@@ -10,37 +10,46 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Script;
 ///     Walks a runtime <c>TESCondition</c>'s embedded <c>BSSimpleList&lt;TESConditionItem*&gt;</c>
 ///     and converts each item into an on-disk-shape <see cref="DialogueCondition" />. Shared
 ///     by record readers whose ESM record carries a CTDA list (IDLE, PERK, QUST, INFO, IDLE, PACK, …).
-///
 ///     <para>Runtime layout (Fallout_Release_Beta PDB, used by xex*.dmp):</para>
 ///     <list type="bullet">
-///         <item><c>TESCondition</c> (8 bytes): a single field <c>listConditions</c> at +0 of type
-///         <c>BSSimpleList&lt;TESConditionItem*&gt;</c>. The TESCondition itself is embedded
-///         (not a pointer) inside the owning record, so the 8 bytes of the BSSimpleList head
-///         live at <c>ownerRecord + conditionsFieldOffset</c>.</item>
-///         <item><c>BSSimpleList</c> (8 bytes):
+///         <item>
+///             <c>TESCondition</c> (8 bytes): a single field <c>listConditions</c> at +0 of type
+///             <c>BSSimpleList&lt;TESConditionItem*&gt;</c>. The TESCondition itself is embedded
+///             (not a pointer) inside the owning record, so the 8 bytes of the BSSimpleList head
+///             live at <c>ownerRecord + conditionsFieldOffset</c>.
+///         </item>
+///         <item>
+///             <c>BSSimpleList</c> (8 bytes):
 ///             <c>m_item</c> @ +0 (TESConditionItem*),
-///             <c>m_pkNext</c> @ +4 (pointer to the next 8-byte BSSimpleList node, or null).</item>
-///         <item><c>TESConditionItem</c> (28 bytes): a single <c>Data</c> field at +0 of type
-///         <c>CONDITION_ITEM_DATA</c> (28 bytes).</item>
-///         <item><c>CONDITION_ITEM_DATA</c> (28 bytes):
+///             <c>m_pkNext</c> @ +4 (pointer to the next 8-byte BSSimpleList node, or null).
+///         </item>
+///         <item>
+///             <c>TESConditionItem</c> (28 bytes): a single <c>Data</c> field at +0 of type
+///             <c>CONDITION_ITEM_DATA</c> (28 bytes).
+///         </item>
+///         <item>
+///             <c>CONDITION_ITEM_DATA</c> (28 bytes):
 ///             <c>iFlags</c> @ +0 (uint8 — CTDA Type byte: operator + OR + swap + UseGlobal),
 ///             <c>fValue</c> @ +4 OR <c>pGlobal</c> @ +4 (union, 4 bytes — comparison value or
-///                 pointer to TESGlobal when UseGlobal bit 0x04 is set),
+///             pointer to TESGlobal when UseGlobal bit 0x04 is set),
 ///             <c>FunctionData</c> @ +8 (FUNCTION_DATA, 12 bytes:
-///                 <c>iFunction</c> @ +0 (uint16),
-///                 padding(2),
-///                 <c>pParam</c> @ +4 (<c>void*[2]</c>, 8 bytes)),
+///             <c>iFunction</c> @ +0 (uint16),
+///             padding(2),
+///             <c>pParam</c> @ +4 (<c>void*[2]</c>, 8 bytes)),
 ///             <c>eObject</c> @ +20 (uint32 enum — RunOn: 0=Subject 1=Target 2=Reference 3=CombatTarget 4=LinkedRef),
 ///             <c>pRunOnRef</c> @ +24 (TESObjectREFR* only when the game-aware semantic
-///                 Reference policy selects the slot; otherwise ignored raw storage).</item>
+///             Reference policy selects the slot; otherwise ignored raw storage).
+///         </item>
 ///     </list>
-///
-///     <para>Runtime <c>pParam</c> entries are <i>either</i> a TESForm* (when the function's
-///     parameter type per <see cref="PerkConditionParameterResolver" /> is a FormID type) <i>or</i>
-///     a uint32 value cast to a pointer (for ActorValue / Stage / Int / enum parameters). We
-///     read the 4 bytes verbatim, then disambiguate using <see cref="PerkConditionParameterResolver.IsFormParameter" />:
-///     if it's a FormID parameter we follow the pointer to TESForm+12 (the FormID); otherwise
-///     we emit the 32-bit value as-is.</para>
+///     <para>
+///         Runtime <c>pParam</c> entries are <i>either</i> a TESForm* (when the function's
+///         parameter type per <see cref="PerkConditionParameterResolver" /> is a FormID type) <i>or</i>
+///         a uint32 value cast to a pointer (for ActorValue / Stage / Int / enum parameters). We
+///         read the 4 bytes verbatim, then disambiguate using
+///         <see cref="PerkConditionParameterResolver.IsFormParameter" />:
+///         if it's a FormID parameter we follow the pointer to TESForm+12 (the FormID); otherwise
+///         we emit the 32-bit value as-is.
+///     </para>
 /// </summary>
 internal static class TesConditionListWalker
 {
@@ -54,9 +63,9 @@ internal static class TesConditionListWalker
     private const int ConditionItemDataSize = 28;
     private const int CitemFlagsOffset = 0;
     private const int CitemCompareValueOffset = 4;
-    private const int CitemFunctionIndexOffset = 8;        // FunctionData @+8, iFunction @+0
-    private const int CitemParam1Offset = 12;              //                pParam[0] @+4 → CITEM+12
-    private const int CitemParam2Offset = 16;              //                pParam[1] @+8 → CITEM+16
+    private const int CitemFunctionIndexOffset = 8; // FunctionData @+8, iFunction @+0
+    private const int CitemParam1Offset = 12; //                pParam[0] @+4 → CITEM+12
+    private const int CitemParam2Offset = 16; //                pParam[1] @+8 → CITEM+16
     private const int CitemRunOnOffset = 20;
     private const int CitemRunOnRefOffset = 24;
 
@@ -105,7 +114,7 @@ internal static class TesConditionListWalker
                 break;
             }
 
-            itemPtr = BinaryUtils.ReadUInt32BE(nextNodeBytes, 0);
+            itemPtr = BinaryUtils.ReadUInt32BE(nextNodeBytes);
             nextNodePtr = BinaryUtils.ReadUInt32BE(nextNodeBytes, 4);
         }
 

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
@@ -164,11 +163,15 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     internal void Store(
         MeshArchiveLookupMetadata metadata,
         string? variantKey,
-        ReferenceDecodedMeshPayload12? payload) =>
+        ReferenceDecodedMeshPayload12? payload)
+    {
         StoreCore(BuildKeyText(metadata, variantKey), payload, WriteMesh);
+    }
 
-    internal string GetCachePath(MeshArchiveLookupMetadata metadata, string? variantKey = null) =>
-        GetCachePath(BuildKeyText(metadata, variantKey));
+    internal string GetCachePath(MeshArchiveLookupMetadata metadata, string? variantKey = null)
+    {
+        return GetCachePath(BuildKeyText(metadata, variantKey));
+    }
 
     private static string BuildKeyText(MeshArchiveLookupMetadata metadata, string? variantKey)
     {
@@ -183,6 +186,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         {
             Append("variant", variantKey);
         }
+
         Append("found", metadata.Found ? "1" : "0");
         Append("archiveSet", metadata.ArchiveSetIdentity);
         Append("archive", metadata.ArchivePath ?? "");
@@ -203,14 +207,20 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         }
     }
 
-    private static string FormatNullable(long? value) =>
-        value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    private static string FormatNullable(long? value)
+    {
+        return value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    }
 
-    private static string FormatNullable(uint? value) =>
-        value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    private static string FormatNullable(uint? value)
+    {
+        return value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    }
 
-    private static string FormatNullable(ulong? value) =>
-        value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    private static string FormatNullable(ulong? value)
+    {
+        return value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "";
+    }
 
     private static void WriteMesh(BinaryWriter writer, ReferenceDecodedMeshPayload12 mesh)
     {
@@ -223,6 +233,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             throw new InvalidDataException(
                 "Decoded mesh cache payload has neither render nor authored collision data.");
         }
+
         writer.Write((byte)mesh.CollisionProvenance);
 
         ValidateRange(mesh.Submeshes.Count, 0, MaxSubmeshes, nameof(mesh.Submeshes));
@@ -673,7 +684,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             (NifBillboardMode)reader.ReadUInt16(),
             reader.ReadBoolean(),
             reader.ReadBoolean(),
-            reader.ReadBoolean() ? (Vector3?)ReadVector3(reader) : null,
+            reader.ReadBoolean() ? ReadVector3(reader) : null,
             ReadRigidNodeAnimation(reader),
             reader.ReadBoolean());
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
@@ -801,8 +812,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         return descriptor;
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
     private static void WriteMaterialAlphaController(
         BinaryWriter writer, NifMaterialAlphaController? controller)
@@ -930,8 +943,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(value.Y);
     }
 
-    private static Vector2 ReadVector2(BinaryReader reader) =>
-        new(reader.ReadSingle(), reader.ReadSingle());
+    private static Vector2 ReadVector2(BinaryReader reader)
+    {
+        return new Vector2(reader.ReadSingle(), reader.ReadSingle());
+    }
 
     private static void WriteVector3(BinaryWriter writer, Vector3 value)
     {
@@ -940,8 +955,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(value.Z);
     }
 
-    private static Vector3 ReadVector3(BinaryReader reader) =>
-        new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static Vector3 ReadVector3(BinaryReader reader)
+    {
+        return new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    }
 
     private static void WriteVector4(BinaryWriter writer, Vector4 value)
     {
@@ -951,8 +968,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(value.W);
     }
 
-    private static Vector4 ReadVector4(BinaryReader reader) =>
-        new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static Vector4 ReadVector4(BinaryReader reader)
+    {
+        return new Vector4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    }
 
     private static void WriteQuaternion(BinaryWriter writer, Quaternion value)
     {
@@ -962,23 +981,39 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(value.W);
     }
 
-    private static Quaternion ReadQuaternion(BinaryReader reader) =>
-        new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static Quaternion ReadQuaternion(BinaryReader reader)
+    {
+        return new Quaternion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    }
 
     private static void WriteMatrix(BinaryWriter writer, Matrix4x4 m)
     {
-        writer.Write(m.M11); writer.Write(m.M12); writer.Write(m.M13); writer.Write(m.M14);
-        writer.Write(m.M21); writer.Write(m.M22); writer.Write(m.M23); writer.Write(m.M24);
-        writer.Write(m.M31); writer.Write(m.M32); writer.Write(m.M33); writer.Write(m.M34);
-        writer.Write(m.M41); writer.Write(m.M42); writer.Write(m.M43); writer.Write(m.M44);
+        writer.Write(m.M11);
+        writer.Write(m.M12);
+        writer.Write(m.M13);
+        writer.Write(m.M14);
+        writer.Write(m.M21);
+        writer.Write(m.M22);
+        writer.Write(m.M23);
+        writer.Write(m.M24);
+        writer.Write(m.M31);
+        writer.Write(m.M32);
+        writer.Write(m.M33);
+        writer.Write(m.M34);
+        writer.Write(m.M41);
+        writer.Write(m.M42);
+        writer.Write(m.M43);
+        writer.Write(m.M44);
     }
 
-    private static Matrix4x4 ReadMatrix(BinaryReader reader) =>
-        new(
+    private static Matrix4x4 ReadMatrix(BinaryReader reader)
+    {
+        return new Matrix4x4(
             reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
             reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
             reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
             reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    }
 }
 
 /// <summary>A disk-cache entry for a decoded reference mesh: the payload, or a negative (known-empty) marker.</summary>
@@ -986,8 +1021,10 @@ internal readonly record struct ReferenceDecodedMeshDiskCacheEntry12(
     ReferenceDecodedMeshPayload12? Mesh,
     bool IsNegative);
 
-/// <summary>A decoded reference mesh ready to cache/upload: its submeshes, collision provenance plus
-/// optional geometry, and the keyframe animation rig for animated statics.</summary>
+/// <summary>
+///     A decoded reference mesh ready to cache/upload: its submeshes, collision provenance plus
+///     optional geometry, and the keyframe animation rig for animated statics.
+/// </summary>
 internal sealed record ReferenceDecodedMeshPayload12(
     IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes,
     Vector3[]? CollisionPositions = null,

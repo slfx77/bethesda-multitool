@@ -18,8 +18,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 /// </summary>
 internal static class OblivionWaterSurfaceSynthesizer
 {
-    public const int FrameCount = 32;  // ini uSurfaceFrameCount
+    public const int FrameCount = 32; // ini uSurfaceFrameCount
     public const int TextureSize = 128; // ini uSurfaceTextureSize
+
+    /// <summary>Peak normal XY tilt at the default strength (≈ gentle-ripple slope).</summary>
+    private const float BaseTilt = 0.35f;
 
     // Flat-spectrum multi-octave wave table (rebuilt 2026-08-17 per the adversarial-review
     // verdict: the previous FIVE low-integer waves WERE the reported checkerboard — the dominant
@@ -53,11 +56,8 @@ internal static class OblivionWaterSurfaceSynthesizer
         (26, 9, 5, 0.04f, 0.23f),
         (-11, 28, 5, 0.04f, 0.43f),
         (-24, -19, 5, 0.035f, 0.67f),
-        (30, -8, 5, 0.035f, 0.97f),
+        (30, -8, 5, 0.035f, 0.97f)
     ];
-
-    /// <summary>Peak normal XY tilt at the default strength (≈ gentle-ripple slope).</summary>
-    private const float BaseTilt = 0.35f;
 
     /// <summary>
     ///     Generates <see cref="FrameCount" /> RGBA8 normal-map frames of
@@ -79,7 +79,7 @@ internal static class OblivionWaterSurfaceSynthesizer
         var pixels = new byte[TextureSize * TextureSize * 4];
         // Reduce modulo the loop FIRST so frame N+FrameCount is bit-identical to frame N (adding
         // whole 2π cycles to the float phase instead drifts the last ULP).
-        var t = ((frame % FrameCount) + FrameCount) % FrameCount / (float)FrameCount;
+        var t = (frame % FrameCount + FrameCount) % FrameCount / (float)FrameCount;
         for (var y = 0; y < TextureSize; y++)
         {
             var v = y / (float)TextureSize;
@@ -93,19 +93,19 @@ internal static class OblivionWaterSurfaceSynthesizer
                 var dhdy = 0f;
                 foreach (var (kx, ky, cycles, amplitude, phaseOffset) in Waves)
                 {
-                    var phase = MathF.Tau * ((kx * u) + (ky * v) + (cycles * t) + phaseOffset);
+                    var phase = MathF.Tau * (kx * u + ky * v + cycles * t + phaseOffset);
                     var slope = amplitude * MathF.Cos(phase);
                     // Normalize by the wave-vector magnitude so every component contributes the
                     // same peak SLOPE regardless of its spatial frequency.
-                    var invMagnitude = 1f / MathF.Sqrt((kx * kx) + (ky * ky));
+                    var invMagnitude = 1f / MathF.Sqrt(kx * kx + ky * ky);
                     dhdx += slope * kx * invMagnitude;
                     dhdy += slope * ky * invMagnitude;
                 }
 
                 var nx = -dhdx * BaseTilt;
                 var ny = -dhdy * BaseTilt;
-                var invLen = 1f / MathF.Sqrt((nx * nx) + (ny * ny) + 1f);
-                var offset = ((y * TextureSize) + x) * 4;
+                var invLen = 1f / MathF.Sqrt(nx * nx + ny * ny + 1f);
+                var offset = (y * TextureSize + x) * 4;
                 pixels[offset] = EncodeUnorm(nx * invLen);
                 pixels[offset + 1] = EncodeUnorm(ny * invLen);
                 pixels[offset + 2] = EncodeUnorm(invLen);
@@ -116,6 +116,8 @@ internal static class OblivionWaterSurfaceSynthesizer
         return pixels;
     }
 
-    private static byte EncodeUnorm(float component) =>
-        (byte)Math.Clamp((int)MathF.Round((component * 0.5f + 0.5f) * 255f), 0, 255);
+    private static byte EncodeUnorm(float component)
+    {
+        return (byte)Math.Clamp((int)MathF.Round((component * 0.5f + 0.5f) * 255f), 0, 255);
+    }
 }

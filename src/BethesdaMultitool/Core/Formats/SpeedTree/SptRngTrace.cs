@@ -21,19 +21,29 @@ internal sealed class SptRngTrace : IDisposable
     private readonly StreamWriter _writer;
     private long _seq;
 
-    /// <summary>Short label (e.g. <c>"branch L1"</c>, <c>"child c2"</c>) the builder sets so each row maps
-    ///     to its generation phase — the C# analog of the engine trace's call-site VA. Free-form; never
-    ///     contains a comma.</summary>
-    public string Phase { get; set; } = "";
-
     private SptRngTrace(StreamWriter writer)
     {
         _writer = writer;
         _writer.WriteLine("seq,kind,callsite,state,a,b,c");
     }
 
-    /// <summary>Open a trace if <c>SPT_RNG_TRACE</c> is set, else return null. <paramref name="seed" /> only
-    ///     names the default temp file.</summary>
+    /// <summary>
+    ///     Short label (e.g. <c>"branch L1"</c>, <c>"child c2"</c>) the builder sets so each row maps
+    ///     to its generation phase — the C# analog of the engine trace's call-site VA. Free-form; never
+    ///     contains a comma.
+    /// </summary>
+    public string Phase { get; set; } = "";
+
+    public void Dispose()
+    {
+        _writer.Flush();
+        _writer.Dispose();
+    }
+
+    /// <summary>
+    ///     Open a trace if <c>SPT_RNG_TRACE</c> is set, else return null. <paramref name="seed" /> only
+    ///     names the default temp file.
+    /// </summary>
     public static SptRngTrace? FromEnvironment(uint seed)
     {
         var value = Environment.GetEnvironmentVariable("SPT_RNG_TRACE");
@@ -54,7 +64,7 @@ internal sealed class SptRngTrace : IDisposable
                 Directory.CreateDirectory(dir);
             }
 
-            return new SptRngTrace(new StreamWriter(path, append: false));
+            return new SptRngTrace(new StreamWriter(path, false));
         }
         catch (IOException)
         {
@@ -66,29 +76,35 @@ internal sealed class SptRngTrace : IDisposable
         }
     }
 
-    /// <summary>A logical uniform draw — the analog of the engine's <c>GetUniform(min, max)</c>.
+    /// <summary>
+    ///     A logical uniform draw — the analog of the engine's <c>GetUniform(min, max)</c>.
     ///     <paramref name="state" /> is the Park-Miller state BEFORE the draw (matches the engine's
-    ///     <c>_DAT_011f9120</c>).</summary>
-    public void Uniform(int state, float min, float max, float result) =>
+    ///     <c>_DAT_011f9120</c>).
+    /// </summary>
+    public void Uniform(int state, float min, float max, float result)
+    {
         _writer.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"{_seq++},U,{Phase},{state},{min:R},{max:R},{result:R}"));
+    }
 
-    /// <summary>A reseed — the analog of the engine's <c>CIdvRandom::Reseed(seed)</c>.
-    ///     <paramref name="oldState" /> is the state before the reseed overwrote it.</summary>
-    public void Reseed(uint seed, int oldState) =>
+    /// <summary>
+    ///     A reseed — the analog of the engine's <c>CIdvRandom::Reseed(seed)</c>.
+    ///     <paramref name="oldState" /> is the state before the reseed overwrote it.
+    /// </summary>
+    public void Reseed(uint seed, int oldState)
+    {
         _writer.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"{_seq++},R,{Phase},{oldState},{seed},0,0"));
+    }
 
-    /// <summary>A leaf-placement decision — the analog of the engine's <c>RoomForLeaf</c> "L" rows
+    /// <summary>
+    ///     A leaf-placement decision — the analog of the engine's <c>RoomForLeaf</c> "L" rows
     ///     (ordering will NOT match the engine, which interleaves placement with generation; the builder
-    ///     places all leaves after generation — these are for accept-count and spacing comparison only).</summary>
-    public void Leaf(int index, float spacing, bool accepted) =>
+    ///     places all leaves after generation — these are for accept-count and spacing comparison only).
+    /// </summary>
+    public void Leaf(int index, float spacing, bool accepted)
+    {
         _writer.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"{_seq++},L,{Phase},0,{index},{spacing:R},{(accepted ? 1 : 0)}"));
-
-    public void Dispose()
-    {
-        _writer.Flush();
-        _writer.Dispose();
     }
 }

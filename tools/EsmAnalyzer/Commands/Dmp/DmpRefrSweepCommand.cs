@@ -112,7 +112,8 @@ internal static class DmpRefrSweepCommand
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"[blue]Sweeping[/] {dmpFiles.Count} dump(s) with up to [cyan]{maxParallel}[/] in parallel");
+        AnsiConsole.MarkupLine(
+            $"[blue]Sweeping[/] {dmpFiles.Count} dump(s) with up to [cyan]{maxParallel}[/] in parallel");
 
         var auditLookup = LoadAuditLookup(auditCsv);
         AnsiConsole.MarkupLine(auditLookup == null
@@ -124,21 +125,22 @@ internal static class DmpRefrSweepCommand
 
         ParallelWork.ForEach("refr-sweep", dmpFiles,
             ConcurrencyPolicy.HalfCoresClamped(2, int.MaxValue).WithExplicitOverride(maxParallel), file =>
-        {
-            try
             {
-                var r = SweepOne(file, forceEarly, perRefrNearOriginCutoff);
-                results.Add(r);
-                var n = Interlocked.Increment(ref done);
-                AnsiConsole.MarkupLine(
-                    $"[grey]  ({n}/{dmpFiles.Count})[/] {Path.GetFileName(file)} " +
-                    $"hits={r.TotalRefrs} null-parent={r.NullParentRefrs} cells={r.CellBuckets.Count} layout={(r.EarlyEra ? "early" : "final")}");
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[red]ERROR scanning {Path.GetFileName(file)}: {ex.Message.EscapeMarkup()}[/]");
-            }
-        });
+                try
+                {
+                    var r = SweepOne(file, forceEarly, perRefrNearOriginCutoff);
+                    results.Add(r);
+                    var n = Interlocked.Increment(ref done);
+                    AnsiConsole.MarkupLine(
+                        $"[grey]  ({n}/{dmpFiles.Count})[/] {Path.GetFileName(file)} " +
+                        $"hits={r.TotalRefrs} null-parent={r.NullParentRefrs} cells={r.CellBuckets.Count} layout={(r.EarlyEra ? "early" : "final")}");
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[red]ERROR scanning {Path.GetFileName(file)}: {ex.Message.EscapeMarkup()}[/]");
+                }
+            });
 
         WriteCsv(outputCsv, results, auditLookup);
         AnsiConsole.MarkupLine($"\n[green]Wrote[/] {outputCsv}");
@@ -551,7 +553,8 @@ internal static class DmpRefrSweepCommand
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
         using var w = new StreamWriter(outputPath);
-        w.WriteLine("Dump,Layout,GridX,GridY,TotalRefrs,NullParentRefrs,DistinctFormIds,DistinctVftables,AuditPlacementCount,AuditCellEditorId,AuditCellFormId,AuditWorldspace,SampleFormIds");
+        w.WriteLine(
+            "Dump,Layout,GridX,GridY,TotalRefrs,NullParentRefrs,DistinctFormIds,DistinctVftables,AuditPlacementCount,AuditCellEditorId,AuditCellFormId,AuditWorldspace,SampleFormIds");
 
         foreach (var r in results.OrderBy(r => r.DumpName, StringComparer.Ordinal))
         {
@@ -685,7 +688,9 @@ internal static class DmpRefrSweepCommand
             AnsiConsole.MarkupLine("[bold]Top 20 (dump, gx, gy) buckets NOT in audit, ranked by NullParent count[/]");
 
             var dangling = results
-                .SelectMany(r => r.CellBuckets.Select(kv => (Dump: r.DumpName, Gx: kv.Key.Item1, Gy: kv.Key.Item2, Bucket: kv.Value)))
+                .SelectMany(r =>
+                    r.CellBuckets.Select(kv =>
+                        (Dump: r.DumpName, Gx: kv.Key.Item1, Gy: kv.Key.Item2, Bucket: kv.Value)))
                 .Where(t => !audit.ContainsKey((t.Dump, t.Gx, t.Gy)))
                 .OrderByDescending(t => t.Bucket.NullParent)
                 .Take(20)
@@ -714,29 +719,29 @@ internal static class DmpRefrSweepCommand
 
     private sealed class RefrHit
     {
-        public uint VA;
-        public uint FormId;
-        public uint Vftable;
-        public float X;
-        public float Y;
-        public float Z;
-        public float Scale;
-        public uint ParentCell;
-
-        /// <summary>VA of the base object pointer (pObjectReference at +48 in TESObjectREFR).</summary>
-        public uint BaseObjectPtr;
-
         /// <summary>Resolved base form FormID (set in SweepOne after region scan via the dump-wide VA->FormID resolver).</summary>
         public uint BaseFormId;
 
         /// <summary>Resolved base form formType (e.g. 0x21 = STAT, 0x23 = MSTT, 0x26 = FLOR).</summary>
         public byte BaseFormType;
+
+        /// <summary>VA of the base object pointer (pObjectReference at +48 in TESObjectREFR).</summary>
+        public uint BaseObjectPtr;
+
+        public uint FormId;
+        public uint ParentCell;
+        public float Scale;
+        public uint VA;
+        public uint Vftable;
+        public float X;
+        public float Y;
+        public float Z;
     }
 
     private sealed class CellBucket
     {
-        public int Total;
         public int NullParent;
+        public int Total;
         public HashSet<uint> FormIds { get; } = [];
         public HashSet<uint> Vftables { get; } = [];
         public List<uint> SampleFormIds { get; } = [];

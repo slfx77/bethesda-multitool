@@ -191,7 +191,7 @@ public sealed class ArchiveFirstMapMarkerIconProviderTests
     public void CropToOpaqueBounds_TrimsRetailFnvPaddingToTheInkBox()
     {
         var rgba = TransparentRgba(64, 64);
-        FillOpaque(rgba, 64, x0: 14, y0: 14, w: 35, h: 35);
+        FillOpaque(rgba, 64, 14, 14, 35, 35);
 
         var (pixels, width, height) = MapMarkerIconPixels.CropToOpaqueBounds(rgba, 64, 64);
 
@@ -205,7 +205,7 @@ public sealed class ArchiveFirstMapMarkerIconProviderTests
     public void CropToOpaqueBounds_IsAReferenceEqualNoOpWhenInkTouchesEveryEdge()
     {
         var rgba = TransparentRgba(8, 8);
-        FillOpaque(rgba, 8, x0: 0, y0: 0, w: 8, h: 8);
+        FillOpaque(rgba, 8, 0, 0, 8, 8);
 
         var (pixels, width, height) = MapMarkerIconPixels.CropToOpaqueBounds(rgba, 8, 8);
 
@@ -232,7 +232,7 @@ public sealed class ArchiveFirstMapMarkerIconProviderTests
     public void CropToOpaqueBounds_IgnoresSubThresholdFringe()
     {
         var rgba = TransparentRgba(10, 10);
-        FillOpaque(rgba, 10, x0: 3, y0: 3, w: 4, h: 4);
+        FillOpaque(rgba, 10, 3, 3, 4, 4);
         rgba[(0 * 10 + 0) * 4 + 3] = 7; // one nearly-transparent corner texel, below the threshold of 8
 
         var (_, width, height) = MapMarkerIconPixels.CropToOpaqueBounds(rgba, 10, 10);
@@ -247,21 +247,24 @@ public sealed class ArchiveFirstMapMarkerIconProviderTests
     {
         var rgba = TransparentRgba(4, 4);
         // Two opaque texels on different rows and columns, with distinct colours.
-        SetTexel(rgba, 4, x: 1, y: 1, r: 10, g: 20, b: 30, a: 255);
-        SetTexel(rgba, 4, x: 2, y: 2, r: 40, g: 50, b: 60, a: 255);
+        SetTexel(rgba, 4, 1, 1, 10, 20, 30, 255);
+        SetTexel(rgba, 4, 2, 2, 40, 50, 60, 255);
 
         var (pixels, width, height) = MapMarkerIconPixels.CropToOpaqueBounds(rgba, 4, 4);
 
         Assert.Equal(2, width);
         Assert.Equal(2, height);
         // (1,1) becomes (0,0) and (2,2) becomes (1,1); the off-diagonal texels stay transparent.
-        Assert.Equal(new byte[] { 10, 20, 30, 255 }, pixels[0..4]);
+        Assert.Equal(new byte[] { 10, 20, 30, 255 }, pixels[..4]);
         Assert.Equal(new byte[] { 40, 50, 60, 255 }, pixels[12..16]);
         Assert.Equal(0, pixels[7]);
         Assert.Equal(0, pixels[11]);
     }
 
-    private static byte[] TransparentRgba(int width, int height) => new byte[width * height * 4];
+    private static byte[] TransparentRgba(int width, int height)
+    {
+        return new byte[width * height * 4];
+    }
 
     private static void FillOpaque(byte[] rgba, int stride, int x0, int y0, int w, int h)
     {

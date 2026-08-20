@@ -30,7 +30,7 @@ internal enum NifCycleType : byte
 {
     Loop = 0,
     Reverse = 1,
-    Clamp = 2,
+    Clamp = 2
 }
 
 /// <summary>Reads the shared NiTimeController base header from any controller block.</summary>
@@ -46,13 +46,13 @@ internal static class NifTimeControllerReader
 
         var pos = block.DataOffset;
         header = new NifTimeControllerHeader(
-            NextControllerRef: BinaryUtils.ReadInt32(data, pos, be),
-            Flags: BinaryUtils.ReadUInt16(data, pos + 4, be),
-            Frequency: BinaryUtils.ReadFloat(data, pos + 6, be),
-            Phase: BinaryUtils.ReadFloat(data, pos + 10, be),
-            StartTime: BinaryUtils.ReadFloat(data, pos + 14, be),
-            StopTime: BinaryUtils.ReadFloat(data, pos + 18, be),
-            TargetRef: BinaryUtils.ReadInt32(data, pos + 22, be));
+            BinaryUtils.ReadInt32(data, pos, be),
+            BinaryUtils.ReadUInt16(data, pos + 4, be),
+            BinaryUtils.ReadFloat(data, pos + 6, be),
+            BinaryUtils.ReadFloat(data, pos + 10, be),
+            BinaryUtils.ReadFloat(data, pos + 14, be),
+            BinaryUtils.ReadFloat(data, pos + 18, be),
+            BinaryUtils.ReadInt32(data, pos + 22, be));
         return true;
     }
 }

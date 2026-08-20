@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Tests.Helpers;
@@ -21,11 +20,19 @@ public sealed class ShaderInventoryTests
         SourceContract.RepoRoot, "src", "BethesdaMultitool",
         "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders");
 
-    private static string[] EmbeddedShaderNames() =>
-        [.. typeof(ShaderPermutation).Assembly
-            .GetManifestResourceNames()
-            .Where(n => n.StartsWith(ResourcePrefix, StringComparison.Ordinal))
-            .Select(n => n[ResourcePrefix.Length..])];
+    private static readonly Regex IncludeDirective = new(
+        @"#include\s+""([^""]+)""", RegexOptions.Compiled);
+
+    private static string[] EmbeddedShaderNames()
+    {
+        return
+        [
+            .. typeof(ShaderPermutation).Assembly
+                .GetManifestResourceNames()
+                .Where(n => n.StartsWith(ResourcePrefix, StringComparison.Ordinal))
+                .Select(n => n[ResourcePrefix.Length..])
+        ];
+    }
 
     [Fact]
     public void EveryShaderOnDiskIsEmbedded()
@@ -113,7 +120,8 @@ public sealed class ShaderInventoryTests
         // of the FO4 permutation while implying FO76 had its own coverage.
         var duplicates = ShaderPermutations.All
             .GroupBy(p => $"{p.File}|{p.EntryPoint}|{p.Profile}|" +
-                          string.Join(",", p.Macros.Select(m => $"{m.Name}={m.Definition}").Order(StringComparer.Ordinal)),
+                          string.Join(",",
+                              p.Macros.Select(m => $"{m.Name}={m.Definition}").Order(StringComparer.Ordinal)),
                 StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)
@@ -164,9 +172,6 @@ public sealed class ShaderInventoryTests
                 $"No embedded resource for '{permutation.File}'.");
         }
     }
-
-    private static readonly Regex IncludeDirective = new(
-        @"#include\s+""([^""]+)""", RegexOptions.Compiled);
 
     [Fact]
     public void EveryIncludeDirectiveResolvesToAnEmbeddedHeader()

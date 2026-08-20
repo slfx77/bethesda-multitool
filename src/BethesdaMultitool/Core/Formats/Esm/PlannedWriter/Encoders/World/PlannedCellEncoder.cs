@@ -36,7 +36,7 @@ public sealed class PlannedCellEncoder : IPlannedRecordEncoder<CellRecord>
                 "New CELLs currently emit through CellGrupBuilder; route them through this encoder " +
                 "once Tier 5b cell-pipeline integration ships."),
             _ => throw new InvalidOperationException(
-                $"PlannedCellEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedCellEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

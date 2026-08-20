@@ -10,24 +10,26 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 /// </summary>
 public sealed class NifRigidNodeAnimationTests
 {
-    private static NifRigidNodeAnimation QuarterTurnTrack(bool loops) => new(
-        ClipStart: 0f,
-        ClipLength: 1f,
-        Loops: loops,
-        SamplesPerSecond: 2f,
-        Rotations:
-        [
-            Quaternion.Identity,
-            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 4f),
-            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f),
-        ],
-        Translations: [Vector3.Zero, new Vector3(0f, 0f, 5f), new Vector3(0f, 0f, 10f)],
-        Scales: [Vector3.One, Vector3.One, Vector3.One]);
+    private static NifRigidNodeAnimation QuarterTurnTrack(bool loops)
+    {
+        return new NifRigidNodeAnimation(
+            0f,
+            1f,
+            loops,
+            2f,
+            [
+                Quaternion.Identity,
+                Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 4f),
+                Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f)
+            ],
+            [Vector3.Zero, new Vector3(0f, 0f, 5f), new Vector3(0f, 0f, 10f)],
+            [Vector3.One, Vector3.One, Vector3.One]);
+    }
 
     [Fact]
     public void SampleBoundaries_ReproduceTheBakedTransforms()
     {
-        var track = QuarterTurnTrack(loops: true);
+        var track = QuarterTurnTrack(true);
 
         Assert.Equal(Matrix4x4.Identity, track.Evaluate(0.0), MatrixComparer.Instance);
 
@@ -41,7 +43,7 @@ public sealed class NifRigidNodeAnimationTests
     [Fact]
     public void MidSampleInterpolation_IsSmooth()
     {
-        var track = QuarterTurnTrack(loops: true);
+        var track = QuarterTurnTrack(true);
 
         var quarter = track.Evaluate(0.25);
         Assert.Equal(2.5f, quarter.Translation.Z, 3);
@@ -55,7 +57,7 @@ public sealed class NifRigidNodeAnimationTests
     [Fact]
     public void LoopingTrack_WrapsPastTheClipLength()
     {
-        var track = QuarterTurnTrack(loops: true);
+        var track = QuarterTurnTrack(true);
 
         var wrapped = track.Evaluate(2.5);
         Assert.Equal(5f, wrapped.Translation.Z, 3);
@@ -64,7 +66,7 @@ public sealed class NifRigidNodeAnimationTests
     [Fact]
     public void NonLoopingTrack_ClampsToTheFinalSample()
     {
-        var track = QuarterTurnTrack(loops: false);
+        var track = QuarterTurnTrack(false);
 
         var clamped = track.Evaluate(9.0);
         Assert.Equal(10f, clamped.Translation.Z, 3);
@@ -98,6 +100,9 @@ public sealed class NifRigidNodeAnimationTests
             return true;
         }
 
-        public int GetHashCode(Matrix4x4 obj) => 0;
+        public int GetHashCode(Matrix4x4 obj)
+        {
+            return 0;
+        }
     }
 }

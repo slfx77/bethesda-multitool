@@ -21,18 +21,6 @@ namespace BethesdaMultitool.Core.Formats.Tes3;
 /// </summary>
 internal static class Tes3DialogueExtractor
 {
-    /// <summary>An INFO captured during the file-order pass, before editor-id → FormID resolution.</summary>
-    public readonly record struct Tes3InfoDraft(
-        uint FormId,
-        string? EditorId,
-        uint? TopicFormId,
-        ushort InfoIndex,
-        byte DialogType,
-        string? ResponseText,
-        string? Speaker,
-        string? Faction,
-        string? Race);
-
     /// <summary>Builds the topic model from a DIAL. The editor id (NAME) <i>is</i> the topic text.</summary>
     public static DialogTopicRecord BuildTopic(uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs)
     {
@@ -61,7 +49,10 @@ internal static class Tes3DialogueExtractor
     ///     render them as the actively-wrong "Conversation"/"Combat"/"Detection". The topic editor id
     ///     (e.g. "Greeting 5", journal quest ids) already conveys the finer kind.
     /// </summary>
-    private static byte MapTopicType(byte dialogType) => dialogType == 3 ? (byte)3 : (byte)0;
+    private static byte MapTopicType(byte dialogType)
+    {
+        return dialogType == 3 ? (byte)3 : (byte)0;
+    }
 
     /// <summary>Captures an INFO's response + speaker strings, linked to the current topic by file order.</summary>
     public static Tes3InfoDraft BuildInfoDraft(
@@ -100,7 +91,8 @@ internal static class Tes3DialogueExtractor
             }
         }
 
-        return new Tes3InfoDraft(formId, editorId, topicFormId, infoIndex, dialogType, response, speaker, faction, race);
+        return new Tes3InfoDraft(formId, editorId, topicFormId, infoIndex, dialogType, response, speaker, faction,
+            race);
     }
 
     /// <summary>
@@ -110,8 +102,10 @@ internal static class Tes3DialogueExtractor
     public static DialogueRecord ToRecord(
         Tes3InfoDraft draft, IReadOnlyDictionary<string, uint> idToFormId)
     {
-        uint? Resolve(string? id) =>
-            !string.IsNullOrEmpty(id) && idToFormId.TryGetValue(id, out var formId) ? formId : null;
+        uint? Resolve(string? id)
+        {
+            return !string.IsNullOrEmpty(id) && idToFormId.TryGetValue(id, out var formId) ? formId : null;
+        }
 
         var responses = new List<DialogueResponse>();
         if (!string.IsNullOrEmpty(draft.ResponseText))
@@ -132,6 +126,20 @@ internal static class Tes3DialogueExtractor
         };
     }
 
-    private static string? ReadString(byte[] data) =>
-        data.Length == 0 ? null : EsmStringUtils.ReadNullTermString(data);
+    private static string? ReadString(byte[] data)
+    {
+        return data.Length == 0 ? null : EsmStringUtils.ReadNullTermString(data);
+    }
+
+    /// <summary>An INFO captured during the file-order pass, before editor-id → FormID resolution.</summary>
+    public readonly record struct Tes3InfoDraft(
+        uint FormId,
+        string? EditorId,
+        uint? TopicFormId,
+        ushort InfoIndex,
+        byte DialogType,
+        string? ResponseText,
+        string? Speaker,
+        string? Faction,
+        string? Race);
 }

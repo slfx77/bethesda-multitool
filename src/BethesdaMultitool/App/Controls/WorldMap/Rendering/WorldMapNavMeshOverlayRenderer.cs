@@ -5,6 +5,7 @@ using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Geometry;
 using Windows.Foundation;
 using Windows.UI;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -15,6 +16,11 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapNavMeshOverlayRenderer
 {
+    private const float OverviewGeometryMinZoom = 0.012f;
+    private const float OverviewEdgesMinZoom = 0.025f;
+    private const int MaxLowZoomGeometryCells = 256;
+    private const int MaxOverviewGeometryCells = 1024;
+
     /// <summary>Filled-triangle tint with low alpha so overlaps still read.</summary>
     private static readonly Color s_fillColor = Color.FromArgb(70, 80, 220, 120);
 
@@ -23,11 +29,6 @@ internal static class WorldMapNavMeshOverlayRenderer
 
     private static readonly Color s_summaryFillColor = Color.FromArgb(45, 80, 220, 120);
     private static readonly Color s_summaryEdgeColor = Color.FromArgb(90, 150, 255, 180);
-
-    private const float OverviewGeometryMinZoom = 0.012f;
-    private const float OverviewEdgesMinZoom = 0.025f;
-    private const int MaxLowZoomGeometryCells = 256;
-    private const int MaxOverviewGeometryCells = 1024;
 
     /// <summary>Parsed-geometry (CPU-side) cache; entries drop when their NavMeshRecord is GC'd.</summary>
     private static readonly ConditionalWeakTable<NavMeshRecord, NavMeshGeometry?> s_parsedCache = new();

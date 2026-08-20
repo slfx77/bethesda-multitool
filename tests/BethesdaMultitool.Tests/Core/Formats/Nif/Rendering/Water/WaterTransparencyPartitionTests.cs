@@ -5,23 +5,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 
 public sealed class WaterTransparencyPartitionTests
 {
-    /// <summary>A probe with one water body per grid cell, keyed on a 4096-unit grid.</summary>
-    private sealed class GridProbe : IWaterHeightProbe
+    private static GridProbe OneBody(float height)
     {
-        private readonly Dictionary<(int, int), float> _heights = new();
-
-        internal GridProbe Add(int gx, int gy, float height)
-        {
-            _heights[(gx, gy)] = height;
-            return this;
-        }
-
-        public bool TryGetWaterHeightAt(float worldX, float worldY, out float height) =>
-            _heights.TryGetValue(
-                ((int)MathF.Floor(worldX / 4096f), (int)MathF.Floor(worldY / 4096f)), out height);
+        return new GridProbe().Add(0, 0, height);
     }
-
-    private static GridProbe OneBody(float height) => new GridProbe().Add(0, 0, height);
 
     [Theory]
     [InlineData(-1f, true)]
@@ -32,7 +19,7 @@ public sealed class WaterTransparencyPartitionTests
     {
         Assert.Equal(
             expected,
-            WaterTransparencyPartition.IsWhollyBelow(OneBody(0f), 100f, 100f, maxZ, cameraZ: 500f));
+            WaterTransparencyPartition.IsWhollyBelow(OneBody(0f), 100f, 100f, maxZ, 500f));
     }
 
     [Fact]
@@ -50,7 +37,7 @@ public sealed class WaterTransparencyPartitionTests
     public void NonFiniteInputsStayInThePostWaterComplement(float x, float y, float maxZ)
     {
         Assert.False(
-            WaterTransparencyPartition.IsWhollyBelow(OneBody(1000f), x, y, maxZ, cameraZ: 5000f));
+            WaterTransparencyPartition.IsWhollyBelow(OneBody(1000f), x, y, maxZ, 5000f));
     }
 
     /// <summary>
@@ -83,8 +70,8 @@ public sealed class WaterTransparencyPartitionTests
     public void GeometryUnderTheSurfaceTheCameraIsSubmergedInIsNotReordered()
     {
         var probe = OneBody(3000f);
-        Assert.False(WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 2000f, cameraZ: 2500f));
-        Assert.True(WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 2000f, cameraZ: 3500f));
+        Assert.False(WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 2000f, 2500f));
+        Assert.True(WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 2000f, 3500f));
     }
 
     /// <summary>
@@ -115,7 +102,7 @@ public sealed class WaterTransparencyPartitionTests
     public void GeometryStraddlingTheSurfaceStaysInThePostWaterPass()
     {
         Assert.False(
-            WaterTransparencyPartition.IsWhollyBelow(OneBody(1000f), 10f, 10f, 1010f, cameraZ: 2000f));
+            WaterTransparencyPartition.IsWhollyBelow(OneBody(1000f), 10f, 10f, 1010f, 2000f));
     }
 
     // ── Wholly-above-all-water (the unified stream's post-drain partition) ────────────────────
@@ -137,7 +124,7 @@ public sealed class WaterTransparencyPartitionTests
         Assert.Equal(
             expected,
             WaterTransparencyPartition.IsWhollyAboveAllWater(
-                minZ, cameraZ: 9115f, maxQueuedSurfaceZ: 8305f));
+                minZ, 9115f, 8305f));
     }
 
     /// <summary>
@@ -152,7 +139,7 @@ public sealed class WaterTransparencyPartitionTests
     {
         Assert.False(
             WaterTransparencyPartition.IsWhollyAboveAllWater(
-                worldMinZ: 8400f, cameraZ, maxQueuedSurfaceZ: 8305f));
+                8400f, cameraZ, 8305f));
     }
 
     /// <summary>
@@ -184,9 +171,27 @@ public sealed class WaterTransparencyPartitionTests
 
         // Downstream mist at 7500: above its local river, below the reservoir surface.
         Assert.False(
-            WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 7800f, cameraZ: 9115f));
+            WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 7800f, 9115f));
         Assert.False(
             WaterTransparencyPartition.IsWhollyAboveAllWater(
-                worldMinZ: 7500f, cameraZ: 9115f, maxQueuedSurfaceZ: 8305f));
+                7500f, 9115f, 8305f));
+    }
+
+    /// <summary>A probe with one water body per grid cell, keyed on a 4096-unit grid.</summary>
+    private sealed class GridProbe : IWaterHeightProbe
+    {
+        private readonly Dictionary<(int, int), float> _heights = new();
+
+        public bool TryGetWaterHeightAt(float worldX, float worldY, out float height)
+        {
+            return _heights.TryGetValue(
+                ((int)MathF.Floor(worldX / 4096f), (int)MathF.Floor(worldY / 4096f)), out height);
+        }
+
+        internal GridProbe Add(int gx, int gy, float height)
+        {
+            _heights[(gx, gy)] = height;
+            return this;
+        }
     }
 }

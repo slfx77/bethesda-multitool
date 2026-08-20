@@ -11,16 +11,20 @@ internal static class ReferenceMeshCapacityPlanner
     /// <summary>Never size below the shipped default — small worldspaces keep current behavior.</summary>
     public const int FloorCapacity = 2048;
 
-    /// <summary>Slack over the counted unique meshes: refs whose model resolves after load
-    /// (persistent-cell refs redistributed by position, late MODL resolution) + path-normalization
-    /// rounding. Cheap — residency is VRAM-bounded, and the geometry arena grows on demand.</summary>
+    /// <summary>
+    ///     Slack over the counted unique meshes: refs whose model resolves after load
+    ///     (persistent-cell refs redistributed by position, late MODL resolution) + path-normalization
+    ///     rounding. Cheap — residency is VRAM-bounded, and the geometry arena grows on demand.
+    /// </summary>
     public const int Headroom = 512;
 
-    /// <summary>Upper bound. The count is distinct mesh KEYS (paths × re-skin variants) — FO4's
-    /// ubiquitous material swaps multiply keys well past the ~7,431 game-wide distinct model paths,
-    /// so the ceiling sits far above that with margin, while still bounding a corrupt/oversized
-    /// input. The cap itself costs trivial RAM; resident GPU meshes are paced by the per-frame
-    /// upload budget and bounded by physical VRAM.</summary>
+    /// <summary>
+    ///     Upper bound. The count is distinct mesh KEYS (paths × re-skin variants) — FO4's
+    ///     ubiquitous material swaps multiply keys well past the ~7,431 game-wide distinct model paths,
+    ///     so the ceiling sits far above that with margin, while still bounding a corrupt/oversized
+    ///     input. The cap itself costs trivial RAM; resident GPU meshes are paced by the per-frame
+    ///     upload budget and bounded by physical VRAM.
+    /// </summary>
     public const int CeilingCapacity = 49_152;
 
     /// <summary>

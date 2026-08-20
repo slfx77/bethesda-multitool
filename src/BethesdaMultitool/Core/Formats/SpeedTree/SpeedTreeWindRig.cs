@@ -29,27 +29,27 @@ public sealed class SpeedTreeWindRig
     // This is a deterministic capture convention, not a claim about the retail engine's frame rate.
     internal const double CanonicalReplayStepSeconds = 1.0 / 60.0;
 
-    // ffrequencies[4][2] — byte-read from both FalloutNV binaries (360 0x832458D0 / PC 0x119B8CC)
-    // AND byte-identical in Oblivion.exe (0x00B12538).
-    private static readonly (float Sin, float Cos)[] Frequencies =
-    [
-        (0.15f, 0.17f), (0.25f, 0.15f), (0.19f, 0.05f), (0.15f, 0.22f),
-    ];
-
-    /// <summary>Per-game <c>fLeaf*</c> setting values. Swap when the loaded game changes.</summary>
-    public SpeedTreeWindProfile Profile { get; set; } = SpeedTreeWindProfile.FalloutNewVegas;
-
     // The tilt scale each oscillator's sin/cos pair is multiplied by before becoming a wind-matrix
     // yaw/pitch angle — the 0.61 literal in BSTreeManager::UpdateWindMatrices (both binaries).
     private const float MatrixTiltScale = 0.61f;
 
+    // ffrequencies[4][2] — byte-read from both FalloutNV binaries (360 0x832458D0 / PC 0x119B8CC)
+    // AND byte-identical in Oblivion.exe (0x00B12538).
+    private static readonly (float Sin, float Cos)[] Frequencies =
+    [
+        (0.15f, 0.17f), (0.25f, 0.15f), (0.19f, 0.05f), (0.15f, 0.22f)
+    ];
+
     private readonly float[] _matrixTimes = new float[4];
+
     private readonly Matrix4x4[] _windMatrices =
         [Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity];
+
     private float _foldStrength;
-    private float _rockTime;
-    private float _rustleTime;
     private float _lastTimeSeconds = float.NaN;
+
+    /// <summary>Per-game <c>fLeaf*</c> setting values. Swap when the loaded game changes.</summary>
+    public SpeedTreeWindProfile Profile { get; set; } = SpeedTreeWindProfile.FalloutNewVegas;
 
     /// <summary>Rock amplitude (engine <c>RockParams.x</c> = S · swayFac(RockAmountSwayInfluence)).</summary>
     public float RockAmount { get; private set; }
@@ -57,12 +57,14 @@ public sealed class SpeedTreeWindRig
     /// <summary>Rustle amplitude (engine <c>RustleParams.x</c>).</summary>
     public float RustleAmount { get; private set; }
 
-    /// <summary>Rock phase (engine <c>RockParams.y</c> before the TREE CNAM RockSpeed multiplier;
-    /// the renderer applies that species-specific multiplier per draw batch).</summary>
-    public float RockPhase => _rockTime;
+    /// <summary>
+    ///     Rock phase (engine <c>RockParams.y</c> before the TREE CNAM RockSpeed multiplier;
+    ///     the renderer applies that species-specific multiplier per draw batch).
+    /// </summary>
+    public float RockPhase { get; private set; }
 
     /// <inheritdoc cref="RockPhase" />
-    public float RustlePhase => _rustleTime;
+    public float RustlePhase { get; private set; }
 
     /// <summary>
     ///     The wind matrix for slot <paramref name="index" /> (0..3) — the slow whole-canopy sway layer.
@@ -72,7 +74,10 @@ public sealed class SpeedTreeWindRig
     ///     small trunk tilt around the tree origin. Vertices lerp toward the tilted position by their
     ///     per-vertex wind weight. Identity while S = 0 (a perfectly static tree).
     /// </summary>
-    public Matrix4x4 WindMatrix(int index) => _windMatrices[index];
+    public Matrix4x4 WindMatrix(int index)
+    {
+        return _windMatrices[index];
+    }
 
     /// <summary>
     ///     Advance the oscillators to <paramref name="timeSeconds" /> at wind strength
@@ -119,8 +124,8 @@ public sealed class SpeedTreeWindRig
         var p = Profile;
         RockAmount = s * SpeedTreeWindProfile.SwayFactor(p.RockAmountSwayInfluence, sway);
         RustleAmount = s * SpeedTreeWindProfile.SwayFactor(p.RustleAmountSwayInfluence, sway);
-        _rockTime += dt * p.RockTimeScale * SpeedTreeWindProfile.SwayFactor(p.RockSpeedSwayInfluence, sway);
-        _rustleTime += dt * p.RustleTimeScale * SpeedTreeWindProfile.SwayFactor(p.RustleSpeedSwayInfluence, sway);
+        RockPhase += dt * p.RockTimeScale * SpeedTreeWindProfile.SwayFactor(p.RockSpeedSwayInfluence, sway);
+        RustlePhase += dt * p.RustleTimeScale * SpeedTreeWindProfile.SwayFactor(p.RustleSpeedSwayInfluence, sway);
     }
 
     /// <summary>
@@ -144,8 +149,8 @@ public sealed class SpeedTreeWindRig
         }
 
         _foldStrength = 0f;
-        _rockTime = 0f;
-        _rustleTime = 0f;
+        RockPhase = 0f;
+        RustlePhase = 0f;
         _lastTimeSeconds = float.NaN;
         RockAmount = 0f;
         RustleAmount = 0f;

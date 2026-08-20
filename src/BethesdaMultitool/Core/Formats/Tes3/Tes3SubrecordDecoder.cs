@@ -1,6 +1,6 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Formats.Tes3;
 
@@ -18,9 +18,6 @@ namespace BethesdaMultitool.Core.Formats.Tes3;
 /// </summary>
 internal static class Tes3SubrecordDecoder
 {
-    /// <summary>One decoded field: a display name and its typed value (string / int / float / formatted flag).</summary>
-    internal readonly record struct Field(string Name, object? Value);
-
     public static IReadOnlyList<Field> Decode(string recordType, string sig, ReadOnlySpan<byte> data)
     {
         var c = new Tes3Cursor(data);
@@ -149,7 +146,8 @@ internal static class Tes3SubrecordDecoder
             case "DATA" when recordType == "PGRD":
                 return Struct(ref c, ("GridX", T.Int), ("GridY", T.Int), ("Granularity", T.Short), ("Points", T.Short));
             case "AMBI" when recordType == "CELL":
-                return Struct(ref c, ("Ambient", T.Flag), ("Sunlight", T.Flag), ("Fog", T.Flag), ("FogDensity", T.Float));
+                return Struct(ref c, ("Ambient", T.Flag), ("Sunlight", T.Flag), ("Fog", T.Flag),
+                    ("FogDensity", T.Float));
             case "WHGT" when recordType == "CELL":
                 return One("WaterHeight", c.ReadFloat());
             case "NAM0" when recordType == "CELL":
@@ -183,52 +181,70 @@ internal static class Tes3SubrecordDecoder
     // Struct decoders (layouts per openMW / UESP)
     // ===================================================================================
 
-    private static List<Field> DecodeWeapon(ref Tes3Cursor c) =>
-    [
-        new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()), new("Type", c.ReadInt16()),
-        new("Health", c.ReadUInt16()), new("Speed", c.ReadFloat()), new("Reach", c.ReadFloat()),
-        new("EnchantPts", c.ReadUInt16()),
-        new("ChopMin", c.ReadByte()), new("ChopMax", c.ReadByte()),
-        new("SlashMin", c.ReadByte()), new("SlashMax", c.ReadByte()),
-        new("ThrustMin", c.ReadByte()), new("ThrustMax", c.ReadByte()),
-        new("Flags", Flag(c.ReadUInt32()))
-    ];
+    private static List<Field> DecodeWeapon(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()), new("Type", c.ReadInt16()),
+            new("Health", c.ReadUInt16()), new("Speed", c.ReadFloat()), new("Reach", c.ReadFloat()),
+            new("EnchantPts", c.ReadUInt16()),
+            new("ChopMin", c.ReadByte()), new("ChopMax", c.ReadByte()),
+            new("SlashMin", c.ReadByte()), new("SlashMax", c.ReadByte()),
+            new("ThrustMin", c.ReadByte()), new("ThrustMax", c.ReadByte()),
+            new("Flags", Flag(c.ReadUInt32()))
+        ];
+    }
 
-    private static List<Field> DecodeArmor(ref Tes3Cursor c) =>
-    [
-        new("Type", c.ReadInt32()), new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()),
-        new("Health", c.ReadInt32()), new("EnchantPts", c.ReadInt32()), new("Armour", c.ReadInt32())
-    ];
+    private static List<Field> DecodeArmor(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Type", c.ReadInt32()), new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()),
+            new("Health", c.ReadInt32()), new("EnchantPts", c.ReadInt32()), new("Armour", c.ReadInt32())
+        ];
+    }
 
-    private static List<Field> DecodeClothing(ref Tes3Cursor c) =>
-    [
-        new("Type", c.ReadInt32()), new("Weight", c.ReadFloat()), new("Value", c.ReadInt16()),
-        new("EnchantPts", c.ReadInt16())
-    ];
+    private static List<Field> DecodeClothing(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Type", c.ReadInt32()), new("Weight", c.ReadFloat()), new("Value", c.ReadInt16()),
+            new("EnchantPts", c.ReadInt16())
+        ];
+    }
 
-    private static List<Field> DecodeLight(ref Tes3Cursor c) =>
-    [
-        new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()), new("Time", c.ReadInt32()),
-        new("Radius", c.ReadInt32()), new("Color", Flag(c.ReadUInt32())), new("Flags", Flag(c.ReadUInt32()))
-    ];
+    private static List<Field> DecodeLight(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()), new("Time", c.ReadInt32()),
+            new("Radius", c.ReadInt32()), new("Color", Flag(c.ReadUInt32())), new("Flags", Flag(c.ReadUInt32()))
+        ];
+    }
 
-    private static List<Field> DecodeIngredient(ref Tes3Cursor c) =>
-    [
-        new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()),
-        new("Effect1", c.ReadInt32()), new("Effect2", c.ReadInt32()),
-        new("Effect3", c.ReadInt32()), new("Effect4", c.ReadInt32()),
-        new("Skill1", c.ReadInt32()), new("Skill2", c.ReadInt32()),
-        new("Skill3", c.ReadInt32()), new("Skill4", c.ReadInt32()),
-        new("Attribute1", c.ReadInt32()), new("Attribute2", c.ReadInt32()),
-        new("Attribute3", c.ReadInt32()), new("Attribute4", c.ReadInt32())
-    ];
+    private static List<Field> DecodeIngredient(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()),
+            new("Effect1", c.ReadInt32()), new("Effect2", c.ReadInt32()),
+            new("Effect3", c.ReadInt32()), new("Effect4", c.ReadInt32()),
+            new("Skill1", c.ReadInt32()), new("Skill2", c.ReadInt32()),
+            new("Skill3", c.ReadInt32()), new("Skill4", c.ReadInt32()),
+            new("Attribute1", c.ReadInt32()), new("Attribute2", c.ReadInt32()),
+            new("Attribute3", c.ReadInt32()), new("Attribute4", c.ReadInt32())
+        ];
+    }
 
-    private static List<Field> DecodeEffect(ref Tes3Cursor c) =>
-    [
-        new("Effect", c.ReadInt16()), new("Skill", c.ReadInt8()), new("Attribute", c.ReadInt8()),
-        new("Range", c.ReadInt32()), new("Area", c.ReadInt32()), new("Duration", c.ReadInt32()),
-        new("MagMin", c.ReadInt32()), new("MagMax", c.ReadInt32())
-    ];
+    private static List<Field> DecodeEffect(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Effect", c.ReadInt16()), new("Skill", c.ReadInt8()), new("Attribute", c.ReadInt8()),
+            new("Range", c.ReadInt32()), new("Area", c.ReadInt32()), new("Duration", c.ReadInt32()),
+            new("MagMin", c.ReadInt32()), new("MagMax", c.ReadInt32())
+        ];
+    }
 
     private static List<Field> DecodeAiData(ref Tes3Cursor c)
     {
@@ -308,19 +324,25 @@ internal static class Tes3SubrecordDecoder
         return f;
     }
 
-    private static List<Field> DecodeSkill(ref Tes3Cursor c) =>
-    [
-        new("Attribute", c.ReadInt32()), new("Specialization", c.ReadInt32()),
-        new("UseValue1", c.ReadFloat()), new("UseValue2", c.ReadFloat()),
-        new("UseValue3", c.ReadFloat()), new("UseValue4", c.ReadFloat())
-    ];
+    private static List<Field> DecodeSkill(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Attribute", c.ReadInt32()), new("Specialization", c.ReadInt32()),
+            new("UseValue1", c.ReadFloat()), new("UseValue2", c.ReadFloat()),
+            new("UseValue3", c.ReadFloat()), new("UseValue4", c.ReadFloat())
+        ];
+    }
 
-    private static List<Field> DecodeMagicEffect(ref Tes3Cursor c) =>
-    [
-        new("School", c.ReadInt32()), new("BaseCost", c.ReadFloat()), new("Flags", Flag(c.ReadUInt32())),
-        new("Red", c.ReadInt32()), new("Green", c.ReadInt32()), new("Blue", c.ReadInt32()),
-        new("SpeedX", c.ReadFloat()), new("SizeX", c.ReadFloat()), new("SizeCap", c.ReadFloat())
-    ];
+    private static List<Field> DecodeMagicEffect(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("School", c.ReadInt32()), new("BaseCost", c.ReadFloat()), new("Flags", Flag(c.ReadUInt32())),
+            new("Red", c.ReadInt32()), new("Green", c.ReadInt32()), new("Blue", c.ReadInt32()),
+            new("SpeedX", c.ReadFloat()), new("SizeX", c.ReadFloat()), new("SizeCap", c.ReadFloat())
+        ];
+    }
 
     private static List<Field> DecodeClass(ref Tes3Cursor c)
     {
@@ -355,12 +377,15 @@ internal static class Tes3SubrecordDecoder
         return fields;
     }
 
-    private static List<Field> DecodeInfoData(ref Tes3Cursor c) =>
-    [
-        new("Unknown", c.ReadInt32()), new("Disposition", c.ReadInt32()),
-        new("Rank", c.ReadByte()), new("Gender", c.ReadByte()),
-        new("PCRank", c.ReadByte()), new("Unknown2", c.ReadByte())
-    ];
+    private static List<Field> DecodeInfoData(ref Tes3Cursor c)
+    {
+        return
+        [
+            new("Unknown", c.ReadInt32()), new("Disposition", c.ReadInt32()),
+            new("Rank", c.ReadByte()), new("Gender", c.ReadByte()),
+            new("PCRank", c.ReadByte()), new("Unknown2", c.ReadByte())
+        ];
+    }
 
     // ===================================================================================
     // Generic fallback + helpers
@@ -376,15 +401,15 @@ internal static class Tes3SubrecordDecoder
         // A 4-byte value is ambiguous (int vs float vs flags) without a layout — present all readings.
         if (data.Length == 4)
         {
-            var i = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(data);
-            var f = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(data);
+            var i = BinaryPrimitives.ReadInt32LittleEndian(data);
+            var f = BinaryPrimitives.ReadSingleLittleEndian(data);
             var u = unchecked((uint)i);
             return One("value", $"int={i}  float={f:F4}  0x{u:X8}");
         }
 
         if (data.Length == 2)
         {
-            return One("value", (int)System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(data));
+            return One("value", (int)BinaryPrimitives.ReadInt16LittleEndian(data));
         }
 
         if (data.Length == 1)
@@ -457,25 +482,23 @@ internal static class Tes3SubrecordDecoder
         return sb.ToString().TrimEnd();
     }
 
-    private static string Flag(uint value) => $"0x{value:X8}";
-
-    private static string DialogueType(byte b) => b switch
+    private static string Flag(uint value)
     {
-        0 => "Topic", 1 => "Voice", 2 => "Greeting", 3 => "Persuasion", 4 => "Journal",
-        _ => $"Unknown({b})"
-    };
+        return $"0x{value:X8}";
+    }
 
-    private static List<Field> One(string name, object? value) => [new Field(name, value)];
-
-    private enum T
+    private static string DialogueType(byte b)
     {
-        Int,
-        Short,
-        Byte,
-        Float,
-        Flag,
-        Flag1,
-        Str32
+        return b switch
+        {
+            0 => "Topic", 1 => "Voice", 2 => "Greeting", 3 => "Persuasion", 4 => "Journal",
+            _ => $"Unknown({b})"
+        };
+    }
+
+    private static List<Field> One(string name, object? value)
+    {
+        return [new Field(name, value)];
     }
 
     // Sequentially read a small fixed struct from a field-type list (keeps the common cases terse).
@@ -499,5 +522,19 @@ internal static class Tes3SubrecordDecoder
         }
 
         return fields;
+    }
+
+    /// <summary>One decoded field: a display name and its typed value (string / int / float / formatted flag).</summary>
+    internal readonly record struct Field(string Name, object? Value);
+
+    private enum T
+    {
+        Int,
+        Short,
+        Byte,
+        Float,
+        Flag,
+        Flag1,
+        Str32
     }
 }

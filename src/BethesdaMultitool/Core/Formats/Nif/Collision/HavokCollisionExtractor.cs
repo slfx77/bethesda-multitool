@@ -1,7 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Collision;
@@ -72,7 +73,9 @@ internal static class HavokCollisionExtractor
     ///     little-endian buffer.
     /// </summary>
     public static HavokCollisionExtractionResult Extract(byte[] data, NifInfo nif)
-        => Extract(data, nif, nif.IsBigEndian);
+    {
+        return Extract(data, nif, nif.IsBigEndian);
+    }
 
     /// <summary>
     ///     Extracts collision with an explicit endianness, for the raw-file diagnostic (which may feed
@@ -87,7 +90,11 @@ internal static class HavokCollisionExtractor
         var hasCollisionObject = false;
         foreach (var block in nif.Blocks)
         {
-            if (CollisionObjectTypes.Contains(block.TypeName)) { hasCollisionObject = true; break; }
+            if (CollisionObjectTypes.Contains(block.TypeName))
+            {
+                hasCollisionObject = true;
+                break;
+            }
         }
 
         if (!hasCollisionObject) return HavokCollisionExtractionResult.AbsentOrUnsupported;
@@ -100,12 +107,14 @@ internal static class HavokCollisionExtractor
         {
             var block = nif.Blocks[i];
             if (!NifSceneGraphWalker.NodeTypes.Contains(block.TypeName)) continue;
-            var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, bigEndian, nif.HasInlineStrings);
+            var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, bigEndian,
+                nif.HasInlineStrings);
             if (children != null) nodeChildren[i] = children;
         }
 
         var worldTransforms = new Dictionary<int, Matrix4x4>();
-        NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, worldTransforms, treatRootsAsIdentity: true);
+        NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, worldTransforms,
+            treatRootsAsIdentity: true);
 
         var positions = new List<Vector3>();
         var triangles = new List<int>();
@@ -120,16 +129,19 @@ internal static class HavokCollisionExtractor
                 everyCollisionObjectIsNoncollidable = false;
                 continue;
             }
+
             if (!TryReadCollisionObject(data, nif.Blocks[i], bigEndian, out var targetIdx, out var bodyIdx))
             {
                 everyCollisionObjectIsNoncollidable = false;
                 continue;
             }
+
             if (bodyIdx < 0 || bodyIdx >= nif.Blocks.Count)
             {
                 everyCollisionObjectIsNoncollidable = false;
                 continue;
             }
+
             if (!TryResolveCollisionTargetWorld(
                     targetIdx, nif, worldTransforms, out var nodeWorld))
             {
@@ -185,7 +197,7 @@ internal static class HavokCollisionExtractor
             // Fresh visited set per collision object so a shape shared between bodies (with different
             // transforms) is still emitted for each; the set only guards against cycles within one walk.
             AppendShape(data, nif, shapeRef, bigEndian, shapeToWorld, Vector3.One, positions, triangles,
-                new HashSet<int>(), depth: 0);
+                new HashSet<int>(), 0);
         }
 
         if (triangles.Count < 3)
@@ -583,13 +595,13 @@ internal static class HavokCollisionExtractor
         Vector3[] localPositions =
         [
             new(-dimensions.X, -dimensions.Y, -dimensions.Z),
-            new( dimensions.X, -dimensions.Y, -dimensions.Z),
-            new( dimensions.X,  dimensions.Y, -dimensions.Z),
-            new(-dimensions.X,  dimensions.Y, -dimensions.Z),
-            new(-dimensions.X, -dimensions.Y,  dimensions.Z),
-            new( dimensions.X, -dimensions.Y,  dimensions.Z),
-            new( dimensions.X,  dimensions.Y,  dimensions.Z),
-            new(-dimensions.X,  dimensions.Y,  dimensions.Z),
+            new(dimensions.X, -dimensions.Y, -dimensions.Z),
+            new(dimensions.X, dimensions.Y, -dimensions.Z),
+            new(-dimensions.X, dimensions.Y, -dimensions.Z),
+            new(-dimensions.X, -dimensions.Y, dimensions.Z),
+            new(dimensions.X, -dimensions.Y, dimensions.Z),
+            new(dimensions.X, dimensions.Y, dimensions.Z),
+            new(-dimensions.X, dimensions.Y, dimensions.Z)
         ];
         int[] localTriangles =
         [
@@ -598,7 +610,7 @@ internal static class HavokCollisionExtractor
             0, 1, 5, 0, 5, 4,
             1, 2, 6, 1, 6, 5,
             2, 3, 7, 2, 7, 6,
-            3, 0, 4, 3, 4, 7,
+            3, 0, 4, 3, 4, 7
         ];
         AppendPrimitiveMesh(localPositions, localTriangles, toWorld, scale, positions, triangles);
     }
@@ -805,7 +817,7 @@ internal static class HavokCollisionExtractor
         // bool is "since 20.2.0.7": reading it on a TES4 file eats the first vertex byte.
         var tes4Era = NifVersions.IsTes4Era(nif.BinaryVersion);
         var triStride = tes4Era ? 20 : 8;
-        var triBytes = (long)numTriangles * triStride;
+        var triBytes = numTriangles * triStride;
 
         // triangles + NumVertices(4) + Compressed(1, modern only)
         if (triStart + triBytes + (tes4Era ? 4 : 5) > end) return;
@@ -833,7 +845,8 @@ internal static class HavokCollisionExtractor
                 var x = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, pos, be));
                 var y = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, pos + 2, be));
                 var z = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, pos + 4, be));
-                positions.Add(Vector3.Transform(new Vector3(x * fullScale.X, y * fullScale.Y, z * fullScale.Z), toWorld));
+                positions.Add(
+                    Vector3.Transform(new Vector3(x * fullScale.X, y * fullScale.Y, z * fullScale.Z), toWorld));
             }
         }
         else
@@ -843,7 +856,8 @@ internal static class HavokCollisionExtractor
                 var x = BinaryUtils.ReadFloat(data, pos, be);
                 var y = BinaryUtils.ReadFloat(data, pos + 4, be);
                 var z = BinaryUtils.ReadFloat(data, pos + 8, be);
-                positions.Add(Vector3.Transform(new Vector3(x * fullScale.X, y * fullScale.Y, z * fullScale.Z), toWorld));
+                positions.Add(
+                    Vector3.Transform(new Vector3(x * fullScale.X, y * fullScale.Y, z * fullScale.Z), toWorld));
             }
         }
 
@@ -864,10 +878,13 @@ internal static class HavokCollisionExtractor
 
     // Substitutes 1 for an exact zero to guard a subsequent division; a non-zero (even tiny)
     // scale divides fine, so only the exact-0f case needs replacing — hence the equality test.
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell",
+    [SuppressMessage("Major Code Smell",
         "S1244:Floating point numbers should not be tested for equality",
         Justification = "Only an exact 0f divisor must be replaced; near-zero scales are acceptable divisors.")]
-    private static float NonZero(float v) => v == 0f ? 1f : v;
+    private static float NonZero(float v)
+    {
+        return v == 0f ? 1f : v;
+    }
 
     private static bool TryReadInt32(byte[] data, BlockInfo block, int rel, bool be, out int value)
     {
@@ -911,6 +928,7 @@ internal static class HavokCollisionExtractor
     }
 
     private static bool IsFinite(Vector3 value)
-        => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }
-

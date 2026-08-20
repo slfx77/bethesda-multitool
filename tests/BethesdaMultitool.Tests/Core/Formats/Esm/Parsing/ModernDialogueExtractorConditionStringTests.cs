@@ -65,5 +65,8 @@ public sealed class ModernDialogueExtractorConditionStringTests
         return data;
     }
 
-    private static byte[] NullTerminated(string value) => Encoding.ASCII.GetBytes(value + '\0');
+    private static byte[] NullTerminated(string value)
+    {
+        return Encoding.ASCII.GetBytes(value + '\0');
+    }
 }

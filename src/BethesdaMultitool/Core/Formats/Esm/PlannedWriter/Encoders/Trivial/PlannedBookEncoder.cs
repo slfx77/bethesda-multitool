@@ -24,7 +24,7 @@ public sealed class PlannedBookEncoder : IPlannedRecordEncoder<BookRecord>
             RecordDisposition.New => BookEncoder.EncodeNew(model),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedBookEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedBookEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

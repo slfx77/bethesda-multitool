@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -26,13 +27,52 @@ internal static class WorldMapLayerRenderer
     /// <summary>Cells lacking the layer's source data render in this neutral gray.</summary>
     private const byte MissingR = 40, MissingG = 40, MissingB = 45;
 
-    /// <summary>A rendered layer's RGBA pixel buffer plus the world-space origin (min cell X, max cell Y) it covers.</summary>
-    internal readonly record struct LayerBitmap(
-        byte[] Pixels,
-        int Width,
-        int Height,
-        int MinCellX,
-        int MaxCellY);
+    /// <summary>
+    ///     Minimum px/cell for the aggregate — even a huge worldspace keeps at least this much
+    ///     detail (a 248-cell worldspace at the 2048 target lands here).
+    /// </summary>
+    internal const int MinAggregatePixelsPerCell = 8;
+
+    /// <summary>
+    ///     Texture-layer pixel density multiplier over the heightmap's HmGridSize. The terrain
+    ///     textures layer is rendered at 4× the heightmap resolution so the BTXT tiling reads
+    ///     sharply when the user zooms in. Memory cost scales 16× for this layer (typical
+    ///     WastelandNV: 1.2 MB → 20 MB), still well within budget.
+    /// </summary>
+    private const int TextureLayerScale = 4;
+
+    /// <summary>Per-cell-axis pixel count used by the terrain textures layer (132 in vanilla FNV).</summary>
+    internal const int TexturePixelsPerCell = HmGridSize * TextureLayerScale;
+
+    /// <summary>
+    ///     Highest overview/detail cell texture resolution used by the viewport-dependent
+    ///     terrain texture path. 1056 = 32 samples per LAND vertex interval (≈132 px per 512-unit
+    ///     tile-repeat), so a tile-repeat displayed wider than ~128 px samples the 256 mip and
+    ///     downscales instead of magnifying a lower mip — the zoomed-in sharpness the lower 528 cap
+    ///     couldn't provide. Only a handful of cells are resident at this zoom, so the 4.5 MB/cell
+    ///     bitmaps stay memory-bounded.
+    /// </summary>
+    internal const int MaxTexturePixelsPerCell = TexturePixelsPerCell * 8;
+
+    // ========================================================================
+    // Coarse multi-cell tiling (zoomed-out overview for oversized worldspaces)
+    // ========================================================================
+
+    /// <summary>
+    ///     "Max tile size" in pixels per edge — the upper bound on one coarse tile's bitmap so a
+    ///     huge worldspace is split into a bounded set of GPU textures instead of one giant bitmap (which
+    ///     froze on FO76's APPALACHIA) or thousands of per-cell tiles (one GPU texture + DrawImage each).
+    /// </summary>
+    internal const int CoarseTilePixelSize = 512;
+
+    /// <summary>
+    ///     Virtual long-edge resolution the whole coarse overview is sized to. Drives the adaptive
+    ///     px/cell so total tile memory + count stay bounded regardless of how scattered the cells are.
+    /// </summary>
+    internal const int CoarseOverviewTargetLongEdge = 4096;
+
+    /// <summary>Floor for the adaptive coarse px/cell — never drop below this even for the largest grids.</summary>
+    internal const int MinCoarsePixelsPerCell = 4;
 
     // ========================================================================
     // Worldspace overview renderers
@@ -99,10 +139,6 @@ internal static class WorldMapLayerRenderer
         return new LayerBitmap(rgba, width, height, minX, maxY);
     }
 
-    /// <summary>Minimum px/cell for the aggregate — even a huge worldspace keeps at least this much
-    /// detail (a 248-cell worldspace at the 2048 target lands here).</summary>
-    internal const int MinAggregatePixelsPerCell = 8;
-
     /// <summary>
     ///     Whole-worldspace TerrainTextures aggregate: renders every cell's ACTUAL blended terrain
     ///     textures at the coarse heightmap resolution (<see cref="HmGridSize" /> px/cell) and
@@ -165,55 +201,34 @@ internal static class WorldMapLayerRenderer
             cells,
             aggregatePolicy,
             cell =>
-        {
-            try
             {
-                var imgCellX = cell.GridX!.Value - minX;
-                var imgCellY = maxY - cell.GridY!.Value;
-                if (imgCellX < 0 || imgCellY < 0 || imgCellX >= gridW || imgCellY >= gridH) return;
-                var bytes = WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
-                    cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette, shading);
-                if (bytes is null) return;
-                WorldMapCellBlitter.BlitCellRgbaBlock(rgba, width, bytes, ppc, imgCellX * ppc, imgCellY * ppc);
-            }
-            catch (Exception ex)
-            {
-                if (Interlocked.Increment(ref loggedFailures) <= MaxLoggedTerrainAggregateCellFailures)
+                try
                 {
-                    Logger.Instance.Warn(
-                        "TerrainTextures aggregate: cell ({0},{1}) render failed and will be skipped: {2}",
-                        cell.GridX,
-                        cell.GridY,
-                        ex);
+                    var imgCellX = cell.GridX!.Value - minX;
+                    var imgCellY = maxY - cell.GridY!.Value;
+                    if (imgCellX < 0 || imgCellY < 0 || imgCellX >= gridW || imgCellY >= gridH) return;
+                    var bytes = WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
+                        cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette, shading);
+                    if (bytes is null) return;
+                    WorldMapCellBlitter.BlitCellRgbaBlock(rgba, width, bytes, ppc, imgCellX * ppc, imgCellY * ppc);
                 }
-            }
-        });
+                catch (Exception ex)
+                {
+                    if (Interlocked.Increment(ref loggedFailures) <= MaxLoggedTerrainAggregateCellFailures)
+                    {
+                        Logger.Instance.Warn(
+                            "TerrainTextures aggregate: cell ({0},{1}) render failed and will be skipped: {2}",
+                            cell.GridX,
+                            cell.GridY,
+                            ex);
+                    }
+                }
+            });
         Map2DProfilerTrace.Event("terrain-aggregate-complete",
             $"cells={cells.Count} failures={loggedFailures}");
 
         return new LayerBitmap(rgba, width, height, minX, maxY);
     }
-
-    /// <summary>
-    ///     Texture-layer pixel density multiplier over the heightmap's HmGridSize. The terrain
-    ///     textures layer is rendered at 4× the heightmap resolution so the BTXT tiling reads
-    ///     sharply when the user zooms in. Memory cost scales 16× for this layer (typical
-    ///     WastelandNV: 1.2 MB → 20 MB), still well within budget.
-    /// </summary>
-    private const int TextureLayerScale = 4;
-
-    /// <summary>Per-cell-axis pixel count used by the terrain textures layer (132 in vanilla FNV).</summary>
-    internal const int TexturePixelsPerCell = HmGridSize * TextureLayerScale;
-
-    /// <summary>
-    ///     Highest overview/detail cell texture resolution used by the viewport-dependent
-    ///     terrain texture path. 1056 = 32 samples per LAND vertex interval (≈132 px per 512-unit
-    ///     tile-repeat), so a tile-repeat displayed wider than ~128 px samples the 256 mip and
-    ///     downscales instead of magnifying a lower mip — the zoomed-in sharpness the lower 528 cap
-    ///     couldn't provide. Only a handful of cells are resident at this zoom, so the 4.5 MB/cell
-    ///     bitmaps stay memory-bounded.
-    /// </summary>
-    internal const int MaxTexturePixelsPerCell = TexturePixelsPerCell * 8;
 
     /// <summary>
     ///     Renders the terrain-textures layer as one RGBA bitmap per cell. Composed at draw
@@ -241,17 +256,9 @@ internal static class WorldMapLayerRenderer
             if (bytes is null) continue;
             result[(cell.GridX!.Value, cell.GridY!.Value)] = bytes;
         }
+
         return result.Count == 0 ? null : result;
     }
-
-    /// <summary>
-    ///     One streamed cell from <see cref="StreamTerrainTexturesPerCell" />. <see cref="Pixels" /> is
-    ///     the water-FREE terrain tile; <see cref="Water" /> is the standalone premultiplied water tile
-    ///     (same dimensions) or <c>null</c> for a dry cell. The consumer caches them as two aligned
-    ///     layers and draws water after the placed-object overlay.
-    /// </summary>
-    internal readonly record struct TerrainTextureCellResult(
-        int GridX, int GridY, int PixelsPerCell, byte[] Pixels, byte[]? Water);
 
     /// <summary>
     ///     Decodes cells in parallel on background workers and yields each completed cell
@@ -327,7 +334,8 @@ internal static class WorldMapLayerRenderer
                             // so toggling water on later is a pure redraw — no re-stream. The
                             // draw-time toggle decides whether the cached water layer is painted.
                             var bytes = WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
-                                cell, palette, defaultWaterHeight, showWater: false, cache, pixelsPerCell, cellByGrid, waterPalette, shading);
+                                cell, palette, defaultWaterHeight, showWater: false, cache, pixelsPerCell, cellByGrid,
+                                waterPalette, shading);
                             if (bytes is not null)
                             {
                                 var water = BuildCellWaterTile(
@@ -346,6 +354,7 @@ internal static class WorldMapLayerRenderer
                                 "TerrainTextures: cell ({0},{1}) render failed and will be skipped: {2}",
                                 cell.GridX!.Value, cell.GridY!.Value, ex);
                         }
+
                         return ValueTask.CompletedTask;
                     }).ConfigureAwait(false);
             }
@@ -364,31 +373,6 @@ internal static class WorldMapLayerRenderer
         // OperationCanceledException which the caller's await-foreach catches.
         await renderTask.ConfigureAwait(false);
     }
-
-    // ========================================================================
-    // Coarse multi-cell tiling (zoomed-out overview for oversized worldspaces)
-    // ========================================================================
-
-    /// <summary>"Max tile size" in pixels per edge — the upper bound on one coarse tile's bitmap so a
-    /// huge worldspace is split into a bounded set of GPU textures instead of one giant bitmap (which
-    /// froze on FO76's APPALACHIA) or thousands of per-cell tiles (one GPU texture + DrawImage each).</summary>
-    internal const int CoarseTilePixelSize = 512;
-
-    /// <summary>Virtual long-edge resolution the whole coarse overview is sized to. Drives the adaptive
-    /// px/cell so total tile memory + count stay bounded regardless of how scattered the cells are.</summary>
-    internal const int CoarseOverviewTargetLongEdge = 4096;
-
-    /// <summary>Floor for the adaptive coarse px/cell — never drop below this even for the largest grids.</summary>
-    internal const int MinCoarsePixelsPerCell = 4;
-
-    /// <summary>A built coarse-tile overview: each tile covers a <see cref="TileCellSpan" />² block of
-    /// cells rendered at <see cref="PixelsPerCell" /> px/cell, so its bitmap is
-    /// (TileCellSpan·PixelsPerCell)² RGBA. Tiles are keyed by tile-grid coords (cell ÷ TileCellSpan,
-    /// floored) so the draw can position each at tileGx·TileCellSpan·CellWorldSize.</summary>
-    internal readonly record struct CoarseTileSet(
-        Dictionary<(int tileGx, int tileGy), byte[]> Tiles,
-        int TileCellSpan,
-        int PixelsPerCell);
 
     /// <summary>
     ///     Renders one of the terrain-derived overview layers (heightmap / vertex colors / regions /
@@ -419,6 +403,7 @@ internal static class WorldMapLayerRenderer
             if (gy < minY) minY = gy;
             if (gy > maxY) maxY = gy;
         }
+
         if (!hasGrid) return null;
 
         var maxSpan = Math.Max(maxX - minX + 1, maxY - minY + 1);
@@ -465,7 +450,8 @@ internal static class WorldMapLayerRenderer
             var localCellX = gx - tileGx * tileCellSpan;
             var topCellY = (tileGy + 1) * tileCellSpan - 1;
             var localImgCellY = topCellY - gy;
-            WorldMapCellBlitter.BlitCellRgbaBlock(tile, tileSidePx, cellPixels, ppc, localCellX * ppc, localImgCellY * ppc);
+            WorldMapCellBlitter.BlitCellRgbaBlock(tile, tileSidePx, cellPixels, ppc, localCellX * ppc,
+                localImgCellY * ppc);
         }
 
         return tiles.Count == 0 ? null : new CoarseTileSet(tiles, tileCellSpan, ppc);
@@ -527,13 +513,17 @@ internal static class WorldMapLayerRenderer
             _ => null
         };
 
-    /// <summary>Floored integer division (handles negative cell coords so tile-grid bucketing is
-    /// contiguous across the origin).</summary>
+    /// <summary>
+    ///     Floored integer division (handles negative cell coords so tile-grid bucketing is
+    ///     contiguous across the origin).
+    /// </summary>
     private static int FloorDiv(int a, int b)
         => a >= 0 ? a / b : -(((-a) + b - 1) / b);
 
-    /// <summary>Single-cell tinted heightmap tile, normalized against the worldspace-global height
-    /// range so it matches its neighbors. Water uses the shared per-cell overlay.</summary>
+    /// <summary>
+    ///     Single-cell tinted heightmap tile, normalized against the worldspace-global height
+    ///     range so it matches its neighbors. Water uses the shared per-cell overlay.
+    /// </summary>
     private static byte[]? RenderHeightmapForCell(
         CellRecord cell, float globalMin, float globalRange,
         float? defaultWaterHeight, bool showWater, HeightmapColorScheme scheme,
@@ -568,6 +558,7 @@ internal static class WorldMapLayerRenderer
                     rgba[idx + 1] = (byte)(gray * tG);
                     rgba[idx + 2] = (byte)(gray * tB);
                 }
+
                 rgba[idx + 3] = 255;
             }
         }
@@ -593,6 +584,7 @@ internal static class WorldMapLayerRenderer
                 index[(gx, gy)] = c;
             }
         }
+
         return index;
     }
 
@@ -618,6 +610,7 @@ internal static class WorldMapLayerRenderer
                 workableCells.Add(c);
             }
         }
+
         return index;
     }
 
@@ -650,6 +643,7 @@ internal static class WorldMapLayerRenderer
                 cells.Add((cell, terrain));
             }
         }
+
         if (cells.Count == 0) return null;
 
         var minX = cells.Min(c => c.Cell.GridX!.Value);
@@ -713,8 +707,8 @@ internal static class WorldMapLayerRenderer
         WorldRenderCache? cache, Vector3? lightDir,
         float zScale = WorldMapHillshadeRenderer.DefaultZScale)
     {
-        const int n = HmGridSize;   // 33 vertices
-        const int w = n + 2;        // 35 (1-vertex border per side)
+        const int n = HmGridSize; // 33 vertices
+        const int w = n + 2; // 35 (1-vertex border per side)
         var field = new float[w * w];
         var has = new bool[w * w];
 
@@ -744,6 +738,7 @@ internal static class WorldMapLayerRenderer
             field[(py + 1) * w + (w - 1)] = east is { } ea ? ea.HeightAt(1, n - 1 - py) : field[(py + 1) * w + n];
             has[(py + 1) * w + (w - 1)] = true;
         }
+
         for (var px = 0; px < n; px++)
         {
             // Top border (row 0, north) = one north of the north edge = north neighbour's vy=1.
@@ -761,6 +756,7 @@ internal static class WorldMapLayerRenderer
         {
             Array.Copy(rgba35, ((py + 1) * w + 1) * 4, rgba, py * n * 4, n * 4);
         }
+
         return rgba;
     }
 
@@ -781,8 +777,10 @@ internal static class WorldMapLayerRenderer
         return gray;
     }
 
-    /// <summary>Decoded terrain for a neighbour cell, or null when there is no such cell (worldspace
-    /// edge) or it has no terrain. Used to feed the hillshade border ring.</summary>
+    /// <summary>
+    ///     Decoded terrain for a neighbour cell, or null when there is no such cell (worldspace
+    ///     edge) or it has no terrain. Used to feed the hillshade border ring.
+    /// </summary>
     private static DecodedTerrainCell? NeighborTerrain(
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
         WorldRenderCache? cache, int gx, int gy)
@@ -820,13 +818,16 @@ internal static class WorldMapLayerRenderer
         return rgba;
     }
 
-    /// <summary>Builds the terrain-region winner grid when there's no cache: Fallout BTXT/ATXT layers, or
-    /// Morrowind's flat 16×16 VTEX grid. Mirrors <c>WorldRenderCache.GetTextureWinners</c>.</summary>
+    /// <summary>
+    ///     Builds the terrain-region winner grid when there's no cache: Fallout BTXT/ATXT layers, or
+    ///     Morrowind's flat 16×16 VTEX grid. Mirrors <c>WorldRenderCache.GetTextureWinners</c>.
+    /// </summary>
     private static TextureWinnerGrid? BuildWinnersFallback(CellRecord cell)
     {
         var layers = cell.LandVisualData?.TextureLayers;
         if (layers is { Count: > 0 }) return TextureWinnerGrid.Build(layers);
-        if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex) return TextureWinnerGrid.BuildFromVtex(vtex);
+        if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
+            return TextureWinnerGrid.BuildFromVtex(vtex);
         return null;
     }
 
@@ -920,6 +921,7 @@ internal static class WorldMapLayerRenderer
             rgba[dst + 2] = MissingB;
             rgba[dst + 3] = 255;
         }
+
         return rgba;
     }
 
@@ -960,7 +962,8 @@ internal static class WorldMapLayerRenderer
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
         WaterColorPalette? waterPalette)
     {
-        var mask = WorldMapWaterRenderer.ComputeCellWaterMask(cell, defaultWaterHeight, pixelsPerCell, cache, cellByGrid);
+        var mask = WorldMapWaterRenderer.ComputeCellWaterMask(cell, defaultWaterHeight, pixelsPerCell, cache,
+            cellByGrid);
         if (mask is null) return null;
 
         var pixelCount = pixelsPerCell * pixelsPerCell;
@@ -1024,5 +1027,36 @@ internal static class WorldMapLayerRenderer
 
         return MaxTexturePixelsPerCell; // 1056
     }
-}
 
+    /// <summary>A rendered layer's RGBA pixel buffer plus the world-space origin (min cell X, max cell Y) it covers.</summary>
+    internal readonly record struct LayerBitmap(
+        byte[] Pixels,
+        int Width,
+        int Height,
+        int MinCellX,
+        int MaxCellY);
+
+    /// <summary>
+    ///     One streamed cell from <see cref="StreamTerrainTexturesPerCell" />. <see cref="Pixels" /> is
+    ///     the water-FREE terrain tile; <see cref="Water" /> is the standalone premultiplied water tile
+    ///     (same dimensions) or <c>null</c> for a dry cell. The consumer caches them as two aligned
+    ///     layers and draws water after the placed-object overlay.
+    /// </summary>
+    internal readonly record struct TerrainTextureCellResult(
+        int GridX,
+        int GridY,
+        int PixelsPerCell,
+        byte[] Pixels,
+        byte[]? Water);
+
+    /// <summary>
+    ///     A built coarse-tile overview: each tile covers a <see cref="TileCellSpan" />² block of
+    ///     cells rendered at <see cref="PixelsPerCell" /> px/cell, so its bitmap is
+    ///     (TileCellSpan·PixelsPerCell)² RGBA. Tiles are keyed by tile-grid coords (cell ÷ TileCellSpan,
+    ///     floored) so the draw can position each at tileGx·TileCellSpan·CellWorldSize.
+    /// </summary>
+    internal readonly record struct CoarseTileSet(
+        Dictionary<(int tileGx, int tileGy), byte[]> Tiles,
+        int TileCellSpan,
+        int PixelsPerCell);
+}

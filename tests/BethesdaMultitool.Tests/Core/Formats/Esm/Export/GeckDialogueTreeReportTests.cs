@@ -27,8 +27,8 @@ public sealed class GeckDialogueTreeReportTests
                 Info = new DialogueRecord
                 {
                     FormId = (uint)(formId + 0x1000 + i),
-                    Responses = [new DialogueResponse { Text = $"Response {i} of {name}" }],
-                },
+                    Responses = [new DialogueResponse { Text = $"Response {i} of {name}" }]
+                }
             });
         }
 
@@ -45,7 +45,7 @@ public sealed class GeckDialogueTreeReportTests
             {
                 QuestFormId = (uint)(0x100 + q),
                 QuestName = $"Quest{q:D3}",
-                Topics = [shared],
+                Topics = [shared]
             };
         }
 
@@ -56,7 +56,7 @@ public sealed class GeckDialogueTreeReportTests
     public void SharedTopicRendersFullyOnceAndStubsAfterwards()
     {
         var report = GeckDialogueWriter.GenerateDialogueTreeReport(
-            SharedTopicAcrossQuests(questCount: 3, infoCount: 2), FormIdResolver.Empty);
+            SharedTopicAcrossQuests(3, 2), FormIdResolver.Empty);
 
         // Full render exactly once; the two other quests show the dedup stub.
         Assert.Equal(1, CountOccurrences(report, "Response 0 of GREETING"));
@@ -75,9 +75,9 @@ public sealed class GeckDialogueTreeReportTests
     public void ReportSizeStaysLinearWhenManyQuestsShareOneLargeTopic()
     {
         var few = GeckDialogueWriter.GenerateDialogueTreeReport(
-            SharedTopicAcrossQuests(questCount: 5, infoCount: 200), FormIdResolver.Empty);
+            SharedTopicAcrossQuests(5, 200), FormIdResolver.Empty);
         var many = GeckDialogueWriter.GenerateDialogueTreeReport(
-            SharedTopicAcrossQuests(questCount: 50, infoCount: 200), FormIdResolver.Empty);
+            SharedTopicAcrossQuests(50, 200), FormIdResolver.Empty);
 
         // 45 extra quests must add only headers + stubs. Under the old per-quest sets the
         // growth would be ~45 × the full 200-INFO chain (hundreds of KB here, GBs on retail).
@@ -97,10 +97,10 @@ public sealed class GeckDialogueTreeReportTests
             {
                 [0x100] = new QuestDialogueNode
                 {
-                    QuestFormId = 0x100, QuestName = "QuestA", Topics = [shared],
-                },
+                    QuestFormId = 0x100, QuestName = "QuestA", Topics = [shared]
+                }
             },
-            OrphanTopics = { shared },
+            OrphanTopics = { shared }
         };
 
         var report = GeckDialogueWriter.GenerateDialogueTreeReport(tree, FormIdResolver.Empty);

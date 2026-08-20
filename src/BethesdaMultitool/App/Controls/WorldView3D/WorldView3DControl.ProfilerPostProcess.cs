@@ -38,35 +38,6 @@ internal sealed record WorldView3DProfilerFixture(
 
 public sealed partial class WorldView3DControl
 {
-    /// <summary>
-    ///     Apply a scenario step through the same private gates the settings-panel handlers update.
-    ///     The controls are synchronized as well, so an unattended run cannot leave the visible UI
-    ///     claiming a state different from the frame renderer's state.
-    /// </summary>
-    internal void Profiler_SetPostProcessState(
-        bool hdrEnabled,
-        bool bloomEnabled,
-        bool imagespaceEnabled,
-        bool fogEnabled,
-        bool shadowsEnabled = true)
-    {
-        // The bool scenario contract predates the retail three-way radio: hdrEnabled maps onto
-        // Hdr/Sdr (the funnel reseats the radio control), and bloomEnabled stays the NON-UI
-        // diagnostic AND-gate so scenarios can A/B bloom independently under HDR.
-        SetTonemapGuiMode(hdrEnabled ? GpuTonemapGuiMode.Hdr : GpuTonemapGuiMode.Sdr);
-        _bloomEnabled = bloomEnabled;
-        _showFog = fogEnabled;
-        _showShadows = shadowsEnabled;
-
-        // The bool scenario contract maps onto the dropdown's Automatic/None entries (explicit IMGS
-        // picks are a GUI-only affordance); this also syncs the ComboBox selection.
-        SetImagespaceSelection(imagespaceEnabled
-            ? ImagespaceSelectionMode.Automatic
-            : ImagespaceSelectionMode.None);
-        LightingPanel.FogEnabled = fogEnabled;
-        LightingPanel.ShadowsEnabled = shadowsEnabled;
-    }
-
     /// <summary>Read back both the private gates and the effective tonemap immediately before capture.</summary>
     internal WorldView3DProfilerPostProcessState Profiler_PostProcessState
     {
@@ -96,6 +67,35 @@ public sealed partial class WorldView3DControl
                 _showShadows,
                 _tonemapGuiMode.ToString());
         }
+    }
+
+    /// <summary>
+    ///     Apply a scenario step through the same private gates the settings-panel handlers update.
+    ///     The controls are synchronized as well, so an unattended run cannot leave the visible UI
+    ///     claiming a state different from the frame renderer's state.
+    /// </summary>
+    internal void Profiler_SetPostProcessState(
+        bool hdrEnabled,
+        bool bloomEnabled,
+        bool imagespaceEnabled,
+        bool fogEnabled,
+        bool shadowsEnabled = true)
+    {
+        // The bool scenario contract predates the retail three-way radio: hdrEnabled maps onto
+        // Hdr/Sdr (the funnel reseats the radio control), and bloomEnabled stays the NON-UI
+        // diagnostic AND-gate so scenarios can A/B bloom independently under HDR.
+        SetTonemapGuiMode(hdrEnabled ? GpuTonemapGuiMode.Hdr : GpuTonemapGuiMode.Sdr);
+        _bloomEnabled = bloomEnabled;
+        _showFog = fogEnabled;
+        _showShadows = shadowsEnabled;
+
+        // The bool scenario contract maps onto the dropdown's Automatic/None entries (explicit IMGS
+        // picks are a GUI-only affordance); this also syncs the ComboBox selection.
+        SetImagespaceSelection(imagespaceEnabled
+            ? ImagespaceSelectionMode.Automatic
+            : ImagespaceSelectionMode.None);
+        LightingPanel.FogEnabled = fogEnabled;
+        LightingPanel.ShadowsEnabled = shadowsEnabled;
     }
 
     /// <summary>

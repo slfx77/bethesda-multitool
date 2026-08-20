@@ -44,13 +44,15 @@ internal static class DialogueSpeakerBinding
             : null;
     }
 
-    public static bool IsPositiveSubjectGetIsId(DialogueCondition condition) =>
-        condition.FunctionIndex == GetIsIdFunctionIndex
-        && condition.Parameter1 != 0
-        && condition.RunOn == 0
-        && !condition.IsSubjectTargetSwapped
-        && (condition.Type & 0x04) == 0
-        && PositivelyIdentifiesBooleanResult(condition.Type, condition.ComparisonValue);
+    public static bool IsPositiveSubjectGetIsId(DialogueCondition condition)
+    {
+        return condition.FunctionIndex == GetIsIdFunctionIndex
+               && condition.Parameter1 != 0
+               && condition.RunOn == 0
+               && !condition.IsSubjectTargetSwapped
+               && (condition.Type & 0x04) == 0
+               && PositivelyIdentifiesBooleanResult(condition.Type, condition.ComparisonValue);
+    }
 
     public static bool IsPositiveSubjectGetIsId(ReadOnlySpan<byte> ctda)
     {
@@ -86,8 +88,9 @@ internal static class DialogueSpeakerBinding
                && !Evaluate(comparisonOperator, 0f, comparisonValue);
     }
 
-    private static bool Evaluate(int comparisonOperator, float actual, float expected) =>
-        comparisonOperator switch
+    private static bool Evaluate(int comparisonOperator, float actual, float expected)
+    {
+        return comparisonOperator switch
         {
             0 => MathF.Abs(actual - expected) <= 0.0001f,
             1 => MathF.Abs(actual - expected) > 0.0001f,
@@ -95,6 +98,7 @@ internal static class DialogueSpeakerBinding
             3 => actual >= expected,
             4 => actual < expected,
             5 => actual <= expected,
-            _ => false,
+            _ => false
         };
+    }
 }

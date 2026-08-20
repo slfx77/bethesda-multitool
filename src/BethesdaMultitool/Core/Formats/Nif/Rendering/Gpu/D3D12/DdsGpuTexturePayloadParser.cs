@@ -194,11 +194,14 @@ internal static class DdsGpuTexturePayloadParser
         return blocksWide * blocksHigh * bytesPerBlock;
     }
 
-    private static int BytesPerBlock(GpuTexturePayloadFormat format) => format switch
+    private static int BytesPerBlock(GpuTexturePayloadFormat format)
     {
-        GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 => 8,
-        GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC5
-            or GpuTexturePayloadFormat.BC7 => 16,
-        _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
-    };
+        return format switch
+        {
+            GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 => 8,
+            GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC5
+                or GpuTexturePayloadFormat.BC7 => 16,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
+        };
+    }
 }

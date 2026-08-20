@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Games;
 using Xunit;

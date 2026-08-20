@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Tests.Helpers;
@@ -57,7 +57,7 @@ public sealed class RecordFormVersionTransportTests
     public void Oblivion_Header_Reports_Absent_FormVersion_Not_KnownZero()
     {
         var headerBytes = new byte[20];
-        System.Text.Encoding.ASCII.GetBytes("WEAP", headerBytes);
+        Encoding.ASCII.GetBytes("WEAP", headerBytes);
 
         var header = EsmParser.ParseRecordHeader(headerBytes, format: PluginFormat.Oblivion);
 
@@ -69,7 +69,7 @@ public sealed class RecordFormVersionTransportTests
     public void Modern_Header_Preserves_KnownZero_And_DoesNotRead_Offset22()
     {
         var headerBytes = new byte[24];
-        System.Text.Encoding.ASCII.GetBytes("WEAP", headerBytes);
+        Encoding.ASCII.GetBytes("WEAP", headerBytes);
         BinaryPrimitives.WriteUInt16LittleEndian(headerBytes.AsSpan(20), 0);
         BinaryPrimitives.WriteUInt16LittleEndian(headerBytes.AsSpan(22), 0xBEEF);
 
@@ -87,19 +87,19 @@ public sealed class RecordFormVersionTransportTests
         // The following WEAP begins at byte 30; a hard-coded 24-byte guard/offset either misses it or
         // reads its first subrecord four bytes late.
         var bytes = new byte[30 + 20 + 11];
-        System.Text.Encoding.ASCII.GetBytes("TES4", bytes);
+        Encoding.ASCII.GetBytes("TES4", bytes);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), 10);
-        System.Text.Encoding.ASCII.GetBytes("HEDR", bytes.AsSpan(20));
+        Encoding.ASCII.GetBytes("HEDR", bytes.AsSpan(20));
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(24), 4);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(26), 1.0f);
 
         const int recordOffset = 30;
-        System.Text.Encoding.ASCII.GetBytes("WEAP", bytes.AsSpan(recordOffset));
+        Encoding.ASCII.GetBytes("WEAP", bytes.AsSpan(recordOffset));
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(recordOffset + 4), 11);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(recordOffset + 12), 0x1234);
-        System.Text.Encoding.ASCII.GetBytes("EDID", bytes.AsSpan(recordOffset + 20));
+        Encoding.ASCII.GetBytes("EDID", bytes.AsSpan(recordOffset + 20));
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(recordOffset + 24), 5);
-        System.Text.Encoding.ASCII.GetBytes("Test\0", bytes.AsSpan(recordOffset + 26));
+        Encoding.ASCII.GetBytes("Test\0", bytes.AsSpan(recordOffset + 26));
 
         var record = Assert.Single(
             EsmRecordScanner.ScanForRecords(bytes).MainRecords,

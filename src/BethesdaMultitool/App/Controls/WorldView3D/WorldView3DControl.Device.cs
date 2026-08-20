@@ -46,7 +46,8 @@ public sealed partial class WorldView3DControl
             _gpu12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12.Create(debugLayer);
             if (_gpu12 is null) return false;
 
-            _commandRecorder12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12(_gpu12);
+            _commandRecorder12 =
+                new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12(_gpu12);
             // Ring size per frame slot (env-overridable; default SCALES WITH SYSTEM RAM — upload
             // heaps are system-memory-backed). Shared by every renderer's per-draw CBs and the
             // reference instance uploads. A whole-map perspective view (max render distance, most
@@ -76,12 +77,14 @@ public sealed partial class WorldView3DControl
                     _gpu12,
                     Vortice.Direct3D12.DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
                     capacity: 131072,
-                    framesInFlight: BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight,
+                    framesInFlight: BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12
+                        .FramesInFlight,
                     persistentCapacity: 16384)
                 .RegisterWith(BethesdaMultitool.Core.Diagnostics.ResourceRegistry.Instance, "viewer");
             _rootSignature12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRootSignature12.Create(_gpu12);
             _deletionQueue12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12(
-                    framesToHold: BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight)
+                    framesToHold: BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12
+                        .FramesInFlight)
                 .RegisterWith(BethesdaMultitool.Core.Diagnostics.ResourceRegistry.Instance, "viewer");
             if (_forceGpuTimestamps)
             {
@@ -94,7 +97,7 @@ public sealed partial class WorldView3DControl
             _cellGrid = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.CellGridDebugRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12)
             {
-                DetailedProfilingEnabled = _profileLogging,
+                DetailedProfilingEnabled = _profileLogging
             };
 
             // Selection outline overlay. Same lightweight backend handles as the cell grid;
@@ -109,7 +112,7 @@ public sealed partial class WorldView3DControl
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12, _deletionQueue12)
             {
                 DetailedProfilingEnabled = _profileLogging,
-                ModernPipelineEnabled = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ModernWater),
+                ModernPipelineEnabled = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ModernWater)
             };
 
             // Real sky-dome NIF renderer — the exterior sky drawn from the climate's own Sky\*.nif
@@ -128,7 +131,7 @@ public sealed partial class WorldView3DControl
             _navMesh = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.NavMeshRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _deletionQueue12)
             {
-                DetailedProfilingEnabled = _profileLogging,
+                DetailedProfilingEnabled = _profileLogging
             };
 
             // Collision-cage debug overlay (off by default). Reads collision meshes live from the
@@ -141,7 +144,7 @@ public sealed partial class WorldView3DControl
                 CollisionResolver = ResolveCollisionMesh,
                 CollisionWarmup = ResolveOrWarmCollisionMesh,
                 ShowDisabled = _showDisabled,
-                DayNightStates = _dayNightStates,
+                DayNightStates = _dayNightStates
             };
 
             // Export framing preview: reuses the collision line shaders (no spatial index needed — it
@@ -167,17 +170,24 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Tears down the D3D12 backend in reverse construction order, draining the
-    /// GPU first so resources aren't referenced by in-flight command lists.</summary>
+    /// <summary>
+    ///     Tears down the D3D12 backend in reverse construction order, draining the
+    ///     GPU first so resources aren't referenced by in-flight command lists.
+    /// </summary>
     private void DisposeD3D12Backend()
     {
         _commandRecorder12?.WaitForGpuIdle();
-        _gpuTimestampProfiler12?.Dispose(); _gpuTimestampProfiler12 = null;
+        _gpuTimestampProfiler12?.Dispose();
+        _gpuTimestampProfiler12 = null;
         // Drain pending deletions now that the GPU is idle — anything queued is safe to release.
-        _deletionQueue12?.Dispose(); _deletionQueue12 = null;
-        _rootSignature12?.Dispose(); _rootSignature12 = null;
-        _shadowMap?.Dispose(); _shadowMap = null; // its SRV slot lives in the heap disposed next
-        _cbvSrvUavHeap12?.Dispose(); _cbvSrvUavHeap12 = null;
+        _deletionQueue12?.Dispose();
+        _deletionQueue12 = null;
+        _rootSignature12?.Dispose();
+        _rootSignature12 = null;
+        _shadowMap?.Dispose();
+        _shadowMap = null; // its SRV slot lives in the heap disposed next
+        _cbvSrvUavHeap12?.Dispose();
+        _cbvSrvUavHeap12 = null;
         _depthSrv = null; // its slot lived in the heap just disposed; reallocate on the next surface
         _captureDepthSrv = null; // same heap — the capture-depth slot dies with it too
         _waterOpaqueSnapshotSrv = null;
@@ -186,9 +196,13 @@ public sealed partial class WorldView3DControl
         _opaqueDepthSnapshotSrv = null; // same heap — the depth-snapshot slot dies with it too
         _opaqueDepthSnapshotSrvResource = null;
 
-        _ringBuffer12?.Dispose(); _ringBuffer12 = null;
-        _surface12?.Dispose(); _surface12 = null;
-        _commandRecorder12?.Dispose(); _commandRecorder12 = null;
-        _gpu12?.Dispose(); _gpu12 = null;
+        _ringBuffer12?.Dispose();
+        _ringBuffer12 = null;
+        _surface12?.Dispose();
+        _surface12 = null;
+        _commandRecorder12?.Dispose();
+        _commandRecorder12 = null;
+        _gpu12?.Dispose();
+        _gpu12 = null;
     }
 }

@@ -1,5 +1,5 @@
-using Spectre.Console;
 using System.Globalization;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Toft.ToftCommands;
 
 namespace EsmAnalyzer.Commands.Toft;

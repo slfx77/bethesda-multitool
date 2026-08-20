@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -23,29 +24,44 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldView3DControl
 {
-    private ProjectionMode _projectionMode = ProjectionMode.None;
+    // Degrees of free azimuth rotation per pixel of Shift+drag (~half a turn across a 450px drag).
+    private const float AzimuthDragSensitivityDeg = 0.4f;
+
+    // FOV slider bounds (perspective-only). Default 60° matches CameraState.FovYRadians (π/3).
+    private const float MinFovDegrees = 30f;
+    private const float MaxFovDegrees = 110f;
+
+    // ---- Matrix + interaction helpers (shared by Frame.cs render + Input.cs picking) -------------
+
+    // Wheel-zoom bounds, expressed in CELLS rather than world units: these were the literals 256 and
+    // 64*4096, which silently assumed Fallout's 4096-unit cell. On Starfield's 100-unit cell the old
+    // floor of 256 units was 2.5 cells, so the view could never zoom closer than a small block of cells.
+    private const float MinOrthoHalfHeightCells = 1f / 16f;
+    private const float MaxOrthoHalfHeightCells = 64f;
+
+    private const float OrthoZoomPerTick = 0.85f; // wheel up shrinks the extent (zoom in)
+
     // Live camera azimuth in DEGREES (continuous). The aligned positions are OrthoViewProjBuilder's
     // quadrants — base + k·90 (base 0 for orthographic / 45 for iso-tri). The ◄ ► buttons snap to those
     // (StepAzimuth); Shift+drag rotates freely off them (RotateProjectionAzimuth), after which the next
     // ◄ ► click snaps to the nearest aligned increment in the arrow's direction. Preserved (re-aligned
     // to the new base) across ortho↔iso/tri switches.
     private float _azimuthDeg;
-    // Degrees of free azimuth rotation per pixel of Shift+drag (~half a turn across a 450px drag).
-    private const float AzimuthDragSensitivityDeg = 0.4f;
-    // World point the ortho camera centers on (the look-at target). Seeded from the perspective
-    // camera's ground intersection when a mode is first entered; moved by left-drag panning.
-    private Vector3 _projectionFocus;
+
     // Half the vertical world extent the ortho frustum covers (the zoom). Driven by the wheel.
     // Seeded here against the default cell size only so the field is never unset; SetProjectionMode
     // re-seeds it from the loaded worldspace's _cellSize before it is ever read (it is only used while
     // ProjectionActive), so a non-4096 game never sees this value.
     private float _orthoHalfHeight = 8f * WorldGridConstants.CellSize;
 
-    // FOV slider bounds (perspective-only). Default 60° matches CameraState.FovYRadians (π/3).
-    private const float MinFovDegrees = 30f;
-    private const float MaxFovDegrees = 110f;
+    // World point the ortho camera centers on (the look-at target). Seeded from the perspective
+    // camera's ground intersection when a mode is first entered; moved by left-drag panning.
+    private Vector3 _projectionFocus;
+    private ProjectionMode _projectionMode = ProjectionMode.None;
 
     private bool ProjectionActive => _projectionMode != ProjectionMode.None;
+    private float MinOrthoHalfHeight => MinOrthoHalfHeightCells * _cellSize;
+    private float MaxOrthoHalfHeight => MaxOrthoHalfHeightCells * _cellSize;
 
     // ---- Toolbar handlers ------------------------------------------------------------------------
 
@@ -58,7 +74,8 @@ public sealed partial class WorldView3DControl
         SetProjectionMode((ProjectionMode)index);
     }
 
-    private void FovSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    private void FovSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
         if (_initializing) return;
         var degrees = Math.Clamp((float)e.NewValue, MinFovDegrees, MaxFovDegrees);
@@ -94,6 +111,7 @@ public sealed partial class WorldView3DControl
                 var quadrant = (int)MathF.Round((_azimuthDeg - prevBase) / 90f);
                 _azimuthDeg = OrthoViewProjBuilder.AzimuthDegFor(mode, quadrant);
             }
+
             ProjectionSnapPanel.Visibility = Visibility.Visible;
         }
         else
@@ -124,8 +142,10 @@ public sealed partial class WorldView3DControl
         _azimuthDeg = OrthoViewProjBuilder.SnapAzimuth(_azimuthDeg, _projectionMode, direction);
     }
 
-    /// <summary>Shift+drag free rotation: turns the camera azimuth by the horizontal drag, leaving it
-    /// off the 90° increments until the next ◄ ► click re-snaps. Horizontal only — pitch stays locked.</summary>
+    /// <summary>
+    ///     Shift+drag free rotation: turns the camera azimuth by the horizontal drag, leaving it
+    ///     off the 90° increments until the next ◄ ► click re-snaps. Horizontal only — pitch stays locked.
+    /// </summary>
     private void RotateProjectionAzimuth(float pixelDeltaX)
     {
         if (!ProjectionActive) return;
@@ -226,14 +246,17 @@ public sealed partial class WorldView3DControl
             {
                 return; // cell not streamed in yet — leave Z; the next gesture re-seats
             }
+
             var dz = groundZ - _projectionFocus.Z;
             if (MathF.Abs(dz) < 1f) return;
             _projectionFocus += toEye * (dz / sinEl); // slide along the view ray onto the ground
         }
     }
 
-    /// <summary>Places the perspective camera looking down at the ortho focus when the user switches
-    /// back to None, so the view doesn't jump back to wherever the free camera was parked.</summary>
+    /// <summary>
+    ///     Places the perspective camera looking down at the ortho focus when the user switches
+    ///     back to None, so the view doesn't jump back to wherever the free camera was parked.
+    /// </summary>
     private void RestorePerspectiveFromProjection()
     {
         _camera.Position = new Vector3(
@@ -241,17 +264,6 @@ public sealed partial class WorldView3DControl
         _camera.Yaw = 0f;
         _camera.Pitch = -MathF.PI / 4f;
     }
-
-    // ---- Matrix + interaction helpers (shared by Frame.cs render + Input.cs picking) -------------
-
-    // Wheel-zoom bounds, expressed in CELLS rather than world units: these were the literals 256 and
-    // 64*4096, which silently assumed Fallout's 4096-unit cell. On Starfield's 100-unit cell the old
-    // floor of 256 units was 2.5 cells, so the view could never zoom closer than a small block of cells.
-    private const float MinOrthoHalfHeightCells = 1f / 16f;
-    private const float MaxOrthoHalfHeightCells = 64f;
-    private float MinOrthoHalfHeight => MinOrthoHalfHeightCells * _cellSize;
-    private float MaxOrthoHalfHeight => MaxOrthoHalfHeightCells * _cellSize;
-    private const float OrthoZoomPerTick = 0.85f; // wheel up shrinks the extent (zoom in)
 
     /// <summary>
     ///     Builds the ortho view-projection for the active mode/quadrant/focus/zoom and the matching
@@ -262,7 +274,8 @@ public sealed partial class WorldView3DControl
     {
         var azimuth = _azimuthDeg;
         var elevation = OrthoViewProjBuilder.ElevationDegFor(_projectionMode);
-        var viewProj = OrthoViewProjBuilder.BuildViewProj(_projectionFocus, azimuth, elevation, _orthoHalfHeight, aspect);
+        var viewProj =
+            OrthoViewProjBuilder.BuildViewProj(_projectionFocus, azimuth, elevation, _orthoHalfHeight, aspect);
 
         // Cull radius = ground-footprint diagonal + terrain-relief parallax + slack — see
         // OrthoViewProjBuilder.CoverRadius for the geometry. The relief term is measured from the focus
@@ -283,9 +296,11 @@ public sealed partial class WorldView3DControl
     private (Vector3 Right, Vector3 Up) ProjectionCameraBasis() => OrthoViewProjBuilder.CameraBasis(
         _azimuthDeg, OrthoViewProjBuilder.ElevationDegFor(_projectionMode));
 
-    /// <summary>Grab-drag pan: moves the focus opposite the pixel drag so the world point under the
-    /// cursor stays put. Pans in the camera's right axis (always horizontal) and the ground projection
-    /// of its up axis, scaled so one screen height equals the visible world extent.</summary>
+    /// <summary>
+    ///     Grab-drag pan: moves the focus opposite the pixel drag so the world point under the
+    ///     cursor stays put. Pans in the camera's right axis (always horizontal) and the ground projection
+    ///     of its up axis, scaled so one screen height equals the visible world extent.
+    /// </summary>
     private void PanProjectionFocus(Vector2 pixelDelta)
     {
         var height = (float)RenderPanel.ActualHeight;
@@ -308,9 +323,11 @@ public sealed partial class WorldView3DControl
         SeatFocusAlongView();
     }
 
-    /// <summary>Wheel zoom for the ortho modes: scales the extent logarithmically (wheel up = zoom in),
-    /// clamped to the zoom range. Returns false when not in a projection mode (caller falls back to the
-    /// flythrough controller's scroll-speed handling).</summary>
+    /// <summary>
+    ///     Wheel zoom for the ortho modes: scales the extent logarithmically (wheel up = zoom in),
+    ///     clamped to the zoom range. Returns false when not in a projection mode (caller falls back to the
+    ///     flythrough controller's scroll-speed handling).
+    /// </summary>
     private bool TryZoomProjection(float wheelDelta)
     {
         if (!ProjectionActive) return false;

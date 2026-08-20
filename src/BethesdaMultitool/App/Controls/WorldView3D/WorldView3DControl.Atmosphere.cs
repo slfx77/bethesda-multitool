@@ -9,31 +9,52 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    private string _weatherImageSpaceTelemetry = "inactive";
-    private string? _weatherImageSpaceTelemetryLogKey;
-    private WeatherImageSpaceEvaluation? _weatherImageSpaceEvaluation;
-    private uint? _tonemapBaseImageSpaceFormId;
+    // Fraction of the cloud dome's authored distance range where the horizon fog fade begins
+    // (fade runs over the outer 40% — full alpha above ~12° elevation, dissolved at the ~5° rim).
+    // TO-CONFIRM (stand-in): the engine's fog start/end for the sky pass hasn't been decompiled;
+    // this matches the vanilla look of clouds melting into the horizon haze. Refine against an
+    // OpenMW hour sweep if the band reads too wide/narrow.
+    private const float CloudHorizonFogStartFraction = 0.6f;
+
+    // Diagnostic toggle for the sky-geometry pipeline — env FALLOUT_VIEWER_SKY_DIAG=1. Logs once per
+    // climate/weather change (RebuildSkyGeometry), so it's quiet during steady-state rendering. Used to
+    // ground per-game cloud diagnoses (which NIF, how many sky-typed submeshes, which cloud layers resolve).
+    private static readonly bool _skyDiag =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SKY_DIAG") == "1";
+
+    // Conventional sky-element asset names, tried against the LOADED archives (first existing wins). This
+    // is NOT a per-game path table: an asset is used only if the loaded game actually ships it, so the
+    // wrong game's texture can never be applied. These cover the genuinely engine-side moon (no record /
+    // NIF carries it) and act as a safety net for stars when a sky NIF can't be harvested.
+    private static readonly string[] StarCandidates =
+        { @"textures\sky\skystars.dds", @"textures\sky\stars.dds" };
+
+    private SkyTexturePaths? _resolvedSkyTexturePaths;
     private string? _tonemapBaseImageSpaceEditorId;
+    private uint? _tonemapBaseImageSpaceFormId;
+    private ResolvedImageSpaceSelection _tonemapBaseImageSpaceSelection;
     private string _tonemapBaseImageSpaceSource = "unavailable";
     private string? _tonemapBaseImageSpaceUnavailableReason;
-    private ResolvedImageSpaceSelection _tonemapBaseImageSpaceSelection;
+    private WeatherImageSpaceEvaluation? _weatherImageSpaceEvaluation;
+    private string _weatherImageSpaceTelemetry = "inactive";
+    private string? _weatherImageSpaceTelemetryLogKey;
 
     /// <summary>Last classic WTHR→IMAD selection and sampled tonemap values, for captures/profiling.</summary>
     internal string WeatherImageSpaceTelemetry => _weatherImageSpaceTelemetry;
 
-    // Sky-element texture paths DERIVED from the loaded game's data (not a hardcoded per-game table):
-    // sun/glare ← CLMT FNAM/GNAM, stars ← the CLMT MODL sky NIF, clouds ← the active weather's cloud
-    // layers, moons ← whichever conventional moon asset the loaded archives actually ship. Any field
-    // may be null → that sky element is skipped.
-    private sealed record SkyTexturePaths(
-        string? Sun, string? SunGlare, string? Cloud, string? Star, string? Moon, string? Secunda);
-
-    private SkyTexturePaths? _resolvedSkyTexturePaths;
+    // The per-game moon configuration: how many moons this engine draws, from which assets, at what
+    // apparent size. Each Bethesda engine differs (Morrowind/Oblivion/Skyrim draw two moons, FO3/FNV/4/76
+    // one, Starfield/Unknown none), so the moon is resolved from the loaded game rather than a shared
+    // constant — and each game probes only ITS own moon assets, so the wrong game's texture can never be
+    // drawn as a billboard moon. Cheap (returns a cached per-game singleton); read per use.
+    private SkyMoonProfile MoonProfile =>
+        SkyMoonProfile.ForGame(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown);
 
     /// <summary>The worldspace selected by the exterior picker, independent of interior mode.</summary>
     private WorldspaceRecord? CurrentSelectedExteriorWorldspace()
@@ -65,12 +86,16 @@ public sealed partial class WorldView3DControl
     ///     engine's precedence:
     ///     <list type="number">
     ///         <item>the selected CELL's classic <c>XCCM</c> climate override;</item>
-    ///         <item>the worldspace's own climate (WRLD <c>CNAM</c>) — present in FO3/FNV/Skyrim/FO4 and the
-    ///         Oblivion worldspaces that set one;</item>
-    ///         <item>a global default climate when the worldspace carries none — Oblivion's Tamriel has NO
-    ///         <c>CNAM</c> (climate is a rare per-cell <c>XCCM</c> override there — only ~55 in the whole
-    ///         277&#160;MB Oblivion.esm, so nothing to sample at cell 0,0), and the engine falls back to a
-    ///         global default. Oblivion ships one literally named <c>DefaultClimate</c>.</item>
+    ///         <item>
+    ///             the worldspace's own climate (WRLD <c>CNAM</c>) — present in FO3/FNV/Skyrim/FO4 and the
+    ///             Oblivion worldspaces that set one;
+    ///         </item>
+    ///         <item>
+    ///             a global default climate when the worldspace carries none — Oblivion's Tamriel has NO
+    ///             <c>CNAM</c> (climate is a rare per-cell <c>XCCM</c> override there — only ~55 in the whole
+    ///             277&#160;MB Oblivion.esm, so nothing to sample at cell 0,0), and the engine falls back to a
+    ///             global default. Oblivion ships one literally named <c>DefaultClimate</c>.
+    ///         </item>
     ///     </list>
     ///     Returns null for an ordinary interior or unlinked exterior selection. The fallback only fires
     ///     for a sky-bearing CELL/WRLD context whose authored climate doesn't resolve.
@@ -95,25 +120,31 @@ public sealed partial class WorldView3DControl
         return ResolveDefaultClimate();
     }
 
-    /// <summary>The loaded data's global default climate for a worldspace that names none: prefer the one
-    /// EditorID'd exactly <c>DefaultClimate</c> (Oblivion's), then any <c>*Default*</c> climate (e.g.
-    /// FNV's NVDefaultClimate), then the first loaded climate so an exterior worldspace still gets a real
-    /// sky (sun + per-weather colors) instead of the bare gradient. Null when no climates are loaded.</summary>
+    /// <summary>
+    ///     The loaded data's global default climate for a worldspace that names none: prefer the one
+    ///     EditorID'd exactly <c>DefaultClimate</c> (Oblivion's), then any <c>*Default*</c> climate (e.g.
+    ///     FNV's NVDefaultClimate), then the first loaded climate so an exterior worldspace still gets a real
+    ///     sky (sun + per-weather colors) instead of the bare gradient. Null when no climates are loaded.
+    /// </summary>
     private ClimateRecord? ResolveDefaultClimate()
     {
         if (_data is null || _data.ClimatesByFormId.Count == 0) return null;
         var climates = _data.ClimatesByFormId.Values;
-        return climates.FirstOrDefault(c => string.Equals(c.EditorId, "DefaultClimate", StringComparison.OrdinalIgnoreCase))
-               ?? climates.FirstOrDefault(c => c.EditorId?.Contains("Default", StringComparison.OrdinalIgnoreCase) == true)
+        return climates.FirstOrDefault(c =>
+                   string.Equals(c.EditorId, "DefaultClimate", StringComparison.OrdinalIgnoreCase))
+               ?? climates.FirstOrDefault(c =>
+                   c.EditorId?.Contains("Default", StringComparison.OrdinalIgnoreCase) == true)
                ?? climates.First();
     }
 
-    /// <summary>The climate's default weather, resolved to a record. The climate's weather list (WLST)
-    /// gates conditional variants with a Global FormID — e.g. NVDefaultClimate lists NVWastelandClearNight
-    /// gated by the VNight global (night only, cloud = a starfield) AND NVWastelandClear with NO gate. The
-    /// UNGATED entry is the base/default weather, so prefer it; otherwise a night-gated variant could become
-    /// the daytime default. Falls back to the first entry when every entry is gated. Null when the
-    /// worldspace has no climate / weather list.</summary>
+    /// <summary>
+    ///     The climate's default weather, resolved to a record. The climate's weather list (WLST)
+    ///     gates conditional variants with a Global FormID — e.g. NVDefaultClimate lists NVWastelandClearNight
+    ///     gated by the VNight global (night only, cloud = a starfield) AND NVWastelandClear with NO gate. The
+    ///     UNGATED entry is the base/default weather, so prefer it; otherwise a night-gated variant could become
+    ///     the daytime default. Falls back to the first entry when every entry is gated. Null when the
+    ///     worldspace has no climate / weather list.
+    /// </summary>
     private WeatherRecord? ResolveClimateDefaultWeather(ResolvedSkySceneContext skyContext)
     {
         var climate = ResolveClimate(skyContext);
@@ -140,7 +171,7 @@ public sealed partial class WorldView3DControl
             _data is
             {
                 Game: BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3,
-                RuntimeWeatherTransition: null,
+                RuntimeWeatherTransition: null
             } data)
         {
             // XCLR is a cell-level candidate list, not proof that the camera is inside a REGN.
@@ -191,8 +222,10 @@ public sealed partial class WorldView3DControl
             GmstFloat("fSunXExtreme"), GmstFloat("fSunYExtreme"), GmstFloat("fSunAlphaTransTime"));
     }
 
-    /// <summary>Refreshes the climate timing + default weather for whatever worldspace is now showing,
-    /// then re-applies the dropdown selection (so "(Climate default)" picks up the new default).</summary>
+    /// <summary>
+    ///     Refreshes the climate timing + default weather for whatever worldspace is now showing,
+    ///     then re-applies the dropdown selection (so "(Climate default)" picks up the new default).
+    /// </summary>
     private void RefreshAtmosphereForCurrentWorldspace()
     {
         var skyContext = CurrentSkySceneContext();
@@ -277,6 +310,7 @@ public sealed partial class WorldView3DControl
         {
             formId = _imagespaceExplicitFormId;
         }
+
         _tonemapBaseImageSpaceFormId = formId;
         _tonemapBaseImageSpaceSource = explicitImagespace
             ? "explicit UI selection"
@@ -304,6 +338,7 @@ public sealed partial class WorldView3DControl
             _tonemapBaseImageSpaceUnavailableReason =
                 "no CELL XCIM or inherited WRLD INAM resolved; game-family defaults are active";
         }
+
         // Retail FNV keeps one continuous adapted-light history across ordinary scene and authored
         // imagespace transitions. Only a real clear epoch enters the semantic key; the GPU pass owns
         // render-target/device/adaptive-mode lifecycle invalidation.
@@ -375,7 +410,7 @@ public sealed partial class WorldView3DControl
                     // ImageSpaceManager::ApplyCurrentParameterData copies classic hdrData[11]
                     // into the global consumed by directional-light setup. Keep it in scene state;
                     // it is not part of the display composite.
-                    SunlightScale = hdr.SunlightDimmer,
+                    SunlightScale = hdr.SunlightDimmer
                 };
             }
 
@@ -392,7 +427,7 @@ public sealed partial class WorldView3DControl
                     // cinematic layouts do not. The shipped
                     // FO3/FNV composite shader itself does not consume this metadata.
                     CinematicFlags = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
-                        .ResolveCinematicFlags(settings.CinematicFlags, cin),
+                        .ResolveCinematicFlags(settings.CinematicFlags, cin)
                 };
             }
 
@@ -403,7 +438,7 @@ public sealed partial class WorldView3DControl
                     TintR = tint.Red,
                     TintG = tint.Green,
                     TintB = tint.Blue,
-                    TintAmount = tint.Amount,
+                    TintAmount = tint.Amount
                 };
             }
         }
@@ -437,9 +472,10 @@ public sealed partial class WorldView3DControl
         // The IMAD elapsed clock is not in the recovered Sky layout, so animatable timelines are
         // explicitly gated as unknown instead of silently sampling a fabricated t=0.
         if (_imagespaceMode == ImagespaceSelectionMode.Automatic && !interior
-            && GameProfiles.For(game).UsesClassicHdrImagespace
-            && (activeWeather?.ImageSpaceModifiers is not null
-                || weatherTransition.OutgoingWeather?.ImageSpaceModifiers is not null))
+                                                                 && GameProfiles.For(game).UsesClassicHdrImagespace
+                                                                 && (activeWeather?.ImageSpaceModifiers is not null
+                                                                     || weatherTransition.OutgoingWeather
+                                                                         ?.ImageSpaceModifiers is not null))
         {
             var weatherEvaluation = Core.Formats.Nif.Rendering.Gpu.D3D12.WeatherImageSpaceEvaluator.Evaluate(
                 settings, _gameHour, _currentClimateTiming, activeWeather,
@@ -496,6 +532,7 @@ public sealed partial class WorldView3DControl
                 _data?.Game ?? BethesdaGame.Unknown);
             return;
         }
+
         _skyTexKey = key;
 
         const uint none = BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SkyBillboardRenderer12.NoTexture;
@@ -619,6 +656,7 @@ public sealed partial class WorldView3DControl
                 AddSkyNifLayers(layers, Path.Combine(skyDir, "Atmosphere.nif"), weather,
                     currentCloudWeight);
             }
+
             AddSkyNifLayers(layers, modl, weather, currentCloudWeight);
             var cloudsPath = Path.Combine(skyDir, "Clouds.nif");
             AddSkyNifLayers(layers, cloudsPath, weather, currentCloudWeight);
@@ -660,19 +698,6 @@ public sealed partial class WorldView3DControl
             _skyGeometry.SetLayers(layers);
         }
     }
-
-    // Diagnostic toggle for the sky-geometry pipeline — env FALLOUT_VIEWER_SKY_DIAG=1. Logs once per
-    // climate/weather change (RebuildSkyGeometry), so it's quiet during steady-state rendering. Used to
-    // ground per-game cloud diagnoses (which NIF, how many sky-typed submeshes, which cloud layers resolve).
-    private static readonly bool _skyDiag =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SKY_DIAG") == "1";
-
-    // Fraction of the cloud dome's authored distance range where the horizon fog fade begins
-    // (fade runs over the outer 40% — full alpha above ~12° elevation, dissolved at the ~5° rim).
-    // TO-CONFIRM (stand-in): the engine's fog start/end for the sky pass hasn't been decompiled;
-    // this matches the vanilla look of clouds melting into the horizon haze. Refine against an
-    // OpenMW hour sweep if the band reads too wide/narrow.
-    private const float CloudHorizonFogStartFraction = 0.6f;
 
     // Bakes Morrowind's sky fog into a cloud layer's vertex alpha: linear fade by authored vertex
     // distance (the engine fogs the sky domes; the shallow cloud cap's rim is ~3.4× farther than
@@ -810,14 +835,18 @@ public sealed partial class WorldView3DControl
                 cloudSourceIndex = sourceLayerIndex;
                 if (cloudPath is null || IsUnusedCloudLayer(cloudPath))
                 {
-                    if (_skyDiag) Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath ?? "(no layer)"}' -> SKIP (unused/no-layer)");
+                    if (_skyDiag)
+                        Log.Info(
+                            $"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath ?? "(no layer)"}' -> SKIP (unused/no-layer)");
                     continue;
                 }
 
                 texIndex = ResolveSkyTexture(cloudPath);
                 if (texIndex == uint.MaxValue)
                 {
-                    if (_skyDiag) Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath}' -> SKIP (texture unresolved)");
+                    if (_skyDiag)
+                        Log.Info(
+                            $"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath}' -> SKIP (texture unresolved)");
                     continue; // texture missing -> don't draw it
                 }
 
@@ -825,7 +854,8 @@ public sealed partial class WorldView3DControl
                 {
                     var cc = WeatherCloudColor(weather, sourceLayerIndex);
                     var a = cc is null ? "n/a" : $"R{cc.Day.R} G{cc.Day.G} B{cc.Day.B} A{cc.Day.A}";
-                    Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: sourceLayer={sourceLayerIndex} layer='{cloudPath}' -> DRAW (tex#{texIndex}) dayColor=[{a}]");
+                    Log.Info(
+                        $"[SkyGeo]     cloud shape #{layerIndex}: sourceLayer={sourceLayerIndex} layer='{cloudPath}' -> DRAW (tex#{texIndex}) dayColor=[{a}]");
                 }
 
                 // This layer's per-draw color (PNAM), per-layer opacity (JNAM) + drift speed (QNAM/RNAM) —
@@ -869,7 +899,7 @@ public sealed partial class WorldView3DControl
                 CloudAlpha = cloudAlpha,
                 CloudSourceIndex = cloudSourceIndex,
                 IsOutgoingCloudPass = type == SkyObjectType.Clouds && isOutgoingCloudPass,
-                CloudWeatherWeight = type == SkyObjectType.Clouds ? cloudWeatherWeight : 1f,
+                CloudWeatherWeight = type == SkyObjectType.Clouds ? cloudWeatherWeight : 1f
             });
         }
     }
@@ -1004,21 +1034,6 @@ public sealed partial class WorldView3DControl
         var alphas = weather?.CloudLayerAlphas;
         return alphas is not null && layer >= 0 && layer < alphas.Count ? alphas[layer] : null;
     }
-
-    // Conventional sky-element asset names, tried against the LOADED archives (first existing wins). This
-    // is NOT a per-game path table: an asset is used only if the loaded game actually ships it, so the
-    // wrong game's texture can never be applied. These cover the genuinely engine-side moon (no record /
-    // NIF carries it) and act as a safety net for stars when a sky NIF can't be harvested.
-    private static readonly string[] StarCandidates =
-        { @"textures\sky\skystars.dds", @"textures\sky\stars.dds" };
-
-    // The per-game moon configuration: how many moons this engine draws, from which assets, at what
-    // apparent size. Each Bethesda engine differs (Morrowind/Oblivion/Skyrim draw two moons, FO3/FNV/4/76
-    // one, Starfield/Unknown none), so the moon is resolved from the loaded game rather than a shared
-    // constant — and each game probes only ITS own moon assets, so the wrong game's texture can never be
-    // drawn as a billboard moon. Cheap (returns a cached per-game singleton); read per use.
-    private SkyMoonProfile MoonProfile =>
-        SkyMoonProfile.ForGame(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown);
 
     // Builds the sky texture set from the loaded climate + weather. Stars come from the climate's own
     // MODL sky-dome NIF (the sky-shader block tagged STARS); clouds from the active weather's last
@@ -1205,6 +1220,7 @@ public sealed partial class WorldView3DControl
             camRight = Vector3.Normalize(new Vector3(invView.M11, invView.M12, invView.M13));
             camUp = Vector3.Normalize(new Vector3(invView.M21, invView.M22, invView.M23));
         }
+
         // Billboard origin = the dome center. The live frame passes 0 (camera-relative, with a translation-
         // free viewProj) so the sun/moon don't jitter at far-from-origin camera positions; the offscreen
         // capture passes the absolute camera position. camRight/camUp are pure directions either way.
@@ -1324,8 +1340,10 @@ public sealed partial class WorldView3DControl
         return idx != SkyBillboardRenderer12.NoTexture ? idx : fullMoonIndex;
     }
 
-    /// <summary>Maps the lighting panel's current weather selection to <see cref="_selectedWeather" />
-    /// (the "(Climate default)" item resolves to the current worldspace default).</summary>
+    /// <summary>
+    ///     Maps the lighting panel's current weather selection to <see cref="_selectedWeather" />
+    ///     (the "(Climate default)" item resolves to the current worldspace default).
+    /// </summary>
     private void ApplyWeatherSelection()
     {
         var sel = LightingPanel.CurrentWeatherSelection;
@@ -1333,8 +1351,10 @@ public sealed partial class WorldView3DControl
         _selectedWeather = sel.IsClimateDefault ? _climateDefaultWeather : sel.Weather;
     }
 
-    /// <summary>Builds the weather dropdown once per load via the shared lighting panel: a
-    /// "(Climate default)" entry plus every weather in the file. Defaults to "(Climate default)".</summary>
+    /// <summary>
+    ///     Builds the weather dropdown once per load via the shared lighting panel: a
+    ///     "(Climate default)" entry plus every weather in the file. Defaults to "(Climate default)".
+    /// </summary>
     private void PopulateWeatherDropdown()
     {
         if (_data is null) return;
@@ -1363,4 +1383,16 @@ public sealed partial class WorldView3DControl
         // Drives the moon phase (texture) + orbit position; the next frame's RenderSkyBillboards reads it.
         _gameDay = (float)day;
     }
+
+    // Sky-element texture paths DERIVED from the loaded game's data (not a hardcoded per-game table):
+    // sun/glare ← CLMT FNAM/GNAM, stars ← the CLMT MODL sky NIF, clouds ← the active weather's cloud
+    // layers, moons ← whichever conventional moon asset the loaded archives actually ship. Any field
+    // may be null → that sky element is skipped.
+    private sealed record SkyTexturePaths(
+        string? Sun,
+        string? SunGlare,
+        string? Cloud,
+        string? Star,
+        string? Moon,
+        string? Secunda);
 }

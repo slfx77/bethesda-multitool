@@ -194,6 +194,7 @@ internal static class NifParticleBaker
                             {
                                 p.Position += p.Velocity * dt;
                             }
+
                             break;
                     }
                 }
@@ -247,7 +248,7 @@ internal static class NifParticleBaker
                 ParticleVelocityType.UseNormals when sample.Normal.LengthSquared() > 1e-8f =>
                     Vector3.Normalize(sample.Normal),
                 ParticleVelocityType.UseRandom => RandomUnitVector(ref rng),
-                _ => ComputeEmissionDirection(decl, planar, e.EmissionAxis),
+                _ => ComputeEmissionDirection(decl, planar, e.EmissionAxis)
             }
             : ComputeEmissionDirection(decl, planar, e.EmissionAxis);
         var velocity = Vector3.TransformNormal(dir, e.EmitterObjectTransform) * speed;
@@ -265,6 +266,7 @@ internal static class NifParticleBaker
             {
                 variedSpeed = -variedSpeed;
             }
+
             rotationSpeed += variedSpeed;
             rotationAngle += rotation.RotationAngle
                              + rotation.RotationAngleVariation * (rng.NextFloat() * 2f - 1f);
@@ -282,7 +284,7 @@ internal static class NifParticleBaker
             SpawnGeneration = 0,
             Rotation = rotationAngle,
             RotationSpeed = rotationSpeed,
-            AtlasSeed = rng.NextFloat(),
+            AtlasSeed = rng.NextFloat()
         };
     }
 
@@ -333,7 +335,7 @@ internal static class NifParticleBaker
                 SpawnGeneration = parent.SpawnGeneration + 1,
                 Rotation = parent.Rotation,
                 RotationSpeed = parent.RotationSpeed,
-                AtlasSeed = rng.NextFloat(),
+                AtlasSeed = rng.NextFloat()
             });
         }
     }
@@ -460,6 +462,7 @@ internal static class NifParticleBaker
             Add(indices[i + 1], indices[i + 2]);
             Add(indices[i + 2], indices[i]);
         }
+
         return result;
 
         void Add(int a, int b)
@@ -479,11 +482,14 @@ internal static class NifParticleBaker
             target -= Vector3.Distance(vertices[edge.A], vertices[edge.B]);
             if (target <= 0f) return edge;
         }
+
         return edges[^1];
     }
 
-    private static Vector3 VertexNormal(ParticleEmitterDefinition e, int index) =>
-        index >= 0 && index < e.MeshNormals.Count ? e.MeshNormals[index] : Vector3.Zero;
+    private static Vector3 VertexNormal(ParticleEmitterDefinition e, int index)
+    {
+        return index >= 0 && index < e.MeshNormals.Count ? e.MeshNormals[index] : Vector3.Zero;
+    }
 
     private static Vector3 TriangleNormal(ParticleEmitterDefinition e, Triangle tri)
     {
@@ -492,16 +498,22 @@ internal static class NifParticleBaker
         return NormalizeOrZero(n);
     }
 
-    private static bool ValidTriangle(IReadOnlyList<int> indices, int vertexCount, int offset) =>
-        indices[offset] >= 0 && indices[offset] < vertexCount
-        && indices[offset + 1] >= 0 && indices[offset + 1] < vertexCount
-        && indices[offset + 2] >= 0 && indices[offset + 2] < vertexCount;
+    private static bool ValidTriangle(IReadOnlyList<int> indices, int vertexCount, int offset)
+    {
+        return indices[offset] >= 0 && indices[offset] < vertexCount
+                                    && indices[offset + 1] >= 0 && indices[offset + 1] < vertexCount
+                                    && indices[offset + 2] >= 0 && indices[offset + 2] < vertexCount;
+    }
 
-    private static float TriangleArea(Vector3 a, Vector3 b, Vector3 c) =>
-        Vector3.Cross(b - a, c - a).Length() * 0.5f;
+    private static float TriangleArea(Vector3 a, Vector3 b, Vector3 c)
+    {
+        return Vector3.Cross(b - a, c - a).Length() * 0.5f;
+    }
 
-    private static Vector3 NormalizeOrZero(Vector3 value) =>
-        value.LengthSquared() > 1e-8f ? Vector3.Normalize(value) : Vector3.Zero;
+    private static Vector3 NormalizeOrZero(Vector3 value)
+    {
+        return value.LengthSquared() > 1e-8f ? Vector3.Normalize(value) : Vector3.Zero;
+    }
 
     internal static Vector3 ComputeEmissionDirection(float declination, float planarAngle, Vector3 axis)
     {
@@ -543,8 +555,8 @@ internal static class NifParticleBaker
         var decay = b.DecayType switch
         {
             1 => b.Range > 0f ? MathF.Max(0f, (b.Range - dist) / b.Range) : 1f, // linear
-            2 => b.Range > 0f ? MathF.Exp(-dist / b.Range) : 1f,                // exponential
-            _ => 1f,                                                            // none
+            2 => b.Range > 0f ? MathF.Exp(-dist / b.Range) : 1f, // exponential
+            _ => 1f // none
         };
 
         var axis = b.BombAxis.LengthSquared() > 1e-6f ? Vector3.Normalize(b.BombAxis) : Vector3.UnitZ;
@@ -619,12 +631,6 @@ internal static class NifParticleBaker
 
         return force;
     }
-
-    /// <summary>Drag axis (system-local, normalized) + range origin + coefficients, precomputed once per
-    /// modifier. <see cref="Active" /> is false when the engine would no-op the modifier (no drag object,
-    /// non-positive percentage, or a degenerate axis).</summary>
-    private readonly record struct PreparedDrag(
-        bool Active, Vector3 AxisHat, Vector3 ObjectPos, float Range, float Falloff, float Percentage);
 
     private static PreparedDrag PrepareDrag(DragModifierDefinition d)
     {
@@ -708,6 +714,19 @@ internal static class NifParticleBaker
         return new Vector3(r * MathF.Cos(theta), r * MathF.Sin(theta), z);
     }
 
+    /// <summary>
+    ///     Drag axis (system-local, normalized) + range origin + coefficients, precomputed once per
+    ///     modifier. <see cref="Active" /> is false when the engine would no-op the modifier (no drag object,
+    ///     non-positive percentage, or a degenerate axis).
+    /// </summary>
+    private readonly record struct PreparedDrag(
+        bool Active,
+        Vector3 AxisHat,
+        Vector3 ObjectPos,
+        float Range,
+        float Falloff,
+        float Percentage);
+
     private struct Particle
     {
         public Vector3 Position;
@@ -718,16 +737,21 @@ internal static class NifParticleBaker
         public float Size;
         public Vector4 Color;
 
-        /// <summary>How many NiPSysSpawnModifier generations deep this particle is (0 = emitted directly).
-        /// Spawning stops once this reaches the modifier's NumSpawnGenerations.</summary>
+        /// <summary>
+        ///     How many NiPSysSpawnModifier generations deep this particle is (0 = emitted directly).
+        ///     Spawning stops once this reaches the modifier's NumSpawnGenerations.
+        /// </summary>
         public int SpawnGeneration;
+
         public float Rotation;
         public float RotationSpeed;
         public float AtlasSeed;
     }
 
     private readonly record struct MeshSample(Vector3 Position, Vector3 Normal);
+
     private readonly record struct Triangle(int A, int B, int C);
+
     private readonly record struct Edge(int A, int B);
 
     /// <summary>Small deterministic xorshift32 PRNG — reproducible across runs/platforms (no Math.Random).</summary>
@@ -744,6 +768,9 @@ internal static class NifParticleBaker
         }
 
         /// <summary>Symmetric unit random matching the engine helper used by gravity turbulence.</summary>
-        public float NextSignedFloat() => NextFloat() * 2f - 1f;
+        public float NextSignedFloat()
+        {
+            return NextFloat() * 2f - 1f;
+        }
     }
 }

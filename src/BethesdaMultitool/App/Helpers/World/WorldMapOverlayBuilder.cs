@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -13,6 +14,7 @@ using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -172,6 +174,7 @@ internal static class WorldMapOverlayBuilder
     {
         int? GmstInt(string id) => records.GameSettings
             .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.IntValue;
+
         float? GmstFloat(string id) => records.GameSettings
             .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.FloatValue;
 
@@ -190,7 +193,7 @@ internal static class WorldMapOverlayBuilder
         var masser = GmstInt("iMasserSize");
         var secunda = GmstInt("iSecundaSize") ?? (masser is int m ? (int)(m * 0.55f) : null);
         return (profile.HalfSizeFractionFromGmst(masser, dome),
-                profile.HalfSizeFractionFromGmst(secunda, dome));
+            profile.HalfSizeFractionFromGmst(secunda, dome));
     }
 
     internal static Dictionary<string, GameSettingRecord> BuildGameSettingIndex(
@@ -401,8 +404,10 @@ internal static class WorldMapOverlayBuilder
                 list = new List<NavMeshRecord>();
                 dict[cellFormId] = list;
             }
+
             list.Add(nm);
         }
+
         return dict;
     }
 
@@ -414,6 +419,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -424,6 +430,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -435,6 +442,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -507,6 +515,7 @@ internal static class WorldMapOverlayBuilder
                 dict.TryAdd(r.FormId, r.Swaps);
             }
         }
+
         return dict;
     }
 
@@ -517,6 +526,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -527,6 +537,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -548,16 +559,19 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
-    private static Dictionary<uint, LightingTemplateRecord> BuildLightingTemplateIndex(List<LightingTemplateRecord> records)
+    private static Dictionary<uint, LightingTemplateRecord> BuildLightingTemplateIndex(
+        List<LightingTemplateRecord> records)
     {
         var dict = new Dictionary<uint, LightingTemplateRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -568,6 +582,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -578,6 +593,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -589,6 +605,7 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+
         return dict;
     }
 
@@ -683,6 +700,4 @@ internal static class WorldMapOverlayBuilder
 
         return cellByFormId;
     }
-
 }
-

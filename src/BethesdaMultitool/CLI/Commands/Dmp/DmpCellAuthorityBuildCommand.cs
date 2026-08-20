@@ -1,9 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -76,6 +73,7 @@ internal static class DmpCellAuthorityBuildCommand
                 AnsiConsole.MarkupLine($"[red]ERROR:[/] DMP dir not found: {Markup.Escape(dmpDir)}");
                 return;
             }
+
             dmpFiles = Directory.GetFiles(dmpDir, "*.dmp")
                 .Where(f => !Path.GetFileName(f).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f, StringComparer.Ordinal)
@@ -100,6 +98,7 @@ internal static class DmpCellAuthorityBuildCommand
                 {
                     authority.AddOrUpdateCell(cell, metadata, $"seed:{Path.GetFileName(outputPath)}");
                 }
+
                 authority.AddSource("seed", outputPath, seedCells.Count, seedCells.Count);
             }
 
@@ -131,6 +130,7 @@ internal static class DmpCellAuthorityBuildCommand
                 AnsiConsole.MarkupLine($"[yellow]ESM not found, skipping:[/] {Markup.Escape(esmPath)}");
                 continue;
             }
+
             await IngestEsmAsync(
                 esmPath, authority, cancellationToken);
         }
@@ -200,7 +200,7 @@ internal static class DmpCellAuthorityBuildCommand
             foreach (var cell in loaded.Records.Cells)
             {
                 esmRecords.CellToWorldspaceMap.TryGetValue(cell.FormId, out var mappedWorldspace);
-                var worldspaceFormId = cell.WorldspaceFormId ?? (mappedWorldspace != 0 ? (uint?)mappedWorldspace : null);
+                var worldspaceFormId = cell.WorldspaceFormId ?? (mappedWorldspace != 0 ? mappedWorldspace : null);
                 if (authority.AddOrUpdateCell(
                         cell.FormId,
                         CellAuthorityMetadata.FromCell(cell, worldspaceFormId),
@@ -305,6 +305,7 @@ internal static class DmpCellAuthorityBuildCommand
                 {
                     continue;
                 }
+
                 observedCells++;
                 if (authority.AddOrUpdateCell(
                         c.FormId,
@@ -336,6 +337,4 @@ internal static class DmpCellAuthorityBuildCommand
             AnsiConsole.MarkupLine($"  [red]ERROR: {Markup.Escape(ex.Message)}[/]");
         }
     }
-
 }
-

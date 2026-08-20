@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Pure scene classification for weather-driven sky rendering. CELL DATA bit 7 is the single
@@ -35,24 +35,24 @@ internal static class SkySceneContextResolver
         if (selectedInterior is null)
         {
             return new ResolvedSkySceneContext(
-                IsInterior: false,
-                BehavesLikeExterior: false,
-                RendersExteriorSky: true,
+                false,
+                false,
+                true,
                 selectedExteriorWorldspace,
-                CellClimateFormId: null,
-                WorldspaceClimateFormId: selectedExteriorWorldspace?.ClimateFormId);
+                null,
+                selectedExteriorWorldspace?.ClimateFormId);
         }
 
         if (!selectedInterior.BehavesLikeExterior)
         {
             return new ResolvedSkySceneContext(
-                IsInterior: true,
-                BehavesLikeExterior: false,
-                RendersExteriorSky: false,
-                Worldspace: null,
+                true,
+                false,
+                false,
+                null,
                 // Retain the authored XCCM identity for diagnostics even though it is not applied.
-                CellClimateFormId: selectedInterior.ClimateFormId,
-                WorldspaceClimateFormId: null);
+                selectedInterior.ClimateFormId,
+                null);
         }
 
         var parent = selectedInterior.WorldspaceFormId is { } expectedParentId
@@ -60,9 +60,9 @@ internal static class SkySceneContextResolver
             ? retainedInteriorParentWorldspace
             : null;
         return new ResolvedSkySceneContext(
-            IsInterior: true,
-            BehavesLikeExterior: true,
-            RendersExteriorSky: true,
+            true,
+            true,
+            true,
             parent,
             selectedInterior.ClimateFormId,
             parent?.ClimateFormId);

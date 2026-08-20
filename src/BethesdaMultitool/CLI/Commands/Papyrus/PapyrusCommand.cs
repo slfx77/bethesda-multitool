@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Diagnostics;
 using BethesdaMultitool.Core.Formats.Papyrus;
 using Spectre.Console;
 
@@ -283,7 +284,7 @@ public static class PapyrusCommand
             AnsiConsole.MarkupLine("[green]Wrote decompiled Papyrus source[/] to {0}", Markup.Escape(fullPath));
         }
         catch (Exception ex) when (ex is PexParseException or IOException or InvalidDataException or
-                                   InvalidOperationException)
+                                       InvalidOperationException)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(ex.Message));
         }
@@ -345,7 +346,7 @@ public static class PapyrusCommand
             AnsiConsole.MarkupLine("[green]Wrote Papyrus VM listing[/] to {0}", Markup.Escape(fullPath));
         }
         catch (Exception ex) when (ex is PexParseException or IOException or InvalidDataException or
-                                   InvalidOperationException)
+                                       InvalidOperationException)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(ex.Message));
         }
@@ -453,7 +454,7 @@ public static class PapyrusCommand
         }
 
         using var archive = PexArchiveReader.Open(input);
-        IEnumerable<PexArchiveEntry> selected = Filter(archive.Entries, filter);
+        var selected = Filter(archive.Entries, filter);
         if (limit > 0)
         {
             selected = selected.Take(limit);
@@ -463,7 +464,7 @@ public static class PapyrusCommand
         var failures = new List<(string Path, string Error)>();
         var parsed = 0;
         var unstructuredBranches = 0;
-        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var timer = Stopwatch.StartNew();
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -602,9 +603,12 @@ public static class PapyrusCommand
 
     private static IEnumerable<PexArchiveEntry> Filter(
         IReadOnlyList<PexArchiveEntry> entries,
-        string? filter) => string.IsNullOrWhiteSpace(filter)
-        ? entries
-        : entries.Where(entry => entry.VirtualPath.Contains(filter, StringComparison.OrdinalIgnoreCase));
+        string? filter)
+    {
+        return string.IsNullOrWhiteSpace(filter)
+            ? entries
+            : entries.Where(entry => entry.VirtualPath.Contains(filter, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static bool RequireFile(string path)
     {

@@ -11,7 +11,6 @@ namespace EsmAnalyzer.Commands.Dmp;
 ///     For each REFR-shaped heap object in a DMP, dereferences <c>pParentCell</c> and
 ///     reads the target CELL's FormID. Reports REFRs whose runtime parent matches one of
 ///     the target cell FormIDs.
-///
 ///     Closes the gap between <c>dmp sweep-refrs</c> (only counts NULL-pParentCell refs in
 ///     per-REFR output) and <c>dmp cell-inventory</c> (only walks cells the pCellMap knew
 ///     about). A REFR can be parented to a CELL the regular parser never reached — neither
@@ -134,9 +133,6 @@ internal static class DmpFindRefsByParentCellCommand
             $"{totalMatches} REFR(s) total.");
         return 0;
     }
-
-    private sealed record RefMatch(
-        uint RefFid, uint BaseFid, uint ParentFid, float X, float Y, float Z, float Scale);
 
     private static List<RefMatch> ScanOne(string dumpPath, HashSet<uint> targets, bool forceEarly)
     {
@@ -310,11 +306,13 @@ internal static class DmpFindRefsByParentCellCommand
                 {
                     finalHits++;
                 }
+
                 if (ProbeRefrShape(buf, i, -4))
                 {
                     earlyHits++;
                 }
             }
+
             probedBytes += bytesToRead;
         }
 
@@ -329,16 +327,19 @@ internal static class DmpFindRefsByParentCellCommand
         {
             return false;
         }
+
         var vft = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(start + VftableOffset));
         if (vft < ModuleVaLo || vft >= ModuleVaHi)
         {
             return false;
         }
+
         var fid = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(start + FormIdOffset));
         if (fid == 0 || fid == 0xFFFFFFFFu)
         {
             return false;
         }
+
         var x = BinaryPrimitives.ReadSingleBigEndian(buf.AsSpan(start + xOff));
         var y = BinaryPrimitives.ReadSingleBigEndian(buf.AsSpan(start + xOff + 4));
         var z = BinaryPrimitives.ReadSingleBigEndian(buf.AsSpan(start + xOff + 8));
@@ -346,11 +347,13 @@ internal static class DmpFindRefsByParentCellCommand
         {
             return false;
         }
+
         var scale = BinaryPrimitives.ReadSingleBigEndian(buf.AsSpan(start + RefScaleOffset + shift));
         if (float.IsNaN(scale) || scale <= 0.01f || scale > 100f)
         {
             return false;
         }
+
         var pCell = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(start + pCellOff));
         return pCell == 0 || (pCell >= HeapVaLo && pCell < ModuleVaHi);
     }
@@ -369,10 +372,12 @@ internal static class DmpFindRefsByParentCellCommand
                 .OrderBy(f => f, StringComparer.Ordinal)
                 .ToList();
         }
+
         if (File.Exists(input))
         {
             return [input];
         }
+
         return [];
     }
 
@@ -383,11 +388,22 @@ internal static class DmpFindRefsByParentCellCommand
         {
             return false;
         }
+
         var span = s.AsSpan();
         if (span.Length > 2 && span[0] == '0' && (span[1] == 'x' || span[1] == 'X'))
         {
             span = span[2..];
         }
+
         return uint.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
     }
+
+    private sealed record RefMatch(
+        uint RefFid,
+        uint BaseFid,
+        uint ParentFid,
+        float X,
+        float Y,
+        float Z,
+        float Scale);
 }

@@ -21,7 +21,10 @@ public static class BinaryUtils
     ///     component of every packed vertex. The bit-reinterpret + widen is ~10–50× faster and is the
     ///     canonical, fully IEEE-correct conversion (normals/subnormals/inf/NaN/±0).
     /// </summary>
-    public static float HalfToFloat(ushort half) => (float)BitConverter.UInt16BitsToHalf(half);
+    public static float HalfToFloat(ushort half)
+    {
+        return (float)BitConverter.UInt16BitsToHalf(half);
+    }
 
     #endregion
 

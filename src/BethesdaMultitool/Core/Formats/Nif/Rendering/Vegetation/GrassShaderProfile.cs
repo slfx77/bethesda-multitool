@@ -1,6 +1,4 @@
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
@@ -78,35 +76,41 @@ internal static class GrassShaderProfile
         return game is BethesdaGame.Oblivion ? Select(game) : default;
     }
 
-    private static GameShaderPair SelectInstanced(BethesdaGame game) => game switch
+    private static GameShaderPair SelectInstanced(BethesdaGame game)
     {
-        // FO3/FNV: retail Shaders\shaderpackage019.sdp, GRASS2002.vso + GRASS2002.pso. The engine
-        // lights grass from terrain data baked into each instance (land normal + land-colour
-        // luminance), composes ambient ADDITIVELY without vertex colour, applies a 1.5x sun boost,
-        // and attenuates ONLY the sun term by the shadow map. Both games share TallGrassShader.cpp
-        // and every shipped GRAS record in both authors DATA flags 0x06, so one pair serves both.
-        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new(
-            true, "reference_grass_fnv.vert.hlsl", "reference_grass_fnv.frag.hlsl"),
+        return game switch
+        {
+            // FO3/FNV: retail Shaders\shaderpackage019.sdp, GRASS2002.vso + GRASS2002.pso. The engine
+            // lights grass from terrain data baked into each instance (land normal + land-colour
+            // luminance), composes ambient ADDITIVELY without vertex colour, applies a 1.5x sun boost,
+            // and attenuates ONLY the sun term by the shadow map. Both games share TallGrassShader.cpp
+            // and every shipped GRAS record in both authors DATA flags 0x06, so one pair serves both.
+            BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new GameShaderPair(
+                true, "reference_grass_fnv.vert.hlsl", "reference_grass_fnv.frag.hlsl"),
 
-        _ => default,
-    };
+            _ => default
+        };
+    }
 
-    private static GameShaderPair Select(BethesdaGame game) => game switch
+    private static GameShaderPair Select(BethesdaGame game)
     {
-        // Oblivion: retail Shaders\shaderpackage019.sdp, GRASS2020.vso + GRASS2002.pso, disassembled
-        // 2026-07-26 (tools/GhidraProject/oblivion_grass_shaderpackage019_disassembled.txt). Retail
-        // lights grass from the TERRAIN normal with no surface normal anywhere and composes ambient
-        // ADDITIVELY; the shared path uses the blade card's own near-vertical normal multiplicatively,
-        // which collapses at high sun and is the reported "grass too dark".
-        BethesdaGame.Oblivion => new(
-            true, "reference_grass_oblivion.vert.hlsl", "reference_grass_oblivion.frag.hlsl"),
+        return game switch
+        {
+            // Oblivion: retail Shaders\shaderpackage019.sdp, GRASS2020.vso + GRASS2002.pso, disassembled
+            // 2026-07-26 (tools/GhidraProject/oblivion_grass_shaderpackage019_disassembled.txt). Retail
+            // lights grass from the TERRAIN normal with no surface normal anywhere and composes ambient
+            // ADDITIVELY; the shared path uses the blade card's own near-vertical normal multiplicatively,
+            // which collapses at high sun and is the reported "grass too dark".
+            BethesdaGame.Oblivion => new GameShaderPair(
+                true, "reference_grass_oblivion.vert.hlsl", "reference_grass_oblivion.frag.hlsl"),
 
-        // Everything else — including BethesdaGame.Unknown, which is what the headless NIF renderer
-        // passes (NifHeadlessRenderer hands ReferenceRenderer12 a default WorldRenderCache). The
-        // fallback is STRUCTURAL rather than a branch at the call site: disabled simply means the
-        // existing shared shaders are used, so no path needs to know a per-game shader might exist.
-        // FO3/FNV grass is not here because it draws INSTANCED, not blended — its recovered pair
-        // lives on the instanced axis (see InstancedForGame).
-        _ => default,
-    };
+            // Everything else — including BethesdaGame.Unknown, which is what the headless NIF renderer
+            // passes (NifHeadlessRenderer hands ReferenceRenderer12 a default WorldRenderCache). The
+            // fallback is STRUCTURAL rather than a branch at the call site: disabled simply means the
+            // existing shared shaders are used, so no path needs to know a per-game shader might exist.
+            // FO3/FNV grass is not here because it draws INSTANCED, not blended — its recovered pair
+            // lives on the instanced axis (see InstancedForGame).
+            _ => default
+        };
+    }
 }

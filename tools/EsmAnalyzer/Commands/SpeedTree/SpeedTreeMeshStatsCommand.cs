@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
@@ -19,15 +18,16 @@ internal static class SpeedTreeMeshStatsCommand
     {
         var command = new Command("meshstats",
             "Build a .spt (no render) and print bark/leaf geometry metrics (z-distribution, extents) for oracle diffs");
-        var fileArg = new Argument<string>("file") { Description = "Path to the .spt file (or BSA-internal path with --bsa)" };
+        var fileArg = new Argument<string>("file")
+            { Description = "Path to the .spt file (or BSA-internal path with --bsa)" };
         var bsaOption = new Option<string?>("--bsa")
-        { Description = "Read <file> from this BSA archive instead of disk" };
+            { Description = "Read <file> from this BSA archive instead of disk" };
         var esmOption = new Option<string?>("--esm")
-        { Description = "ESM to source the per-tree TREE.SNAM seed (matches the viewer build)" };
+            { Description = "ESM to source the per-tree TREE.SNAM seed (matches the viewer build)" };
         var csvOption = new Option<string?>("--csv")
-        { Description = "Write per-leaf-card centers (x,y,z) to this CSV" };
+            { Description = "Write per-leaf-card centers (x,y,z) to this CSV" };
         var lowestOption = new Option<int>("--lowest")
-        { Description = "Print the N lowest leaf-card centers", DefaultValueFactory = _ => 0 };
+            { Description = "Print the N lowest leaf-card centers", DefaultValueFactory = _ => 0 };
         command.Arguments.Add(fileArg);
         command.Options.Add(bsaOption);
         command.Options.Add(esmOption);
@@ -73,7 +73,7 @@ internal static class SpeedTreeMeshStatsCommand
         {
             // Match the viewer's GPU leaf path so the per-leaf wind weight packs into aBitangent.z
             // (the non-billboard fallback bakes flat quads and carries no wind data).
-            LeafBillboard = true,
+            LeafBillboard = true
         };
         var seed = treeMeta?.Seed ?? model.General.Token2005;
         var renderable = SptGeometryBuilder.Build(model, seed, opt);
@@ -90,7 +90,8 @@ internal static class SpeedTreeMeshStatsCommand
         foreach (var sub in renderable.Submeshes)
         {
             var tris = sub.Triangles.Length / 3;
-            Console.WriteLine(string.Create(ci, $"  submesh {sub.ShapeName,-12} verts={sub.Positions.Length / 3,-6} tris={tris}"));
+            Console.WriteLine(string.Create(ci,
+                $"  submesh {sub.ShapeName,-12} verts={sub.Positions.Length / 3,-6} tris={tris}"));
             if (sub.ShapeName == "spt:bark")
             {
                 barkTris += tris;
@@ -182,7 +183,8 @@ internal static class SpeedTreeMeshStatsCommand
                 Console.WriteLine($"  lowest {Math.Min(lowest, centers.Count)} leaf centers:");
                 foreach (var c in centers.OrderBy(c => c.Z).Take(lowest))
                 {
-                    Console.WriteLine(string.Create(ci, $"    ({c.X:F1}, {c.Y:F1}, {c.Z:F1})  zFrac={(c.Z - totalMinZ) / height:F3}"));
+                    Console.WriteLine(string.Create(ci,
+                        $"    ({c.X:F1}, {c.Y:F1}, {c.Z:F1})  zFrac={(c.Z - totalMinZ) / height:F3}"));
                 }
             }
         }
@@ -203,6 +205,8 @@ internal static class SpeedTreeMeshStatsCommand
         return 0;
     }
 
-    private static float Pct(float[] sorted, float p) =>
-        sorted[Math.Clamp((int)(p * sorted.Length), 0, sorted.Length - 1)];
+    private static float Pct(float[] sorted, float p)
+    {
+        return sorted[Math.Clamp((int)(p * sorted.Length), 0, sorted.Length - 1)];
+    }
 }

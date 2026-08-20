@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Recovery;
 
 namespace BethesdaMultitool.Core.Semantic;

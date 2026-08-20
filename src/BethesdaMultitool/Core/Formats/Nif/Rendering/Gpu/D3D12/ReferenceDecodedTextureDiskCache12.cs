@@ -23,6 +23,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
 {
     internal const int CacheFormatVersion = 1;
+
     // Bump whenever the decode output bytes can change (transcode/untile/parse algorithm changes), OR
     // when the set of paths that resolve changes — a cached negative ("not found") would otherwise mask
     // a newly-resolvable path. v2: FO4/FO76 .bgsm/.bgem materials now resolve in the GPU path and
@@ -93,14 +94,20 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
         return mb * 1024L * 1024L;
     }
 
-    /// <summary>Looks up a cached payload for <paramref name="keyText" />. Returns true on a cache hit
-    /// (<paramref name="payload" /> non-null for a real texture, null for a cached negative/not-found).</summary>
-    internal bool TryLoad(string keyText, out GpuTexturePayload? payload, out bool isNegative) =>
-        TryLoadCore(keyText, ReadPayload, out payload, out isNegative);
+    /// <summary>
+    ///     Looks up a cached payload for <paramref name="keyText" />. Returns true on a cache hit
+    ///     (<paramref name="payload" /> non-null for a real texture, null for a cached negative/not-found).
+    /// </summary>
+    internal bool TryLoad(string keyText, out GpuTexturePayload? payload, out bool isNegative)
+    {
+        return TryLoadCore(keyText, ReadPayload, out payload, out isNegative);
+    }
 
     /// <summary>Stores a payload (or a negative for not-found) under <paramref name="keyText" />.</summary>
-    internal void Store(string keyText, GpuTexturePayload? payload) =>
+    internal void Store(string keyText, GpuTexturePayload? payload)
+    {
         StoreCore(keyText, payload, WritePayload);
+    }
 
     private static void WritePayload(BinaryWriter writer, GpuTexturePayload payload)
     {

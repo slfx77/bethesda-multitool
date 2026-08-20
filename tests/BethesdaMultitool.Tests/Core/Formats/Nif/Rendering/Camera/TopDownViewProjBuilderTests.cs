@@ -94,7 +94,7 @@ public sealed class TopDownViewProjBuilderTests
         // The optional clip param defaults to null → identical to the exterior overload (no behavior
         // change for the worldspace overlay; the clip is interior-only).
         var noArg = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f);
-        var nullClip = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f, null);
+        var nullClip = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f);
         Assert.Equal(noArg, nullClip);
     }
 

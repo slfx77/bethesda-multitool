@@ -8,8 +8,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///     index to a model and optional sound so effects can attach to it; a stripped proto-only ADDN
 ///     leaves anything referencing that node index unresolved.
 ///     <para>
-///     Canonical order from xEdit <c>wbRecord(ADDN)</c> (wbDefinitionsFNV.pas):
-///     EDID(req), OBND(req), MODL(req), DATA(req, s32 Node Index), SNAM?, DNAM(req, 4B).
+///         Canonical order from xEdit <c>wbRecord(ADDN)</c> (wbDefinitionsFNV.pas):
+///         EDID(req), OBND(req), MODL(req), DATA(req, s32 Node Index), SNAM?, DNAM(req, 4B).
 ///     </para>
 /// </summary>
 public sealed class AddnEncoder : IRecordEncoder
@@ -70,7 +70,8 @@ public sealed class AddnEncoder : IRecordEncoder
             var cap = GenericRecordFields.TryUInt(addn, "BGSAddonNode.iMasterParticleSystemIndex");
             if (cap is not null)
             {
-                BinaryPrimitives.WriteUInt16LittleEndian(dnam.AsSpan(0, 2), (ushort)Math.Min(cap.Value, ushort.MaxValue));
+                BinaryPrimitives.WriteUInt16LittleEndian(dnam.AsSpan(0, 2),
+                    (ushort)Math.Min(cap.Value, ushort.MaxValue));
             }
             else
             {

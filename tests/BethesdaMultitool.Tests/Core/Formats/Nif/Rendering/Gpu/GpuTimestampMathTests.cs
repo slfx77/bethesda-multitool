@@ -39,7 +39,7 @@ public sealed class GpuTimestampMathTests
         Assert.Equal(9u, GpuTimestampProfiler12.QueryIndex(0, GpuTimestampRegion.FrameEnd));
         Assert.Equal(stride, GpuTimestampProfiler12.QueryIndex(1, GpuTimestampRegion.FrameStart));
         Assert.Equal(stride + 3u, GpuTimestampProfiler12.QueryIndex(1, GpuTimestampRegion.ReferencesStart));
-        Assert.Equal((2u * stride) + 9u, GpuTimestampProfiler12.QueryIndex(2, GpuTimestampRegion.FrameEnd));
+        Assert.Equal(2u * stride + 9u, GpuTimestampProfiler12.QueryIndex(2, GpuTimestampRegion.FrameEnd));
     }
 
     [Fact]
@@ -67,8 +67,10 @@ public sealed class GpuTimestampMathTests
         for (var i = 0; i < count; i++)
         {
             // Start < Refs < End, so Start..Refs is the reference replay and Refs..End the terrain gather.
-            Assert.True((int)GpuTimestampProfiler12.ShadowCascadeStart[i] < (int)GpuTimestampProfiler12.ShadowCascadeRefs[i]);
-            Assert.True((int)GpuTimestampProfiler12.ShadowCascadeRefs[i] < (int)GpuTimestampProfiler12.ShadowCascadeEnd[i]);
+            Assert.True((int)GpuTimestampProfiler12.ShadowCascadeStart[i] <
+                        (int)GpuTimestampProfiler12.ShadowCascadeRefs[i]);
+            Assert.True((int)GpuTimestampProfiler12.ShadowCascadeRefs[i] <
+                        (int)GpuTimestampProfiler12.ShadowCascadeEnd[i]);
         }
     }
 }

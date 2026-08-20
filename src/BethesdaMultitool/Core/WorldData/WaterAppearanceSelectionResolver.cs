@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>The authored record that supplied the current water appearance.</summary>
 internal enum WaterAppearanceSelectionSource : uint
@@ -10,7 +10,7 @@ internal enum WaterAppearanceSelectionSource : uint
     Unavailable = 0,
     CellXcwt = 1,
     WorldspaceNam2 = 2,
-    EngineDefault = 3,
+    EngineDefault = 3
 }
 
 /// <summary>
@@ -30,7 +30,7 @@ internal readonly record struct ResolvedWaterAppearanceSelection(
         WaterAppearanceSelectionSource.CellXcwt => "cell-xcwt",
         WaterAppearanceSelectionSource.WorldspaceNam2 => "worldspace-nam2",
         WaterAppearanceSelectionSource.EngineDefault => "engine-default",
-        _ => "unavailable",
+        _ => "unavailable"
     };
 }
 
@@ -112,10 +112,10 @@ internal static class WaterAppearanceSelectionResolver
         }
 
         return new ResolvedWaterAppearanceSelection(
-            Water: null,
-            Source: WaterAppearanceSelectionSource.Unavailable,
-            CellFormId: cell?.FormId,
-            WorldspaceFormId: worldspace?.FormId);
+            null,
+            WaterAppearanceSelectionSource.Unavailable,
+            cell?.FormId,
+            worldspace?.FormId);
     }
 
     private static EngineDefaultWaters ResolveEngineDefaults(

@@ -37,4 +37,3 @@ public sealed record CellCatalogEntry
     /// </summary>
     public CellRecord? DmpModel { get; init; }
 }
-

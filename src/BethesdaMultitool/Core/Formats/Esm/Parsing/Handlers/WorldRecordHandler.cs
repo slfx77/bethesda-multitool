@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Utils;
@@ -132,6 +133,19 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
 
     #endregion
 
+    #region Worldspaces
+
+    /// <summary>
+    ///     Parse all Worldspace records from the scan result.
+    ///     Delegates to <see cref="WorldspaceRecordHandler" />.
+    /// </summary>
+    internal List<WorldspaceRecord> ParseWorldspaces()
+    {
+        return _worldspaceHandler.ParseWorldspaces();
+    }
+
+    #endregion
+
     #region Cells
 
     /// <summary>
@@ -224,19 +238,6 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         RecordParserContext context)
     {
         return CellLinkageHandler.CreateVirtualCells(existingCells, allRefrs, context);
-    }
-
-    #endregion
-
-    #region Worldspaces
-
-    /// <summary>
-    ///     Parse all Worldspace records from the scan result.
-    ///     Delegates to <see cref="WorldspaceRecordHandler" />.
-    /// </summary>
-    internal List<WorldspaceRecord> ParseWorldspaces()
-    {
-        return _worldspaceHandler.ParseWorldspaces();
     }
 
     #endregion
@@ -345,6 +346,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     {
                         dataBlocks.Add(new RegionDataBlock(currentType, currentFlags, currentPayload));
                     }
+
                     currentType = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
                     // RDAT header after Type is Override(u8) + Priority(u8) + Padding(2) (xEdit /
                     // conversion schema SubrecordCellAndMiscSchemas). Those are single/unused bytes
@@ -362,6 +364,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                         Buffer.BlockCopy(data, sub.DataOffset, bytes, 0, sub.DataLength);
                         currentPayload.Add(new RegionSubrecord(sub.Signature, bytes));
                     }
+
                     break;
             }
         }
@@ -411,13 +414,17 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         };
     }
 
-    /// <summary>RDWT region weather-types: 12 bytes/entry (Weather FormID, Chance u32, Global FormID).
-    /// Stride confirmed by the Xbox→PC converter's RDWT byte-swap schema.</summary>
+    /// <summary>
+    ///     RDWT region weather-types: 12 bytes/entry (Weather FormID, Chance u32, Global FormID).
+    ///     Stride confirmed by the Xbox→PC converter's RDWT byte-swap schema.
+    /// </summary>
     private const int RdwtEntrySize = 12;
 
-    /// <summary>RDGS region grasses: 8 bytes/entry (Grass FormID + 4 unused). fopdoc layout —
-    /// PROVISIONAL (no converter schema to confirm; verify in P6). Decoded only when the payload
-    /// length divides evenly, so a wrong-stride reality leaves the list empty rather than garbage.</summary>
+    /// <summary>
+    ///     RDGS region grasses: 8 bytes/entry (Grass FormID + 4 unused). fopdoc layout —
+    ///     PROVISIONAL (no converter schema to confirm; verify in P6). Decoded only when the payload
+    ///     length divides evenly, so a wrong-stride reality leaves the list empty rather than garbage.
+    /// </summary>
     private const int RdgsEntrySize = 8;
 
     internal static void DecodeRegionWeatherTypes(byte[] bytes, bool isBigEndian, List<RegionWeatherType> into)
@@ -571,7 +578,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         string? editorId = null;
         byte flags = 0;
         uint parentPath = 0;
-        var conditions = new List<Models.Records.Quest.DialogueCondition>();
+        var conditions = new List<DialogueCondition>();
         var shotFormIds = new List<uint>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))

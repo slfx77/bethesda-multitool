@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using Vortice.Direct3D;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
@@ -36,8 +35,10 @@ internal readonly record struct GameShaderPair(
     ///     game's pair. Disabled pairs also return null.
     /// </summary>
     /// <param name="consumerName">Names the consumer in the fallback log line.</param>
-    internal (byte[] Vs, byte[] Ps)? TryCompile(string consumerName) =>
-        TryCompile(consumerName, [], []);
+    internal (byte[] Vs, byte[] Ps)? TryCompile(string consumerName)
+    {
+        return TryCompile(consumerName, [], []);
+    }
 
     /// <summary>
     ///     Macro-parameterized overload for pairs whose pixel stage ships more than one permutation

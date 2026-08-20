@@ -36,6 +36,8 @@ internal readonly record struct HavokCollisionExtractionResult(
     public static HavokCollisionExtractionResult AuthoredNoncollidable =>
         new(HavokCollisionProvenance.AuthoredNoncollidable, null);
 
-    public static HavokCollisionExtractionResult FromSoup(HavokTriangleSoup soup) =>
-        new(HavokCollisionProvenance.AuthoredMesh, soup);
+    public static HavokCollisionExtractionResult FromSoup(HavokTriangleSoup soup)
+    {
+        return new HavokCollisionExtractionResult(HavokCollisionProvenance.AuthoredMesh, soup);
+    }
 }

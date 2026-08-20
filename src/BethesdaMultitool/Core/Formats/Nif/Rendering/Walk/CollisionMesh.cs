@@ -1,7 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
@@ -46,8 +45,10 @@ internal readonly record struct CollisionMeshResolution(
     public static CollisionMeshResolution TerminalUnavailable =>
         new(false, null, CollisionMeshSource.None, false);
 
-    public static CollisionMeshResolution From(CollisionBuildResult result) =>
-        new(true, result.Mesh, result.Source, false);
+    public static CollisionMeshResolution From(CollisionBuildResult result)
+    {
+        return new CollisionMeshResolution(true, result.Mesh, result.Source, false);
+    }
 }
 
 /// <summary>
@@ -62,6 +63,19 @@ internal readonly record struct CollisionCacheEntry(
 {
     public static CollisionCacheEntry ResolvedNone =>
         new(CollisionBuildResult.None, CollisionBuildResult.None);
+
+    // Even resolved-null entries carry dictionary/list/key overhead. Charging a non-zero floor keeps
+    // the negative cache genuinely bounded. Sum both fields so future representation changes cannot
+    // silently under-account retained geometry.
+    public long ByteSize => Math.Max(
+        128L,
+        (Authored.Mesh?.ByteSize ?? 0L) + (VisualFallback.Mesh?.ByteSize ?? 0L));
+
+    /// <summary>
+    ///     Whether recreating this entry after collision-LRU eviction requires decoded geometry.
+    ///     A source-independent resolved-none result can instead remain as lightweight node state.
+    /// </summary>
+    public bool HasRetainedGeometry => Authored.Mesh is not null || VisualFallback.Mesh is not null;
 
     /// <summary>
     ///     Builds the category-independent cache payload. Visual soup is built exactly once when
@@ -166,19 +180,6 @@ internal readonly record struct CollisionCacheEntry(
             ? VisualFallback
             : CollisionBuildResult.None;
     }
-
-    // Even resolved-null entries carry dictionary/list/key overhead. Charging a non-zero floor keeps
-    // the negative cache genuinely bounded. Sum both fields so future representation changes cannot
-    // silently under-account retained geometry.
-    public long ByteSize => Math.Max(
-        128L,
-        (Authored.Mesh?.ByteSize ?? 0L) + (VisualFallback.Mesh?.ByteSize ?? 0L));
-
-    /// <summary>
-    ///     Whether recreating this entry after collision-LRU eviction requires decoded geometry.
-    ///     A source-independent resolved-none result can instead remain as lightweight node state.
-    /// </summary>
-    public bool HasRetainedGeometry => Authored.Mesh is not null || VisualFallback.Mesh is not null;
 }
 
 /// <summary>
@@ -195,19 +196,6 @@ internal readonly record struct CollisionCacheEntry(
 /// </summary>
 internal sealed class CollisionMesh
 {
-    /// <summary>Mesh-local vertex positions.</summary>
-    public Vector3[] Positions { get; }
-
-    /// <summary>Triangle index triples into <see cref="Positions" /> (length is a multiple of 3).</summary>
-    public int[] Triangles { get; }
-
-    /// <summary>Mesh-local axis-aligned bounds (inclusive) used for the cheap pre-ray slab reject.</summary>
-    public Vector3 LocalMin { get; }
-    public Vector3 LocalMax { get; }
-
-    /// <summary>Approximate retained-byte size for the byte-budgeted LRU.</summary>
-    public long ByteSize { get; }
-
     public CollisionMesh(Vector3[] positions, int[] triangles)
     {
         Positions = positions;
@@ -232,6 +220,20 @@ internal sealed class CollisionMesh
         LocalMax = max;
         ByteSize = (long)positions.Length * 12 + (long)triangles.Length * sizeof(int) + 128;
     }
+
+    /// <summary>Mesh-local vertex positions.</summary>
+    public Vector3[] Positions { get; }
+
+    /// <summary>Triangle index triples into <see cref="Positions" /> (length is a multiple of 3).</summary>
+    public int[] Triangles { get; }
+
+    /// <summary>Mesh-local axis-aligned bounds (inclusive) used for the cheap pre-ray slab reject.</summary>
+    public Vector3 LocalMin { get; }
+
+    public Vector3 LocalMax { get; }
+
+    /// <summary>Approximate retained-byte size for the byte-budgeted LRU.</summary>
+    public long ByteSize { get; }
 
     /// <summary>
     ///     Returns the nearest forward (<c>t &gt;= 0</c>) intersection of the local-space ray

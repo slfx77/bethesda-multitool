@@ -17,38 +17,38 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Lighting;
 public sealed class PlacedLightSelectorDayNightTests
 {
     private const string NightScript = """
-        scn nightlight
-        float Time
-        int State
-        begin GameMode
-        	set Time to GetCurrentTime
-        	if (Time > 20 || Time < 6) && State == 0
-        		enable
-        		set State to 1
-        	elseif Time < 20 && Time > 6 && State == 1
-        		disable
-        		set State to 0
-        	endif
-        end
-        """;
+                                       scn nightlight
+                                       float Time
+                                       int State
+                                       begin GameMode
+                                       	set Time to GetCurrentTime
+                                       	if (Time > 20 || Time < 6) && State == 0
+                                       		enable
+                                       		set State to 1
+                                       	elseif Time < 20 && Time > 6 && State == 1
+                                       		disable
+                                       		set State to 0
+                                       	endif
+                                       end
+                                       """;
 
     private static DayNightRefStateStore StoreAt(float hour)
     {
         var scripts = new List<ScriptRecord>
         {
-            new() { FormId = 0x100, EditorId = "nightlight", SourceText = NightScript },
+            new() { FormId = 0x100, EditorId = "nightlight", SourceText = NightScript }
         };
         var lights = new List<LightRecord>
         {
-            new() { FormId = 0x300, EditorId = "GatedLightBase", Script = 0x100 },
+            new() { FormId = 0x300, EditorId = "GatedLightBase", Script = 0x100 }
         };
         var cell = new CellRecord
         {
             FormId = 0x400,
             PlacedObjects =
             {
-                new PlacedReference { FormId = 0x1000, BaseFormId = 0x300 },
-            },
+                new PlacedReference { FormId = 0x1000, BaseFormId = 0x300 }
+            }
         };
         var schedule = DayNightRefSchedule.Build(scripts, [cell], [], lights);
         Assert.NotNull(schedule);
@@ -57,17 +57,20 @@ public sealed class PlacedLightSelectorDayNightTests
         return store;
     }
 
-    private static PlacedLight Light(uint formId, uint flags = 0, bool initiallyDisabled = false) => new(
-        FormId: formId,
-        BaseFormId: 0x300,
-        Position: Vector3.Zero,
-        Radius: 256f,
-        Color: Vector3.One,
-        FalloffExponent: 1f,
-        FieldOfView: 90f,
-        Intensity: 1f,
-        Flags: flags,
-        IsInitiallyDisabled: initiallyDisabled);
+    private static PlacedLight Light(uint formId, uint flags = 0, bool initiallyDisabled = false)
+    {
+        return new PlacedLight(
+            formId,
+            0x300,
+            Vector3.Zero,
+            256f,
+            Vector3.One,
+            1f,
+            90f,
+            1f,
+            flags,
+            initiallyDisabled);
+    }
 
     private static List<PlacedLight> Select(
         PlacedLight light, DayNightRefStateStore store, ReferenceEnabledOverrideStore? overrides = null)
@@ -76,12 +79,12 @@ public sealed class PlacedLightSelectorDayNightTests
         PlacedLightSelector.AppendNearest(
             [light],
             Vector3.Zero,
-            maxPerCell: 16,
-            enabledOverrides: overrides ?? new ReferenceEnabledOverrideStore(),
-            includeInitiallyDisabled: false,
-            destination: destination,
-            scratch: [],
-            dayNightStates: store);
+            16,
+            overrides ?? new ReferenceEnabledOverrideStore(),
+            false,
+            destination,
+            [],
+            store);
         return destination;
     }
 
@@ -99,7 +102,7 @@ public sealed class PlacedLightSelectorDayNightTests
     [Fact]
     public void OffByDefaultBaseStaysDarkInsideTheOnWindow()
     {
-        var offByDefault = Light(0x1000, flags: PlacedLight.OffByDefaultFlag, initiallyDisabled: true);
+        var offByDefault = Light(0x1000, PlacedLight.OffByDefaultFlag, true);
         Assert.Empty(Select(offByDefault, StoreAt(23f)));
     }
 

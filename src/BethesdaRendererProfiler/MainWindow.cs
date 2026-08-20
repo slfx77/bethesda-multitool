@@ -1,17 +1,20 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Windows.Graphics;
 using Windows.UI;
+using BethesdaMultitool;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaRendererProfiler;
 
@@ -244,8 +247,10 @@ internal sealed partial class MainWindow : Window, IDisposable
     ///         framing, or the worldspace bookmark) rather than forcing a value.
     ///     </para>
     /// </summary>
-    private RendererProfilerCameraPose ApplyRequestedFraming(string logPrefix) =>
-        ApplyRequestedFraming(logPrefix, out _);
+    private RendererProfilerCameraPose ApplyRequestedFraming(string logPrefix)
+    {
+        return ApplyRequestedFraming(logPrefix, out _);
+    }
 
     private RendererProfilerCameraPose ApplyRequestedFraming(string logPrefix, out bool movedCamera)
     {
@@ -388,12 +393,12 @@ internal sealed partial class MainWindow : Window, IDisposable
             for (var attempt = 0; attempt < 200; attempt++)
             {
                 render = await provider.RenderTopDownAsync(
-                    minX, maxX, minY, maxY, px, px, showDisabled: true,
-                    showWater: true,
-                    worldspaceFormId: targetFormId,
-                    hiddenCategories: Array.Empty<BethesdaMultitool.Core.Formats.Esm.Models.PlacedObjectCategory>(),
-                    enableLighting: false, gameHour: 12f,
-                    interiorCellFormId: null, // profiler top-down capture is exterior worldspaces only
+                    minX, maxX, minY, maxY, px, px, true,
+                    true,
+                    targetFormId,
+                    Array.Empty<PlacedObjectCategory>(),
+                    false, 12f,
+                    null, // profiler top-down capture is exterior worldspaces only
                     CancellationToken.None);
                 if (render is null)
                 {
@@ -420,7 +425,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             var rgba = BgraToRgba(render.Bgra);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveRgba(rgba, render.Width, render.Height, path);
+            PngWriter.SaveRgba(rgba, render.Width, render.Height, path);
 
             var msg = string.Format(
                 CultureInfo.InvariantCulture,
@@ -567,15 +572,21 @@ internal sealed partial class MainWindow : Window, IDisposable
                 var next = _worldView.Profiler_CaptureSceneCensus;
                 if (next.IsClean && next == census)
                 {
-                    if (++streak >= 4) { quiesced = true; break; }
+                    if (++streak >= 4)
+                    {
+                        quiesced = true;
+                        break;
+                    }
                 }
                 else
                 {
                     lastDirt = next.DescribeDirt(census);
                     streak = 0;
                 }
+
                 census = next;
             }
+
             if (!quiesced && lastDirt.Length > 0)
             {
                 Log.Error($"[Capture] scene never completed; unsettled terms: {lastDirt}");
@@ -674,24 +685,24 @@ internal sealed partial class MainWindow : Window, IDisposable
                     // Linear steps accumulate off the PREVIOUS frame; the circular sweep is absolute
                     // off the ORIGINAL pose, so one revolution lands exactly back where it started
                     // (which is what makes same-pose frames comparable for flicker detection).
-                    var yaw = previous.Yaw + (_options.CaptureMotionYawStepDegrees * deg);
-                    var pitch = previous.Pitch + (_options.CaptureMotionPitchStepDegrees * deg);
+                    var yaw = previous.Yaw + _options.CaptureMotionYawStepDegrees * deg;
+                    var pitch = previous.Pitch + _options.CaptureMotionPitchStepDegrees * deg;
                     if (_options.CaptureMotionOrbitDegrees != 0f)
                     {
                         var radius = _options.CaptureMotionOrbitDegrees * deg;
                         var theta = MathF.Tau * motionFrame / motionFrames;
-                        yaw = capturePose0.Yaw + (radius * MathF.Sin(theta)) +
-                              (_options.CaptureMotionYawStepDegrees * deg * motionFrame);
+                        yaw = capturePose0.Yaw + radius * MathF.Sin(theta) +
+                              _options.CaptureMotionYawStepDegrees * deg * motionFrame;
                         // cos(theta) - 1 keeps frame 0 ON the requested pose rather than a radius
                         // above it, so the circle passes through the pose the report cited.
-                        pitch = capturePose0.Pitch + (radius * (MathF.Cos(theta) - 1f)) +
-                                (_options.CaptureMotionPitchStepDegrees * deg * motionFrame);
+                        pitch = capturePose0.Pitch + radius * (MathF.Cos(theta) - 1f) +
+                                _options.CaptureMotionPitchStepDegrees * deg * motionFrame;
                     }
 
                     var position = previous.Position;
                     if (_options.CaptureMotionForwardStep != 0f)
                     {
-                        var forward = new System.Numerics.Vector3(
+                        var forward = new Vector3(
                             MathF.Sin(yaw) * MathF.Cos(pitch),
                             MathF.Cos(yaw) * MathF.Cos(pitch),
                             MathF.Sin(pitch));
@@ -731,7 +742,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                     var framePath = Path.ChangeExtension(path, null) +
                                     string.Create(CultureInfo.InvariantCulture, $".{motionFrame:000}.png");
                     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(framePath))!);
-                    BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveRgba(
+                    PngWriter.SaveRgba(
                         BgraToRgba(bgra), px, pyh, framePath);
                     Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                         $"[Capture] motion frame {motionFrame:000} yaw={capturePose.Yaw * (180f / MathF.PI):0.#}° " +
@@ -760,7 +771,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             var rgba = BgraToRgba(bgra);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveRgba(rgba, px, pyh, path);
+            PngWriter.SaveRgba(rgba, px, pyh, path);
             var pixelSha256 = CaptureImageFingerprint.Compute(bgra);
             string pngSha256;
             using (var pngStream = File.OpenRead(path))

@@ -2,10 +2,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
@@ -17,14 +15,12 @@ namespace EsmAnalyzer.Commands.Dmp;
 ///     placement data. A cell counts when it holds at least one placed REFR/ACHR/ACRE whose
 ///     header lacks the persistent flag (0x0400) — i.e. it was streamed in as part of the loaded
 ///     scene at dump time, not a global persistent ref (map marker, enable-parent, door, …).
-///
 ///     Loads each dump through the same semantic pipeline as <c>dmp cell-inventory</c> (default
 ///     cell→worldspace authority applied) and tallies, per dump, the distinct cells with
 ///     non-persistent content. Dumps are ordered by the internal PE compile date of the game
 ///     module captured inside the dump (<c>MinidumpAnalyzer.FindGameModule().TimeDateStamp</c>),
 ///     so the breakdown reads as a build timeline. Emits a per-cell TSV (with a BuildDate column),
 ///     a per-file markdown report, and a corpus-wide union summary.
-///
 ///     The high-confidence dangling-ref contribution (cut/heap refs the cell traversal missed)
 ///     is a corpus-aggregate signal in <c>data/cell_worldspace_authority.json</c> (deduped by
 ///     FormID across the whole corpus), so it is not attributable to an individual dump and is
@@ -47,11 +43,13 @@ internal static class DmpSceneryCensusCommand
         };
         var outputOpt = new Option<string?>("-o", "--output")
         {
-            Description = "TSV output path (default: TestOutput/scenery_census.tsv). A sibling .md report is also written."
+            Description =
+                "TSV output path (default: TestOutput/scenery_census.tsv). A sibling .md report is also written."
         };
         var sceneryOpt = new Option<string?>("--scenery-types")
         {
-            Description = "Comma-separated base record types counted as static scenery (default STAT,MSTT,SCOL,TREE,FURN,ACTI)"
+            Description =
+                "Comma-separated base record types counted as static scenery (default STAT,MSTT,SCOL,TREE,FURN,ACTI)"
         };
 
         command.Arguments.Add(pathArg);
@@ -124,6 +122,7 @@ internal static class DmpSceneryCensusCommand
             Console.WriteLine($"BUILDDATE\t{Path.GetFileName(x.File)}\t{d}\t" +
                               $"{(x.Build.Ts is { } t ? $"0x{t:X8}" : "")}\t{x.Build.Type ?? ""}");
         }
+
         AnsiConsole.WriteLine();
 
         var tsv = new StringBuilder();
@@ -187,7 +186,9 @@ internal static class DmpSceneryCensusCommand
                     var wsFid = cell.WorldspaceFormId ?? 0u;
                     var wsLabel = wsFid != 0
                         ? wsName.GetValueOrDefault(wsFid, $"0x{wsFid:X8}")
-                        : (cell.IsInterior ? "(interior)" : "(unlinked)");
+                        : cell.IsInterior
+                            ? "(interior)"
+                            : "(unlinked)";
 
                     report.Cells.Add(new CellDetail
                     {
@@ -257,10 +258,12 @@ internal static class DmpSceneryCensusCommand
         {
             foreach (var s in records.Statics) map[s.FormId] = "STAT";
         }
+
         if (sceneryTypes.Contains("SCOL"))
         {
             foreach (var s in records.StaticCollections) map[s.FormId] = "SCOL";
         }
+
         foreach (var g in records.GenericRecords)
         {
             if (sceneryTypes.Contains(g.RecordType))
@@ -337,6 +340,7 @@ internal static class DmpSceneryCensusCommand
             sb.AppendLine($"| {n} | {date} | {r.Dump} | {r.BuildType ?? ""} | {cells} | " +
                           $"{r.InteriorCount} | {r.ExteriorCount} | {r.PlacementCount} |");
         }
+
         sb.AppendLine();
 
         n = 0;
@@ -376,10 +380,12 @@ internal static class DmpSceneryCensusCommand
                 {
                     label += $" \"{c.FullName}\"";
                 }
+
                 var grid = c.GridX.HasValue && c.GridY.HasValue ? $"{c.GridX},{c.GridY}" : "";
                 sb.AppendLine($"| {EscMd(label)} | {(c.Interior ? "INT" : "EXT")} | {EscMd(c.Worldspace)} | {grid} | " +
                               $"{c.NonPersist} | {c.Objects} | {c.Actors} | {c.Scenery} | `0x{c.FormId:X8}` |");
             }
+
             sb.AppendLine();
         }
 

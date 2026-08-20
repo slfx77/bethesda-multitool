@@ -23,7 +23,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
         yield return new RawReference
         {
             FieldPath = FieldPath.Subrecord("NAME"),
-            FormId = placed.BaseFormId,
+            FormId = placed.BaseFormId
         };
 
         if (placed.OwnerFormId.HasValue)
@@ -31,7 +31,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("XOWN"),
-                FormId = placed.OwnerFormId.Value,
+                FormId = placed.OwnerFormId.Value
             };
         }
 
@@ -40,7 +40,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("XEZN"),
-                FormId = placed.EncounterZoneFormId.Value,
+                FormId = placed.EncounterZoneFormId.Value
             };
         }
 
@@ -49,7 +49,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("XESP"),
-                FormId = placed.EnableParentFormId.Value,
+                FormId = placed.EnableParentFormId.Value
             };
         }
 
@@ -58,7 +58,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Member("XTEL", "DestinationDoor"),
-                FormId = placed.DestinationDoorFormId.Value,
+                FormId = placed.DestinationDoorFormId.Value
             };
         }
 
@@ -67,7 +67,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Member("XLOC", "LockKey"),
-                FormId = placed.LockKeyFormId.Value,
+                FormId = placed.LockKeyFormId.Value
             };
         }
 
@@ -76,7 +76,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("XLKR"),
-                FormId = placed.LinkedRefFormId.Value,
+                FormId = placed.LinkedRefFormId.Value
             };
         }
 
@@ -85,7 +85,7 @@ public sealed class RefrReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Member("XLKR", "Keyword"),
-                FormId = placed.LinkedRefKeywordFormId.Value,
+                FormId = placed.LinkedRefKeywordFormId.Value
             };
         }
     }

@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.App;
@@ -81,8 +82,8 @@ public sealed class DecodedTerrainCellWaterMaskTests
         var mask = DecodedTerrainCell.Decode(RampCell(heights)).GetHiResWaterMask(160f, 33);
 
         Assert.NotNull(mask);
-        Assert.Equal(0, mask![0]);                 // north row samples grid y=32 (h=320) → dry
-        Assert.Equal(180, mask[32 * 33]);          // south row samples grid y=0 (h=0) → full water
+        Assert.Equal(0, mask![0]); // north row samples grid y=32 (h=320) → dry
+        Assert.Equal(180, mask[32 * 33]); // south row samples grid y=0 (h=0) → full water
         Assert.Contains(mask, v => v is > 0 and < 180); // and a real shoreline gradient between them
     }
 
@@ -126,7 +127,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
         var submerged = DecodedTerrainCell.Decode(FlatCell(0f));
 
         var mask = DecodedTerrainCell.BuildLowResWaterMaskWithNeighbors(
-            dry, north: null, south: submerged, east: null, west: null, 100f);
+            dry, null, submerged, null, null, 100f);
 
         Assert.NotNull(mask);
         Assert.Contains(mask!, v => v > 0);
@@ -144,7 +145,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
 
         Assert.False(terrainless.HasTerrain);
         Assert.Null(DecodedTerrainCell.BuildLowResWaterMaskWithNeighbors(
-            dry, north: terrainless, south: terrainless, east: terrainless, west: terrainless, 100f));
+            dry, terrainless, terrainless, terrainless, terrainless, 100f));
     }
 
     [Fact]
@@ -167,6 +168,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
                 heights[y, x] = 500f;
             }
         }
+
         heights[7, 11] = -42f;
 
         Assert.Equal(-42f, DecodedTerrainCell.Decode(RampCell(heights)).MinHeight);
@@ -188,15 +190,18 @@ public sealed class DecodedTerrainCellWaterMaskTests
 
     // ExactHeights bypasses VHGT delta decoding, so the fixture height IS the decoded height.
     // HeightDeltas is `required` but unread on that path — an empty grid keeps the fixture honest.
-    private static CellRecord RampCell(float[,] heights) => new()
+    private static CellRecord RampCell(float[,] heights)
     {
-        FormId = 0x100,
-        GridX = 0,
-        GridY = 0,
-        Heightmap = new LandHeightmap
+        return new CellRecord
         {
-            HeightDeltas = new sbyte[33 * 33],
-            ExactHeights = heights,
-        },
-    };
+            FormId = 0x100,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap
+            {
+                HeightDeltas = new sbyte[33 * 33],
+                ExactHeights = heights
+            }
+        };
+    }
 }

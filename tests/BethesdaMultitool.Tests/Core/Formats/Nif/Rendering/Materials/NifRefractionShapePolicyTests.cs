@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
@@ -10,8 +10,8 @@ public sealed class NifRefractionShapePolicyTests
     public void RefractionOnlyNormalMapHelper_IsSkipped()
     {
         var metadata = CreateMetadata(
-            materialPath: null,
-            diffusePath: @"textures\effects\VaporTileNormal_n.dds");
+            null,
+            @"textures\effects\VaporTileNormal_n.dds");
 
         Assert.True(NifRefractionShapePolicy.ShouldSkipUnsupportedDistortion(130, metadata));
     }
@@ -50,7 +50,7 @@ public sealed class NifRefractionShapePolicyTests
     [Fact]
     public void ShapeWithoutRefractionFlags_IsNotSkipped()
     {
-        var metadata = CreateMetadata(null, null, shaderFlags: 0u);
+        var metadata = CreateMetadata(null, null, 0u);
 
         Assert.False(NifRefractionShapePolicy.ShouldSkipUnsupportedDistortion(130, metadata));
     }

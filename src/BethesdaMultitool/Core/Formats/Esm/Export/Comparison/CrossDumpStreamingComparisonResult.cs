@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 
 internal sealed record CrossDumpStreamingComparisonResult
@@ -9,4 +10,3 @@ internal sealed record CrossDumpStreamingComparisonResult
     public IReadOnlyList<CrossDumpSourceSummary> SourceSummaries { get; init; } = [];
     public bool HasBaseBuild { get; init; }
 }
-

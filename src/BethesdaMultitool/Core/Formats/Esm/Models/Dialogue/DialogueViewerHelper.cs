@@ -79,7 +79,7 @@ internal static class DialogueViewerHelper
             {
                 Topic = t,
                 FilteredChain = FilterInfoChain(
-                    t.InfoChain, questFilter, speakerFilter, strictQuestFilter: questFilter != null)
+                    t.InfoChain, questFilter, speakerFilter, questFilter != null)
             })
             .Where(t => t.FilteredChain.Count > 0)
             .GroupBy(t => t.Topic.TopicFormId)

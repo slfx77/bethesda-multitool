@@ -1,43 +1,46 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
 ///     Typed runtime reader for <c>BGSPlaceableWater</c> (PWAT, FormType 0x23).
 ///     <para>
-///     PWAT's parent-water reference cannot come out of the generic reader.
-///     <c>BGSPlaceableWater.Data</c> is an 8-byte embedded struct, and
-///     <c>RuntimeGenericReader.ReadEmbeddedStruct</c> hex-encodes structs that small
-///     instead of walking them — so the pointer inside is never followed and the field
-///     surfaces as a raw Xbox VA. Only a typed read can resolve it.
+///         PWAT's parent-water reference cannot come out of the generic reader.
+///         <c>BGSPlaceableWater.Data</c> is an 8-byte embedded struct, and
+///         <c>RuntimeGenericReader.ReadEmbeddedStruct</c> hex-encodes structs that small
+///         instead of walking them — so the pointer inside is never followed and the field
+///         surfaces as a raw Xbox VA. Only a typed read can resolve it.
 ///     </para>
 ///     <para>
-///     Layout of <c>BGSPlaceableWaterData</c>, established empirically with
-///     <c>dmp struct-layout</c> against xex21 and not from the PDB (which records the
-///     struct only as an opaque 8 bytes at offset 88):
+///         Layout of <c>BGSPlaceableWaterData</c>, established empirically with
+///         <c>dmp struct-layout</c> against xex21 and not from the PDB (which records the
+///         struct only as an opaque 8 bytes at offset 88):
 ///     </para>
 ///     <list type="bullet">
-///         <item><description><c>+0</c> (struct 88): <c>uint32</c> flags — the DNAM flag word.</description></item>
-///         <item><description><c>+4</c> (struct 92): <c>TESWaterForm*</c> — the parent WATR.</description></item>
+///         <item>
+///             <description><c>+0</c> (struct 88): <c>uint32</c> flags — the DNAM flag word.</description>
+///         </item>
+///         <item>
+///             <description><c>+4</c> (struct 92): <c>TESWaterForm*</c> — the parent WATR.</description>
+///         </item>
 ///     </list>
 ///     <para>
-///     This is the SAME order the on-disk DNAM uses — <c>{ uint32 Flags, FormID Water }</c>
-///     per xEdit <c>wbRecord(PWAT)</c>. (An earlier revision of this comment claimed DNAM was
-///     the reverse, and <c>PwatEncoder</c> was written to match, which shipped all 48 PWATs
-///     with the two words transposed.) Verified on the first 10 PWATs in xex21: every one
-///     resolved a type-checked WATR at +4 with a semantically matching name
-///     (<c>PoolWastelandWater01</c> → <c>WastelandMuckPool01</c>,
-///     <c>CreekWater2048x2048</c> → <c>CreekWater01</c>, <c>WaterDirty</c> →
-///     <c>WaterTypeDirty</c>). Bit 28 ("Depth") is set on most but not all captured flag
-///     words — 42 of 48 in xex21 — so do not treat it as an invariant.
+///         This is the SAME order the on-disk DNAM uses — <c>{ uint32 Flags, FormID Water }</c>
+///         per xEdit <c>wbRecord(PWAT)</c>. (An earlier revision of this comment claimed DNAM was
+///         the reverse, and <c>PwatEncoder</c> was written to match, which shipped all 48 PWATs
+///         with the two words transposed.) Verified on the first 10 PWATs in xex21: every one
+///         resolved a type-checked WATR at +4 with a semantically matching name
+///         (<c>PoolWastelandWater01</c> → <c>WastelandMuckPool01</c>,
+///         <c>CreekWater2048x2048</c> → <c>CreekWater01</c>, <c>WaterDirty</c> →
+///         <c>WaterTypeDirty</c>). Bit 28 ("Depth") is set on most but not all captured flag
+///         words — 42 of 48 in xex21 — so do not treat it as an invariant.
 ///     </para>
 ///     <para>
-///     Without this reader PWAT emits from neither pipeline — it has no typed producer, so
-///     <see cref="PlaceableWaterRecord" /> was never constructed anywhere and
-///     <c>PwatEncoder</c> sat registered but unreachable. Placed refs on a proto-only PWAT
-///     base therefore dropped as <c>refr.dangling-base</c>.
+///         Without this reader PWAT emits from neither pipeline — it has no typed producer, so
+///         <see cref="PlaceableWaterRecord" /> was never constructed anywhere and
+///         <c>PwatEncoder</c> sat registered but unreachable. Placed refs on a proto-only PWAT
+///         base therefore dropped as <c>refr.dangling-base</c>.
 ///     </para>
 /// </summary>
 internal sealed class RuntimePlaceableWaterReader(RuntimeMemoryContext context)

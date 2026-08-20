@@ -1,5 +1,5 @@
-using Spectre.Console;
 using System.Globalization;
+using Spectre.Console;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.LandHelpers;
 
 namespace EsmAnalyzer.Commands.Terrain;
@@ -65,7 +65,8 @@ internal static class LandSummaryCommand
         PrintVhgtDetails(subrecords, esm.IsBigEndian, vhgtSamples, vhgtHist);
         if (!string.IsNullOrWhiteSpace(vhgtComparePath))
         {
-            LandVhgtCompareCommand.Execute(filePath, vhgtComparePath, formId.Value, vhgtCompareSamples, vhgtCompareDiff);
+            LandVhgtCompareCommand.Execute(filePath, vhgtComparePath, formId.Value, vhgtCompareSamples,
+                vhgtCompareDiff);
         }
 
         return 0;

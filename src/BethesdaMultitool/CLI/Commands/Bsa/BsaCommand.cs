@@ -9,6 +9,8 @@ namespace BethesdaMultitool.CLI.Commands.Bsa;
 /// </summary>
 public static class BsaCommand
 {
-    public static Command Create() =>
-        ArchiveCommand.BuildGroup("bsa", "BSA archive operations (deprecated alias of 'archive')");
+    public static Command Create()
+    {
+        return ArchiveCommand.BuildGroup("bsa", "BSA archive operations (deprecated alias of 'archive')");
+    }
 }

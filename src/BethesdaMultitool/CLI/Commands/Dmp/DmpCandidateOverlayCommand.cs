@@ -3,9 +3,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -19,19 +18,19 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 ///     Builds a thin, VIEW-ONLY overlay ESP from a reviewed candidate CSV so the unaligned
 ///     FormID-NN candidate clusters can be inspected WITH MODELS in the 3D world viewer.
 ///     <para>
-///     For each candidate (a heap-resident REFR the cell-traversal pipeline never attributed to a
-///     cell), this scans the DMP corpus to locate the struct, resolves its base-object FormID +
-///     world position + rotation + scale, then emits the candidate as a REFR inside a SYNTHETIC NEW
-///     interior cell (fresh 0x01 plugin FormID) named <c>CAND_&lt;cellEdid&gt;_&lt;status&gt;</c>.
-///     The REFR's NAME still points at the master base FormID, so when the user loads
-///     FalloutNV.esm + this overlay the viewer resolves each base's MODL and draws the cluster.
+///         For each candidate (a heap-resident REFR the cell-traversal pipeline never attributed to a
+///         cell), this scans the DMP corpus to locate the struct, resolves its base-object FormID +
+///         world position + rotation + scale, then emits the candidate as a REFR inside a SYNTHETIC NEW
+///         interior cell (fresh 0x01 plugin FormID) named <c>CAND_&lt;cellEdid&gt;_&lt;status&gt;</c>.
+///         The REFR's NAME still points at the master base FormID, so when the user loads
+///         FalloutNV.esm + this overlay the viewer resolves each base's MODL and draws the cluster.
 ///     </para>
 ///     <para>
-///     Synthetic NEW cells (not master-cell overrides) are deliberate: the GUI load-order merge is
-///     record-level (an override CELL would REPLACE the master cell's whole placed-object list), so
-///     a synthetic cell keeps each cluster isolated and browsable side-by-side with the real cell.
-///     A coherent room-shaped arrangement reads as real content; a pile at the origin or scattered
-///     floaters read as junk / misattribution.
+///         Synthetic NEW cells (not master-cell overrides) are deliberate: the GUI load-order merge is
+///         record-level (an override CELL would REPLACE the master cell's whole placed-object list), so
+///         a synthetic cell keeps each cluster isolated and browsable side-by-side with the real cell.
+///         A coherent room-shaped arrangement reads as real content; a pile at the origin or scattered
+///         floaters read as junk / misattribution.
 ///     </para>
 ///     This NEVER touches the conversion pipeline or the authority JSON — it is an analysis aid only.
 /// </summary>
@@ -256,8 +255,12 @@ internal static class DmpCandidateOverlayCommand
         }
 
         var cols = header.Split(',');
-        int Idx(params string[] names) => Array.FindIndex(cols,
-            c => names.Any(n => string.Equals(c.Trim(), n, StringComparison.OrdinalIgnoreCase)));
+
+        int Idx(params string[] names)
+        {
+            return Array.FindIndex(cols,
+                c => names.Any(n => string.Equals(c.Trim(), n, StringComparison.OrdinalIgnoreCase)));
+        }
 
         var fidIdx = Idx("FormID", "FormId");
         var cellIdx = Idx("PredCell");
@@ -538,10 +541,15 @@ internal static class DmpCandidateOverlayCommand
         IReadOnlyDictionary<(uint Cell, string Status), CellGroup> groups)
     {
         var trace = new StringBuilder();
-        trace.AppendLine("SyntheticCellFormId,CellEditorId,SyntheticRefFormId,CandidateFormId,BaseFormId,BaseFormType,Spatial,X,Y,Z,Scale");
+        trace.AppendLine(
+            "SyntheticCellFormId,CellEditorId,SyntheticRefFormId,CandidateFormId,BaseFormId,BaseFormType,Spatial,X,Y,Z,Scale");
 
         uint local = 0x800;
-        uint NextFormId() => PluginIndexBase | local++;
+
+        uint NextFormId()
+        {
+            return PluginIndexBase | local++;
+        }
 
         // Build the interior CELL section: GRUP(0,"CELL") -> GRUP(2,block) -> GRUP(3,subblock) -> cells.
         using var cellSection = new MemoryStream();
@@ -675,7 +683,10 @@ internal static class DmpCandidateOverlayCommand
         return buf; // trailing null already zero
     }
 
-    private static string F(float v) => v.ToString("F2", CultureInfo.InvariantCulture);
+    private static string F(float v)
+    {
+        return v.ToString("F2", CultureInfo.InvariantCulture);
+    }
 
     // ---- summary / helpers -------------------------------------------------------------------
 
@@ -734,9 +745,16 @@ internal static class DmpCandidateOverlayCommand
     private readonly record struct CandidateMeta(uint PredCell, string Edid, string Status);
 
     private readonly record struct ResolvedRef(
-        float X, float Y, float Z,
-        float RotX, float RotY, float RotZ,
-        float Scale, uint BaseObjectPtr, uint BaseFormId, byte BaseFormType);
+        float X,
+        float Y,
+        float Z,
+        float RotX,
+        float RotY,
+        float RotZ,
+        float Scale,
+        uint BaseObjectPtr,
+        uint BaseFormId,
+        byte BaseFormType);
 
     private sealed class CellGroup
     {
@@ -746,4 +764,3 @@ internal static class DmpCandidateOverlayCommand
         public List<(uint, ResolvedRef, string)> Refs { get; } = [];
     }
 }
-

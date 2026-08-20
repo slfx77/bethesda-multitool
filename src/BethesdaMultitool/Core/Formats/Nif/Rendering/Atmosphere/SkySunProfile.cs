@@ -19,6 +19,53 @@ public sealed record SkySunProfile
     /// <summary>The existing calibrated viewer glare size retained where the executable path is unrecovered.</summary>
     public const float LegacyGlareHalfSizeFraction = 0.160f;
 
+    private static readonly SkySunProfile Legacy = new();
+
+    // Fallout 3 / New Vegas retail PC defaults are authored in Fallout_default.ini [Weather]. Their
+    // shared symbol-backed implementation builds the quads directly from these values. The fallback
+    // path GMSTs are FNV's shipped ESM values; a loaded FO3/FNV GMST overrides them at the call site.
+    private static readonly SkySunProfile Fallout = new()
+    {
+        HasRecoveredTriangleProjection = true,
+        DefaultDiscHalfExtent = 750f,
+        DefaultGlareHalfExtent = 800f,
+        DefaultSunXExtreme = 800f,
+        DefaultSunYExtreme = -100f,
+        DefaultAlphaTransitionHours = 2f
+    };
+
+    // TESV.exe 1.9.32 and Fallout4.exe independently initialize these SettingT values and create the
+    // same direct ±extent quads. Their Sun::Update implementations write the raw triangle position to
+    // both billboard nodes. Plugin GMSTs still take precedence over these executable defaults.
+    private static readonly SkySunProfile Creation = new()
+    {
+        HasRecoveredTriangleProjection = true,
+        DefaultDiscHalfExtent = 425f,
+        DefaultGlareHalfExtent = 600f,
+        DefaultSunXExtreme = 400f,
+        DefaultSunYExtreme = 25f,
+        DefaultAlphaTransitionHours = 2f
+    };
+
+    // TES4 (Oblivion): recovered 2026-07-20 from the symbolized Oblivion Remastered Sun::Update
+    // (the remaster runs the original engine logic) + retail Oblivion.exe Setting defaults
+    // (docs/research/tes4_celestial_pipeline.md). Retail authored fSunXExtreme=−400 with the stored
+    // X negated in Sun::Update — folded here to the positive convention the shared triangle uses
+    // (dawn = +X/east). fSunYExtreme=25, fSunAlphaTransTime=2, fSunBaseSize=250, fSunGlareSize=350.
+    // Noon apex atan(400/25) ≈ 86° — near-zenith, which the previous 50° analytic stand-in missed
+    // (the reported "sun never appears overhead").
+    private static readonly SkySunProfile Tes4 = new()
+    {
+        HasRecoveredTriangleProjection = true,
+        DefaultDiscHalfExtent = 250f,
+        DefaultGlareHalfExtent = 350f,
+        DefaultSunXExtreme = 400f,
+        DefaultSunYExtreme = 25f,
+        DefaultAlphaTransitionHours = 2f,
+        TriangleWindowUsesBeginEnd = true,
+        VisibilityUsesClimateHalfWindows = true
+    };
+
     /// <summary>Whether this profile has a recovered direct-quad + triangle-path projection.</summary>
     public bool HasRecoveredTriangleProjection { get; init; }
 
@@ -67,7 +114,8 @@ public sealed record SkySunProfile
         float? discHalfExtent = null,
         float? glareHalfExtent = null,
         float? alphaTransitionHours = null)
-        => ResolveBillboardProjection(
+    {
+        return ResolveBillboardProjection(
             viewerRadius,
             gameHour,
             climate,
@@ -76,6 +124,7 @@ public sealed record SkySunProfile
             discHalfExtent,
             glareHalfExtent,
             alphaTransitionHours).HalfSizes;
+    }
 
     /// <summary>
     ///     Resolves the raw engine billboard direction and the uniformly rescaled authored quad. The
@@ -210,11 +259,11 @@ public sealed record SkySunProfile
         // TES4 Sun::Update pads the raw climate sunrise-begin/sunset-end; FNV and the Creation
         // engines pad the window midpoints. Same triangle shape either way.
         var dayStart = windowUsesBeginEnd
-            ? sunriseBegin - (alphaTransitionHours * 0.5f)
-            : ((sunriseBegin + sunriseEnd) * 0.5f) - (alphaTransitionHours * 0.5f);
+            ? sunriseBegin - alphaTransitionHours * 0.5f
+            : (sunriseBegin + sunriseEnd) * 0.5f - alphaTransitionHours * 0.5f;
         var dayEnd = windowUsesBeginEnd
-            ? sunsetEnd + (alphaTransitionHours * 0.5f)
-            : ((sunsetBegin + sunsetEnd) * 0.5f) + (alphaTransitionHours * 0.5f);
+            ? sunsetEnd + alphaTransitionHours * 0.5f
+            : (sunsetBegin + sunsetEnd) * 0.5f + alphaTransitionHours * 0.5f;
         var daySpan = dayEnd - dayStart;
         if (!float.IsFinite(daySpan) || daySpan <= MinimumPathLength || daySpan >= 24f)
         {
@@ -224,12 +273,12 @@ public sealed record SkySunProfile
         float x;
         if (hour >= dayStart && hour <= dayEnd)
         {
-            x = 1f - ((hour - dayStart) / daySpan) * 2f;
+            x = 1f - (hour - dayStart) / daySpan * 2f;
         }
         else
         {
-            var sinceDusk = hour > dayEnd ? hour - dayEnd : (hour + 24f) - dayEnd;
-            x = (sinceDusk / (24f - daySpan)) * 2f - 1f;
+            var sinceDusk = hour > dayEnd ? hour - dayEnd : hour + 24f - dayEnd;
+            x = sinceDusk / (24f - daySpan) * 2f - 1f;
         }
 
         var px = x * sunXExtreme;
@@ -279,7 +328,7 @@ public sealed record SkySunProfile
 
         if (hour > fadeOutBegin)
         {
-            return Math.Clamp(1f - ((hour - fadeOutBegin) / (fadeOutEnd - fadeOutBegin)), 0f, 1f);
+            return Math.Clamp(1f - (hour - fadeOutBegin) / (fadeOutEnd - fadeOutBegin), 0f, 1f);
         }
 
         return 1f;
@@ -324,8 +373,10 @@ public sealed record SkySunProfile
         return 1f;
     }
 
-    private static float FiniteOr(float? candidate, float fallback) =>
-        candidate is { } value && float.IsFinite(value) ? value : fallback;
+    private static float FiniteOr(float? candidate, float fallback)
+    {
+        return candidate is { } value && float.IsFinite(value) ? value : fallback;
+    }
 
     private static float WrapHour(float hour)
     {
@@ -333,66 +384,22 @@ public sealed record SkySunProfile
         return hour < 0f ? hour + 24f : hour;
     }
 
-    private static readonly SkySunProfile Legacy = new();
-
-    // Fallout 3 / New Vegas retail PC defaults are authored in Fallout_default.ini [Weather]. Their
-    // shared symbol-backed implementation builds the quads directly from these values. The fallback
-    // path GMSTs are FNV's shipped ESM values; a loaded FO3/FNV GMST overrides them at the call site.
-    private static readonly SkySunProfile Fallout = new()
-    {
-        HasRecoveredTriangleProjection = true,
-        DefaultDiscHalfExtent = 750f,
-        DefaultGlareHalfExtent = 800f,
-        DefaultSunXExtreme = 800f,
-        DefaultSunYExtreme = -100f,
-        DefaultAlphaTransitionHours = 2f,
-    };
-
-    // TESV.exe 1.9.32 and Fallout4.exe independently initialize these SettingT values and create the
-    // same direct ±extent quads. Their Sun::Update implementations write the raw triangle position to
-    // both billboard nodes. Plugin GMSTs still take precedence over these executable defaults.
-    private static readonly SkySunProfile Creation = new()
-    {
-        HasRecoveredTriangleProjection = true,
-        DefaultDiscHalfExtent = 425f,
-        DefaultGlareHalfExtent = 600f,
-        DefaultSunXExtreme = 400f,
-        DefaultSunYExtreme = 25f,
-        DefaultAlphaTransitionHours = 2f,
-    };
-
-    // TES4 (Oblivion): recovered 2026-07-20 from the symbolized Oblivion Remastered Sun::Update
-    // (the remaster runs the original engine logic) + retail Oblivion.exe Setting defaults
-    // (docs/research/tes4_celestial_pipeline.md). Retail authored fSunXExtreme=−400 with the stored
-    // X negated in Sun::Update — folded here to the positive convention the shared triangle uses
-    // (dawn = +X/east). fSunYExtreme=25, fSunAlphaTransTime=2, fSunBaseSize=250, fSunGlareSize=350.
-    // Noon apex atan(400/25) ≈ 86° — near-zenith, which the previous 50° analytic stand-in missed
-    // (the reported "sun never appears overhead").
-    private static readonly SkySunProfile Tes4 = new()
-    {
-        HasRecoveredTriangleProjection = true,
-        DefaultDiscHalfExtent = 250f,
-        DefaultGlareHalfExtent = 350f,
-        DefaultSunXExtreme = 400f,
-        DefaultSunYExtreme = 25f,
-        DefaultAlphaTransitionHours = 2f,
-        TriangleWindowUsesBeginEnd = true,
-        VisibilityUsesClimateHalfWindows = true,
-    };
-
     /// <summary>
     ///     Returns the objective per-game profile. FO76 retains the previous calibrated fractions
     ///     until its complete path/projection chain has an independent binary oracle.
     /// </summary>
-    public static SkySunProfile ForGame(BethesdaGame game) => game switch
+    public static SkySunProfile ForGame(BethesdaGame game)
     {
-        BethesdaGame.Oblivion => Tes4,
-        BethesdaGame.Fallout3 => Fallout,
-        BethesdaGame.FalloutNewVegas => Fallout,
-        BethesdaGame.Skyrim => Creation,
-        BethesdaGame.Fallout4 => Creation,
-        _ => Legacy,
-    };
+        return game switch
+        {
+            BethesdaGame.Oblivion => Tes4,
+            BethesdaGame.Fallout3 => Fallout,
+            BethesdaGame.FalloutNewVegas => Fallout,
+            BethesdaGame.Skyrim => Creation,
+            BethesdaGame.Fallout4 => Creation,
+            _ => Legacy
+        };
+    }
 }
 
 /// <summary>Viewer-space half-extents for the sun base and its maximum glare quad.</summary>

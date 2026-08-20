@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.EsmView;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 
@@ -98,7 +99,7 @@ public sealed partial class WorldMapControl
 
         _panOffset = new Vector2(_panOffset.X + dx, _panOffset.Y + dy);
         _viewportRebuildPending = true; // re-stream terrain for the shifted viewport
-        _topDownRequestPending = true;  // keep the rendered-models overlay in sync when it's on
+        _topDownRequestPending = true; // keep the rendered-models overlay in sync when it's on
         MapCanvas.Invalidate();
     }
 

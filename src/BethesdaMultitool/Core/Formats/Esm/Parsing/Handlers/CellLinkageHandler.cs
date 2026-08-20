@@ -1,8 +1,7 @@
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Games;
@@ -329,11 +328,11 @@ internal static class CellLinkageHandler
     ///     surviving non-virtual cell (deduping by FormID) and drop the now-redundant virtual cell so
     ///     the refs emit. Strictly recovers refs the dedup would otherwise discard.
     ///     <para>
-    ///     <paramref name="masterFormIds" /> (master ESM record FormIDs) excludes master cells from
-    ///     being keepers — recovery targets cut/proto content only. Merging orphan refs into a MASTER
-    ///     cell (e.g. a live worldspace's persistent cell such as TheStripWorldNew's 0x0013B310)
-    ///     corrupts a real game cell and crashes on GridCellArray attach; for master worldspaces the
-    ///     orphan refs are redundant with master, so dropping them (the prior behavior) is correct.
+    ///         <paramref name="masterFormIds" /> (master ESM record FormIDs) excludes master cells from
+    ///         being keepers — recovery targets cut/proto content only. Merging orphan refs into a MASTER
+    ///         cell (e.g. a live worldspace's persistent cell such as TheStripWorldNew's 0x0013B310)
+    ///         corrupts a real game cell and crashes on GridCellArray attach; for master worldspaces the
+    ///         orphan refs are redundant with master, so dropping them (the prior behavior) is correct.
     ///     </para>
     /// </summary>
     internal static int MergeColocatedVirtualOrphanCells(
@@ -895,7 +894,7 @@ internal static class CellLinkageHandler
         // instead of being with-cloned by a post-parse sweep (5.1M clones on Fallout 76). Null
         // indexes (direct-parser callers, tests) just leave both fields null — the old pre-sweep
         // state.
-        Models.ObjectBounds? bounds = null;
+        ObjectBounds? bounds = null;
         if (context.PlacedObjectBoundsIndex is { } boundsIndex)
         {
             boundsIndex.TryGetValue(r.BaseFormId, out bounds);

@@ -21,6 +21,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Reporting;
 internal static class ScriptEmissionProvenanceReporter
 {
     internal const string EventCode = "script.source-provenance";
+
     private static readonly Dictionary<string, string> FunctionNameNormalizationMap =
         ScriptComparer.BuildFunctionNameNormalizationMap();
 
@@ -46,7 +47,7 @@ internal static class ScriptEmissionProvenanceReporter
         {
             ScriptSourceTextOrigin.DmpFragment => "dmp-fragment",
             ScriptSourceTextOrigin.RuntimeSameObject => "runtime-same-object",
-            _ => "unattributed-same-dump",
+            _ => "unattributed-same-dump"
         };
         var scda = GetOptionalSingle(subrecords, "SCDA");
         var bytecodeChanged = !ByteArraysEqual(source.CompiledData, scda);
@@ -128,7 +129,7 @@ internal static class ScriptEmissionProvenanceReporter
         // null rather than pretending the target master FormID identifies a captured source.
         Emit(
             sink,
-            sourceFormId: null,
+            null,
             master.Header.FormId,
             master.EditorId,
             "augmentation",
@@ -187,7 +188,7 @@ internal static class ScriptEmissionProvenanceReporter
                 ["sctx-scda-semantic-match"] = proof.SemanticMatch,
                 ["sctx-scda-match-count"] = proof.ComparisonMatchCount?.ToString(CultureInfo.InvariantCulture),
                 ["sctx-scda-tolerated-count"] = proof.ComparisonToleratedCount?.ToString(CultureInfo.InvariantCulture),
-                ["sctx-scda-tolerated-categories"] = proof.ComparisonToleratedCategories,
+                ["sctx-scda-tolerated-categories"] = proof.ComparisonToleratedCategories
             });
     }
 
@@ -329,15 +330,18 @@ internal static class ScriptEmissionProvenanceReporter
         return expected;
     }
 
-    private static string DeclarationKeyword(ScriptVariableDeclarationKind kind) => kind switch
+    private static string DeclarationKeyword(ScriptVariableDeclarationKind kind)
     {
-        ScriptVariableDeclarationKind.Short => "short",
-        ScriptVariableDeclarationKind.Long => "long",
-        ScriptVariableDeclarationKind.Int => "int",
-        ScriptVariableDeclarationKind.Float => "float",
-        ScriptVariableDeclarationKind.Reference => "ref",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-    };
+        return kind switch
+        {
+            ScriptVariableDeclarationKind.Short => "short",
+            ScriptVariableDeclarationKind.Long => "long",
+            ScriptVariableDeclarationKind.Int => "int",
+            ScriptVariableDeclarationKind.Float => "float",
+            ScriptVariableDeclarationKind.Reference => "ref",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+    }
 
     private static int FindFirstBeginLine(string source)
     {
@@ -456,8 +460,10 @@ internal static class ScriptEmissionProvenanceReporter
                    && pair.First.Data.AsSpan().SequenceEqual(pair.Second.Data));
     }
 
-    private static bool IsTableSubrecord(ScriptSubrecord subrecord) =>
-        subrecord.Signature is "SLSD" or "SCVR" or "SCRO" or "SCRV";
+    private static bool IsTableSubrecord(ScriptSubrecord subrecord)
+    {
+        return subrecord.Signature is "SLSD" or "SCVR" or "SCRO" or "SCRV";
+    }
 
     private static bool TryGetSingle(
         IReadOnlyList<ScriptSubrecord> subrecords,
@@ -483,9 +489,11 @@ internal static class ScriptEmissionProvenanceReporter
         return matches.Length == 1 ? matches[0].Data : null;
     }
 
-    private static bool ByteArraysEqual(byte[]? left, byte[]? right) =>
-        ReferenceEquals(left, right)
-        || left is not null && right is not null && left.AsSpan().SequenceEqual(right);
+    private static bool ByteArraysEqual(byte[]? left, byte[]? right)
+    {
+        return ReferenceEquals(left, right)
+               || left is not null && right is not null && left.AsSpan().SequenceEqual(right);
+    }
 
     private static int GetDecodedLength(byte[] payload)
     {
@@ -500,18 +508,26 @@ internal static class ScriptEmissionProvenanceReporter
         return EsmStringUtils.DecodeGameText(payload.AsSpan(0, nul >= 0 ? nul : payload.Length));
     }
 
-    private static string? NormalizeEmpty(string? value) =>
-        string.IsNullOrEmpty(value) ? null : value;
+    private static string? NormalizeEmpty(string? value)
+    {
+        return string.IsNullOrEmpty(value) ? null : value;
+    }
 
-    private static string FormatCounts(IReadOnlyDictionary<string, int> counts) => string.Join(
-        '|',
-        counts.OrderBy(static item => item.Key, StringComparer.Ordinal)
-            .Select(static item => $"{item.Key}={item.Value}"));
+    private static string FormatCounts(IReadOnlyDictionary<string, int> counts)
+    {
+        return string.Join(
+            '|',
+            counts.OrderBy(static item => item.Key, StringComparer.Ordinal)
+                .Select(static item => $"{item.Key}={item.Value}"));
+    }
 
-    private static string? FormatFormId(uint? formId) =>
-        formId is null or 0 ? null : $"0x{formId.Value:X8}";
+    private static string? FormatFormId(uint? formId)
+    {
+        return formId is null or 0 ? null : $"0x{formId.Value:X8}";
+    }
 
     private readonly record struct ScriptSubrecord(string Signature, byte[] Data);
+
     private readonly record struct SourceProof(
         string Kind,
         byte[] ExpectedSctx,

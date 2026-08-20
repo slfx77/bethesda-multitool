@@ -1,16 +1,6 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Buffers.Binary;
-using System.CommandLine;
-using System.Globalization;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Ofst.OfstMathUtils;
 
 namespace EsmAnalyzer.Commands.Ofst;
@@ -257,7 +247,7 @@ internal static class OfstDataLoader
             return false;
         }
 
-        index = (row * context.Columns) + col;
+        index = row * context.Columns + col;
         var ofstCount = context.Offsets.Count;
         if (index < 0 || index >= ofstCount)
         {
@@ -432,7 +422,8 @@ internal static class OfstDataLoader
         return null;
     }
 
-    internal static int ResolveBaseOffset(byte[] data, bool bigEndian, uint wrldOffset, uint wrldFormId, string baseMode)
+    internal static int ResolveBaseOffset(byte[] data, bool bigEndian, uint wrldOffset, uint wrldFormId,
+        string baseMode)
     {
         return baseMode.ToLowerInvariant() switch
         {
@@ -510,6 +501,4 @@ internal static class OfstDataLoader
         recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)recordHeader.DataSize;
         return recordEnd > offset && recordEnd <= data.Length;
     }
-
 }
-

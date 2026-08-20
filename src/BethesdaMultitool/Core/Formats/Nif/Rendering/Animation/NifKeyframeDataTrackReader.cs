@@ -16,8 +16,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 internal static class NifKeyframeDataTrackReader
 {
     /// <summary>Block type names this reader accepts.</summary>
-    internal static bool IsTrackDataBlock(string typeName) =>
-        typeName is "NiKeyframeData" or "NiTransformData";
+    internal static bool IsTrackDataBlock(string typeName)
+    {
+        return typeName is "NiKeyframeData" or "NiTransformData";
+    }
 
     /// <summary>
     ///     Reads the data block behind a keyframe controller into a <see cref="NifNodeTrack" />.
@@ -67,9 +69,9 @@ internal static class NifKeyframeDataTrackReader
             rotInterp, rotKeys,
             transInterp, transKeys,
             scaleInterp, scaleKeys,
-            EulerXKeys: eulerKeys?.X,
-            EulerYKeys: eulerKeys?.Y,
-            EulerZKeys: eulerKeys?.Z);
+            eulerKeys?.X,
+            eulerKeys?.Y,
+            eulerKeys?.Z);
     }
 
     /// <summary>

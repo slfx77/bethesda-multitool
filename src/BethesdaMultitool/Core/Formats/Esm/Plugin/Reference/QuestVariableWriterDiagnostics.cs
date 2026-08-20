@@ -48,8 +48,8 @@ internal static class QuestVariableWriterDiagnostics
             .Select(static overlay => overlay.PrototypeInfo.FormId)
             .ToHashSet();
         var preGateFormIds = preGateDialogues.Select(static info => info.FormId).ToHashSet();
-        var suppressionsByRecord = gateDiagnostics.ToLookup(
-            static diagnostic => (diagnostic.RecordType, diagnostic.RecordFormId));
+        var suppressionsByRecord =
+            gateDiagnostics.ToLookup(static diagnostic => (diagnostic.RecordType, diagnostic.RecordFormId));
         var ownersByMapping = collectedEvidence
             .GroupBy(static evidence => evidence.Mapping)
             .ToDictionary(
@@ -119,7 +119,7 @@ internal static class QuestVariableWriterDiagnostics
                 {
                     ["route"] = route,
                     ["reasons"] = string.Join(",", reasons),
-                    ["editor-id"] = info.EditorId,
+                    ["editor-id"] = info.EditorId
                 });
         }
 
@@ -149,7 +149,7 @@ internal static class QuestVariableWriterDiagnostics
                     ["variable"] = mapping.SourceVariable.Name,
                     ["source-index"] = mapping.SourceVariable.Index.ToString(),
                     ["target-index"] = mapping.TargetVariable.Index.ToString(),
-                    ["evidence-owner-count"] = (owners?.Count ?? 0).ToString(),
+                    ["evidence-owner-count"] = (owners?.Count ?? 0).ToString()
                 });
         }
     }

@@ -144,7 +144,7 @@ internal static class ScriptRuntimeMerger
                 ? ResolveSourceCorrespondenceStatus(
                     runtime,
                     scriptsByFormId.GetValueOrDefault(runtime.FormId))
-                : ScriptSourceCorrespondenceStatus.Rejected,
+                : ScriptSourceCorrespondenceStatus.Rejected
         }).ToList();
     }
 
@@ -171,7 +171,7 @@ internal static class ScriptRuntimeMerger
             ScriptSourceCorrespondenceStatus.AcceptedSourceOnly =>
                 ScriptSourceCorrespondenceStatus.AcceptedSourceOnly,
             ScriptSourceCorrespondenceStatus.Rejected => ScriptSourceCorrespondenceStatus.Rejected,
-            _ => ScriptSourceCorrespondenceStatus.Unverified,
+            _ => ScriptSourceCorrespondenceStatus.Unverified
         };
     }
 
@@ -199,9 +199,11 @@ internal static class ScriptRuntimeMerger
                && left.Variables.SequenceEqual(right.Variables);
     }
 
-    private static bool ByteArraysEqual(byte[]? left, byte[]? right) =>
-        ReferenceEquals(left, right)
-        || left is not null && right is not null && left.AsSpan().SequenceEqual(right);
+    private static bool ByteArraysEqual(byte[]? left, byte[]? right)
+    {
+        return ReferenceEquals(left, right)
+               || (left is not null && right is not null && left.AsSpan().SequenceEqual(right));
+    }
 
     internal static ScriptRecord EnrichScriptWithRuntimeData(
         ScriptRecord existing, RuntimeScriptData runtime)
@@ -235,7 +237,7 @@ internal static class ScriptRuntimeMerger
         var runtimeLocalBindingsComplete = runtimeCompiledData == null
                                            || ScriptBytecodeAnalyzer.HasCompleteLocalVariableBindings(
                                                runtimeCompiledData,
-                                               isBigEndian: true,
+                                               true,
                                                runtime.Variables,
                                                runtimeReferencedObjects);
         var runtimeBundleComplete = runtimeCompiledData != null
@@ -356,7 +358,7 @@ internal static class ScriptRuntimeMerger
             : existing.QuestScriptDelay;
         var isQuestScript = existing.IsQuestScript || runtime.IsQuestScript;
         var isMagicEffectScript = existing.IsMagicEffectScript || runtime.IsMagicEffectScript;
-        var isCompiled = existing.IsCompiled || adoptedRuntimeBundle && runtime.IsCompiled;
+        var isCompiled = existing.IsCompiled || (adoptedRuntimeBundle && runtime.IsCompiled);
         needsUpdate |= !string.Equals(editorId, existing.EditorId, StringComparison.Ordinal)
                        || ownerQuestFormId != existing.OwnerQuestFormId
                        || !questScriptDelay.Equals(existing.QuestScriptDelay)
@@ -431,7 +433,7 @@ internal static class ScriptRuntimeMerger
                                      && referencedObjectsComplete
                                      && ScriptBytecodeAnalyzer.HasCompleteLocalVariableBindings(
                                          compiledData,
-                                         isBigEndian: true,
+                                         true,
                                          runtime.Variables,
                                          referencedObjects);
 
@@ -486,16 +488,18 @@ internal static class ScriptRuntimeMerger
         };
     }
 
-    private static bool IsProvenUncompiledSourceOnlyStub(RuntimeScriptData runtime) =>
-        runtime.DataSize == 0
-        && runtime.CompiledData is not { Length: > 0 }
-        && !runtime.IsCompiled
-        && runtime.VariableCount == 0
-        && runtime.RefObjectCount == 0
-        && runtime.Variables.Count == 0
-        && runtime.ReferencedObjects.Count == 0
-        && runtime.VariablesComplete
-        && runtime.ReferencedObjectsComplete;
+    private static bool IsProvenUncompiledSourceOnlyStub(RuntimeScriptData runtime)
+    {
+        return runtime.DataSize == 0
+               && runtime.CompiledData is not { Length: > 0 }
+               && !runtime.IsCompiled
+               && runtime.VariableCount == 0
+               && runtime.RefObjectCount == 0
+               && runtime.Variables.Count == 0
+               && runtime.ReferencedObjects.Count == 0
+               && runtime.VariablesComplete
+               && runtime.ReferencedObjectsComplete;
+    }
 
     /// <summary>
     ///     Build object-to-script (SCRI) mappings by scanning ESM records.

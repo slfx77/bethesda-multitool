@@ -3,11 +3,9 @@ using System.Text;
 using System.Text.Json;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
+using BethesdaMultitool.Core.Formats.Esm.Export.Projections;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Export.Projections;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -199,7 +197,7 @@ internal static class ReportConsistencyCommand
         CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
 
         var index = CrossDumpProjectionAggregator.AggregateFromProjections(
-            projections, virtualCanon, allowedTypes: null);
+            projections, virtualCanon, null);
 
         // AggregateFromProjections sorts by build date — re-derive labels from the index's
         // dump order so they line up with StructuredRecords' dump indices.
@@ -426,4 +424,3 @@ internal static class ReportConsistencyCommand
         }
     }
 }
-

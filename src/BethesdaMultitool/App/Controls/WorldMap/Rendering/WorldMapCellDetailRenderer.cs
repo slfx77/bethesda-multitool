@@ -6,6 +6,7 @@ using Windows.Foundation;
 using Windows.UI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -143,7 +144,8 @@ internal static class WorldMapCellDetailRenderer
                 WorldMapLayer.VertexColors =>
                     WorldMapLayerRenderer.RenderVertexColorsForCell(cell, currentDefaultWaterHeight, showWater, cache),
                 WorldMapLayer.TerrainRegions =>
-                    WorldMapLayerRenderer.RenderTerrainRegionsForCell(cell, currentDefaultWaterHeight, showWater, cache),
+                    WorldMapLayerRenderer.RenderTerrainRegionsForCell(cell, currentDefaultWaterHeight, showWater,
+                        cache),
                 WorldMapLayer.TerrainTextures =>
                     WorldMapLayerRenderer.RenderTerrainTexturesForCell(cell,
                         data is null ? null : LandscapeTexturePalette.GetOrCreate(data),

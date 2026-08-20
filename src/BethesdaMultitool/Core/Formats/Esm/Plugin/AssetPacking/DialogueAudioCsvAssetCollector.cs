@@ -1,5 +1,5 @@
+using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Semantic;
@@ -26,6 +26,9 @@ internal sealed record DialogueAudioCsvCollectionResult(
 /// </summary>
 internal static class DialogueAudioCsvAssetCollector
 {
+    private static DialogueAudioCsvCollectionResult Empty { get; } =
+        new(new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, 0, 0, 0);
+
     /// <summary>
     ///     Reads the transcriber CSV rows and collects the voice-file asset paths they reference,
     ///     rewriting prototype INFO paths to the converted ESP's newly allocated FormIDs where needed.
@@ -377,8 +380,8 @@ internal static class DialogueAudioCsvAssetCollector
             // "missing" noise entries that never affected runtime (engine falls back to the
             // master file's voice folder when ours doesn't ship the audio).
             if (matchedBinding is null && !allocatedFormId.HasValue
-                && bindingsByAllocated is not null
-                && dialogueFormIds.Contains(formId))
+                                       && bindingsByAllocated is not null
+                                       && dialogueFormIds.Contains(formId))
             {
                 var resp = ExtractResponseNumberFromPath(filePath);
                 if (resp.HasValue
@@ -412,6 +415,7 @@ internal static class DialogueAudioCsvAssetCollector
                     {
                         rewrittenViaTriple++;
                     }
+
                     if (matchedViaPrefix)
                     {
                         rewrittenViaPrefix++;
@@ -473,7 +477,7 @@ internal static class DialogueAudioCsvAssetCollector
     ///     (<c>VDialogueUlyssesUlyssesTopic000/001/002/...</c> all collapse to
     ///     <c>VDialogueUlysse</c>), so each bucket can carry many candidates. The collector
     ///     disambiguates by matching the CSV row's response Text against each candidate's
-    ///     <see cref="EmittedDialogueAudioBinding.ResponseText"/>.
+    ///     <see cref="EmittedDialogueAudioBinding.ResponseText" />.
     /// </summary>
     internal static Dictionary<(string Voice, string TopicPrefix, byte Resp), List<EmittedDialogueAudioBinding>>
         BuildAudioBindingPrefixIndex(IReadOnlyList<EmittedDialogueAudioBinding>? bindings)
@@ -513,7 +517,7 @@ internal static class DialogueAudioCsvAssetCollector
     /// <summary>
     ///     Build an (allocFid, responseNumber) → binding index. Used after a FormID-first
     ///     match has resolved an allocated INFO so the path rewriter can still pull the
-    ///     binding's quest+topic+voice EDIDs and pass them to <see cref="EngineVoicePathBuilder"/>
+    ///     binding's quest+topic+voice EDIDs and pass them to <see cref="EngineVoicePathBuilder" />
     ///     — that way the BSA path matches what the runtime constructs even when the source
     ///     CSV came from an older engine with a different truncation policy.
     /// </summary>
@@ -597,8 +601,8 @@ internal static class DialogueAudioCsvAssetCollector
         }
 
         var respText = stem[(underscoreBeforeResp + 1)..];
-        if (!byte.TryParse(respText, System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture, out var resp)
+        if (!byte.TryParse(respText, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var resp)
             || resp == 0)
         {
             return null;
@@ -617,7 +621,7 @@ internal static class DialogueAudioCsvAssetCollector
     }
 
     /// <summary>
-    ///     Pick the candidate whose <see cref="EmittedDialogueAudioBinding.ResponseText"/>
+    ///     Pick the candidate whose <see cref="EmittedDialogueAudioBinding.ResponseText" />
     ///     best matches the CSV row's Text. Exact match (case-insensitive, trimmed) wins.
     ///     Otherwise fall back to the candidate whose normalized text shares the longest
     ///     leading common substring — this tolerates the minor typo / punctuation drift
@@ -716,8 +720,8 @@ internal static class DialogueAudioCsvAssetCollector
         }
 
         var respText = stem[(underscoreBeforeResp + 1)..];
-        if (!byte.TryParse(respText, System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture, out var resp)
+        if (!byte.TryParse(respText, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var resp)
             || resp == 0)
         {
             return false;
@@ -927,7 +931,4 @@ internal static class DialogueAudioCsvAssetCollector
             "subtitle overrides remain active and the engine will fall back to vanilla master audio.",
             code: "dialog.audio.retail-fallback");
     }
-
-    private static DialogueAudioCsvCollectionResult Empty { get; } =
-        new(new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, 0, 0, 0);
 }

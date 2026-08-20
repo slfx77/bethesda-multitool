@@ -3,7 +3,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
-/// <summary>A resolved plan for composing a creature: its scanned record, options, and the meshes/transforms/animation to assemble.</summary>
+/// <summary>
+///     A resolved plan for composing a creature: its scanned record, options, and the meshes/transforms/animation to
+///     assemble.
+/// </summary>
 internal sealed class CreatureCompositionPlan
 {
     public required CreatureScanEntry Creature { get; init; }

@@ -13,7 +13,7 @@ internal enum PhysicsLiteSwaySkipReason
     NoDrivenSubtree,
     InvalidAuthoredFrame,
     InvalidAuthoredLimits,
-    InvalidTime,
+    InvalidTime
 }
 
 internal readonly record struct PhysicsLiteSwaySample(
@@ -40,8 +40,9 @@ internal readonly record struct PhysicsLiteSwayDescriptor(
     internal PhysicsLiteSwaySample Evaluate(
         double elapsedSeconds,
         uint placedReferenceSeed,
-        bool isAtRest = false) =>
-        PhysicsLiteSway.Evaluate(
+        bool isAtRest = false)
+    {
+        return PhysicsLiteSway.Evaluate(
             Pivot,
             Axis,
             MinimumAngle,
@@ -52,6 +53,7 @@ internal readonly record struct PhysicsLiteSwayDescriptor(
                 PhysicsLiteSway.CombineStableSeed(placedReferenceSeed, ConstraintBlockIndex)),
             elapsedSeconds,
             isAtRest);
+    }
 }
 
 /// <summary>
@@ -60,13 +62,11 @@ internal readonly record struct PhysicsLiteSwayDescriptor(
 /// </summary>
 internal sealed class PhysicsLiteSwayPlan
 {
-    private readonly Vector3 _pivot;
-    private readonly Vector3 _axis;
-    private readonly float _minimumAngle;
-    private readonly float _maximumAngle;
     private readonly float _amplitudeFraction;
-    private readonly float _phase;
+    private readonly Vector3 _axis;
     private readonly float _cyclesPerSecond;
+    private readonly float _phase;
+    private readonly Vector3 _pivot;
 
     internal PhysicsLiteSwayPlan(
         PhysicsLiteSwaySkipReason skipReason,
@@ -89,8 +89,8 @@ internal sealed class PhysicsLiteSwayPlan
         TargetSubtree = targetSubtree ?? Array.Empty<int>();
         _pivot = pivot;
         _axis = axis;
-        _minimumAngle = minimumAngle;
-        _maximumAngle = maximumAngle;
+        MinimumAngle = minimumAngle;
+        MaximumAngle = maximumAngle;
         _amplitudeFraction = amplitudeFraction;
         _cyclesPerSecond = cyclesPerSecond;
         _phase = phase;
@@ -102,15 +102,17 @@ internal sealed class PhysicsLiteSwayPlan
     internal int DrivenBodyBlockIndex { get; }
     internal int TargetNodeBlockIndex { get; }
     internal IReadOnlyList<int> TargetSubtree { get; }
-    internal float MinimumAngle => _minimumAngle;
-    internal float MaximumAngle => _maximumAngle;
+    internal float MinimumAngle { get; }
+
+    internal float MaximumAngle { get; }
+
     internal PhysicsLiteSwayDescriptor? Descriptor => IsSupported
         ? new PhysicsLiteSwayDescriptor(
             ConstraintBlockIndex,
             _pivot,
             _axis,
-            _minimumAngle,
-            _maximumAngle,
+            MinimumAngle,
+            MaximumAngle,
             _amplitudeFraction,
             _cyclesPerSecond)
         : null;
@@ -125,8 +127,8 @@ internal sealed class PhysicsLiteSwayPlan
         return PhysicsLiteSway.Evaluate(
             _pivot,
             _axis,
-            _minimumAngle,
-            _maximumAngle,
+            MinimumAngle,
+            MaximumAngle,
             _amplitudeFraction,
             _cyclesPerSecond,
             _phase,
@@ -134,8 +136,10 @@ internal sealed class PhysicsLiteSwayPlan
             isAtRest);
     }
 
-    private static PhysicsLiteSwaySample Identity(PhysicsLiteSwaySkipReason reason) =>
-        new(Matrix4x4.Identity, 0f, false, reason);
+    private static PhysicsLiteSwaySample Identity(PhysicsLiteSwaySkipReason reason)
+    {
+        return new PhysicsLiteSwaySample(Matrix4x4.Identity, 0f, false, reason);
+    }
 }
 
 /// <summary>
@@ -278,7 +282,7 @@ internal static class PhysicsLiteSway
         var ambiguous = new HashSet<int>();
         foreach (var constraint in constraintSet.Constraints)
         {
-            var plan = CreatePlan(constraintSet, constraint, stableSeed: 0);
+            var plan = CreatePlan(constraintSet, constraint, 0);
             if (plan.Descriptor is not { } descriptor)
             {
                 continue;
@@ -373,10 +377,15 @@ internal static class PhysicsLiteSway
             : null;
     }
 
-    private static PhysicsLiteSwayPlan Skipped(PhysicsLiteSwaySkipReason reason) => new(reason);
+    private static PhysicsLiteSwayPlan Skipped(PhysicsLiteSwaySkipReason reason)
+    {
+        return new PhysicsLiteSwayPlan(reason);
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
     internal static uint CombineStableSeed(uint placedReferenceSeed, int constraintBlockIndex)
     {

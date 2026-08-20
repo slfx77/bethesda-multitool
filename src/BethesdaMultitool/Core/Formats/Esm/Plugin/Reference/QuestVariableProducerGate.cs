@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -39,7 +40,10 @@ internal sealed record PlanProducerEmissionLedger(
 {
     public static PlanProducerEmissionLedger Empty { get; } = new([]);
 
-    public bool Contains(QuestVariableProducerOwner owner) => Owners.Contains(owner);
+    public bool Contains(QuestVariableProducerOwner owner)
+    {
+        return Owners.Contains(owner);
+    }
 }
 
 internal sealed record QuestVariableProducerGateDiagnostic(
@@ -251,14 +255,14 @@ internal static class QuestVariableProducerGate
                         unsupported,
                         freshMappings,
                         formIdAliases,
-                        code: "quest-variable.menu-item-suppressed-no-emitted-producer",
-                        subject: "terminal menu item",
-                        extraMetadata: new Dictionary<string, string?>
+                        "quest-variable.menu-item-suppressed-no-emitted-producer",
+                        "terminal menu item",
+                        new Dictionary<string, string?>
                         {
                             ["terminal-menu-index"] = itemIndex.ToString(
-                                System.Globalization.CultureInfo.InvariantCulture),
+                                CultureInfo.InvariantCulture),
                             ["terminal-menu-text"] = item.Text,
-                            ["terminal-result-text"] = item.ResultText,
+                            ["terminal-result-text"] = item.ResultText
                         });
                 }
 
@@ -383,12 +387,12 @@ internal static class QuestVariableProducerGate
         foreach (var requirement in materialized)
         {
             var survivesPlannedOwner = requirement.CandidateOwners
-                    .Where(static owner => owner.RecordType != "INFO")
-                    .Any(owner => plan.Records.Any(record =>
-                        record.Type == owner.RecordType
-                        && record.SourceFormId == owner.SourceFormId
-                        && record.Disposition is RecordDisposition.New or RecordDisposition.Override
-                        && record.Model is not null));
+                .Where(static owner => owner.RecordType != "INFO")
+                .Any(owner => plan.Records.Any(record =>
+                    record.Type == owner.RecordType
+                    && record.SourceFormId == owner.SourceFormId
+                    && record.Disposition is RecordDisposition.New or RecordDisposition.Override
+                    && record.Model is not null));
             if (survivesPlannedOwner)
             {
                 continue;
@@ -521,7 +525,7 @@ internal static class QuestVariableProducerGate
                 "TERM" => terminalOwnerItems.TryGetValue(owner, out var item)
                           && liveTerminalItems.Contains(item),
                 "INFO" => liveInfoSourceIds.Contains(owner.SourceFormId),
-                _ => false,
+                _ => false
             };
             if (isLive)
             {
@@ -555,9 +559,9 @@ internal static class QuestVariableProducerGate
                 ["target-quest-form-id"] = $"0x{ResolveAlias(mapping.TargetQuestFormId, aliases):X8}",
                 ["target-script-form-id"] = $"0x{augmentation.TargetScriptFormId:X8}",
                 ["target-variable-index"] = augmentation.Variable.Index.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture),
+                    CultureInfo.InvariantCulture),
                 ["target-variable-name"] = augmentation.Variable.Name,
-                ["producer-policy"] = "planned-owner-or-emitted-dialogue-bundle-write",
+                ["producer-policy"] = "planned-owner-or-emitted-dialogue-bundle-write"
             };
             if (extraMetadata is not null)
             {
@@ -633,20 +637,26 @@ internal static class QuestVariableProducerGate
 
     private static string BuildTerminalScriptPath(
         TerminalRecord terminal,
-        int itemIndex) =>
-        $"{terminal.EditorId ?? $"TERM 0x{terminal.FormId:X8}"}/menu[{itemIndex}]";
+        int itemIndex)
+    {
+        return $"{terminal.EditorId ?? $"TERM 0x{terminal.FormId:X8}"}/menu[{itemIndex}]";
+    }
 
     private static ScriptVariableAugmentation? FindAugmentation(
         QuestVariableRecoveryMapping mapping,
-        IReadOnlyList<ScriptVariableAugmentation> augmentations) =>
-        augmentations.FirstOrDefault(augmentation => Matches(mapping, augmentation));
+        IReadOnlyList<ScriptVariableAugmentation> augmentations)
+    {
+        return augmentations.FirstOrDefault(augmentation => Matches(mapping, augmentation));
+    }
 
     private static bool Matches(
         QuestVariableRecoveryMapping mapping,
-        ScriptVariableAugmentation augmentation) =>
-        mapping.TargetScriptFormId == augmentation.TargetScriptFormId
-        && mapping.TargetVariable == augmentation.Variable
-        && mapping.DeclarationKind == augmentation.DeclarationKind;
+        ScriptVariableAugmentation augmentation)
+    {
+        return mapping.TargetScriptFormId == augmentation.TargetScriptFormId
+               && mapping.TargetVariable == augmentation.Variable
+               && mapping.DeclarationKind == augmentation.DeclarationKind;
+    }
 
     private static bool IsMasterAnchored(
         string signature,
@@ -680,5 +690,4 @@ internal static class QuestVariableProducerGate
     }
 
     private readonly record struct TargetConditionKey(uint QuestFormId, uint VariableIndex);
-
 }

@@ -87,4 +87,3 @@ internal static class NifNodeControllerPoseReader
             : -1;
     }
 }
-

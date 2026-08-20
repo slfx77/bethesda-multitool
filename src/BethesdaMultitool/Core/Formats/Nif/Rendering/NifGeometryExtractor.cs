@@ -5,7 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
@@ -262,7 +262,12 @@ internal static class NifGeometryExtractor
         var lodShapeNames = shapeDataMap.Keys
             .Select(idx => (idx, name: NifBlockParsers.ReadBlockName(data, nif.Blocks[idx], nif) ?? ""))
             .ToList();
-        static bool IsLodShape(string name) => name.Contains("_lod", StringComparison.OrdinalIgnoreCase);
+
+        static bool IsLodShape(string name)
+        {
+            return name.Contains("_lod", StringComparison.OrdinalIgnoreCase);
+        }
+
         if (lodShapeNames.Any(s => IsLodShape(s.name)) && lodShapeNames.Any(s => !IsLodShape(s.name)))
         {
             foreach (var (idx, _) in lodShapeNames.Where(s => IsLodShape(s.name)))
@@ -465,6 +470,7 @@ internal static class NifGeometryExtractor
                         clampTextureV = true;
                     }
                 }
+
                 // Self-illuminated (unlit) shaders: FO3/FNV BSShaderNoLightingProperty AND the Skyrim/
                 // SE/FO4 BSEffectShaderProperty (fire, magic, glow, light shafts). Without the effect
                 // case, every Skyrim effect shape was N·L-lit and rendered as a faceted, shaded "gem"
@@ -636,8 +642,8 @@ internal static class NifGeometryExtractor
                                    ?? (diffusePath is not null &&
                                        (diffusePath.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) ||
                                         diffusePath.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase))
-                                        ? diffusePath
-                                        : null);
+                                       ? diffusePath
+                                       : null);
                 BgsmMaterial? externalMaterial = null;
 
                 // FO4/FO76 MSWP material swap (REFR XMSP): substitute the placement's replacement
@@ -717,7 +723,7 @@ internal static class NifGeometryExtractor
                             // Smoothness is 0–1 (not an exponent); map to the Blinn-Phong exponent the
                             // shader expects — rough ≈ 4, mirror-smooth ≈ 128.
                             var smooth = Math.Clamp(bgsm.SpecularSmoothness, 0f, 1f);
-                            materialGlossiness = 4f + (smooth * smooth * 124f);
+                            materialGlossiness = 4f + smooth * smooth * 124f;
                             // Per-texel mask: FO4 SmoothSpec (slot 6) / FO76 reflectance (slot 8).
                             // Without it the shader keeps specular OFF for BC5 normal maps — a
                             // uniform mask blows out whole scenes.
@@ -833,7 +839,8 @@ internal static class NifGeometryExtractor
                     }
 
                     var block = nif.Blocks[propRef];
-                    skyType = SkyNifTextureHarvester.ReadSkyObjectType(data, block.DataOffset, block.Size, nif.IsBigEndian);
+                    skyType = SkyNifTextureHarvester.ReadSkyObjectType(data, block.DataOffset, block.Size,
+                        nif.IsBigEndian);
                     if (SkyNifTextureHarvester.TryReadSkyShaderProperty(
                             data, block.DataOffset, block.Size, nif.IsBigEndian, out _, out var skyFile) &&
                         !string.IsNullOrWhiteSpace(skyFile))
@@ -892,6 +899,7 @@ internal static class NifGeometryExtractor
                     submesh.IsBillboard = true;
                     submesh.BillboardMode = billboardMode;
                 }
+
                 submesh.MaterialDiffuse = materialDiffuse;
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
@@ -955,7 +963,7 @@ internal static class NifGeometryExtractor
                 // constant. Distinct from the NiTexturingProperty/NiTextureTransformController
                 // static bake above — that path never handled NiUVController.
                 if (submesh.UVs != null &&
-                    Animation.NifUvScrollResolver.TryResolve(data, nif, shapeIndex, out var uvScroll))
+                    NifUvScrollResolver.TryResolve(data, nif, shapeIndex, out var uvScroll))
                 {
                     submesh.UvScrollVelocity = uvScroll;
                 }
@@ -967,11 +975,11 @@ internal static class NifGeometryExtractor
                 // BSEffect approximation below, where resolved XEMI modulates the full-bright tint and
                 // an unresolved placement remains neutral.
                 var externalEmittance = shaderMetadata is
-                    {
-                        PropertyType: "BSShaderPPLightingProperty" or "Lighting30ShaderProperty" or
-                            "BSShaderNoLightingProperty" or "BSEffectShaderProperty",
-                        ShaderFlags: { } eeFlags
-                    } && (eeFlags & 0x20000000u) != 0;
+                {
+                    PropertyType: "BSShaderPPLightingProperty" or "Lighting30ShaderProperty" or
+                    "BSShaderNoLightingProperty" or "BSEffectShaderProperty",
+                    ShaderFlags: { } eeFlags
+                } && (eeFlags & 0x20000000u) != 0;
 
                 var materialEmission = isLighting30 && propRefs is not null
                     ? NifBlockParsers.ReadMaterialEmissionSource(data, nif, propRefs)
@@ -1070,7 +1078,7 @@ internal static class NifGeometryExtractor
         // bind-pose alignment mode (no scene-graph transforms there).
         if (collectBillboards && !bindPoseOnly)
         {
-            Particles.NifParticleSystemExtractor.Append(
+            NifParticleSystemExtractor.Append(
                 data, nif, model, nodeTransforms, nodeChildren, treatRootsAsIdentity,
                 alphaControllersByProperty);
         }
@@ -1085,4 +1093,3 @@ internal static class NifGeometryExtractor
         Dictionary<string, Matrix4x4> BoneTransforms,
         List<(string Parent, string Child)> BoneLinks);
 }
-

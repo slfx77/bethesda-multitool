@@ -10,7 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 ///     (Morrowind→Skyrim/FNV) or a BA2 (Fallout 4 / Fallout 76) — dispatched by magic — so mesh
 ///     resolution is format-agnostic for the consumers (3D-viewer reference pipeline, NPC pipelines,
 ///     FaceGen verification tools).
-///
 ///     A thin facade over the same <see cref="DataFolderIndex" /> + <see cref="DataFolderResolver" />
 ///     the DMP→ESM conversion uses, so there is a single asset-resolution implementation. It owns the
 ///     consumer-specific pieces that don't belong in the generic resolver: construction from an
@@ -18,7 +17,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 ///     (<see cref="ArchiveSetIdentity" /> / <see cref="GetLookupMetadata" />), and the
 ///     empty-baseline-as-sole-secondary wiring (the baseline-exact strategy yields a null
 ///     <c>Source</c>, so routing through the secondary guarantees every hit carries readable bytes).
-///
 ///     By default resolution is EXACT-only (no fuzzy, no loose files) — matching the historical
 ///     behavior every consumer relies on. The 3D viewer opts into the fuzzy renamed-asset fallback
 ///     (and loose-file overrides) when browsing a memory dump, where prototype mesh paths were
@@ -28,9 +26,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 internal sealed class MeshArchiveSet : IDisposable
 {
+    // Full archive path → (length, last-write-utc-ticks), for the decoded-mesh disk-cache key.
+    private readonly Dictionary<string, (long Length, long Ticks)> _archiveStats;
     private readonly DataFolderIndex _emptyBaseline;
     private readonly DataFolderIndex _index;
-    private readonly DataFolderResolver _resolver;
 
     // Per-path resolution memo. DataFolderResolver.Resolve is read-only over the immutable index
     // (lock-free), so concurrent decode tasks can resolve in parallel; the memo just avoids
@@ -38,8 +37,7 @@ internal sealed class MeshArchiveSet : IDisposable
     private readonly ConcurrentDictionary<string, DataFolderResolution> _resolveCache =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // Full archive path → (length, last-write-utc-ticks), for the decoded-mesh disk-cache key.
-    private readonly Dictionary<string, (long Length, long Ticks)> _archiveStats;
+    private readonly DataFolderResolver _resolver;
 
     private MeshArchiveSet(IReadOnlyList<string> archivePaths, bool enableFuzzy, bool includeLooseFiles)
     {
@@ -49,11 +47,11 @@ internal sealed class MeshArchiveSet : IDisposable
         // archive sets in one process — the registry dedups the parse + memory map per archive.
         // ArchiveSetIdentity/GetLookupMetadata keep their own FileInfo stats (cache keys unchanged).
         _index = DataFolderIndex.FromArchivePaths(
-            archivePaths, includeLooseFromArchiveDirs: includeLooseFiles, ArchiveHandleRegistry.Shared);
+            archivePaths, includeLooseFiles, ArchiveHandleRegistry.Shared);
         // Empty baseline + the real index as the SOLE secondary: the baseline-exact strategy returns
         // AlreadyInBaseline with a null Source (unusable for extraction), so routing everything through
         // the secondary guarantees every hit carries a readable Source (and a ResolvedPath when fuzzy).
-        _resolver = new DataFolderResolver(_emptyBaseline, [_index], overrideBaseline: false, enableFuzzy: enableFuzzy);
+        _resolver = new DataFolderResolver(_emptyBaseline, [_index], false, enableFuzzy);
 
         _archiveStats = new Dictionary<string, (long, long)>(StringComparer.OrdinalIgnoreCase);
         var idParts = new List<string>(archivePaths.Count);
@@ -84,7 +82,7 @@ internal sealed class MeshArchiveSet : IDisposable
     /// <summary>Exact-only resolution (no fuzzy, no loose files) — the historical default.</summary>
     public static MeshArchiveSet Open(string primaryMeshesBsaPath, string[]? extraMeshesBsaPaths)
     {
-        return Open(primaryMeshesBsaPath, extraMeshesBsaPaths, enableFuzzy: false, includeLooseFiles: false);
+        return Open(primaryMeshesBsaPath, extraMeshesBsaPaths, false, false);
     }
 
     /// <summary>
@@ -172,22 +170,22 @@ internal sealed class MeshArchiveSet : IDisposable
         {
             return new MeshArchiveLookupMetadata(
                 normalized,
-                Found: false,
+                false,
                 ArchiveSetIdentity,
-                ArchivePath: null,
-                ArchiveLength: null,
-                ArchiveLastWriteUtcTicks: null,
-                FileNameHash: null,
-                FileRawSize: null,
-                FileSize: null,
-                FileOffset: null);
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
         }
 
         var (archivePath, archiveLength, archiveTicks) = ArchiveStatsOf(resolution.Source);
         var meta = GetSourceMetadata(resolution.Source);
         return new MeshArchiveLookupMetadata(
             resolution.ResolvedPath ?? normalized,
-            Found: true,
+            true,
             ArchiveSetIdentity,
             archivePath,
             archiveLength,
@@ -248,7 +246,7 @@ internal sealed class MeshArchiveSet : IDisposable
         {
             BsaAssetSource bsa => (bsa.Record.NameHash, bsa.Record.RawSize, bsa.Record.Size, bsa.Record.Offset),
             Ba2AssetSource ba2 => ba2.Record is { Kind: Ba2HeaderType.Texture, Texture: { Chunks.Count: > 0 } texture }
-                ? ((ulong)ba2.Record.NameHash, texture.Chunks[0].PackedSize, texture.Chunks[0].FullSize,
+                ? (ba2.Record.NameHash, texture.Chunks[0].PackedSize, texture.Chunks[0].FullSize,
                     (uint)texture.Chunks[0].Offset)
                 : ((ulong)ba2.Record.NameHash, ba2.Record.PackedSize, ba2.Record.RealSize, (uint)ba2.Record.Offset),
             _ => null

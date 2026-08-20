@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
@@ -15,9 +13,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Vegetation;
 /// </summary>
 public sealed class Tes4GrassShaderTests
 {
-    private static string VertexShader() => SourceContract.ReadShaderSource("reference_grass_oblivion.vert.hlsl");
+    private static string VertexShader()
+    {
+        return SourceContract.ReadShaderSource("reference_grass_oblivion.vert.hlsl");
+    }
 
-    private static string PixelShader() => SourceContract.ReadShaderSource("reference_grass_oblivion.frag.hlsl");
+    private static string PixelShader()
+    {
+        return SourceContract.ReadShaderSource("reference_grass_oblivion.frag.hlsl");
+    }
 
     [Fact]
     public void OnlyOblivionSelectsAPerGameGrassShader()

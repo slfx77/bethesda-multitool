@@ -25,11 +25,14 @@ public readonly record struct PluginFormat(
     public static readonly PluginFormat Oblivion = FromProfile(GameProfiles.For(BethesdaGame.Oblivion));
 
     /// <summary>Project the framing fields of a <see cref="GameProfile" /> into a <see cref="PluginFormat" />.</summary>
-    private static PluginFormat FromProfile(GameProfile profile) => new(
-        profile.RecordHeaderSize,
-        profile.GroupHeaderSize,
-        profile.HasRecordVersionTrailer,
-        profile.Game);
+    private static PluginFormat FromProfile(GameProfile profile)
+    {
+        return new PluginFormat(
+            profile.RecordHeaderSize,
+            profile.GroupHeaderSize,
+            profile.HasRecordVersionTrailer,
+            profile.Game);
+    }
 
     /// <summary>
     ///     Detect the plugin framing from the file's leading bytes. Uses a STRUCTURAL probe — the
@@ -79,7 +82,9 @@ public readonly record struct PluginFormat(
     }
 
     private static bool HasHedrAt(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-        => data.Length >= offset + 4 && ReadSig(data, offset, bigEndian) == "HEDR";
+    {
+        return data.Length >= offset + 4 && ReadSig(data, offset, bigEndian) == "HEDR";
+    }
 
     /// <summary>
     ///     Read the HEDR version float of a TES4 file. HEDR layout: signature(4) + dataLength(2) +

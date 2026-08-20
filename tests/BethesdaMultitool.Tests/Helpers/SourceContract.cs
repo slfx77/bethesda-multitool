@@ -15,6 +15,13 @@ internal static class SourceContract
     /// <summary>Repo root, located by probing upward for Directory.Build.props.</summary>
     public static string RepoRoot => LazyRepoRoot.Value;
 
+    /// <summary>The embedded-shader source tree (Gpu/Shaders).</summary>
+    public static string ShadersRoot => Path.Combine(
+        RepoRoot, "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders");
+
+    /// <summary>The WinUI application source tree (src/BethesdaMultitool/App).</summary>
+    public static string AppRoot => Path.Combine(RepoRoot, "src", "BethesdaMultitool", "App");
+
     /// <summary>Read a source file addressed by path segments relative to the repo root.</summary>
     public static string ReadSource(params string[] relativePath)
     {
@@ -34,23 +41,21 @@ internal static class SourceContract
         return File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
-    /// <summary>The embedded-shader source tree (Gpu/Shaders).</summary>
-    public static string ShadersRoot => Path.Combine(
-        RepoRoot, "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders");
-
     /// <summary>
     ///     Resolve a shader source file by bare file name, searching every Shaders subdirectory.
     ///     Mirrors the runtime's flat LogicalName lookup (names are globally unique by build-time
     ///     guarantee), so shader pins stay valid when a file moves between subdirectories.
     /// </summary>
-    public static string ShaderPath(string fileName) =>
-        Directory.EnumerateFiles(ShadersRoot, fileName, SearchOption.AllDirectories).Single();
+    public static string ShaderPath(string fileName)
+    {
+        return Directory.EnumerateFiles(ShadersRoot, fileName, SearchOption.AllDirectories).Single();
+    }
 
     /// <summary>Read a shader's source text by bare file name.</summary>
-    public static string ReadShaderSource(string fileName) => ReadNormalized(ShaderPath(fileName));
-
-    /// <summary>The WinUI application source tree (src/BethesdaMultitool/App).</summary>
-    public static string AppRoot => Path.Combine(RepoRoot, "src", "BethesdaMultitool", "App");
+    public static string ReadShaderSource(string fileName)
+    {
+        return ReadNormalized(ShaderPath(fileName));
+    }
 
     /// <summary>
     ///     Read an App-layer source file by bare file name, searching every App subdirectory.
@@ -58,8 +63,10 @@ internal static class SourceContract
     ///     unique bare file name keeps source pins valid across moves (mirrors
     ///     <see cref="ReadShaderSource" />).
     /// </summary>
-    public static string ReadAppSource(string fileName) =>
-        ReadNormalized(Directory.EnumerateFiles(AppRoot, fileName, SearchOption.AllDirectories).Single());
+    public static string ReadAppSource(string fileName)
+    {
+        return ReadNormalized(Directory.EnumerateFiles(AppRoot, fileName, SearchOption.AllDirectories).Single());
+    }
 
     /// <summary>Assert each value appears in <paramref name="source" /> after the previous one.</summary>
     public static void AssertOrder(string source, params string[] values)

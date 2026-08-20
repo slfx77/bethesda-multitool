@@ -13,14 +13,22 @@ namespace BethesdaMultitool.Core.Orchestration;
 ///         adds no thread hops. What it adds:
 ///     </para>
 ///     <list type="bullet">
-///         <item>a session <see cref="Token" />, canceled by <see cref="CancelAll" /> (work checks
-///             it after awaits and before touching session state),</item>
-///         <item>single-flight de-duplication per key — concurrent triggers of the same populate
-///             share one task instead of racing,</item>
-///         <item>exception capture: failures are logged via <see cref="Logger" /> and counted, never
-///             thrown back through an event handler or lost,</item>
-///         <item><see cref="CancelAllAndDrainAsync" /> — THE guard to await before disposing or
-///             reopening session state, guaranteeing quiescence.</item>
+///         <item>
+///             a session <see cref="Token" />, canceled by <see cref="CancelAll" /> (work checks
+///             it after awaits and before touching session state),
+///         </item>
+///         <item>
+///             single-flight de-duplication per key — concurrent triggers of the same populate
+///             share one task instead of racing,
+///         </item>
+///         <item>
+///             exception capture: failures are logged via <see cref="Logger" /> and counted, never
+///             thrown back through an event handler or lost,
+///         </item>
+///         <item>
+///             <see cref="CancelAllAndDrainAsync" /> — THE guard to await before disposing or
+///             reopening session state, guaranteeing quiescence.
+///         </item>
 ///     </list>
 ///     <para>
 ///         <b>Drain must be awaited, never blocked on:</b> work continuations typically resume on
@@ -31,32 +39,17 @@ internal sealed class SessionTaskRunner : ITrackableResource, IDisposable
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Task> _running = new(StringComparer.Ordinal);
-    private ResourceRegistration? _registration;
     private CancellationTokenSource _cts = new();
     private bool _disposed;
-    private long _started;
     private long _failures;
     private volatile string? _lastError;
+    private ResourceRegistration? _registration;
+    private long _started;
 
     public SessionTaskRunner(string ownerName)
     {
         ResourceName = ownerName;
     }
-
-    /// <summary>
-    ///     Registers the runner with <paramref name="registry" /> (unregistered again on
-    ///     <see cref="Dispose" />). Returns the runner for fluent construction.
-    /// </summary>
-    public SessionTaskRunner RegisterWith(ResourceRegistry registry, string? instanceTag = null)
-    {
-        _registration?.Dispose();
-        _registration = registry.Register(this, instanceTag);
-        return this;
-    }
-
-    public string ResourceName { get; }
-
-    public ResourceCategory Category => ResourceCategory.Queue;
 
     /// <summary>
     ///     The current session token. Replaced (with the old one canceled) by
@@ -74,13 +67,64 @@ internal sealed class SessionTaskRunner : ITrackableResource, IDisposable
         }
     }
 
-    public ResourceStats GetStats() => new()
+    private int RunningCount
     {
-        InFlight = RunningCount,
-        Processed = Interlocked.Read(ref _started),
-        Failures = Interlocked.Read(ref _failures),
-        LastError = _lastError,
-    };
+        get
+        {
+            lock (_gate)
+            {
+                return _running.Count(static pair => !pair.Value.IsCompleted);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Cancels outstanding work and rejects new work. Does not block on in-flight tasks — await
+    ///     <see cref="CancelAllAndDrainAsync" /> first when teardown ordering matters.
+    /// </summary>
+    public void Dispose()
+    {
+        CancellationTokenSource toCancel;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            toCancel = _cts;
+        }
+
+        toCancel.Cancel();
+        _registration?.Dispose();
+    }
+
+    public string ResourceName { get; }
+
+    public ResourceCategory Category => ResourceCategory.Queue;
+
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats
+        {
+            InFlight = RunningCount,
+            Processed = Interlocked.Read(ref _started),
+            Failures = Interlocked.Read(ref _failures),
+            LastError = _lastError
+        };
+    }
+
+    /// <summary>
+    ///     Registers the runner with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the runner for fluent construction.
+    /// </summary>
+    public SessionTaskRunner RegisterWith(ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
+    }
 
     /// <summary>
     ///     Runs <paramref name="work" /> unless work with the same key is already running, in which
@@ -118,7 +162,10 @@ internal sealed class SessionTaskRunner : ITrackableResource, IDisposable
     }
 
     /// <summary>Fire-and-forget form of <see cref="RunExclusiveAsync" /> for event handlers.</summary>
-    public void Post(string key, Func<CancellationToken, Task> work) => _ = RunExclusiveAsync(key, work);
+    public void Post(string key, Func<CancellationToken, Task> work)
+    {
+        _ = RunExclusiveAsync(key, work);
+    }
 
     public bool IsRunning(string key)
     {
@@ -174,39 +221,6 @@ internal sealed class SessionTaskRunner : ITrackableResource, IDisposable
 
             // Wrapper tasks never fault (see ExecuteAsync), so WhenAll cannot throw.
             await Task.WhenAll(pending).ConfigureAwait(false);
-        }
-    }
-
-    /// <summary>
-    ///     Cancels outstanding work and rejects new work. Does not block on in-flight tasks — await
-    ///     <see cref="CancelAllAndDrainAsync" /> first when teardown ordering matters.
-    /// </summary>
-    public void Dispose()
-    {
-        CancellationTokenSource toCancel;
-        lock (_gate)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            toCancel = _cts;
-        }
-
-        toCancel.Cancel();
-        _registration?.Dispose();
-    }
-
-    private int RunningCount
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _running.Count(static pair => !pair.Value.IsCompleted);
-            }
         }
     }
 

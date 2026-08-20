@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Scanning;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
@@ -15,8 +14,8 @@ internal sealed class RuntimeTreeGeometryExtractor(RuntimeMemoryContext context)
 {
     // BSTreeModel data members (PDB + speedtree_decompiled.txt/Create{Branch,Leaf,Billboard}Geometry).
     private const int BranchDataArrayOffset = 0x14; // pspBranchData: NiTriShapeData* array
-    private const int LeafDataArrayOffset = 0x18;   // pspLeafData: NiTriShapeData* array
-    private const int BillboardShapeOffset = 0x1C;  // spBillboard: NiTriShape/NiTriStrips shape
+    private const int LeafDataArrayOffset = 0x18; // pspLeafData: NiTriShapeData* array
+    private const int BillboardShapeOffset = 0x1C; // spBillboard: NiTriShape/NiTriStrips shape
 
     // Ni* runtime offsets (PDB / RuntimeSceneGraphWalker).
     private const int NiNodeChildrenPtrOffset = 196; // m_kChildren NiTArray m_pBase
@@ -93,7 +92,7 @@ internal sealed class RuntimeTreeGeometryExtractor(RuntimeMemoryContext context)
 
             var mesh = _geometry.ExtractSpeedTreeMeshAtVa(
                 dataVa,
-                allowImplicitLeafCardIndices: kind == TreeGeometryKind.Leaf);
+                kind == TreeGeometryKind.Leaf);
             if (mesh != null)
             {
                 output.Add(new ExtractedTreeSubmesh { Mesh = mesh, Kind = kind });
@@ -141,18 +140,21 @@ internal sealed class RuntimeTreeGeometryExtractor(RuntimeMemoryContext context)
     }
 
     // A runtime pointer is just a big-endian uint32 at the given VA.
-    private uint ReadPointer(uint va) => ReadUInt32(va);
+    private uint ReadPointer(uint va)
+    {
+        return ReadUInt32(va);
+    }
 
     private ushort ReadUInt16(uint va)
     {
         var bytes = context.ReadBytesAtVa(va, 2);
-        return bytes is null || bytes.Length < 2 ? (ushort)0 : BinaryUtils.ReadUInt16BE(bytes, 0);
+        return bytes is null || bytes.Length < 2 ? (ushort)0 : BinaryUtils.ReadUInt16BE(bytes);
     }
 
     private uint ReadUInt32(uint va)
     {
         var bytes = context.ReadBytesAtVa(va, 4);
-        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadUInt32BE(bytes, 0);
+        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadUInt32BE(bytes);
     }
 }
 
@@ -183,5 +185,5 @@ public enum TreeGeometryKind
 {
     Branch,
     Leaf,
-    Billboard,
+    Billboard
 }

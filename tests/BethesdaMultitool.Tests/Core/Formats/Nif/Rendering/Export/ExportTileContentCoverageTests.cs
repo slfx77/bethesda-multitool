@@ -19,7 +19,7 @@ public sealed class ExportTileContentCoverageTests
             cylinder, 4f, [(15.5f, 15.5f)], NoWater);
 
         Assert.True(result);
-        Assert.True(MathF.Sqrt((15.5f * 15.5f) + (15.5f * 15.5f)) > cylinder.Radius);
+        Assert.True(MathF.Sqrt(15.5f * 15.5f + 15.5f * 15.5f) > cylinder.Radius);
     }
 
     [Fact]

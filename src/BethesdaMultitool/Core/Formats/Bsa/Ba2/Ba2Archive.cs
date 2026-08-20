@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Bsa.Models;
-
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 /// <summary>

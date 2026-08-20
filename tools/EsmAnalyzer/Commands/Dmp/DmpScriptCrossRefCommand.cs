@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dmp;
@@ -123,7 +122,7 @@ internal static class DmpScriptCrossRefCommand
                 if (unresolvedExamples.Count < 20)
                 {
                     var name = script.EditorId ?? $"0x{script.FormId:X8}";
-                    foreach (var m in matches.Cast<Match>().Take(3))
+                    foreach (var m in matches.Take(3))
                     {
                         unresolvedExamples.Add((name, m.Value));
                     }
@@ -131,7 +130,7 @@ internal static class DmpScriptCrossRefCommand
             }
         }
 
-        AnsiConsole.MarkupLine($"\n[cyan]Unresolved Variable References:[/]");
+        AnsiConsole.MarkupLine("\n[cyan]Unresolved Variable References:[/]");
         AnsiConsole.MarkupLine($"  Total: {totalUnresolved}");
         AnsiConsole.MarkupLine($"  Scripts affected: {scriptsWithUnresolved}");
 
@@ -185,7 +184,7 @@ internal static class DmpScriptCrossRefCommand
             }
         }
 
-        AnsiConsole.MarkupLine($"\n[cyan]EditorID REF→base heuristic:[/]");
+        AnsiConsole.MarkupLine("\n[cyan]EditorID REF→base heuristic:[/]");
         AnsiConsole.MarkupLine($"  SCRO entries ending in 'REF': {refSuffixTotal}");
         AnsiConsole.MarkupLine($"  Resolvable via base EditorId: {refSuffixHits}");
     }

@@ -63,7 +63,7 @@ internal static class NewWorldspaceFormIdReservationPlanner
                 FormId = allocator.Allocate(),
                 SourceFormId = worldspace.FormId,
                 RecordType = "WRLD",
-                PolicyId = PolicyId,
+                PolicyId = PolicyId
             });
         }
 

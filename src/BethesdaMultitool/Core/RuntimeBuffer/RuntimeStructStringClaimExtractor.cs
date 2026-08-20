@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 
 namespace BethesdaMultitool.Core.RuntimeBuffer;
@@ -86,7 +85,7 @@ internal static class RuntimeStructStringClaimExtractor
             var fieldLabel = field.Owner != null ? $"{field.Owner}.{field.Name}" : field.Name;
 
             AddClaim(claims, claimedOffsets, entry, info.Value.StringFileOffset,
-                fieldLabel, memCtx.MinidumpInfo, structData.FileOffset, ownerOffsetResolved: true);
+                fieldLabel, memCtx.MinidumpInfo, structData.FileOffset, true);
         }
     }
 

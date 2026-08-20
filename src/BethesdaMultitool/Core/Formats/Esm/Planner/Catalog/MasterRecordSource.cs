@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
@@ -48,9 +47,8 @@ public sealed class MasterRecordSource
                 Type = type,
                 Source = SourceKind.MasterOnly,
                 MasterFormId = record.Header.FormId,
-                Master = record,
+                Master = record
             };
         }
     }
 }
-

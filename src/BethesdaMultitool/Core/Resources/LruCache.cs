@@ -24,17 +24,17 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     where TKey : notnull
 {
     private readonly Dictionary<TKey, Node> _entries;
-    private readonly LinkedList<TKey> _order = new();
-    private int? _maxEntries;
     private readonly long? _maxBytes;
-    private readonly Func<TKey, TValue, long>? _sizeOf;
     private readonly Action<TKey, TValue>? _onEvicted;
-    private ResourceRegistration? _registration;
+    private readonly LinkedList<TKey> _order = new();
+    private readonly Func<TKey, TValue, long>? _sizeOf;
 
     private long _estimatedBytes;
-    private long _hits;
-    private long _misses;
     private long _evictions;
+    private long _hits;
+    private int? _maxEntries;
+    private long _misses;
+    private ResourceRegistration? _registration;
 
     /// <summary>Creates an LRU cache with the given budgets and hooks.</summary>
     /// <param name="resourceName">Stable name for diagnostics (e.g. <c>"TerrainCellMeshes"</c>).</param>
@@ -75,6 +75,35 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
         _entries = new Dictionary<TKey, Node>(comparer);
     }
 
+    public int Count => _entries.Count;
+
+    public long EstimatedBytes => _estimatedBytes;
+
+    public void Dispose()
+    {
+        // Unregister first so the retired-stats record captures the cache as it was at teardown
+        // (entries/bytes still resident) rather than post-Clear zeros.
+        _registration?.Dispose();
+        _registration = null;
+        Clear();
+    }
+
+    public string ResourceName { get; }
+
+    public ResourceCategory Category { get; }
+
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats
+        {
+            EstimatedBytes = Volatile.Read(ref _estimatedBytes),
+            EntryCount = _entries.Count,
+            Hits = Volatile.Read(ref _hits),
+            Misses = Volatile.Read(ref _misses),
+            Evictions = Volatile.Read(ref _evictions)
+        };
+    }
+
     /// <summary>
     ///     Registers the cache with <paramref name="registry" /> (unregistered again on
     ///     <see cref="Dispose" />). Returns the cache for fluent construction.
@@ -86,16 +115,11 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
         return this;
     }
 
-    public string ResourceName { get; }
-
-    public ResourceCategory Category { get; }
-
-    public int Count => _entries.Count;
-
-    public long EstimatedBytes => _estimatedBytes;
-
     /// <summary>Tests for an entry without touching recency or hit/miss counters.</summary>
-    public bool ContainsKey(TKey key) => _entries.ContainsKey(key);
+    public bool ContainsKey(TKey key)
+    {
+        return _entries.ContainsKey(key);
+    }
 
     /// <summary>Fetches an entry, bumping it to most-recently-used on a hit.</summary>
     public bool TryGet(TKey key, out TValue value)
@@ -178,7 +202,10 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
         return true;
     }
 
-    /// <summary>Evicts least-recently-used entries until at most <paramref name="targetBytes" /> remain. Returns bytes released.</summary>
+    /// <summary>
+    ///     Evicts least-recently-used entries until at most <paramref name="targetBytes" /> remain. Returns bytes
+    ///     released.
+    /// </summary>
     public long TrimToBytes(long targetBytes)
     {
         var before = _estimatedBytes;
@@ -186,7 +213,10 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
         return before - _estimatedBytes;
     }
 
-    /// <summary>Evicts least-recently-used entries until at most <paramref name="targetCount" /> remain. Returns entries evicted.</summary>
+    /// <summary>
+    ///     Evicts least-recently-used entries until at most <paramref name="targetCount" /> remain. Returns entries
+    ///     evicted.
+    /// </summary>
     public int TrimToCount(int targetCount)
     {
         var before = _entries.Count;
@@ -220,24 +250,6 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     {
         // Walk the order list so eviction order stays LRU-last even in Clear.
         EvictWhile(() => _entries.Count > 0);
-    }
-
-    public ResourceStats GetStats() => new()
-    {
-        EstimatedBytes = Volatile.Read(ref _estimatedBytes),
-        EntryCount = _entries.Count,
-        Hits = Volatile.Read(ref _hits),
-        Misses = Volatile.Read(ref _misses),
-        Evictions = Volatile.Read(ref _evictions),
-    };
-
-    public void Dispose()
-    {
-        // Unregister first so the retired-stats record captures the cache as it was at teardown
-        // (entries/bytes still resident) rather than post-Clear zeros.
-        _registration?.Dispose();
-        _registration = null;
-        Clear();
     }
 
     private void EvictWhile(Func<bool> condition)

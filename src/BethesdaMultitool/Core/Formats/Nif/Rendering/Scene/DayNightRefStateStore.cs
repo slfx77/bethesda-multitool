@@ -13,8 +13,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 internal sealed class DayNightRefStateStore
 {
     private readonly Dictionary<uint, bool> _disabledNow = [];
-    private DayNightRefSchedule? _schedule;
     private int _lastSlot = -1;
+    private DayNightRefSchedule? _schedule;
 
     internal int Version { get; private set; }
     internal int Count => _disabledNow.Count;
@@ -49,10 +49,14 @@ internal sealed class DayNightRefStateStore
     }
 
     /// <summary>Hour-driven disabled state; false = not gated (use the authored state).</summary>
-    internal bool TryGetDisabled(uint formId, out bool disabled) =>
-        _disabledNow.TryGetValue(formId, out disabled);
+    internal bool TryGetDisabled(uint formId, out bool disabled)
+    {
+        return _disabledNow.TryGetValue(formId, out disabled);
+    }
 
     /// <summary>Authored-vs-scheduled merge used by every visibility consumer.</summary>
-    internal bool EffectiveDisabled(uint formId, bool authoredDisabled) =>
-        _disabledNow.TryGetValue(formId, out var disabled) ? disabled : authoredDisabled;
+    internal bool EffectiveDisabled(uint formId, bool authoredDisabled)
+    {
+        return _disabledNow.TryGetValue(formId, out var disabled) ? disabled : authoredDisabled;
+    }
 }

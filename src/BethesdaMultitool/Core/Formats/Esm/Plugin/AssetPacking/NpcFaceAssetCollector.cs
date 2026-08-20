@@ -11,10 +11,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 internal static class NpcFaceAssetCollector
 {
-    internal sealed record Result(
-        IReadOnlySet<string> SourcePaths,
-        IReadOnlyDictionary<string, string> PackPathRenames);
-
     public static Result Collect(
         RecordCollection records,
         IReadOnlyDictionary<uint, uint> sourceToAllocatedFormIds,
@@ -77,4 +73,8 @@ internal static class NpcFaceAssetCollector
 
         return result;
     }
+
+    internal sealed record Result(
+        IReadOnlySet<string> SourcePaths,
+        IReadOnlyDictionary<string, string> PackPathRenames);
 }

@@ -16,13 +16,22 @@ namespace BethesdaMultitool.Core.Formats.Bsa.Extraction;
 /// </summary>
 public sealed class BsaExtractor : IDisposable
 {
+    // Upper bound for a compressed entry's declared uncompressed size: the size dword is
+    // attacker-controlled and would otherwise commit an arbitrary allocation. Real BSA payloads
+    // top out well under this (the engine streams nothing close to 256 MiB from a BSA).
+    private const long MaxDecompressedFileSize = 256 * 1024 * 1024;
+
+    private readonly long _archiveFileLength;
+
     // Converter cache - keyed by extension (e.g., ".ddx", ".nif")
     // Uses FormatRegistry to resolve converters. Guarded by _converterLock: converters are
     // resolved lazily on first touch, which can race when conversion-enabled extraction fans out.
     private readonly Dictionary<string, IFileConverter?> _converterCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _converterLock = new();
     private readonly bool _defaultCompressed;
+
     private readonly bool _embedFileNames;
+
     // Concurrent set (value unused): Enable* toggles can race conversion-enabled extraction workers.
     private readonly ConcurrentDictionary<string, byte> _enabledExtensions = new(StringComparer.OrdinalIgnoreCase);
     private readonly MemoryMappedFile _mappedFile;
@@ -31,21 +40,14 @@ public sealed class BsaExtractor : IDisposable
     // concurrent ExtractFile calls share it without locks (same pattern as Ba2Extractor, which
     // adopted it because per-read CreateViewAccessor is a real MapViewOfFile each time).
     private readonly MemoryMappedViewAccessor _view;
-    private readonly long _archiveFileLength;
     private bool _disposed;
-    private bool _verbose;
 
     // Set once by ArchiveHandleRegistry when this instance becomes a shared handle; the
     // conversion toggles below are per-instance state and must stay off shared instances.
     private bool _shared;
+    private bool _verbose;
 
     // XMA needs special handling since it uses XmaWavConverter
-    private bool _xmaConversionEnabled;
-
-    // Upper bound for a compressed entry's declared uncompressed size: the size dword is
-    // attacker-controlled and would otherwise commit an arbitrary allocation. Real BSA payloads
-    // top out well under this (the engine streams nothing close to 256 MiB from a BSA).
-    private const long MaxDecompressedFileSize = 256 * 1024 * 1024;
 
     /// <summary>
     ///     Create an extractor for a BSA archive.
@@ -86,7 +88,7 @@ public sealed class BsaExtractor : IDisposable
     public bool DdxConversionEnabled => _enabledExtensions.ContainsKey(".ddx") && GetOrCreateConverter(".ddx") != null;
 
     /// <summary>Whether XMA conversion is enabled and available.</summary>
-    public bool XmaConversionEnabled => _xmaConversionEnabled;
+    public bool XmaConversionEnabled { get; private set; }
 
     /// <summary>Whether NIF conversion is enabled and available.</summary>
     public bool NifConversionEnabled => _enabledExtensions.ContainsKey(".nif") && GetOrCreateConverter(".nif") != null;
@@ -108,7 +110,10 @@ public sealed class BsaExtractor : IDisposable
     ///     state visible to every holder, so they throw on a shared instance. Sites that need
     ///     conversion (Xbox→PC extraction flows) must open a private extractor.
     /// </summary>
-    internal void MarkShared() => _shared = true;
+    internal void MarkShared()
+    {
+        _shared = true;
+    }
 
     private void ThrowIfShared()
     {
@@ -175,17 +180,17 @@ public sealed class BsaExtractor : IDisposable
         if (!enable)
         {
             _enabledExtensions.TryRemove(".xma", out _);
-            _xmaConversionEnabled = false;
+            XmaConversionEnabled = false;
             return true;
         }
 
         if (!XmaWavConverter.IsAvailable)
         {
-            _xmaConversionEnabled = false;
+            XmaConversionEnabled = false;
             return false;
         }
 
-        _xmaConversionEnabled = true;
+        XmaConversionEnabled = true;
 
         _enabledExtensions.TryAdd(".xma", 0);
         return true;
@@ -198,7 +203,7 @@ public sealed class BsaExtractor : IDisposable
     /// <returns>Conversion result with WAV data if successful.</returns>
     public async Task<ConversionResult> ConvertXmaAsync(byte[] xmaData)
     {
-        if (!_xmaConversionEnabled)
+        if (!XmaConversionEnabled)
         {
             return new ConversionResult { Success = false, Notes = "XMA converter not initialized" };
         }

@@ -313,7 +313,7 @@ public record RuntimeTerrainMesh
             Vertices = sanitized,
             SanitizedZCount = totalBad,
             SanitizedMask = originalBadMask,
-            SanitizedZeroOriginIndex = sanitizedZeroOriginIndex,
+            SanitizedZeroOriginIndex = sanitizedZeroOriginIndex
         };
     }
 
@@ -455,7 +455,9 @@ public record RuntimeTerrainMesh
             HeightSource = reconstruction != null ? "RuntimeMESH" : "None",
             DetectedGridSize = reconstruction?.SourceGridSize ?? 0,
             DetectedLodLevel =
-                reconstruction != null ? TerrainGridReconstructor.GridSizeToLodLevel(reconstruction.SourceGridSize) : -1,
+                reconstruction != null
+                    ? TerrainGridReconstructor.GridSizeToLodLevel(reconstruction.SourceGridSize)
+                    : -1,
             SourceSampleCount = reconstruction?.SourceSampleCount ?? 0,
             SourceCoveragePercent = reconstruction?.SourceCoveragePercent ?? 0f,
             EncodedRoundTripMaxError = encodedRoundTripMaxError,

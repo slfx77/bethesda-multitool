@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
@@ -55,14 +55,15 @@ internal sealed record QuestVariableConditionSanitizationResult(
 ///     schedules a byte-preserving augmentation of the retained retail script, and remaps
 ///     the condition to it. Missing metadata and ambiguous exact matches still suppress the
 ///     entire newly-emitted INFO/PACK or TERM menu item. GetScriptVariable additionally requires a proven
-    ///     REFR/ACHR/ACRE -> NAME base -> SCRI chain; it remaps only by the same unique exact
-    ///     name/type identity and otherwise suppresses the INFO/PACK/menu item. It never drops only the CTDA:
-    ///     doing so would widen the owner to unconditional dialogue, AI, or terminal content.
+///     REFR/ACHR/ACRE -> NAME base -> SCRI chain; it remaps only by the same unique exact
+///     name/type identity and otherwise suppresses the INFO/PACK/menu item. It never drops only the CTDA:
+///     doing so would widen the owner to unconditional dialogue, AI, or terminal content.
 /// </remarks>
 internal static class QuestVariableConditionSanitizer
 {
     internal const ushort GetQuestVariableFunctionIndex = 79;
     internal const ushort GetScriptVariableFunctionIndex = 53;
+
     private static readonly IReadOnlyDictionary<string, string?> EmptyMetadata =
         new Dictionary<string, string?>();
 
@@ -121,8 +122,9 @@ internal static class QuestVariableConditionSanitizer
         var invalidConditions = 0;
         var unresolvedTargets = 0;
         var retainedGetScriptVariables = 0;
-        var needsInfoMetadata = sanitizeInfoRecords && dmpRecords.Dialogues.Any(dialogue => dialogue.Conditions.Any(
-            condition => condition.FunctionIndex is GetQuestVariableFunctionIndex or GetScriptVariableFunctionIndex));
+        var needsInfoMetadata = sanitizeInfoRecords && dmpRecords.Dialogues.Any(dialogue =>
+            dialogue.Conditions.Any(condition =>
+                condition.FunctionIndex is GetQuestVariableFunctionIndex or GetScriptVariableFunctionIndex));
         var topicsByFormId = needsInfoMetadata
             ? dmpRecords.DialogTopics.GroupBy(topic => topic.FormId)
                 .ToDictionary(group => group.Key, group => group.First())
@@ -175,7 +177,7 @@ internal static class QuestVariableConditionSanitizer
                 {
                     dmpRecords.Dialogues[index] = dialogue with
                     {
-                        SuppressPrototypeDerivedDialogue = true,
+                        SuppressPrototypeDerivedDialogue = true
                     };
                     suppressedPrototypeDerivedInfos++;
                     RewritePrototypeDerivedDiagnostics(diagnostics, diagnosticStart);
@@ -363,7 +365,7 @@ internal static class QuestVariableConditionSanitizer
             {
                 ["suppression-reason-code"] = diagnostic.Code,
                 ["owner-disposition"] = "retail-overlay-retained",
-                ["prototype-derived-disposition"] = "suppressed",
+                ["prototype-derived-disposition"] = "suppressed"
             };
             var code = diagnostic.Code.StartsWith("script-variable.", StringComparison.Ordinal)
                 ? "script-variable.prototype-derived-info-suppressed"
@@ -373,10 +375,10 @@ internal static class QuestVariableConditionSanitizer
                 Code = code,
                 RecordSuppressed = false,
                 Message =
-                    "Suppressed only the prototype-derived INFO because its captured condition " +
-                    $"was unsafe ({diagnostic.Message}) The shared retail INFO overlay remains " +
-                    "master-byte authoritative.",
-                Metadata = metadata,
+                "Suppressed only the prototype-derived INFO because its captured condition " +
+                $"was unsafe ({diagnostic.Message}) The shared retail INFO overlay remains " +
+                "master-byte authoritative.",
+                Metadata = metadata
             };
         }
     }
@@ -419,7 +421,7 @@ internal static class QuestVariableConditionSanitizer
                         patchedConditions ??= [.. conditions];
                         patchedConditions[index] = condition with
                         {
-                            Parameter2 = scriptDecision.RemappedIndex!.Value,
+                            Parameter2 = scriptDecision.RemappedIndex!.Value
                         };
                         remappedConditions++;
                         diagnostics.Add(CreateScriptVariableDiagnostic(
@@ -628,7 +630,7 @@ internal static class QuestVariableConditionSanitizer
             ["condition-source-script-form-id"] = FormatFormId(decision.SourceScriptFormId),
             ["condition-target-script-form-id"] = FormatFormId(decision.TargetScriptFormId),
             ["condition-remapped-variable-index"] = decision.RemappedIndex?
-                .ToString(System.Globalization.CultureInfo.InvariantCulture),
+                .ToString(CultureInfo.InvariantCulture)
         };
         foreach (var (key, value) in decision.Metadata)
         {
@@ -655,13 +657,13 @@ internal static class QuestVariableConditionSanitizer
         Dictionary<uint, QuestRecord> questsByFormId,
         Dictionary<uint, NpcRecord> npcsByFormId)
     {
-        (string? speakerScopeKind, uint? speakerScopeFormId) = dialogue switch
+        var (speakerScopeKind, speakerScopeFormId) = dialogue switch
         {
             { SpeakerFormId: { } exactSpeaker } => ("exact-npc", (uint?)exactSpeaker),
             { SpeakerFactionFormId: { } faction } => ("faction", (uint?)faction),
             { SpeakerRaceFormId: { } race } => ("race", (uint?)race),
             { SpeakerVoiceTypeFormId: { } voiceType } => ("voice-type", (uint?)voiceType),
-            _ => (null, null),
+            _ => (null, null)
         };
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -675,7 +677,7 @@ internal static class QuestVariableConditionSanitizer
             ["info-speaker-voice-type-form-id"] = FormatFormId(dialogue.SpeakerVoiceTypeFormId),
             ["info-speaker-scope-kind"] = speakerScopeKind,
             ["info-speaker-scope-form-id"] = FormatFormId(speakerScopeFormId),
-            ["info-response-count"] = dialogue.Responses.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["info-response-count"] = dialogue.Responses.Count.ToString(CultureInfo.InvariantCulture)
         };
 
         var topicFormId = dialogue.RawParentTopicFormId ?? dialogue.TopicFormId;
@@ -702,31 +704,35 @@ internal static class QuestVariableConditionSanitizer
             var response = dialogue.Responses[index];
             var prefix = $"info-response-{index:D3}";
             metadata[$"{prefix}-number"] = response.ResponseNumber
-                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+                .ToString(CultureInfo.InvariantCulture);
             metadata[$"{prefix}-text"] = response.Text;
         }
 
         return metadata;
     }
 
-    private static Dictionary<string, string?> BuildBaseMetadata(string? editorId) =>
-        new Dictionary<string, string?>(StringComparer.Ordinal)
+    private static Dictionary<string, string?> BuildBaseMetadata(string? editorId)
+    {
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            ["record-editor-id"] = editorId,
+            ["record-editor-id"] = editorId
         };
+    }
 
     private static Dictionary<string, string?> BuildTerminalItemMetadata(
         string? editorId,
         TerminalMenuItem item,
-        int itemIndex) =>
-        new Dictionary<string, string?>(StringComparer.Ordinal)
+        int itemIndex)
+    {
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["record-editor-id"] = editorId,
             ["terminal-menu-index"] = itemIndex.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
+                CultureInfo.InvariantCulture),
             ["terminal-menu-text"] = item.Text,
-            ["terminal-result-text"] = item.ResultText,
+            ["terminal-result-text"] = item.ResultText
         };
+    }
 
     private static Dictionary<string, string?> BuildConditionMetadata(
         IReadOnlyDictionary<string, string?> recordMetadata,
@@ -740,24 +746,27 @@ internal static class QuestVariableConditionSanitizer
                 ? "same-dump-sctx-exact"
                 : "same-dump-slsd-scvr-storage-only";
         }
+
         var metadata = new Dictionary<string, string?>(recordMetadata, StringComparer.Ordinal)
         {
             ["condition-target-form-id"] = FormatFormId(condition.Parameter1),
             ["condition-variable-index"] = condition.Parameter2
-                .ToString(System.Globalization.CultureInfo.InvariantCulture),
+                .ToString(CultureInfo.InvariantCulture),
             ["condition-variable-name"] = decision?.SourceVariable?.Name,
             ["condition-target-script-form-id"] = FormatFormId(decision?.TargetScriptFormId),
             ["condition-remapped-variable-index"] = decision?.RemappedIndex?
-                .ToString(System.Globalization.CultureInfo.InvariantCulture),
+                .ToString(CultureInfo.InvariantCulture),
             ["condition-augmented-variable-name"] = decision?.Augmentation?.Variable.Name,
             ["condition-variable-declaration-kind"] = decision?.SourceDeclarationKind?.ToString(),
-            ["condition-source-identity-proof"] = sourceIdentityProof,
+            ["condition-source-identity-proof"] = sourceIdentityProof
         };
         return metadata;
     }
 
-    private static string? FormatFormId(uint? formId) =>
-        formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    private static string? FormatFormId(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    }
 
     private sealed record RecordConditionOutcome(
         List<DialogueCondition> Conditions,
@@ -798,34 +807,40 @@ internal static class QuestVariableConditionSanitizer
     {
         public static ScriptVariableIdentityComparer Instance { get; } = new();
 
-        public bool Equals(ScriptVariableIdentity x, ScriptVariableIdentity y) =>
-            x.TargetScriptFormId == y.TargetScriptFormId
-            && x.Type == y.Type
-            && x.DeclarationKind == y.DeclarationKind
-            && string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+        public bool Equals(ScriptVariableIdentity x, ScriptVariableIdentity y)
+        {
+            return x.TargetScriptFormId == y.TargetScriptFormId
+                   && x.Type == y.Type
+                   && x.DeclarationKind == y.DeclarationKind
+                   && string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+        }
 
-        public int GetHashCode(ScriptVariableIdentity obj) =>
-            HashCode.Combine(
+        public int GetHashCode(ScriptVariableIdentity obj)
+        {
+            return HashCode.Combine(
                 obj.TargetScriptFormId,
                 obj.Type,
                 obj.DeclarationKind,
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
+        }
     }
 
     private sealed class VariableTableResolver
     {
-        private readonly IReadOnlyDictionary<uint, ParsedMainRecord> _masterRecords;
-        private readonly IReadOnlyDictionary<uint, uint>? _remapTable;
         private readonly Dictionary<uint, QuestRecord> _dmpQuestsByFormId;
         private readonly Dictionary<uint, QuestRecord> _dmpQuestsByResolvedFormId;
         private readonly Dictionary<uint, List<ScriptRecord>> _dmpScriptsByFormId;
         private readonly Dictionary<uint, List<ScriptRecord>> _dmpScriptsByResolvedFormId;
-        private readonly Dictionary<uint, List<RuntimeScriptData>> _runtimeScriptsByFormId = [];
-        private readonly Dictionary<uint, List<RuntimeScriptData>> _runtimeScriptsByResolvedFormId = [];
-        private readonly Dictionary<uint, IReadOnlyList<ScriptVariableInfo>> _masterVariablesByScript;
+        private readonly IReadOnlyDictionary<uint, ParsedMainRecord> _masterRecords;
         private readonly Dictionary<uint, string?> _masterSourceTextByScript;
+        private readonly Dictionary<uint, IReadOnlyList<ScriptVariableInfo>> _masterVariablesByScript;
+
         private readonly Dictionary<ScriptVariableIdentity, ScriptVariableAugmentation>
             _plannedAugmentations = new(ScriptVariableIdentityComparer.Instance);
+
+        private readonly IReadOnlyDictionary<uint, uint>? _remapTable;
+        private readonly Dictionary<uint, List<RuntimeScriptData>> _runtimeScriptsByFormId = [];
+        private readonly Dictionary<uint, List<RuntimeScriptData>> _runtimeScriptsByResolvedFormId = [];
 
         public VariableTableResolver(
             RecordCollection dmpRecords,
@@ -880,7 +895,7 @@ internal static class QuestVariableConditionSanitizer
                 .Select(condition => ResolveCore(
                     condition.Parameter1,
                     condition.Parameter2,
-                    allowUnplannedAugmentation: true))
+                    true))
                 .Where(static decision =>
                     decision.Kind == VariableConditionDecisionKind.Augment
                     && decision.SourceVariable is { Name: not null }
@@ -925,8 +940,8 @@ internal static class QuestVariableConditionSanitizer
                             .Where(static name => !string.IsNullOrWhiteSpace(name))
                             .Select(static name => name!),
                         StringComparer.OrdinalIgnoreCase);
-                    foreach (var planned in _plannedAugmentations.Values.Where(
-                                 augmentation => augmentation.TargetScriptFormId == targetScriptFormId))
+                    foreach (var planned in _plannedAugmentations.Values.Where(augmentation =>
+                                 augmentation.TargetScriptFormId == targetScriptFormId))
                     {
                         reservedNames.Add(planned.Variable.Name!);
                     }
@@ -977,7 +992,7 @@ internal static class QuestVariableConditionSanitizer
             while (true)
             {
                 var candidate = recoveryStem + suffix.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture);
+                    CultureInfo.InvariantCulture);
                 if (reservedNames.Add(candidate))
                 {
                     return candidate;
@@ -992,7 +1007,7 @@ internal static class QuestVariableConditionSanitizer
             return ResolveCore(
                 sourceQuestFormId,
                 sourceVariableIndex,
-                allowUnplannedAugmentation: false);
+                false);
         }
 
         private VariableConditionDecision ResolveCore(
@@ -1006,9 +1021,9 @@ internal static class QuestVariableConditionSanitizer
             var sourceScript = FindSourceScript(sourceQuest, out var sourceScriptAmbiguous);
             var runtimeSourceScript = FindSourceRuntimeScript(
                 sourceQuest,
-                sourceScriptIsRaw: sourceQuest?.Script is { } sourceScriptFormId
-                                   && _dmpScriptsByFormId.ContainsKey(sourceScriptFormId),
-                metadataInvalid: out var runtimeMetadataInvalid);
+                sourceQuest?.Script is { } sourceScriptFormId
+                && _dmpScriptsByFormId.ContainsKey(sourceScriptFormId),
+                out var runtimeMetadataInvalid);
             var sourceVariables = sourceQuest?.Variables;
             if (runtimeSourceScript is not null)
             {
@@ -1018,6 +1033,7 @@ internal static class QuestVariableConditionSanitizer
             {
                 sourceVariables = sourceScript.Variables;
             }
+
             var sourceVariablesAtIndex = sourceVariables?
                 .Where(variable => variable.Index == sourceVariableIndex)
                 .ToList() ?? [];
@@ -1032,21 +1048,21 @@ internal static class QuestVariableConditionSanitizer
                 : null;
 
             var targetResolved = TryGetTargetVariableTable(
-                    sourceQuest,
-                    sourceScript,
-                    runtimeSourceScript,
-                    resolvedQuestFormId,
-                    out var targetScriptFormId,
-                    out var targetVariables,
-                    out var targetSourceText,
-                    out var targetIsRetainedMasterScript);
+                sourceQuest,
+                sourceScript,
+                runtimeSourceScript,
+                resolvedQuestFormId,
+                out var targetScriptFormId,
+                out var targetVariables,
+                out var targetSourceText,
+                out var targetIsRetainedMasterScript);
             if (sourceScriptAmbiguous || runtimeMetadataInvalid)
             {
                 return new VariableConditionDecision(
                     VariableConditionDecisionKind.Invalid,
                     null,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId);
+                    resolvedQuestFormId);
             }
 
             if (!targetResolved)
@@ -1055,7 +1071,7 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Unresolved,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId);
+                    resolvedQuestFormId);
             }
 
             var targetAtSameIndex = targetVariables
@@ -1067,7 +1083,7 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Invalid,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId);
+                    resolvedQuestFormId);
             }
 
             var sourceKind = TryGetDeclarationKind(sourceVariable, sourceText, out var concreteSourceKind)
@@ -1080,24 +1096,26 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Invalid,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId,
+                    resolvedQuestFormId,
                     SourceDeclarationKind: sourceKind);
             }
 
             // A non-concrete source identity or a non-retained target only supports the serialized
             // identity check; a concrete identity against a retained master script gets the full match.
             var sameIndexIdentityMatches = targetAtSameIndex.Count == 1
-                && (!ScriptVariableDeclarationIdentity.IsConcrete(sourceKind) || !targetIsRetainedMasterScript
-                    ? SameSerializedIdentity(sourceVariable, targetAtSameIndex[0])
-                    : VariablesMatch(sourceVariable, sourceKind, targetAtSameIndex[0], targetSourceText));
+                                           && (!ScriptVariableDeclarationIdentity.IsConcrete(sourceKind) ||
+                                               !targetIsRetainedMasterScript
+                                               ? SameSerializedIdentity(sourceVariable, targetAtSameIndex[0])
+                                               : VariablesMatch(sourceVariable, sourceKind, targetAtSameIndex[0],
+                                                   targetSourceText));
             if (sameIndexIdentityMatches)
             {
                 return new VariableConditionDecision(
                     VariableConditionDecisionKind.Valid,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId,
-                    TargetVariable: targetAtSameIndex[0],
+                    resolvedQuestFormId,
+                    targetAtSameIndex[0],
                     SourceDeclarationKind: sourceKind);
             }
 
@@ -1110,9 +1128,9 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Remap,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId,
-                    TargetVariable: matchingTargets[0],
-                    RemappedIndex: matchingTargets[0].Index,
+                    resolvedQuestFormId,
+                    matchingTargets[0],
+                    matchingTargets[0].Index,
                     SourceDeclarationKind: sourceKind);
             }
 
@@ -1122,7 +1140,7 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Invalid,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId);
+                    resolvedQuestFormId);
             }
 
             var identity = new ScriptVariableIdentity(
@@ -1136,11 +1154,11 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Augment,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId,
-                    TargetVariable: augmentation.Variable,
-                    RemappedIndex: augmentation.Variable.Index,
-                    Augmentation: augmentation,
-                    SourceDeclarationKind: sourceKind);
+                    resolvedQuestFormId,
+                    augmentation.Variable,
+                    augmentation.Variable.Index,
+                    augmentation,
+                    sourceKind);
             }
 
             return allowUnplannedAugmentation
@@ -1148,13 +1166,13 @@ internal static class QuestVariableConditionSanitizer
                     VariableConditionDecisionKind.Augment,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId,
+                    resolvedQuestFormId,
                     SourceDeclarationKind: sourceKind)
                 : new VariableConditionDecision(
                     VariableConditionDecisionKind.Invalid,
                     sourceVariable,
                     targetScriptFormId,
-                    TargetQuestFormId: resolvedQuestFormId);
+                    resolvedQuestFormId);
         }
 
         private ScriptRecord? FindSourceScript(QuestRecord? sourceQuest, out bool ambiguous)
@@ -1206,6 +1224,7 @@ internal static class QuestVariableConditionSanitizer
             {
                 candidates = _runtimeScriptsByResolvedFormId.GetValueOrDefault(resolvedScriptFormId);
             }
+
             if (candidates is null)
             {
                 return null;
@@ -1255,8 +1274,8 @@ internal static class QuestVariableConditionSanitizer
             if (_masterRecords.TryGetValue(resolvedQuestFormId, out var masterQuest)
                 && masterQuest.Header.Signature == "QUST")
             {
-                var scri = masterQuest.Subrecords.FirstOrDefault(
-                    static s => s.Signature == "SCRI" && s.Data.Length >= 4);
+                var scri =
+                    masterQuest.Subrecords.FirstOrDefault(static s => s.Signature == "SCRI" && s.Data.Length >= 4);
                 if (scri is null || scri.DataAsFormId == 0)
                 {
                     return false;
@@ -1270,6 +1289,7 @@ internal static class QuestVariableConditionSanitizer
                 {
                     _masterSourceTextByScript.TryGetValue(targetScriptFormId.Value, out targetSourceText);
                 }
+
                 return targetIsRetainedMasterScript;
             }
 
@@ -1442,10 +1462,12 @@ internal static class QuestVariableConditionSanitizer
 
         private static bool SameSerializedIdentity(
             ScriptVariableInfo source,
-            ScriptVariableInfo target) =>
-            source.Index == target.Index
-            && source.Type == target.Type
-            && string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase);
+            ScriptVariableInfo target)
+        {
+            return source.Index == target.Index
+                   && source.Type == target.Type
+                   && string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase);
+        }
 
         private static bool TryGetDeclarationKind(
             ScriptVariableInfo variable,

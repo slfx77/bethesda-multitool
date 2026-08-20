@@ -30,6 +30,7 @@ internal static class DialogueCombinePlanner
 {
     private const uint GreetingDialFormId = 0x000000C8;
     private const uint FirstNonSystemFormId = 0x00001000;
+
     /// <summary>
     ///     Collapse duplicate carved INFO identities before CSV backfill. Doing this while
     ///     source provenance is still visible guarantees a direct non-placeholder DMP line
@@ -104,6 +105,7 @@ internal static class DialogueCombinePlanner
                 {
                     noOpOverlaysSuppressed++;
                 }
+
                 // Never append unmatched prototype slots to the retail INFO itself. A cut
                 // slot may be rehomed only when it independently satisfies the strict cut-
                 // topic gate below, including an explicit player-facing PromptText. This
@@ -195,7 +197,7 @@ internal static class DialogueCombinePlanner
         // the sanitizer's allow-list; the synthesizer itself retains its established
         // explicit-root precedence.
         var rootsByPair = GreetingEntrySynthesizer.SelectScopedEntryTopics(
-            topics, infos, includeAllGraphRoots: true);
+            topics, infos, true);
         for (var index = 0; index < infos.Count; index++)
         {
             var greeting = infos[index];
@@ -301,21 +303,21 @@ internal static class DialogueCombinePlanner
                 .Order()
                 .ToList(),
             IdentityScopeObservedMissingTopic =
-                firstScope.ObservedMissingTopic || nextScope.ObservedMissingTopic,
+            firstScope.ObservedMissingTopic || nextScope.ObservedMissingTopic,
             IdentityScopeQuestFormIds = firstScope.QuestFormIds
                 .Concat(nextScope.QuestFormIds)
                 .Distinct()
                 .Order()
                 .ToList(),
             IdentityScopeObservedMissingQuest =
-                firstScope.ObservedMissingQuest || nextScope.ObservedMissingQuest,
+            firstScope.ObservedMissingQuest || nextScope.ObservedMissingQuest,
             IdentityScopeHardSpeakerFormIds = firstScope.HardSpeakerFormIds
                 .Concat(nextScope.HardSpeakerFormIds)
                 .Distinct()
                 .Order()
                 .ToList(),
             IdentityScopeObservedMissingHardSpeaker =
-                firstScope.ObservedMissingHardSpeaker || nextScope.ObservedMissingHardSpeaker,
+            firstScope.ObservedMissingHardSpeaker || nextScope.ObservedMissingHardSpeaker,
             QuestFormId = first.QuestFormId is > 0 ? first.QuestFormId : next.QuestFormId,
             SpeakerFormId = first.SpeakerFormId is > 0 ? first.SpeakerFormId : next.SpeakerFormId,
             SpeakerFactionFormId = first.SpeakerFactionFormId is > 0
@@ -329,7 +331,7 @@ internal static class DialogueCombinePlanner
                 : next.SpeakerVoiceTypeFormId,
             PromptText = !string.IsNullOrWhiteSpace(first.PromptText) ? first.PromptText : next.PromptText,
             SuppressPrototypeDerivedDialogue =
-                first.SuppressPrototypeDerivedDialogue || next.SuppressPrototypeDerivedDialogue,
+            first.SuppressPrototypeDerivedDialogue || next.SuppressPrototypeDerivedDialogue,
             Conditions = first.Conditions.Count > 0 ? first.Conditions : next.Conditions,
             ConditionFunctions = first.ConditionFunctions.Count > 0
                 ? first.ConditionFunctions
@@ -371,15 +373,6 @@ internal static class DialogueCombinePlanner
             hardSpeaker == 0 ? [] : [hardSpeaker],
             hardSpeaker == 0);
     }
-
-    private sealed record IdentityScopeEvidence(
-        int CaptureCount,
-        IReadOnlyList<uint> TopicFormIds,
-        bool ObservedMissingTopic,
-        IReadOnlyList<uint> QuestFormIds,
-        bool ObservedMissingQuest,
-        IReadOnlyList<uint> HardSpeakerFormIds,
-        bool ObservedMissingHardSpeaker);
 
     private static bool TryCreateRehomedCut(
         DialogueRecord source,
@@ -640,4 +633,13 @@ internal static class DialogueCombinePlanner
             }
         }
     }
+
+    private sealed record IdentityScopeEvidence(
+        int CaptureCount,
+        IReadOnlyList<uint> TopicFormIds,
+        bool ObservedMissingTopic,
+        IReadOnlyList<uint> QuestFormIds,
+        bool ObservedMissingQuest,
+        IReadOnlyList<uint> HardSpeakerFormIds,
+        bool ObservedMissingHardSpeaker);
 }

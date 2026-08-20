@@ -9,11 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class MiscEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<MiscItemRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["Value"] = m => m.Value,
-        ["Weight"] = m => m.Weight,
-    };
+    private static readonly Dictionary<string, Func<MiscItemRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Value"] = m => m.Value,
+            ["Weight"] = m => m.Weight
+        };
 
     public string RecordType => "MISC";
     public Type ModelType => typeof(MiscItemRecord);

@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 
@@ -25,8 +24,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 internal static class PlacedReferenceTransform
 {
     /// <summary>
-    ///     The model-to-world matrix for the 3D viewer: <c>Scale · Rx(−RotX)·Ry(−RotY)·Rz(−RotZ) ·
-    ///     Translation</c> (System.Numerics row-vector form, evaluated under <c>Vector3.Transform</c>).
+    ///     The model-to-world matrix for the 3D viewer:
+    ///     <c>
+    ///         Scale · Rx(−RotX)·Ry(−RotY)·Rz(−RotZ) ·
+    ///         Translation
+    ///     </c>
+    ///     (System.Numerics row-vector form, evaluated under <c>Vector3.Transform</c>).
     ///     Note this is the REFR <i>placement</i> only; the mesh scene-root node's own transform is
     ///     handled (discarded) at bake time — see
     ///     <c>NifSceneGraphWalker.ComputeWorldTransforms(treatRootsAsIdentity)</c>.
@@ -40,8 +43,8 @@ internal static class PlacedReferenceTransform
             * Matrix4x4.CreateRotationY(-rotY)
             * Matrix4x4.CreateRotationX(-rotX);
         return Matrix4x4.CreateScale(s)
-             * rotation
-             * Matrix4x4.CreateTranslation(x, y, z);
+               * rotation
+               * Matrix4x4.CreateTranslation(x, y, z);
     }
 
     /// <summary>
@@ -58,6 +61,7 @@ internal static class PlacedReferenceTransform
     ///     </para>
     /// </summary>
     public static float MapCanvasYawRadians(float rotZ, float rootNodeYawRadians = 0f)
-        => rotZ - rootNodeYawRadians;
+    {
+        return rotZ - rootNodeYawRadians;
+    }
 }
-

@@ -18,6 +18,25 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// </summary>
 public sealed class RaceEncoder : IRecordEncoder
 {
+    private static readonly Dictionary<string, Func<RaceRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
+    {
+        ["SkillBoosts"] = BuildSkillBoostBytes,
+        ["MaleHeight"] = m => m.MaleHeight,
+        ["FemaleHeight"] = m => m.FemaleHeight,
+        ["MaleWeight"] = m => m.MaleWeight,
+        ["FemaleWeight"] = m => m.FemaleWeight,
+        ["Flags"] = m => m.DataFlags
+    };
+
+    private static readonly Dictionary<string, Func<RaceRecord, object?>> VtckExtractors = new(StringComparer.Ordinal)
+    {
+        ["Male Voice Type"] = m => m.MaleVoiceFormId ?? 0u,
+        ["Female Voice Type"] = m => m.FemaleVoiceFormId ?? 0u
+    };
+
+    public string RecordType => "RACE";
+    public Type ModelType => typeof(RaceRecord);
+
     private static byte[] BuildSkillBoostBytes(RaceRecord race)
     {
         // 14 bytes: 7 pairs of (int8 SkillIndex + int8 Boost). -1 sentinel + zero for unused slots.
@@ -36,27 +55,9 @@ public sealed class RaceEncoder : IRecordEncoder
                 bytes[i * 2 + 1] = 0;
             }
         }
+
         return bytes;
     }
-
-    private static readonly Dictionary<string, Func<RaceRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["SkillBoosts"] = BuildSkillBoostBytes,
-        ["MaleHeight"] = m => m.MaleHeight,
-        ["FemaleHeight"] = m => m.FemaleHeight,
-        ["MaleWeight"] = m => m.MaleWeight,
-        ["FemaleWeight"] = m => m.FemaleWeight,
-        ["Flags"] = m => m.DataFlags,
-    };
-
-    private static readonly Dictionary<string, Func<RaceRecord, object?>> VtckExtractors = new(StringComparer.Ordinal)
-    {
-        ["Male Voice Type"] = m => m.MaleVoiceFormId ?? 0u,
-        ["Female Voice Type"] = m => m.FemaleVoiceFormId ?? 0u,
-    };
-
-    public string RecordType => "RACE";
-    public Type ModelType => typeof(RaceRecord);
 
     internal static EncodedRecord EncodeNew(RaceRecord race)
     {

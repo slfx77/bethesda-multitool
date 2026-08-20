@@ -36,7 +36,7 @@ public enum RecordDisposition
     ///     reason; the writer treats <c>Skip</c> entries as no-ops and they do not appear in
     ///     <see cref="EmitPlan.Records" />.
     /// </summary>
-    Skip,
+    Skip
 }
 
 /// <summary>
@@ -130,14 +130,13 @@ public sealed record RecordPlan
     ///     and only these, the verdict pass applies the CAPTURED enable-state instead of
     ///     preserving the master's Initially-Disabled header flag.
     ///     <para>
-    ///     USER RULING 2026-08-05 (playtest finding 2, option D): a scoped exception to the
-    ///     2026-08-04 "runtime state never overwrites authored file state" ruling, defensible
-    ///     because the master authored no placement in these worldspaces at all — there is no
-    ///     authored enable-state for the proto placement to overwrite. Re-homes into MASTER
-    ///     containers (WastelandNV, FreesideWorld) never set this: the 0x800 ruling stands in
-    ///     retail territory, which keeps the Powder-Gangers fix intact (overlap measured 0).
+    ///         USER RULING 2026-08-05 (playtest finding 2, option D): a scoped exception to the
+    ///         2026-08-04 "runtime state never overwrites authored file state" ruling, defensible
+    ///         because the master authored no placement in these worldspaces at all — there is no
+    ///         authored enable-state for the proto placement to overwrite. Re-homes into MASTER
+    ///         containers (WastelandNV, FreesideWorld) never set this: the 0x800 ruling stands in
+    ///         retail territory, which keeps the Powder-Gangers fix intact (overlap measured 0).
     ///     </para>
     /// </summary>
     public bool ProtoWorldspaceRehome { get; init; }
 }
-

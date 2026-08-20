@@ -41,7 +41,7 @@ internal static class ExportTileContentCoverage
         // ReferenceRenderer12 and the terrain/water cache gathers retain one extra cell at their
         // exit edge. Expand once more by half a cell because the input stores centers, not AABBs.
         var workingHalfExtent = (double)tileCylinder.Radius + cellSize;
-        var cellCenterReach = workingHalfExtent + ((double)cellSize * 0.5d);
+        var cellCenterReach = workingHalfExtent + cellSize * 0.5d;
         if (!double.IsFinite(workingHalfExtent) || !double.IsFinite(cellCenterReach))
         {
             return true;
@@ -63,10 +63,10 @@ internal static class ExportTileContentCoverage
             }
         }
 
-        var minX = (double)tileCylinder.Position.X - workingHalfExtent;
-        var maxX = (double)tileCylinder.Position.X + workingHalfExtent;
-        var minY = (double)tileCylinder.Position.Y - workingHalfExtent;
-        var maxY = (double)tileCylinder.Position.Y + workingHalfExtent;
+        var minX = tileCylinder.Position.X - workingHalfExtent;
+        var maxX = tileCylinder.Position.X + workingHalfExtent;
+        var minY = tileCylinder.Position.Y - workingHalfExtent;
+        var maxY = tileCylinder.Position.Y + workingHalfExtent;
         for (var i = 0; i < placedNifWater.Count; i++)
         {
             var geometry = placedNifWater[i];
@@ -85,10 +85,14 @@ internal static class ExportTileContentCoverage
         return false;
     }
 
-    private static bool HasValidBounds(Vector3 min, Vector3 max) =>
-        IsFinite(min) && IsFinite(max) &&
-        min.X <= max.X && min.Y <= max.Y && min.Z <= max.Z;
+    private static bool HasValidBounds(Vector3 min, Vector3 max)
+    {
+        return IsFinite(min) && IsFinite(max) &&
+               min.X <= max.X && min.Y <= max.Y && min.Z <= max.Z;
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }

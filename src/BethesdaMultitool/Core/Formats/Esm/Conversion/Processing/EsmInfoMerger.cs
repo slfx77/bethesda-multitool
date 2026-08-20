@@ -562,4 +562,3 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
         Response
     }
 }
-

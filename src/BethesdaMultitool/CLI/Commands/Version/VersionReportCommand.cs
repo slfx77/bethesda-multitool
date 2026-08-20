@@ -1,6 +1,5 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Utils;
 using BethesdaMultitool.Core.VersionTracking.Caching;
 using BethesdaMultitool.Core.VersionTracking.Extraction;

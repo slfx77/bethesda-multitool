@@ -1,9 +1,9 @@
 using System.Globalization;
+using Windows.Graphics;
+using Windows.UI;
 using BethesdaMultitool;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
-using Windows.Graphics;
-using Windows.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;

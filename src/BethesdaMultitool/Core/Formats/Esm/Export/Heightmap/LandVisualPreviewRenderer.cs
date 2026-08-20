@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+
 internal static class LandVisualPreviewRenderer
 {
     internal static async Task ExportAsync(
@@ -98,7 +99,8 @@ internal static class LandVisualPreviewRenderer
             var pixels = HeightmapExportPixelRenderer.BuildTextureIdPreviewPixels(visualData);
             if (pixels != null)
             {
-                HeightmapExportGroups.GetRgbWorldspaceGroup(texturePreviewCellsByWorldspace, land.WorldspaceFormId ?? 0u)
+                HeightmapExportGroups
+                    .GetRgbWorldspaceGroup(texturePreviewCellsByWorldspace, land.WorldspaceFormId ?? 0u)
                     .TryAdd(cellKey, pixels);
             }
         }
@@ -138,6 +140,4 @@ internal static class LandVisualPreviewRenderer
 
         return LandVisualData.MergeForEmission(land.VisualData, runtimeVertexColors, null);
     }
-
 }
-

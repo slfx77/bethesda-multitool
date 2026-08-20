@@ -49,19 +49,21 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
     // A line-list triangle always contributes six vertices. Rounding down prevents a permanently
     // unreachable two-vertex tail when the configured cap is not divisible by six.
     private readonly int _effectiveMaxLineVertices;
-    private readonly CollisionWireframeUploader<TBuffer> _uploader;
-    private readonly Action<TBuffer> _retire;
+
     private readonly Dictionary<CollisionMesh, MeshFingerprint> _meshFingerprintScratch =
         new(ReferenceEqualityComparer.Instance);
 
-    private Vector3[] _lineScratch = new Vector3[4096];
-    private Vector3[] _worldPositionScratch = [];
-    private WireframeContentKey _key;
+    private readonly Action<TBuffer> _retire;
+    private readonly CollisionWireframeUploader<TBuffer> _uploader;
     private TBuffer? _buffer;
+    private bool _disposed;
+    private bool _hasKey;
+    private WireframeContentKey _key;
+
+    private Vector3[] _lineScratch = new Vector3[4096];
     private int _lineVertexCount;
     private int _referencesDrawn;
-    private bool _hasKey;
-    private bool _disposed;
+    private Vector3[] _worldPositionScratch = [];
 
     public CollisionWireframeGeometryCache(
         CollisionWireframeUploader<TBuffer> uploader,
@@ -86,6 +88,13 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
     /// <summary>Number of non-empty replacement buffers created by the uploader.</summary>
     public int UploadCount { get; private set; }
 
+    public void Dispose()
+    {
+        if (_disposed) return;
+        Invalidate();
+        _disposed = true;
+    }
+
     public CollisionWireframeCacheResult<TBuffer> Resolve(IReadOnlyList<CollisionWireframeInstance> instances)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -95,7 +104,7 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
         if (_hasKey && plan.Key == _key)
         {
             return new CollisionWireframeCacheResult<TBuffer>(
-                _buffer, _lineVertexCount, _referencesDrawn, Rebuilt: false, Uploaded: false);
+                _buffer, _lineVertexCount, _referencesDrawn, false, false);
         }
 
         BuildGeometry(instances, plan);
@@ -117,7 +126,7 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
         if (previous is not null) _retire(previous);
 
         return new CollisionWireframeCacheResult<TBuffer>(
-            _buffer, _lineVertexCount, _referencesDrawn, Rebuilt: true, Uploaded: replacement is not null);
+            _buffer, _lineVertexCount, _referencesDrawn, true, replacement is not null);
     }
 
     /// <summary>
@@ -135,13 +144,6 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
         _hasKey = false;
         _lineVertexCount = 0;
         _referencesDrawn = 0;
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        Invalidate();
-        _disposed = true;
     }
 
     private BuildPlan CreatePlan(IReadOnlyList<CollisionWireframeInstance> instances)
@@ -203,6 +205,7 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
             {
                 _worldPositionScratch = new Vector3[positions.Length];
             }
+
             for (var i = 0; i < positions.Length; i++)
             {
                 _worldPositionScratch[i] = Vector3.Transform(positions[i], instance.World);
@@ -323,17 +326,16 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
     private struct ContentHasher
     {
         private const ulong FnvPrime = 1_099_511_628_211UL;
-        private ulong _hashA;
-        private ulong _hashB;
 
         public ContentHasher()
         {
-            _hashA = 14_695_981_039_346_656_037UL;
-            _hashB = 0x9E3779B97F4A7C15UL;
+            HashA = 14_695_981_039_346_656_037UL;
+            HashB = 0x9E3779B97F4A7C15UL;
         }
 
-        public readonly ulong HashA => _hashA;
-        public readonly ulong HashB => _hashB;
+        public ulong HashA { get; private set; }
+
+        public ulong HashB { get; private set; }
 
         public void Add(ulong value)
         {
@@ -345,12 +347,12 @@ internal sealed class CollisionWireframeGeometryCache<TBuffer> : IDisposable
         {
             unchecked
             {
-                _hashA ^= value;
-                _hashA *= FnvPrime;
+                HashA ^= value;
+                HashA *= FnvPrime;
 
-                _hashB ^= (ulong)value + 0x9E3779B97F4A7C15UL;
-                _hashB = BitOperations.RotateLeft(_hashB, 27);
-                _hashB = _hashB * 5 + 0x52DCE729UL;
+                HashB ^= value + 0x9E3779B97F4A7C15UL;
+                HashB = BitOperations.RotateLeft(HashB, 27);
+                HashB = HashB * 5 + 0x52DCE729UL;
             }
         }
     }

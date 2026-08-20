@@ -184,4 +184,3 @@ internal static class ReportTextFormatter
         sb.AppendLine($"{Indent}{label + ":",-LabelWidth}{value}");
     }
 }
-

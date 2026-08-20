@@ -1,9 +1,7 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
@@ -15,17 +13,28 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 /// </summary>
 internal sealed class RuntimeWorldReader
 {
-    private readonly RuntimeMemoryContext _context;
-    private readonly RuntimeLandVisualReader _landVisualReader;
-    private readonly RuntimeLoadedLandDiagnosticsReader _diagnosticsReader;
-    private readonly RuntimePdbFieldAccessor _fields;
-
     // Build-specific shift delta vs the PDB baseline (+16). Most builds align with
     // PDB exactly (shift=0); proto Debug builds shift -4 etc. Routed through
     // PdbStructView.WithShift so the per-field offset constants below are PDB-aligned
     // and the shift adjustment happens once per opened view.
     private const int PdbBaselineShift = 16;
+
+    // High-byte histogram of "bad" ppVertices VAs — values that are non-null but don't
+    // resolve to a captured memory region. Tells us whether they cluster in a specific
+    // VA range (suggesting an uncaptured heap region) or are random noise (suggesting a
+    // wrong field offset). Index = upper 8 bits of the VA (0x00..0xFF).
+    private readonly int[] _badVertexVaHighBytes = new int[256];
+    private readonly RuntimeMemoryContext _context;
+    private readonly RuntimeLoadedLandDiagnosticsReader _diagnosticsReader;
+    private readonly RuntimePdbFieldAccessor _fields;
+
+    // Parallel histogram of successful inner-pointer VAs (the actual pVertices arrays
+    // that were resolved). Comparing this against `_badVertexVaHighBytes` shows whether
+    // good vs bad VAs cluster in different regions.
+    private readonly int[] _goodVertexVaHighBytes = new int[256];
+    private readonly RuntimeLandVisualReader _landVisualReader;
     private readonly int _shift;
+    private int _meshStageGridReconstructFail;
 
     // Stage counters for the terrain-mesh extraction path. Aggregated across a single
     // `ReadAllRuntimeLandData` call so we can pinpoint which step drops a build's
@@ -33,24 +42,12 @@ internal sealed class RuntimeWorldReader
     // exclusive: a LAND record contributes to exactly one of them.
     private int _meshStageQuadrantOk;
     private int _meshStageSingleArrayOk;
-    private int _meshStageVertexPtrNull;
-    private int _meshStageVertexPtrBad;
-    private int _meshStageVertexOuterDerefFail;
-    private int _meshStageVertexInnerPtrNullOrBad;
     private int _meshStageVertexDataReadFail;
     private int _meshStageVertexFloatValidationFail;
-    private int _meshStageGridReconstructFail;
-
-    // High-byte histogram of "bad" ppVertices VAs — values that are non-null but don't
-    // resolve to a captured memory region. Tells us whether they cluster in a specific
-    // VA range (suggesting an uncaptured heap region) or are random noise (suggesting a
-    // wrong field offset). Index = upper 8 bits of the VA (0x00..0xFF).
-    private readonly int[] _badVertexVaHighBytes = new int[256];
-
-    // Parallel histogram of successful inner-pointer VAs (the actual pVertices arrays
-    // that were resolved). Comparing this against `_badVertexVaHighBytes` shows whether
-    // good vs bad VAs cluster in different regions.
-    private readonly int[] _goodVertexVaHighBytes = new int[256];
+    private int _meshStageVertexInnerPtrNullOrBad;
+    private int _meshStageVertexOuterDerefFail;
+    private int _meshStageVertexPtrBad;
+    private int _meshStageVertexPtrNull;
 
     /// <summary>Creates the reader bound to the given runtime memory context.</summary>
     public RuntimeWorldReader(RuntimeMemoryContext context)
@@ -72,7 +69,7 @@ internal sealed class RuntimeWorldReader
         // EditorIdLookupTables.landFormType detection identifies the right runtime
         // byte for filtering; this override ensures the field-resolution machinery
         // uses the right PDB layout regardless.
-        return _fields.OpenStructView(entry, pdbFormType: 0x44)?.WithShift(0, int.MaxValue, _shift);
+        return _fields.OpenStructView(entry, 0x44)?.WithShift(0, int.MaxValue, _shift);
     }
 
     /// <summary>

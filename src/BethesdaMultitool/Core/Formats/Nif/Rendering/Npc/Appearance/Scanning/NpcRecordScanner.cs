@@ -6,7 +6,10 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
-/// <summary>Parses an NPC_ record into a <see cref="NpcScanEntry" /> (race, head parts, FaceGen coefficients, inventory, packages).</summary>
+/// <summary>
+///     Parses an NPC_ record into a <see cref="NpcScanEntry" /> (race, head parts, FaceGen coefficients, inventory,
+///     packages).
+/// </summary>
 internal static class NpcRecordScanner
 {
     internal static NpcScanEntry? Process(
@@ -192,4 +195,3 @@ internal static class NpcRecordScanner
         };
     }
 }
-

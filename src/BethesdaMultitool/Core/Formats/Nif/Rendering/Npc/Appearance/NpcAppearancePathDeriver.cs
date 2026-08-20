@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
-/// <summary>Prefixes relative asset paths with the canonical <c>meshes\</c> / <c>textures\</c> roots used by Bethesda archives.</summary>
+/// <summary>
+///     Prefixes relative asset paths with the canonical <c>meshes\</c> / <c>textures\</c> roots used by Bethesda
+///     archives.
+/// </summary>
 internal static class NpcAppearancePathDeriver
 {
     internal static string? AsMeshPath(string? relativePath)

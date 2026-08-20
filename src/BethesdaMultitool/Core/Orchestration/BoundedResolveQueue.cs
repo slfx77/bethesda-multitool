@@ -24,17 +24,17 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
     where TKey : notnull
     where TResult : class
 {
-    private readonly int _maxConcurrent;
-    private readonly Func<TKey, TResult?> _resolve;
-    private readonly Func<Func<TResult?>, Task<TResult?>> _scheduler;
-    private readonly Queue<TKey> _pending = new();
-    private readonly HashSet<TKey> _known;
     private readonly ConcurrentQueue<Completion> _completed = new();
     private readonly List<Task> _inFlight = [];
     private readonly Lock _inFlightLock = new();
-    private ResourceRegistration? _registration;
+    private readonly HashSet<TKey> _known;
+    private readonly int _maxConcurrent;
+    private readonly Queue<TKey> _pending = new();
+    private readonly Func<TKey, TResult?> _resolve;
+    private readonly Func<Func<TResult?>, Task<TResult?>> _scheduler;
     private int _active;
     private long _processed;
+    private ResourceRegistration? _registration;
 
     /// <summary>Creates a queue that runs at most <paramref name="maxConcurrent" /> resolutions concurrently.</summary>
     /// <param name="name">Stable name for diagnostics.</param>
@@ -60,6 +60,31 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
         _known = keyComparer is null ? [] : new HashSet<TKey>(keyComparer);
     }
 
+    /// <summary>Background tasks currently running.</summary>
+    public int ActiveCount => Volatile.Read(ref _active);
+
+    /// <summary>Keys enqueued but not yet started.</summary>
+    public int QueuedCount => _pending.Count;
+
+    public void Dispose()
+    {
+        _registration?.Dispose();
+    }
+
+    public string ResourceName { get; }
+
+    public ResourceCategory Category => ResourceCategory.Queue;
+
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats
+        {
+            QueueDepth = _pending.Count,
+            InFlight = Volatile.Read(ref _active),
+            Processed = Interlocked.Read(ref _processed)
+        };
+    }
+
     /// <summary>
     ///     Registers the queue with <paramref name="registry" /> (unregistered again on
     ///     <see cref="Dispose" />). Returns the queue for fluent construction.
@@ -70,23 +95,6 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
         _registration = registry.Register(this, instanceTag);
         return this;
     }
-
-    public string ResourceName { get; }
-
-    public ResourceCategory Category => ResourceCategory.Queue;
-
-    /// <summary>Background tasks currently running.</summary>
-    public int ActiveCount => Volatile.Read(ref _active);
-
-    /// <summary>Keys enqueued but not yet started.</summary>
-    public int QueuedCount => _pending.Count;
-
-    public ResourceStats GetStats() => new()
-    {
-        QueueDepth = _pending.Count,
-        InFlight = Volatile.Read(ref _active),
-        Processed = Interlocked.Read(ref _processed),
-    };
 
     /// <summary>
     ///     Queues <paramref name="key" /> for background resolution unless it is already queued or in
@@ -201,11 +209,6 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
         }
 
         return pending.Length == 0 || NonPumpingWait.WaitAll(pending, timeout);
-    }
-
-    public void Dispose()
-    {
-        _registration?.Dispose();
     }
 
     private void PruneInFlight()

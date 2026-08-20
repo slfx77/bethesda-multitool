@@ -7,7 +7,7 @@ internal enum SpeedTreeLodComponent : byte
 {
     Branch,
     Leaf,
-    Billboard,
+    Billboard
 }
 
 /// <summary>
@@ -147,8 +147,10 @@ internal static class SpeedTreeRuntimeLod
         return sourceIndex >= 0 && sourceIndex % stride == 0;
     }
 
-    public static float ApproximateLeafSizeScale(SptLodInfo lod, int leafLevel) =>
-        MathF.Max(0.05f, 1f + Math.Max(0, leafLevel) * lod.LeafLodSizeIncrease);
+    public static float ApproximateLeafSizeScale(SptLodInfo lod, int leafLevel)
+    {
+        return MathF.Max(0.05f, 1f + Math.Max(0, leafLevel) * lod.LeafLodSizeIncrease);
+    }
 
     /// <summary>Build model-local near/far limits and the placement-scale reference radius.</summary>
     public static (float NearDistance, float FarDistance, float ReferenceRadius) ComputeDistanceRange(

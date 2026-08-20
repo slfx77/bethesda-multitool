@@ -76,7 +76,7 @@ public sealed class OblivionWaterReflectionCompositionContractTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuTextureCache12.cs");
         Assert.Contains(
-            "_solidTextureFactory.CreateFromRgba(width, height, rgba, generateMips: true)",
+            "_solidTextureFactory.CreateFromRgba(width, height, rgba, true)",
             cache, StringComparison.Ordinal);
     }
 

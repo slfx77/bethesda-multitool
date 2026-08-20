@@ -13,19 +13,19 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 ///     apply strictly, leaving the engine to walk ExtraLinkedRef into a form that no
 ///     longer resolves (the Gomorrah access-violation class).
 ///     <para>
-///     <b>Why this stayed a byte sweep when the other link rules moved to plan time.</b>
-///     Retirement Stage H5 (2026-08-12) moved every captured-child link decision into
-///     <c>PlacedRefLinkPlanner</c>, but this rule's subjects are the two populations the plan
-///     does not describe: master refs carried forward as verbatim bytes, and the deletion
-///     tombstones themselves — both produced by <see cref="MasterChildCarryForward" /> during
-///     writing, neither backed by a <c>RecordPlan</c>. Relocating this rule therefore means
-///     relocating carry-forward and tombstone synthesis first, which is its own stage.
+///         <b>Why this stayed a byte sweep when the other link rules moved to plan time.</b>
+///         Retirement Stage H5 (2026-08-12) moved every captured-child link decision into
+///         <c>PlacedRefLinkPlanner</c>, but this rule's subjects are the two populations the plan
+///         does not describe: master refs carried forward as verbatim bytes, and the deletion
+///         tombstones themselves — both produced by <see cref="MasterChildCarryForward" /> during
+///         writing, neither backed by a <c>RecordPlan</c>. Relocating this rule therefore means
+///         relocating carry-forward and tombstone synthesis first, which is its own stage.
 ///     </para>
 ///     <para>
-///     Measured on the three-dump corpus at H5: 0 / 26 / 415 tombstones emitted (xex21 /
-///     xex22 / xex44) and <c>refr.link-to-deleted-stripped</c> == 0 on all three — the rule is
-///     live but currently unexercised, so it is retained on the strength of the crash class it
-///     guards rather than on observed strips.
+///         Measured on the three-dump corpus at H5: 0 / 26 / 415 tombstones emitted (xex21 /
+///         xex22 / xex44) and <c>refr.link-to-deleted-stripped</c> == 0 on all three — the rule is
+///         live but currently unexercised, so it is retained on the strength of the crash class it
+///         guards rather than on observed strips.
 ///     </para>
 /// </summary>
 internal static class DeletedRefLinkStripper
@@ -60,7 +60,7 @@ internal static class DeletedRefLinkStripper
                 {
                     PersistentChildRecords = persistent,
                     VwdChildRecords = vwd,
-                    TemporaryChildRecords = temporary,
+                    TemporaryChildRecords = temporary
                 };
             }
         }
@@ -140,7 +140,7 @@ internal static class DeletedRefLinkStripper
                 var uintsToCheck = subSig == "XLKR" ? subLen / 4 : 1;
                 for (var u = 0; u < uintsToCheck; u++)
                 {
-                    var target = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 6 + (u * 4), 4));
+                    var target = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 6 + u * 4, 4));
                     if (deleted.Contains(target))
                     {
                         drops ??= [];

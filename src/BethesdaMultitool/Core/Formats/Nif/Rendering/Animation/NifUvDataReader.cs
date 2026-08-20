@@ -4,10 +4,14 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 /// <summary>The four NiUVData channels, in file order (nif.xml NiUVData: UV Groups[4]).</summary>
 internal sealed record NifUvData(
-    NifKeyInterpolation UTranslationInterpolation, NifFloatKey[] UTranslationKeys,
-    NifKeyInterpolation VTranslationInterpolation, NifFloatKey[] VTranslationKeys,
-    NifKeyInterpolation UScaleInterpolation, NifFloatKey[] UScaleKeys,
-    NifKeyInterpolation VScaleInterpolation, NifFloatKey[] VScaleKeys);
+    NifKeyInterpolation UTranslationInterpolation,
+    NifFloatKey[] UTranslationKeys,
+    NifKeyInterpolation VTranslationInterpolation,
+    NifFloatKey[] VTranslationKeys,
+    NifKeyInterpolation UScaleInterpolation,
+    NifFloatKey[] UScaleKeys,
+    NifKeyInterpolation VScaleInterpolation,
+    NifFloatKey[] VScaleKeys);
 
 /// <summary>
 ///     Reads a NiUVData block — exactly four float KeyGroups: U translation, V translation, U scale,

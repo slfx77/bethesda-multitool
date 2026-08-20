@@ -1,7 +1,5 @@
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
@@ -59,6 +57,7 @@ internal static class DmpDanglingEnrichment
                         }
                     }
                 }
+
                 foreach (var ws in loaded.Records.Worldspaces)
                 {
                     foreach (var cell in ws.Cells)
@@ -72,6 +71,7 @@ internal static class DmpDanglingEnrichment
                         }
                     }
                 }
+
                 foreach (var pr in loaded.Records.MapMarkers)
                 {
                     if (TryAddEnrichment(enrich, pr, resolver))
@@ -102,16 +102,15 @@ internal static class DmpDanglingEnrichment
         }
 
         enrich[pr.FormId] = new ReferenceEnrichment(
-            EditorId: string.IsNullOrEmpty(pr.EditorId) ? null : pr.EditorId,
-            BaseFormId: pr.BaseFormId,
-            BaseEditorId: pr.BaseEditorId ?? resolver.GetEditorId(pr.BaseFormId),
-            BaseFullName: resolver.GetDisplayName(pr.BaseFormId),
-            ModelPath: string.IsNullOrEmpty(pr.ModelPath) ? null : pr.ModelPath,
-            RecordType: pr.RecordType,
-            IsMapMarker: pr.IsMapMarker,
-            MarkerName: string.IsNullOrEmpty(pr.MarkerName) ? null : pr.MarkerName,
-            MarkerType: pr.MarkerType.HasValue ? (ushort)pr.MarkerType.Value : null);
+            string.IsNullOrEmpty(pr.EditorId) ? null : pr.EditorId,
+            pr.BaseFormId,
+            pr.BaseEditorId ?? resolver.GetEditorId(pr.BaseFormId),
+            resolver.GetDisplayName(pr.BaseFormId),
+            string.IsNullOrEmpty(pr.ModelPath) ? null : pr.ModelPath,
+            pr.RecordType,
+            pr.IsMapMarker,
+            string.IsNullOrEmpty(pr.MarkerName) ? null : pr.MarkerName,
+            pr.MarkerType.HasValue ? (ushort)pr.MarkerType.Value : null);
         return true;
     }
 }
-

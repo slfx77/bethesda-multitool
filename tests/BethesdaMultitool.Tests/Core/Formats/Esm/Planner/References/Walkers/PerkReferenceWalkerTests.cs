@@ -47,17 +47,17 @@ public sealed class PerkReferenceWalkerTests
                                 {
                                     FunctionIndex = 0x1C1,
                                     Parameter1FormId = 0x000B0001,
-                                    Parameter2FormId = 0x000B0002,
+                                    Parameter2FormId = 0x000B0002
                                 },
                                 new PerkCondition
                                 {
                                     FunctionIndex = 0x0E,
-                                    Parameter1 = 6,
-                                },
-                            ],
-                        },
-                    ],
-                },
+                                    Parameter1 = 6
+                                }
+                            ]
+                        }
+                    ]
+                }
             ]
         };
         var walker = new PerkReferenceWalker();

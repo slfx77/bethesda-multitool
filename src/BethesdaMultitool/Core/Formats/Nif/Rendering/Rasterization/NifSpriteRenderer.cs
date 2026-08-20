@@ -716,4 +716,3 @@ internal static class NifSpriteRenderer
         TriangleData[] OpaqueAndCutoutTriangles,
         TriangleData[] BlendedTriangles);
 }
-

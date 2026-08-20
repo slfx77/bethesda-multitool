@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Magic;

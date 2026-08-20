@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Actor;
@@ -9,28 +8,31 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Actor;
 ///     Reads NPC-specific fields from Xbox 360 memory dump buffers: ACBS stats, AI data,
 ///     S.P.E.C.I.A.L., skills, FaceGen morphs, inventory, factions, and package lists.
 ///     Used by <see cref="RuntimeActorReader" /> to populate NPC and Creature records.
-///
 ///     <para>
-///     Phase 1B.20 migrated 12 core-region offsets to PDB-driven lookups (via
-///     <see cref="PdbStructView" />). Phase 5.1 migrated the appearance-region reads
-///     too — the +32-byte runtime/PDB padding delta (FR2MatrixVTC) is now absorbed
-///     by a single <c>WithShift("TESNPC", 16 + _appearanceShift)</c> registration at
-///     the view-opening site in <see cref="RuntimeActorReader" />. Per-band coverage
-///     for the late-appearance region only fires when the probe discovers
-///     <c>LateAppearanceShift != AppearanceShift</c> (rare).
+///         Phase 1B.20 migrated 12 core-region offsets to PDB-driven lookups (via
+///         <see cref="PdbStructView" />). Phase 5.1 migrated the appearance-region reads
+///         too — the +32-byte runtime/PDB padding delta (FR2MatrixVTC) is now absorbed
+///         by a single <c>WithShift("TESNPC", 16 + _appearanceShift)</c> registration at
+///         the view-opening site in <see cref="RuntimeActorReader" />. Per-band coverage
+///         for the late-appearance region only fires when the probe discovers
+///         <c>LateAppearanceShift != AppearanceShift</c> (rare).
 ///     </para>
 ///     <para>
-///     Two clusters stay as hardcoded constants by design:
-///     <list type="bullet">
-///         <item>Probe-only core offsets (NpcAcbsOffset / NpcScriptPtrOffset /
-///         NpcRacePtrOffset / NpcClassPtrOffset / NpcStructSize) — used by
-///         RuntimeNpcLayoutProbe.ScoreSample, which runs BEFORE a stable layout
-///         (and view) exists.</item>
-///         <item>Core scalars (NpcAiDataOffset / NpcMoodOffset / NpcAiFlagsOffset /
-///         NpcAiAssistanceOffset / NpcSpecialOffset / NpcSkillsOffset) — they're
-///         read against a raw buffer span on the hot path; PDB-name lookups would
-///         add allocations.</item>
-///     </list>
+///         Two clusters stay as hardcoded constants by design:
+///         <list type="bullet">
+///             <item>
+///                 Probe-only core offsets (NpcAcbsOffset / NpcScriptPtrOffset /
+///                 NpcRacePtrOffset / NpcClassPtrOffset / NpcStructSize) — used by
+///                 RuntimeNpcLayoutProbe.ScoreSample, which runs BEFORE a stable layout
+///                 (and view) exists.
+///             </item>
+///             <item>
+///                 Core scalars (NpcAiDataOffset / NpcMoodOffset / NpcAiFlagsOffset /
+///                 NpcAiAssistanceOffset / NpcSpecialOffset / NpcSkillsOffset) — they're
+///                 read against a raw buffer span on the hot path; PDB-name lookups would
+///                 add allocations.
+///             </item>
+///         </list>
 ///     </para>
 /// </summary>
 internal sealed class RuntimeNpcFieldReader
@@ -47,6 +49,16 @@ internal sealed class RuntimeNpcFieldReader
         _layout = layout;
         _coreShift = layout.CoreShift;
     }
+
+    #region Creature Struct Layout
+
+    // TESCreature: PDB struct size 368, fully PDB-aligned (no FR2MatrixVTC padding
+    // drift). Phase 1B.21 migrated every field to view.* lookups in
+    // RuntimeActorReader.ReadRuntimeCreature. Only the struct size remains here so
+    // RuntimeActorReader can allocate the read buffer.
+    public int CreaStructSize => 352 + _coreShift;
+
+    #endregion
 
     /// <summary>
     ///     Read AI behavior data from TESAIForm at dump offset +164.
@@ -97,7 +109,7 @@ internal sealed class RuntimeNpcFieldReader
     {
         var factions = new List<FactionMembership>();
         var npcBuffer = view.Buffer;
-        var headOffset = view.Offset("listFactions", "TESActorBaseData") ?? (92 + _coreShift);
+        var headOffset = view.Offset("listFactions", "TESActorBaseData") ?? 92 + _coreShift;
 
         if (headOffset + 8 > npcBuffer.Length)
         {
@@ -212,7 +224,7 @@ internal sealed class RuntimeNpcFieldReader
     {
         var packages = new List<uint>();
         var buffer = view.Buffer;
-        var headOffset = view.Offset("AIPackList", "TESAIForm") ?? (168 + _coreShift);
+        var headOffset = view.Offset("AIPackList", "TESAIForm") ?? 168 + _coreShift;
 
         if (headOffset + 8 > buffer.Length)
         {
@@ -275,7 +287,7 @@ internal sealed class RuntimeNpcFieldReader
     {
         var spells = new List<uint>();
         var buffer = view.Buffer;
-        var headOffset = view.Offset("spellList", "TESSpellList") ?? (128 + _coreShift);
+        var headOffset = view.Offset("spellList", "TESSpellList") ?? 128 + _coreShift;
 
         if (headOffset + 8 > buffer.Length)
         {
@@ -523,7 +535,7 @@ internal sealed class RuntimeNpcFieldReader
     {
         var items = new List<InventoryItem>();
         var npcBuffer = view.Buffer;
-        var headOffset = view.Offset("objectList", "TESContainer") ?? (104 + _coreShift);
+        var headOffset = view.Offset("objectList", "TESContainer") ?? 104 + _coreShift;
 
         if (headOffset + 8 > npcBuffer.Length)
         {
@@ -833,16 +845,6 @@ internal sealed class RuntimeNpcFieldReader
     public RuntimeNpcFaceGenFieldLayout NpcFggsLayout => _layout.Fggs;
     public RuntimeNpcFaceGenFieldLayout NpcFggaLayout => _layout.Fgga;
     public RuntimeNpcFaceGenFieldLayout NpcFgtsLayout => _layout.Fgts;
-
-    #endregion
-
-    #region Creature Struct Layout
-
-    // TESCreature: PDB struct size 368, fully PDB-aligned (no FR2MatrixVTC padding
-    // drift). Phase 1B.21 migrated every field to view.* lookups in
-    // RuntimeActorReader.ReadRuntimeCreature. Only the struct size remains here so
-    // RuntimeActorReader can allocate the read buffer.
-    public int CreaStructSize => 352 + _coreShift;
 
     #endregion
 }

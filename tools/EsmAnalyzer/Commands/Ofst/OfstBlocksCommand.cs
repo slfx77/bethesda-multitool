@@ -1,6 +1,6 @@
-using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Ofst.OfstDataLoader;
 using static EsmAnalyzer.Commands.Ofst.OfstMathUtils;
 
@@ -24,11 +24,11 @@ public static class OfstBlocksCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var tileOption = new Option<int>("-t", "--tile")
-        { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
+            { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
         var tileLimitOption = new Option<int>("--tile-limit")
-        { Description = "Number of tiles to show", DefaultValueFactory = _ => 8 };
+            { Description = "Number of tiles to show", DefaultValueFactory = _ => 8 };
         var innerLimitOption = new Option<int>("--inner-limit")
-        { Description = "Number of inner positions to show per tile", DefaultValueFactory = _ => 32 };
+            { Description = "Number of inner positions to show per tile", DefaultValueFactory = _ => 32 };
         var csvOption = new Option<string?>("--csv") { Description = "Write full order to CSV" };
 
         command.Arguments.Add(fileArg);
@@ -56,13 +56,13 @@ public static class OfstBlocksCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var tileOption = new Option<int>("-t", "--tile")
-        { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
+            { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
         var tileXOption = new Option<int>("--tile-x")
-        { Description = "Tile X index", DefaultValueFactory = _ => -1 };
+            { Description = "Tile X index", DefaultValueFactory = _ => -1 };
         var tileYOption = new Option<int>("--tile-y")
-        { Description = "Tile Y index", DefaultValueFactory = _ => -1 };
+            { Description = "Tile Y index", DefaultValueFactory = _ => -1 };
         var maxOption = new Option<int>("--max")
-        { Description = "Max entries to show in list view", DefaultValueFactory = _ => 256 };
+            { Description = "Max entries to show in list view", DefaultValueFactory = _ => 256 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -90,7 +90,7 @@ public static class OfstBlocksCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Max entries to show", DefaultValueFactory = _ => 100 };
+            { Description = "Max entries to show", DefaultValueFactory = _ => 100 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -307,7 +307,7 @@ public static class OfstBlocksCommand
 
         var l1Col = col / L1Size;
         var l1Row = row / L1Size;
-        var l1Quad = ((l1Row * 2) + l1Col) % 4;
+        var l1Quad = (l1Row * 2 + l1Col) % 4;
         var l1Index = topOrder[l1Quad];
 
         var inL1Col = col % L1Size;
@@ -317,11 +317,11 @@ public static class OfstBlocksCommand
 
         var l2SubRow = l2Row / 2;
         var l2SubCol = l2Col / 2;
-        var l2SubQuad = ((l2SubRow * 2) + l2SubCol) % 4;
+        var l2SubQuad = (l2SubRow * 2 + l2SubCol) % 4;
         var l2SubIndex = midOrder[l2SubQuad];
         var l2InnerRow = l2Row % 2;
         var l2InnerCol = l2Col % 2;
-        var l2Index = (l2SubIndex * 4) + (l2InnerRow * 2) + l2InnerCol;
+        var l2Index = l2SubIndex * 4 + l2InnerRow * 2 + l2InnerCol;
 
         var inL2Col = inL1Col % L2Size;
         var inL2Row = inL1Row % L2Size;
@@ -330,24 +330,24 @@ public static class OfstBlocksCommand
         int l3Index;
         if (colMajorInner)
         {
-            l3Index = (l3Col * 4) + l3Row;
+            l3Index = l3Col * 4 + l3Row;
         }
         else
         {
-            l3Index = (l3Row * 4) + l3Col;
+            l3Index = l3Row * 4 + l3Col;
         }
 
         var cellCol = inL2Col % L3Size;
         var cellRow = inL2Row % L3Size;
-        int cellIndex = colMajorInner ? (cellCol * L3Size) + cellRow : (cellRow * L3Size) + cellCol;
+        var cellIndex = colMajorInner ? cellCol * L3Size + cellRow : cellRow * L3Size + cellCol;
 
         var l2BlocksPerL1 = 16;
         var l3BlocksPerL2 = 16;
         var cellsPerL3 = 64;
 
-        return ((long)l1Index * l2BlocksPerL1 * l3BlocksPerL2 * cellsPerL3) +
-               ((long)l2Index * l3BlocksPerL2 * cellsPerL3) +
-               ((long)l3Index * cellsPerL3) +
+        return (long)l1Index * l2BlocksPerL1 * l3BlocksPerL2 * cellsPerL3 +
+               (long)l2Index * l3BlocksPerL2 * cellsPerL3 +
+               (long)l3Index * cellsPerL3 +
                cellIndex;
     }
 
@@ -388,7 +388,7 @@ public static class OfstBlocksCommand
             var e = ordered[order];
             var tileX = e.Col / tileSize;
             var tileY = e.Row / tileSize;
-            var tileIndex = (tileY * tilesX) + tileX;
+            var tileIndex = tileY * tilesX + tileX;
             var innerX = e.Col % tileSize;
             var innerY = e.Row % tileSize;
 
@@ -475,7 +475,7 @@ public static class OfstBlocksCommand
             var tileY = e.Row / tileSize;
             var innerX = e.Col % tileSize;
             var innerY = e.Row % tileSize;
-            var tileIndex = (tileY * tilesX) + tileX;
+            var tileIndex = tileY * tilesX + tileX;
             writer.WriteLine(
                 $"{order},0x{e.FormId:X8},{e.GridX},{e.GridY},{e.Row},{e.Col},{tileX},{tileY},{innerX},{innerY},{tileIndex},0x{e.RecordOffset:X8}");
         }

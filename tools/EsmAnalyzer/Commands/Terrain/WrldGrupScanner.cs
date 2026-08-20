@@ -1,9 +1,4 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using System.Text;
-using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands.Terrain;
 
@@ -34,7 +29,7 @@ internal static class WrldGrupScanner
         var headerSize = bigEndian
             ? BinaryUtils.ReadUInt32BE(data.AsSpan(), 4)
             : BinaryUtils.ReadUInt32LE(data.AsSpan(), 4);
-        int offset = EsmParser.MainRecordHeaderSize + (int)headerSize;
+        var offset = EsmParser.MainRecordHeaderSize + (int)headerSize;
 
         while (offset + 24 <= data.Length)
         {
@@ -455,4 +450,3 @@ internal static class WrldGrupScanner
         }
     }
 }
-

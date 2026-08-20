@@ -5,7 +5,10 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
-/// <summary>Parses an AI-package (PACK) record into a scan entry of the weapon/equipment hints used to pick an NPC's displayed gear.</summary>
+/// <summary>
+///     Parses an AI-package (PACK) record into a scan entry of the weapon/equipment hints used to pick an NPC's
+///     displayed gear.
+/// </summary>
 internal static class PackageRecordScanner
 {
     internal static PackageScanEntry? Process(
@@ -70,4 +73,3 @@ internal static class PackageRecordScanner
         };
     }
 }
-

@@ -91,7 +91,7 @@ internal enum ParticleSystemSourceLayout
 {
     LegacyNiGeometry,
     SkyrimNiGeometry,
-    BsGeometry,
+    BsGeometry
 }
 
 /// <summary>Emitter volume shape (NiPSysEmitter subtype).</summary>
@@ -101,7 +101,7 @@ internal enum ParticleEmitterShape
     Box,
     Sphere,
     Cylinder,
-    Mesh,
+    Mesh
 }
 
 /// <summary>NiPSysMeshEmitter initial-velocity selection.</summary>
@@ -109,7 +109,7 @@ internal enum ParticleVelocityType
 {
     UseNormals = 0,
     UseRandom = 1,
-    UseDirection = 2,
+    UseDirection = 2
 }
 
 /// <summary>NiPSysMeshEmitter surface element used to select the spawn point.</summary>
@@ -119,7 +119,7 @@ internal enum ParticleEmitFrom
     FaceCenter = 1,
     EdgeCenter = 2,
     FaceSurface = 3,
-    EdgeSurface = 4,
+    EdgeSurface = 4
 }
 
 /// <summary>
@@ -142,9 +142,11 @@ internal sealed class ParticleEmitterDefinition : ParticleModifierDefinition
     public float LifeSpan { get; init; }
     public float LifeSpanVariation { get; init; }
 
-    /// <summary>Declination reference axis. Recovered FNV math treats declination as elevation, so π/2 emits
-    /// along this axis and zero emits in its perpendicular plane; the emitter-object transform then orients it
-    /// to world. Defaults to +Z for volume emitters. Mesh emitters override it with their authored Emission Axis.</summary>
+    /// <summary>
+    ///     Declination reference axis. Recovered FNV math treats declination as elevation, so π/2 emits
+    ///     along this axis and zero emits in its perpendicular plane; the emitter-object transform then orients it
+    ///     to world. Defaults to +Z for volume emitters. Mesh emitters override it with their authored Emission Axis.
+    /// </summary>
     public Vector3 EmissionAxis { get; init; } = Vector3.UnitZ;
 
     public ParticleVelocityType VelocityType { get; init; } = ParticleVelocityType.UseDirection;
@@ -164,20 +166,26 @@ internal sealed class ParticleEmitterDefinition : ParticleModifierDefinition
     /// </summary>
     public Matrix4x4 EmitterObjectTransform { get; set; } = Matrix4x4.Identity;
 
-    /// <summary>Block index of the volume emitter's Emitter Object node (-1 when absent), so the extractor
-    /// can resolve its WORLD transform from the scene-graph walk instead of trusting the raw local read.</summary>
+    /// <summary>
+    ///     Block index of the volume emitter's Emitter Object node (-1 when absent), so the extractor
+    ///     can resolve its WORLD transform from the scene-graph walk instead of trusting the raw local read.
+    /// </summary>
     public int EmitterObjectIndex { get; init; } = -1;
 
-    /// <summary>For mesh emitters: block indices of the authored emission meshes
-    /// (<c>NiPSysMeshEmitter.Emitter Meshes</c>). These shapes are suppressed from ordinary rendering.</summary>
+    /// <summary>
+    ///     For mesh emitters: block indices of the authored emission meshes
+    ///     (<c>NiPSysMeshEmitter.Emitter Meshes</c>). These shapes are suppressed from ordinary rendering.
+    /// </summary>
     public IReadOnlyList<int> EmitterMeshIndices { get; init; } = [];
 
     /// <summary>Compatibility projection of the emitter geometry bounds in particle-system local space.</summary>
     public Vector3 MeshBoundsMin { get; set; }
+
     public Vector3 MeshBoundsMax { get; set; }
 
     /// <summary>Emitter mesh geometry expressed in particle-system local space.</summary>
     public IReadOnlyList<Vector3> MeshVertices { get; set; } = [];
+
     public IReadOnlyList<Vector3> MeshNormals { get; set; } = [];
     public IReadOnlyList<int> MeshTriangles { get; set; } = [];
 
@@ -209,7 +217,7 @@ internal enum ParticleModifierKind
     Spawn,
     BoundUpdate,
     Subtexture,
-    Other,
+    Other
 }
 
 /// <summary>Base for a parsed NiPSysModifier. Concrete kinds carry their own typed params.</summary>
@@ -285,10 +293,10 @@ internal sealed class SubtextureModifierDefinition : ParticleModifierDefinition
 internal sealed class BombModifierDefinition : ParticleModifierDefinition
 {
     public Vector3 BombAxis { get; init; } = Vector3.UnitX;
-    public float Range { get; init; }       // "Decay" field = range over which the force decays
-    public float DeltaV { get; init; }      // velocity delta scale
-    public int DecayType { get; init; }     // 0 none, 1 linear, 2 exponential
-    public int SymmetryType { get; init; }  // 0 spherical, 1 cylindrical, 2 planar
+    public float Range { get; init; } // "Decay" field = range over which the force decays
+    public float DeltaV { get; init; } // velocity delta scale
+    public int DecayType { get; init; } // 0 none, 1 linear, 2 exponential
+    public int SymmetryType { get; init; } // 0 spherical, 1 cylindrical, 2 planar
     public Matrix4x4 BombObjectTransform { get; init; } = Matrix4x4.Identity;
     public bool HasBombObject { get; init; }
 }
@@ -299,7 +307,7 @@ internal sealed class GravityModifierDefinition : ParticleModifierDefinition
     public Vector3 GravityAxis { get; init; } = Vector3.UnitX;
     public float Decay { get; init; }
     public float Strength { get; init; } = 1f;
-    public int ForceType { get; init; }     // 0 planar, 1 spherical
+    public int ForceType { get; init; } // 0 planar, 1 spherical
     public float Turbulence { get; init; }
     public float TurbulenceScale { get; init; } = 1f;
     public bool WorldAligned { get; init; }
@@ -373,8 +381,10 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
     // NiPSysColorModifier (NiColorData) keys, sorted by Time in [0,1].
     public ParticleColorKey[] Keys { get; init; } = [];
 
-    /// <summary>Sample the modifier's RGBA at normalized life fraction <paramref name="t" /> (0=birth, 1=death).
-    /// Falls back to <paramref name="initial" /> when empty.</summary>
+    /// <summary>
+    ///     Sample the modifier's RGBA at normalized life fraction <paramref name="t" /> (0=birth, 1=death).
+    ///     Falls back to <paramref name="initial" /> when empty.
+    /// </summary>
     public Vector4 Sample(float t, Vector4 initial)
     {
         t = Math.Clamp(t, 0f, 1f);
@@ -436,12 +446,12 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
         {
             return FadeInPercent == 0f || t >= FadeInPercent
                 ? Color1.W
-                : Color0.W + ((Color1.W - Color0.W) * (t / FadeInPercent));
+                : Color0.W + (Color1.W - Color0.W) * (t / FadeInPercent);
         }
 #pragma warning restore S1244
 
-        return Color1.W + ((Color2.W - Color1.W) *
-                           ((t - FadeOutPercent) / (1f - FadeOutPercent)));
+        return Color1.W + (Color2.W - Color1.W) *
+            ((t - FadeOutPercent) / (1f - FadeOutPercent));
     }
 
     private Vector4 SampleKeys(float t)
@@ -459,5 +469,4 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
 
         return Keys[^1].Color;
     }
-
 }

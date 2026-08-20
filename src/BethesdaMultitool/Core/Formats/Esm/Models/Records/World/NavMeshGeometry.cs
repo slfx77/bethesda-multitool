@@ -26,8 +26,10 @@ public sealed class NavMeshGeometry
         Triangles = triangles;
     }
 
-    /// <summary>Navmesh vertices in the record's coordinate space (worldspace for exterior
-    /// cells, cell-local for interiors — both align with placed-reference coordinates).</summary>
+    /// <summary>
+    ///     Navmesh vertices in the record's coordinate space (worldspace for exterior
+    ///     cells, cell-local for interiors — both align with placed-reference coordinates).
+    /// </summary>
     public Vector3[] Vertices { get; }
 
     /// <summary>Triangle vertex-index triples into <see cref="Vertices" />.</summary>
@@ -188,17 +190,17 @@ public sealed class NavMeshGeometry
         if (nvnm.Length < 20) return null;
 
         var vertexCount = BinaryPrimitives.ReadUInt32LittleEndian(nvnm.AsSpan(16, 4));
-        var triCountOffset = 20L + ((long)vertexCount * 12);
+        var triCountOffset = 20L + (long)vertexCount * 12;
         if (vertexCount == 0 || triCountOffset + 4 > nvnm.Length) return null;
 
         var triangleCount = BinaryPrimitives.ReadUInt32LittleEndian(nvnm.AsSpan((int)triCountOffset, 4));
         var triStart = triCountOffset + 4;
-        if (triangleCount == 0 || triStart + ((long)triangleCount * 16) > nvnm.Length) return null;
+        if (triangleCount == 0 || triStart + (long)triangleCount * 16 > nvnm.Length) return null;
 
         var verts = new Vector3[vertexCount];
         for (var i = 0; i < vertexCount; i++)
         {
-            var off = 20 + (i * 12);
+            var off = 20 + i * 12;
             verts[i] = new Vector3(
                 BinaryPrimitives.ReadSingleLittleEndian(nvnm.AsSpan(off, 4)),
                 BinaryPrimitives.ReadSingleLittleEndian(nvnm.AsSpan(off + 4, 4)),
@@ -208,7 +210,7 @@ public sealed class NavMeshGeometry
         var tris = new (ushort, ushort, ushort)[triangleCount];
         for (var i = 0; i < triangleCount; i++)
         {
-            var off = (int)triStart + (i * 16);
+            var off = (int)triStart + i * 16;
             tris[i] = (
                 BinaryPrimitives.ReadUInt16LittleEndian(nvnm.AsSpan(off, 2)),
                 BinaryPrimitives.ReadUInt16LittleEndian(nvnm.AsSpan(off + 2, 2)),

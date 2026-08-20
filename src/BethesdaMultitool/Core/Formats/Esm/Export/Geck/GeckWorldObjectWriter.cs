@@ -560,4 +560,3 @@ internal static class GeckWorldObjectWriter
         return sb.ToString();
     }
 }
-

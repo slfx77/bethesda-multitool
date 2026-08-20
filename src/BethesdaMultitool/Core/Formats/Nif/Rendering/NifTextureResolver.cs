@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
@@ -17,11 +18,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 internal sealed class NifTextureResolver : IDisposable
 {
     private readonly ConcurrentLazyCache<string, DecodedTexture> _cache;
-    private readonly List<INifTextureSource> _sources;
     private readonly Func<string, DecodedTexture?>? _loadTextureOverride;
 
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, BgsmMaterial?> _materialCache =
+    private readonly ConcurrentDictionary<string, BgsmMaterial?> _materialCache =
         new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly List<INifTextureSource> _sources;
 
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
@@ -126,15 +128,17 @@ internal sealed class NifTextureResolver : IDisposable
         _cache.RecordExternalHit();
     }
 
-    private ConcurrentLazyCache<string, DecodedTexture> CreateCache() =>
-        new(
+    private ConcurrentLazyCache<string, DecodedTexture> CreateCache()
+    {
+        return new ConcurrentLazyCache<string, DecodedTexture>(
             nameof(NifTextureResolver),
             ResourceCategory.CpuCache,
             LoadTexture,
-            sizeOf: static texture =>
+            static texture =>
                 texture.MipLevels.Sum(static mip => (long)mip.Pixels.Length) + ByteSize.ObjectOverhead,
-            comparer: StringComparer.OrdinalIgnoreCase,
-            trimPriority: 10);
+            StringComparer.OrdinalIgnoreCase,
+            10);
+    }
 
     private DecodedTexture? LoadTexture(string path)
     {
@@ -199,24 +203,27 @@ internal sealed class NifTextureResolver : IDisposable
     ///     and resolves the diffuse texture. The materials archive must be among the configured sources.
     /// </summary>
     /// <summary>A 1×1 RGBA texture of <paramref name="rgba" /> (R in the low byte).</summary>
-    private static DecodedTexture SolidColorTexture(uint rgba) => new()
+    private static DecodedTexture SolidColorTexture(uint rgba)
     {
-        MipLevels =
-        [
-            new DecodedTextureMipLevel
-            {
-                Width = 1,
-                Height = 1,
-                Pixels =
-                [
-                    (byte)(rgba & 0xFF),
-                    (byte)((rgba >> 8) & 0xFF),
-                    (byte)((rgba >> 16) & 0xFF),
-                    (byte)((rgba >> 24) & 0xFF)
-                ]
-            }
-        ]
-    };
+        return new DecodedTexture
+        {
+            MipLevels =
+            [
+                new DecodedTextureMipLevel
+                {
+                    Width = 1,
+                    Height = 1,
+                    Pixels =
+                    [
+                        (byte)(rgba & 0xFF),
+                        (byte)((rgba >> 8) & 0xFF),
+                        (byte)((rgba >> 16) & 0xFF),
+                        (byte)((rgba >> 24) & 0xFF)
+                    ]
+                }
+            ]
+        };
+    }
 
     private DecodedTexture? LoadFromMaterial(string materialPath)
     {
@@ -230,9 +237,11 @@ internal sealed class NifTextureResolver : IDisposable
     ///     inline properties — at decode time. Cached per path (nulls too): a cell's shapes reference the
     ///     same few materials over and over, and each miss walks every archive source.
     /// </summary>
-    internal BgsmMaterial? TryGetMaterial(string materialPath) =>
-        _materialCache.GetOrAdd(
+    internal BgsmMaterial? TryGetMaterial(string materialPath)
+    {
+        return _materialCache.GetOrAdd(
             materialPath,
             static (path, sources) => MaterialTexturePathResolver.ResolveMaterial(path, sources),
             _sources);
+    }
 }

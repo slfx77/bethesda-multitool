@@ -1,7 +1,5 @@
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
@@ -114,7 +112,7 @@ internal static class SpeedTreeMetadata
         return candidates;
     }
 
-    private static float? ExtractObjectBoundsHeight(BethesdaMultitool.Core.Formats.Esm.Models.ObjectBounds? bounds)
+    private static float? ExtractObjectBoundsHeight(ObjectBounds? bounds)
     {
         if (bounds is null)
         {

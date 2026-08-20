@@ -1,7 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
@@ -137,8 +134,15 @@ public sealed class DmpRecordSource
             ["ANIO"] = c => GenericsOfType(c, "ANIO"),
             ["TACT"] = c => GenericsOfType(c, "TACT"),
             ["ASPC"] = c => GenericsOfType(c, "ASPC"),
-            ["ADDN"] = c => GenericsOfType(c, "ADDN"),
+            ["ADDN"] = c => GenericsOfType(c, "ADDN")
         };
+
+    private readonly RecordCollection _collection;
+
+    public DmpRecordSource(RecordCollection collection)
+    {
+        _collection = collection ?? throw new ArgumentNullException(nameof(collection));
+    }
 
     /// <summary>
     ///     Yields the generic records of one signature out of the shared
@@ -150,13 +154,6 @@ public sealed class DmpRecordSource
         return collection.GenericRecords
             .Where(r => string.Equals(r.RecordType, recordType, StringComparison.Ordinal))
             .Select(r => (r.FormId, (object)r));
-    }
-
-    private readonly RecordCollection _collection;
-
-    public DmpRecordSource(RecordCollection collection)
-    {
-        _collection = collection ?? throw new ArgumentNullException(nameof(collection));
     }
 
     /// <summary>
@@ -206,5 +203,8 @@ public sealed class DmpRecordSource
     ///     type. Routing-consistency tests use this contract; an enabled unmapped type simply
     ///     contributes no DMP catalog candidates.
     /// </summary>
-    public static bool SupportsType(string recordType) => Extractors.ContainsKey(recordType);
+    public static bool SupportsType(string recordType)
+    {
+        return Extractors.ContainsKey(recordType);
+    }
 }

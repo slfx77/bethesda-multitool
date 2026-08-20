@@ -13,17 +13,6 @@ internal static class CapturedScriptEmissionContract
     private static readonly Dictionary<string, string> FunctionNameNormalizationMap =
         ScriptComparer.BuildFunctionNameNormalizationMap();
 
-    internal sealed record SourceDecision(
-        bool ExecutableBundleSafe,
-        string? SourceText,
-        string? BundleIssue,
-        string? SourceIssue);
-
-    internal sealed record StandaloneDecision(
-        ScriptRecord Script,
-        string? BundleIssue,
-        string? SourceIssue);
-
     internal static SourceDecision EvaluateInline(
         bool isDmpDerived,
         ScriptSourceTextOrigin sourceTextOrigin,
@@ -146,7 +135,7 @@ internal static class CapturedScriptEmissionContract
                     {
                         IsCompiled = false,
                         CompiledSize = 0,
-                        IsIncompleteExecutableBundle = false,
+                        IsIncompleteExecutableBundle = false
                     },
                     null,
                     null);
@@ -163,14 +152,14 @@ internal static class CapturedScriptEmissionContract
                 {
                     SourceText = null,
                     SourceTextOrigin = ScriptSourceTextOrigin.None,
-                    IsIncompleteExecutableBundle = true,
+                    IsIncompleteExecutableBundle = true
                 },
                 consistencyIssue,
                 null);
         }
 
         var sourceDecision = EvaluateInline(
-            isDmpDerived: true,
+            true,
             script.SourceTextOrigin,
             compiledData,
             script.SourceText,
@@ -185,7 +174,7 @@ internal static class CapturedScriptEmissionContract
                 {
                     SourceText = null,
                     SourceTextOrigin = ScriptSourceTextOrigin.None,
-                    IsIncompleteExecutableBundle = true,
+                    IsIncompleteExecutableBundle = true
                 },
                 sourceDecision.BundleIssue,
                 sourceDecision.SourceIssue);
@@ -204,7 +193,7 @@ internal static class CapturedScriptEmissionContract
                 SourceTextOrigin = sourceIssue is null
                     ? script.SourceTextOrigin
                     : ScriptSourceTextOrigin.None,
-                IsIncompleteExecutableBundle = false,
+                IsIncompleteExecutableBundle = false
             },
             null,
             sourceIssue);
@@ -256,12 +245,12 @@ internal static class CapturedScriptEmissionContract
 
         var littleEndian = ScriptBytecodeAnalyzer.Analyze(
             compiled,
-            isBigEndian: false,
+            false,
             variables,
             referencedObjects);
         var bigEndian = ScriptBytecodeAnalyzer.Analyze(
             compiled,
-            isBigEndian: true,
+            true,
             variables,
             referencedObjects);
         var littleClean = littleEndian.WalkedToEnd && !littleEndian.HasDiagnostics;
@@ -312,7 +301,8 @@ internal static class CapturedScriptEmissionContract
 
         if (script.RefObjectCount != (uint)script.ReferencedObjects.Count)
         {
-            return $"SCHR RefObjectCount={script.RefObjectCount} does not match SCRO/SCRV count={script.ReferencedObjects.Count}";
+            return
+                $"SCHR RefObjectCount={script.RefObjectCount} does not match SCRO/SCRV count={script.ReferencedObjects.Count}";
         }
 
         var safety = ScriptBytecodeAnalyzer.AnalyzeEmissionSafety(
@@ -414,8 +404,7 @@ internal static class CapturedScriptEmissionContract
             return $"SCTX local '{duplicateDeclaration.Key}' is declared more than once";
         }
 
-        var unnamedVariable = variables.FirstOrDefault(
-            static variable => string.IsNullOrEmpty(variable.Name));
+        var unnamedVariable = variables.FirstOrDefault(static variable => string.IsNullOrEmpty(variable.Name));
         if (unnamedVariable is not null)
         {
             return $"SLSD local {unnamedVariable.Index} has no exact SCVR name";
@@ -449,8 +438,6 @@ internal static class CapturedScriptEmissionContract
 
         return null;
     }
-
-    private readonly record struct SourceLocalDeclaration(string Name, bool IsInteger);
 
     private static IEnumerable<string> NormalizeLines(string sourceText)
     {
@@ -489,15 +476,32 @@ internal static class CapturedScriptEmissionContract
         return false;
     }
 
-    private static string FormatSafetyDiagnostics(ScriptBytecodeEmissionSafetyAnalysis safety) =>
-        safety.Diagnostics.Count == 0
+    private static string FormatSafetyDiagnostics(ScriptBytecodeEmissionSafetyAnalysis safety)
+    {
+        return safety.Diagnostics.Count == 0
             ? "no analyzer detail"
             : string.Join(" | ", safety.Diagnostics);
+    }
 
-    private static string FormatCategories(IReadOnlyDictionary<string, int> categories) =>
-        string.Join(
+    private static string FormatCategories(IReadOnlyDictionary<string, int> categories)
+    {
+        return string.Join(
             ", ",
             categories
                 .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
                 .Select(static pair => $"{pair.Key}={pair.Value}"));
+    }
+
+    internal sealed record SourceDecision(
+        bool ExecutableBundleSafe,
+        string? SourceText,
+        string? BundleIssue,
+        string? SourceIssue);
+
+    internal sealed record StandaloneDecision(
+        ScriptRecord Script,
+        string? BundleIssue,
+        string? SourceIssue);
+
+    private readonly record struct SourceLocalDeclaration(string Name, bool IsInteger);
 }

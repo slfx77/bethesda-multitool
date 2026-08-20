@@ -6,27 +6,25 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 /// <summary>
 ///     Drops runtime obstacle-split triangles from a captured navmesh before it is re-emitted as
 ///     a persistent ESM navmesh.
-///
 ///     <para>
-///     When the engine routes around a dynamic obstacle it splits the affected base triangles
-///     into smaller sub-triangles and appends them to the live <c>BSNavMesh</c> triangle array,
-///     leaving the originals in place. Those appended triangles are flagged differently — they
-///     LACK the <c>0x800</c> "real navmesh triangle" bit that every base-mesh triangle carries —
-///     and they overlap the originals geometrically. A runtime DMP capture serializes both, so
-///     the re-emitted navmesh has coincident triangles; FNV's load-time validator then logs
-///     <c>opposite normals but are linked</c> / <c>vertices do not match</c> and AVs in
-///     <c>NavMeshSearchClosePoint</c> on cell entry (the Gomorrah01 crash). Obstacles are dynamic
-///     and re-applied at runtime, so the persistent navmesh must contain only the base mesh.
+///         When the engine routes around a dynamic obstacle it splits the affected base triangles
+///         into smaller sub-triangles and appends them to the live <c>BSNavMesh</c> triangle array,
+///         leaving the originals in place. Those appended triangles are flagged differently — they
+///         LACK the <c>0x800</c> "real navmesh triangle" bit that every base-mesh triangle carries —
+///         and they overlap the originals geometrically. A runtime DMP capture serializes both, so
+///         the re-emitted navmesh has coincident triangles; FNV's load-time validator then logs
+///         <c>opposite normals but are linked</c> / <c>vertices do not match</c> and AVs in
+///         <c>NavMeshSearchClosePoint</c> on cell entry (the Gomorrah01 crash). Obstacles are dynamic
+///         and re-applied at runtime, so the persistent navmesh must contain only the base mesh.
 ///     </para>
-///
 ///     <para>
-///     This pass keeps only triangles with the <c>0x800</c> flag, updates <c>DATA.TriangleCount</c>,
-///     and remaps the triangle indices that <c>NVCA</c> (cover triangles) and <c>NVDP</c> (door
-///     portals, owning-triangle at +4) reference, dropping any that pointed at a removed triangle.
-///     Vertices (NVVX) are left untouched — orphaned ones are harmless and dropping them would
-///     force a full vertex-index remap. Triangle neighbor links are NOT remapped here: the
-///     downstream <see cref="NavMeshAdjacencyRebuild" /> regenerates them from geometry on the
-///     filtered index space.
+///         This pass keeps only triangles with the <c>0x800</c> flag, updates <c>DATA.TriangleCount</c>,
+///         and remaps the triangle indices that <c>NVCA</c> (cover triangles) and <c>NVDP</c> (door
+///         portals, owning-triangle at +4) reference, dropping any that pointed at a removed triangle.
+///         Vertices (NVVX) are left untouched — orphaned ones are harmless and dropping them would
+///         force a full vertex-index remap. Triangle neighbor links are NOT remapped here: the
+///         downstream <see cref="NavMeshAdjacencyRebuild" /> regenerates them from geometry on the
+///         filtered index space.
 ///     </para>
 /// </summary>
 internal static class NavMeshObstacleTriangleFilter

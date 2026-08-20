@@ -437,7 +437,7 @@ public sealed class HavokCollisionExtractorTests
         var (data, nif) = BuildNif(
             false,
             CollisionObject(3, 1, false),
-            RigidBodyWithLayer(2, layer: 15, be: false),
+            RigidBodyWithLayer(2, 15, false),
             BoxShape(Vector3.One, false),
             TargetNode(false));
 
@@ -453,7 +453,7 @@ public sealed class HavokCollisionExtractorTests
         var (data, nif) = BuildNif(
             false,
             CollisionObject(3, 1, false),
-            RigidBodyWithLayer(2, layer: 0, be: false),
+            RigidBodyWithLayer(2, 0, false),
             ("bhkCompressedMeshShape", new byte[16]),
             TargetNode(false));
 
@@ -469,10 +469,10 @@ public sealed class HavokCollisionExtractorTests
         var (data, nif) = BuildNif(
             false,
             CollisionObject(6, 1, false),
-            RigidBodyWithLayer(2, layer: 15, be: false),
+            RigidBodyWithLayer(2, 15, false),
             BoxShape(Vector3.One, false),
             CollisionObject(6, 4, false),
-            RigidBodyWithLayer(5, layer: 0, be: false),
+            RigidBodyWithLayer(5, 0, false),
             ("bhkCompressedMeshShape", new byte[16]),
             TargetNode(false));
 
@@ -488,10 +488,10 @@ public sealed class HavokCollisionExtractorTests
         var (data, nif) = BuildNif(
             false,
             CollisionObject(6, 1, false),
-            RigidBodyWithLayer(2, layer: 15, be: false),
+            RigidBodyWithLayer(2, 15, false),
             BoxShape(Vector3.One, false),
             CollisionObject(6, 4, false),
-            RigidBodyWithLayer(5, layer: 0, be: false),
+            RigidBodyWithLayer(5, 0, false),
             BoxShape(Vector3.One, false),
             TargetNode(false));
 
@@ -508,7 +508,7 @@ public sealed class HavokCollisionExtractorTests
         var (data, nif) = BuildNif(
             false,
             CollisionObject(int.MaxValue, 1, false),
-            RigidBodyWithLayer(2, layer: 15, be: false),
+            RigidBodyWithLayer(2, 15, false),
             BoxShape(Vector3.One, false));
 
         var extraction = HavokCollisionExtractor.Extract(data, nif, false);
@@ -528,7 +528,7 @@ public sealed class HavokCollisionExtractorTests
         var (data, nif) = BuildNif(
             false,
             CollisionObject(4, 1, false),
-            RigidBodyWithLayer(2, layer: 15, be: false),
+            RigidBodyWithLayer(2, 15, false),
             BoxShape(Vector3.One, false),
             (peerType, new byte[16]),
             TargetNode(false));

@@ -8,19 +8,19 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Probes;
 /// <summary>
 ///     Picks the <see cref="RuntimeAcousticSpaceLayout" /> that matches the dump in hand.
 ///     <para>
-///     ASPC cannot be probed by the generic shift probe: <c>GetReadableFields(0x0E)</c> yields
-///     nine <c>PointerToForm</c> specs and nothing else, and sliding a run of adjacent pointers by
-///     ±4 re-validates almost every slot, so the generic probe's margin gate can never be met. It
-///     nonetheless returned a confident-looking <c>+4</c>, which is what put a REGN into the
-///     Night-sound slot on every emitted record.
+///         ASPC cannot be probed by the generic shift probe: <c>GetReadableFields(0x0E)</c> yields
+///         nine <c>PointerToForm</c> specs and nothing else, and sliding a run of adjacent pointers by
+///         ±4 re-validates almost every slot, so the generic probe's margin gate can never be met. It
+///         nonetheless returned a confident-looking <c>+4</c>, which is what put a REGN into the
+///         Night-sound slot on every emitted record.
 ///     </para>
 ///     <para>
-///     The discriminator this probe uses instead is <b>pointee type</b>, which is decisive where a
-///     shift score is not: the sound slots must resolve to SOUN and the region slot to REGN, and
-///     the three era layouts place those so that a wrong candidate always lands a REGN in a sound
-///     slot, a SOUN in the region slot, or a small integer where a pointer belongs. A non-null slot
-///     of the wrong type scores <see cref="Violation" />, so wrong candidates go negative rather
-///     than merely failing to score — that is what produces a usable margin.
+///         The discriminator this probe uses instead is <b>pointee type</b>, which is decisive where a
+///         shift score is not: the sound slots must resolve to SOUN and the region slot to REGN, and
+///         the three era layouts place those so that a wrong candidate always lands a REGN in a sound
+///         slot, a SOUN in the region slot, or a small integer where a pointer belongs. A non-null slot
+///         of the wrong type scores <see cref="Violation" />, so wrong candidates go negative rather
+///         than merely failing to score — that is what produces a usable margin.
 ///     </para>
 /// </summary>
 internal static class RuntimeAcousticSpaceProbe

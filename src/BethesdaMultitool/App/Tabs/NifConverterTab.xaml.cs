@@ -15,11 +15,11 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class NifConverterTab : NifFileConverterBase
 {
+    private readonly NifConverterViewModel _nifViewer = new();
     private bool _dependencyCheckDone;
 
     // NIF Viewer state
     private NifBrowserService? _nifBrowserService;
-    private readonly NifConverterViewModel _nifViewer = new();
     private bool _nifViewerWebViewInitialized;
 
     public NifConverterTab()

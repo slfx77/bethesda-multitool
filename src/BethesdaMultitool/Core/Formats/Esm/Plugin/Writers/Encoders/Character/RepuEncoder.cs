@@ -9,11 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// </summary>
 public sealed class RepuEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<ReputationRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["PositiveValue"] = m => m.PositiveValue,
-        ["NegativeValue"] = m => m.NegativeValue,
-    };
+    private static readonly Dictionary<string, Func<ReputationRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["PositiveValue"] = m => m.PositiveValue,
+            ["NegativeValue"] = m => m.NegativeValue
+        };
 
     public string RecordType => "REPU";
     public Type ModelType => typeof(ReputationRecord);

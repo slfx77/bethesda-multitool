@@ -16,26 +16,31 @@ namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
 /// </summary>
 public sealed class SpeedTreeRecordSourceTests
 {
-    /// <summary>FNV's WhiteOak01 TREE as it sits in FalloutNV.esm: MODL is a bare name with a leading
-    /// backslash (no <c>Trees\</c> folder) and ICON is a bare atlas file name.</summary>
-    private static TreeRecord WhiteOakTyped() => new()
+    /// <summary>
+    ///     FNV's WhiteOak01 TREE as it sits in FalloutNV.esm: MODL is a bare name with a leading
+    ///     backslash (no <c>Trees\</c> folder) and ICON is a bare atlas file name.
+    /// </summary>
+    private static TreeRecord WhiteOakTyped()
     {
-        FormId = 0x0003C356,
-        EditorId = "WhiteOak01",
-        ModelPath = @"\WhiteOak01.spt",
-        IconPath = "WhiteOakLeaves01.dds",
-        Seeds = [0x00049961],
-        Data = new TreeData
+        return new TreeRecord
         {
-            LeafCurvature = 2.5f,
-            BranchDimmingValue = 0.2f,
-            LeafDimmingValue = 0.7f,
-            ShadowRadius = 128,
-            RockSpeed = 1f,
-            RustleSpeed = 1f
-        },
-        BillboardSize = new TreeBillboardSize { Width = 768f, Height = 768f }
-    };
+            FormId = 0x0003C356,
+            EditorId = "WhiteOak01",
+            ModelPath = @"\WhiteOak01.spt",
+            IconPath = "WhiteOakLeaves01.dds",
+            Seeds = [0x00049961],
+            Data = new TreeData
+            {
+                LeafCurvature = 2.5f,
+                BranchDimmingValue = 0.2f,
+                LeafDimmingValue = 0.7f,
+                ShadowRadius = 128,
+                RockSpeed = 1f,
+                RustleSpeed = 1f
+            },
+            BillboardSize = new TreeBillboardSize { Width = 768f, Height = 768f }
+        };
+    }
 
     [Fact]
     public void BuildLeafTextureMap_TypedTreeRecord_ResolvesShippedAtlas()

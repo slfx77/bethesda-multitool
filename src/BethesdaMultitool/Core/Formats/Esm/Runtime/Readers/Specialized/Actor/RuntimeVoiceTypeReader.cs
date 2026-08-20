@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Actor;
 

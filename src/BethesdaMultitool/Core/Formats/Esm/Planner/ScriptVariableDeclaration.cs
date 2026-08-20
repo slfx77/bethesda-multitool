@@ -15,6 +15,7 @@ internal enum ScriptVariableDeclarationKind
     ///     converter-owned slot as canonical <c>int</c> in the target script's own SCTX.
     /// </summary>
     Integer,
+
     /// <summary>
     ///     A type-zero SLSD whose exact float-versus-reference keyword was not captured.
     ///     Like <see cref="Integer" />, it is storage evidence for a fresh local only; the
@@ -25,7 +26,7 @@ internal enum ScriptVariableDeclarationKind
     Long,
     Int,
     Float,
-    Reference,
+    Reference
 }
 
 /// <summary>
@@ -133,27 +134,33 @@ internal static class ScriptVariableDeclarationParser
 /// </summary>
 internal static class ScriptVariableDeclarationIdentity
 {
-    internal static bool IsConcrete(ScriptVariableDeclarationKind kind) =>
-        kind is ScriptVariableDeclarationKind.Short
+    internal static bool IsConcrete(ScriptVariableDeclarationKind kind)
+    {
+        return kind is ScriptVariableDeclarationKind.Short
             or ScriptVariableDeclarationKind.Long
             or ScriptVariableDeclarationKind.Int
             or ScriptVariableDeclarationKind.Float
             or ScriptVariableDeclarationKind.Reference;
+    }
 
     internal static bool KindsMatchExact(
         ScriptVariableDeclarationKind left,
-        ScriptVariableDeclarationKind right) =>
-        left == right && IsConcrete(left);
+        ScriptVariableDeclarationKind right)
+    {
+        return left == right && IsConcrete(left);
+    }
 
-    internal static ScriptVariableDeclarationKind FromStorage(ScriptVariableInfo variable) =>
-        variable.Type switch
+    internal static ScriptVariableDeclarationKind FromStorage(ScriptVariableInfo variable)
+    {
+        return variable.Type switch
         {
             1 => ScriptVariableDeclarationKind.Integer,
             0 => ScriptVariableDeclarationKind.FloatOrReference,
             _ => throw new InvalidDataException(
                 $"Script local '{variable.Name ?? "<unnamed>"}' has unsupported SLSD type "
-                + $"{variable.Type}."),
+                + $"{variable.Type}.")
         };
+    }
 
     /// <summary>
     ///     Chooses the declaration written for a newly allocated local. This does not turn
@@ -161,17 +168,22 @@ internal static class ScriptVariableDeclarationIdentity
     ///     a complete, deterministic SCTX declaration compatible with its serialized SLSD.
     /// </summary>
     internal static ScriptVariableDeclarationKind ForFreshLocal(
-        ScriptVariableDeclarationKind sourceKind) => sourceKind switch
+        ScriptVariableDeclarationKind sourceKind)
+    {
+        return sourceKind switch
         {
             ScriptVariableDeclarationKind.Integer => ScriptVariableDeclarationKind.Int,
             ScriptVariableDeclarationKind.FloatOrReference => ScriptVariableDeclarationKind.Float,
             _ when IsConcrete(sourceKind) => sourceKind,
-            _ => throw new ArgumentOutOfRangeException(nameof(sourceKind), sourceKind, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(sourceKind), sourceKind, null)
         };
+    }
 
     internal static bool IsStorageCompatible(
         ScriptVariableDeclarationKind kind,
-        byte serializedType) => kind switch
+        byte serializedType)
+    {
+        return kind switch
         {
             ScriptVariableDeclarationKind.Integer
                 or ScriptVariableDeclarationKind.Short
@@ -180,8 +192,9 @@ internal static class ScriptVariableDeclarationIdentity
             ScriptVariableDeclarationKind.FloatOrReference
                 or ScriptVariableDeclarationKind.Float
                 or ScriptVariableDeclarationKind.Reference => serializedType == 0,
-            _ => false,
+            _ => false
         };
+    }
 
     /// <summary>
     ///     Compares the complete local table relevant to numeric-variable identity. Duplicate
@@ -232,7 +245,7 @@ internal static class ScriptVariableDeclarationIdentity
                 rightVariable.Name!,
                 out var rightKind);
             if (leftHasKind != rightHasKind
-                || leftHasKind && leftKind != rightKind)
+                || (leftHasKind && leftKind != rightKind))
             {
                 return false;
             }
@@ -290,13 +303,15 @@ internal static class ScriptVariableDeclarationIdentity
         return true;
     }
 
-    private static bool IsAcceptedCompiledDeclarationSource(ScriptRecord? script) =>
-        script is
-        {
-            SourceTextCorrespondenceStatus: ScriptSourceCorrespondenceStatus.Accepted,
-            IsIncompleteExecutableBundle: false,
-            CompiledData: { Length: > 0 },
-        }
-        && !string.IsNullOrEmpty(script.SourceText)
-        && script.SourceTextOrigin != ScriptSourceTextOrigin.None;
+    private static bool IsAcceptedCompiledDeclarationSource(ScriptRecord? script)
+    {
+        return script is
+               {
+                   SourceTextCorrespondenceStatus: ScriptSourceCorrespondenceStatus.Accepted,
+                   IsIncompleteExecutableBundle: false,
+                   CompiledData: { Length: > 0 }
+               }
+               && !string.IsNullOrEmpty(script.SourceText)
+               && script.SourceTextOrigin != ScriptSourceTextOrigin.None;
+    }
 }

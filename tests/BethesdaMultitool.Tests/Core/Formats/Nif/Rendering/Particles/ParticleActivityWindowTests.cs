@@ -21,35 +21,39 @@ public sealed class ParticleActivityWindowTests
 
     /// <summary>The shape the census cares about: a gated emitter with a constant authored rate.</summary>
     private static ParticleSystemDefinition MakeSystem(
-        ParticleRateControllerDefinition rate, float lifeSpan = 2f) =>
-        new()
+        ParticleRateControllerDefinition rate, float lifeSpan = 2f)
+    {
+        return new ParticleSystemDefinition
         {
             Emitter = new ParticleEmitterDefinition
             {
                 LifeSpan = lifeSpan,
                 BirthRate = 50f,
-                BirthRateController = rate,
-            },
+                BirthRateController = rate
+            }
         };
+    }
 
     private static ParticleRateControllerDefinition ConstantRate(
         float value,
         ParticleControllerTiming? controller = null,
         bool? gate = null,
-        params ParticleBoolKey[] gateKeys) =>
-        new()
+        params ParticleBoolKey[] gateKeys)
+    {
+        return new ParticleRateControllerDefinition
         {
             ConstantValue = value,
             ControllerTiming = controller ?? ParticleControllerTiming.Identity,
             EmitterActiveConstant = gate,
-            EmitterActiveKeys = gateKeys,
+            EmitterActiveKeys = gateKeys
         };
+    }
 
     [Fact]
     public void ResolveBakeGrid_MirrorsBakerFloorsAndSettleMargin()
     {
         // Lifespan below the dt floor still gets at least one step, and the settle margin is included.
-        var (dt, steps) = ParticleActivityWindow.ResolveBakeGrid(MakeSystem(ConstantRate(10f), lifeSpan: 0f));
+        var (dt, steps) = ParticleActivityWindow.ResolveBakeGrid(MakeSystem(ConstantRate(10f), 0f));
 
         Assert.Equal(MathF.Max(ParticleBakeOptions.Default.TimeStep, 1f / 240f), dt, 6);
         Assert.True(steps >= 1);
@@ -70,7 +74,7 @@ public sealed class ParticleActivityWindowTests
         Assert.Equal(steps, times.Length);
         Assert.All(times, t => Assert.True(t < 0f, $"expected a negative sample time, got {t}"));
         Assert.True(times[0] < times[^1], "window must advance forward in time toward the snapshot");
-        Assert.Equal(-(steps * dt) + (0.5f * dt), times[0], 5);
+        Assert.Equal(-(steps * dt) + 0.5f * dt, times[0], 5);
     }
 
     [Fact]
@@ -86,13 +90,13 @@ public sealed class ParticleActivityWindowTests
             ConstantRate(25f, gate: false),
             ConstantRate(25f, gate: true),
             ConstantRate(
-                25f, loop, gate: null,
+                25f, loop, null,
                 new ParticleBoolKey(0f, false), new ParticleBoolKey(2f, true)),
-            new ParticleRateControllerDefinition
+            new()
             {
                 ControllerTiming = loop,
-                Keys = [new ParticleRateKey(0f, 0f), new ParticleRateKey(2f, 80f)],
-            },
+                Keys = [new ParticleRateKey(0f, 0f), new ParticleRateKey(2f, 80f)]
+            }
         ];
 
         foreach (var rate in cases)
@@ -104,7 +108,7 @@ public sealed class ParticleActivityWindowTests
             var baked = NifParticleBaker.Bake(system).Count;
 
             Assert.True(
-                (integral > 0f) == (baked > 0),
+                integral > 0f == baked > 0,
                 $"instrument and baker disagree: integral={integral}, baked={baked}");
         }
     }
@@ -116,7 +120,7 @@ public sealed class ParticleActivityWindowTests
         // "pulses-invisible" in census terms. bestSnapshot must be a snapshot that really bakes.
         var loop = new ParticleControllerTiming(1f, 0f, 0f, 10f, ParticleControllerCycle.Loop);
         var rate = ConstantRate(
-            60f, loop, gate: null,
+            60f, loop, null,
             new ParticleBoolKey(0f, false),
             new ParticleBoolKey(6f, true),
             new ParticleBoolKey(8f, false));
@@ -145,7 +149,7 @@ public sealed class ParticleActivityWindowTests
         Assert.Equal(0f, ParticleBakeOptions.Default.SnapshotTimeSeconds);
 
         var rate = ConstantRate(
-            60f, controller: null, gate: null,
+            60f, null, null,
             new ParticleBoolKey(0f, false), new ParticleBoolKey(1f, true));
         var system = MakeSystem(rate);
 
@@ -168,7 +172,7 @@ public sealed class ParticleActivityWindowTests
         // trailing OFF segment: a short-lived emitter's window never reaches back far enough to see
         // the ON keys, while a long-lived one's does. Nothing but LifeSpan differs between the two.
         var rate = ConstantRate(
-            60f, loop, gate: null,
+            60f, loop, null,
             new ParticleBoolKey(0f, false),
             new ParticleBoolKey(2f, true),
             new ParticleBoolKey(4f, false));

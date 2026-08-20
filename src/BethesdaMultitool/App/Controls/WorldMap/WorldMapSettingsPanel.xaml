@@ -73,12 +73,14 @@
         <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" Content="Initially disabled" IsChecked="False"
                   AutomationProperties.Name="Initially disabled"
                   ToolTipService.ToolTip="Show objects flagged initially-disabled" />
-        <CheckBox x:Name="RenderedObjectsCheckBox" x:FieldModifier="internal" Content="Rendered models" IsChecked="False"
+        <CheckBox x:Name="RenderedObjectsCheckBox" x:FieldModifier="internal" Content="Rendered models"
+                  IsChecked="False"
                   IsEnabled="False"
                   AutomationProperties.Name="Render placed objects top-down via the 3D renderer"
                   ToolTipService.ToolTip="Replace placed-object dots/boxes with a top-down rendered view of the actual models, occluded by terrain (exterior cells only; needs Meshes + Textures BSAs)" />
         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-          <TextBlock x:Name="DanglingRefsLabel" x:FieldModifier="internal" Text="Dangling REFRs:" VerticalAlignment="Center"
+          <TextBlock x:Name="DanglingRefsLabel" x:FieldModifier="internal" Text="Dangling REFRs:"
+                     VerticalAlignment="Center"
                      FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
           <ComboBox x:Name="DanglingRefsComboBox" x:FieldModifier="internal" MinWidth="100"
                     AutomationProperties.Name="Dangling REFR confidence threshold"

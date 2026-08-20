@@ -248,7 +248,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                             currentInsignia));
                     }
 
-                    currentRankNumber = SubrecordSchemaView.TryRead("RNAM", "FACT", subData, record.IsBigEndian) is { } v
+                    currentRankNumber = SubrecordSchemaView.TryRead("RNAM", "FACT", subData, record.IsBigEndian) is
+                        { } v
                         ? v.Int32("RankNumber")
                         : 0;
                     currentMaleTitle = null;

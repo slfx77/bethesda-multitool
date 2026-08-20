@@ -168,7 +168,7 @@ public sealed class SunShadowTelemetrySourceContractTests
                      "shadowCapturedBatchCount",
                      "shadowReferenceDrawsByCascade",
                      "shadowReferenceInstancesByCascade",
-                     "shadowTerrainCellDrawsByCascade",
+                     "shadowTerrainCellDrawsByCascade"
                  })
         {
             Assert.Contains($"fields[\"{field}\"]", profiling, StringComparison.Ordinal);

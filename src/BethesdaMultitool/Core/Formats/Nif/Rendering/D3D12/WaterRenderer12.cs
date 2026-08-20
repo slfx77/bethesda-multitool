@@ -15,6 +15,7 @@ using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using D12 = Vortice.Direct3D12;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -146,11 +147,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // as its global animated normal. WATR TNAM is a separate per-water detail input.
     private uint[]? _legacyAnimatedFrames;
 
-    private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
-    private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> _waterCells = new();
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> _visibleWaterScratch = new();
     // Point-query index over _waterCells; see RebuildWaterHeightLookup / TryGetWaterHeightAt.
     private readonly Dictionary<(int gx, int gy), float> _waterHeightByGrid = new();
-    private readonly List<global::BethesdaMultitool.WorldWaterCell> _irregularWaterCells = new();
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> _irregularWaterCells = new();
     // Placed-NIF water geometry (cave/pool/reflecting-pool water embedded in REFR meshes). Owned by
     // ReferenceRenderer12 (which retains ownership while their meshes stream in) and handed here once
     // per frame via SetNifWaterPlanes. Its stable publication dynamically removes hidden owners; this
@@ -160,7 +161,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly List<FnvNifWaterDrawBatch> _fnvNifDrawBatches = new();
     // Per-frame (cell, effective WATR, view depth) triples so the unstable cell sort compares
     // precomputed fields instead of re-deriving identity/depth per comparison.
-    private readonly List<(global::BethesdaMultitool.WorldWaterCell Cell, uint FormId, float Depth)>
+    private readonly List<(global::BethesdaMultitool.Core.WorldData.WorldWaterCell Cell, uint FormId, float Depth)>
         _fnvWaterSortScratch = new();
     private float? _worldspaceDefaultWaterHeight;
     private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
@@ -198,7 +199,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
     private FnvWater001SnapshotDescriptor _fnvWater001Snapshot;
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
-    private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
+    private global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? _spatialIndex;
 
     // Persistent-mapped UPLOAD-heap structured buffer, FRAME-SLOTTED: FramesInFlight slots of
     // _instanceCapacity packets each, written and SRV-windowed at the recorder's FrameIndex. A
@@ -515,7 +516,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _psoMorrowindDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
-    public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
+    public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
     public FnvWater001Preflight LastFnvWater001Decision { get; private set; } =
         FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
     public bool DetailedProfilingEnabled { get; set; }
@@ -537,20 +538,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex)
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex)
         => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex, appearance: null);
 
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex,
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance)
         => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex, appearance, normalMapBindlessIndex: null);
 
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex,
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance,
         uint? normalMapBindlessIndex)
         => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex, appearance,
@@ -559,7 +560,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex,
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance,
         IReadOnlyList<uint?>? normalMapBindlessIndices)
     {
@@ -578,7 +579,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             {
                 if (ResolveWaterHeight(cell) is float z)
                 {
-                    _waterCells.Add(new global::BethesdaMultitool.WorldWaterCell(
+                    _waterCells.Add(new global::BethesdaMultitool.Core.WorldData.WorldWaterCell(
                         key,
                         cell,
                         z,
@@ -1864,7 +1865,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
             return 0;
         }
-        var surface = _appearance?.Surface ?? BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
+        var surface =
+ _appearance?.Surface ?? BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
         // Morrowind and Oblivion both cycle the global water00-31 animation at the shipped 12 FPS.
         // Morrowind repurposes the NNAM slot as diffuse; Oblivion WATER000 consumes it as NormalMap.
         var noiseIndex = _noiseBindlessIndex;
@@ -1947,7 +1949,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
                 NoiseScale = surface.NoiseScale,
                 WaterOpacity = waterOpacity,
-                Surface0 = new Vector4(ResolveSurfaceUvScale(surface), surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
+                Surface0 =
+ new Vector4(ResolveSurfaceUvScale(surface), surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
                 // .w carries the lava flag (OBLIV-2): 1 = render as emissive, Fresnel-free lava (Oblivion
                 // Deadlands lava planes) instead of reflective water. Was an unused spare.
                 Surface1 = new Vector4(surface.SunPower, surface.DepthFalloffStart, surface.DepthFalloffEnd,
@@ -1995,7 +1998,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                     BodyIndex = modernResources?.BindlessIndices[ModernWaterResources12.BodyOutput] ?? NoNormalMap,
                     NormalIndex = modernResources?.BindlessIndices[ModernWaterResources12.NormalOutput] ?? NoNormalMap,
                     GlossIndex = modernResources?.BindlessIndices[ModernWaterResources12.GlossOutput] ?? NoNormalMap,
-                    DepthLutIndex = modernResources?.BindlessIndices[ModernWaterResources12.DepthLutOutput] ?? NoNormalMap,
+                    DepthLutIndex =
+ modernResources?.BindlessIndices[ModernWaterResources12.DepthLutOutput] ?? NoNormalMap,
                     TechniqueId = (uint)modernTechnique,
                     CubeIndex = _modernCubeBindlessIndex,
                     MaxPointLights = ModernWaterPipeline.MaxPointLights,
@@ -2864,7 +2868,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         bool MixedWaterTypes,
         uint? EffectiveWaterFormId);
 
-    private uint EffectiveFnvWaterFormId(global::BethesdaMultitool.WorldWaterCell water) =>
+    private uint EffectiveFnvWaterFormId(global::BethesdaMultitool.Core.WorldData.WorldWaterCell water) =>
         water.Cell.WaterFormId is > 0
             ? water.Cell.WaterFormId.Value
             : _fnvWater001WorldspaceDefaultWaterFormId ?? 0u;
@@ -2958,7 +2962,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     private FnvWater001VisibleCellContract InspectFnvWater001VisibleCells(
-        List<global::BethesdaMultitool.WorldWaterCell> cells)
+        List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> cells)
     {
         if (cells.Count == 0)
         {
@@ -3011,7 +3015,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     private FnvWater001Preflight EvaluateFnvWater001(
-        List<global::BethesdaMultitool.WorldWaterCell> visibleCells,
+        List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> visibleCells,
         in FnvWater001VisibleCellContract cells,
         float cameraHeight,
         bool isPerspectiveProjection,

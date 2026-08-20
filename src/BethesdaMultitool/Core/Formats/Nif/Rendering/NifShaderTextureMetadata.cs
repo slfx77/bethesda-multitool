@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 /// <summary>
@@ -16,11 +18,13 @@ internal sealed class NifShaderTextureMetadata
     ///     retained for inspection/POM work only; PC-final simple parallax does not consume them.
     /// </summary>
     public float? ParallaxMaxPasses { get; init; }
+
     public float? ParallaxScale { get; init; }
 
     /// <summary>Static shader-property UV transform authored before the texture reference.</summary>
-    public System.Numerics.Vector2 UvOffset { get; init; }
-    public System.Numerics.Vector2 UvScale { get; init; } = System.Numerics.Vector2.One;
+    public Vector2 UvOffset { get; init; }
+
+    public Vector2 UvScale { get; init; } = Vector2.One;
 
     /// <summary>
     ///     Inline Skyrim <c>BSEffectShaderProperty</c> base color. The engine uploads
@@ -61,6 +65,7 @@ internal sealed class NifShaderTextureMetadata
     ///     Null when the block predates the fields or isn't a no-lighting shader.
     /// </summary>
     public (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? NoLightingFalloff { get; init; }
+
     public IReadOnlyList<string?> TextureSlots { get; init; } = [];
 
     /// <summary>

@@ -71,7 +71,7 @@ public sealed record SubrecordMergePolicy
         return this with
         {
             RetainFromEsm = retained,
-            DoNotAppendFromDmp = doNotAppend,
+            DoNotAppendFromDmp = doNotAppend
         };
     }
 
@@ -110,18 +110,18 @@ public sealed record SubrecordMergePolicy
                 },
             "NPC_" or "CREA" => CreateActorMergePolicy(),
             "CELL" => new SubrecordMergePolicy
+            {
+                RetainFromEsm = new HashSet<string>(StringComparer.Ordinal)
                 {
-                    RetainFromEsm = new HashSet<string>(StringComparer.Ordinal)
-                    {
-                        // Preserve master cell structure; runtime captures can misclassify interiors.
-                        "DATA", "XCLC"
-                    },
-                    AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
-                    DoNotAppendFromDmp = new HashSet<string>(StringComparer.Ordinal)
-                    {
-                        "DATA", "XCLC"
-                    }
+                    // Preserve master cell structure; runtime captures can misclassify interiors.
+                    "DATA", "XCLC"
                 },
+                AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
+                DoNotAppendFromDmp = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "DATA", "XCLC"
+                }
+            },
             _ => Default
         };
     }
@@ -132,12 +132,10 @@ public sealed record SubrecordMergePolicy
     ///     may point at prototype-only records that don't exist in master; letting them through
     ///     causes the engine's NPC-init bind to fail partially, which manifests as gore caps
     ///     on living NPCs (race mismatch → wrong body part data) and partial dismemberment.
-    ///
     ///     We DO let through raw-data fields: FGGS/FGGA/FGTS (FaceGen coefficient blobs),
     ///     HCLR/LNAM/NAM4/NAM5/NAM6/NAM7 (hair color, length, skeleton scale). These aren't
     ///     FormIDs and can't dangle — retaining them blocks prototype FaceGen changes from
     ///     reaching the rendered actor (Sunny Smiles' face stayed master-default).
-    ///
     ///     Each retained signature must also be in <see cref="DoNotAppendFromDmp" />, because
     ///     <see cref="RetainFromEsm" /> only controls Pass 1 (ESM-positional merge) and leaves
     ///     the DMP copy unconsumed — Pass 2 then appends it at the end of the record, producing

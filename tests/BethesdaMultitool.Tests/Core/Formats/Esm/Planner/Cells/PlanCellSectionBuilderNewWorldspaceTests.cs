@@ -89,7 +89,8 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         };
 
         var bytes = PlanCellSectionBuilder.BuildCellSection(
-            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(),
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()),
+            new Dictionary<uint, ParsedMainRecord>(),
             new PluginBuildOptions { CompressRecords = false });
 
         Assert.NotNull(bytes);

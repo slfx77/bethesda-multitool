@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     One frame's demand-set census for the capture completion gate. "Everything that should be
@@ -42,23 +42,26 @@ internal readonly record struct CaptureSceneCensus(
     ///     layer is disabled — it contributes nothing (same contract as
     ///     <see cref="StreamingQuiescence.IsQuiesced" />).
     /// </summary>
-    public static CaptureSceneCensus From(WorldRenderStats? references, WorldRenderStats? terrain) => new(
-        QueuedDecodes: references?.ReferenceQueuedDecodes ?? 0,
-        ActiveDecodes: references?.ReferenceActiveDecodes ?? 0,
-        GpuUploads: references?.ReferenceGpuUploads ?? 0,
-        TexturePendingResolves: references?.ReferenceTexturePendingResolves ?? 0,
-        TexturePendingUploads: references?.ReferenceTexturePendingUploads ?? 0,
-        TexturesWithheld: references?.ReferenceTexturePending ?? 0,
-        TerrainUploads: terrain?.NewUploads ?? 0,
-        TerrainTextureResolves: terrain?.TexturePendingResolves ?? 0,
-        TerrainTextureUploads: terrain?.TexturePendingUploads ?? 0,
-        TerrainDrawsTruncated: terrain?.TerrainDrawsTruncated ?? 0,
-        ReferenceInstances: references?.ReferenceInstances ?? 0,
-        ReferenceDrawn: references?.ReferenceDrawn ?? 0,
-        ReferenceSubmeshDraws: references?.ReferenceSubmeshDraws ?? 0,
-        ReferenceMeshMissing: references?.ReferenceMeshMissing ?? 0,
-        TerrainDraws: terrain?.TerrainDraws ?? 0,
-        WaterDraws: (references ?? terrain)?.WaterDraws ?? 0);
+    public static CaptureSceneCensus From(WorldRenderStats? references, WorldRenderStats? terrain)
+    {
+        return new CaptureSceneCensus(
+            references?.ReferenceQueuedDecodes ?? 0,
+            references?.ReferenceActiveDecodes ?? 0,
+            references?.ReferenceGpuUploads ?? 0,
+            references?.ReferenceTexturePendingResolves ?? 0,
+            references?.ReferenceTexturePendingUploads ?? 0,
+            references?.ReferenceTexturePending ?? 0,
+            terrain?.NewUploads ?? 0,
+            terrain?.TexturePendingResolves ?? 0,
+            terrain?.TexturePendingUploads ?? 0,
+            terrain?.TerrainDrawsTruncated ?? 0,
+            references?.ReferenceInstances ?? 0,
+            references?.ReferenceDrawn ?? 0,
+            references?.ReferenceSubmeshDraws ?? 0,
+            references?.ReferenceMeshMissing ?? 0,
+            terrain?.TerrainDraws ?? 0,
+            (references ?? terrain)?.WaterDraws ?? 0);
+    }
 
     /// <summary>
     ///     Names every term keeping this census from counting as complete relative to
@@ -68,7 +71,12 @@ internal readonly record struct CaptureSceneCensus(
     public string DescribeDirt(in CaptureSceneCensus previous)
     {
         var parts = new List<string>(4);
-        void Pending(string name, int v) { if (v != 0) parts.Add($"{name}={v}"); }
+
+        void Pending(string name, int v)
+        {
+            if (v != 0) parts.Add($"{name}={v}");
+        }
+
         Pending(nameof(QueuedDecodes), QueuedDecodes);
         Pending(nameof(ActiveDecodes), ActiveDecodes);
         Pending(nameof(GpuUploads), GpuUploads);
@@ -79,7 +87,12 @@ internal readonly record struct CaptureSceneCensus(
         Pending(nameof(TerrainTextureResolves), TerrainTextureResolves);
         Pending(nameof(TerrainTextureUploads), TerrainTextureUploads);
         Pending(nameof(TerrainDrawsTruncated), TerrainDrawsTruncated);
-        void Moved(string name, int now, int was) { if (now != was) parts.Add($"{name} {was}->{now}"); }
+
+        void Moved(string name, int now, int was)
+        {
+            if (now != was) parts.Add($"{name} {was}->{now}");
+        }
+
         Moved(nameof(ReferenceInstances), ReferenceInstances, previous.ReferenceInstances);
         Moved(nameof(ReferenceDrawn), ReferenceDrawn, previous.ReferenceDrawn);
         Moved(nameof(ReferenceSubmeshDraws), ReferenceSubmeshDraws, previous.ReferenceSubmeshDraws);

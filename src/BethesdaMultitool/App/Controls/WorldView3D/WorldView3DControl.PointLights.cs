@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.WorldData;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool;
@@ -43,8 +44,9 @@ public sealed partial class WorldView3DControl
     private static readonly bool PlacedLightsEnvEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLights) != "0";
 
-    private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerFrame);
     private readonly List<PlacedLight> _cellPlacedLightScratch = new(MaxPlacedLightsPerInteriorCell * 2);
+
+    private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerFrame);
     private readonly List<WorldSpatialCell> _placedLightCellScratch = [];
     private readonly HashSet<uint> _placedLightClipLoggedCells = [];
     private bool _framePlacedLightCapLogged;

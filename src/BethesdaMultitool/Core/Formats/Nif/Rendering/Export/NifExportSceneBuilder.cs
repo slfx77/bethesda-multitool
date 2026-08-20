@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;

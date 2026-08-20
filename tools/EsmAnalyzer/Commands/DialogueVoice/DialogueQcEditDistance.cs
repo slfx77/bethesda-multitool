@@ -16,11 +16,13 @@ internal static class DialogueQcEditDistance
             {
                 continue;
             }
+
             var diff = c.Length - tokenLen;
             if (diff < -1 || diff > 1)
             {
                 continue;
             }
+
             if (EditDistanceAtMost1(token, c))
             {
                 matches.Add(c);
@@ -35,6 +37,7 @@ internal static class DialogueQcEditDistance
         {
             (a, b) = (b, a);
         }
+
         var diff = b.Length - a.Length;
         if (diff > 1)
         {
@@ -56,6 +59,7 @@ internal static class DialogueQcEditDistance
                     }
                 }
             }
+
             return mismatches <= 1;
         }
 
@@ -75,10 +79,12 @@ internal static class DialogueQcEditDistance
                 {
                     return false;
                 }
+
                 inserted = true;
                 j++;
             }
         }
+
         return true;
     }
 }

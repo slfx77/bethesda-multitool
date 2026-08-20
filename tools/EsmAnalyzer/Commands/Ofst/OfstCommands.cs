@@ -1,6 +1,6 @@
-using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Ofst.OfstDataLoader;
 
 namespace EsmAnalyzer.Commands.Ofst;
@@ -20,7 +20,7 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum number of offsets to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum number of offsets to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
         var nonZeroOption = new Option<bool>("--nonzero") { Description = "Only show non-zero offsets" };
         var summaryOption = new Option<bool>("--summary") { Description = "Only print summary statistics" };
 
@@ -48,7 +48,7 @@ public static class OfstCommands
         var pcArg = new Argument<string>("pc") { Description = "Path to the PC ESM file" };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
 
         command.Arguments.Add(xboxArg);
         command.Arguments.Add(pcArg);
@@ -65,22 +65,58 @@ public static class OfstCommands
     }
 
     // Delegated to OfstLocateCommand
-    public static Command CreateOfstLocateCommand() => OfstLocateCommand.CreateOfstLocateCommand();
-    public static Command CreateOfstCellCommand() => OfstLocateCommand.CreateOfstCellCommand();
+    public static Command CreateOfstLocateCommand()
+    {
+        return OfstLocateCommand.CreateOfstLocateCommand();
+    }
+
+    public static Command CreateOfstCellCommand()
+    {
+        return OfstLocateCommand.CreateOfstCellCommand();
+    }
 
     // Delegated to OfstPatternCommand
-    public static Command CreateOfstPatternCommand() => OfstPatternCommand.CreateOfstPatternCommand();
-    public static Command CreateOfstOrderCommand() => OfstPatternCommand.CreateOfstOrderCommand();
-    public static Command CreateOfstDeltasCommand() => OfstPatternCommand.CreateOfstDeltasCommand();
+    public static Command CreateOfstPatternCommand()
+    {
+        return OfstPatternCommand.CreateOfstPatternCommand();
+    }
+
+    public static Command CreateOfstOrderCommand()
+    {
+        return OfstPatternCommand.CreateOfstOrderCommand();
+    }
+
+    public static Command CreateOfstDeltasCommand()
+    {
+        return OfstPatternCommand.CreateOfstDeltasCommand();
+    }
 
     // Delegated to OfstBlocksCommand
-    public static Command CreateOfstBlocksCommand() => OfstBlocksCommand.CreateOfstBlocksCommand();
-    public static Command CreateOfstTileOrderCommand() => OfstBlocksCommand.CreateOfstTileOrderCommand();
-    public static Command CreateOfstQuadtreeCommand() => OfstBlocksCommand.CreateOfstQuadtreeCommand();
+    public static Command CreateOfstBlocksCommand()
+    {
+        return OfstBlocksCommand.CreateOfstBlocksCommand();
+    }
+
+    public static Command CreateOfstTileOrderCommand()
+    {
+        return OfstBlocksCommand.CreateOfstTileOrderCommand();
+    }
+
+    public static Command CreateOfstQuadtreeCommand()
+    {
+        return OfstBlocksCommand.CreateOfstQuadtreeCommand();
+    }
 
     // Delegated to OfstRebuildCommand
-    public static Command CreateOfstValidateCommand() => OfstRebuildCommand.CreateOfstValidateCommand();
-    public static Command CreateOfstImageCommand() => OfstRebuildCommand.CreateOfstImageCommand();
+    public static Command CreateOfstValidateCommand()
+    {
+        return OfstRebuildCommand.CreateOfstValidateCommand();
+    }
+
+    public static Command CreateOfstImageCommand()
+    {
+        return OfstRebuildCommand.CreateOfstImageCommand();
+    }
 
     // ─── ExtractOfst command implementation ────────────────────────────────────
 

@@ -60,6 +60,7 @@ internal sealed class EsmAssembler(RecordEncoderRegistry encoderRegistry)
             {
                 continue;
             }
+
             orderedGrups.Add(kvp.Value);
             emittedTypes.Add(kvp.Key);
         }
@@ -105,4 +106,3 @@ internal sealed class EsmAssembler(RecordEncoderRegistry encoderRegistry)
         return stream.ToArray();
     }
 }
-

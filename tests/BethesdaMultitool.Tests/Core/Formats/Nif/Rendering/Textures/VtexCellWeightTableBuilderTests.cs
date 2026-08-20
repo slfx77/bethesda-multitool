@@ -78,16 +78,23 @@ public sealed class VtexCellWeightTableBuilderTests
         Assert.Equal(GridValue(ownBase, 15, 15), table.At(last, 0).E0.FormId);
     }
 
-    private static CellRecord Cell(int gx, int gy, uint[] grid) => new()
+    private static CellRecord Cell(int gx, int gy, uint[] grid)
     {
-        GridX = gx,
-        GridY = gy,
-        LandVisualData = new LandVisualData { VtexTextureFormIds = grid }
-    };
+        return new CellRecord
+        {
+            GridX = gx,
+            GridY = gy,
+            LandVisualData = new LandVisualData { VtexTextureFormIds = grid }
+        };
+    }
 
-    private static uint[] TextureGrid(uint baseId) =>
-        Enumerable.Range(0, 16 * 16).Select(i => baseId + (uint)i).ToArray();
+    private static uint[] TextureGrid(uint baseId)
+    {
+        return Enumerable.Range(0, 16 * 16).Select(i => baseId + (uint)i).ToArray();
+    }
 
-    private static uint GridValue(uint baseId, int row, int column) =>
-        baseId + (uint)(row * 16 + column);
+    private static uint GridValue(uint baseId, int row, int column)
+    {
+        return baseId + (uint)(row * 16 + column);
+    }
 }

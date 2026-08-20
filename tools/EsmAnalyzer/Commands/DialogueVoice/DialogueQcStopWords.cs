@@ -133,7 +133,8 @@ internal static class DialogueQcStopWords
         "case", "cases", "fact", "facts", "story",
         "money", "food", "work", "job", "company", "business",
         "fine", "okay", "true", "false", "real", "fake",
-        "alone", "together", "ourselves", "yourselves", "themselves", "myself", "yourself", "himself", "herself", "itself",
+        "alone", "together", "ourselves", "yourselves", "themselves", "myself", "yourself", "himself", "herself",
+        "itself",
         // Common nouns / generic NPC titles that exist as single-word FULL strings in FNV
         // and would otherwise drive false-positive case-fixes on every dialogue use.
         "guard", "guards", "soldier", "soldiers", "trooper", "troopers", "ranger", "rangers",

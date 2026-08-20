@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.WorldData;

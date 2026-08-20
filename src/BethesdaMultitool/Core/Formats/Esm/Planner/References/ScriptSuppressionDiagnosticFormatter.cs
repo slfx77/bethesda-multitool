@@ -1,3 +1,4 @@
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
@@ -9,12 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 /// </summary>
 internal static class ScriptSuppressionDiagnosticFormatter
 {
-    internal sealed record Issue(
-        string Message,
-        ResolvedRef? Reference = null,
-        int? LocalIndex = null,
-        uint? LocalId = null);
-
     public static string ScriptIdentity(
         ScriptRecord? script,
         uint? sourceFormId,
@@ -28,13 +23,17 @@ internal static class ScriptSuppressionDiagnosticFormatter
                + $"script-edid={editorId}]";
     }
 
-    public static string ReferenceIdentity(ResolvedRef reference) =>
-        $"{reference.FieldPath}[target-source={FormatFormId(reference.OriginalFormId)};"
-        + $"target-emitted={FormatFormId(reference.FinalFormId)};"
-        + $"action={reference.Action}]";
+    public static string ReferenceIdentity(ResolvedRef reference)
+    {
+        return $"{reference.FieldPath}[target-source={FormatFormId(reference.OriginalFormId)};"
+               + $"target-emitted={FormatFormId(reference.FinalFormId)};"
+               + $"action={reference.Action}]";
+    }
 
-    public static string LocalIdentity(int index, uint localId) =>
-        $"SCRV[{index}][local-id={localId}]";
+    public static string LocalIdentity(int index, uint localId)
+    {
+        return $"SCRV[{index}][local-id={localId}]";
+    }
 
     public static IReadOnlyDictionary<string, string?> Metadata(
         ScriptRecord? script,
@@ -48,7 +47,7 @@ internal static class ScriptSuppressionDiagnosticFormatter
             ["script-emitted-form-id"] = FormatNullableFormId(emittedFormId),
             ["script-editor-id"] = string.IsNullOrEmpty(script?.EditorId) ? null : script.EditorId,
             ["script-owner-quest-form-id"] = FormatNullableFormId(script?.OwnerQuestFormId),
-            ["issue-count"] = issues.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["issue-count"] = issues.Count.ToString(CultureInfo.InvariantCulture)
         };
 
         for (var index = 0; index < issues.Count; index++)
@@ -68,16 +67,26 @@ internal static class ScriptSuppressionDiagnosticFormatter
             {
                 metadata[$"{prefix}reference-field"] = $"SCRV[{localIndex}]";
                 metadata[$"{prefix}local-variable-id"] =
-                    localId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    localId.ToString(CultureInfo.InvariantCulture);
             }
         }
 
         return metadata;
     }
 
-    private static string FormatFormId(uint? formId) =>
-        formId.HasValue ? $"0x{formId.Value:X8}" : "<none>";
+    private static string FormatFormId(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : "<none>";
+    }
 
-    private static string? FormatNullableFormId(uint? formId) =>
-        formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    private static string? FormatNullableFormId(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    }
+
+    internal sealed record Issue(
+        string Message,
+        ResolvedRef? Reference = null,
+        int? LocalIndex = null,
+        uint? LocalId = null);
 }

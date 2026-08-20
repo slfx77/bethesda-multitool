@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Dds;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
@@ -185,10 +184,12 @@ internal static class NifTextureSampler
         );
     }
 
-    private static int AddressCoordinate(int coordinate, int size, bool clamp) =>
-        clamp
+    private static int AddressCoordinate(int coordinate, int size, bool clamp)
+    {
+        return clamp
             ? Math.Clamp(coordinate, 0, size - 1)
-            : ((coordinate % size) + size) % size;
+            : (coordinate % size + size) % size;
+    }
 
     /// <summary>
     ///     Resolve a D3D blend factor enum value to a per-channel multiplier.
@@ -218,4 +219,3 @@ internal static class NifTextureSampler
         };
     }
 }
-

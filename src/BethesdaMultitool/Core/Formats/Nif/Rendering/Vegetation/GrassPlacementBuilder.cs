@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 
@@ -139,7 +140,7 @@ internal static class GrassPlacementBuilder
                                 densitySum += value;
                             }
 
-                            if ((densitySum / density.Length) < profile.TexturePercentageThreshold)
+                            if (densitySum / density.Length < profile.TexturePercentageThreshold)
                             {
                                 continue;
                             }
@@ -332,19 +333,19 @@ internal static class GrassPlacementBuilder
                 var authoredRadius = grass.ModelBound is > 0f ? grass.ModelBound.Value : 64f;
                 var boundsScale = uniformScale ? heightScale : MathF.Max(1f, heightScale);
                 destination.Add(new RenderableReference(
-                    FormId: grass.FormId,
-                    WorldMatrix: world,
-                    ModelPath: modelPath,
-                    BoundsCenter: new Vector3(x, y, instanceHeight),
-                    BoundsRadius: MathF.Max(16f, authoredRadius * boundsScale),
-                    MeshId: meshId,
-                    IsInitiallyDisabled: false,
-                    IsMarker: false,
-                    IsImposter: false,
-                    Category: PlacedObjectCategory.Plants,
-                    AlternateTextures: null,
-                    IsGrass: true,
-                    GrassWaveMultiplier: grassWaveMultiplier));
+                    grass.FormId,
+                    world,
+                    modelPath,
+                    new Vector3(x, y, instanceHeight),
+                    MathF.Max(16f, authoredRadius * boundsScale),
+                    meshId,
+                    false,
+                    false,
+                    false,
+                    PlacedObjectCategory.Plants,
+                    null,
+                    true,
+                    grassWaveMultiplier));
             }
         }
     }
@@ -362,7 +363,7 @@ internal static class GrassPlacementBuilder
             for (var dx = -1; dx <= 1; dx++)
             {
                 // CellLayerWeightTable's row zero is north; LAND qy/world y grows north.
-                var tableY = (LandGridSize - 1) - (centerY + dy);
+                var tableY = LandGridSize - 1 - (centerY + dy);
                 destination[index++] = WeightFor(weights.At(centerX + dx, tableY), textureFormId);
             }
         }
@@ -380,6 +381,7 @@ internal static class GrassPlacementBuilder
         {
             if (weights.Overflow[i].FormId == formId) return weights.Overflow[i].Weight;
         }
+
         return 0f;
     }
 
@@ -389,6 +391,7 @@ internal static class GrassPlacementBuilder
         {
             if (values[i] > threshold) return true;
         }
+
         return false;
     }
 
@@ -472,7 +475,7 @@ internal static class GrassPlacementBuilder
             3 => height <= water && height >= water - distance,
             4 => height >= water + distance || height <= water - distance,
             5 => height <= water + distance && height >= water - distance,
-            _ => true,
+            _ => true
         };
     }
 

@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;

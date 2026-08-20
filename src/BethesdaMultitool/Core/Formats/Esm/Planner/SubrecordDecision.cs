@@ -22,7 +22,7 @@ public enum SubrecordSource
     ///     Both sources had this subrecord but the planner decided to drop it entirely
     ///     (e.g. a runtime-only orphan COED on a CONT inventory entry).
     /// </summary>
-    Dropped,
+    Dropped
 }
 
 /// <summary>

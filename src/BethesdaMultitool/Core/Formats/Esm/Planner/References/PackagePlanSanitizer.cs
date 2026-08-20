@@ -88,8 +88,8 @@ internal static class PackagePlanSanitizer
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "PackagePlanSanitizer.FailClosedStructuralReference",
-                    Reason = reason,
-                },
+                    Reason = reason
+                }
             };
             diagnostics.Add(new PlanDiagnostic
             {
@@ -100,7 +100,7 @@ internal static class PackagePlanSanitizer
                     : "references.keep-master.pack-invalid-target",
                 RecordType = "PACK",
                 FormId = record.FormId,
-                Message = $"PACK 0x{record.FormId:X8} {reason}",
+                Message = $"PACK 0x{record.FormId:X8} {reason}"
             });
         }
 

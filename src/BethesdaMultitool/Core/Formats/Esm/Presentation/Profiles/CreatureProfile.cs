@@ -46,10 +46,14 @@ internal sealed class CreatureProfile : IRecordProfile
             ]),
             RecordDetailHelpers.Section("Combat",
             [
-                RecordDetailHelpers.Scalar("Attack Damage", ((short)(Int(ChildByLabel(data, "Damage")) ?? 0)).ToString()),
-                RecordDetailHelpers.Scalar("Combat Skill", ((byte)(Int(ChildByLabel(data, "Combat Skill")) ?? 0)).ToString()),
-                RecordDetailHelpers.Scalar("Magic Skill", ((byte)(Int(ChildByLabel(data, "Magic Skill")) ?? 0)).ToString()),
-                RecordDetailHelpers.Scalar("Stealth Skill", ((byte)(Int(ChildByLabel(data, "Stealth Skill")) ?? 0)).ToString())
+                RecordDetailHelpers.Scalar("Attack Damage",
+                    ((short)(Int(ChildByLabel(data, "Damage")) ?? 0)).ToString()),
+                RecordDetailHelpers.Scalar("Combat Skill",
+                    ((byte)(Int(ChildByLabel(data, "Combat Skill")) ?? 0)).ToString()),
+                RecordDetailHelpers.Scalar("Magic Skill",
+                    ((byte)(Int(ChildByLabel(data, "Magic Skill")) ?? 0)).ToString()),
+                RecordDetailHelpers.Scalar("Stealth Skill",
+                    ((byte)(Int(ChildByLabel(data, "Stealth Skill")) ?? 0)).ToString())
             ]),
             RecordDetailHelpers.Section("AI & Runtime",
             [
@@ -64,9 +68,11 @@ internal sealed class CreatureProfile : IRecordProfile
             ]),
             RecordDetailHelpers.ListSection("Factions", Factions(tree, resolver)),
             RecordDetailHelpers.ListSection("Spells & Abilities",
-                RefList(TopByLabel(tree, "Actor Effects")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
+                RefList(TopByLabel(tree, "Actor Effects")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver))
+                    .ToList()),
             RecordDetailHelpers.ListSection("AI Packages",
-                RefList(TopByLabel(tree, "Packages")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
+                RefList(TopByLabel(tree, "Packages")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver))
+                    .ToList())
         };
 
         return RecordDetailHelpers.Model("CREA", formId, editorId, displayName, sections);
@@ -128,10 +134,15 @@ internal sealed class CreatureProfile : IRecordProfile
     }
 
     // A FormID kept even when zero (typed fields assigned straight from ReadFormID: Script, Death Item).
-    private static uint? KeepZero(DecodedNode? node) => node?.RawValue as uint?;
+    private static uint? KeepZero(DecodedNode? node)
+    {
+        return node?.RawValue as uint?;
+    }
 
     // The FormIDs of an array node's children (Actor Effects / Packages), keeping zero entries like the
     // typed handler (which adds every SPLO/PKID it reads).
-    private static IEnumerable<uint> RefList(DecodedNode? arrayNode) =>
-        arrayNode?.Children.Select(c => c.RawValue as uint?).Where(v => v.HasValue).Select(v => v!.Value) ?? [];
+    private static IEnumerable<uint> RefList(DecodedNode? arrayNode)
+    {
+        return arrayNode?.Children.Select(c => c.RawValue as uint?).Where(v => v.HasValue).Select(v => v!.Value) ?? [];
+    }
 }

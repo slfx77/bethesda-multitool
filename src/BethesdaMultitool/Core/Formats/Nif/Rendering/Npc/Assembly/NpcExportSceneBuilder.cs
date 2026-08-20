@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -225,11 +224,13 @@ internal static class NpcExportSceneBuilder
         };
     }
 
-    /// <summary>Working state while building an NPC's GLB skeleton: the scene, bone transforms, optional pose deltas, and bone-name-to-node-index map.</summary>
+    /// <summary>
+    ///     Working state while building an NPC's GLB skeleton: the scene, bone transforms, optional pose deltas, and
+    ///     bone-name-to-node-index map.
+    /// </summary>
     internal sealed record SkeletonContext(
         GlbScene Scene,
         Dictionary<string, Matrix4x4> BoneTransforms,
         Dictionary<string, Matrix4x4>? PoseDeltas,
         Dictionary<string, int> NodeIndicesByBoneName);
 }
-

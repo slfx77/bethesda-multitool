@@ -40,8 +40,8 @@ public sealed class DiagnosticKeepMasterDispositionPolicy : IFirstPriorityDispos
             Provenance = new PlanProvenance
             {
                 PolicyId = "DiagnosticKeepMasterDispositionPolicy",
-                Reason = $"Diagnostic requested master-pure FormID 0x{id:X8}.",
-            },
+                Reason = $"Diagnostic requested master-pure FormID 0x{id:X8}."
+            }
         };
     }
 }

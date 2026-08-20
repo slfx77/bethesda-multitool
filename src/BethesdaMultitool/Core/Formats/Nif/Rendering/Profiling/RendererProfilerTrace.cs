@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text.Json;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 
@@ -7,6 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 internal static class RendererProfilerTrace
 {
     private static readonly Lock Sync = new();
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
@@ -84,7 +87,7 @@ internal static class RendererProfilerTrace
             var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["event"] = eventType,
-                ["timestamp"] = DateTimeOffset.Now.ToString("O", System.Globalization.CultureInfo.InvariantCulture)
+                ["timestamp"] = DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture)
             };
 
             if (fields is not null)
@@ -99,15 +102,18 @@ internal static class RendererProfilerTrace
         }
     }
 
-    internal static Dictionary<string, object?> CameraPoseFields(RendererProfilerCameraPose pose) => new()
+    internal static Dictionary<string, object?> CameraPoseFields(RendererProfilerCameraPose pose)
     {
-        ["cameraX"] = pose.Position.X,
-        ["cameraY"] = pose.Position.Y,
-        ["cameraZ"] = pose.Position.Z,
-        ["cameraYaw"] = pose.Yaw,
-        ["cameraPitch"] = pose.Pitch,
-        ["renderDistance"] = pose.RenderDistance
-    };
+        return new Dictionary<string, object?>
+        {
+            ["cameraX"] = pose.Position.X,
+            ["cameraY"] = pose.Position.Y,
+            ["cameraZ"] = pose.Position.Z,
+            ["cameraYaw"] = pose.Yaw,
+            ["cameraPitch"] = pose.Pitch,
+            ["renderDistance"] = pose.RenderDistance
+        };
+    }
 
     internal static Dictionary<string, object?> StatsFields(string prefix, WorldRenderStats? stats)
     {
@@ -146,14 +152,17 @@ internal static class RendererProfilerTrace
         {
             Add("waterPipeline", stats.WaterPipeline);
         }
+
         if (stats.WaterTechnique is not null)
         {
             Add("waterTechnique", stats.WaterTechnique);
         }
+
         if (stats.WaterTelemetryUnavailableReason is not null)
         {
             Add("waterFallbackReason", stats.WaterTelemetryUnavailableReason);
         }
+
         Add("wireframeDraws", stats.WireframeDraws);
         Add("refCellsVisited", stats.ReferenceCellsVisited);
         Add("refCandidates", stats.ReferenceCandidates);
@@ -199,6 +208,7 @@ internal static class RendererProfilerTrace
         {
             Add("refFnvClassicBasicFallbackReason", stats.ReferenceFnvClassicBasicFallbackReason);
         }
+
         Add("refFnvActiveAdtBaseDraws", stats.ReferenceFnvActiveAdtBaseDraws);
         Add("refFnvActiveAdtBaseInstances", stats.ReferenceFnvActiveAdtBaseInstances);
         Add("refFnvActiveAdtBaseVertexColorDraws", stats.ReferenceFnvActiveAdtBaseVertexColorDraws);
@@ -210,6 +220,7 @@ internal static class RendererProfilerTrace
         {
             Add("refFnvActiveAdtBaseFallbackReason", stats.ReferenceFnvActiveAdtBaseFallbackReason);
         }
+
         Add("refSceneDepthBlendedDraws", stats.ReferenceSceneDepthBlendedDraws);
         Add("refSoftParticleDraws", stats.ReferenceSoftParticleDraws);
         Add("refSoftParticleAuthoredDraws", stats.ReferenceSoftParticleAuthoredDraws);
@@ -231,7 +242,10 @@ internal static class RendererProfilerTrace
         Add("refDrawCallMs", stats.ReferenceDrawCallMilliseconds);
         return result;
 
-        void Add(string name, object value) => result[prefix + name] = value;
+        void Add(string name, object value)
+        {
+            result[prefix + name] = value;
+        }
     }
 
     internal static void Close()

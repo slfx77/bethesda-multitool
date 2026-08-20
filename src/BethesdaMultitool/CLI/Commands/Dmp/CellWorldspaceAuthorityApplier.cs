@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -7,7 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.CLI.Commands.Dmp;
 
 internal sealed record CellWorldspaceAuthorityApplyResult(
     int Applied,
@@ -36,12 +35,6 @@ internal static class CellWorldspaceAuthorityApplier
 
     /// <summary>Exact-grid reassignment requires this many placements in the target cell.</summary>
     private const int ExactGridReassignmentMinPlacements = 10;
-
-    private readonly record struct ResolvedReferenceWindow(
-        uint CellFormId,
-        long MinOffset,
-        long MaxOffset,
-        string? Label);
 
     /// <summary>
     ///     Applies authoritative CELL metadata to the semantic record model and rebuilds
@@ -166,7 +159,7 @@ internal static class CellWorldspaceAuthorityApplier
             terrainAttached,
             referenceMove.Moved + windowMove.Moved + offsetMove.Moved + interiorMove.Moved + boundsMove.Moved,
             referenceMove.CreatedCells + windowMove.CreatedCells + offsetMove.CreatedCells
-                + interiorMove.CreatedCells + boundsMove.CreatedCells,
+            + interiorMove.CreatedCells + boundsMove.CreatedCells,
             windowMove.AppliedWindows,
             windowMove.AmbiguousMatches);
     }
@@ -181,15 +174,15 @@ internal static class CellWorldspaceAuthorityApplier
     ///     Ambiguous containment (grids inside two worldspaces' spans) leaves the ref where it
     ///     is — this pass never guesses between candidates.
     ///     <para>
-    ///     USER RULING 2026-08-05 (playtest finding 3, Utl* block): position inference is ON by
-    ///     default and opt-out via <c>--no-cell-inference</c>. Worldspace membership derived
-    ///     this way is an inference, not a capture — every moved ref carries
-    ///     <c>AssignmentSource = "WorldspaceBoundsInference"</c> and every synthesized cell
-    ///     carries the same <c>WorldspaceAssignmentSource</c>, so reports can always separate
-    ///     inferred placements from captured ones. Cells synthesized here are REAL exterior
-    ///     cells (grid + worldspace, no EditorId — CK convention), NOT <c>IsVirtual</c>: the
-    ///     planner removes virtual cells as parse-time buckets, which would silently kill the
-    ///     temporary refs this pass exists to save.
+    ///         USER RULING 2026-08-05 (playtest finding 3, Utl* block): position inference is ON by
+    ///         default and opt-out via <c>--no-cell-inference</c>. Worldspace membership derived
+    ///         this way is an inference, not a capture — every moved ref carries
+    ///         <c>AssignmentSource = "WorldspaceBoundsInference"</c> and every synthesized cell
+    ///         carries the same <c>WorldspaceAssignmentSource</c>, so reports can always separate
+    ///         inferred placements from captured ones. Cells synthesized here are REAL exterior
+    ///         cells (grid + worldspace, no EditorId — CK convention), NOT <c>IsVirtual</c>: the
+    ///         planner removes virtual cells as parse-time buckets, which would silently kill the
+    ///         temporary refs this pass exists to save.
     ///     </para>
     /// </summary>
     private static (int Moved, int CreatedCells) ReattachUnresolvedByBoundsInference(
@@ -500,7 +493,8 @@ internal static class CellWorldspaceAuthorityApplier
 
         return cell.IsVirtual &&
                !cell.IsPersistentCell &&
-               cell.WorldspaceAssignmentSource is SourceOffsetCluster or SourceVirtual or SourceAuthorityOffsetCluster or
+               cell.WorldspaceAssignmentSource is SourceOffsetCluster or SourceVirtual or SourceAuthorityOffsetCluster
+                   or
                    SourceAuthorityRefWindow;
     }
 
@@ -891,6 +885,7 @@ internal static class CellWorldspaceAuthorityApplier
             bestGap = anchorOffsets[idx] - offset;
             best = anchors[idx].Cell;
         }
+
         if (idx - 1 >= 0)
         {
             var gapBelow = offset - anchorOffsets[idx - 1];
@@ -1103,8 +1098,8 @@ internal static class CellWorldspaceAuthorityApplier
 
         CellAuthorityMetadata? metadata = null;
         cellMetadata?.TryGetValue(cellFormId, out metadata);
-        uint? worldspaceFormId = metadata?.WorldspaceFormId;
-        if ((worldspaceFormId is null or 0u) &&
+        var worldspaceFormId = metadata?.WorldspaceFormId;
+        if (worldspaceFormId is null or 0u &&
             authority is not null &&
             authority.TryGetValue(cellFormId, out var authorityWorldspaceFormId))
         {
@@ -1117,7 +1112,7 @@ internal static class CellWorldspaceAuthorityApplier
             return false;
         }
 
-        var isInterior = metadata?.IsInterior ?? (worldspaceFormId is not > 0u);
+        var isInterior = metadata?.IsInterior ?? worldspaceFormId is not > 0u;
         var cell = new CellRecord
         {
             FormId = cellFormId,
@@ -1228,4 +1223,10 @@ internal static class CellWorldspaceAuthorityApplier
 
         return synthesized;
     }
+
+    private readonly record struct ResolvedReferenceWindow(
+        uint CellFormId,
+        long MinOffset,
+        long MaxOffset,
+        string? Label);
 }

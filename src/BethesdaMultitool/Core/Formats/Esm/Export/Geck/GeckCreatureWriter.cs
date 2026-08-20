@@ -425,4 +425,3 @@ internal static class GeckCreatureWriter
         return sb.ToString();
     }
 }
-

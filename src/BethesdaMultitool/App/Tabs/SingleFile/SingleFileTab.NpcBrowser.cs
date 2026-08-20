@@ -19,9 +19,9 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    private readonly NpcBrowserController _npcBrowser = new();
     private CancellationTokenSource? _npcBatchCts;
     private NpcBrowserService? _npcBrowserService;
-    private readonly NpcBrowserController _npcBrowser = new();
     private CancellationTokenSource? _npcRenderOptionDebounce;
     private bool _webViewInitialized;
 

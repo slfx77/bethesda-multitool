@@ -64,7 +64,7 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
         var amplitudeSum = 0f;
         foreach (var (kx, ky, cycles, amplitude, phase) in OblivionWaterSurfaceSynthesizer.Waves)
         {
-            var k = MathF.Sqrt((kx * kx) + (ky * ky));
+            var k = MathF.Sqrt(kx * kx + ky * ky);
             Assert.True(k >= 8f, $"wave ({kx},{ky}) below 8 cycles/tile — reintroduces the plaid");
             Assert.True(k <= 32f, $"wave ({kx},{ky}) above 32 cycles/tile — under 4 texels/cycle");
             Assert.InRange(cycles, 1, 8);

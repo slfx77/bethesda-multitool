@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using Xunit;
+using Xunit.Sdk;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Export;
 
@@ -135,9 +136,8 @@ public sealed class SingleOutstandingOperationTests
             cts.Token);
         releaseFirst.SetResult();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            async () => await canceledEnqueue.WaitAsync(
-                Timeout, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await canceledEnqueue.WaitAsync(
+            Timeout, TestContext.Current.CancellationToken));
         Assert.Equal([1], commits);
         Assert.False(secondStarted);
         Assert.False(pipeline.HasPending);
@@ -170,8 +170,8 @@ public sealed class SingleOutstandingOperationTests
             ex => reportedSecondary = ex);
         releaseSave.SetResult();
 
-        var thrown = await Assert.ThrowsAsync<OperationCanceledException>(
-            async () => await drain.WaitAsync(Timeout, TestContext.Current.CancellationToken));
+        var thrown = await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await drain.WaitAsync(Timeout, TestContext.Current.CancellationToken));
         Assert.Same(primary, thrown);
         Assert.Equal([7], commits);
         Assert.Null(reportedSecondary);
@@ -201,19 +201,21 @@ public sealed class SingleOutstandingOperationTests
 
         var drain = pipeline.DrainAndRethrowAsync(
             primary,
-            static _ => throw new Xunit.Sdk.XunitException("A faulted save has no result to commit."),
+            static _ => throw new XunitException("A faulted save has no result to commit."),
             ex => reportedSecondary = ex);
         releaseSave.SetResult();
 
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await drain.WaitAsync(Timeout, TestContext.Current.CancellationToken));
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await drain.WaitAsync(Timeout, TestContext.Current.CancellationToken));
         Assert.Same(primary, thrown);
         Assert.Same(secondary, reportedSecondary);
         Assert.False(pipeline.HasPending);
     }
 
-    private static TaskCompletionSource Gate() =>
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private static TaskCompletionSource Gate()
+    {
+        return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     private static void UpdateMaximum(ref int target, int value)
     {

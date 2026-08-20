@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -11,7 +10,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
-/// <summary>Builds an <see cref="NpcCompositionPlan" /> from a resolved appearance and options, resolving head parts, body meshes, skeleton, and weapon.</summary>
+/// <summary>
+///     Builds an <see cref="NpcCompositionPlan" /> from a resolved appearance and options, resolving head parts, body
+///     meshes, skeleton, and weapon.
+/// </summary>
 internal static class NpcCompositionPlanner
 {
     private static readonly Logger Log = Logger.Instance;
@@ -660,4 +662,3 @@ internal static class NpcCompositionPlanner
         return $"{skeletonNifPath}|bind:{options.BindPose}|anim:{options.AnimOverride ?? string.Empty}";
     }
 }
-

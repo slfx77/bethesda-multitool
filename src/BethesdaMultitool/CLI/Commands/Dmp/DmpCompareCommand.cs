@@ -3,8 +3,6 @@ using System.Runtime;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Dmp;
@@ -356,4 +354,3 @@ internal static class DmpCompareCommand
 #pragma warning restore S1215
     }
 }
-

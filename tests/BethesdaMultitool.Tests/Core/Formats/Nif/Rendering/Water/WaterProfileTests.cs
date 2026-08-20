@@ -82,7 +82,7 @@ public class WaterProfileTests
             Assert.Contains(profile, (WaterProfile[])
             [
                 WaterProfile.Fnv, WaterProfile.Oblivion, WaterProfile.Fallout4,
-                WaterProfile.Fallout76, WaterProfile.Morrowind, WaterProfile.Flat,
+                WaterProfile.Fallout76, WaterProfile.Morrowind, WaterProfile.Flat
             ]);
         }
 

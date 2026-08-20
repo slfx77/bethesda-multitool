@@ -14,20 +14,23 @@ public static class ExportCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var worldspaceOption = new Option<string?>("-w", "--worldspace")
-        { Description = "Worldspace EditorID or FormID, matched against the file (default: WastelandNV, else Wasteland)" };
+        {
+            Description =
+                "Worldspace EditorID or FormID, matched against the file (default: WastelandNV, else Wasteland)"
+        };
         var outputOption = new Option<string>("-o", "--output")
-        { Description = "Output directory", DefaultValueFactory = _ => "worldmap_export" };
+            { Description = "Output directory", DefaultValueFactory = _ => "worldmap_export" };
         var scaleOption = new Option<int>("-s", "--scale")
         {
             Description = "Scale factor for output images (1=native 33px/cell, 2=66px/cell, etc.)",
             DefaultValueFactory = _ => 1
         };
         var rawOption = new Option<bool>("-r", "--raw")
-        { Description = "Output raw 16-bit heightmap (for terrain editing tools)" };
+            { Description = "Output raw 16-bit heightmap (for terrain editing tools)" };
         var exportAllOption = new Option<bool>("-a", "--export-all")
-        { Description = "Export all worldspaces" };
+            { Description = "Export all worldspaces" };
         var analyzeOnlyOption = new Option<bool>("--analyze-only")
-        { Description = "Only analyze, don't export images" };
+            { Description = "Only analyze, don't export images" };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(worldspaceOption);
@@ -55,13 +58,13 @@ public static class ExportCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var formIdOption = new Option<string?>("-f", "--formid")
-        { Description = "Specific FormID to export (hex, e.g., 0x00123456)" };
+            { Description = "Specific FormID to export (hex, e.g., 0x00123456)" };
         var allOption = new Option<bool>("-a", "--all")
-        { Description = "Export all LAND records (use --limit to control count)" };
+            { Description = "Export all LAND records (use --limit to control count)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of LAND records to export", DefaultValueFactory = _ => 100 };
+            { Description = "Maximum number of LAND records to export", DefaultValueFactory = _ => 100 };
         var outputOption = new Option<string>("-o", "--output")
-        { Description = "Output directory", DefaultValueFactory = _ => "land_export" };
+            { Description = "Output directory", DefaultValueFactory = _ => "land_export" };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(formIdOption);

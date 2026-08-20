@@ -21,7 +21,8 @@ internal static class DmpDanglingReaders
         {
             foreach (var p in wsEl.EnumerateObject())
             {
-                if (DmpDanglingParsing.TryParseHexUInt(p.Name, out var fid) && p.Value.ValueKind == JsonValueKind.String)
+                if (DmpDanglingParsing.TryParseHexUInt(p.Name, out var fid) &&
+                    p.Value.ValueKind == JsonValueKind.String)
                 {
                     view.WorldspaceNames[fid] = p.Value.GetString() ?? "";
                 }
@@ -32,7 +33,8 @@ internal static class DmpDanglingReaders
         {
             foreach (var p in cellsEl.EnumerateObject())
             {
-                if (!DmpDanglingParsing.TryParseHexUInt(p.Name, out var cellFid) || p.Value.ValueKind != JsonValueKind.Object)
+                if (!DmpDanglingParsing.TryParseHexUInt(p.Name, out var cellFid) ||
+                    p.Value.ValueKind != JsonValueKind.Object)
                 {
                     continue;
                 }
@@ -80,6 +82,7 @@ internal static class DmpDanglingReaders
                         list = [];
                         view.CellsByGrid[(gx.Value, gy.Value)] = list;
                     }
+
                     list.Add(info);
 
                     view.WorldspaceCellCounts.TryGetValue(ws.Value, out var c);
@@ -119,7 +122,12 @@ internal static class DmpDanglingReaders
         }
 
         var cols = DmpDanglingParsing.SplitCsv(header);
-        int IdxOf(string n) => Array.IndexOf(cols, n);
+
+        int IdxOf(string n)
+        {
+            return Array.IndexOf(cols, n);
+        }
+
         var iDump = IdxOf("Dump");
         var iGx = IdxOf("GridX");
         var iGy = IdxOf("GridY");
@@ -180,7 +188,12 @@ internal static class DmpDanglingReaders
         }
 
         var cols = DmpDanglingParsing.SplitCsv(header);
-        int IdxOf(string n) => Array.IndexOf(cols, n);
+
+        int IdxOf(string n)
+        {
+            return Array.IndexOf(cols, n);
+        }
+
         var iFid = IdxOf("FormId");
         var iX = IdxOf("X");
         var iY = IdxOf("Y");
@@ -253,6 +266,7 @@ internal static class DmpDanglingReaders
                 {
                     s = s[2..];
                 }
+
                 byte.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out baseType);
             }
 

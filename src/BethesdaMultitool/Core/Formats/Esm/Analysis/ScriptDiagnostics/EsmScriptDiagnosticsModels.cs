@@ -59,7 +59,10 @@ public sealed record EsmScriptDiagnosticDialogueRow(
     bool HasResultScript,
     string ResponsePreview);
 
-/// <summary>Audit row diagnosing whether a dialogue INFO is reachable (root/terminal/goodbye classification and topic edges).</summary>
+/// <summary>
+///     Audit row diagnosing whether a dialogue INFO is reachable (root/terminal/goodbye classification and topic
+///     edges).
+/// </summary>
 public sealed record EsmScriptDialogueAuditRow(
     string Target,
     uint InfoFormId,

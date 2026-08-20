@@ -437,6 +437,7 @@ internal static class GeckDialogueWriter
                 {
                     sb.AppendLine($"{indent}      {speakerStr}\"{response.Text}\"{emotionStr}");
                 }
+
                 if (response.SoundFormId is > 0)
                 {
                     sb.AppendLine($"{indent}      Sound: {resolver.FormatFull(response.SoundFormId.Value)}");
@@ -792,6 +793,7 @@ internal static class GeckDialogueWriter
         {
             qualifiers.Add($"Run On: {DialogueConditionRunOnPolicy.Format(c, BethesdaGame.FalloutNewVegas)}");
         }
+
         if (DialogueConditionReferencePolicy.TryGetSemanticReference(
                 c,
                 BethesdaGame.FalloutNewVegas,
@@ -811,4 +813,3 @@ internal static class GeckDialogueWriter
         return $"{functionName}{paramStr} {c.ComparisonOperator} {comparison}{qualStr}";
     }
 }
-

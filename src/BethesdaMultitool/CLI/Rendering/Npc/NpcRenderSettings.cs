@@ -1,4 +1,5 @@
 using BethesdaMultitool.CLI.Rendering.Nif;
+
 namespace BethesdaMultitool.CLI.Rendering.Npc;
 
 internal sealed class NpcRenderSettings

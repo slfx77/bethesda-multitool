@@ -23,7 +23,10 @@ internal sealed class CarveWriter(
     /// </summary>
     public IReadOnlyCollection<long> FailedConversionOffsets => _failedConversionOffsets;
 
-    /// <summary>Writes a carved file to disk, converting (e.g. DDX-&gt;DDS) or repairing it first when a handler applies, and records a manifest entry.</summary>
+    /// <summary>
+    ///     Writes a carved file to disk, converting (e.g. DDX-&gt;DDS) or repairing it first when a handler applies, and
+    ///     records a manifest entry.
+    /// </summary>
     public async Task WriteFileAsync(WriteFileParams p)
     {
         var format = FormatRegistry.GetBySignatureId(p.SignatureId);

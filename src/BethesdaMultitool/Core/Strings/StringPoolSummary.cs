@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.Strings;
 
-/// <summary>Summary of the strings extracted from a memory dump: per-category counts, samples, full export sets, and carved-file cross-reference stats.</summary>
+/// <summary>
+///     Summary of the strings extracted from a memory dump: per-category counts, samples, full export sets, and
+///     carved-file cross-reference stats.
+/// </summary>
 public sealed class StringPoolSummary
 {
     public int TotalStrings { get; set; }

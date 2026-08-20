@@ -1,7 +1,5 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Esm;
 
 namespace EsmAnalyzer.Commands.DialogueVoice;
 
@@ -10,40 +8,6 @@ namespace EsmAnalyzer.Commands.DialogueVoice;
 /// </summary>
 internal static class VoiceFileMatcher
 {
-    internal readonly record struct VoiceFile(uint FormId, string TopicEditorId, string VoiceType, string FileName);
-
-    internal readonly record struct InfoData(bool HasNam1, uint? AnamFormId, uint? QstiFormId);
-
-    internal readonly record struct DialData(uint? QstiFormId, uint? TnamFormId);
-
-    /// <summary>
-    ///     Aggregated results from matching voice files against ESM records.
-    /// </summary>
-    internal sealed class MatchResults
-    {
-        public int FormIdMatched;
-        public int FormIdWithNam1;
-        public int FormIdWithAnam;
-        public int FormIdWithQsti;
-        public List<(uint FormId, string TopicEditorId)> UnmatchedFormIds = [];
-
-        public int TopicsCaseSensitive;
-        public int TopicsCaseInsensitive;
-        public int TopicsWithQsti;
-        public int TopicsWithTnam;
-        public List<string> UnmatchedTopics = [];
-
-        public int VtypMatchedUnique;
-        public int VtypMatchedShared;
-        public int VtypUnmatched;
-
-        public int EnrichedSubtitle;
-        public int EnrichedSpeaker;
-        public int EnrichedSpeakerViaVtyp;
-        public int EnrichedQuest;
-        public int EnrichedQuestViaPrefix;
-    }
-
     /// <summary>
     ///     Parse voice filename: {topicEditorId}_{formId:8hex}_{index}.{ext}
     ///     Inlined from BethesdaAudioTranscriber.Models.VoiceFileNameParser (can't reference WinUI project).
@@ -272,5 +236,39 @@ internal static class VoiceFileMatcher
         }
 
         return results;
+    }
+
+    internal readonly record struct VoiceFile(uint FormId, string TopicEditorId, string VoiceType, string FileName);
+
+    internal readonly record struct InfoData(bool HasNam1, uint? AnamFormId, uint? QstiFormId);
+
+    internal readonly record struct DialData(uint? QstiFormId, uint? TnamFormId);
+
+    /// <summary>
+    ///     Aggregated results from matching voice files against ESM records.
+    /// </summary>
+    internal sealed class MatchResults
+    {
+        public int EnrichedQuest;
+        public int EnrichedQuestViaPrefix;
+        public int EnrichedSpeaker;
+        public int EnrichedSpeakerViaVtyp;
+
+        public int EnrichedSubtitle;
+        public int FormIdMatched;
+        public int FormIdWithAnam;
+        public int FormIdWithNam1;
+        public int FormIdWithQsti;
+        public int TopicsCaseInsensitive;
+
+        public int TopicsCaseSensitive;
+        public int TopicsWithQsti;
+        public int TopicsWithTnam;
+        public List<(uint FormId, string TopicEditorId)> UnmatchedFormIds = [];
+        public List<string> UnmatchedTopics = [];
+        public int VtypMatchedShared;
+
+        public int VtypMatchedUnique;
+        public int VtypUnmatched;
     }
 }

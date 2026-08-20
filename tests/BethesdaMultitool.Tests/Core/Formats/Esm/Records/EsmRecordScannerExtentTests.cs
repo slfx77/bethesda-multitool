@@ -24,7 +24,7 @@ public class EsmRecordScannerExtentTests
         // Torn BE REFR: genuine-looking header + NAME first subrecord, but DataSize claims
         // everything to (and past) the buffer end. Real records follow 4 KB later.
         var buffer = new byte[512 * 1024];
-        WriteBeRecordHeader(buffer, 0x1000, "REFR", dataSize: 4_500_000, formId: 0x1014BFA5);
+        WriteBeRecordHeader(buffer, 0x1000, "REFR", 4_500_000, 0x1014BFA5);
         WriteBeSubrecord(buffer, 0x1000 + 24, "NAME", FormIdBytesBE(0x00146E25));
         // Garbage after the first subrecord — the chain must misalign.
         for (var i = 0x1000 + 24 + 10; i < 0x1400; i++)
@@ -36,7 +36,7 @@ public class EsmRecordScannerExtentTests
         for (var r = 0; r < realOffsets.Length; r++)
         {
             WriteBeRecordHeader(buffer, (int)realOffsets[r], r == 1 ? "PGRE" : "REFR",
-                dataSize: 40, formId: 0x0014685Au + (uint)r);
+                40, 0x0014685Au + (uint)r);
             WriteBeSubrecord(buffer, (int)realOffsets[r] + 24, "NAME", FormIdBytesBE(0x000043FA));
             WriteBeSubrecord(buffer, (int)realOffsets[r] + 34, "DATA", new byte[24]);
         }
@@ -107,7 +107,7 @@ public class EsmRecordScannerExtentTests
     public void LargeCompressedClaim_WithoutZlibHeader_IsRejected()
     {
         var buffer = new byte[256 * 1024];
-        WriteBeRecordHeader(buffer, 0x100, "LAND", 120_000, 0x000DB114, flags: 0x00040000);
+        WriteBeRecordHeader(buffer, 0x100, "LAND", 120_000, 0x000DB114, 0x00040000);
         // Payload: 4-byte decompressed size then garbage where the zlib CMF/FLG belongs.
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(0x100 + 24, 4), 200_000);
         buffer[0x100 + 28] = 0xC7;
@@ -122,7 +122,7 @@ public class EsmRecordScannerExtentTests
     public void LargeCompressedRecord_WithZlibHeader_IsStillDetected()
     {
         var buffer = new byte[256 * 1024];
-        WriteBeRecordHeader(buffer, 0x100, "LAND", 120_000, 0x000DB114, flags: 0x00040000);
+        WriteBeRecordHeader(buffer, 0x100, "LAND", 120_000, 0x000DB114, 0x00040000);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(0x100 + 24, 4), 200_000);
         buffer[0x100 + 28] = 0x78; // CMF: deflate, 32K window
         buffer[0x100 + 29] = 0x9C; // FLG: (0x789C % 31) == 0

@@ -1,16 +1,16 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
@@ -81,6 +81,16 @@ internal static class DialogGrupBuilder
     ///     topic speaker gate must not suppress their prototype-only INFO children.
     /// </summary>
     private const uint FirstNonSystemDialFormId = 0x00001000;
+
+    /// <summary>FNV condition function: GetQuestVariable (quest + script variable index).</summary>
+    private const ushort GetQuestVariableFunctionIndex = 79;
+
+    /// <summary>FNV condition function: GetVariable-style scripted lookup (variable index).</summary>
+    private const ushort GetVariableFunctionIndex = 449;
+
+    private const int IdentityEvidencePreviewLimit = 8;
+    private const int IdentityConflictPreviewLimit = 4;
+    private const int IdentityConflictTextLimit = 192;
 
     /// <summary>
     ///     Builds the top-level DIAL GRUP section: emits new topics with fresh FormIDs, nests
@@ -183,9 +193,9 @@ internal static class DialogGrupBuilder
         // the NPC with only Goodbye (Ulysses).
         var synthesizedGreetings = GreetingEntrySynthesizer.Synthesize(
             newTopics, newInfos, dialFormIdMap,
-            greetingSurvivesGates: info =>
+            info =>
                 HasSpeakerBindingCondition(info) && HasRenderableResponse(info),
-            speakersWithRetailGreeting: combinePlan.RetailCoveredSpeakers);
+            combinePlan.RetailCoveredSpeakers);
         if (synthesizedGreetings.Count > 0)
         {
             newInfos.AddRange(synthesizedGreetings);
@@ -203,11 +213,17 @@ internal static class DialogGrupBuilder
         var droppedOrphanInfos = 0;
         var recoveredRawParentInfos = 0;
 
-        bool ResolvesToEmittedDial(uint id) => dialFormIdMap.ContainsKey(id);
-        bool ResolvesToMasterDial(uint id) =>
-            masterFormIdSet.Contains(id)
-            && masterRecordsByFormId.TryGetValue(id, out var record)
-            && record.Header.Signature == "DIAL";
+        bool ResolvesToEmittedDial(uint id)
+        {
+            return dialFormIdMap.ContainsKey(id);
+        }
+
+        bool ResolvesToMasterDial(uint id)
+        {
+            return masterFormIdSet.Contains(id)
+                   && masterRecordsByFormId.TryGetValue(id, out var record)
+                   && record.Header.Signature == "DIAL";
+        }
 
         foreach (var info in newInfos)
         {
@@ -226,7 +242,7 @@ internal static class DialogGrupBuilder
             {
                 var resolvable = routed.RawParentTopicFormIds
                     .Where(raw => raw != 0 && raw != topicId
-                                  && (ResolvesToEmittedDial(raw) || ResolvesToMasterDial(raw)))
+                                           && (ResolvesToEmittedDial(raw) || ResolvesToMasterDial(raw)))
                     .Distinct()
                     .ToList();
 
@@ -299,10 +315,12 @@ internal static class DialogGrupBuilder
         {
             validFormIds.Add(newDialId);
         }
+
         foreach (var newInfoId in infoFormIdMap.Values)
         {
             validFormIds.Add(newInfoId);
         }
+
         if (additionalValidFormIds is not null)
         {
             foreach (var fid in additionalValidFormIds)
@@ -382,7 +400,7 @@ internal static class DialogGrupBuilder
                         {
                             ["script-variable-source-owner-form-id"] = $"0x{owner.Source:X8}",
                             ["script-variable-target-owner-form-id"] = $"0x{owner.Resolved:X8}",
-                            ["owner-liveness-source"] = "master-or-actual-cell-emission",
+                            ["owner-liveness-source"] = "master-or-actual-cell-emission"
                         });
                 }
 
@@ -453,7 +471,7 @@ internal static class DialogGrupBuilder
                             ? $"0x{issue.ResolvedFormId.Value:X8}"
                             : null,
                         ["local-variable-id"] = issue.LocalVariableId?.ToString(
-                            CultureInfo.InvariantCulture),
+                            CultureInfo.InvariantCulture)
                     });
             }
 
@@ -499,7 +517,7 @@ internal static class DialogGrupBuilder
                             ? $"0x{issue.ResolvedFormId.Value:X8}"
                             : null,
                         ["local-variable-id"] = issue.LocalVariableId?.ToString(
-                            CultureInfo.InvariantCulture),
+                            CultureInfo.InvariantCulture)
                     });
             }
         }
@@ -517,6 +535,7 @@ internal static class DialogGrupBuilder
                 dialEditorIdByFormId[newDialId] = topic.EditorId;
             }
         }
+
         foreach (var masterDialId in infosByMasterDial.Keys.Concat(overlaysByMasterDial.Keys).Distinct())
         {
             if (!masterRecordsByFormId.TryGetValue(masterDialId, out var masterRec))
@@ -571,7 +590,7 @@ internal static class DialogGrupBuilder
             }
 
             var dialBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
-                "DIAL", newDialId, flags: 0u, dialEncoded.Subrecords);
+                "DIAL", newDialId, 0u, dialEncoded.Subrecords);
             stream.Write(dialBytes);
             stats.IncrementEmitted("DIAL");
             stats.NewRecordsEmitted++;
@@ -625,7 +644,7 @@ internal static class DialogGrupBuilder
                 }
 
                 var infoBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
-                    "INFO", newInfoId, flags: 0u, infoEncoded.Subrecords);
+                    "INFO", newInfoId, 0u, infoEncoded.Subrecords);
                 stream.Write(infoBytes);
                 producerLedger.RecordEmittedInfo(
                     info,
@@ -723,7 +742,7 @@ internal static class DialogGrupBuilder
                     overlay.MasterInfo.Record.Header.FormId, masterDialId,
                     dialEditorIdByFormId, voiceTypeEditorIdsByFormId,
                     npcVoiceTypeByNpcFormId, masterRecordsByFormId,
-                    questEditorIdsByFormId, isRetailInfoOverlay: true);
+                    questEditorIdsByFormId, true);
             }
 
             // Same per-quest PNAM chain construction as the new-DIAL loop above.
@@ -800,7 +819,7 @@ internal static class DialogGrupBuilder
                 }
 
                 var infoBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
-                    "INFO", newInfoId, flags: 0u, infoEncoded.Subrecords);
+                    "INFO", newInfoId, 0u, infoEncoded.Subrecords);
                 stream.Write(infoBytes);
                 producerLedger.RecordEmittedInfo(
                     info,
@@ -873,290 +892,6 @@ internal static class DialogGrupBuilder
             infoSourceToAllocated,
             audioBindings,
             producerLedger.Build());
-    }
-
-    /// <summary>
-    ///     Per (quest, speaker), picks ONE master DIAL from the proto's retail-FormID-
-    ///     colliding topics to serve as the synthesized choice chains' exit link. The pick
-    ///     must have a retail INFO that PASSES for the speaker (GetIsID match or
-    ///     unconditioned) or the engine hides the choice — quest-level picks fail on shared
-    ///     quests like VFreeformFreeside where the lowest-FormID topic belongs to a
-    ///     different NPC. Ranking: goodbye-flagged passing → terminating (link-less)
-    ///     passing → any passing → quest-wide Min fallback; ties broken by Min FormID.
-    /// </summary>
-    private sealed class ExitTopicResolver
-    {
-        private readonly Dictionary<uint, List<uint>> _collidingByQuest;
-        private readonly Dictionary<uint, MasterDialConditions> _conditionsByDial;
-        private readonly Dictionary<(uint Quest, uint Speaker), uint> _memo = new();
-
-        private ExitTopicResolver(
-            Dictionary<uint, List<uint>> collidingByQuest,
-            Dictionary<uint, MasterDialConditions> conditionsByDial)
-        {
-            _collidingByQuest = collidingByQuest;
-            _conditionsByDial = conditionsByDial;
-        }
-
-        public static ExitTopicResolver Build(
-            IReadOnlyList<DialogTopicRecord> topics,
-            NewVsOverrideClassifier classifier,
-            IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
-        {
-            var collidingByQuest = new Dictionary<uint, List<uint>>();
-            var collidingDials = new HashSet<uint>();
-            foreach (var topic in topics)
-            {
-                // Engine/system DIALs (GREETING 0xC8, HELLO 0xD2, GOODBYE 0xD4, …) live in
-                // the sub-0x1000 FormID block and are captured by every dump — they collide
-                // with master by definition and their huge INFO sets trivially pass every
-                // rank, hijacking the exit pick (a TCLT back to GREETING is nonsense).
-                if (topic.FormId < 0x00001000u
-                    || !classifier.IsOverride(topic.FormId)
-                    || !masterRecordsByFormId.TryGetValue(topic.FormId, out var masterDial)
-                    || masterDial.Header.Signature != "DIAL")
-                {
-                    continue;
-                }
-
-                // Quest membership + type come from MASTER's own record — captured
-                // topic→quest attribution is unreliable (a Hidden Valley Conversation topic
-                // was attributed to Beatrix's Freeside quest). Choice links target
-                // Topic-type DIALs only (DATA type byte 0).
-                var dialData = masterDial.Subrecords.FirstOrDefault(s =>
-                    s.Signature == "DATA" && s.Data.Length >= 1);
-                if (dialData is null || dialData.Data[0] != 0)
-                {
-                    continue;
-                }
-
-                var addedToAnyQuest = false;
-                foreach (var qsti in masterDial.Subrecords)
-                {
-                    if (qsti.Signature != "QSTI" || qsti.Data.Length < 4)
-                    {
-                        continue;
-                    }
-
-                    var quest = BinaryPrimitives.ReadUInt32LittleEndian(qsti.Data.AsSpan(0, 4));
-                    if (quest == 0)
-                    {
-                        continue;
-                    }
-
-                    if (!collidingByQuest.TryGetValue(quest, out var list))
-                    {
-                        list = [];
-                        collidingByQuest[quest] = list;
-                    }
-
-                    if (!list.Contains(topic.FormId))
-                    {
-                        list.Add(topic.FormId);
-                        addedToAnyQuest = true;
-                    }
-                }
-
-                if (addedToAnyQuest)
-                {
-                    collidingDials.Add(topic.FormId);
-                }
-            }
-
-            var conditions = collidingDials.Count == 0
-                ? new Dictionary<uint, MasterDialConditions>()
-                : IndexMasterDialConditions(masterRecordsByFormId, collidingDials);
-            return new ExitTopicResolver(collidingByQuest, conditions);
-        }
-
-        /// <summary>0 when the quest has no colliding master topics.</summary>
-        public uint Resolve(uint quest, uint? speaker)
-        {
-            if (!_collidingByQuest.TryGetValue(quest, out var dials))
-            {
-                return 0;
-            }
-
-            var key = (quest, speaker ?? 0u);
-            if (_memo.TryGetValue(key, out var memoized))
-            {
-                return memoized;
-            }
-
-            var exit = PickForSpeaker(dials, speaker ?? 0u);
-            _memo[key] = exit;
-            return exit;
-        }
-
-        private uint PickForSpeaker(List<uint> dials, uint speaker)
-        {
-            uint bestGoodbye = 0, bestTerminating = 0, bestPassing = 0;
-            foreach (var dial in dials)
-            {
-                if (!_conditionsByDial.TryGetValue(dial, out var c))
-                {
-                    continue;
-                }
-
-                if (c.GoodbyePassesFor(speaker) && (bestGoodbye == 0 || dial < bestGoodbye))
-                {
-                    bestGoodbye = dial;
-                }
-
-                if (c.TerminatingPassesFor(speaker) && (bestTerminating == 0 || dial < bestTerminating))
-                {
-                    bestTerminating = dial;
-                }
-
-                if (c.AnyPassesFor(speaker) && (bestPassing == 0 || dial < bestPassing))
-                {
-                    bestPassing = dial;
-                }
-            }
-
-            if (bestGoodbye != 0)
-            {
-                return bestGoodbye;
-            }
-
-            if (bestTerminating != 0)
-            {
-                return bestTerminating;
-            }
-
-            return bestPassing != 0 ? bestPassing : dials.Min();
-        }
-
-        /// <summary>
-        ///     One offset-ordered walk over the master stream (INFO parentage is
-        ///     GRUP-positional). Per colliding DIAL, aggregates which speakers its INFOs
-        ///     pass for. INFO DATA: type(0), nextSpeaker(1), flags16(2-3) — Goodbye 0x0001.
-        ///     CTDA: functionIndex at offset 8 (GetIsID = 72), param1 at offset 12.
-        ///     "Terminating" = INFO with no TCLT links (playing it returns to the topic
-        ///     list, where the engine Goodbye is available).
-        /// </summary>
-        private static Dictionary<uint, MasterDialConditions> IndexMasterDialConditions(
-            IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
-            HashSet<uint> collidingDials)
-        {
-            var index = new Dictionary<uint, MasterDialConditions>();
-            uint currentDial = 0;
-            foreach (var record in masterRecordsByFormId.Values
-                         .Where(r => r.Header.Signature is "DIAL" or "INFO")
-                         .OrderBy(r => r.Offset))
-            {
-                if (record.Header.Signature == "DIAL")
-                {
-                    currentDial = record.Header.FormId;
-                    continue;
-                }
-
-                if (currentDial == 0 || !collidingDials.Contains(currentDial))
-                {
-                    continue;
-                }
-
-                var isGoodbye = false;
-                var hasTclt = false;
-                var getIsIdSpeakers = new HashSet<uint>();
-                var conditionCount = 0;
-                foreach (var sub in record.Subrecords)
-                {
-                    switch (sub.Signature)
-                    {
-                        case "DATA" when sub.Data.Length >= 4:
-                            isGoodbye = (sub.Data[2] & 0x01) != 0;
-                            break;
-                        case "TCLT":
-                            hasTclt = true;
-                            break;
-                        case "CTDA" when sub.Data.Length >= 16:
-                            conditionCount++;
-                            if (DialogueSpeakerBinding.IsPositiveSubjectGetIsId(sub.Data))
-                            {
-                                getIsIdSpeakers.Add(
-                                    BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(12, 4)));
-                            }
-
-                            break;
-                    }
-                }
-
-                if (!index.TryGetValue(currentDial, out var conditions))
-                {
-                    conditions = new MasterDialConditions();
-                    index[currentDial] = conditions;
-                }
-
-                if (getIsIdSpeakers.Count == 0)
-                {
-                    conditions.Record(
-                        speaker: null,
-                        unconditioned: conditionCount == 0,
-                        goodbye: isGoodbye,
-                        terminating: !hasTclt);
-                }
-                else
-                {
-                    foreach (var speaker in getIsIdSpeakers)
-                    {
-                        conditions.Record(
-                            speaker,
-                            unconditioned: false,
-                            goodbye: isGoodbye,
-                            terminating: !hasTclt);
-                    }
-                }
-            }
-
-            return index;
-        }
-    }
-
-    /// <summary>Per-master-DIAL aggregate of which speakers its INFOs pass for.</summary>
-    private sealed class MasterDialConditions
-    {
-        private readonly HashSet<uint> _goodbyeSpeakers = [];
-        private readonly HashSet<uint> _terminatingSpeakers = [];
-        private readonly HashSet<uint> _anySpeakers = [];
-        private bool _goodbyeUnconditioned;
-        private bool _terminatingUnconditioned;
-        private bool _anyUnconditioned;
-
-        public void Record(uint? speaker, bool unconditioned, bool goodbye, bool terminating)
-        {
-            Track(_anySpeakers, ref _anyUnconditioned, speaker, unconditioned);
-            if (goodbye)
-            {
-                Track(_goodbyeSpeakers, ref _goodbyeUnconditioned, speaker, unconditioned);
-            }
-
-            if (terminating)
-            {
-                Track(_terminatingSpeakers, ref _terminatingUnconditioned, speaker, unconditioned);
-            }
-        }
-
-        public bool GoodbyePassesFor(uint speaker) =>
-            _goodbyeUnconditioned || _goodbyeSpeakers.Contains(speaker);
-
-        public bool TerminatingPassesFor(uint speaker) =>
-            _terminatingUnconditioned || _terminatingSpeakers.Contains(speaker);
-
-        public bool AnyPassesFor(uint speaker) =>
-            _anyUnconditioned || _anySpeakers.Contains(speaker);
-
-        private static void Track(HashSet<uint> speakers, ref bool unconditioned, uint? speaker, bool isUnconditioned)
-        {
-            if (isUnconditioned)
-            {
-                unconditioned = true;
-            }
-            else if (speaker is > 0)
-            {
-                speakers.Add(speaker.Value);
-            }
-        }
     }
 
     private static int ApplyRootReturnTopicLinks(
@@ -1421,8 +1156,12 @@ internal static class DialogGrupBuilder
 
     /// <summary>
     ///     Append <see cref="EmittedDialogueAudioBinding" /> entries (one per response) for
-    ///     the just-emitted INFO record. The triple <c>(VoiceTypeEditorId, ParentDialEditorId,
-    ///     ResponseNumber)</c> matches what the FNV engine builds at runtime for the voice
+    ///     the just-emitted INFO record. The triple
+    ///     <c>
+    ///         (VoiceTypeEditorId, ParentDialEditorId,
+    ///         ResponseNumber)
+    ///     </c>
+    ///     matches what the FNV engine builds at runtime for the voice
     ///     file path; the asset packer uses these to bridge build-era FormID drift in the
     ///     dialogue-audio CSV.
     /// </summary>
@@ -1479,9 +1218,9 @@ internal static class DialogGrupBuilder
             var resp = patched.Responses[i];
             var respNum = resp.ResponseNumber > 0 ? resp.ResponseNumber : (byte)(i + 1);
             var sourceRespNum = i < original.AudioSourceResponseNumbers.Count
-                && original.AudioSourceResponseNumbers[i] != 0
-                    ? original.AudioSourceResponseNumbers[i]
-                    : respNum;
+                                && original.AudioSourceResponseNumbers[i] != 0
+                ? original.AudioSourceResponseNumbers[i]
+                : respNum;
             var sourceInfoFormId = original.AudioSourceInfoFormId is > 0
                 ? original.AudioSourceInfoFormId.Value
                 : original.FormId;
@@ -1556,7 +1295,7 @@ internal static class DialogGrupBuilder
             return null;
         }
 
-        var vtFid = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(vtck.Data);
+        var vtFid = BinaryPrimitives.ReadUInt32LittleEndian(vtck.Data);
         if (vtFid == 0
             || !voiceTypeEditorIdsByFormId.TryGetValue(vtFid, out var masterEdid)
             || string.IsNullOrEmpty(masterEdid))
@@ -1592,7 +1331,7 @@ internal static class DialogGrupBuilder
         {
             if (sub.Signature == "QSTI" && sub.Data.Length >= 4)
             {
-                existing.Add(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sub.Data));
+                existing.Add(BinaryPrimitives.ReadUInt32LittleEndian(sub.Data));
             }
         }
 
@@ -1631,7 +1370,7 @@ internal static class DialogGrupBuilder
         }
 
         using var subStream = new MemoryStream();
-        using (var subWriter = new BinaryWriter(subStream, System.Text.Encoding.Latin1, true))
+        using (var subWriter = new BinaryWriter(subStream, Encoding.Latin1, true))
         {
             // Canonical FNV DIAL order is EDID, QSTI*, FULL, PNAM, TDUM?, DATA — the added
             // quest links must land in the QSTI block. Insert after the last existing QSTI;
@@ -1721,12 +1460,6 @@ internal static class DialogGrupBuilder
         return topic with { QuestFormId = quest, SpeakerFormId = speaker };
     }
 
-    /// <summary>FNV condition function: GetQuestVariable (quest + script variable index).</summary>
-    private const ushort GetQuestVariableFunctionIndex = 79;
-
-    /// <summary>FNV condition function: GetVariable-style scripted lookup (variable index).</summary>
-    private const ushort GetVariableFunctionIndex = 449;
-
     /// <summary>
     ///     True when the INFO is safe to attach under a shared MASTER topic (GREETING etc.),
     ///     which the engine evaluates for every actor in the game. Two requirements:
@@ -1757,11 +1490,13 @@ internal static class DialogGrupBuilder
     ///     "(NOT FOUND IN CRASH DUMP)" placeholder is NOT renderable — a placeholder-seeded
     ///     model must never shadow a retail greeting either.
     /// </summary>
-    private static bool HasRenderableResponse(DialogueRecord info) =>
-        info.Responses.Any(response =>
+    private static bool HasRenderableResponse(DialogueRecord info)
+    {
+        return info.Responses.Any(response =>
             (!string.IsNullOrWhiteSpace(response.Text)
              && !string.Equals(response.Text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal))
             || response.SoundFormId is > 0);
+    }
 
     /// <summary>
     ///     Drop FormID fields on a new INFO whose targets don't exist in either master or our
@@ -1856,10 +1591,6 @@ internal static class DialogGrupBuilder
         return kept;
     }
 
-    private const int IdentityEvidencePreviewLimit = 8;
-    private const int IdentityConflictPreviewLimit = 4;
-    private const int IdentityConflictTextLimit = 192;
-
     internal static void ReportIdentityTelemetry(
         IReadOnlyList<DialogueTopicIdentity> identities,
         IConversionProgressSink sink)
@@ -1909,40 +1640,53 @@ internal static class DialogGrupBuilder
                 $"evidenceINFOPreview={FormatEvidencePreview(evidence)}; " +
                 $"conflictCount={InvariantCount(conflicts.Count)}; " +
                 $"conflictPreview={FormatConflictPreview(conflicts)}; reason={identity.Reason}",
-                formType: "DIAL",
-                formId: identity.PrototypeDialFormId,
-                code: IdentityEventCode(identity.Kind));
+                "DIAL",
+                identity.PrototypeDialFormId,
+                IdentityEventCode(identity.Kind));
         }
     }
 
-    private static string FormatEvidencePreview(List<uint> evidence) => evidence.Count == 0
-        ? "none"
-        : string.Join(",", evidence
-            .Take(IdentityEvidencePreviewLimit)
-            .Select(static formId => $"0x{formId:X8}"));
+    private static string FormatEvidencePreview(List<uint> evidence)
+    {
+        return evidence.Count == 0
+            ? "none"
+            : string.Join(",", evidence
+                .Take(IdentityEvidencePreviewLimit)
+                .Select(static formId => $"0x{formId:X8}"));
+    }
 
-    private static string FormatConflictPreview(List<string> conflicts) => conflicts.Count == 0
-        ? "none"
-        : string.Join(" | ", conflicts
-            .Take(IdentityConflictPreviewLimit)
-            .Select(static conflict => TruncateIdentityConflict(conflict)));
+    private static string FormatConflictPreview(List<string> conflicts)
+    {
+        return conflicts.Count == 0
+            ? "none"
+            : string.Join(" | ", conflicts
+                .Take(IdentityConflictPreviewLimit)
+                .Select(static conflict => TruncateIdentityConflict(conflict)));
+    }
 
-    private static string TruncateIdentityConflict(string conflict) =>
-        conflict.Length <= IdentityConflictTextLimit
+    private static string TruncateIdentityConflict(string conflict)
+    {
+        return conflict.Length <= IdentityConflictTextLimit
             ? conflict
             : conflict[..(IdentityConflictTextLimit - 3)] + "...";
+    }
 
-    private static string InvariantCount(int value) =>
-        value.ToString("N0", CultureInfo.InvariantCulture);
-
-    private static string IdentityEventCode(DialogueTopicIdentityKind kind) => kind switch
+    private static string InvariantCount(int value)
     {
-        DialogueTopicIdentityKind.MasterAnchor => "dialogue.identity.master-anchor",
-        DialogueTopicIdentityKind.SharedChildAnchor => "dialogue.identity.shared-child-anchor",
-        DialogueTopicIdentityKind.PrototypeDistinct => "dialogue.identity.prototype-distinct",
-        DialogueTopicIdentityKind.Ambiguous => "dialogue.identity.ambiguous",
-        _ => "dialogue.identity.unknown",
-    };
+        return value.ToString("N0", CultureInfo.InvariantCulture);
+    }
+
+    private static string IdentityEventCode(DialogueTopicIdentityKind kind)
+    {
+        return kind switch
+        {
+            DialogueTopicIdentityKind.MasterAnchor => "dialogue.identity.master-anchor",
+            DialogueTopicIdentityKind.SharedChildAnchor => "dialogue.identity.shared-child-anchor",
+            DialogueTopicIdentityKind.PrototypeDistinct => "dialogue.identity.prototype-distinct",
+            DialogueTopicIdentityKind.Ambiguous => "dialogue.identity.ambiguous",
+            _ => "dialogue.identity.unknown"
+        };
+    }
 
     private static long WriteGrupHeader(Stream stream, byte[] label, int groupType)
     {
@@ -1956,5 +1700,294 @@ internal static class DialogGrupBuilder
         };
         return RecordHeaderProcessor.WriteGrupHeader(stream, header);
     }
-}
 
+    /// <summary>
+    ///     Per (quest, speaker), picks ONE master DIAL from the proto's retail-FormID-
+    ///     colliding topics to serve as the synthesized choice chains' exit link. The pick
+    ///     must have a retail INFO that PASSES for the speaker (GetIsID match or
+    ///     unconditioned) or the engine hides the choice — quest-level picks fail on shared
+    ///     quests like VFreeformFreeside where the lowest-FormID topic belongs to a
+    ///     different NPC. Ranking: goodbye-flagged passing → terminating (link-less)
+    ///     passing → any passing → quest-wide Min fallback; ties broken by Min FormID.
+    /// </summary>
+    private sealed class ExitTopicResolver
+    {
+        private readonly Dictionary<uint, List<uint>> _collidingByQuest;
+        private readonly Dictionary<uint, MasterDialConditions> _conditionsByDial;
+        private readonly Dictionary<(uint Quest, uint Speaker), uint> _memo = new();
+
+        private ExitTopicResolver(
+            Dictionary<uint, List<uint>> collidingByQuest,
+            Dictionary<uint, MasterDialConditions> conditionsByDial)
+        {
+            _collidingByQuest = collidingByQuest;
+            _conditionsByDial = conditionsByDial;
+        }
+
+        public static ExitTopicResolver Build(
+            IReadOnlyList<DialogTopicRecord> topics,
+            NewVsOverrideClassifier classifier,
+            IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+        {
+            var collidingByQuest = new Dictionary<uint, List<uint>>();
+            var collidingDials = new HashSet<uint>();
+            foreach (var topic in topics)
+            {
+                // Engine/system DIALs (GREETING 0xC8, HELLO 0xD2, GOODBYE 0xD4, …) live in
+                // the sub-0x1000 FormID block and are captured by every dump — they collide
+                // with master by definition and their huge INFO sets trivially pass every
+                // rank, hijacking the exit pick (a TCLT back to GREETING is nonsense).
+                if (topic.FormId < 0x00001000u
+                    || !classifier.IsOverride(topic.FormId)
+                    || !masterRecordsByFormId.TryGetValue(topic.FormId, out var masterDial)
+                    || masterDial.Header.Signature != "DIAL")
+                {
+                    continue;
+                }
+
+                // Quest membership + type come from MASTER's own record — captured
+                // topic→quest attribution is unreliable (a Hidden Valley Conversation topic
+                // was attributed to Beatrix's Freeside quest). Choice links target
+                // Topic-type DIALs only (DATA type byte 0).
+                var dialData = masterDial.Subrecords.FirstOrDefault(s =>
+                    s.Signature == "DATA" && s.Data.Length >= 1);
+                if (dialData is null || dialData.Data[0] != 0)
+                {
+                    continue;
+                }
+
+                var addedToAnyQuest = false;
+                foreach (var qsti in masterDial.Subrecords)
+                {
+                    if (qsti.Signature != "QSTI" || qsti.Data.Length < 4)
+                    {
+                        continue;
+                    }
+
+                    var quest = BinaryPrimitives.ReadUInt32LittleEndian(qsti.Data.AsSpan(0, 4));
+                    if (quest == 0)
+                    {
+                        continue;
+                    }
+
+                    if (!collidingByQuest.TryGetValue(quest, out var list))
+                    {
+                        list = [];
+                        collidingByQuest[quest] = list;
+                    }
+
+                    if (!list.Contains(topic.FormId))
+                    {
+                        list.Add(topic.FormId);
+                        addedToAnyQuest = true;
+                    }
+                }
+
+                if (addedToAnyQuest)
+                {
+                    collidingDials.Add(topic.FormId);
+                }
+            }
+
+            var conditions = collidingDials.Count == 0
+                ? new Dictionary<uint, MasterDialConditions>()
+                : IndexMasterDialConditions(masterRecordsByFormId, collidingDials);
+            return new ExitTopicResolver(collidingByQuest, conditions);
+        }
+
+        /// <summary>0 when the quest has no colliding master topics.</summary>
+        public uint Resolve(uint quest, uint? speaker)
+        {
+            if (!_collidingByQuest.TryGetValue(quest, out var dials))
+            {
+                return 0;
+            }
+
+            var key = (quest, speaker ?? 0u);
+            if (_memo.TryGetValue(key, out var memoized))
+            {
+                return memoized;
+            }
+
+            var exit = PickForSpeaker(dials, speaker ?? 0u);
+            _memo[key] = exit;
+            return exit;
+        }
+
+        private uint PickForSpeaker(List<uint> dials, uint speaker)
+        {
+            uint bestGoodbye = 0, bestTerminating = 0, bestPassing = 0;
+            foreach (var dial in dials)
+            {
+                if (!_conditionsByDial.TryGetValue(dial, out var c))
+                {
+                    continue;
+                }
+
+                if (c.GoodbyePassesFor(speaker) && (bestGoodbye == 0 || dial < bestGoodbye))
+                {
+                    bestGoodbye = dial;
+                }
+
+                if (c.TerminatingPassesFor(speaker) && (bestTerminating == 0 || dial < bestTerminating))
+                {
+                    bestTerminating = dial;
+                }
+
+                if (c.AnyPassesFor(speaker) && (bestPassing == 0 || dial < bestPassing))
+                {
+                    bestPassing = dial;
+                }
+            }
+
+            if (bestGoodbye != 0)
+            {
+                return bestGoodbye;
+            }
+
+            if (bestTerminating != 0)
+            {
+                return bestTerminating;
+            }
+
+            return bestPassing != 0 ? bestPassing : dials.Min();
+        }
+
+        /// <summary>
+        ///     One offset-ordered walk over the master stream (INFO parentage is
+        ///     GRUP-positional). Per colliding DIAL, aggregates which speakers its INFOs
+        ///     pass for. INFO DATA: type(0), nextSpeaker(1), flags16(2-3) — Goodbye 0x0001.
+        ///     CTDA: functionIndex at offset 8 (GetIsID = 72), param1 at offset 12.
+        ///     "Terminating" = INFO with no TCLT links (playing it returns to the topic
+        ///     list, where the engine Goodbye is available).
+        /// </summary>
+        private static Dictionary<uint, MasterDialConditions> IndexMasterDialConditions(
+            IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+            HashSet<uint> collidingDials)
+        {
+            var index = new Dictionary<uint, MasterDialConditions>();
+            uint currentDial = 0;
+            foreach (var record in masterRecordsByFormId.Values
+                         .Where(r => r.Header.Signature is "DIAL" or "INFO")
+                         .OrderBy(r => r.Offset))
+            {
+                if (record.Header.Signature == "DIAL")
+                {
+                    currentDial = record.Header.FormId;
+                    continue;
+                }
+
+                if (currentDial == 0 || !collidingDials.Contains(currentDial))
+                {
+                    continue;
+                }
+
+                var isGoodbye = false;
+                var hasTclt = false;
+                var getIsIdSpeakers = new HashSet<uint>();
+                var conditionCount = 0;
+                foreach (var sub in record.Subrecords)
+                {
+                    switch (sub.Signature)
+                    {
+                        case "DATA" when sub.Data.Length >= 4:
+                            isGoodbye = (sub.Data[2] & 0x01) != 0;
+                            break;
+                        case "TCLT":
+                            hasTclt = true;
+                            break;
+                        case "CTDA" when sub.Data.Length >= 16:
+                            conditionCount++;
+                            if (DialogueSpeakerBinding.IsPositiveSubjectGetIsId(sub.Data))
+                            {
+                                getIsIdSpeakers.Add(
+                                    BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(12, 4)));
+                            }
+
+                            break;
+                    }
+                }
+
+                if (!index.TryGetValue(currentDial, out var conditions))
+                {
+                    conditions = new MasterDialConditions();
+                    index[currentDial] = conditions;
+                }
+
+                if (getIsIdSpeakers.Count == 0)
+                {
+                    conditions.Record(
+                        null,
+                        conditionCount == 0,
+                        isGoodbye,
+                        !hasTclt);
+                }
+                else
+                {
+                    foreach (var speaker in getIsIdSpeakers)
+                    {
+                        conditions.Record(
+                            speaker,
+                            false,
+                            isGoodbye,
+                            !hasTclt);
+                    }
+                }
+            }
+
+            return index;
+        }
+    }
+
+    /// <summary>Per-master-DIAL aggregate of which speakers its INFOs pass for.</summary>
+    private sealed class MasterDialConditions
+    {
+        private readonly HashSet<uint> _anySpeakers = [];
+        private readonly HashSet<uint> _goodbyeSpeakers = [];
+        private readonly HashSet<uint> _terminatingSpeakers = [];
+        private bool _anyUnconditioned;
+        private bool _goodbyeUnconditioned;
+        private bool _terminatingUnconditioned;
+
+        public void Record(uint? speaker, bool unconditioned, bool goodbye, bool terminating)
+        {
+            Track(_anySpeakers, ref _anyUnconditioned, speaker, unconditioned);
+            if (goodbye)
+            {
+                Track(_goodbyeSpeakers, ref _goodbyeUnconditioned, speaker, unconditioned);
+            }
+
+            if (terminating)
+            {
+                Track(_terminatingSpeakers, ref _terminatingUnconditioned, speaker, unconditioned);
+            }
+        }
+
+        public bool GoodbyePassesFor(uint speaker)
+        {
+            return _goodbyeUnconditioned || _goodbyeSpeakers.Contains(speaker);
+        }
+
+        public bool TerminatingPassesFor(uint speaker)
+        {
+            return _terminatingUnconditioned || _terminatingSpeakers.Contains(speaker);
+        }
+
+        public bool AnyPassesFor(uint speaker)
+        {
+            return _anyUnconditioned || _anySpeakers.Contains(speaker);
+        }
+
+        private static void Track(HashSet<uint> speakers, ref bool unconditioned, uint? speaker, bool isUnconditioned)
+        {
+            if (isUnconditioned)
+            {
+                unconditioned = true;
+            }
+            else if (speaker is > 0)
+            {
+                speakers.Add(speaker.Value);
+            }
+        }
+    }
+}

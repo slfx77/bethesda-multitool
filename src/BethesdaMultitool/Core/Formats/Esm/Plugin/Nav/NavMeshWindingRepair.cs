@@ -11,30 +11,29 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     <c>PATHFINDING: Navmesh … Triangle X and Y have opposite normals but are linked</c> and
 ///     then dereferences a flipped neighbor inside <c>NavMeshSearchClosePoint</c> → AV when an
 ///     NPC paths across the seam (the Gomorrah01 entry crash).
-///
 ///     <para>
-///     Approach: compute each triangle's geometric normal from its NVVX vertices, take the sign
-///     of the normal's Z component (walkable navmesh surfaces face up, so the dominant sign is
-///     +Z), and flip every triangle whose normal opposes the majority. Using the majority sign
-///     rather than a hard-coded +Z convention makes the pass robust if a given mesh (or a future
-///     build's coordinate handling) is globally inverted — it only ever flips the minority that
-///     disagrees with the bulk of the mesh.
+///         Approach: compute each triangle's geometric normal from its NVVX vertices, take the sign
+///         of the normal's Z component (walkable navmesh surfaces face up, so the dominant sign is
+///         +Z), and flip every triangle whose normal opposes the majority. Using the majority sign
+///         rather than a hard-coded +Z convention makes the pass robust if a given mesh (or a future
+///         build's coordinate handling) is globally inverted — it only ever flips the minority that
+///         disagrees with the bulk of the mesh.
 ///     </para>
-///
 ///     <para>
-///     Flipping a triangle = reverse its winding by swapping Vertex1/Vertex2. Because the edge
-///     slots are defined relative to the vertex order (Edge01 = edge V0-V1, Edge12 = V1-V2,
-///     Edge20 = V2-V0), swapping V1/V2 turns edge V2-V0 into the new V0-V1 slot and edge V0-V1
-///     into the new V2-V0 slot, so Edge01 and Edge20 are swapped to keep each neighbor pointing
-///     across the same geometric edge. Edge12 (V1-V2 ⇒ V2-V1, same edge) is unchanged. The
-///     adjacency graph (which triangle borders which) is preserved; only this triangle's internal
-///     vertex/edge order changes, so neighbors' back-references (which store triangle indices,
-///     not edge slots) stay valid.
+///         Flipping a triangle = reverse its winding by swapping Vertex1/Vertex2. Because the edge
+///         slots are defined relative to the vertex order (Edge01 = edge V0-V1, Edge12 = V1-V2,
+///         Edge20 = V2-V0), swapping V1/V2 turns edge V2-V0 into the new V0-V1 slot and edge V0-V1
+///         into the new V2-V0 slot, so Edge01 and Edge20 are swapped to keep each neighbor pointing
+///         across the same geometric edge. Edge12 (V1-V2 ⇒ V2-V1, same edge) is unchanged. The
+///         adjacency graph (which triangle borders which) is preserved; only this triangle's internal
+///         vertex/edge order changes, so neighbors' back-references (which store triangle indices,
+///         not edge slots) stay valid.
 ///     </para>
-///
-///     <para>NVTR entry layout (16 bytes): Vertex0/1/2 (uint16, +0/+2/+4), Edge01/12/20
-///     (int16, +6/+8/+10), Flags (uint32, +12). NVVX vertex = NiPoint3 = 3 little-endian floats
-///     (12 bytes).</para>
+///     <para>
+///         NVTR entry layout (16 bytes): Vertex0/1/2 (uint16, +0/+2/+4), Edge01/12/20
+///         (int16, +6/+8/+10), Flags (uint32, +12). NVVX vertex = NiPoint3 = 3 little-endian floats
+///         (12 bytes).
+///     </para>
 /// </summary>
 internal static class NavMeshWindingRepair
 {
@@ -120,7 +119,7 @@ internal static class NavMeshWindingRepair
         // Z component of (V1-V0) x (V2-V0). Sign tells whether the triangle faces up or down;
         // the full 3D normal isn't needed because the engine's seam check only cares which side
         // of the surface the winding presents.
-        return ((x1 - x0) * (y2 - y0)) - ((y1 - y0) * (x2 - x0));
+        return (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
     }
 
     private static (float X, float Y) ReadXy(byte[] nvvx, int vertexIndex)

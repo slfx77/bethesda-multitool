@@ -1,7 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
-using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 
@@ -27,7 +27,7 @@ public sealed class PlannedAlchEncoder : IPlannedRecordEncoder<ConsumableRecord>
             RecordDisposition.New => EncodeNew(model, plan, refs),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedAlchEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedAlchEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 
@@ -57,7 +57,7 @@ public sealed class PlannedAlchEncoder : IPlannedRecordEncoder<ConsumableRecord>
                 FieldPath.Member("ENIT", "ConsumeSound"),
                 refs,
                 warnings,
-                ref topLevelRemaps),
+                ref topLevelRemaps)
         };
 
         var effectResolution = PlannedMagicEffectResolver.Resolve(
@@ -77,7 +77,7 @@ public sealed class PlannedAlchEncoder : IPlannedRecordEncoder<ConsumableRecord>
         var encoded = AlchEncoder.EncodeNew(resolvedModel);
         return encoded with
         {
-            Warnings = [.. encoded.Warnings, .. warnings, .. effectResolution.Warnings],
+            Warnings = [.. encoded.Warnings, .. warnings, .. effectResolution.Warnings]
         };
     }
 

@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 internal sealed record ParticleRenderTelemetry(
     int BlockIndex,
@@ -23,9 +23,12 @@ internal sealed class WorldRenderStats
     internal int TerrainDraws { get; set; }
     internal int TerrainQuadrantDraws { get; set; }
 
-    /// <summary>Terrain cells whose per-draw ring allocation soft-failed this frame — a silent
-    /// draw skip that would otherwise be un-observable (it reads as a missing cell on screen).</summary>
+    /// <summary>
+    ///     Terrain cells whose per-draw ring allocation soft-failed this frame — a silent
+    ///     draw skip that would otherwise be un-observable (it reads as a missing cell on screen).
+    /// </summary>
     internal int TerrainDrawsTruncated { get; set; }
+
     internal int NewUploads { get; set; }
     internal int NewPreUploads { get; set; }
     internal int TextureCacheMisses { get; set; }
@@ -57,6 +60,7 @@ internal sealed class WorldRenderStats
     ///     drew. Dropped > 0 is always a defect, never a tuning outcome.
     /// </summary>
     internal int WaterStreamEntries { get; set; }
+
     internal int WaterStreamRuns { get; set; }
     internal int WaterStreamNoisePrepasses { get; set; }
     internal int WaterStreamDroppedEntries { get; set; }
@@ -67,6 +71,7 @@ internal sealed class WorldRenderStats
     ///     scene — a quality reduction that would otherwise be invisible.
     /// </summary>
     internal int WaterNoiseSlotOverflows { get; set; }
+
     internal int WireframeDraws { get; set; }
     internal double CpuFrameMilliseconds { get; set; }
     internal double StateSetupMilliseconds { get; set; }
@@ -87,8 +92,8 @@ internal sealed class WorldRenderStats
     // GPU instancing would help or whether the bottleneck is elsewhere
     // (mesh cache thrash on motion, texture upload, GC pressure, etc.).
     internal int ReferenceCellsVisited { get; set; }
-    internal int ReferenceCandidates { get; set; }       // sum of PlacedObjects across visited cells
-    internal int ReferenceCulled { get; set; }           // dropped by per-REFR cylinder test
+    internal int ReferenceCandidates { get; set; } // sum of PlacedObjects across visited cells
+    internal int ReferenceCulled { get; set; } // dropped by per-REFR cylinder test
 
     // Whether this frame REUSED the cached cull survivor set instead of re-testing every candidate.
     // The single most motion-sensitive state in the renderer, and previously unreported: the hit rate
@@ -97,22 +102,27 @@ internal sealed class WorldRenderStats
     internal bool ReferenceCullCacheHit { get; set; }
     internal bool ReferenceBatchesReused { get; set; }
 
-    /// <summary>First cull-cache clause that failed this frame (ReferenceRenderer12.CullCacheVeto).
-    /// Reported because "the cull cache missed" alone does not say WHICH invariant moved, and two
-    /// plausible-sounding culprits have already cost an experiment cycle apiece.</summary>
+    /// <summary>
+    ///     First cull-cache clause that failed this frame (ReferenceRenderer12.CullCacheVeto).
+    ///     Reported because "the cull cache missed" alone does not say WHICH invariant moved, and two
+    ///     plausible-sounding culprits have already cost an experiment cycle apiece.
+    /// </summary>
     internal int ReferenceCullCacheVeto { get; set; }
 
-    /// <summary>First reuse-gate clause that failed this frame (ReferenceRenderer12.BatchReuseBlocker).
-    /// 0 = reused. The resolve+batch pass is the largest CPU item in the frame, so knowing WHY it
-    /// re-runs is the difference between fixing it and guessing at it.</summary>
+    /// <summary>
+    ///     First reuse-gate clause that failed this frame (ReferenceRenderer12.BatchReuseBlocker).
+    ///     0 = reused. The resolve+batch pass is the largest CPU item in the frame, so knowing WHY it
+    ///     re-runs is the difference between fixing it and guessing at it.
+    /// </summary>
     internal int ReferenceBatchReuseBlocker { get; set; }
-    internal int ReferenceMeshMissing { get; set; }      // GetOrUpload returned null this frame
-    internal int ReferenceTexturePending { get; set; }   // mesh ready, but at least one texture still streaming
-    internal int ReferenceDrawn { get; set; }            // REFRs that issued ≥1 submesh draw
-    internal int ReferenceSubmeshDraws { get; set; }     // total DrawIndexed calls
-    internal int ReferenceSrvBinds { get; set; }         // distinct PSSetShaderResource calls (post BindSrvIfChanged dedup)
-    internal int ReferenceCullModeFlips { get; set; }    // RSSetState calls (post SetCullModeIfChanged dedup)
-    internal int ReferenceMeshCacheMisses { get; set; }  // NIF parse + GPU upload events this frame
+
+    internal int ReferenceMeshMissing { get; set; } // GetOrUpload returned null this frame
+    internal int ReferenceTexturePending { get; set; } // mesh ready, but at least one texture still streaming
+    internal int ReferenceDrawn { get; set; } // REFRs that issued ≥1 submesh draw
+    internal int ReferenceSubmeshDraws { get; set; } // total DrawIndexed calls
+    internal int ReferenceSrvBinds { get; set; } // distinct PSSetShaderResource calls (post BindSrvIfChanged dedup)
+    internal int ReferenceCullModeFlips { get; set; } // RSSetState calls (post SetCullModeIfChanged dedup)
+    internal int ReferenceMeshCacheMisses { get; set; } // NIF parse + GPU upload events this frame
     internal int ReferenceDecodeRequests { get; set; }
     internal int ReferenceQueuedDecodes { get; set; }
     internal int ReferenceDecodeStarts { get; set; }
@@ -131,7 +141,9 @@ internal sealed class WorldRenderStats
     internal int ReferenceBatches { get; set; }
     internal int ReferenceInstances { get; set; }
     internal int ReferenceInstancedDraws { get; set; }
+
     internal int ReferenceBlendedDraws { get; set; }
+
     // Dormant PS1 audit counters. Retail does not submit SLS1009/SLS1013; these must remain zero.
     internal int ReferenceFnvSls1009Draws { get; set; }
     internal int ReferenceFnvSls1009Instances { get; set; }
@@ -141,7 +153,9 @@ internal sealed class WorldRenderStats
     internal bool ReferenceFnvClassicBasicLightingEnabled { get; set; }
     internal int ReferenceFnvClassicBasicFallbackDraws { get; set; }
     internal int ReferenceFnvClassicBasicFallbackInstances { get; set; }
+
     internal string? ReferenceFnvClassicBasicFallbackReason { get; set; }
+
     // Main-scene color draws that actually selected the bounded active retail
     // ID193/BSSM_ADT/SLS2000 route. Shadow replay is deliberately excluded.
     internal int ReferenceFnvActiveAdtBaseDraws { get; set; }
@@ -151,18 +165,24 @@ internal sealed class WorldRenderStats
     internal bool ReferenceFnvActiveAdtBaseEnabled { get; set; }
     internal int ReferenceFnvActiveAdtBaseFallbackDraws { get; set; }
     internal int ReferenceFnvActiveAdtBaseFallbackInstances { get; set; }
+
     internal string? ReferenceFnvActiveAdtBaseFallbackReason { get; set; }
+
     // Deferred blend depth diagnostics. SceneDepth counts transparent draws issued while a sampled
     // read-only depth view is active; SoftParticle is the eligible subset doing shader-side reject/fade.
     internal int ReferenceSceneDepthBlendedDraws { get; set; }
     internal int ReferenceSoftParticleDraws { get; set; }
     internal int ReferenceSoftParticleAuthoredDraws { get; set; }
     internal int ReferenceSoftParticleFallbackDraws { get; set; }
+
     internal int ReferenceSoftParticleDepthSampleCount { get; set; }
+
     // NiControllerSequence → NiAlphaController diagnostics for material-opacity animation.
     internal int ReferenceMaterialAlphaControllerDraws { get; set; }
     internal float ReferenceMaterialAlphaControllerMinimum { get; set; }
+
     internal float ReferenceMaterialAlphaControllerMaximum { get; set; }
+
     // Opt-in live-particle diagnostics. Owners is the number of unique particle systems visible in
     // the frame (including when the opt-in is disabled); the remaining counters describe geometry
     // actually produced by the live path. Draws counts placed-reference draw calls, so one shared
@@ -188,7 +208,9 @@ internal sealed class WorldRenderStats
     internal int ReferenceSpeedTreeLeafInstances { get; set; }
     internal int ReferenceSpeedTreeBillboardInstances { get; set; }
     internal int ReferenceSpeedTreeMinimumLod { get; set; } = -1;
+
     internal int ReferenceSpeedTreeMaximumLod { get; set; } = -1;
+
     // FNV TallGrassShaderProperty diagnostics. These are CPU-side observations of draws that used
     // the recovered GRASS2000 wind route; they deliberately do not alter any shader/GPU layout.
     internal bool ReferenceTallGrassWindSupported { get; set; }
@@ -210,11 +232,11 @@ internal sealed class WorldRenderStats
     internal float ReferenceTallGrassTemporalPhaseRadiansMinimum { get; set; }
     internal float ReferenceTallGrassTemporalPhaseRadiansMaximum { get; set; }
     internal double ReferenceStateSetupMilliseconds { get; set; }
-    internal double ReferenceCullMilliseconds { get; set; }   // per-REFR cylinder cull + placement-list walk
+    internal double ReferenceCullMilliseconds { get; set; } // per-REFR cylinder cull + placement-list walk
     internal double ReferenceMeshUploadMilliseconds { get; set; } // cache-miss NIF parse + GPU upload
-    internal double ReferenceCbUpdateMilliseconds { get; set; }   // per-submesh Map(WriteDiscard) on _perDrawCb
-    internal double ReferenceSrvBindMilliseconds { get; set; }    // BindSrvIfChanged + SetCullModeIfChanged
-    internal double ReferenceDrawCallMilliseconds { get; set; }   // IASetVB/IB + DrawIndexed
+    internal double ReferenceCbUpdateMilliseconds { get; set; } // per-submesh Map(WriteDiscard) on _perDrawCb
+    internal double ReferenceSrvBindMilliseconds { get; set; } // BindSrvIfChanged + SetCullModeIfChanged
+    internal double ReferenceDrawCallMilliseconds { get; set; } // IASetVB/IB + DrawIndexed
 
     internal void Reset()
     {
@@ -366,152 +388,155 @@ internal sealed class WorldRenderStats
         ReferenceDrawCallMilliseconds = 0;
     }
 
-    internal WorldRenderStats Snapshot() => new()
+    internal WorldRenderStats Snapshot()
     {
-        VisibleCandidates = VisibleCandidates,
-        TerrainDraws = TerrainDraws,
-        TerrainQuadrantDraws = TerrainQuadrantDraws,
-        TerrainDrawsTruncated = TerrainDrawsTruncated,
-        NewUploads = NewUploads,
-        NewPreUploads = NewPreUploads,
-        TextureCacheMisses = TextureCacheMisses,
-        TextureCompressedUploads = TextureCompressedUploads,
-        TextureRgbaFallbackUploads = TextureRgbaFallbackUploads,
-        TextureQueuedResolves = TextureQueuedResolves,
-        TextureActiveResolves = TextureActiveResolves,
-        TexturePendingResolves = TexturePendingResolves,
-        TexturePendingUploads = TexturePendingUploads,
-        WaterDraws = WaterDraws,
-        WaterPipeline = WaterPipeline,
-        WaterTechnique = WaterTechnique,
-        WaterMapPaths = WaterMapPaths.ToArray(),
-        WaterMapRoles = WaterMapRoles.ToArray(),
-        WaterMapResolved = WaterMapResolved.ToArray(),
-        WaterAnimationFrame = WaterAnimationFrame,
-        WaterAnimationFps = WaterAnimationFps,
-        WaterAnimationSeconds = WaterAnimationSeconds,
-        WaterNoisePrepassUsed = WaterNoisePrepassUsed,
-        WaterTelemetryUnavailableReason = WaterTelemetryUnavailableReason,
-        WaterStreamEntries = WaterStreamEntries,
-        WaterStreamRuns = WaterStreamRuns,
-        WaterStreamNoisePrepasses = WaterStreamNoisePrepasses,
-        WaterNoiseSlotOverflows = WaterNoiseSlotOverflows,
-        WaterStreamDroppedEntries = WaterStreamDroppedEntries,
-        WireframeDraws = WireframeDraws,
-        CpuFrameMilliseconds = CpuFrameMilliseconds,
-        StateSetupMilliseconds = StateSetupMilliseconds,
-        VisibleGatherMilliseconds = VisibleGatherMilliseconds,
-        VisibleSortMilliseconds = VisibleSortMilliseconds,
-        DrawLoopMilliseconds = DrawLoopMilliseconds,
-        MeshBuildUploadMilliseconds = MeshBuildUploadMilliseconds,
-        NeighborPreUploadMilliseconds = NeighborPreUploadMilliseconds,
-        QuadrantDrawMilliseconds = QuadrantDrawMilliseconds,
-        InstanceBuildMilliseconds = InstanceBuildMilliseconds,
-        GpuUploadMilliseconds = GpuUploadMilliseconds,
-        DrawCallMilliseconds = DrawCallMilliseconds,
-        ResourceResizeMilliseconds = ResourceResizeMilliseconds,
-        ReferenceCellsVisited = ReferenceCellsVisited,
-        ReferenceCandidates = ReferenceCandidates,
-        ReferenceCulled = ReferenceCulled,
-        ReferenceCullCacheHit = ReferenceCullCacheHit,
-        ReferenceBatchesReused = ReferenceBatchesReused,
-        ReferenceBatchReuseBlocker = ReferenceBatchReuseBlocker,
-        ReferenceMeshMissing = ReferenceMeshMissing,
-        ReferenceTexturePending = ReferenceTexturePending,
-        ReferenceDrawn = ReferenceDrawn,
-        ReferenceSubmeshDraws = ReferenceSubmeshDraws,
-        ReferenceSrvBinds = ReferenceSrvBinds,
-        ReferenceCullModeFlips = ReferenceCullModeFlips,
-        ReferenceMeshCacheMisses = ReferenceMeshCacheMisses,
-        ReferenceDecodeRequests = ReferenceDecodeRequests,
-        ReferenceQueuedDecodes = ReferenceQueuedDecodes,
-        ReferenceDecodeStarts = ReferenceDecodeStarts,
-        ReferenceActiveDecodes = ReferenceActiveDecodes,
-        ReferenceCpuDecodedMeshCacheHits = ReferenceCpuDecodedMeshCacheHits,
-        ReferenceCpuDecodedMeshCacheMisses = ReferenceCpuDecodedMeshCacheMisses,
-        ReferenceCpuDecodedMeshNegativeHits = ReferenceCpuDecodedMeshNegativeHits,
-        ReferenceGpuUploads = ReferenceGpuUploads,
-        ReferenceUploadByteBudgetDeferrals = ReferenceUploadByteBudgetDeferrals,
-        ReferenceCompressedTextureUploads = ReferenceCompressedTextureUploads,
-        ReferenceRgbaTextureUploads = ReferenceRgbaTextureUploads,
-        ReferenceTextureQueuedResolves = ReferenceTextureQueuedResolves,
-        ReferenceTextureActiveResolves = ReferenceTextureActiveResolves,
-        ReferenceTexturePendingResolves = ReferenceTexturePendingResolves,
-        ReferenceTexturePendingUploads = ReferenceTexturePendingUploads,
-        ReferenceBatches = ReferenceBatches,
-        ReferenceInstances = ReferenceInstances,
-        ReferenceInstancedDraws = ReferenceInstancedDraws,
-        ReferenceBlendedDraws = ReferenceBlendedDraws,
-        ReferenceFnvSls1009Draws = ReferenceFnvSls1009Draws,
-        ReferenceFnvSls1009Instances = ReferenceFnvSls1009Instances,
-        ReferenceFnvSls1013Draws = ReferenceFnvSls1013Draws,
-        ReferenceFnvSls1013Instances = ReferenceFnvSls1013Instances,
-        ReferencePlacedLightCount = ReferencePlacedLightCount,
-        ReferenceFnvClassicBasicLightingEnabled = ReferenceFnvClassicBasicLightingEnabled,
-        ReferenceFnvClassicBasicFallbackDraws = ReferenceFnvClassicBasicFallbackDraws,
-        ReferenceFnvClassicBasicFallbackInstances = ReferenceFnvClassicBasicFallbackInstances,
-        ReferenceFnvClassicBasicFallbackReason = ReferenceFnvClassicBasicFallbackReason,
-        ReferenceFnvActiveAdtBaseDraws = ReferenceFnvActiveAdtBaseDraws,
-        ReferenceFnvActiveAdtBaseInstances = ReferenceFnvActiveAdtBaseInstances,
-        ReferenceFnvActiveAdtBaseVertexColorDraws = ReferenceFnvActiveAdtBaseVertexColorDraws,
-        ReferenceFnvActiveAdtBaseVertexColorInstances = ReferenceFnvActiveAdtBaseVertexColorInstances,
-        ReferenceFnvActiveAdtBaseEnabled = ReferenceFnvActiveAdtBaseEnabled,
-        ReferenceFnvActiveAdtBaseFallbackDraws = ReferenceFnvActiveAdtBaseFallbackDraws,
-        ReferenceFnvActiveAdtBaseFallbackInstances = ReferenceFnvActiveAdtBaseFallbackInstances,
-        ReferenceFnvActiveAdtBaseFallbackReason = ReferenceFnvActiveAdtBaseFallbackReason,
-        ReferenceSceneDepthBlendedDraws = ReferenceSceneDepthBlendedDraws,
-        ReferenceSoftParticleDraws = ReferenceSoftParticleDraws,
-        ReferenceSoftParticleAuthoredDraws = ReferenceSoftParticleAuthoredDraws,
-        ReferenceSoftParticleFallbackDraws = ReferenceSoftParticleFallbackDraws,
-        ReferenceSoftParticleDepthSampleCount = ReferenceSoftParticleDepthSampleCount,
-        ReferenceMaterialAlphaControllerDraws = ReferenceMaterialAlphaControllerDraws,
-        ReferenceMaterialAlphaControllerMinimum = ReferenceMaterialAlphaControllerMinimum,
-        ReferenceMaterialAlphaControllerMaximum = ReferenceMaterialAlphaControllerMaximum,
-        ReferenceLiveParticleOwners = ReferenceLiveParticleOwners,
-        ReferenceLiveParticleParticles = ReferenceLiveParticleParticles,
-        ReferenceLiveParticleDraws = ReferenceLiveParticleDraws,
-        ReferenceLiveParticleFallbacks = ReferenceLiveParticleFallbacks,
-        ReferenceLiveParticleUploadBytes = ReferenceLiveParticleUploadBytes,
-        ReferenceLiveParticleUvFrame = ReferenceLiveParticleUvFrame,
-        ReferenceLiveParticleAtlasFrameCount = ReferenceLiveParticleAtlasFrameCount,
-        ReferenceLiveParticleAuthoredCapacity = ReferenceLiveParticleAuthoredCapacity,
-        ReferenceParticleRenderedCount = ReferenceParticleRenderedCount,
-        ReferenceParticleSystems = ReferenceParticleSystems.ToArray(),
-        ReferenceSpeedTreeWindStrength = ReferenceSpeedTreeWindStrength,
-        ReferenceSpeedTreeRockAmount = ReferenceSpeedTreeRockAmount,
-        ReferenceSpeedTreeRockPhase = ReferenceSpeedTreeRockPhase,
-        ReferenceSpeedTreeRustleAmount = ReferenceSpeedTreeRustleAmount,
-        ReferenceSpeedTreeRustlePhase = ReferenceSpeedTreeRustlePhase,
-        ReferenceSpeedTreeAnimationSeconds = ReferenceSpeedTreeAnimationSeconds,
-        ReferenceSpeedTreeRuntimeLodEnabled = ReferenceSpeedTreeRuntimeLodEnabled,
-        ReferenceSpeedTreeBranchInstances = ReferenceSpeedTreeBranchInstances,
-        ReferenceSpeedTreeLeafInstances = ReferenceSpeedTreeLeafInstances,
-        ReferenceSpeedTreeBillboardInstances = ReferenceSpeedTreeBillboardInstances,
-        ReferenceSpeedTreeMinimumLod = ReferenceSpeedTreeMinimumLod,
-        ReferenceSpeedTreeMaximumLod = ReferenceSpeedTreeMaximumLod,
-        ReferenceTallGrassWindSupported = ReferenceTallGrassWindSupported,
-        ReferenceTallGrassAnimationsEnabled = ReferenceTallGrassAnimationsEnabled,
-        ReferenceTallGrassNormalizedStrength = ReferenceTallGrassNormalizedStrength,
-        ReferenceTallGrassMagnitudeWorldUnits = ReferenceTallGrassMagnitudeWorldUnits,
-        ReferenceTallGrassDirectionX = ReferenceTallGrassDirectionX,
-        ReferenceTallGrassDirectionY = ReferenceTallGrassDirectionY,
-        ReferenceTallGrassAnimationSeconds = ReferenceTallGrassAnimationSeconds,
-        ReferenceTallGrassInstancedDraws = ReferenceTallGrassInstancedDraws,
-        ReferenceTallGrassInstancedInstances = ReferenceTallGrassInstancedInstances,
-        ReferenceTallGrassDirectDraws = ReferenceTallGrassDirectDraws,
-        ReferenceTallGrassDirectInstances = ReferenceTallGrassDirectInstances,
-        ReferenceTallGrassShadowDraws = ReferenceTallGrassShadowDraws,
-        ReferenceTallGrassShadowInstances = ReferenceTallGrassShadowInstances,
-        ReferenceTallGrassWaveMultiplierMinimum = ReferenceTallGrassWaveMultiplierMinimum,
-        ReferenceTallGrassWaveMultiplierMaximum = ReferenceTallGrassWaveMultiplierMaximum,
-        ReferenceTallGrassWaveMultiplierDistinctCount = ReferenceTallGrassWaveMultiplierDistinctCount,
-        ReferenceTallGrassTemporalPhaseRadiansMinimum = ReferenceTallGrassTemporalPhaseRadiansMinimum,
-        ReferenceTallGrassTemporalPhaseRadiansMaximum = ReferenceTallGrassTemporalPhaseRadiansMaximum,
-        ReferenceStateSetupMilliseconds = ReferenceStateSetupMilliseconds,
-        ReferenceCullMilliseconds = ReferenceCullMilliseconds,
-        ReferenceMeshUploadMilliseconds = ReferenceMeshUploadMilliseconds,
-        ReferenceCbUpdateMilliseconds = ReferenceCbUpdateMilliseconds,
-        ReferenceSrvBindMilliseconds = ReferenceSrvBindMilliseconds,
-        ReferenceDrawCallMilliseconds = ReferenceDrawCallMilliseconds
-    };
+        return new WorldRenderStats
+        {
+            VisibleCandidates = VisibleCandidates,
+            TerrainDraws = TerrainDraws,
+            TerrainQuadrantDraws = TerrainQuadrantDraws,
+            TerrainDrawsTruncated = TerrainDrawsTruncated,
+            NewUploads = NewUploads,
+            NewPreUploads = NewPreUploads,
+            TextureCacheMisses = TextureCacheMisses,
+            TextureCompressedUploads = TextureCompressedUploads,
+            TextureRgbaFallbackUploads = TextureRgbaFallbackUploads,
+            TextureQueuedResolves = TextureQueuedResolves,
+            TextureActiveResolves = TextureActiveResolves,
+            TexturePendingResolves = TexturePendingResolves,
+            TexturePendingUploads = TexturePendingUploads,
+            WaterDraws = WaterDraws,
+            WaterPipeline = WaterPipeline,
+            WaterTechnique = WaterTechnique,
+            WaterMapPaths = WaterMapPaths.ToArray(),
+            WaterMapRoles = WaterMapRoles.ToArray(),
+            WaterMapResolved = WaterMapResolved.ToArray(),
+            WaterAnimationFrame = WaterAnimationFrame,
+            WaterAnimationFps = WaterAnimationFps,
+            WaterAnimationSeconds = WaterAnimationSeconds,
+            WaterNoisePrepassUsed = WaterNoisePrepassUsed,
+            WaterTelemetryUnavailableReason = WaterTelemetryUnavailableReason,
+            WaterStreamEntries = WaterStreamEntries,
+            WaterStreamRuns = WaterStreamRuns,
+            WaterStreamNoisePrepasses = WaterStreamNoisePrepasses,
+            WaterNoiseSlotOverflows = WaterNoiseSlotOverflows,
+            WaterStreamDroppedEntries = WaterStreamDroppedEntries,
+            WireframeDraws = WireframeDraws,
+            CpuFrameMilliseconds = CpuFrameMilliseconds,
+            StateSetupMilliseconds = StateSetupMilliseconds,
+            VisibleGatherMilliseconds = VisibleGatherMilliseconds,
+            VisibleSortMilliseconds = VisibleSortMilliseconds,
+            DrawLoopMilliseconds = DrawLoopMilliseconds,
+            MeshBuildUploadMilliseconds = MeshBuildUploadMilliseconds,
+            NeighborPreUploadMilliseconds = NeighborPreUploadMilliseconds,
+            QuadrantDrawMilliseconds = QuadrantDrawMilliseconds,
+            InstanceBuildMilliseconds = InstanceBuildMilliseconds,
+            GpuUploadMilliseconds = GpuUploadMilliseconds,
+            DrawCallMilliseconds = DrawCallMilliseconds,
+            ResourceResizeMilliseconds = ResourceResizeMilliseconds,
+            ReferenceCellsVisited = ReferenceCellsVisited,
+            ReferenceCandidates = ReferenceCandidates,
+            ReferenceCulled = ReferenceCulled,
+            ReferenceCullCacheHit = ReferenceCullCacheHit,
+            ReferenceBatchesReused = ReferenceBatchesReused,
+            ReferenceBatchReuseBlocker = ReferenceBatchReuseBlocker,
+            ReferenceMeshMissing = ReferenceMeshMissing,
+            ReferenceTexturePending = ReferenceTexturePending,
+            ReferenceDrawn = ReferenceDrawn,
+            ReferenceSubmeshDraws = ReferenceSubmeshDraws,
+            ReferenceSrvBinds = ReferenceSrvBinds,
+            ReferenceCullModeFlips = ReferenceCullModeFlips,
+            ReferenceMeshCacheMisses = ReferenceMeshCacheMisses,
+            ReferenceDecodeRequests = ReferenceDecodeRequests,
+            ReferenceQueuedDecodes = ReferenceQueuedDecodes,
+            ReferenceDecodeStarts = ReferenceDecodeStarts,
+            ReferenceActiveDecodes = ReferenceActiveDecodes,
+            ReferenceCpuDecodedMeshCacheHits = ReferenceCpuDecodedMeshCacheHits,
+            ReferenceCpuDecodedMeshCacheMisses = ReferenceCpuDecodedMeshCacheMisses,
+            ReferenceCpuDecodedMeshNegativeHits = ReferenceCpuDecodedMeshNegativeHits,
+            ReferenceGpuUploads = ReferenceGpuUploads,
+            ReferenceUploadByteBudgetDeferrals = ReferenceUploadByteBudgetDeferrals,
+            ReferenceCompressedTextureUploads = ReferenceCompressedTextureUploads,
+            ReferenceRgbaTextureUploads = ReferenceRgbaTextureUploads,
+            ReferenceTextureQueuedResolves = ReferenceTextureQueuedResolves,
+            ReferenceTextureActiveResolves = ReferenceTextureActiveResolves,
+            ReferenceTexturePendingResolves = ReferenceTexturePendingResolves,
+            ReferenceTexturePendingUploads = ReferenceTexturePendingUploads,
+            ReferenceBatches = ReferenceBatches,
+            ReferenceInstances = ReferenceInstances,
+            ReferenceInstancedDraws = ReferenceInstancedDraws,
+            ReferenceBlendedDraws = ReferenceBlendedDraws,
+            ReferenceFnvSls1009Draws = ReferenceFnvSls1009Draws,
+            ReferenceFnvSls1009Instances = ReferenceFnvSls1009Instances,
+            ReferenceFnvSls1013Draws = ReferenceFnvSls1013Draws,
+            ReferenceFnvSls1013Instances = ReferenceFnvSls1013Instances,
+            ReferencePlacedLightCount = ReferencePlacedLightCount,
+            ReferenceFnvClassicBasicLightingEnabled = ReferenceFnvClassicBasicLightingEnabled,
+            ReferenceFnvClassicBasicFallbackDraws = ReferenceFnvClassicBasicFallbackDraws,
+            ReferenceFnvClassicBasicFallbackInstances = ReferenceFnvClassicBasicFallbackInstances,
+            ReferenceFnvClassicBasicFallbackReason = ReferenceFnvClassicBasicFallbackReason,
+            ReferenceFnvActiveAdtBaseDraws = ReferenceFnvActiveAdtBaseDraws,
+            ReferenceFnvActiveAdtBaseInstances = ReferenceFnvActiveAdtBaseInstances,
+            ReferenceFnvActiveAdtBaseVertexColorDraws = ReferenceFnvActiveAdtBaseVertexColorDraws,
+            ReferenceFnvActiveAdtBaseVertexColorInstances = ReferenceFnvActiveAdtBaseVertexColorInstances,
+            ReferenceFnvActiveAdtBaseEnabled = ReferenceFnvActiveAdtBaseEnabled,
+            ReferenceFnvActiveAdtBaseFallbackDraws = ReferenceFnvActiveAdtBaseFallbackDraws,
+            ReferenceFnvActiveAdtBaseFallbackInstances = ReferenceFnvActiveAdtBaseFallbackInstances,
+            ReferenceFnvActiveAdtBaseFallbackReason = ReferenceFnvActiveAdtBaseFallbackReason,
+            ReferenceSceneDepthBlendedDraws = ReferenceSceneDepthBlendedDraws,
+            ReferenceSoftParticleDraws = ReferenceSoftParticleDraws,
+            ReferenceSoftParticleAuthoredDraws = ReferenceSoftParticleAuthoredDraws,
+            ReferenceSoftParticleFallbackDraws = ReferenceSoftParticleFallbackDraws,
+            ReferenceSoftParticleDepthSampleCount = ReferenceSoftParticleDepthSampleCount,
+            ReferenceMaterialAlphaControllerDraws = ReferenceMaterialAlphaControllerDraws,
+            ReferenceMaterialAlphaControllerMinimum = ReferenceMaterialAlphaControllerMinimum,
+            ReferenceMaterialAlphaControllerMaximum = ReferenceMaterialAlphaControllerMaximum,
+            ReferenceLiveParticleOwners = ReferenceLiveParticleOwners,
+            ReferenceLiveParticleParticles = ReferenceLiveParticleParticles,
+            ReferenceLiveParticleDraws = ReferenceLiveParticleDraws,
+            ReferenceLiveParticleFallbacks = ReferenceLiveParticleFallbacks,
+            ReferenceLiveParticleUploadBytes = ReferenceLiveParticleUploadBytes,
+            ReferenceLiveParticleUvFrame = ReferenceLiveParticleUvFrame,
+            ReferenceLiveParticleAtlasFrameCount = ReferenceLiveParticleAtlasFrameCount,
+            ReferenceLiveParticleAuthoredCapacity = ReferenceLiveParticleAuthoredCapacity,
+            ReferenceParticleRenderedCount = ReferenceParticleRenderedCount,
+            ReferenceParticleSystems = ReferenceParticleSystems.ToArray(),
+            ReferenceSpeedTreeWindStrength = ReferenceSpeedTreeWindStrength,
+            ReferenceSpeedTreeRockAmount = ReferenceSpeedTreeRockAmount,
+            ReferenceSpeedTreeRockPhase = ReferenceSpeedTreeRockPhase,
+            ReferenceSpeedTreeRustleAmount = ReferenceSpeedTreeRustleAmount,
+            ReferenceSpeedTreeRustlePhase = ReferenceSpeedTreeRustlePhase,
+            ReferenceSpeedTreeAnimationSeconds = ReferenceSpeedTreeAnimationSeconds,
+            ReferenceSpeedTreeRuntimeLodEnabled = ReferenceSpeedTreeRuntimeLodEnabled,
+            ReferenceSpeedTreeBranchInstances = ReferenceSpeedTreeBranchInstances,
+            ReferenceSpeedTreeLeafInstances = ReferenceSpeedTreeLeafInstances,
+            ReferenceSpeedTreeBillboardInstances = ReferenceSpeedTreeBillboardInstances,
+            ReferenceSpeedTreeMinimumLod = ReferenceSpeedTreeMinimumLod,
+            ReferenceSpeedTreeMaximumLod = ReferenceSpeedTreeMaximumLod,
+            ReferenceTallGrassWindSupported = ReferenceTallGrassWindSupported,
+            ReferenceTallGrassAnimationsEnabled = ReferenceTallGrassAnimationsEnabled,
+            ReferenceTallGrassNormalizedStrength = ReferenceTallGrassNormalizedStrength,
+            ReferenceTallGrassMagnitudeWorldUnits = ReferenceTallGrassMagnitudeWorldUnits,
+            ReferenceTallGrassDirectionX = ReferenceTallGrassDirectionX,
+            ReferenceTallGrassDirectionY = ReferenceTallGrassDirectionY,
+            ReferenceTallGrassAnimationSeconds = ReferenceTallGrassAnimationSeconds,
+            ReferenceTallGrassInstancedDraws = ReferenceTallGrassInstancedDraws,
+            ReferenceTallGrassInstancedInstances = ReferenceTallGrassInstancedInstances,
+            ReferenceTallGrassDirectDraws = ReferenceTallGrassDirectDraws,
+            ReferenceTallGrassDirectInstances = ReferenceTallGrassDirectInstances,
+            ReferenceTallGrassShadowDraws = ReferenceTallGrassShadowDraws,
+            ReferenceTallGrassShadowInstances = ReferenceTallGrassShadowInstances,
+            ReferenceTallGrassWaveMultiplierMinimum = ReferenceTallGrassWaveMultiplierMinimum,
+            ReferenceTallGrassWaveMultiplierMaximum = ReferenceTallGrassWaveMultiplierMaximum,
+            ReferenceTallGrassWaveMultiplierDistinctCount = ReferenceTallGrassWaveMultiplierDistinctCount,
+            ReferenceTallGrassTemporalPhaseRadiansMinimum = ReferenceTallGrassTemporalPhaseRadiansMinimum,
+            ReferenceTallGrassTemporalPhaseRadiansMaximum = ReferenceTallGrassTemporalPhaseRadiansMaximum,
+            ReferenceStateSetupMilliseconds = ReferenceStateSetupMilliseconds,
+            ReferenceCullMilliseconds = ReferenceCullMilliseconds,
+            ReferenceMeshUploadMilliseconds = ReferenceMeshUploadMilliseconds,
+            ReferenceCbUpdateMilliseconds = ReferenceCbUpdateMilliseconds,
+            ReferenceSrvBindMilliseconds = ReferenceSrvBindMilliseconds,
+            ReferenceDrawCallMilliseconds = ReferenceDrawCallMilliseconds
+        };
+    }
 }

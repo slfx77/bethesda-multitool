@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
-/// <summary>Decides how a NIF shape's texture channels map onto glTF PBR material channels (e.g. whether a glow map becomes emissive).</summary>
+/// <summary>
+///     Decides how a NIF shape's texture channels map onto glTF PBR material channels (e.g. whether a glow map
+///     becomes emissive).
+/// </summary>
 internal static class NpcGlbMaterialChannelDecider
 {
     internal static bool ShouldExportGlowAsEmissive(

@@ -10,9 +10,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 ///     and drifted, which left 49 SOUN records per build naming <c>.xma</c> files the archive
 ///     never contained (fixed 2026-08-13).
 ///     <para>
-///     The rule the packer implements: an entry is written under the REQUESTED path — that is
-///     what makes a fuzzy rename re-home donor bytes onto the name the record uses — with only
-///     its extension replaced by whatever the source actually yields.
+///         The rule the packer implements: an entry is written under the REQUESTED path — that is
+///         what makes a fuzzy rename re-home donor bytes onto the name the record uses — with only
+///         its extension replaced by whatever the source actually yields.
 ///     </para>
 /// </summary>
 public sealed class AssetPackNamingTests
@@ -26,7 +26,7 @@ public sealed class AssetPackNamingTests
     public void ExtensionAfterConversion_PcSource_IsNeverConverted(string extension)
     {
         var result = PrototypeAssetConverter.ExtensionAfterConversion(
-            $"sound\\fx\\a\\x{extension}", sourceIsXbox360: false);
+            $"sound\\fx\\a\\x{extension}", false);
 
         Assert.Equal(extension, result);
     }
@@ -42,7 +42,7 @@ public sealed class AssetPackNamingTests
         string sourcePath, string expected)
     {
         var result = PrototypeAssetConverter.ExtensionAfterConversion(
-            sourcePath, sourceIsXbox360: true);
+            sourcePath, true);
 
         Assert.Equal(expected, result);
     }
@@ -53,7 +53,7 @@ public sealed class AssetPackNamingTests
         // IsDialogueVoicePath anchors on "sound\voice\"; a "voice" folder elsewhere in the
         // tree is an FX asset and must convert to WAV, not OGG.
         var result = PrototypeAssetConverter.ExtensionAfterConversion(
-            "sound\\fx\\voice\\x.xma", sourceIsXbox360: true);
+            "sound\\fx\\voice\\x.xma", true);
 
         Assert.Equal(".wav", result);
     }
@@ -64,7 +64,7 @@ public sealed class AssetPackNamingTests
         // THE regression case. A correct `.wav` field resolving through an ExtensionSwap to a
         // 360 `.xma` donor must stay `.wav`: that is exactly where the packer writes it.
         var result = PrototypeAssetConverter.PredictPackedPath(
-            "sound\\fx\\amb\\lp.wav", "sound\\fx\\amb\\lp.xma", sourceIsXbox360: true);
+            "sound\\fx\\amb\\lp.wav", "sound\\fx\\amb\\lp.xma", true);
 
         Assert.Equal("sound\\fx\\amb\\lp.wav", result);
     }
@@ -87,7 +87,7 @@ public sealed class AssetPackNamingTests
         // CONVERSION changed the extension would leave Ogg bytes under a .wav name — three
         // records per build hit this (campfire, underwater, industrial machine).
         var result = PrototypeAssetConverter.PredictPackedPath(
-            "sound\\fx\\amb\\x.wav", "sound\\fx\\amb\\x.ogg", sourceIsXbox360: false);
+            "sound\\fx\\amb\\x.wav", "sound\\fx\\amb\\x.ogg", false);
 
         Assert.Equal("sound\\fx\\amb\\x.ogg", result);
     }
@@ -98,7 +98,7 @@ public sealed class AssetPackNamingTests
         // Only the extension travels from the donor; the stem stays the request's, because
         // that is the name the record uses and the packer re-homes the bytes onto it.
         var result = PrototypeAssetConverter.PredictPackedPath(
-            "sound\\fx\\a\\old.wav", "sound\\fx\\b\\new.xma", sourceIsXbox360: true);
+            "sound\\fx\\a\\old.wav", "sound\\fx\\b\\new.xma", true);
 
         Assert.Equal("sound\\fx\\a\\old.wav", result);
     }

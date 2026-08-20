@@ -16,9 +16,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Vegetation;
 /// </summary>
 public sealed class FnvGrassShaderTests
 {
-    private static string VertexShader() => SourceContract.ReadShaderSource("reference_grass_fnv.vert.hlsl");
+    private static string VertexShader()
+    {
+        return SourceContract.ReadShaderSource("reference_grass_fnv.vert.hlsl");
+    }
 
-    private static string PixelShader() => SourceContract.ReadShaderSource("reference_grass_fnv.frag.hlsl");
+    private static string PixelShader()
+    {
+        return SourceContract.ReadShaderSource("reference_grass_fnv.frag.hlsl");
+    }
 
     [Theory]
     [InlineData(BethesdaGame.FalloutNewVegas)]
@@ -114,7 +120,7 @@ public sealed class FnvGrassShaderTests
 
         Assert.Equal(FnvGrassLighting.LuminanceRed, luminance, 4);
         Assert.Equal(1f, FnvGrassLighting.LuminanceRed + FnvGrassLighting.LuminanceGreen
-            + FnvGrassLighting.LuminanceBlue, 5);
+                                                       + FnvGrassLighting.LuminanceBlue, 5);
     }
 
     [Fact]
@@ -155,8 +161,8 @@ public sealed class FnvGrassShaderTests
         var vnml = new byte[33 * 33 * 3];
         for (var i = 0; i < 33 * 33; i++)
         {
-            vnml[i * 3] = unchecked((byte)(sbyte)0);
-            vnml[i * 3 + 1] = unchecked((byte)(sbyte)0);
+            vnml[i * 3] = unchecked(0);
+            vnml[i * 3 + 1] = unchecked(0);
             vnml[i * 3 + 2] = 127;
         }
 

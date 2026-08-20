@@ -718,7 +718,7 @@ public sealed class CellLandPlannerTests
             new HashSet<uint>(),
             new FormIdAllocator(),
             false,
-            masterRefFormIds: new HashSet<uint>());
+            new HashSet<uint>());
 
         var plan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(["LAND", "NAVM", "REFR"], plan.TemporaryChildren.Select(child => child.Type));
@@ -817,7 +817,7 @@ public sealed class CellLandPlannerTests
 
     private static RuntimeTerrainMesh CompleteRuntimeMesh()
     {
-        return FullGridMesh((x, y) => x * 3f + y * 2f + (x * y % 7));
+        return FullGridMesh((x, y) => x * 3f + y * 2f + x * y % 7);
     }
 
     private static RuntimeTerrainMesh FullGridMesh(Func<int, int, float> height)

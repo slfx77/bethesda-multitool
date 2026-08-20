@@ -4,8 +4,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -63,7 +61,8 @@ internal static class DanglingBaseSearchCommand
         return command;
     }
 
-    private static async Task RunAsync(string authorityPath, string[] esmPaths, string pattern, bool caseSensitive, CancellationToken ct)
+    private static async Task RunAsync(string authorityPath, string[] esmPaths, string pattern, bool caseSensitive,
+        CancellationToken ct)
     {
         if (!File.Exists(authorityPath))
         {
@@ -166,11 +165,6 @@ internal static class DanglingBaseSearchCommand
         }
     }
 
-    private sealed record MatchRow(
-        uint RefFid, uint BaseFid, string? BaseEdid, string? BaseDisplay,
-        float X, float Y, float Z, int Gx, int Gy,
-        string Confidence, string CellEdid, int FoundInDumps);
-
     private static void HarvestNames(FormIdResolver resolver, Dictionary<uint, (string? Edid, string? Display)> target)
     {
         foreach (var kvp in resolver.EditorIds)
@@ -179,14 +173,17 @@ internal static class DanglingBaseSearchCommand
             {
                 continue;
             }
+
             target[kvp.Key] = (kvp.Value, resolver.GetDisplayName(kvp.Key));
         }
+
         foreach (var kvp in resolver.DisplayNames)
         {
             if (target.ContainsKey(kvp.Key))
             {
                 continue;
             }
+
             target[kvp.Key] = (null, kvp.Value);
         }
     }
@@ -198,12 +195,27 @@ internal static class DanglingBaseSearchCommand
         {
             return false;
         }
+
         var span = s.AsSpan();
         if (span.Length > 2 && span[0] == '0' && (span[1] == 'x' || span[1] == 'X'))
         {
             span = span[2..];
         }
+
         return uint.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
     }
-}
 
+    private sealed record MatchRow(
+        uint RefFid,
+        uint BaseFid,
+        string? BaseEdid,
+        string? BaseDisplay,
+        float X,
+        float Y,
+        float Z,
+        int Gx,
+        int Gy,
+        string Confidence,
+        string CellEdid,
+        int FoundInDumps);
+}

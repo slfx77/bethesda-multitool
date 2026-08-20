@@ -15,7 +15,7 @@ public sealed class BookEncoder : IRecordEncoder
         ["Flags"] = m => m.Flags,
         ["Skill"] = m => (sbyte)m.SkillTaught,
         ["Value"] = m => m.Value,
-        ["Weight"] = m => m.Weight,
+        ["Weight"] = m => m.Weight
     };
 
     public string RecordType => "BOOK";

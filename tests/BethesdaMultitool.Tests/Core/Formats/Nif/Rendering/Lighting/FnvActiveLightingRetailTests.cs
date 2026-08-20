@@ -1,12 +1,12 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -53,7 +53,7 @@ public sealed class FnvActiveLightingRetailTests(
         Assert.SkipWhen(meshesBsa is null, "FNV PC-final meshes BSA not available");
 
         using var archives = MeshArchiveSet.Open(
-            meshesBsa!, null, false, false);
+            meshesBsa!, null, false);
         Assert.True(
             archives.TryExtractFile(PrimmGatedWallModelPath, out var data, out _),
             $"Retail NIF missing: {PrimmGatedWallModelPath}");
@@ -61,7 +61,6 @@ public sealed class FnvActiveLightingRetailTests(
         var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
             data,
             nif,
-            null,
             skipSkinning: true,
             treatRootsAsIdentity: true,
             collectBillboards: true,

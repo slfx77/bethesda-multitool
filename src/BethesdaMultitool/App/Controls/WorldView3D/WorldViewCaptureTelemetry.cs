@@ -91,7 +91,7 @@ internal static class WorldViewCaptureTelemetry
                 ["toAuthored"] = IsColorBandAuthored(color, band.To),
                 ["fromRgba8"] = Rgba8(from),
                 ["toRgba8"] = Rgba8(to),
-                ["sampledRgba"] = LerpRgba(from, to, band.ToWeight),
+                ["sampledRgba"] = LerpRgba(from, to, band.ToWeight)
             };
         }
 
@@ -130,7 +130,7 @@ internal static class WorldViewCaptureTelemetry
                 {
                     ["fromRgba8"] = Rgba8(from),
                     ["toRgba8"] = Rgba8(to),
-                    ["sampledRgba"] = LerpRgba(from, to, band.ToWeight),
+                    ["sampledRgba"] = LerpRgba(from, to, band.ToWeight)
                 };
             }
 
@@ -143,7 +143,7 @@ internal static class WorldViewCaptureTelemetry
                 {
                     ["from"] = from,
                     ["to"] = to,
-                    ["sampled"] = from + (to - from) * band.ToWeight,
+                    ["sampled"] = from + (to - from) * band.ToWeight
                 };
             }
 
@@ -160,7 +160,7 @@ internal static class WorldViewCaptureTelemetry
                 ["opacityBand"] = opacityBand,
                 ["opacityUnavailableReason"] = layer?.Opacity is null
                     ? "the authored cloud slot has no retained JNAM opacity row"
-                    : null,
+                    : null
             };
         }
 
@@ -184,7 +184,7 @@ internal static class WorldViewCaptureTelemetry
             ["toBand"] = band.To.ToString(),
             ["toWeight"] = band.ToWeight,
             ["from"] = AmbientCube(from),
-            ["to"] = AmbientCube(to),
+            ["to"] = AmbientCube(to)
         };
     }
 
@@ -200,7 +200,7 @@ internal static class WorldViewCaptureTelemetry
         AtmosphereState.WeatherBandKind.EarlySunset => bands.EarlySunset ?? bands.Sunset,
         AtmosphereState.WeatherBandKind.Sunset => bands.Sunset,
         AtmosphereState.WeatherBandKind.LateSunset => bands.LateSunset ?? bands.Sunset,
-        _ => bands.Day,
+        _ => bands.Day
     };
 
     private static Dictionary<string, object?> AmbientCube(WeatherAmbientCube cube) => new()
@@ -212,7 +212,7 @@ internal static class WorldViewCaptureTelemetry
         ["positiveZ"] = Rgba8(cube.PositiveZ),
         ["negativeZ"] = Rgba8(cube.NegativeZ),
         ["specular"] = cube.Specular is { } specular ? Rgba8(specular) : null,
-        ["fresnelPower"] = cube.FresnelPower,
+        ["fresnelPower"] = cube.FresnelPower
     };
 
     private static WeatherRgba EffectiveColorBand(
@@ -228,7 +228,7 @@ internal static class WorldViewCaptureTelemetry
         AtmosphereState.WeatherBandKind.EarlySunset => color.EarlySunset ?? color.Sunset,
         AtmosphereState.WeatherBandKind.Sunset => color.Sunset,
         AtmosphereState.WeatherBandKind.LateSunset => color.LateSunset ?? color.Sunset,
-        _ => color.Day,
+        _ => color.Day
     };
 
     private static bool IsColorBandAuthored(
@@ -240,7 +240,7 @@ internal static class WorldViewCaptureTelemetry
         AtmosphereState.WeatherBandKind.LateSunrise => color.Bands.LateSunrise.HasValue,
         AtmosphereState.WeatherBandKind.EarlySunset => color.Bands.EarlySunset.HasValue,
         AtmosphereState.WeatherBandKind.LateSunset => color.Bands.LateSunset.HasValue,
-        _ => true,
+        _ => true
     };
 
     private static float EffectiveOpacityBand(
@@ -255,7 +255,7 @@ internal static class WorldViewCaptureTelemetry
         AtmosphereState.WeatherBandKind.EarlySunset => bands.EarlySunset ?? bands.Sunset,
         AtmosphereState.WeatherBandKind.Sunset => bands.Sunset,
         AtmosphereState.WeatherBandKind.LateSunset => bands.LateSunset ?? bands.Sunset,
-        _ => bands.Day,
+        _ => bands.Day
     };
 
     private static byte[] Rgba8(WeatherRgba color) => [color.R, color.G, color.B, color.A];
@@ -269,7 +269,7 @@ internal static class WorldViewCaptureTelemetry
             (from.R + (to.R - from.R) * toWeight) * scale,
             (from.G + (to.G - from.G) * toWeight) * scale,
             (from.B + (to.B - from.B) * toWeight) * scale,
-            (from.A + (to.A - from.A) * toWeight) * scale,
+            (from.A + (to.A - from.A) * toWeight) * scale
         ];
     }
 
@@ -306,8 +306,10 @@ internal static class WorldViewCaptureTelemetry
                 }
             }
 
-            Log.Info("[ShadowDump] cascade={0} res={1} nonZero={2} ({3:0.000}%) range=[{4:0.00000},{5:0.00000}] bbox=({6},{7})-({8},{9})",
-                cascade, resolution, nonZero, 100.0 * nonZero / ((long)resolution * resolution), minNz, maxV, minX, minY, maxX, maxY);
+            Log.Info(
+                "[ShadowDump] cascade={0} res={1} nonZero={2} ({3:0.000}%) range=[{4:0.00000},{5:0.00000}] bbox=({6},{7})-({8},{9})",
+                cascade, resolution, nonZero, 100.0 * nonZero / ((long)resolution * resolution), minNz, maxV, minX,
+                minY, maxX, maxY);
         }
         finally
         {

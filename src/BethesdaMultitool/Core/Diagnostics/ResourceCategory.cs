@@ -27,5 +27,5 @@ internal enum ResourceCategory
     Queue,
 
     /// <summary>Aggregate session holders (a loaded file and its derived data).</summary>
-    SessionScope,
+    SessionScope
 }

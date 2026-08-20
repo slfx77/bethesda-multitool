@@ -212,8 +212,10 @@ internal static class AssetPathCollector
     ///     that can disambiguate. Null means "derive it from the extension", which is correct
     ///     for every other record.
     /// </summary>
-    private static string? FieldRootHint(object owner) =>
-        owner is MusicTypeRecord ? "music\\" : null;
+    private static string? FieldRootHint(object owner)
+    {
+        return owner is MusicTypeRecord ? "music\\" : null;
+    }
 
     /// <summary>
     ///     Build an <see cref="AssetPathReference" /> for a path discovered on a record
@@ -475,12 +477,12 @@ internal static class AssetPathCollector
     /// <summary>
     ///     Adds a path to the request set and reports whether it is a packable asset path.
     ///     <para>
-    ///     The return value deliberately does NOT mean "was newly added". It used to, and that
-    ///     silently cost rewrites: when two records name the same asset — e.g. a MUSC holding
-    ///     <c>endgame\endgame_04.mp3</c> and another holding
-    ///     <c>D:\Data\Music\endgame\endgame_04.mp3</c>, which normalize identically — only the
-    ///     first was source-tracked, so the second could never be repointed. Deduping is the
-    ///     <see cref="HashSet{T}" />'s job; every owning field still needs its own reference.
+    ///         The return value deliberately does NOT mean "was newly added". It used to, and that
+    ///         silently cost rewrites: when two records name the same asset — e.g. a MUSC holding
+    ///         <c>endgame\endgame_04.mp3</c> and another holding
+    ///         <c>D:\Data\Music\endgame\endgame_04.mp3</c>, which normalize identically — only the
+    ///         first was source-tracked, so the second could never be repointed. Deduping is the
+    ///         <see cref="HashSet{T}" />'s job; every owning field still needs its own reference.
     ///     </para>
     /// </summary>
     private static bool TryAddPath(string? raw, HashSet<string> paths, string? rootHint = null)

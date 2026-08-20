@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
@@ -13,13 +12,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
 /// </summary>
 internal sealed class RuntimeCellReader
 {
-    #region TESObjectCELL Struct Layout
-
-    // CellShiftStartOffset (52) is now owned by RuntimeCellObjectEnumerator, where
-    // the WithShift band is registered via the cellShift constructor parameter.
-
-    #endregion
-
     private readonly bool _allowStructuralReads;
     private readonly RuntimeCellObjectEnumerator _cellEnumerator;
     private readonly RuntimeCellMapWalker _cellMapWalker;
@@ -128,7 +120,10 @@ internal sealed class RuntimeCellReader
             entry.DisplayName);
     }
 
-    /// <summary>Reads the runtime cell (CELL) referenced by a worldspace cell-map entry, with optional editor ID and display name.</summary>
+    /// <summary>
+    ///     Reads the runtime cell (CELL) referenced by a worldspace cell-map entry, with optional editor ID and display
+    ///     name.
+    /// </summary>
     public CellRecord? ReadRuntimeCell(RuntimeCellMapEntry entry, string? editorId = null, string? displayName = null)
     {
         CellRecord? cell = null;
@@ -238,9 +233,9 @@ internal sealed class RuntimeCellReader
         // Resolve cell-map / persistent-cell / parent-world pointer offsets via the
         // worldspace view (PDB +64/+68/+128 + WorldShift band).
         var worldView = layout != null ? OpenWorldspaceView(entry, buffer, layout) : null;
-        var cellMapOffset = worldView?.Offset("pCellMap", "TESWorldSpace") ?? (64 + _layout.WorldShift);
-        var persistentCellOffset = worldView?.Offset("pPersistentCell", "TESWorldSpace") ?? (68 + _layout.WorldShift);
-        var parentWorldOffset = worldView?.Offset("pParentWorld", "TESWorldSpace") ?? (128 + _layout.WorldShift);
+        var cellMapOffset = worldView?.Offset("pCellMap", "TESWorldSpace") ?? 64 + _layout.WorldShift;
+        var persistentCellOffset = worldView?.Offset("pPersistentCell", "TESWorldSpace") ?? 68 + _layout.WorldShift;
+        var parentWorldOffset = worldView?.Offset("pParentWorld", "TESWorldSpace") ?? 128 + _layout.WorldShift;
 
         // Read pPersistentCell pointer
         var persistentCellFormId = _cellMapWalker.ReadCellFormIdFromPointer(buffer, persistentCellOffset);
@@ -347,6 +342,13 @@ internal sealed class RuntimeCellReader
 
         return (plausible, garbage);
     }
+
+    #region TESObjectCELL Struct Layout
+
+    // CellShiftStartOffset (52) is now owned by RuntimeCellObjectEnumerator, where
+    // the WithShift band is registered via the cellShift constructor parameter.
+
+    #endregion
 
     #region Worldspace Reading
 

@@ -77,7 +77,8 @@ internal static class NifSkinningDiagnostics
             return null;
         }
 
-        var vertexCount = NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.BinaryVersion);
+        var vertexCount =
+            NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.BinaryVersion);
         if (vertexCount <= 0)
         {
             return null;
@@ -185,4 +186,3 @@ internal static class NifSkinningDiagnostics
                MathF.Abs(matrix.M43) < 0.0001f;
     }
 }
-

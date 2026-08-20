@@ -1,10 +1,8 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
@@ -24,7 +22,8 @@ internal static class NpcInventoryCommand
             DefaultValueFactory = _ => "text"
         };
 
-        var command = new Command("npcs", "List unique NPC FormIDs found in the runtime objects of a memory dump (DMP)");
+        var command = new Command("npcs",
+            "List unique NPC FormIDs found in the runtime objects of a memory dump (DMP)");
         command.Arguments.Add(inputArg);
         command.Options.Add(formatOpt);
         command.SetAction(parseResult =>
@@ -176,4 +175,3 @@ internal static class NpcInventoryCommand
         string? EditorId,
         string? DisplayName);
 }
-

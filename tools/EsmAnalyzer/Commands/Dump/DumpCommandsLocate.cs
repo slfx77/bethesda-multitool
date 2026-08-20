@@ -1,11 +1,4 @@
 using Spectre.Console;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.RecordTraversalHelpers;
 
 namespace EsmAnalyzer.Commands.Dump;
@@ -251,7 +244,7 @@ internal static class DumpCommandsLocate
         var pathMatch = leftPath.SequenceEqual(rightPath);
 
         AnsiConsole.MarkupLine(
-            $"[bold]Match #{(left?.FormId ?? right?.FormId ?? 0):X8}[/]  " +
+            $"[bold]Match #{left?.FormId ?? right?.FormId ?? 0:X8}[/]  " +
             $"Signature {(sigMatch ? "[green]✓[/]" : "[red]✗[/]")}  " +
             $"Bucket {(bucketMatch ? "[green]✓[/]" : "[red]✗[/]")}  " +
             $"Path {(pathMatch ? "[green]✓[/]" : "[red]✗[/]")}");
@@ -262,10 +255,12 @@ internal static class DumpCommandsLocate
             .AddColumn(new TableColumn(Path.GetFileName(rightEsm.FilePath)).LeftAligned());
 
         var leftHeader = left != null
-            ? $"{left.Signature} 0x{left.FormId:X8} @0x{left.Offset:X8}" + (string.IsNullOrEmpty(leftBucket) ? "" : $" ({leftBucket})")
+            ? $"{left.Signature} 0x{left.FormId:X8} @0x{left.Offset:X8}" +
+              (string.IsNullOrEmpty(leftBucket) ? "" : $" ({leftBucket})")
             : "[dim]N/A[/]";
         var rightHeader = right != null
-            ? $"{right.Signature} 0x{right.FormId:X8} @0x{right.Offset:X8}" + (string.IsNullOrEmpty(rightBucket) ? "" : $" ({rightBucket})")
+            ? $"{right.Signature} 0x{right.FormId:X8} @0x{right.Offset:X8}" +
+              (string.IsNullOrEmpty(rightBucket) ? "" : $" ({rightBucket})")
             : "[dim]N/A[/]";
 
         _ = table.AddRow($"[cyan]{leftHeader}[/]", $"[cyan]{rightHeader}[/]");
@@ -315,4 +310,3 @@ internal static class DumpCommandsLocate
         return string.Empty;
     }
 }
-

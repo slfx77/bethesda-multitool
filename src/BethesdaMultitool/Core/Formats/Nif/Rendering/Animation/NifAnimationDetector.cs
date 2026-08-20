@@ -60,8 +60,10 @@ internal static class NifAnimationDetector
             hasInternalSkin, hasKeyframeTracks, hasSequences && hasTransformInterpolators);
     }
 
-    /// <summary>Every bone ref must resolve to a scene-node block in THIS file for the NIF's own
-    /// node transforms to pose the skin.</summary>
+    /// <summary>
+    ///     Every bone ref must resolve to a scene-node block in THIS file for the NIF's own
+    ///     node transforms to pose the skin.
+    /// </summary>
     private static bool HasResolvableInternalBones(byte[] data, NifInfo nif, int skinInstanceIndex)
     {
         var skin = NifSkinBlockParser.ParseNiSkinInstance(

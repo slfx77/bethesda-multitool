@@ -15,9 +15,6 @@ namespace BethesdaMultitool.Core.Formats.Bsa.Index;
 /// </summary>
 public sealed class ArchiveReader : IDisposable
 {
-    private readonly BsaExtractor? _bsa;
-    private readonly Ba2Extractor? _ba2;
-
     // Lazy<T> (ExecutionAndPublication) so racing first lookups build the index exactly once —
     // the old `_byPath ??= BuildIndex()` let concurrent first calls each build a full private
     // index (wasted work; last assignment won).
@@ -25,76 +22,87 @@ public sealed class ArchiveReader : IDisposable
 
     private ArchiveReader(BsaExtractor bsa)
     {
-        _bsa = bsa;
+        AsBsaExtractor = bsa;
         _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
     }
 
     private ArchiveReader(Ba2Extractor ba2)
     {
-        _ba2 = ba2;
+        AsBa2Extractor = ba2;
         _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
     }
 
     /// <summary>True when the underlying container is a BA2 (vs a classic BSA).</summary>
-    public bool IsBa2 => _ba2 != null;
+    public bool IsBa2 => AsBa2Extractor != null;
 
     /// <summary>Short format label for display: <c>"BSA"</c> or <c>"BA2"</c>.</summary>
     public string FormatName => IsBa2 ? "BA2" : "BSA";
 
     /// <summary>Platform label: a BSA may be Xbox 360 or PC; a BA2 is always PC.</summary>
-    public string PlatformLabel => _bsa?.Archive.Platform ?? "PC";
+    public string PlatformLabel => AsBsaExtractor?.Archive.Platform ?? "PC";
 
     /// <summary>Total entry count across the container.</summary>
-    public int TotalFiles => _ba2?.Archive.TotalFiles ?? _bsa!.Archive.TotalFiles;
+    public int TotalFiles => AsBa2Extractor?.Archive.TotalFiles ?? AsBsaExtractor!.Archive.TotalFiles;
 
     /// <summary>The parsed BSA archive, or null when this is a BA2 (for format-specific display).</summary>
-    public BsaArchive? Bsa => _bsa?.Archive;
+    public BsaArchive? Bsa => AsBsaExtractor?.Archive;
 
     /// <summary>The parsed BA2 archive, or null when this is a BSA (for format-specific display).</summary>
-    public Ba2Archive? Ba2 => _ba2?.Archive;
+    public Ba2Archive? Ba2 => AsBa2Extractor?.Archive;
 
     /// <summary>
     ///     The underlying BSA extractor, non-null only for a BSA. This is the hook for the inherently
     ///     BSA/Xbox-360 conversion path (DDX→DDS, XMA→WAV, NIF endian swap), which has no BA2 analogue
     ///     because BA2 is already a PC format.
     /// </summary>
-    public BsaExtractor? AsBsaExtractor => _bsa;
+    public BsaExtractor? AsBsaExtractor { get; }
 
     /// <summary>
     ///     The underlying BA2 extractor, non-null only for a BA2. Counterpart of
     ///     <see cref="AsBsaExtractor" /> for callers that need record-typed extraction
     ///     (e.g. texture sources built over a shared <see cref="ArchiveReader" /> handle).
     /// </summary>
-    public Ba2Extractor? AsBa2Extractor => _ba2;
+    public Ba2Extractor? AsBa2Extractor { get; }
+
+    public void Dispose()
+    {
+        AsBsaExtractor?.Dispose();
+        AsBa2Extractor?.Dispose();
+    }
 
     /// <summary>Opens <paramref name="path" /> as a BA2 when it carries the BTDX magic, else as a BSA.</summary>
-    public static ArchiveReader Open(string path) =>
-        Ba2Parser.IsBa2File(path)
+    public static ArchiveReader Open(string path)
+    {
+        return Ba2Parser.IsBa2File(path)
             ? new ArchiveReader(new Ba2Extractor(path))
             : new ArchiveReader(new BsaExtractor(path));
+    }
 
     /// <summary>All entries in the archive (BSA folder tree flattened; BA2 is already a flat list).</summary>
     public IReadOnlyList<ArchiveEntry> ListFiles()
     {
-        if (_ba2 != null)
+        if (AsBa2Extractor != null)
         {
-            return _ba2.Archive.Files.Select(ToEntry).ToList();
+            return AsBa2Extractor.Archive.Files.Select(ToEntry).ToList();
         }
 
-        var defaultCompressed = _bsa!.Archive.Header.DefaultCompressed;
-        return _bsa.Archive.Folders
+        var defaultCompressed = AsBsaExtractor!.Archive.Header.DefaultCompressed;
+        return AsBsaExtractor.Archive.Folders
             .SelectMany(folder => folder.Files)
             .Select(f => ToEntry(f, defaultCompressed))
             .ToList();
     }
 
     /// <summary>Extracts an entry returned by <see cref="ListFiles" /> to bytes. Thread-safe.</summary>
-    public byte[] Extract(ArchiveEntry entry) => entry.Record switch
+    public byte[] Extract(ArchiveEntry entry)
     {
-        Ba2FileRecord r => _ba2!.ExtractFile(r),
-        BsaFileRecord r => _bsa!.ExtractFile(r),
-        _ => throw new InvalidOperationException("ArchiveReader entry has an unrecognized record type.")
-    };
+        return entry.Record switch
+        {
+            Ba2FileRecord r => AsBa2Extractor!.ExtractFile(r),
+            BsaFileRecord r => AsBsaExtractor!.ExtractFile(r),
+            _ => throw new InvalidOperationException("ArchiveReader entry has an unrecognized record type.")
+        };
+    }
 
     /// <summary>
     ///     Extracts an entry to <paramref name="outputDir" /> under its virtual path. Returns whether
@@ -105,9 +113,10 @@ public sealed class ArchiveReader : IDisposable
         switch (entry.Record)
         {
             case Ba2FileRecord r:
-                return await _ba2!.ExtractFileToDiskAsync(r, outputDir, overwrite).ConfigureAwait(false);
+                return await AsBa2Extractor!.ExtractFileToDiskAsync(r, outputDir, overwrite).ConfigureAwait(false);
             case BsaFileRecord r:
-                var result = await _bsa!.ExtractFileToDiskAsync(r, outputDir, overwrite).ConfigureAwait(false);
+                var result = await AsBsaExtractor!.ExtractFileToDiskAsync(r, outputDir, overwrite)
+                    .ConfigureAwait(false);
                 return result.Success;
             default:
                 throw new InvalidOperationException("ArchiveReader entry has an unrecognized record type.");
@@ -115,8 +124,10 @@ public sealed class ArchiveReader : IDisposable
     }
 
     /// <summary>File-extension histogram, delegated to the backing extractor.</summary>
-    public Dictionary<string, int> GetExtensionStats() =>
-        _ba2?.GetExtensionStats() ?? _bsa!.GetExtensionStats();
+    public Dictionary<string, int> GetExtensionStats()
+    {
+        return AsBa2Extractor?.GetExtensionStats() ?? AsBsaExtractor!.GetExtensionStats();
+    }
 
     /// <summary>
     ///     Files-per-folder histogram. BSA has a real folder tree; for a flat BA2 it is derived from the
@@ -124,9 +135,9 @@ public sealed class ArchiveReader : IDisposable
     /// </summary>
     public Dictionary<string, int> GetFolderStats()
     {
-        if (_bsa != null)
+        if (AsBsaExtractor != null)
         {
-            return _bsa.GetFolderStats();
+            return AsBsaExtractor.GetFolderStats();
         }
 
         var stats = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -144,31 +155,32 @@ public sealed class ArchiveReader : IDisposable
     ///     Reads a file by its full virtual path (case-insensitive, accepts <c>/</c> or <c>\</c>), or
     ///     null when absent. Builds a path index on first use for O(1) lookups. Thread-safe.
     /// </summary>
-    public byte[]? ReadFile(string fullPath) =>
-        FindEntry(fullPath) is { } entry ? Extract(entry) : null;
+    public byte[]? ReadFile(string fullPath)
+    {
+        return FindEntry(fullPath) is { } entry ? Extract(entry) : null;
+    }
 
     /// <summary>
     ///     Looks up an entry by full virtual path without extracting it (case-insensitive, accepts
     ///     <c>/</c> or <c>\</c>), or null when absent. Thread-safe.
     /// </summary>
-    public ArchiveEntry? FindEntry(string fullPath) =>
-        _byPath.Value.TryGetValue(Normalize(fullPath), out var entry) ? entry : null;
-
-    public void Dispose()
+    public ArchiveEntry? FindEntry(string fullPath)
     {
-        _bsa?.Dispose();
-        _ba2?.Dispose();
+        return _byPath.Value.TryGetValue(Normalize(fullPath), out var entry) ? entry : null;
     }
 
-    private static ArchiveEntry ToEntry(BsaFileRecord f, bool defaultCompressed) => new(
-        f.FullPath,
-        f.Folder?.Name ?? string.Empty,
-        f.Name ?? f.FullPath,
-        ExtensionOf(f.FullPath, null),
-        f.Size,
-        f.Offset,
-        defaultCompressed != f.CompressionToggle,
-        f);
+    private static ArchiveEntry ToEntry(BsaFileRecord f, bool defaultCompressed)
+    {
+        return new ArchiveEntry(
+            f.FullPath,
+            f.Folder?.Name ?? string.Empty,
+            f.Name ?? f.FullPath,
+            ExtensionOf(f.FullPath, null),
+            f.Size,
+            f.Offset,
+            defaultCompressed != f.CompressionToggle,
+            f);
+    }
 
     private static ArchiveEntry ToEntry(Ba2FileRecord f)
     {
@@ -218,7 +230,10 @@ public sealed class ArchiveReader : IDisposable
         return map;
     }
 
-    private static string Normalize(string path) => path.Replace('/', '\\');
+    private static string Normalize(string path)
+    {
+        return path.Replace('/', '\\');
+    }
 
     /// <summary>
     ///     One archive entry. Carries the resolved, format-neutral metadata every consumer needs

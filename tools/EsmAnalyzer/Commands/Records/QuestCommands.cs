@@ -1,9 +1,8 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Records;
 
@@ -241,8 +240,8 @@ public static class QuestCommands
         return data.Length < 4
             ? 0
             : bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(0, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4));
+                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(0, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4));
     }
 
     private static bool TryParseFormId(string text, out uint formId)

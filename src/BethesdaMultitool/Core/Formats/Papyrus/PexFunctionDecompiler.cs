@@ -19,6 +19,7 @@ internal sealed class PexFunctionDecompiler
 
     private readonly Dictionary<string, Expression> _expressions =
         new(StringComparer.OrdinalIgnoreCase);
+
     private readonly PexFunction _function;
     private readonly List<string> _lines = [];
     private readonly HashSet<string> _materializedTemporaries;
@@ -234,17 +235,17 @@ internal sealed class PexFunctionDecompiler
                 return;
             case PexOpCode.CallMethod:
                 Assign(a[2], Call(Member(ReadValue(a[1]), PexDecompiler.RawName(a[0])),
-                    instruction.VariadicArguments), sideEffect: true);
+                    instruction.VariadicArguments), true);
                 return;
             case PexOpCode.CallParent:
                 Assign(a[1], Call(new Expression($"Parent.{PexDecompiler.RawName(a[0])}", MemberPrecedence),
-                    instruction.VariadicArguments), sideEffect: true);
+                    instruction.VariadicArguments), true);
                 return;
             case PexOpCode.CallStatic:
             {
                 var type = PexDecompiler.FormatType(PexDecompiler.RawName(a[0]));
                 Assign(a[2], Call(new Expression($"{type}.{PexDecompiler.RawName(a[1])}", MemberPrecedence),
-                    instruction.VariadicArguments), sideEffect: true);
+                    instruction.VariadicArguments), true);
                 return;
             }
             case PexOpCode.Return:
@@ -411,7 +412,9 @@ internal sealed class PexFunctionDecompiler
     }
 
     private Expression Call(Expression callable, ImmutableArray<PexValue> arguments)
-        => Call(callable, (IReadOnlyList<PexValue>)arguments);
+    {
+        return Call(callable, (IReadOnlyList<PexValue>)arguments);
+    }
 
     private Expression Call(Expression callable, IReadOnlyList<PexValue> arguments)
     {
@@ -426,19 +429,29 @@ internal sealed class PexFunctionDecompiler
     }
 
     private static Expression Member(Expression target, string name)
-        => new($"{Wrap(target, MemberPrecedence)}.{name}", MemberPrecedence);
+    {
+        return new Expression($"{Wrap(target, MemberPrecedence)}.{name}", MemberPrecedence);
+    }
 
     private static Expression Index(Expression target, Expression index)
-        => new($"{Wrap(target, MemberPrecedence)}[{index.Text}]", MemberPrecedence);
+    {
+        return new Expression($"{Wrap(target, MemberPrecedence)}[{index.Text}]", MemberPrecedence);
+    }
 
     private static Expression Unary(string operation, Expression operand)
-        => new(operation + Wrap(operand, UnaryPrecedence), UnaryPrecedence);
+    {
+        return new Expression(operation + Wrap(operand, UnaryPrecedence), UnaryPrecedence);
+    }
 
     private static Expression Binary(Expression left, string operation, Expression right, int precedence)
-        => new($"{Wrap(left, precedence)} {operation} {Wrap(right, precedence + 1)}", precedence);
+    {
+        return new Expression($"{Wrap(left, precedence)} {operation} {Wrap(right, precedence + 1)}", precedence);
+    }
 
     private static string Wrap(Expression expression, int requiredPrecedence)
-        => expression.Precedence < requiredPrecedence ? $"({expression.Text})" : expression.Text;
+    {
+        return expression.Precedence < requiredPrecedence ? $"({expression.Text})" : expression.Text;
+    }
 
     private bool TryGetLoopTail(int conditionIp, int branchTarget, out int loopTail, out int loopStart)
     {
@@ -492,7 +505,9 @@ internal sealed class PexFunctionDecompiler
     }
 
     private Dictionary<string, Expression> CloneExpressions()
-        => new(_expressions, StringComparer.OrdinalIgnoreCase);
+    {
+        return new Dictionary<string, Expression>(_expressions, StringComparer.OrdinalIgnoreCase);
+    }
 
     private void RestoreExpressions(Dictionary<string, Expression> snapshot)
     {
@@ -504,7 +519,9 @@ internal sealed class PexFunctionDecompiler
     }
 
     private void Line(string text = "")
-        => _lines.Add(text.Length == 0 ? string.Empty : new string(' ', _indent * 2) + text);
+    {
+        _lines.Add(text.Length == 0 ? string.Empty : new string(' ', _indent * 2) + text);
+    }
 
     private static HashSet<string> FindMaterializedTemporaries(
         ImmutableArray<PexInstruction> instructions)
@@ -580,19 +597,22 @@ internal sealed class PexFunctionDecompiler
         list.Add(ip);
     }
 
-    private static int DestinationIndex(PexOpCode opcode) => opcode switch
+    private static int DestinationIndex(PexOpCode opcode)
     {
-        >= PexOpCode.IAdd and <= PexOpCode.CompareGreaterThanOrEqual => 0,
-        PexOpCode.CallMethod or PexOpCode.CallStatic => 2,
-        PexOpCode.CallParent => 1,
-        PexOpCode.PropertyGet => 2,
-        PexOpCode.ArrayCreate or PexOpCode.ArrayLength or PexOpCode.ArrayGetElement => 0,
-        PexOpCode.ArrayFindElement or PexOpCode.ArrayRFindElement => 1,
-        PexOpCode.Is or PexOpCode.StructCreate or PexOpCode.StructGet => 0,
-        PexOpCode.ArrayFindStruct or PexOpCode.ArrayRFindStruct or
-            PexOpCode.ArrayGetAllMatchingStructs => 1,
-        _ => -1
-    };
+        return opcode switch
+        {
+            >= PexOpCode.IAdd and <= PexOpCode.CompareGreaterThanOrEqual => 0,
+            PexOpCode.CallMethod or PexOpCode.CallStatic => 2,
+            PexOpCode.CallParent => 1,
+            PexOpCode.PropertyGet => 2,
+            PexOpCode.ArrayCreate or PexOpCode.ArrayLength or PexOpCode.ArrayGetElement => 0,
+            PexOpCode.ArrayFindElement or PexOpCode.ArrayRFindElement => 1,
+            PexOpCode.Is or PexOpCode.StructCreate or PexOpCode.StructGet => 0,
+            PexOpCode.ArrayFindStruct or PexOpCode.ArrayRFindStruct or
+                PexOpCode.ArrayGetAllMatchingStructs => 1,
+            _ => -1
+        };
+    }
 
     private sealed record Expression(string Text, int Precedence);
 

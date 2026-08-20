@@ -34,7 +34,7 @@ public sealed class FnvRigidNodeAnimationRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false);
         Assert.True(
             archives.TryExtractFile(GoodspringsSignPath, out var data, out _),
             $"Retail NIF missing: {GoodspringsSignPath}");

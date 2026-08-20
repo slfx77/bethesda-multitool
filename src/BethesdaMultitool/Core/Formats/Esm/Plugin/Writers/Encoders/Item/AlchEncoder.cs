@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
@@ -23,19 +22,21 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class AlchEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<ConsumableRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["Weight"] = m => m.Weight,
-    };
+    private static readonly Dictionary<string, Func<ConsumableRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Weight"] = m => m.Weight
+        };
 
-    private static readonly Dictionary<string, Func<ConsumableRecord, object?>> EnitExtractors = new(StringComparer.Ordinal)
-    {
-        ["Value"] = m => m.Value,
-        ["Flags"] = m => BitConverter.GetBytes(m.Flags),
-        ["WithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
-        ["AddictionChance"] = m => m.AddictionChance,
-        ["ConsumeSound"] = m => m.ConsumeSoundFormId ?? 0u,
-    };
+    private static readonly Dictionary<string, Func<ConsumableRecord, object?>> EnitExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Value"] = m => m.Value,
+            ["Flags"] = m => BitConverter.GetBytes(m.Flags),
+            ["WithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
+            ["AddictionChance"] = m => m.AddictionChance,
+            ["ConsumeSound"] = m => m.ConsumeSoundFormId ?? 0u
+        };
 
     public string RecordType => "ALCH";
     public Type ModelType => typeof(ConsumableRecord);
@@ -71,7 +72,7 @@ public sealed class AlchEncoder : IRecordEncoder
         {
             null => null,
             HashSet<uint> hashSet => hashSet,
-            _ => new HashSet<uint>(validFormIds),
+            _ => new HashSet<uint>(validFormIds)
         };
         var emittedRemappedConditionFields = 0;
 

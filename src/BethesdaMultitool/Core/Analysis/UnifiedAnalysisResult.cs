@@ -1,6 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Land;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Analysis;
@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Analysis;
 public sealed class UnifiedAnalysisResult : IDisposable
 {
     private MemoryMappedFile? _mmf;
-    private Formats.Esm.Land.BtdTerrainInjection? _terrainInjection;
+    private BtdTerrainInjection? _terrainInjection;
 
     /// <summary>The detected file type.</summary>
     public AnalysisFileType FileType { get; init; }
@@ -49,7 +49,7 @@ public sealed class UnifiedAnalysisResult : IDisposable
     ///     It must outlive every heightmap read, so it is disposed with the result — or handed to
     ///     whoever <see cref="DetachDisposables" />es the file mapping (the GUI session).
     /// </summary>
-    internal void SetTerrainInjection(Formats.Esm.Land.BtdTerrainInjection? terrainInjection)
+    internal void SetTerrainInjection(BtdTerrainInjection? terrainInjection)
     {
         _terrainInjection = terrainInjection;
     }
@@ -60,14 +60,14 @@ public sealed class UnifiedAnalysisResult : IDisposable
     ///     deliberately disposes the result to close the ESM mapping but keeps <see cref="Records" />.
     ///     Without this, disposal would close the lazy height sources under cells that escaped.
     /// </summary>
-    internal Formats.Esm.Land.BtdTerrainInjection? DetachTerrainInjection()
+    internal BtdTerrainInjection? DetachTerrainInjection()
     {
         var terrain = _terrainInjection;
         _terrainInjection = null;
         return terrain;
     }
 
-    internal (MemoryMappedFile? MappedFile, MemoryMappedViewAccessor? Accessor, Formats.Esm.Land.BtdTerrainInjection? TerrainInjection)
+    internal (MemoryMappedFile? MappedFile, MemoryMappedViewAccessor? Accessor, BtdTerrainInjection? TerrainInjection)
         DetachDisposables()
     {
         var mappedFile = _mmf;
@@ -79,4 +79,3 @@ public sealed class UnifiedAnalysisResult : IDisposable
         return (mappedFile, accessor, terrain);
     }
 }
-

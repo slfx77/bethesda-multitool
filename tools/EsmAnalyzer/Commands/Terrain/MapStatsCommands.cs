@@ -1,8 +1,5 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -183,4 +180,3 @@ public static class MapStatsCommands
         };
     }
 }
-

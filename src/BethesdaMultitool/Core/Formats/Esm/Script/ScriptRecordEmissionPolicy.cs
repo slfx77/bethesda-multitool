@@ -40,8 +40,10 @@ internal static class ScriptRecordEmissionPolicy
     ///     Prefer the captured EDID. When runtime metadata omitted it, recover only an exact,
     ///     unambiguous <c>scn</c>/<c>ScriptName</c> declaration from the same SCTX text.
     /// </summary>
-    internal static string? ResolveEditorId(ScriptRecord script) =>
-        ResolveEditorId(script.EditorId, script.SourceText);
+    internal static string? ResolveEditorId(ScriptRecord script)
+    {
+        return ResolveEditorId(script.EditorId, script.SourceText);
+    }
 
     internal static string? ResolveEditorId(string? editorId, string? sourceText)
     {
@@ -79,8 +81,8 @@ internal static class ScriptRecordEmissionPolicy
 
             var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (tokens.Length != 2
-                || !tokens[0].Equals("scn", StringComparison.OrdinalIgnoreCase)
-                && !tokens[0].Equals("ScriptName", StringComparison.OrdinalIgnoreCase))
+                || (!tokens[0].Equals("scn", StringComparison.OrdinalIgnoreCase)
+                    && !tokens[0].Equals("ScriptName", StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }

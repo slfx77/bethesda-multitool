@@ -5,6 +5,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Text;
 using Windows.UI;
+using BethesdaMultitool.Core.EsmView;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -12,14 +14,26 @@ namespace BethesdaMultitool;
 ///     Renders the optional "dangling REFR" overlay: cells with heap-resident TESObjectREFR
 ///     clusters that the cell-traversal pipeline never reached. Cells are tinted by
 ///     confidence; ref counts are drawn as small badges at sufficient zoom.
-///
 ///     Confidence color key:
-///       HIGH/STRONG (named cell wins) -> vivid magenta
-///       MEDIUM      (sole unnamed cand.) -> orange
-///       LOW         (multiple unnamed cands.) -> yellow
+///     HIGH/STRONG (named cell wins) -> vivid magenta
+///     MEDIUM      (sole unnamed cand.) -> orange
+///     LOW         (multiple unnamed cands.) -> yellow
 /// </summary>
 internal static class WorldMapDanglingRefOverlayRenderer
 {
+    /// <summary>
+    ///     Marker size (world units per screen pixel of radius). Matches
+    ///     <c>WorldMapOverviewRenderer.DrawActorDots</c> so dangling REFRs render
+    ///     at the same visual scale as existing actor dots.
+    /// </summary>
+    private const float MarkerRadiusPerZoom = 5f;
+
+    /// <summary>
+    ///     Outline thickness in world units per screen pixel. Matches existing
+    ///     actor-dot outlines.
+    /// </summary>
+    private const float OutlineWidthPerZoom = 1f;
+
     [ThreadStatic] private static List<DanglingRefPosition>? t_danglingScratch;
 
     // Per-confidence base color (alpha applied per-cell based on ref count).
@@ -157,19 +171,6 @@ internal static class WorldMapDanglingRefOverlayRenderer
         }
     }
 
-    /// <summary>
-    ///     Marker size (world units per screen pixel of radius). Matches
-    ///     <c>WorldMapOverviewRenderer.DrawActorDots</c> so dangling REFRs render
-    ///     at the same visual scale as existing actor dots.
-    /// </summary>
-    private const float MarkerRadiusPerZoom = 5f;
-
-    /// <summary>
-    ///     Outline thickness in world units per screen pixel. Matches existing
-    ///     actor-dot outlines.
-    /// </summary>
-    private const float OutlineWidthPerZoom = 1f;
-
     private static void DrawIndividualMarkers(
         CanvasDrawingSession ds,
         List<DanglingRefPosition> positions,
@@ -251,9 +252,9 @@ internal static class WorldMapDanglingRefOverlayRenderer
     {
         return confidence switch
         {
-            "ESM" or "HIGH" or "STRONG" => Color.FromArgb(255, 90, 230, 250),  // cyan
-            "MEDIUM" => Color.FromArgb(255, 250, 190, 70),                      // amber
-            _ => Color.FromArgb(220, 180, 180, 180)                             // gray (LOW, CUT)
+            "ESM" or "HIGH" or "STRONG" => Color.FromArgb(255, 90, 230, 250), // cyan
+            "MEDIUM" => Color.FromArgb(255, 250, 190, 70), // amber
+            _ => Color.FromArgb(220, 180, 180, 180) // gray (LOW, CUT)
         };
     }
 

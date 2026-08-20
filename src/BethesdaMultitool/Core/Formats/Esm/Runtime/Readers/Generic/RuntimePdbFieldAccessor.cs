@@ -106,7 +106,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         var cFormTypeOff = FindFieldOffset(layout, "cFormType", "TESForm");
         var iFormIdOff = FindFieldOffset(layout, "iFormID", "TESForm");
         if (cFormTypeOff is not { } ftOff || iFormIdOff is not { } fidOff
-            || ftOff + 1 > buffer.Length || fidOff + 4 > buffer.Length)
+                                          || ftOff + 1 > buffer.Length || fidOff + 4 > buffer.Length)
         {
             return null;
         }

@@ -34,6 +34,11 @@ public sealed class PexArchiveReader : IDisposable
     /// <summary>All Papyrus binaries in deterministic virtual-path order.</summary>
     public IReadOnlyList<PexArchiveEntry> Entries { get; }
 
+    public void Dispose()
+    {
+        _archive.Dispose();
+    }
+
     /// <summary>Opens a BSA or BA2 archive by file magic.</summary>
     public static PexArchiveReader Open(string archivePath)
     {
@@ -65,7 +70,10 @@ public sealed class PexArchiveReader : IDisposable
     }
 
     /// <summary>Extracts and parses one script.</summary>
-    public PexFile Parse(PexArchiveEntry entry) => PexParser.Parse(Extract(entry));
+    public PexFile Parse(PexArchiveEntry entry)
+    {
+        return PexParser.Parse(Extract(entry));
+    }
 
     /// <summary>
     ///     Finds one script by exact normalized virtual path, or by a unique case-insensitive
@@ -96,8 +104,6 @@ public sealed class PexArchiveReader : IDisposable
         };
     }
 
-    public void Dispose() => _archive.Dispose();
-
     private void EnsureOwnedEntry(PexArchiveEntry entry)
     {
         if (!Entries.Contains(entry))
@@ -106,7 +112,10 @@ public sealed class PexArchiveReader : IDisposable
         }
     }
 
-    private static string Normalize(string path) => path.Replace('/', '\\');
+    private static string Normalize(string path)
+    {
+        return path.Replace('/', '\\');
+    }
 }
 
 /// <summary>Metadata for one lazily extracted Papyrus archive entry.</summary>

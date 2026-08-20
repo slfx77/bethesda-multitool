@@ -11,109 +11,109 @@
        type + wind); rows can be hidden per host (the 2D map drives only the hillshade light
        direction). -->
   <StackPanel Spacing="10" MinWidth="280">
-          <ToggleSwitch x:Name="LightingToggle" IsOn="True" Header="Lighting"
-                        OnContent="On" OffContent="Off"
-                        AutomationProperties.Name="Lighting"
-                        ToolTipService.ToolTip="Toggle scene lighting (press 8)"
-                        Toggled="LightingToggle_Changed" />
-          <ToggleSwitch x:Name="FogToggle" IsOn="True" Header="Fog"
-                        OnContent="On" OffContent="Off"
-                        AutomationProperties.Name="Fog"
-                        ToolTipService.ToolTip="Toggle distance fog (press 0)"
-                        Toggled="FogToggle_Changed" />
-          <ToggleSwitch x:Name="ShadowsToggle" IsOn="True" Header="Sun shadows"
-                        OnContent="On" OffContent="Off"
-                        AutomationProperties.Name="Sun shadows"
-                        ToolTipService.ToolTip="Toggle the directional sun shadows (cascaded — sharp near the camera, reaching the full draw distance)"
-                        Toggled="ShadowsToggle_Changed" />
-          <ToggleSwitch x:Name="SkyboxToggle" IsOn="True" Header="Skybox"
-                        OnContent="On" OffContent="Off"
-                        AutomationProperties.Name="Skybox"
-                        ToolTipService.ToolTip="Show the sky (press 9)"
-                        Toggled="SkyboxToggle_Changed" />
-          <Grid ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Time of day" FontWeight="SemiBold"
-                       VerticalAlignment="Center" />
-            <!-- Segmented HH:MM stepper (replaces a NumberBox whose inline spin chrome squeezed the
+    <ToggleSwitch x:Name="LightingToggle" IsOn="True" Header="Lighting"
+                  OnContent="On" OffContent="Off"
+                  AutomationProperties.Name="Lighting"
+                  ToolTipService.ToolTip="Toggle scene lighting (press 8)"
+                  Toggled="LightingToggle_Changed" />
+    <ToggleSwitch x:Name="FogToggle" IsOn="True" Header="Fog"
+                  OnContent="On" OffContent="Off"
+                  AutomationProperties.Name="Fog"
+                  ToolTipService.ToolTip="Toggle distance fog (press 0)"
+                  Toggled="FogToggle_Changed" />
+    <ToggleSwitch x:Name="ShadowsToggle" IsOn="True" Header="Sun shadows"
+                  OnContent="On" OffContent="Off"
+                  AutomationProperties.Name="Sun shadows"
+                  ToolTipService.ToolTip="Toggle the directional sun shadows (cascaded — sharp near the camera, reaching the full draw distance)"
+                  Toggled="ShadowsToggle_Changed" />
+    <ToggleSwitch x:Name="SkyboxToggle" IsOn="True" Header="Skybox"
+                  OnContent="On" OffContent="Off"
+                  AutomationProperties.Name="Skybox"
+                  ToolTipService.ToolTip="Show the sky (press 9)"
+                  Toggled="SkyboxToggle_Changed" />
+    <Grid ColumnSpacing="8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Grid.Column="0" Text="Time of day" FontWeight="SemiBold"
+                 VerticalAlignment="Center" />
+      <!-- Segmented HH:MM stepper (replaces a NumberBox whose inline spin chrome squeezed the
                  text so thin the clear-x overlapped it). Click hours or minutes to select the field
                  — the accent underline marks it — then the chevrons (or Up/Down on the focused
                  segment) step ONLY that field. Minutes wrap 0↔59 WITHOUT carrying into the hour;
                  hours wrap 0↔23. Coarse setting stays on the slider below. -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-              <Button x:Name="HourSegment" Content="12" MinWidth="40" Padding="8,4"
-                      FontWeight="SemiBold" BorderThickness="0,0,0,2" BorderBrush="Transparent"
-                      AutomationProperties.Name="Hours"
-                      ToolTipService.ToolTip="Select the hours field — the arrows then step it (wraps 0–23)"
-                      Click="HourSegment_Click" KeyDown="TimeSegment_KeyDown" />
-              <TextBlock Text=":" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0" />
-              <Button x:Name="MinuteSegment" Content="00" MinWidth="40" Padding="8,4"
-                      FontWeight="SemiBold" BorderThickness="0,0,0,2" BorderBrush="Transparent"
-                      AutomationProperties.Name="Minutes"
-                      ToolTipService.ToolTip="Select the minutes field — the arrows then step it (wraps 0–59 without changing the hour)"
-                      Click="MinuteSegment_Click" KeyDown="TimeSegment_KeyDown" />
-            </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Vertical" VerticalAlignment="Center" Spacing="2">
-              <RepeatButton x:Name="TimeUpButton" MinWidth="30" Padding="6,2"
-                            AutomationProperties.Name="Step time up"
-                            ToolTipService.ToolTip="Step the selected time field up (hold to repeat)"
-                            Click="TimeUpButton_Click">
-                <FontIcon Glyph="&#xE70E;" FontSize="10" />
-              </RepeatButton>
-              <RepeatButton x:Name="TimeDownButton" MinWidth="30" Padding="6,2"
-                            AutomationProperties.Name="Step time down"
-                            ToolTipService.ToolTip="Step the selected time field down (hold to repeat)"
-                            Click="TimeDownButton_Click">
-                <FontIcon Glyph="&#xE70D;" FontSize="10" />
-              </RepeatButton>
-            </StackPanel>
-          </Grid>
-          <Slider x:Name="TimeSlider" Minimum="0" Maximum="24" StepFrequency="0.1" Value="12"
-                  AutomationProperties.Name="Time of day"
-                  ToolTipService.ToolTip="Time of day (0–24h) — drives lighting + sky colors"
-                  ValueChanged="TimeSlider_ValueChanged" />
-          <Grid x:Name="DayRow">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Day" FontWeight="SemiBold" />
-            <TextBlock Grid.Column="1" x:Name="DayValueText" FontWeight="SemiBold"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-          </Grid>
-          <Slider x:Name="DaySlider" Minimum="0" Maximum="24" StepFrequency="1" Value="0"
-                  AutomationProperties.Name="Day"
-                  ToolTipService.ToolTip="Day of the lunar cycle — drives the moon phase + sky position"
-                  ValueChanged="DaySlider_ValueChanged" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="HourSegment" Content="12" MinWidth="40" Padding="8,4"
+                FontWeight="SemiBold" BorderThickness="0,0,0,2" BorderBrush="Transparent"
+                AutomationProperties.Name="Hours"
+                ToolTipService.ToolTip="Select the hours field — the arrows then step it (wraps 0–23)"
+                Click="HourSegment_Click" KeyDown="TimeSegment_KeyDown" />
+        <TextBlock Text=":" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0" />
+        <Button x:Name="MinuteSegment" Content="00" MinWidth="40" Padding="8,4"
+                FontWeight="SemiBold" BorderThickness="0,0,0,2" BorderBrush="Transparent"
+                AutomationProperties.Name="Minutes"
+                ToolTipService.ToolTip="Select the minutes field — the arrows then step it (wraps 0–59 without changing the hour)"
+                Click="MinuteSegment_Click" KeyDown="TimeSegment_KeyDown" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Orientation="Vertical" VerticalAlignment="Center" Spacing="2">
+        <RepeatButton x:Name="TimeUpButton" MinWidth="30" Padding="6,2"
+                      AutomationProperties.Name="Step time up"
+                      ToolTipService.ToolTip="Step the selected time field up (hold to repeat)"
+                      Click="TimeUpButton_Click">
+          <FontIcon Glyph="&#xE70E;" FontSize="10" />
+        </RepeatButton>
+        <RepeatButton x:Name="TimeDownButton" MinWidth="30" Padding="6,2"
+                      AutomationProperties.Name="Step time down"
+                      ToolTipService.ToolTip="Step the selected time field down (hold to repeat)"
+                      Click="TimeDownButton_Click">
+          <FontIcon Glyph="&#xE70D;" FontSize="10" />
+        </RepeatButton>
+      </StackPanel>
+    </Grid>
+    <Slider x:Name="TimeSlider" Minimum="0" Maximum="24" StepFrequency="0.1" Value="12"
+            AutomationProperties.Name="Time of day"
+            ToolTipService.ToolTip="Time of day (0–24h) — drives lighting + sky colors"
+            ValueChanged="TimeSlider_ValueChanged" />
+    <Grid x:Name="DayRow">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Grid.Column="0" Text="Day" FontWeight="SemiBold" />
+      <TextBlock Grid.Column="1" x:Name="DayValueText" FontWeight="SemiBold"
+                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Grid>
+    <Slider x:Name="DaySlider" Minimum="0" Maximum="24" StepFrequency="1" Value="0"
+            AutomationProperties.Name="Day"
+            ToolTipService.ToolTip="Day of the lunar cycle — drives the moon phase + sky position"
+            ValueChanged="DaySlider_ValueChanged" />
 
-          <!-- ============================== Weather ============================== -->
-          <Border x:Name="WeatherSeparator" Height="1" Margin="0,2,0,2"
-                  Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-          <TextBlock x:Name="WeatherHeader" Text="Weather" FontWeight="SemiBold"
-                     AutomationProperties.HeadingLevel="Level2" />
-          <ComboBox x:Name="WeatherComboBox" HorizontalAlignment="Stretch"
-                    SelectionChanged="WeatherComboBox_SelectionChanged"
-                    AutomationProperties.Name="Weather"
-                    ToolTipService.ToolTip="Weather — drives the sky / ambient / sun / fog colors, and the wind speed"
-                    PlaceholderText="Weather" />
-          <Grid x:Name="WindRow" ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <CheckBox Grid.Column="0" x:Name="WindOverrideCheck" Content="Override wind" MinWidth="0"
-                      VerticalAlignment="Center"
-                      ToolTipService.ToolTip="Unchecked: wind follows the selected weather (wind speed ÷ 255; 0 indoors). Checked: use the slider value."
-                      Checked="WindOverrideCheck_Changed" Unchecked="WindOverrideCheck_Changed" />
-            <Slider Grid.Column="1" x:Name="WindSpeedSlider" Minimum="0" Maximum="1"
-                    StepFrequency="0.01" IsEnabled="False" VerticalAlignment="Center"
-                    AutomationProperties.Name="Wind speed"
-                    ToolTipService.ToolTip="SpeedTree wind strength on the engine scale (weather wind-speed byte ÷ 255; ~0.1 breeze, ~0.4 storm)"
-                    ValueChanged="WindSpeedSlider_ValueChanged" />
+    <!-- ============================== Weather ============================== -->
+    <Border x:Name="WeatherSeparator" Height="1" Margin="0,2,0,2"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    <TextBlock x:Name="WeatherHeader" Text="Weather" FontWeight="SemiBold"
+               AutomationProperties.HeadingLevel="Level2" />
+    <ComboBox x:Name="WeatherComboBox" HorizontalAlignment="Stretch"
+              SelectionChanged="WeatherComboBox_SelectionChanged"
+              AutomationProperties.Name="Weather"
+              ToolTipService.ToolTip="Weather — drives the sky / ambient / sun / fog colors, and the wind speed"
+              PlaceholderText="Weather" />
+    <Grid x:Name="WindRow" ColumnSpacing="8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <CheckBox Grid.Column="0" x:Name="WindOverrideCheck" Content="Override wind" MinWidth="0"
+                VerticalAlignment="Center"
+                ToolTipService.ToolTip="Unchecked: wind follows the selected weather (wind speed ÷ 255; 0 indoors). Checked: use the slider value."
+                Checked="WindOverrideCheck_Changed" Unchecked="WindOverrideCheck_Changed" />
+      <Slider Grid.Column="1" x:Name="WindSpeedSlider" Minimum="0" Maximum="1"
+              StepFrequency="0.01" IsEnabled="False" VerticalAlignment="Center"
+              AutomationProperties.Name="Wind speed"
+              ToolTipService.ToolTip="SpeedTree wind strength on the engine scale (weather wind-speed byte ÷ 255; ~0.1 breeze, ~0.4 storm)"
+              ValueChanged="WindSpeedSlider_ValueChanged" />
     </Grid>
   </StackPanel>
 </UserControl>

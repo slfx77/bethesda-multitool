@@ -1,5 +1,4 @@
-using System.Reflection;
-using Vortice.D3DCompiler;
+using BethesdaMultitool.Core.Games;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -50,50 +49,49 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private const int BrightPassBlurRtvSlot = ReductionRtvStart + ClassicHdrPassPlan.MaxReductionLevels;
     private const int BlurRtvSlot = BrightPassBlurRtvSlot + 1;
     private const int RtvDescriptorCount = BlurRtvSlot + 1;
-
-    private readonly GpuDevice12 _gpu;
-    private readonly ID3D12RootSignature _rootSignature;
-    private readonly ID3D12PipelineState _pso;
-    private readonly ID3D12PipelineState _avgPso;
     private readonly ID3D12PipelineState _adaptPso;
-    private readonly ID3D12PipelineState _downsamplePso;
-    private readonly ID3D12PipelineState _bloomPso;
-    private readonly ID3D12PipelineState _blurPso;
-    private readonly ID3D12DescriptorHeap _srvHeap;
+    private readonly ID3D12PipelineState _avgPso;
+    private readonly uint _avgRtvDescriptorSize;
+
     private readonly ID3D12DescriptorHeap _avgRtvHeap;
+
     // Ping-pong pair of 1×1 adapted-average targets: each engine-mode frame reads the PREVIOUS
     // frame's adapted average (temporal eye adaptation) while writing the new one; the main pass
     // then samples the freshly written side. Both start in PixelShaderResource.
     private readonly ID3D12Resource[] _avgTextures = new ID3D12Resource[2];
+    private readonly ID3D12PipelineState _bloomPso;
+    private readonly ID3D12PipelineState _blurPso;
+    private readonly ID3D12PipelineState _downsamplePso;
+
+    private readonly GpuDevice12 _gpu;
+
+    private readonly ID3D12PipelineState _pso;
+
     // Recursive /4 DownSample16 targets. Level 0 is retained as the BrightPassBlur source; the final
     // level is 1x1 and feeds ADAPT. The two bloom targets hold vertical BPBLUR and horizontal BLUR.
     private readonly ID3D12Resource?[] _reductionTextures =
         new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
-    private ID3D12Resource? _brightPassBlurTexture;
-    private ID3D12Resource? _bloomTexture;
-    private readonly uint _avgRtvDescriptorSize;
+
+    private readonly ID3D12RootSignature _rootSignature;
     private readonly uint _srvDescriptorSize;
-    private int _bloomWidth;
-    private int _bloomHeight;
-    private int _classicSourceWidth;
-    private int _classicSourceHeight;
-    private int _reductionLevelCount;
-    private int _avgWriteIndex;
+    private readonly ID3D12DescriptorHeap _srvHeap;
     private bool _adaptPrimed;
-    private ulong _lastHistoryKey = ulong.MaxValue;
+    private int _avgWriteIndex;
+    private int _bloomHeight;
+    private ID3D12Resource? _bloomTexture;
+    private int _bloomWidth;
+    private ID3D12Resource? _brightPassBlurTexture;
+    private int _classicSourceHeight;
+    private int _classicSourceWidth;
+    private bool _disposed;
     private bool _lastAdaptiveMode;
+    private Format _lastHistoryFormat = Format.Unknown;
+    private int _lastHistoryHeight;
+    private ulong _lastHistoryKey = ulong.MaxValue;
     private ID3D12Resource? _lastHistoryTarget;
     private int _lastHistoryWidth;
-    private int _lastHistoryHeight;
-    private Format _lastHistoryFormat = Format.Unknown;
+    private int _reductionLevelCount;
     private int _srvCursor;
-    private bool _disposed;
-
-    /// <summary>Whether the most recently recorded pass invalidated its eye-adaptation history.</summary>
-    internal bool LastHistoryReset { get; private set; }
-
-    /// <summary>Comma-separated authoritative invalidation inputs for <see cref="LastHistoryReset"/>.</summary>
-    internal string? LastHistoryResetReason { get; private set; }
 
     public GpuTonemapPass12(GpuDevice12 gpu)
     {
@@ -110,15 +108,15 @@ internal sealed class GpuTonemapPass12 : IDisposable
             BaseShaderRegister = 0,
             RegisterSpace = 0,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0,
+            OffsetInDescriptorsFromTableStart = 0
         };
         var srvTable = new RootParameter1(new RootDescriptorTable1(srvRange), ShaderVisibility.Pixel);
         var rootConstants = new RootParameter1(
-            new RootConstants(shaderRegister: 0, registerSpace: 0, num32BitValues: 24),
+            new RootConstants(0, 0, 24),
             ShaderVisibility.Pixel);
 
         var sampler = new StaticSamplerDescription(
-            shaderRegister: 0,
+            0,
             Filter.MinMagMipLinear,
             TextureAddressMode.Clamp,
             TextureAddressMode.Clamp,
@@ -130,7 +128,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             0f,
             float.MaxValue,
             ShaderVisibility.Pixel,
-            registerSpace: 0);
+            0);
 
         var desc = new RootSignatureDescription1(
             RootSignatureFlags.None,
@@ -141,11 +139,11 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var vs = CompileEmbeddedShader("tonemap.vert.hlsl", "main", "vs_5_1");
         var ps = CompileEmbeddedShader("tonemap.frag.hlsl", "main", "ps_5_1");
 
-        var blend = new D12.BlendDescription { AlphaToCoverageEnable = false, IndependentBlendEnable = false };
-        blend.RenderTarget[0] = new D12.RenderTargetBlendDescription
+        var blend = new BlendDescription { AlphaToCoverageEnable = false, IndependentBlendEnable = false };
+        blend.RenderTarget[0] = new RenderTargetBlendDescription
         {
             BlendEnable = false,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
+            RenderTargetWriteMask = ColorWriteEnable.All
         };
 
         var psoDesc = new GraphicsPipelineStateDescription
@@ -154,25 +152,25 @@ internal sealed class GpuTonemapPass12 : IDisposable
             VertexShader = vs,
             PixelShader = ps,
             BlendState = blend,
-            RasterizerState = new D12.RasterizerDescription
+            RasterizerState = new RasterizerDescription
             {
-                FillMode = D12.FillMode.Solid,
-                CullMode = D12.CullMode.None,
-                DepthClipEnable = false,
+                FillMode = FillMode.Solid,
+                CullMode = CullMode.None,
+                DepthClipEnable = false
             },
-            DepthStencilState = new D12.DepthStencilDescription
+            DepthStencilState = new DepthStencilDescription
             {
                 DepthEnable = false,
-                DepthWriteMask = D12.DepthWriteMask.Zero,
+                DepthWriteMask = DepthWriteMask.Zero,
                 DepthFunc = ComparisonFunction.Always,
-                StencilEnable = false,
+                StencilEnable = false
             },
             InputLayout = new InputLayoutDescription(Array.Empty<InputElementDescription>()),
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = new[] { GpuSceneFormats.LdrOutput },
             DepthStencilFormat = Format.Unknown,
             SampleDescription = new SampleDescription(1, 0), // the LDR output/backbuffer is single-sample
-            SampleMask = uint.MaxValue,
+            SampleMask = uint.MaxValue
         };
         _pso = device.CreateGraphicsPipelineState(psoDesc);
 
@@ -216,7 +214,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             Type = DescriptorHeapType.RenderTargetView,
             DescriptorCount = RtvDescriptorCount,
-            Flags = DescriptorHeapFlags.None,
+            Flags = DescriptorHeapFlags.None
         });
         _avgRtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
         for (var i = 0; i < 2; i++)
@@ -237,10 +235,40 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
             DescriptorCount = SrvRingSlots * GroupsPerCall * SrvsPerCall,
-            Flags = DescriptorHeapFlags.ShaderVisible,
+            Flags = DescriptorHeapFlags.ShaderVisible
         });
         _srvDescriptorSize = device.GetDescriptorHandleIncrementSize(
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+    }
+
+    /// <summary>Whether the most recently recorded pass invalidated its eye-adaptation history.</summary>
+    internal bool LastHistoryReset { get; private set; }
+
+    /// <summary>Comma-separated authoritative invalidation inputs for <see cref="LastHistoryReset" />.</summary>
+    internal string? LastHistoryResetReason { get; private set; }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _srvHeap.Dispose();
+        _avgRtvHeap.Dispose();
+        _avgTextures[0].Dispose();
+        _avgTextures[1].Dispose();
+        for (var i = 0; i < _reductionTextures.Length; i++)
+        {
+            _reductionTextures[i]?.Dispose();
+        }
+
+        _brightPassBlurTexture?.Dispose();
+        _bloomTexture?.Dispose();
+        _blurPso.Dispose();
+        _bloomPso.Dispose();
+        _downsamplePso.Dispose();
+        _adaptPso.Dispose();
+        _avgPso.Dispose();
+        _pso.Dispose();
+        _rootSignature.Dispose();
     }
 
     /// <summary>
@@ -279,14 +307,18 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var callBase = (nuint)(slot * GroupsPerCall * SrvsPerCall * _srvDescriptorSize);
         var heapCpu = _srvHeap.GetCPUDescriptorHandleForHeapStart();
         var heapGpu = _srvHeap.GetGPUDescriptorHandleForHeapStart();
-        nuint GroupOffset(int group) => callBase + (nuint)(group * SrvsPerCall * _srvDescriptorSize);
+
+        nuint GroupOffset(int group)
+        {
+            return callBase + (nuint)(group * SrvsPerCall * _srvDescriptorSize);
+        }
 
         var srvDesc = new ShaderResourceViewDescription
         {
             Format = hdrFormat,
             ViewDimension = D12.ShaderResourceViewDimension.Texture2D,
             Shader4ComponentMapping = ShaderComponentMapping.Default,
-            Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
+            Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
         };
         var avgSrvDesc = srvDesc with { Format = Format.R16G16B16A16_Float };
 
@@ -319,6 +351,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             LastHistoryResetReason = null;
         }
+
         if (LastHistoryReset)
         {
             _adaptPrimed = false;
@@ -329,6 +362,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             _lastHistoryHeight = height;
             _lastHistoryFormat = hdrFormat;
         }
+
         var bloomActive = executionPlan.BloomActive;
         var classicPlan = engineMode
             ? ClassicHdrPassPlan.Create(width, height, bloomActive, settings.BlurPasses)
@@ -340,7 +374,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
 
         // ADAPT group. Classic t0 is the recursive chain's final 1x1 value; the modern stand-in keeps
         // t0 as the full scene for mainAvg. t1 is always the previous adapted history.
-        var cpuA = heapCpu; cpuA.Ptr += GroupOffset(AdaptGroup);
+        var cpuA = heapCpu;
+        cpuA.Ptr += GroupOffset(AdaptGroup);
         var adaptSource = engineMode
             ? _reductionTextures[classicPlan.DownsampleDrawCount - 1]!
             : hdrTexture;
@@ -356,7 +391,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             for (var level = 0; level < classicPlan.DownsampleDrawCount; level++)
             {
-                var cpuP = heapCpu; cpuP.Ptr += GroupOffset(DownsampleGroupStart + level);
+                var cpuP = heapCpu;
+                cpuP.Ptr += GroupOffset(DownsampleGroupStart + level);
                 var source = level == 0 ? hdrTexture : _reductionTextures[level - 1]!;
                 _gpu.Device.CreateShaderResourceView(source, level == 0 ? srvDesc : avgSrvDesc, cpuP);
                 cpuP.Ptr += _srvDescriptorSize;
@@ -371,14 +407,16 @@ internal sealed class GpuTonemapPass12 : IDisposable
         // both resources are transitioned back to SRV before their consumers execute.
         if (bloomActive)
         {
-            var cpuBrightPass = heapCpu; cpuBrightPass.Ptr += GroupOffset(BrightPassBlurGroup);
+            var cpuBrightPass = heapCpu;
+            cpuBrightPass.Ptr += GroupOffset(BrightPassBlurGroup);
             _gpu.Device.CreateShaderResourceView(_reductionTextures[0]!, avgSrvDesc, cpuBrightPass);
             cpuBrightPass.Ptr += _srvDescriptorSize;
             _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBrightPass);
             cpuBrightPass.Ptr += _srvDescriptorSize;
             _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBrightPass);
 
-            var cpuBlur = heapCpu; cpuBlur.Ptr += GroupOffset(BlurGroup);
+            var cpuBlur = heapCpu;
+            cpuBlur.Ptr += GroupOffset(BlurGroup);
             _gpu.Device.CreateShaderResourceView(_brightPassBlurTexture!, avgSrvDesc, cpuBlur);
             cpuBlur.Ptr += _srvDescriptorSize;
             _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBlur);
@@ -388,7 +426,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
 
         // Main group: t2 = BPBLUR output, or the avg texture as a benign always-valid filler
         // when bloom is off (uParams3.z gates the term to zero).
-        var cpuB = heapCpu; cpuB.Ptr += GroupOffset(CompositeGroup);
+        var cpuB = heapCpu;
+        cpuB.Ptr += GroupOffset(CompositeGroup);
         _gpu.Device.CreateShaderResourceView(hdrTexture, srvDesc, cpuB);
         cpuB.Ptr += _srvDescriptorSize;
         _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuB);
@@ -402,7 +441,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var adaptFactor = _adaptPrimed ? settings.AdaptFactor : 2f;
 
         var modernFamily = settings.ModernFamily ==
-            Core.Games.ImageSpaceModernFamily.Fallout4 ? 1f : 0f;
+                           ImageSpaceModernFamily.Fallout4
+            ? 1f
+            : 0f;
         var p = stackalloc float[24]
         {
             settings.Exposure, enabled ? 1f : 0f, (float)settings.Mode, settings.TargetLum,
@@ -410,7 +451,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             settings.TintR, settings.TintG, settings.TintB, settings.TintAmount,
             settings.UpperLumClamp, adaptFactor, bloomActive ? 1f : 0f, (float)settings.CinematicFlags,
             settings.AutoExposureMin, settings.AutoExposureMax, settings.MiddleGray, settings.TonemapE,
-            settings.White, settings.EyeAdaptStrength, settings.ReceiveBloomThreshold, modernFamily,
+            settings.White, settings.EyeAdaptStrength, settings.ReceiveBloomThreshold, modernFamily
         };
 
         cmd.SetGraphicsRootSignature(_rootSignature);
@@ -460,7 +501,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
             _adaptPrimed = true;
             var writeRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
             writeRtv.Ptr += (nuint)(writeIdx * _avgRtvDescriptorSize);
-            var gpuA = heapGpu; gpuA.Ptr += GroupOffset(AdaptGroup);
+            var gpuA = heapGpu;
+            gpuA.Ptr += GroupOffset(AdaptGroup);
             cmd.SetGraphicsRootDescriptorTable(0, gpuA);
             cmd.ResourceBarrierTransition(
                 _avgTextures[writeIdx], ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
@@ -493,8 +535,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
             cmd.RSSetScissorRect(_bloomWidth, _bloomHeight);
             cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
             var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            brightPassRtv.Ptr += (nuint)(BrightPassBlurRtvSlot * _avgRtvDescriptorSize);
-            var brightPassGpu = heapGpu; brightPassGpu.Ptr += GroupOffset(BrightPassBlurGroup);
+            brightPassRtv.Ptr += BrightPassBlurRtvSlot * _avgRtvDescriptorSize;
+            var brightPassGpu = heapGpu;
+            brightPassGpu.Ptr += GroupOffset(BrightPassBlurGroup);
             cmd.SetGraphicsRootDescriptorTable(0, brightPassGpu);
             cmd.ResourceBarrierTransition(
                 _brightPassBlurTexture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
@@ -510,8 +553,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
             b[5] = 0f;
             cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
             var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            blurRtv.Ptr += (nuint)(BlurRtvSlot * _avgRtvDescriptorSize);
-            var blurGpu = heapGpu; blurGpu.Ptr += GroupOffset(BlurGroup);
+            blurRtv.Ptr += BlurRtvSlot * _avgRtvDescriptorSize;
+            var blurGpu = heapGpu;
+            blurGpu.Ptr += GroupOffset(BlurGroup);
             cmd.SetGraphicsRootDescriptorTable(0, blurGpu);
             cmd.ResourceBarrierTransition(
                 _bloomTexture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
@@ -524,7 +568,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
             cmd.SetGraphicsRoot32BitConstants(1, 24, p, 0);
         }
 
-        var gpuB = heapGpu; gpuB.Ptr += GroupOffset(CompositeGroup);
+        var gpuB = heapGpu;
+        gpuB.Ptr += GroupOffset(CompositeGroup);
         cmd.SetGraphicsRootDescriptorTable(0, gpuB);
         cmd.OMSetRenderTargets(ldrRtv);
         cmd.RSSetViewport(new Viewport(0, 0, width, height, 0f, 1f));
@@ -556,6 +601,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             _reductionTextures[i]?.Dispose();
             _reductionTextures[i] = null;
         }
+
         _brightPassBlurTexture?.Dispose();
         _brightPassBlurTexture = null;
         _bloomTexture?.Dispose();
@@ -599,7 +645,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             ResourceStates.PixelShaderResource);
         _brightPassBlurTexture.Name = $"TonemapClassicBrightPassVertical_{_bloomWidth}x{_bloomHeight}";
         var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-        brightPassRtv.Ptr += (nuint)(BrightPassBlurRtvSlot * _avgRtvDescriptorSize);
+        brightPassRtv.Ptr += BrightPassBlurRtvSlot * _avgRtvDescriptorSize;
         _gpu.Device.CreateRenderTargetView(_brightPassBlurTexture, null, brightPassRtv);
 
         _bloomTexture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
@@ -614,31 +660,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
             ResourceStates.PixelShaderResource);
         _bloomTexture.Name = $"TonemapClassicBlurHorizontal_{_bloomWidth}x{_bloomHeight}";
         var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-        blurRtv.Ptr += (nuint)(BlurRtvSlot * _avgRtvDescriptorSize);
+        blurRtv.Ptr += BlurRtvSlot * _avgRtvDescriptorSize;
         _gpu.Device.CreateRenderTargetView(_bloomTexture, null, blurRtv);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _srvHeap.Dispose();
-        _avgRtvHeap.Dispose();
-        _avgTextures[0].Dispose();
-        _avgTextures[1].Dispose();
-        for (var i = 0; i < _reductionTextures.Length; i++)
-        {
-            _reductionTextures[i]?.Dispose();
-        }
-        _brightPassBlurTexture?.Dispose();
-        _bloomTexture?.Dispose();
-        _blurPso.Dispose();
-        _bloomPso.Dispose();
-        _downsamplePso.Dispose();
-        _adaptPso.Dispose();
-        _avgPso.Dispose();
-        _pso.Dispose();
-        _rootSignature.Dispose();
     }
 
     /// <summary>
@@ -646,6 +669,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
     ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
     ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
     /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
-        GpuShaderCompiler12.Compile(name, entryPoint, profile);
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
+    {
+        return GpuShaderCompiler12.Compile(name, entryPoint, profile);
+    }
 }

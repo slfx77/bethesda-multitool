@@ -25,7 +25,7 @@ public enum ContainmentRelationship
     ///     A teleport reference (XTEL) on a placed REFR pointing at a destination door,
     ///     paired with the synthetic-door rescue path that may emit a matching REFR.
     /// </summary>
-    TeleportRescue,
+    TeleportRescue
 }
 
 /// <summary>

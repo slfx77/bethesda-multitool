@@ -17,8 +17,6 @@ internal enum HeightmapRenderMode
 /// </summary>
 internal sealed record HeightmapColorScheme(string Name, byte R, byte G, byte B)
 {
-    /// <summary>Rendering mode — tint-multiply (default) or the colorful elevation gradient.</summary>
-    public HeightmapRenderMode Mode { get; init; } = HeightmapRenderMode.TintMultiply;
     /// <summary>FNV engine default (uHUDColor = 4290134783 = 0xFFB642FF).</summary>
     public static readonly HeightmapColorScheme Amber = new("Amber", 255, 182, 66);
 
@@ -40,6 +38,9 @@ internal sealed record HeightmapColorScheme(string Name, byte R, byte G, byte B)
 
     /// <summary>All available presets.</summary>
     public static readonly HeightmapColorScheme[] Presets = [Amber, Green, White, Blue, HudAlt, Colorful];
+
+    /// <summary>Rendering mode — tint-multiply (default) or the colorful elevation gradient.</summary>
+    public HeightmapRenderMode Mode { get; init; } = HeightmapRenderMode.TintMultiply;
 
     /// <summary>
     ///     Returns the default color scheme for the loaded game: New Vegas uses its amber Pip-Boy HUD,

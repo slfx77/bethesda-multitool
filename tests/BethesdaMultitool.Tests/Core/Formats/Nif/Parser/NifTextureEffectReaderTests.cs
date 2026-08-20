@@ -16,8 +16,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Parser;
 /// </summary>
 public sealed class NifTextureEffectReaderTests
 {
-    private const uint Tes3Version = 0x04000002;  // Morrowind 4.0.0.2
-    private const uint Tes4Version = 0x14000005;  // Oblivion 20.0.0.5
+    private const uint Tes3Version = 0x04000002; // Morrowind 4.0.0.2
+    private const uint Tes4Version = 0x14000005; // Oblivion 20.0.0.5
     private const uint Tes4BsVersion = 11;
 
     /// <summary>The affected-node set every fixture in this class authors.</summary>
@@ -27,15 +27,15 @@ public sealed class NifTextureEffectReaderTests
     public void Parse_LegacyMorrowindLayout_ReadsEnvironmentSphereMapAndSourceRef()
     {
         var bytes = BuildLegacyEffect(
-            textureType: NifTextureEffectReader.TextureTypeEnvironmentMap,
-            coordGen: NifTextureEffectReader.CoordGenTypeSphereMap,
-            sourceRef: 17);
+            NifTextureEffectReader.TextureTypeEnvironmentMap,
+            NifTextureEffectReader.CoordGenTypeSphereMap,
+            17);
         // Byte-parity pin against the retail block (0x3C68, size 181, empty name, 0 affected).
         Assert.Equal(181, bytes.Length);
 
         var block = MakeBlock("NiTextureEffect", bytes.Length);
         var info = NifTextureEffectReader.Parse(
-            bytes, block, bsVersion: 0, Tes3Version, be: false, hasInlineStrings: true);
+            bytes, block, 0, Tes3Version, false, true);
 
         Assert.NotNull(info);
         Assert.True(info.Value.SwitchState); // field absent pre-10.1.0.106 → defaults enabled
@@ -52,14 +52,14 @@ public sealed class NifTextureEffectReaderTests
     {
         var bytes = BuildTes4Effect(
             switchState,
-            affectedNodes: [4, 9],
-            textureType: NifTextureEffectReader.TextureTypeEnvironmentMap,
-            coordGen: NifTextureEffectReader.CoordGenTypeSphereMap,
-            sourceRef: 2);
+            [4, 9],
+            NifTextureEffectReader.TextureTypeEnvironmentMap,
+            NifTextureEffectReader.CoordGenTypeSphereMap,
+            2);
 
         var block = MakeBlock("NiTextureEffect", bytes.Length);
         var info = NifTextureEffectReader.Parse(
-            bytes, block, Tes4BsVersion, Tes4Version, be: false, hasInlineStrings: true);
+            bytes, block, Tes4BsVersion, Tes4Version, false, true);
 
         Assert.NotNull(info);
         Assert.Equal(switchState, info.Value.SwitchState);
@@ -75,11 +75,11 @@ public sealed class NifTextureEffectReaderTests
         // Projected light (0) with world-parallel coordinates (0) — the policy filters these; the
         // reader itself must report them as authored.
         var bytes = BuildTes4Effect(
-            switchState: true, affectedNodes: [], textureType: 0, coordGen: 0, sourceRef: 5);
+            true, [], 0, 0, 5);
 
         var info = NifTextureEffectReader.Parse(
             bytes, MakeBlock("NiTextureEffect", bytes.Length), Tes4BsVersion, Tes4Version,
-            be: false, hasInlineStrings: true);
+            false, true);
 
         Assert.NotNull(info);
         Assert.Equal(0u, info.Value.TextureType);
@@ -91,16 +91,16 @@ public sealed class NifTextureEffectReaderTests
     public void Parse_TruncatedBlock_ReturnsNull()
     {
         var bytes = BuildTes4Effect(
-            switchState: true,
-            affectedNodes: [],
-            textureType: NifTextureEffectReader.TextureTypeEnvironmentMap,
-            coordGen: NifTextureEffectReader.CoordGenTypeSphereMap,
-            sourceRef: 2);
+            true,
+            [],
+            NifTextureEffectReader.TextureTypeEnvironmentMap,
+            NifTextureEffectReader.CoordGenTypeSphereMap,
+            2);
         var truncated = bytes[..(bytes.Length - 20)]; // lose coordgen/source tail
 
         Assert.Null(NifTextureEffectReader.Parse(
             truncated, MakeBlock("NiTextureEffect", truncated.Length), Tes4BsVersion, Tes4Version,
-            be: false, hasInlineStrings: true));
+            false, true));
     }
 
     private static BlockInfo MakeBlock(string typeName, int size)
@@ -114,30 +114,30 @@ public sealed class NifTextureEffectReaderTests
     private static byte[] BuildLegacyEffect(uint textureType, uint coordGen, int sourceRef)
     {
         var bytes = new List<byte>();
-        AppendUInt(bytes, 0);   // name length 0 (inline SizedString)
-        AppendInt(bytes, -1);   // Extra Data ref (legacy single ref)
-        AppendInt(bytes, -1);   // Controller ref
+        AppendUInt(bytes, 0); // name length 0 (inline SizedString)
+        AppendInt(bytes, -1); // Extra Data ref (legacy single ref)
+        AppendInt(bytes, -1); // Controller ref
         bytes.Add(4);
-        bytes.Add(0);           // Flags (ushort)
+        bytes.Add(0); // Flags (ushort)
         AppendZeros(bytes, 12); // Translation
         AppendIdentityMatrix(bytes);
         AppendFloat(bytes, 1f); // Scale
         AppendZeros(bytes, 12); // Velocity (until 4.2.2.0)
-        AppendUInt(bytes, 0);   // Num Properties
-        AppendUInt(bytes, 0);   // Has Bounding Volume (bool32)
-        AppendUInt(bytes, 0);   // Num Affected Nodes (pointer hashes)
+        AppendUInt(bytes, 0); // Num Properties
+        AppendUInt(bytes, 0); // Has Bounding Volume (bool32)
+        AppendUInt(bytes, 0); // Num Affected Nodes (pointer hashes)
         AppendIdentityMatrix(bytes); // Model Projection Matrix
         AppendZeros(bytes, 12); // Model Projection Translation
-        AppendUInt(bytes, 2);   // Texture Filtering (FILTER_TRILERP)
-        AppendUInt(bytes, 3);   // Texture Clamping (WRAP_S_WRAP_T)
+        AppendUInt(bytes, 2); // Texture Filtering (FILTER_TRILERP)
+        AppendUInt(bytes, 3); // Texture Clamping (WRAP_S_WRAP_T)
         AppendUInt(bytes, textureType);
         AppendUInt(bytes, coordGen);
         AppendInt(bytes, sourceRef);
-        bytes.Add(0);           // Enable Plane
+        bytes.Add(0); // Enable Plane
         AppendZeros(bytes, 16); // Plane
         AppendUInt(bytes, 0xFFB5_0000); // PS2 L = 0, PS2 K = -75 (retail default)
         bytes.Add(0);
-        bytes.Add(0);           // Unknown Short (until 4.1.0.12)
+        bytes.Add(0); // Unknown Short (until 4.1.0.12)
         return [.. bytes];
     }
 
@@ -149,16 +149,16 @@ public sealed class NifTextureEffectReaderTests
         bool switchState, int[] affectedNodes, uint textureType, uint coordGen, int sourceRef)
     {
         var bytes = new List<byte>();
-        AppendUInt(bytes, 0);   // name length 0 (inline SizedString)
-        AppendUInt(bytes, 0);   // Num Extra Data List
-        AppendInt(bytes, -1);   // Controller ref
+        AppendUInt(bytes, 0); // name length 0 (inline SizedString)
+        AppendUInt(bytes, 0); // Num Extra Data List
+        AppendInt(bytes, -1); // Controller ref
         bytes.Add(4);
-        bytes.Add(0);           // Flags (ushort — BS stream 11 <= 26)
+        bytes.Add(0); // Flags (ushort — BS stream 11 <= 26)
         AppendZeros(bytes, 12); // Translation
         AppendIdentityMatrix(bytes);
         AppendFloat(bytes, 1f); // Scale
-        AppendUInt(bytes, 0);   // Num Properties
-        AppendInt(bytes, -1);   // Collision Object ref
+        AppendUInt(bytes, 0); // Num Properties
+        AppendInt(bytes, -1); // Collision Object ref
         bytes.Add(switchState ? (byte)1 : (byte)0); // Switch State (since 10.1.0.106)
         AppendUInt(bytes, (uint)affectedNodes.Length);
         foreach (var nodeRef in affectedNodes)
@@ -167,9 +167,9 @@ public sealed class NifTextureEffectReaderTests
         }
 
         AppendIdentityMatrix(bytes); // Model Projection Matrix
-        AppendZeros(bytes, 12);      // Model Projection Translation
-        AppendUInt(bytes, 2);        // Texture Filtering
-        AppendUInt(bytes, 3);        // Texture Clamping
+        AppendZeros(bytes, 12); // Model Projection Translation
+        AppendUInt(bytes, 2); // Texture Filtering
+        AppendUInt(bytes, 3); // Texture Clamping
         AppendUInt(bytes, textureType);
         AppendUInt(bytes, coordGen);
         AppendInt(bytes, sourceRef);

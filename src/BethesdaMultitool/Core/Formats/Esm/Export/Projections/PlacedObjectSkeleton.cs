@@ -33,7 +33,8 @@ internal sealed record PlacedObjectSkeleton
 
     /// <summary>
     ///     Back-reference to the originating <see cref="PlacedReference" />. Phase 1 keeps it so existing
-    ///     <see cref="NpcPlacementInfo.Ref" /> / <see cref="KeyLockedDoorInfo.Ref" /> / <see cref="ContainerPlacementInfo.Ref" />
+    ///     <see cref="NpcPlacementInfo.Ref" /> / <see cref="KeyLockedDoorInfo.Ref" /> /
+    ///     <see cref="ContainerPlacementInfo.Ref" />
     ///     keep their current shape. Phase 2 widens this skeleton with the remaining fields actually consumed
     ///     by downstream report builders and drops this reference.
     /// </summary>
@@ -52,4 +53,3 @@ internal sealed record PlacedObjectSkeleton
         };
     }
 }
-

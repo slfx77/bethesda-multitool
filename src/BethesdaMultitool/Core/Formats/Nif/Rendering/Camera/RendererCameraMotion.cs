@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -36,7 +37,7 @@ internal static class RendererCameraMotion
         new(1f, 0f),
         new(0f, -1f),
         new(-1f, 0f),
-        new(0f, -1f),
+        new(0f, -1f)
     ];
 
     internal static bool TryParseKind(string? value, out RendererCameraMotionKind kind)
@@ -174,6 +175,8 @@ internal static class RendererCameraMotion
         return length > 0.0001f ? value / length : fallback;
     }
 
-    private static float YawFromGroundDirection(Vector2 direction) =>
-        MathF.Atan2(direction.X, direction.Y);
+    private static float YawFromGroundDirection(Vector2 direction)
+    {
+        return MathF.Atan2(direction.X, direction.Y);
+    }
 }

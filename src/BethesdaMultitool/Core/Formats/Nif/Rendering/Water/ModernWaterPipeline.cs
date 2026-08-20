@@ -15,7 +15,7 @@ internal enum ModernWaterTechnique : uint
 {
     Baseline = 0x001,
     DepthLut = 0x040,
-    Cubemap = 0x100,
+    Cubemap = 0x100
 }
 
 /// <summary>
@@ -36,14 +36,19 @@ internal static class ModernWaterPipeline
     // by the pixel shader between per-frame UAV writes.
     internal const ResourceStates AuthoredSourceReadState =
         ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource;
+
     internal const ResourceStates DynamicReadState = ResourceStates.PixelShaderResource;
     internal const ResourceStates DynamicWriteState = ResourceStates.UnorderedAccess;
 
-    internal static bool Supports(BethesdaGame game) =>
-        game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76;
+    internal static bool Supports(BethesdaGame game)
+    {
+        return game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76;
+    }
 
-    internal static bool ShouldUse(bool explicitlyEnabled, BethesdaGame game) =>
-        explicitlyEnabled && Supports(game);
+    internal static bool ShouldUse(bool explicitlyEnabled, BethesdaGame game)
+    {
+        return explicitlyEnabled && Supports(game);
+    }
 
     internal static ModernWaterTechnique SelectTechnique(bool hasDepthLut, bool hasCubemap)
     {
@@ -64,7 +69,7 @@ internal static class ModernWaterPipeline
         {
             BethesdaGame.Fallout76 => "fo76",
             BethesdaGame.Fallout4 => "fo4",
-            _ => "legacy",
+            _ => "legacy"
         };
         if (!ShouldUse(explicitlyEnabled, game)) return $"{prefix}-standin";
         if (!resourcesReady) return $"{prefix}-modern-unavailable-standin";
@@ -77,11 +82,15 @@ internal static class ModernWaterPipeline
     ///     SunPower and SunSpecularMagnitude through the recovered shader equations:
     ///     <c>exp(10*y*A+1)</c> and <c>x*B*pi</c>. They are mappings, not tuned constants.
     /// </summary>
-    internal static float GlossPowerScale(float authoredSunPower) =>
-        (MathF.Log(MathF.Max(authoredSunPower, 1e-6f)) - 1f) / 10f;
+    internal static float GlossPowerScale(float authoredSunPower)
+    {
+        return (MathF.Log(MathF.Max(authoredSunPower, 1e-6f)) - 1f) / 10f;
+    }
 
-    internal static float GlossAmplitudeScale(float authoredMagnitude) =>
-        authoredMagnitude / MathF.PI;
+    internal static float GlossAmplitudeScale(float authoredMagnitude)
+    {
+        return authoredMagnitude / MathF.PI;
+    }
 }
 
 /// <summary>

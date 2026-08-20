@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -10,9 +11,11 @@ namespace BethesdaMultitool.Tests.App;
 ///     2D-map centring contracts (<see cref="WorldMapViewportMath" />):
 ///     <list type="bullet">
 ///         <item>a resize/maximize keeps the world point that was centred in the centre;</item>
-///         <item>initial framing uses the bounds of cells that hold DATA, not the WRLD's declared
-///         extents — WastelandNV declares cells well past its authored region, and framing those
-///         puts the centre near the data's top edge;</item>
+///         <item>
+///             initial framing uses the bounds of cells that hold DATA, not the WRLD's declared
+///             extents — WastelandNV declares cells well past its authored region, and framing those
+///             puts the centre near the data's top edge;
+///         </item>
 ///         <item>the 2D→3D handoff clamps to those same bounds so the 3D camera lands in-bounds.</item>
 ///     </list>
 ///     The wiring lives in the App TFM (not built by the test target), so the handler/clamp call
@@ -29,10 +32,13 @@ public sealed class WorldMapCenteringTests
             GridX = gridX,
             GridY = gridY,
             CellWorldSize = CellSize,
-            PlacedObjects = [.. Enumerable.Range(0, placedObjects).Select(i => new PlacedReference
-            {
-                FormId = (uint)(0x1000 + i)
-            })]
+            PlacedObjects =
+            [
+                .. Enumerable.Range(0, placedObjects).Select(i => new PlacedReference
+                {
+                    FormId = (uint)(0x1000 + i)
+                })
+            ]
         };
 
         if (withTerrain)
@@ -44,8 +50,10 @@ public sealed class WorldMapCenteringTests
     }
 
     /// <summary>Canvas-world point currently under the view centre (screen = world × zoom + pan).</summary>
-    private static Vector2 CenterWorld(Vector2 pan, float zoom, float width, float height) =>
-        new((width * 0.5f - pan.X) / zoom, (height * 0.5f - pan.Y) / zoom);
+    private static Vector2 CenterWorld(Vector2 pan, float zoom, float width, float height)
+    {
+        return new Vector2((width * 0.5f - pan.X) / zoom, (height * 0.5f - pan.Y) / zoom);
+    }
 
     private static WorldMapViewportMath.CanvasBounds OccupiedBounds(List<CellRecord> cells)
     {
@@ -123,7 +131,7 @@ public sealed class WorldMapCenteringTests
         var cells = new List<CellRecord>();
         for (var y = 0; y <= 3; y++)
         {
-            cells.Add(Cell(0, y, withTerrain: true));
+            cells.Add(Cell(0, y, true));
         }
 
         for (var y = 4; y <= 40; y++)
@@ -144,7 +152,7 @@ public sealed class WorldMapCenteringTests
         // A cell can be authored without terrain (references only) — it must still frame in.
         var cells = new List<CellRecord>
         {
-            Cell(0, 0, withTerrain: true),
+            Cell(0, 0, true),
             Cell(5, 0, placedObjects: 3),
             Cell(60, 0)
         };

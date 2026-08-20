@@ -17,11 +17,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class ContEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<ContainerRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["Flags"] = m => m.Flags,
-        ["Weight"] = m => m.Weight,
-    };
+    private static readonly Dictionary<string, Func<ContainerRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Flags"] = m => m.Flags,
+            ["Weight"] = m => m.Weight
+        };
 
     public string RecordType => "CONT";
     public Type ModelType => typeof(ContainerRecord);
@@ -30,10 +31,10 @@ public sealed class ContEncoder : IRecordEncoder
     ///     Encode a new CONT record from scratch in fopdoc canonical order:
     ///     EDID, OBND, FULL, MODL, MODT, SCRI, [CNTO+COED?]+, DATA, SNAM, QNAM, RNAM.
     ///     <para>
-    ///     CNTO inventory entries with a dangling ItemFormId are skipped (and their
-    ///     paired COED, if any). The engine logs "Unable to find container object" otherwise
-    ///     and removes the inventory line, so we skip at encode time. Sounds (SNAM/QNAM/RNAM)
-    ///     and SCRI are likewise validated.
+    ///         CNTO inventory entries with a dangling ItemFormId are skipped (and their
+    ///         paired COED, if any). The engine logs "Unable to find container object" otherwise
+    ///         and removes the inventory line, so we skip at encode time. Sounds (SNAM/QNAM/RNAM)
+    ///         and SCRI are likewise validated.
     ///     </para>
     /// </summary>
     internal static EncodedRecord EncodeNew(
@@ -103,6 +104,7 @@ public sealed class ContEncoder : IRecordEncoder
                 subs.Add(new EncodedSubrecord("COED", BuildCoedSubrecord(item)));
             }
         }
+
         if (droppedItems > 0)
         {
             warnings.Add(

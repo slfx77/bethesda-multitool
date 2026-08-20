@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
@@ -78,8 +77,10 @@ internal sealed class PdbStructView
     ///         +32 bytes ahead of the MemDebug PDB across every observed FNV build
     ///         (FR2MatrixVTC padding delta).
     ///     </para>
-    ///     <para>Registering shift=0 is a no-op (no entry stored). Returns <c>this</c> for
-    ///     fluent chaining.</para>
+    ///     <para>
+    ///         Registering shift=0 is a no-op (no entry stored). Returns <c>this</c> for
+    ///         fluent chaining.
+    ///     </para>
     /// </summary>
     public PdbStructView WithShift(string owner, int shift)
     {
@@ -120,7 +121,7 @@ internal sealed class PdbStructView
         // so a field declared with the matching owner picks up the shift regardless of
         // its PDB-declared offset.
         if (owner is not null && _ownerShifts is not null
-            && _ownerShifts.TryGetValue(owner, out var ownerShift))
+                              && _ownerShifts.TryGetValue(owner, out var ownerShift))
         {
             resolved += ownerShift;
         }
@@ -135,7 +136,10 @@ internal sealed class PdbStructView
     ///     Returns null if the field isn't in the layout — callers should treat that as
     ///     "field absent" and fall back to a default, matching the prevailing reader idiom.
     /// </summary>
-    public int? Offset(string name, string? owner = null) => ResolveOffset(name, owner);
+    public int? Offset(string name, string? owner = null)
+    {
+        return ResolveOffset(name, owner);
+    }
 
     public int Int32(string field, string? owner = null, int def = 0)
     {
@@ -222,7 +226,10 @@ internal sealed class PdbStructView
     ///     Canonical OBND extraction via TESBoundObject.BoundData — returns null when
     ///     the layout has no BoundData field or the bounds are all-zero.
     /// </summary>
-    public ObjectBounds? Bounds() => RuntimePdbFieldAccessor.ReadBounds(Buffer, Layout);
+    public ObjectBounds? Bounds()
+    {
+        return RuntimePdbFieldAccessor.ReadBounds(Buffer, Layout);
+    }
 
     /// <summary>
     ///     Walks a BSSimpleList&lt;TESForm*&gt; rooted at the named field and resolves each
@@ -246,4 +253,3 @@ internal sealed class PdbStructView
             : [];
     }
 }
-

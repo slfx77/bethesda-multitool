@@ -8,7 +8,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
-/// <summary>Walks a NIF and extracts its node hierarchy, mesh parts, and skin bindings into a basis-neutral scene for export.</summary>
+/// <summary>
+///     Walks a NIF and extracts its node hierarchy, mesh parts, and skin bindings into a basis-neutral scene for
+///     export.
+/// </summary>
 internal static class NifExportExtractor
 {
     internal static ExtractedScene Extract(
@@ -212,7 +215,8 @@ internal static class NifExportExtractor
             return null;
         }
 
-        var skinInstance = NifSkinBlockParser.ParseNiSkinInstance(data, nif.Blocks[skinInstanceIndex], nif.IsBigEndian, nif.BinaryVersion);
+        var skinInstance = NifSkinBlockParser.ParseNiSkinInstance(data, nif.Blocks[skinInstanceIndex], nif.IsBigEndian,
+            nif.BinaryVersion);
         if (skinInstance == null ||
             skinInstance.DataRef < 0 ||
             skinInstance.DataRef >= nif.Blocks.Count ||
@@ -221,13 +225,15 @@ internal static class NifExportExtractor
             return null;
         }
 
-        var skinData = NifSkinBlockParser.ParseNiSkinData(data, nif.Blocks[skinInstance.DataRef], nif.IsBigEndian, nif.BinaryVersion);
+        var skinData = NifSkinBlockParser.ParseNiSkinData(data, nif.Blocks[skinInstance.DataRef], nif.IsBigEndian,
+            nif.BinaryVersion);
         if (skinData == null || skinData.Bones.Length == 0)
         {
             return null;
         }
 
-        var numVertices = NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.BinaryVersion);
+        var numVertices =
+            NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.BinaryVersion);
         if (numVertices <= 0)
         {
             return null;
@@ -494,4 +500,3 @@ internal static class NifExportExtractor
         public float EnvMapScale { get; init; }
     }
 }
-

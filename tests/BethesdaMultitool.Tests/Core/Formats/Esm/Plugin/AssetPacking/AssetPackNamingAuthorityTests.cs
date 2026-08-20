@@ -6,12 +6,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 /// <summary>
 ///     Structural guard: exactly one place decides what a packed asset ends up being called.
 ///     <para>
-///     The 2026-08-13 defect was not a wrong rule — it was two rules. The packer derived the
-///     BSA entry name in <c>AssetPackingService</c> and the rename pass derived the record's
-///     path in <c>AssetPathRewriter</c>, independently, and they disagreed: 49 SOUN records
-///     per build named <c>.xma</c> files the archive never contained. Both now call
-///     <c>PrototypeAssetConverter.PredictPackedPath</c>, and a direct
-///     <c>Path.ChangeExtension</c> at either site is how that drift would come back.
+///         The 2026-08-13 defect was not a wrong rule — it was two rules. The packer derived the
+///         BSA entry name in <c>AssetPackingService</c> and the rename pass derived the record's
+///         path in <c>AssetPathRewriter</c>, independently, and they disagreed: 49 SOUN records
+///         per build named <c>.xma</c> files the archive never contained. Both now call
+///         <c>PrototypeAssetConverter.PredictPackedPath</c>, and a direct
+///         <c>Path.ChangeExtension</c> at either site is how that drift would come back.
 ///     </para>
 /// </summary>
 public sealed class AssetPackNamingAuthorityTests
@@ -39,9 +39,12 @@ public sealed class AssetPackNamingAuthorityTests
             "src", "BethesdaMultitool", "Core", "Formats", "Esm", "Plugin", "AssetPacking",
             "PrototypeAssetConverter.cs");
 
-        foreach (var literal in new[] { "ChangeExtension(sourcePath, \".dds\")",
-                                        "ChangeExtension(sourcePath, \".wav\")",
-                                        "ChangeExtension(sourcePath, \".ogg\")" })
+        foreach (var literal in new[]
+                 {
+                     "ChangeExtension(sourcePath, \".dds\")",
+                     "ChangeExtension(sourcePath, \".wav\")",
+                     "ChangeExtension(sourcePath, \".ogg\")"
+                 })
         {
             Assert.DoesNotContain(literal, source, StringComparison.Ordinal);
         }

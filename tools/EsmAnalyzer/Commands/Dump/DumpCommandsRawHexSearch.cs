@@ -1,9 +1,4 @@
 using System.Globalization;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using BethesdaMultitool.Core.Formats.Esm.Conversion;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dump;
@@ -13,7 +8,6 @@ namespace EsmAnalyzer.Commands.Dump;
 ///     <see cref="EsmHelpers.GetRecordData" />, and scans the decompressed bytes
 ///     for a hex pattern. Designed to find content that a raw file scan would
 ///     miss because it lives inside a zlib-compressed record.
-///
 ///     This intentionally does NOT byte-swap or apply any conversion schema —
 ///     it's a pure decompress-then-scan, useful for auditing the converter.
 /// </summary>
@@ -43,13 +37,12 @@ internal static class DumpCommandsRawHexSearch
         {
             AnsiConsole.MarkupLine($"Type filter: [cyan]{typeFilter.ToUpperInvariant()}[/]");
         }
+
         AnsiConsole.WriteLine();
 
         List<AnalyzerRecordInfo> records = [];
-        AnsiConsole.Status().Start("Scanning records...", _ =>
-        {
-            records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian);
-        });
+        AnsiConsole.Status().Start("Scanning records...",
+            _ => { records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian); });
 
         if (!string.IsNullOrWhiteSpace(typeFilter))
         {
@@ -96,7 +89,7 @@ internal static class DumpCommandsRawHexSearch
 
             var compTag = rec.IsCompressed ? " [yellow](compressed)[/]" : string.Empty;
             AnsiConsole.Write(new Rule(
-                $"[cyan]{rec.Signature}[/] FormID [green]0x{rec.FormId:X8}[/] @ file 0x{rec.Offset:X8}{compTag}  [grey]{hits.Count} hit(s)[/]")
+                    $"[cyan]{rec.Signature}[/] FormID [green]0x{rec.FormId:X8}[/] @ file 0x{rec.Offset:X8}{compTag}  [grey]{hits.Count} hit(s)[/]")
                 .LeftJustified());
 
             foreach (var hit in hits)
@@ -114,7 +107,8 @@ internal static class DumpCommandsRawHexSearch
 
             if (limit > 0 && rendered >= limit)
             {
-                AnsiConsole.MarkupLine($"[grey]Render limit ({limit}) reached; continuing to count remaining hits...[/]");
+                AnsiConsole.MarkupLine(
+                    $"[grey]Render limit ({limit}) reached; continuing to count remaining hits...[/]");
                 // Don't break — keep counting totalHits across remaining records.
             }
         }
@@ -146,9 +140,11 @@ internal static class DumpCommandsRawHexSearch
             {
                 break;
             }
+
             results.Add(start + idx);
             start += idx + 1;
         }
+
         return results;
     }
 
@@ -165,8 +161,8 @@ internal static class DumpCommandsRawHexSearch
     private static byte[]? ParseHexPattern(string hex)
     {
         hex = hex.Replace(" ", string.Empty)
-                 .Replace("-", string.Empty)
-                 .Replace("0x", string.Empty, StringComparison.OrdinalIgnoreCase);
+            .Replace("-", string.Empty)
+            .Replace("0x", string.Empty, StringComparison.OrdinalIgnoreCase);
 
         if (hex.Length == 0 || hex.Length % 2 != 0)
         {
@@ -180,6 +176,7 @@ internal static class DumpCommandsRawHexSearch
             {
                 bytes[i] = byte.Parse(hex.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
             }
+
             return bytes;
         }
         catch

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 
@@ -53,13 +54,13 @@ public static class BsaParser
         // (hash + size + offset) at every version.
         var folderRecordSize = isV105 ? 24 : 16;
         var remaining = stream.Length - stream.Position;
-        if ((long)folderCount * folderRecordSize > remaining)
+        if (folderCount * folderRecordSize > remaining)
         {
             throw new InvalidDataException(
                 $"BSA folder count {folderCount} cannot fit in {stream.Length}-byte archive");
         }
 
-        if ((long)folderCount * folderRecordSize + (long)header.FileCount * 16 > remaining)
+        if (folderCount * folderRecordSize + (long)header.FileCount * 16 > remaining)
         {
             throw new InvalidDataException(
                 $"BSA file count {header.FileCount} cannot fit in {stream.Length}-byte archive");
@@ -263,7 +264,7 @@ public static class BsaParser
             return true;
         }
 
-        return System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data) == MorrowindBsaParser.MorrowindVersion;
+        return BinaryPrimitives.ReadUInt32LittleEndian(data) == MorrowindBsaParser.MorrowindVersion;
     }
 
     private static string ReadNullTerminatedString(BinaryReader reader)

@@ -24,13 +24,17 @@ public sealed record SptModel
 
     public SptWind? Wind { get; init; }
 
-    /// <summary>Post-tree branch-LOD parameters (token 9001 section). Null when the <c>.spt</c> omits the
-    /// section, in which case the engine's constructor defaults apply (no LOD0 decimation).</summary>
+    /// <summary>
+    ///     Post-tree branch-LOD parameters (token 9001 section). Null when the <c>.spt</c> omits the
+    ///     section, in which case the engine's constructor defaults apply (no LOD0 decimation).
+    /// </summary>
     public SptLodInfo? Lod { get; init; }
 
-    /// <summary>Post-tree frond parameters (token 13000 section → <c>CFrondEngine::Parse</c>). Null when
-    /// the <c>.spt</c> omits the section — the <c>CFrondEngine</c> ctor default is DISABLED, so branch
-    /// levels are only frond-gated when a section explicitly enables fronds.</summary>
+    /// <summary>
+    ///     Post-tree frond parameters (token 13000 section → <c>CFrondEngine::Parse</c>). Null when
+    ///     the <c>.spt</c> omits the section — the <c>CFrondEngine</c> ctor default is DISABLED, so branch
+    ///     levels are only frond-gated when a section explicitly enables fronds.
+    /// </summary>
     public SptFrond? Frond { get; init; }
 }
 
@@ -85,15 +89,19 @@ public sealed record SptLodInfo
     /// </summary>
     public float LeafLodSizeIncrease { get; init; } = 0.1f;
 
-    /// <summary>Token 9013 → <c>+0xe8</c>: upper bound of the per-branch demotion draw in
-    /// <c>BuildBranchLods</c> (<c>u = GetUniform(0, this)</c>; sort key zeroed when
-    /// <c>(1−u)·v + u·max &lt; 0</c>). Ctor default 0 = no demotion (draws still happen, from a private
-    /// <c>Reseed(-1)</c> RNG — never the tree stream).</summary>
+    /// <summary>
+    ///     Token 9013 → <c>+0xe8</c>: upper bound of the per-branch demotion draw in
+    ///     <c>BuildBranchLods</c> (<c>u = GetUniform(0, this)</c>; sort key zeroed when
+    ///     <c>(1−u)·v + u·max &lt; 0</c>). Ctor default 0 = no demotion (draws still happen, from a private
+    ///     <c>Reseed(-1)</c> RNG — never the tree stream).
+    /// </summary>
     public float BranchDemotionRandomness { get; init; }
 
-    /// <summary>Token 9014 → <c>+0xec</c>: guarantee fraction — branches with volume &gt;
-    /// <c>max·(1−this)</c> skip the demotion draw and are front-inserted ahead of the sorted rest.
-    /// Ctor default 0.05.</summary>
+    /// <summary>
+    ///     Token 9014 → <c>+0xec</c>: guarantee fraction — branches with volume &gt;
+    ///     <c>max·(1−this)</c> skip the demotion draw and are front-inserted ahead of the sorted rest.
+    ///     Ctor default 0.05.
+    /// </summary>
     public float BranchGuaranteeFraction { get; init; } = 0.05f;
 }
 
@@ -106,7 +114,7 @@ public sealed record SptGeneralParams
     public float Float2001 { get; init; } // +0x40
     public byte Byte2002 { get; init; }
     public float Float2003 { get; init; } // +0x44
-    public uint Token2005 { get; init; }  // LOD/config
+    public uint Token2005 { get; init; } // LOD/config
     public float Float2006 { get; init; } // +0x4C
     public float Float2007 { get; init; } // +0x50
 }
@@ -123,34 +131,37 @@ public sealed record SptBranch
     // Scalar tokens land at SIdvBranchInfo+0x00..+0x1D in Parse order (decompiled 360
     // SIdvBranchInfo::Parse; the +0x20/+0x24 scalars — including CIdvBranch::Compute's
     // ring-spacing pow() exponent — have NO tokens and keep their ctor defaults).
-    public uint UInt6008 { get; init; }   // +0x00 verts per ring − 1
-    public uint UInt6009 { get; init; }   // +0x04 ring count − 1
+    public uint UInt6008 { get; init; } // +0x00 verts per ring − 1
+    public uint UInt6009 { get; init; } // +0x04 ring count − 1
     public float Float6010 { get; init; } // +0x08 child/leaf spawn range start
     public float Float6011 { get; init; } // +0x0C child/leaf spawn range end
+
     public float Float6012 { get; init; } // +0x10 child frequency scale
+
     // Bark texture tilings + their "absolute" flags (SIdvBranchInfo ctor defaults 1.0 / 1.0 / true / false):
     // flag set → the tiling is consumed raw (repeats per revolution / per unit path); clear → the engine
     // scales it by radius·2π (U) or branch length/tree size (V) at CIdvBranch::Compute L2051-2062.
     public float Float6013 { get; init; } = 1f; // +0x14 bark U tiling
     public float Float6014 { get; init; } = 1f; // +0x18 bark V tiling
     public bool Bool6015 { get; init; } = true; // +0x1C absolute-U flag
-    public bool Bool6016 { get; init; }         // +0x1D absolute-V flag
+    public bool Bool6016 { get; init; } // +0x1D absolute-V flag
 }
 
 /// <summary>One leaf card (tokens 0x3EF..0x3F0 inside the 0x3F1 collection).</summary>
 public sealed record SptLeaf
 {
-    public byte Type { get; init; }          // 4000
+    public byte Type { get; init; } // 4000
+
     // 4001 = the per-leaf SIZE BASE vector (MakeLeaf adds the ±4002 jitter to it and CLeafGeometry
     // scales the card extents by the result). Every shipped .spt authors (1,1,1); default to that so
     // synthetic models without the token keep unit-scaled cards.
     public Vector3 Position { get; init; } = Vector3.One;
-    public float Size { get; init; }         // 4002 (size jitter bound; also the lighting-normal lerp t)
-    public string? Material { get; init; }   // 4003 (dev-machine .tga path in shipped files)
-    public Vector3 Corner0 { get; init; }    // 4004
-    public Vector3 Corner1 { get; init; }    // 4005
-    public Vector3 Corner2 { get; init; }    // 4006
-    public float Float4007 { get; init; }    // 4007
+    public float Size { get; init; } // 4002 (size jitter bound; also the lighting-normal lerp t)
+    public string? Material { get; init; } // 4003 (dev-machine .tga path in shipped files)
+    public Vector3 Corner0 { get; init; } // 4004
+    public Vector3 Corner1 { get; init; } // 4005
+    public Vector3 Corner2 { get; init; } // 4006
+    public float Float4007 { get; init; } // 4007
 }
 
 /// <summary>
@@ -168,7 +179,7 @@ public readonly record struct SptLeafTextureCoords(Vector2 Corner0, Vector2 Corn
         1 => Corner1,
         2 => Corner2,
         3 => Corner3,
-        _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        _ => throw new ArgumentOutOfRangeException(nameof(index))
     };
 }
 
@@ -184,8 +195,8 @@ public sealed record SptLeafTable
     public float Float3005 { get; init; }
     public byte Byte3006 { get; init; }
     public float Float3007 { get; init; } // +0x20: RoomForLeaf spacing factor
-    public uint UInt3008 { get; init; }   // +0x0c: RoomForLeaf placement mode
-    public byte Byte3009 { get; init; }   // +0
+    public uint UInt3008 { get; init; } // +0x0c: RoomForLeaf placement mode
+    public byte Byte3009 { get; init; } // +0
     public float Float3010 { get; init; } // +4
 }
 

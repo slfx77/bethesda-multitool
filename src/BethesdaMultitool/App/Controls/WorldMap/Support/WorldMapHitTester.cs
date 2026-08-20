@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -14,13 +15,14 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapHitTester
 {
-
     /// <summary>
     ///     Bounding area threshold (in square world units) above which an object is considered
     ///     "large" for hit testing purposes. Large objects are deprioritized so smaller objects
     ///     beneath them remain clickable.
     /// </summary>
     private const float LargeBoundsAreaThreshold = 500f * 500f;
+
+    [ThreadStatic] private static List<PlacedReference>? s_refHitScratch;
 
     /// <summary>
     ///     Tests whether worldPos hits the object's visual bounds (rotated AABB or circle fallback)
@@ -470,8 +472,6 @@ internal static class WorldMapHitTester
         internal PlacedReference? HoveredObject { get; } = hoveredObject;
         internal bool IsInteractive { get; } = isInteractive;
     }
-
-    [ThreadStatic] private static List<PlacedReference>? s_refHitScratch;
 
     /// <summary>Result of a click hit-test: the action the caller should take plus the object or cell it targets.</summary>
     internal readonly struct ClickResult

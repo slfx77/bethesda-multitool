@@ -301,7 +301,7 @@ internal static class VoiceResultRenderer
 
             if (!hasSpeaker || !hasQuest)
             {
-                var missing = (!hasSpeaker && !hasQuest) ? "speaker+quest"
+                var missing = !hasSpeaker && !hasQuest ? "speaker+quest"
                     : !hasSpeaker ? "speaker"
                     : "quest";
                 noMatchFiles.Add((vf.FormId, vf.FileName, vf.VoiceType, missing));

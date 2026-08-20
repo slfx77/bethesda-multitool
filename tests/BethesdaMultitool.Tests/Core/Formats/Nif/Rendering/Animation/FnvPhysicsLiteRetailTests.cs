@@ -94,7 +94,7 @@ public sealed class FnvPhysicsLiteRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
-        return MeshArchiveSet.Open(bsaPath!, null, false, false);
+        return MeshArchiveSet.Open(bsaPath!, null, false);
     }
 
     private static (byte[] Data, NifInfo Nif) Extract(MeshArchiveSet archives, string path)

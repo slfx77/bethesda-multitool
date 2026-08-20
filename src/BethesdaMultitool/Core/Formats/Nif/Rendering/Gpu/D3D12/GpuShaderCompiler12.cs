@@ -20,8 +20,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal static class GpuShaderCompiler12
 {
-    private static readonly Logger Log = Logger.Instance;
-
     /// <summary>
     ///     <c>D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES</c>. Not present in Vortice's
     ///     <see cref="ShaderFlags" /> enum, hence the cast.
@@ -46,6 +44,8 @@ internal static class GpuShaderCompiler12
 
     /// <summary>Logical-name prefix stamped onto every shader by the csproj EmbeddedResource item.</summary>
     private const string ResourcePrefix = "BethesdaMultitool.Shaders.";
+
+    private static readonly Logger Log = Logger.Instance;
 
     private static readonly Lazy<FrozenDictionary<string, string>> Index = new(BuildIndex);
 
@@ -102,8 +102,8 @@ internal static class GpuShaderCompiler12
             profile,
             EnableUnboundedDescriptorTables,
             EffectFlags.None,
-            out Blob? bytecode,
-            out Blob? errors);
+            out var bytecode,
+            out var errors);
 
         if (result.Failure || bytecode is null)
         {
@@ -119,7 +119,11 @@ internal static class GpuShaderCompiler12
         {
             var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             Interlocked.Increment(ref _compileCount);
-            lock (Index) { _totalCompileMilliseconds += elapsed; }
+            lock (Index)
+            {
+                _totalCompileMilliseconds += elapsed;
+            }
+
             // Compile cost was previously never measured anywhere, so nobody could tell that
             // water.frag.hlsl was being compiled nine times per startup.
             Log.Debug(
@@ -168,8 +172,10 @@ internal static class GpuShaderCompiler12
     }
 
     private static string BuildCacheKey(
-        string fileName, string entryPoint, string profile, ShaderMacro[] macros) =>
-        $"{fileName}|{entryPoint}|{profile}|{DescribeMacros(macros)}";
+        string fileName, string entryPoint, string profile, ShaderMacro[] macros)
+    {
+        return $"{fileName}|{entryPoint}|{profile}|{DescribeMacros(macros)}";
+    }
 
     /// <summary>Order-independent macro description, so equivalent permutations share a cache slot.</summary>
     private static string DescribeMacros(ShaderMacro[]? macros)

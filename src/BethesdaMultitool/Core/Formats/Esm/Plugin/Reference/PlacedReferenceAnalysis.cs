@@ -70,7 +70,7 @@ internal static class PlacedReferenceAnalysis
             var dx = placed.X - masterPosition.X;
             var dy = placed.Y - masterPosition.Y;
             var dz = placed.Z - masterPosition.Z;
-            if ((dx * dx) + (dy * dy) + (dz * dz) > 1.0f)
+            if (dx * dx + dy * dy + dz * dz > 1.0f)
             {
                 return true;
             }
@@ -123,6 +123,7 @@ internal static class PlacedReferenceAnalysis
                 result.Add(baseRecord.Header.Signature);
             }
         }
+
         return result;
     }
 }

@@ -130,7 +130,7 @@ public sealed class IntenseTrainingPerkRankRegressionTests
             RuntimeReaderTestFixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
 
         Assert.NotNull(perk);
-        Assert.Equal((byte?)expectedHidden, perk.Hidden);
+        Assert.Equal(expectedHidden, perk.Hidden);
         Assert.True(perk.IsHidden);
     }
 

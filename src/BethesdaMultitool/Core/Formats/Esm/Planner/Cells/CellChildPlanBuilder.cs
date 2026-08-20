@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 
@@ -8,8 +9,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     into Persistent / VWD / Temporary, plus the LAND and NAVM entries that lead the
 ///     Temporary bucket in vanilla file order (LAND, NAVMs, then placed refs).
 ///     <para>
-///     Split out of <see cref="CellSectionPlanner" /> in 2026-08-12 (retirement Stage H2),
-///     which was at the 500-line architecture ceiling.
+///         Split out of <see cref="CellSectionPlanner" /> in 2026-08-12 (retirement Stage H2),
+///         which was at the 500-line architecture ceiling.
 ///     </para>
 /// </summary>
 internal static class CellChildPlanBuilder
@@ -20,20 +21,20 @@ internal static class CellChildPlanBuilder
     ///     VWD (currently always empty — the <c>PlacedReference</c> model doesn't expose
     ///     a VWD flag), and Temporary (everything else + LAND + NAVMs).
     ///     <para>
-    ///     <c>DuplicateChildDrops</c> counts captures discarded because another capture in
-    ///     the same cell already claimed their emitted FormID; the caller raises a plan
-    ///     diagnostic so a silently-shrinking cell is visible.
+    ///         <c>DuplicateChildDrops</c> counts captures discarded because another capture in
+    ///         the same cell already claimed their emitted FormID; the caller raises a plan
+    ///         diagnostic so a silently-shrinking cell is visible.
     ///     </para>
     /// </summary>
     internal static (ImmutableArray<RecordPlan> Persistent,
         ImmutableArray<RecordPlan> Vwd,
         ImmutableArray<RecordPlan> Temporary,
         int DuplicateChildDrops) BuildChildPlans(
-        CellCatalogEntry entry,
-        IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
-        IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
-        CellChildAllocator.AllocationResult allocations,
-        IReadOnlySet<uint> masterFormIds)
+            CellCatalogEntry entry,
+            IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
+            IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
+            CellChildAllocator.AllocationResult allocations,
+            IReadOnlySet<uint> masterFormIds)
     {
         var duplicateChildDrops = 0;
         if (entry.DmpModel is null)
@@ -102,7 +103,7 @@ internal static class CellChildPlanBuilder
     }
 
     private static RecordPlan? BuildPlacedRefPlan(
-        Models.World.PlacedReference placed,
+        PlacedReference placed,
         CellChildAllocator.AllocationResult allocations,
         IReadOnlySet<uint> masterFormIds)
     {
@@ -137,30 +138,33 @@ internal static class CellChildPlanBuilder
                 PolicyId = "CellSectionPlanner.PlacedRef." + disposition,
                 Reason = inMaster
                     ? "DMP captured a placed ref sharing FormID with master; emit override."
-                    : "DMP captured a placed ref without master counterpart; allocated plugin FormID.",
-            },
+                    : "DMP captured a placed ref without master counterpart; allocated plugin FormID."
+            }
         };
     }
 
-    private static RecordPlan BuildLandPlan(CellLandDecision land, uint landFormId) => new()
+    private static RecordPlan BuildLandPlan(CellLandDecision land, uint landFormId)
     {
-        Type = "LAND",
-        Disposition = land.MasterLandFormId is null ? RecordDisposition.New : RecordDisposition.Override,
-        FormId = landFormId,
-        SourceFormId = land.MasterLandFormId,
-        Model = land,
-        Master = null,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        OverrideSubrecords = null,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance
+        return new RecordPlan
         {
-            PolicyId = land.MasterLandFormId is null ? "CellLandPlanner.New" : "CellLandPlanner.Override",
-            Reason = land.MasterLandFormId is { } masterLand
-                ? $"DMP capture for master CELL 0x{land.CellSourceFormId:X8} has complete {land.HeightSource} terrain; overrides master LAND 0x{masterLand:X8}."
-                : $"DMP-new exterior CELL 0x{land.CellSourceFormId:X8} has {land.HeightSource} terrain.",
-        },
-    };
+            Type = "LAND",
+            Disposition = land.MasterLandFormId is null ? RecordDisposition.New : RecordDisposition.Override,
+            FormId = landFormId,
+            SourceFormId = land.MasterLandFormId,
+            Model = land,
+            Master = null,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            OverrideSubrecords = null,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance
+            {
+                PolicyId = land.MasterLandFormId is null ? "CellLandPlanner.New" : "CellLandPlanner.Override",
+                Reason = land.MasterLandFormId is { } masterLand
+                    ? $"DMP capture for master CELL 0x{land.CellSourceFormId:X8} has complete {land.HeightSource} terrain; overrides master LAND 0x{masterLand:X8}."
+                    : $"DMP-new exterior CELL 0x{land.CellSourceFormId:X8} has {land.HeightSource} terrain."
+            }
+        };
+    }
 
     private static RecordPlan? BuildNavmPlan(
         NavMeshRecord navm,
@@ -185,8 +189,8 @@ internal static class CellChildPlanBuilder
             Provenance = new PlanProvenance
             {
                 PolicyId = "CellSectionPlanner.Navm.New",
-                Reason = "DMP captured a NAVM without master counterpart; allocated plugin FormID.",
-            },
+                Reason = "DMP captured a NAVM without master counterpart; allocated plugin FormID."
+            }
         };
     }
 }

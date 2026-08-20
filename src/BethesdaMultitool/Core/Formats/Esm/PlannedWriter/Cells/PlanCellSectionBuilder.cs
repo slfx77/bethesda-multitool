@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -14,6 +13,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
+
 /// <summary>
 ///     The planner-side equivalent of legacy <see cref="CellGrupBuilder.BuildCellSection" />.
 ///     Walks <see cref="EmitPlan.CellsByFormId" />, encodes each cell's children via the
@@ -26,6 +26,7 @@ internal static class PlanCellSectionBuilder
 {
     private const uint PersistentFlag = 0x00000400u;
     private const uint CompressedFlag = 0x00040000u;
+
     public static byte[]? BuildCellSection(
         EmitPlan plan,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
@@ -35,6 +36,7 @@ internal static class PlanCellSectionBuilder
     {
         return BuildCellSectionCore(plan, masterByFormId, options, stats, masterIndex).SectionBytes;
     }
+
     /// <summary>
     ///     Full-result variant: also reports which NAVM FormIDs were written and which placed
     ///     refs/children the bundles ended up containing. The written-NAVM set is retained as
@@ -69,7 +71,7 @@ internal static class PlanCellSectionBuilder
         // The XESP census indexes every captured child, so only build it when a stats sink
         // is actually collecting.
         var xespClassifier = new PlannerXespParentClassifier(
-            plan, masterByFormId, masterRefFormIds, indexCapturedChildren: stats is not null);
+            plan, masterByFormId, masterRefFormIds, stats is not null);
 
         // Master ref FormIDs the plan emits anywhere (cross-cell moves included): a moved
         // ref's home cell must neither carry-forward nor tombstone it.
@@ -89,7 +91,7 @@ internal static class PlanCellSectionBuilder
             plan, masterByFormId, validFormIds, options, stats, masterIndex, masterRefFormIds,
             dmpBaseTypes, xespClassifier)
         {
-            GloballyEmittedMasterRefs = globallyEmittedMasterRefs,
+            GloballyEmittedMasterRefs = globallyEmittedMasterRefs
         };
 
         var bundles = ConvertCellsToBundles(plan, context, out var emittedNavmFormIds);
@@ -105,7 +107,7 @@ internal static class PlanCellSectionBuilder
         var newWorldspaces = BuildNewWorldspaces(plan, options);
 
         var sectionBytes = CellGrupBuilder.BuildCellSection(
-            bundles, masterByFormId, newWorldspacesByDmpFormId: newWorldspaces);
+            bundles, masterByFormId, newWorldspaces);
         return new CellSectionBuildResult(
             sectionBytes,
             emittedNavmFormIds,
@@ -148,6 +150,7 @@ internal static class PlanCellSectionBuilder
                     newTemp.Add(rec);
                     continue;
                 }
+
                 var sanitized = NavMeshByteRewriter.SanitizeNvexInNavmRecord(rec, validTargets, out _);
                 newTemp.Add(sanitized);
                 if (!ReferenceEquals(sanitized, rec))
@@ -155,6 +158,7 @@ internal static class PlanCellSectionBuilder
                     bundleChanged = true;
                 }
             }
+
             if (bundleChanged)
             {
                 bundles[b] = bundle with { TemporaryChildRecords = newTemp };
@@ -254,7 +258,7 @@ internal static class PlanCellSectionBuilder
                 IsMasterAnchored = isMasterAnchored,
                 IsInterior = cellPlan.Context.IsInterior,
                 DropRenderCullingMarkers = cellPlan.DropRenderCullingMarkers,
-                RefDecisions = cellPlan.RefDecisions,
+                RefDecisions = cellPlan.RefDecisions
             };
 
             var persistent = new List<byte[]>();
@@ -263,9 +267,12 @@ internal static class PlanCellSectionBuilder
             var landPrefix = new List<byte[]>();
             var navmPrefix = new List<byte[]>();
 
-            EncodeBucketChildren(cellPlan.PersistentChildren, 8, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
-            EncodeBucketChildren(cellPlan.VwdChildren, 10, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
-            EncodeBucketChildren(cellPlan.TemporaryChildren, 9, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
+            EncodeBucketChildren(cellPlan.PersistentChildren, 8, context, state, persistent, vwd, temporary, landPrefix,
+                navmPrefix);
+            EncodeBucketChildren(cellPlan.VwdChildren, 10, context, state, persistent, vwd, temporary, landPrefix,
+                navmPrefix);
+            EncodeBucketChildren(cellPlan.TemporaryChildren, 9, context, state, persistent, vwd, temporary, landPrefix,
+                navmPrefix);
 
             // Cell-emission gates are settled at plan time by CellChildVerdictPlanner's
             // PlanCellGates; the writer only applies them. (The inline re-computation that
@@ -311,7 +318,7 @@ internal static class PlanCellSectionBuilder
                 CellRecordBytes = cellRecordBytes,
                 PersistentChildRecords = persistent,
                 VwdChildRecords = vwd,
-                TemporaryChildRecords = temporaryAll,
+                TemporaryChildRecords = temporaryAll
             });
         }
 
@@ -350,9 +357,11 @@ internal static class PlanCellSectionBuilder
                         }
                     }
                 }
+
                 // LAND does not participate in genuine-child emission gates.
                 continue;
             }
+
             if (child.Type == "NAVM")
             {
                 if (context.Options.DiagnosticSkipCellNavm)
@@ -361,6 +370,7 @@ internal static class PlanCellSectionBuilder
                     context.Stats?.IncrementDropReason("navm.diagnostic-skip");
                     continue;
                 }
+
                 var navmBytes = EncodeNavm(
                     child, state.CellFormId, context.Plan.SourceToEmittedFormId,
                     context.Plan.NavmDoorLinks, context.Options);
@@ -368,16 +378,19 @@ internal static class PlanCellSectionBuilder
                 {
                     continue;
                 }
+
                 navmPrefix.Add(navmBytes);
                 state.EmittedNavmFormIds.Add(child.FormId);
                 state.GenuineChildCount++;
                 state.GenuineNavmCount++;
                 continue;
             }
+
             if (child.Type is not ("REFR" or "ACHR" or "ACRE" or "PGRE"))
             {
                 continue;
             }
+
             // Overrides re-bucket to master's original child GRUP (legacy parity); new
             // refs keep the planner's persistence-based bucket.
             var routeGroupType = plannedGroupType;
@@ -386,11 +399,13 @@ internal static class PlanCellSectionBuilder
             {
                 continue;
             }
+
             state.GenuineChildCount++;
             if (child.Disposition == RecordDisposition.New)
             {
                 state.GenuineNewCount++;
             }
+
             switch (routeGroupType)
             {
                 case 8:
@@ -455,8 +470,8 @@ internal static class PlanCellSectionBuilder
         if (child.Disposition != RecordDisposition.New)
         {
             return null; // Master (KeepMaster) NAVMs are intentionally not emitted: engine RE
-                         // shows they load from master via the cell's TESForm file-list merge,
-                         // so copying them is redundant.
+            // shows they load from master via the cell's TESForm file-list merge,
+            // so copying them is redundant.
         }
 
         return PlannedNavmEncoder.EncodeRecord(

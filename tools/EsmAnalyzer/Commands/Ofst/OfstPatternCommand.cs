@@ -1,6 +1,6 @@
-using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Ofst.OfstDataLoader;
 using static EsmAnalyzer.Commands.Ofst.OfstMathUtils;
 
@@ -18,7 +18,7 @@ public static class OfstPatternCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum number of entries to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum number of entries to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
         var csvOption = new Option<string?>("--csv") { Description = "Write full order to CSV" };
 
         command.Arguments.Add(fileArg);
@@ -42,7 +42,7 @@ public static class OfstPatternCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum number of patterns to display", DefaultValueFactory = _ => 20 };
+            { Description = "Maximum number of patterns to display", DefaultValueFactory = _ => 20 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -63,13 +63,13 @@ public static class OfstPatternCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum consecutive entries to analyze", DefaultValueFactory = _ => 500 };
+            { Description = "Maximum consecutive entries to analyze", DefaultValueFactory = _ => 500 };
         var histogramOption = new Option<bool>("--histogram")
-        { Description = "Show delta histogram instead of raw deltas" };
+            { Description = "Show delta histogram instead of raw deltas" };
         var runsOption = new Option<bool>("--runs")
-        { Description = "Show run-length encoded movement patterns" };
+            { Description = "Show run-length encoded movement patterns" };
         var csvOption = new Option<string?>("--csv")
-        { Description = "Export deltas to CSV file" };
+            { Description = "Export deltas to CSV file" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -158,16 +158,16 @@ public static class OfstPatternCommand
         var hilbertSize = NextPow2(maxDim);
         var maxAbsX = Math.Max(Math.Abs(minX), Math.Abs(maxX));
         var maxAbsY = Math.Max(Math.Abs(minY), Math.Abs(maxY));
-        var centeredCols = (maxAbsX * 2) + 1;
-        var centeredRows = (maxAbsY * 2) + 1;
+        var centeredCols = maxAbsX * 2 + 1;
+        var centeredRows = maxAbsY * 2 + 1;
         var centeredSize = NextPow2(Math.Max(centeredCols, centeredRows));
 
-        scores.Add(("row-major", Pearson(ordered, e => (e.Row * columns) + e.Col)));
+        scores.Add(("row-major", Pearson(ordered, e => e.Row * columns + e.Col)));
         scores.Add(("row-major-serp", Pearson(ordered, e => RowMajorSerp(e.Row, e.Col, columns))));
         scores.Add(("morton", Pearson(ordered, e => Morton2D((uint)e.Col, (uint)e.Row))));
         scores.Add(("hilbert", Pearson(ordered, e => HilbertIndex(hilbertSize, e.Col, e.Row))));
         scores.Add(("centered-row-major",
-            Pearson(ordered, e => ((e.GridY + maxAbsY) * centeredCols) + e.GridX + maxAbsX)));
+            Pearson(ordered, e => (e.GridY + maxAbsY) * centeredCols + e.GridX + maxAbsX)));
         scores.Add(("centered-morton",
             Pearson(ordered, e => Morton2D((uint)(e.GridX + maxAbsX), (uint)(e.GridY + maxAbsY)))));
         scores.Add(("centered-hilbert",
@@ -361,7 +361,7 @@ public static class OfstPatternCommand
         var histogram = deltas
             .GroupBy(d => (d.DeltaX, d.DeltaY))
             .Select(g => new
-            { Delta = g.Key, Count = g.Count(), Direction = GetDirectionName(g.Key.DeltaX, g.Key.DeltaY) })
+                { Delta = g.Key, Count = g.Count(), Direction = GetDirectionName(g.Key.DeltaX, g.Key.DeltaY) })
             .OrderByDescending(x => x.Count)
             .ThenBy(x => x.Delta.DeltaX)
             .ThenBy(x => x.Delta.DeltaY)

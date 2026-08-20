@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using Vortice.Direct3D12;
 using Xunit;
 

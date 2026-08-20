@@ -10,13 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 /// </summary>
 public sealed class ConditionFunctionTable
 {
-    private readonly ScriptFunctionSet _functions;
-
-    private ConditionFunctionTable(ScriptFunctionSet functions)
-    {
-        _functions = functions;
-    }
-
     private static readonly ConditionFunctionTable Fallout =
         new(ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas));
 
@@ -44,27 +37,42 @@ public sealed class ConditionFunctionTable
     private static readonly ConditionFunctionTable Unknown =
         new(ScriptFunctionTables.For(BethesdaGame.Unknown));
 
-    public static ConditionFunctionTable For(BethesdaGame game) => game switch
+    private readonly ScriptFunctionSet _functions;
+
+    private ConditionFunctionTable(ScriptFunctionSet functions)
     {
-        BethesdaGame.Unknown => Unknown,
-        BethesdaGame.Morrowind => Morrowind,
-        BethesdaGame.Oblivion => Oblivion,
-        BethesdaGame.Fallout3 => Fallout3,
-        BethesdaGame.FalloutNewVegas => Fallout,
-        BethesdaGame.Skyrim => Skyrim,
-        BethesdaGame.Fallout4 => Fallout4,
-        BethesdaGame.Fallout76 => Fallout76,
-        BethesdaGame.Starfield => Starfield,
-        _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
-    };
+        _functions = functions;
+    }
 
     public BethesdaGame Game => _functions.Game;
 
-    /// <summary>The function's display name, or a hex placeholder when unknown.</summary>
-    public string GetName(ushort functionIndex) =>
-        _functions.GetConditionFunction(functionIndex)?.Name ?? $"Func 0x{functionIndex:X4}";
+    public static ConditionFunctionTable For(BethesdaGame game)
+    {
+        return game switch
+        {
+            BethesdaGame.Unknown => Unknown,
+            BethesdaGame.Morrowind => Morrowind,
+            BethesdaGame.Oblivion => Oblivion,
+            BethesdaGame.Fallout3 => Fallout3,
+            BethesdaGame.FalloutNewVegas => Fallout,
+            BethesdaGame.Skyrim => Skyrim,
+            BethesdaGame.Fallout4 => Fallout4,
+            BethesdaGame.Fallout76 => Fallout76,
+            BethesdaGame.Starfield => Starfield,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null)
+        };
+    }
 
-    public ScriptFunctionDef? Get(ushort functionIndex) => _functions.GetConditionFunction(functionIndex);
+    /// <summary>The function's display name, or a hex placeholder when unknown.</summary>
+    public string GetName(ushort functionIndex)
+    {
+        return _functions.GetConditionFunction(functionIndex)?.Name ?? $"Func 0x{functionIndex:X4}";
+    }
+
+    public ScriptFunctionDef? Get(ushort functionIndex)
+    {
+        return _functions.GetConditionFunction(functionIndex);
+    }
 
     /// <summary>
     ///     Tries to classify parameter <paramref name="paramIndex" /> (0 or 1) of a resolved function
@@ -108,9 +116,11 @@ public sealed class ConditionFunctionTable
         int paramIndex,
         byte conditionType,
         uint? runOn,
-        out ConditionParamKind kind) =>
-        TryClassifyParam(
-            functionIndex, paramIndex, conditionType, runOn, parameter1Value: null, out kind);
+        out ConditionParamKind kind)
+    {
+        return TryClassifyParam(
+            functionIndex, paramIndex, conditionType, runOn, null, out kind);
+    }
 
     /// <summary>
     ///     Context-aware classification including the raw first parameter. Skyrim GetVATSValue uses
@@ -167,7 +177,7 @@ public sealed class ConditionFunctionTable
 
         // In FO4/FO76/SF1 xEdit, this exact case keeps param1 as the Package FormID: the alias is the
         // Run-On-selected physical Parameter #3. Without Run On, guessing either way is unsafe.
-        if (Game is (BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield) &&
+        if (Game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield &&
             useAliases && functionIndex == 0x0A1 && paramIndex == 0)
         {
             if (runOn is null)
@@ -190,86 +200,99 @@ public sealed class ConditionFunctionTable
     ///     any metadata miss. This deliberately returns the declared base kind; CTDA consumers that
     ///     possess condition flags must call the context-aware overload above.
     /// </summary>
-    public ConditionParamKind ClassifyParam(ushort functionIndex, int paramIndex) =>
-        TryClassifyParam(functionIndex, paramIndex, out var kind) ? kind : ConditionParamKind.Numeric;
+    public ConditionParamKind ClassifyParam(ushort functionIndex, int paramIndex)
+    {
+        return TryClassifyParam(functionIndex, paramIndex, out var kind) ? kind : ConditionParamKind.Numeric;
+    }
 
     /// <summary>Classifies a single parameter definition under this table's game numbering.</summary>
-    public ConditionParamKind Classify(ScriptFunctionParamDef param) =>
-        Game switch
+    public ConditionParamKind Classify(ScriptFunctionParamDef param)
+    {
+        return Game switch
         {
             BethesdaGame.Oblivion => ClassifyTes4(param.ObType),
             BethesdaGame.Fallout4 => ClassifyFallout4(param.Fallout4Type),
-            _ => ClassifyFallout(param.Type),
+            _ => ClassifyFallout(param.Type)
         };
+    }
 
     // FO3/FNV CTDA scalar and enum parameter kinds. ActorValue is the numeric AV enum index, not an
     // AVIF FormID; ScriptVar likewise stays numeric as the variable index paired with a Quest param.
-    private static ConditionParamKind ClassifyFallout(ScriptParamType type) => type switch
+    private static ConditionParamKind ClassifyFallout(ScriptParamType type)
     {
-        ScriptParamType.Char or
-            ScriptParamType.Int or
-            ScriptParamType.Float or
-            ScriptParamType.ActorValue or
-            ScriptParamType.Axis or
-            ScriptParamType.AnimGroup or
-            ScriptParamType.Sex or
-            ScriptParamType.ScriptVar or
-            ScriptParamType.Stage or
-            ScriptParamType.CrimeType or
-            ScriptParamType.FormType or
-            ScriptParamType.MiscStat or
-            ScriptParamType.VatsValue or
-            ScriptParamType.VatsValueData or
-            ScriptParamType.Alignment or
-            ScriptParamType.CritStage => ConditionParamKind.Numeric,
-        _ => ConditionParamKind.FormId,
-    };
+        return type switch
+        {
+            ScriptParamType.Char or
+                ScriptParamType.Int or
+                ScriptParamType.Float or
+                ScriptParamType.ActorValue or
+                ScriptParamType.Axis or
+                ScriptParamType.AnimGroup or
+                ScriptParamType.Sex or
+                ScriptParamType.ScriptVar or
+                ScriptParamType.Stage or
+                ScriptParamType.CrimeType or
+                ScriptParamType.FormType or
+                ScriptParamType.MiscStat or
+                ScriptParamType.VatsValue or
+                ScriptParamType.VatsValueData or
+                ScriptParamType.Alignment or
+                ScriptParamType.CritStage => ConditionParamKind.Numeric,
+            _ => ConditionParamKind.FormId
+        };
+    }
 
     // TES4 numbering (ObScriptParamType). Non-FormID kinds: strings, plain numbers, and the
     // by-index enums (ActorValue is a skill/attribute index, VariableName a quest-variable index).
-    private static ConditionParamKind ClassifyTes4(ObScriptParamType type) => type switch
+    private static ConditionParamKind ClassifyTes4(ObScriptParamType type)
     {
-        ObScriptParamType.String or
-            ObScriptParamType.Integer or
-            ObScriptParamType.Float or
-            ObScriptParamType.ActorValue or
-            ObScriptParamType.Axis or
-            ObScriptParamType.AnimGroup or
-            ObScriptParamType.Sex or
-            ObScriptParamType.VariableName or
-            ObScriptParamType.QuestStage or
-            ObScriptParamType.CrimeType or
-            ObScriptParamType.FormType => ConditionParamKind.Numeric,
-        _ => ConditionParamKind.FormId,
-    };
+        return type switch
+        {
+            ObScriptParamType.String or
+                ObScriptParamType.Integer or
+                ObScriptParamType.Float or
+                ObScriptParamType.ActorValue or
+                ObScriptParamType.Axis or
+                ObScriptParamType.AnimGroup or
+                ObScriptParamType.Sex or
+                ObScriptParamType.VariableName or
+                ObScriptParamType.QuestStage or
+                ObScriptParamType.CrimeType or
+                ObScriptParamType.FormType => ConditionParamKind.Numeric,
+            _ => ConditionParamKind.FormId
+        };
+    }
 
     // This is only a defensive direct-call interpretation. FO4 CTDA paths use the generated
     // condition-specific xEdit storage kinds because script parameters are not always a one-to-one
     // physical CTDA mapping (GetEventData is the canonical counterexample).
-    private static ConditionParamKind ClassifyFallout4(Fallout4ScriptParamType type) => type switch
+    private static ConditionParamKind ClassifyFallout4(Fallout4ScriptParamType type)
     {
-        Fallout4ScriptParamType.Char or
-            Fallout4ScriptParamType.Int or
-            Fallout4ScriptParamType.Float or
-            Fallout4ScriptParamType.Axis or
-            Fallout4ScriptParamType.AnimGroup or
-            Fallout4ScriptParamType.Sex or
-            Fallout4ScriptParamType.ScriptVar or
-            Fallout4ScriptParamType.Stage or
-            Fallout4ScriptParamType.CrimeType or
-            Fallout4ScriptParamType.FormType or
-            Fallout4ScriptParamType.MiscStat or
-            Fallout4ScriptParamType.VatsValue or
-            Fallout4ScriptParamType.VatsValueData or
-            Fallout4ScriptParamType.EventFunction or
-            Fallout4ScriptParamType.EventFunctionMember or
-            Fallout4ScriptParamType.Alignment or
-            Fallout4ScriptParamType.CastingSource or
-            Fallout4ScriptParamType.WardState or
-            Fallout4ScriptParamType.PackageDataNumeric or
-            Fallout4ScriptParamType.MovementIdleFromState or
-            Fallout4ScriptParamType.MovementIdleToState or
-            Fallout4ScriptParamType.SceneAction => ConditionParamKind.Numeric,
-        _ => ConditionParamKind.FormId,
-    };
+        return type switch
+        {
+            Fallout4ScriptParamType.Char or
+                Fallout4ScriptParamType.Int or
+                Fallout4ScriptParamType.Float or
+                Fallout4ScriptParamType.Axis or
+                Fallout4ScriptParamType.AnimGroup or
+                Fallout4ScriptParamType.Sex or
+                Fallout4ScriptParamType.ScriptVar or
+                Fallout4ScriptParamType.Stage or
+                Fallout4ScriptParamType.CrimeType or
+                Fallout4ScriptParamType.FormType or
+                Fallout4ScriptParamType.MiscStat or
+                Fallout4ScriptParamType.VatsValue or
+                Fallout4ScriptParamType.VatsValueData or
+                Fallout4ScriptParamType.EventFunction or
+                Fallout4ScriptParamType.EventFunctionMember or
+                Fallout4ScriptParamType.Alignment or
+                Fallout4ScriptParamType.CastingSource or
+                Fallout4ScriptParamType.WardState or
+                Fallout4ScriptParamType.PackageDataNumeric or
+                Fallout4ScriptParamType.MovementIdleFromState or
+                Fallout4ScriptParamType.MovementIdleToState or
+                Fallout4ScriptParamType.SceneAction => ConditionParamKind.Numeric,
+            _ => ConditionParamKind.FormId
+        };
+    }
 }

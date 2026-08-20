@@ -14,13 +14,30 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class GeometryArenaAllocator
 {
-    private readonly long _blockSize;
     private readonly int _alignment;
     private readonly List<List<FreeSpan>> _blocks = new();
     private readonly List<long> _blockSizes = new();
     private readonly Dictionary<(int Block, long Offset), ulong> _liveAllocations = new();
-    private long _allocatedBytes;
     private ulong _nextAllocationId = 1;
+
+    /// <summary>Creates an arena that sub-allocates spans from fixed-size blocks.</summary>
+    /// <param name="blockSize">Bytes per block (rounded down to a multiple of <paramref name="alignment" />).</param>
+    /// <param name="alignment">
+    ///     Power-of-two alignment applied to every allocation. 16 satisfies both
+    ///     vertex-stride and R16 index-buffer location requirements.
+    /// </param>
+    public GeometryArenaAllocator(long blockSize, int alignment = 16)
+    {
+        if (blockSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(blockSize), "Must be > 0.");
+        if (alignment <= 0 || (alignment & (alignment - 1)) != 0)
+            throw new ArgumentOutOfRangeException(nameof(alignment), "Must be a power of two.");
+
+        _alignment = alignment;
+        BlockSize = AlignDown(blockSize, alignment);
+        if (BlockSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(blockSize), "Block size is smaller than the alignment.");
+    }
 
     /// <summary>
     ///     Opt-in free validation (FALLOUT_VIEWER_GEOMETRY_VALIDATE): tracks live allocations by
@@ -32,35 +49,23 @@ internal sealed class GeometryArenaAllocator
     /// </summary>
     public bool StrictValidation { get; set; }
 
-    /// <summary>Creates an arena that sub-allocates spans from fixed-size blocks.</summary>
-    /// <param name="blockSize">Bytes per block (rounded down to a multiple of <paramref name="alignment" />).</param>
-    /// <param name="alignment">Power-of-two alignment applied to every allocation. 16 satisfies both
-    ///     vertex-stride and R16 index-buffer location requirements.</param>
-    public GeometryArenaAllocator(long blockSize, int alignment = 16)
-    {
-        if (blockSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(blockSize), "Must be > 0.");
-        if (alignment <= 0 || (alignment & (alignment - 1)) != 0)
-            throw new ArgumentOutOfRangeException(nameof(alignment), "Must be a power of two.");
-
-        _alignment = alignment;
-        _blockSize = AlignDown(blockSize, alignment);
-        if (_blockSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(blockSize), "Block size is smaller than the alignment.");
-    }
-
     /// <summary>Blocks created so far. Grows when an allocation does not fit any existing block.</summary>
     public int BlockCount => _blocks.Count;
 
     /// <summary>Usable bytes per STANDARD block (oversized allocations get larger dedicated blocks).</summary>
-    public long BlockSize => _blockSize;
-
-    /// <summary>Actual usable bytes of block <paramref name="blockIndex" /> — the standard size, or
-    /// the allocation size that forced a dedicated oversized block.</summary>
-    public long BlockSizeOf(int blockIndex) => _blockSizes[blockIndex];
+    public long BlockSize { get; }
 
     /// <summary>Currently-allocated (not freed) bytes across all blocks, including alignment padding.</summary>
-    public long AllocatedBytes => _allocatedBytes;
+    public long AllocatedBytes { get; private set; }
+
+    /// <summary>
+    ///     Actual usable bytes of block <paramref name="blockIndex" /> — the standard size, or
+    ///     the allocation size that forced a dedicated oversized block.
+    /// </summary>
+    public long BlockSizeOf(int blockIndex)
+    {
+        return _blockSizes[blockIndex];
+    }
 
     /// <summary>
     ///     Reserves <paramref name="size" /> bytes (rounded up to the alignment). Uses the first
@@ -79,24 +84,26 @@ internal sealed class GeometryArenaAllocator
         {
             if (TryAllocateInBlock(b, alignedSize, out var offset))
             {
-                _allocatedBytes += alignedSize;
+                AllocatedBytes += alignedSize;
                 return Issue(b, offset, size, alignedSize);
             }
         }
 
         // No existing block had room → append a fresh, fully-free block and allocate at its front.
-        var newBlockSize = Math.Max(_blockSize, alignedSize);
+        var newBlockSize = Math.Max(BlockSize, alignedSize);
         _blocks.Add(new List<FreeSpan> { new(0, newBlockSize) });
         _blockSizes.Add(newBlockSize);
         var blockIndex = _blocks.Count - 1;
         TryAllocateInBlock(blockIndex, alignedSize, out var newOffset);
-        _allocatedBytes += alignedSize;
+        AllocatedBytes += alignedSize;
         return Issue(blockIndex, newOffset, size, alignedSize);
     }
 
-    /// <summary>Returns an allocation's range to its block's free-list, coalescing with neighbors.
-    /// In strict mode a double-free, a free of a recycled range, or a free whose span overlaps the
-    /// free-list throws HERE, so the offending caller is named by the stack trace.</summary>
+    /// <summary>
+    ///     Returns an allocation's range to its block's free-list, coalescing with neighbors.
+    ///     In strict mode a double-free, a free of a recycled range, or a free whose span overlaps the
+    ///     free-list throws HERE, so the offending caller is named by the stack trace.
+    /// </summary>
     public void Free(ArenaAllocation allocation)
     {
         if ((uint)allocation.BlockIndex >= (uint)_blocks.Count)
@@ -109,7 +116,7 @@ internal sealed class GeometryArenaAllocator
         }
 
         InsertAndCoalesce(_blocks[allocation.BlockIndex], allocation.Offset, allocation.AlignedSize);
-        _allocatedBytes -= allocation.AlignedSize;
+        AllocatedBytes -= allocation.AlignedSize;
     }
 
     /// <summary>
@@ -252,9 +259,15 @@ internal sealed class GeometryArenaAllocator
         spans.Insert(i, merged);
     }
 
-    private static long AlignUp(long value, int alignment) => (value + alignment - 1) & ~((long)alignment - 1);
+    private static long AlignUp(long value, int alignment)
+    {
+        return (value + alignment - 1) & ~((long)alignment - 1);
+    }
 
-    private static long AlignDown(long value, int alignment) => value & ~((long)alignment - 1);
+    private static long AlignDown(long value, int alignment)
+    {
+        return value & ~((long)alignment - 1);
+    }
 
     private readonly record struct FreeSpan(long Offset, long Length);
 }
@@ -267,7 +280,11 @@ internal sealed class GeometryArenaAllocator
 ///     values) letting diagnostics tell a live range from one freed and re-issued at the same offset.
 /// </summary>
 internal readonly record struct ArenaAllocation(
-    int BlockIndex, long Offset, long Size, long AlignedSize, ulong AllocationId = 0);
+    int BlockIndex,
+    long Offset,
+    long Size,
+    long AlignedSize,
+    ulong AllocationId = 0);
 
 /// <summary>Liveness verdicts for <see cref="GeometryArenaAllocator.QueryLiveness" />.</summary>
 internal enum ArenaLiveness
@@ -281,7 +298,9 @@ internal enum ArenaLiveness
     /// <summary>The range was freed and has not been re-issued.</summary>
     NotLive,
 
-    /// <summary>The range was freed and re-issued to a DIFFERENT allocation — reads through stale
-    /// views now fetch that other allocation's bytes.</summary>
-    Recycled,
+    /// <summary>
+    ///     The range was freed and re-issued to a DIFFERENT allocation — reads through stale
+    ///     views now fetch that other allocation's bytes.
+    /// </summary>
+    Recycled
 }

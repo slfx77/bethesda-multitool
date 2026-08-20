@@ -5,7 +5,7 @@ internal enum ParticleControllerCycle : byte
 {
     Loop = 0,
     Reverse = 1,
-    Clamp = 2,
+    Clamp = 2
 }
 
 /// <summary>Authored NiFloatData interpolation basis.</summary>
@@ -14,7 +14,7 @@ internal enum ParticleRateInterpolation : uint
     Linear = 1,
     Quadratic = 2,
     Tbc = 3,
-    Constant = 5,
+    Constant = 5
 }
 
 /// <summary>
@@ -54,7 +54,7 @@ internal readonly record struct ParticleControllerTiming(
         {
             ParticleControllerCycle.Loop => StartTime + PositiveModulo(localTime - StartTime, length),
             ParticleControllerCycle.Reverse => MapReverse(localTime, length),
-            _ => Math.Clamp(localTime, StartTime, StopTime),
+            _ => Math.Clamp(localTime, StartTime, StopTime)
         };
     }
 
@@ -121,9 +121,11 @@ internal sealed class ParticleRateControllerDefinition
     /// </summary>
     public bool? EmitterActiveConstant { get; init; }
 
-    /// <summary>Stepwise EmitterActive keys when the bool interpolator carries NiBoolData. Takes
-    /// precedence over <see cref="EmitterActiveConstant" />; evaluated on the SAME mapped clock as
-    /// the rate keys (one controller, one pair of clocks).</summary>
+    /// <summary>
+    ///     Stepwise EmitterActive keys when the bool interpolator carries NiBoolData. Takes
+    ///     precedence over <see cref="EmitterActiveConstant" />; evaluated on the SAME mapped clock as
+    ///     the rate keys (one controller, one pair of clocks).
+    /// </summary>
     public IReadOnlyList<ParticleBoolKey> EmitterActiveKeys { get; init; } = [];
 
     /// <summary>
@@ -167,8 +169,10 @@ internal sealed class ParticleRateControllerDefinition
         return float.IsFinite(value) ? MathF.Max(0f, value) : 0f;
     }
 
-    /// <summary>Steps through the EmitterActive track at the already-mapped controller time. No
-    /// authored bool at all means no gate — the rate alone decides, as before.</summary>
+    /// <summary>
+    ///     Steps through the EmitterActive track at the already-mapped controller time. No
+    ///     authored bool at all means no gate — the rate alone decides, as before.
+    /// </summary>
     private bool EmitterActiveAt(float mappedTime)
     {
         if (EmitterActiveKeys.Count > 0)

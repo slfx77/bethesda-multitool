@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
@@ -388,4 +389,3 @@ internal static class EsmCharacterPropertyBuilder
         });
     }
 }
-

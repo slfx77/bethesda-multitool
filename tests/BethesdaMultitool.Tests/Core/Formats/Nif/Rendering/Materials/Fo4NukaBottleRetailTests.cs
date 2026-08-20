@@ -49,7 +49,7 @@ public sealed class Fo4NukaBottleRetailTests
         Assert.Equal(
             @"materials\Props\NukaColaGlass.BGEM",
             glass.ShaderMetadata?.MaterialPath,
-            ignoreCase: true);
+            true);
 
         var bottle = Assert.Single(model.Submeshes, static submesh =>
             string.Equals(submesh.ShapeName, "NukaCola:0", StringComparison.Ordinal));
@@ -57,15 +57,15 @@ public sealed class Fo4NukaBottleRetailTests
         Assert.Equal(
             @"materials\Props\NukaColaFull.BGSM",
             bottle.ShaderMetadata?.MaterialPath,
-            ignoreCase: true);
+            true);
         Assert.True((bottle.ShaderMetadata!.ShaderFlags!.Value & (1u << 16)) != 0);
-        Assert.Equal(@"props/nukacolafull_d.dds", bottle.DiffuseTexturePath, ignoreCase: true);
+        Assert.Equal(@"props/nukacolafull_d.dds", bottle.DiffuseTexturePath, true);
 
         // This row still has a real residual: the glass material intentionally has no diffuse and
         // instead authors a cubemap/effect route that this bounded fix does not implement.
         var glassMaterial = Assert.IsType<BgsmMaterial>(
             resolver.TryGetMaterial(@"materials\Props\NukaColaGlass.BGEM"));
         Assert.Null(glassMaterial.Diffuse);
-        Assert.Equal(@"Shared/Cubemaps/Bronze_e.dds", glassMaterial.EnvironmentMap, ignoreCase: true);
+        Assert.Equal(@"Shared/Cubemaps/Bronze_e.dds", glassMaterial.EnvironmentMap, true);
     }
 }

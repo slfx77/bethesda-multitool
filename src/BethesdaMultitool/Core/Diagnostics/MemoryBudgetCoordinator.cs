@@ -3,8 +3,12 @@ using System.Globalization;
 namespace BethesdaMultitool.Core.Diagnostics;
 
 /// <summary>
-///     Optional safety valve over the <see cref="ResourceRegistry" />. <b>Trimming is OFF by
-///     default</b>: the app may use as much RAM as it needs. The registry, the diagnostics panel,
+///     Optional safety valve over the <see cref="ResourceRegistry" />.
+///     <b>
+///         Trimming is OFF by
+///         default
+///     </b>
+///     : the app may use as much RAM as it needs. The registry, the diagnostics panel,
 ///     and the CLI stats are the point of centralization — a shared usage pattern plus visibility
 ///     for hunting leaks — not a RAM limiter. This coordinator only sheds caches when a caller
 ///     opts in by setting a positive <c>FALLOUT_MEMORY_BUDGET_MB</c>.
@@ -32,34 +36,13 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
 
     private static MemoryBudgetCoordinator? _instance;
     private static readonly Lock InstanceLock = new();
+    private readonly long _budgetBytes;
+    private readonly bool _disabled;
+    private readonly Func<double> _memoryLoadRatio;
 
     private readonly ResourceRegistry _registry;
-    private readonly long _budgetBytes;
-    private readonly Func<double> _memoryLoadRatio;
-    private readonly bool _disabled;
-    private Timer? _timer;
     private int _passRunning;
-
-    /// <summary>Process-wide coordinator over <see cref="ResourceRegistry.Instance" />, configured from environment.</summary>
-    public static MemoryBudgetCoordinator Instance
-    {
-        get
-        {
-            if (_instance == null)
-            {
-                lock (InstanceLock)
-                {
-                    _instance ??= new MemoryBudgetCoordinator(
-                        ResourceRegistry.Instance,
-                        ResolveBudgetBytes(),
-                        memoryLoadRatio: null,
-                        disabled: EnvironmentVariables.IsEnabled(EnvironmentVariables.Memory.Disable));
-                }
-            }
-
-            return _instance;
-        }
-    }
+    private Timer? _timer;
 
     internal MemoryBudgetCoordinator(
         ResourceRegistry registry,
@@ -73,6 +56,33 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
         _disabled = disabled;
     }
 
+    /// <summary>Process-wide coordinator over <see cref="ResourceRegistry.Instance" />, configured from environment.</summary>
+    public static MemoryBudgetCoordinator Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                lock (InstanceLock)
+                {
+                    _instance ??= new MemoryBudgetCoordinator(
+                        ResourceRegistry.Instance,
+                        ResolveBudgetBytes(),
+                        null,
+                        EnvironmentVariables.IsEnabled(EnvironmentVariables.Memory.Disable));
+                }
+            }
+
+            return _instance;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+
     /// <summary>Starts the periodic check timer. Idempotent; a no-op when disabled.</summary>
     public void Start()
     {
@@ -82,7 +92,7 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
         }
 
         var interval = TimeSpan.FromSeconds(EnvironmentVariables.GetClampedInt(
-            EnvironmentVariables.Memory.CheckIntervalSeconds, defaultValue: 5, min: 1, max: 3600));
+            EnvironmentVariables.Memory.CheckIntervalSeconds, 5, 1, 3600));
         _timer = new Timer(static state => ((MemoryBudgetCoordinator)state!).OnTimerTick(), this, interval, interval);
     }
 
@@ -93,12 +103,6 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
         {
             RunPass(reason);
         }
-    }
-
-    public void Dispose()
-    {
-        _timer?.Dispose();
-        _timer = null;
     }
 
     private void OnTimerTick()

@@ -25,7 +25,7 @@ public sealed class SounEncoder : IRecordEncoder
         ["Flags"] = m => m.Flags,
         ["StaticAttenuation"] = m => m.StaticAttenuation,
         ["EndTime"] = m => m.EndTime,
-        ["StartTime"] = m => m.StartTime,
+        ["StartTime"] = m => m.StartTime
     };
 
     public string RecordType => "SOUN";

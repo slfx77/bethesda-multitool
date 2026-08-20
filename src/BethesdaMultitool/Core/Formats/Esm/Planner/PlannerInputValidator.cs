@@ -41,7 +41,7 @@ internal static class PlannerInputValidator
         foreach (var (sourceFormId, masterFormId) in aliases)
         {
             if (sourceFormId == 0 || sourceFormId == masterFormId
-                || !capturedTypes.TryGetValue(sourceFormId, out var sourceTypes))
+                                  || !capturedTypes.TryGetValue(sourceFormId, out var sourceTypes))
             {
                 continue;
             }
@@ -54,7 +54,7 @@ internal static class PlannerInputValidator
             }
 
             if (sourceTypes.Length != 1 || targetTypes.Length != 1
-                || !string.Equals(sourceTypes[0], targetTypes[0], StringComparison.Ordinal))
+                                        || !string.Equals(sourceTypes[0], targetTypes[0], StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     $"DMP FormID alias 0x{sourceFormId:X8} has captured type(s) " +

@@ -40,16 +40,17 @@ internal sealed class GpuUploadQueue12 : IDisposable
     /// </summary>
     private const int RingSize = 3;
 
-    private readonly ID3D12CommandQueue _copyQueue;
     private readonly ID3D12CommandAllocator[] _allocators = new ID3D12CommandAllocator[RingSize];
-    private readonly ID3D12GraphicsCommandList[] _lists = new ID3D12GraphicsCommandList[RingSize];
-    private readonly ulong[] _slotFenceValues = new ulong[RingSize];
+
+    private readonly ID3D12CommandQueue _copyQueue;
     private readonly ID3D12Fence _fence;
     private readonly AutoResetEvent _fenceEvent = new(false);
+    private readonly ID3D12GraphicsCommandList[] _lists = new ID3D12GraphicsCommandList[RingSize];
+    private readonly ulong[] _slotFenceValues = new ulong[RingSize];
     private readonly Queue<StagingRetirement> _stagingRetire = new();
+    private bool _disposed;
     private ulong _nextFenceValue = 1;
     private int _ringIndex;
-    private bool _disposed;
 
     public GpuUploadQueue12(GpuDevice12 gpu)
     {
@@ -60,18 +61,39 @@ internal sealed class GpuUploadQueue12 : IDisposable
             _allocators[i] = gpu.Device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Copy);
             // Command lists are born open; close immediately so Submit can Reset before recording.
             _lists[i] = gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
-                nodeMask: 0, CommandListType.Copy, _allocators[i], initialState: null);
+                0, CommandListType.Copy, _allocators[i]);
             _lists[i].Close();
         }
-        _fence = gpu.Device.CreateFence<ID3D12Fence>(0, FenceFlags.None);
+
+        _fence = gpu.Device.CreateFence<ID3D12Fence>();
     }
 
-    /// <summary>Highest copy-fence value the GPU has signaled complete. Lock-free; the render
-    /// thread polls this to decide which submitted uploads are safe to bind.</summary>
+    /// <summary>
+    ///     Highest copy-fence value the GPU has signaled complete. Lock-free; the render
+    ///     thread polls this to decide which submitted uploads are safe to bind.
+    /// </summary>
     public ulong LastCompletedValue => _fence.CompletedValue;
 
     /// <summary>Staging buffers awaiting copy completion before they can be freed.</summary>
     public int PendingStagingCount => _stagingRetire.Count;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        Flush();
+        _disposed = true;
+        // Any staging left after Flush (none expected) — release defensively.
+        while (_stagingRetire.TryDequeue(out var pending))
+        {
+            pending.Resource.Dispose();
+        }
+
+        foreach (var list in _lists) list.Dispose();
+        foreach (var allocator in _allocators) allocator.Dispose();
+        _fence.Dispose();
+        _fenceEvent.Dispose();
+        _copyQueue.Dispose();
+    }
 
     /// <summary>
     ///     Records and submits one copy-only command list on the copy queue, returning the fence
@@ -95,7 +117,7 @@ internal sealed class GpuUploadQueue12 : IDisposable
 
         _allocators[slot].Reset();
         var list = _lists[slot];
-        list.Reset(_allocators[slot], initialState: null);
+        list.Reset(_allocators[slot], null);
         record(list);
         list.Close();
 
@@ -113,8 +135,10 @@ internal sealed class GpuUploadQueue12 : IDisposable
         return value;
     }
 
-    /// <summary>Disposes staging buffers whose copy has completed. Uploader-thread only (also
-    /// invoked from <see cref="Flush" /> / <see cref="Dispose" /> once the uploader is stopped).</summary>
+    /// <summary>
+    ///     Disposes staging buffers whose copy has completed. Uploader-thread only (also
+    ///     invoked from <see cref="Flush" /> / <see cref="Dispose" /> once the uploader is stopped).
+    /// </summary>
     public void RetireCompletedStaging()
     {
         var completed = _fence.CompletedValue;
@@ -139,25 +163,10 @@ internal sealed class GpuUploadQueue12 : IDisposable
         RetireCompletedStaging();
     }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        Flush();
-        _disposed = true;
-        // Any staging left after Flush (none expected) — release defensively.
-        while (_stagingRetire.TryDequeue(out var pending))
-        {
-            pending.Resource.Dispose();
-        }
-        foreach (var list in _lists) list.Dispose();
-        foreach (var allocator in _allocators) allocator.Dispose();
-        _fence.Dispose();
-        _fenceEvent.Dispose();
-        _copyQueue.Dispose();
-    }
-
     private void WaitForFence(ulong value)
-        => D3D12FenceWaiter.WaitForFence(_fence, value, _fenceEvent);
+    {
+        D3D12FenceWaiter.WaitForFence(_fence, value, _fenceEvent);
+    }
 
     private readonly record struct StagingRetirement(IDisposable Resource, ulong FenceValue);
 }

@@ -19,31 +19,35 @@ public sealed class WorldspaceSelectorTests
     private const uint FnvWastelandNvFormId = 0x000DA726;
 
     /// <summary>A file shaped like Fallout3.esm: one exterior worldspace named "Wasteland".</summary>
-    private static byte[] BuildFo3LikeFile() =>
-        new EsmTestFileBuilder()
+    private static byte[] BuildFo3LikeFile()
+    {
+        return new EsmTestFileBuilder()
             .AddWorldspace(new EsmTestFileBuilder.WorldspaceData
             {
                 FormId = Fo3WastelandFormId,
                 EditorId = "Wasteland",
-                FullName = "Capital Wasteland",
+                FullName = "Capital Wasteland"
             })
             .Build();
+    }
 
     /// <summary>A file shaped like FalloutNV.esm: "WastelandNV" plus a second worldspace.</summary>
-    private static byte[] BuildFnvLikeFile() =>
-        new EsmTestFileBuilder()
+    private static byte[] BuildFnvLikeFile()
+    {
+        return new EsmTestFileBuilder()
             .AddWorldspace(new EsmTestFileBuilder.WorldspaceData
             {
                 FormId = FnvWastelandNvFormId,
                 EditorId = "WastelandNV",
-                FullName = "Mojave Wasteland",
+                FullName = "Mojave Wasteland"
             })
             .AddWorldspace(new EsmTestFileBuilder.WorldspaceData
             {
                 FormId = 0x00108E2D,
-                EditorId = "FreesideWorld",
+                EditorId = "FreesideWorld"
             })
             .Build();
+    }
 
     /// <summary>
     ///     The regression this exists for: FO3's "Wasteland" must resolve to FO3's own FormID, not
@@ -53,7 +57,7 @@ public sealed class WorldspaceSelectorTests
     public void Fo3WastelandResolvesToTheFilesOwnFormIdNotTheFnvAlias()
     {
         Assert.True(WorldspaceSelector.TryResolve(
-            BuildFo3LikeFile(), bigEndian: false, "Wasteland", out var name, out var formId));
+            BuildFo3LikeFile(), false, "Wasteland", out var name, out var formId));
 
         Assert.Equal("Wasteland", name);
         Assert.Equal(Fo3WastelandFormId, formId);
@@ -64,7 +68,7 @@ public sealed class WorldspaceSelectorTests
     public void NameMatchIsCaseInsensitive()
     {
         Assert.True(WorldspaceSelector.TryResolve(
-            BuildFnvLikeFile(), bigEndian: false, "wastelandnv", out var name, out var formId));
+            BuildFnvLikeFile(), false, "wastelandnv", out var name, out var formId));
 
         Assert.Equal("WastelandNV", name);
         Assert.Equal(FnvWastelandNvFormId, formId);
@@ -74,7 +78,7 @@ public sealed class WorldspaceSelectorTests
     public void FormIdPresentInTheFileResolvesAndReportsItsRealName()
     {
         Assert.True(WorldspaceSelector.TryResolve(
-            BuildFo3LikeFile(), bigEndian: false, "0x0000003C", out var name, out var formId));
+            BuildFo3LikeFile(), false, "0x0000003C", out var name, out var formId));
 
         Assert.Equal("Wasteland", name);
         Assert.Equal(Fo3WastelandFormId, formId);
@@ -89,7 +93,7 @@ public sealed class WorldspaceSelectorTests
     public void FormIdAbsentFromTheFileIsRejected()
     {
         Assert.False(WorldspaceSelector.TryResolve(
-            BuildFo3LikeFile(), bigEndian: false, "0x000DA726", out var name, out var formId));
+            BuildFo3LikeFile(), false, "0x000DA726", out var name, out var formId));
 
         Assert.Equal(string.Empty, name);
         Assert.Equal(0u, formId);
@@ -99,7 +103,7 @@ public sealed class WorldspaceSelectorTests
     public void UnknownNameIsRejected()
     {
         Assert.False(WorldspaceSelector.TryResolve(
-            BuildFo3LikeFile(), bigEndian: false, "NotAWorldspace", out _, out _));
+            BuildFo3LikeFile(), false, "NotAWorldspace", out _, out _));
     }
 
     /// <summary>
@@ -110,12 +114,12 @@ public sealed class WorldspaceSelectorTests
     public void DefaultPrefersWastelandNvThenFallsBackToFo3sWasteland()
     {
         Assert.True(WorldspaceSelector.TryResolve(
-            BuildFnvLikeFile(), bigEndian: false, null, out var fnvName, out var fnvFormId));
+            BuildFnvLikeFile(), false, null, out var fnvName, out var fnvFormId));
         Assert.Equal("WastelandNV", fnvName);
         Assert.Equal(FnvWastelandNvFormId, fnvFormId);
 
         Assert.True(WorldspaceSelector.TryResolve(
-            BuildFo3LikeFile(), bigEndian: false, "", out var fo3Name, out var fo3FormId));
+            BuildFo3LikeFile(), false, "", out var fo3Name, out var fo3FormId));
         Assert.Equal("Wasteland", fo3Name);
         Assert.Equal(Fo3WastelandFormId, fo3FormId);
     }
@@ -127,17 +131,17 @@ public sealed class WorldspaceSelectorTests
             .AddWorldspace(new EsmTestFileBuilder.WorldspaceData
             {
                 FormId = 0x00000C1B,
-                EditorId = "SomeOtherWorld",
+                EditorId = "SomeOtherWorld"
             })
             .Build();
 
-        Assert.False(WorldspaceSelector.TryResolve(file, bigEndian: false, null, out _, out _));
+        Assert.False(WorldspaceSelector.TryResolve(file, false, null, out _, out _));
     }
 
     [Fact]
     public void FileWithNoWorldspacesFails()
     {
         Assert.False(WorldspaceSelector.TryResolve(
-            new EsmTestFileBuilder().Build(), bigEndian: false, "Wasteland", out _, out _));
+            new EsmTestFileBuilder().Build(), false, "Wasteland", out _, out _));
     }
 }

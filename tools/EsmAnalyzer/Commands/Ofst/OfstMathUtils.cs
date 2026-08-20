@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-
 namespace EsmAnalyzer.Commands.Ofst;
 
 /// <summary>
@@ -56,7 +54,7 @@ internal static class OfstMathUtils
 
     internal static double RowMajorSerp(int row, int col, int columns)
     {
-        return (row & 1) == 0 ? (row * columns) + col : (row * columns) + (columns - 1 - col);
+        return (row & 1) == 0 ? row * columns + col : row * columns + (columns - 1 - col);
     }
 
     internal static double TiledRowMajor(int row, int col, int columns, int tile, bool serpOuter)
@@ -67,10 +65,10 @@ internal static class OfstMathUtils
         var innerX = col % tile;
         var innerY = row % tile;
         var tileIndex = serpOuter && (tileY & 1) == 1
-            ? (tileY * tilesX) + (tilesX - 1 - tileX)
-            : (tileY * tilesX) + tileX;
-        var inner = (innerY * tile) + innerX;
-        return (tileIndex * tile * tile) + inner;
+            ? tileY * tilesX + (tilesX - 1 - tileX)
+            : tileY * tilesX + tileX;
+        var inner = innerY * tile + innerX;
+        return tileIndex * tile * tile + inner;
     }
 
     internal static double TiledMorton(int row, int col, int columns, int tile, bool serpOuter)
@@ -81,10 +79,10 @@ internal static class OfstMathUtils
         var innerX = col % tile;
         var innerY = row % tile;
         var tileIndex = serpOuter && (tileY & 1) == 1
-            ? (tileY * tilesX) + (tilesX - 1 - tileX)
-            : (tileY * tilesX) + tileX;
+            ? tileY * tilesX + (tilesX - 1 - tileX)
+            : tileY * tilesX + tileX;
         var inner = Morton2D((uint)innerX, (uint)innerY);
-        return (tileIndex * tile * tile) + inner;
+        return tileIndex * tile * tile + inner;
     }
 
     internal static double TiledHilbert(int row, int col, int columns, int tile, bool serpOuter)
@@ -95,10 +93,10 @@ internal static class OfstMathUtils
         var innerX = col % tile;
         var innerY = row % tile;
         var tileIndex = serpOuter && (tileY & 1) == 1
-            ? (tileY * tilesX) + (tilesX - 1 - tileX)
-            : (tileY * tilesX) + tileX;
+            ? tileY * tilesX + (tilesX - 1 - tileX)
+            : tileY * tilesX + tileX;
         var inner = HilbertIndex(tile, innerX, innerY);
-        return (tileIndex * tile * tile) + inner;
+        return tileIndex * tile * tile + inner;
     }
 
     internal static double Pearson(IReadOnlyList<OfstLayoutEntry> ordered, Func<OfstLayoutEntry, double> selector)
@@ -126,8 +124,8 @@ internal static class OfstMathUtils
             sumY2 += y * y;
         }
 
-        var num = (n * sumXY) - (sumX * sumY);
-        var den = Math.Sqrt(((n * sumX2) - (sumX * sumX)) * ((n * sumY2) - (sumY * sumY)));
+        var num = n * sumXY - sumX * sumY;
+        var den = Math.Sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
         return IsNearlyZero(den) ? 0 : num / den;
     }
 
@@ -154,8 +152,8 @@ internal static class OfstMathUtils
             sumXy += x[i] * y[i];
         }
 
-        var denom = Math.Sqrt(((n * sumX2) - (sumX * sumX)) * ((n * sumY2) - (sumY * sumY)));
-        return denom < ZeroEpsilon ? 0 : ((n * sumXy) - (sumX * sumY)) / denom;
+        var denom = Math.Sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+        return denom < ZeroEpsilon ? 0 : (n * sumXy - sumX * sumY) / denom;
     }
 
     private static void Rot(int n, ref int x, ref int y, int rx, int ry)

@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
@@ -25,7 +26,7 @@ internal static class TerrainRaycaster
         Vector3 origin,
         Vector3 direction,
         out float t,
-        global::BethesdaMultitool.WorldRenderCache? cache = null,
+        WorldRenderCache? cache = null,
         float maxDistance = float.PositiveInfinity)
     {
         t = 0f;
@@ -123,9 +124,12 @@ internal static class TerrainRaycaster
         t = best;
         return true;
 
-        float HeightAt(int x, int y) => cachedHeights is not null
-            ? cachedHeights[y * CachedGridSize + x]
-            : nativeHeights![y, x];
+        float HeightAt(int x, int y)
+        {
+            return cachedHeights is not null
+                ? cachedHeights[y * CachedGridSize + x]
+                : nativeHeights![y, x];
+        }
 
         void TestTriangle(Vector3 v0, Vector3 v1, Vector3 v2)
         {
@@ -186,6 +190,8 @@ internal static class TerrainRaycaster
         }
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }

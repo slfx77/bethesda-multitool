@@ -272,4 +272,3 @@ internal static class GeckReportHelpers
         public List<string> Files { get; } = [];
     }
 }
-

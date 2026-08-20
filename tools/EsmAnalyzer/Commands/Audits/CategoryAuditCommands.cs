@@ -1,9 +1,6 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -384,6 +381,67 @@ public static class CategoryAuditCommands
 
     #endregion
 
+    #region Helpers
+
+    /// <summary>
+    ///     Extracts the top-level folder from a model path, stripping meshes\ and DLC prefixes.
+    /// </summary>
+    private static string? ExtractTopFolder(string modelPath)
+    {
+        var path = modelPath.AsSpan();
+
+        if (path.Length > 7 &&
+            (path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase) ||
+             path[..7].Equals("meshes/", StringComparison.OrdinalIgnoreCase)))
+        {
+            path = path[7..];
+        }
+
+        // Strip DLC directory prefix (numeric: DLC01\, DLC02\, etc.)
+        if (path.Length > 6 &&
+            path[..3].Equals("dlc", StringComparison.OrdinalIgnoreCase) &&
+            path[3] >= '0' && path[3] <= '9' &&
+            path[4] >= '0' && path[4] <= '9' &&
+            (path[5] == '\\' || path[5] == '/'))
+        {
+            path = path[6..];
+        }
+
+        // Strip named DLC folder prefixes (dlcanch\, DLCPitt\, etc.)
+        if (path.Length >= 5 && path[..3].Equals("dlc", StringComparison.OrdinalIgnoreCase))
+        {
+            var dlcSep = path.IndexOfAny('\\', '/');
+            if (dlcSep > 3)
+            {
+                path = path[(dlcSep + 1)..];
+            }
+        }
+
+        var sepIndex = path.IndexOfAny('\\', '/');
+        return sepIndex <= 0 ? null : path[..sepIndex].ToString();
+    }
+
+    #endregion
+
+    private sealed class UnknownEntry
+    {
+        public required uint BaseFormId { get; init; }
+        public required string RecordType { get; init; }
+        public string? EditorId { get; init; }
+        public string? ModelPath { get; init; }
+        public required RootCause RootCause { get; init; }
+        public PlacedObjectCategory? ProposedCategory { get; init; }
+    }
+
+    private enum RootCause
+    {
+        MissingRecordTypeHandler,
+        UnrecognizedModelFolder,
+        UnreconstructedType,
+        EngineFormId,
+        Uncategorizable
+    }
+
     #region Output: CSV
 
     private static void OutputCsv(List<UnknownEntry> unknowns)
@@ -477,7 +535,8 @@ public static class CategoryAuditCommands
             {
                 sb.AppendLine($"if (folder.Equals(\"{folder}\", StringComparison.OrdinalIgnoreCase))");
                 sb.AppendLine("{");
-                sb.AppendLine($"    return PlacedObjectCategory.Static; // TODO: assign correct category for '{folder}'");
+                sb.AppendLine(
+                    $"    return PlacedObjectCategory.Static; // TODO: assign correct category for '{folder}'");
                 sb.AppendLine("}");
                 sb.AppendLine();
             }
@@ -537,66 +596,4 @@ public static class CategoryAuditCommands
     }
 
     #endregion
-
-    #region Helpers
-
-    /// <summary>
-    ///     Extracts the top-level folder from a model path, stripping meshes\ and DLC prefixes.
-    /// </summary>
-    private static string? ExtractTopFolder(string modelPath)
-    {
-        var path = modelPath.AsSpan();
-
-        if (path.Length > 7 &&
-            (path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase) ||
-             path[..7].Equals("meshes/", StringComparison.OrdinalIgnoreCase)))
-        {
-            path = path[7..];
-        }
-
-        // Strip DLC directory prefix (numeric: DLC01\, DLC02\, etc.)
-        if (path.Length > 6 &&
-            path[..3].Equals("dlc", StringComparison.OrdinalIgnoreCase) &&
-            path[3] >= '0' && path[3] <= '9' &&
-            path[4] >= '0' && path[4] <= '9' &&
-            (path[5] == '\\' || path[5] == '/'))
-        {
-            path = path[6..];
-        }
-
-        // Strip named DLC folder prefixes (dlcanch\, DLCPitt\, etc.)
-        if (path.Length >= 5 && path[..3].Equals("dlc", StringComparison.OrdinalIgnoreCase))
-        {
-            var dlcSep = path.IndexOfAny('\\', '/');
-            if (dlcSep > 3)
-            {
-                path = path[(dlcSep + 1)..];
-            }
-        }
-
-        var sepIndex = path.IndexOfAny('\\', '/');
-        return sepIndex <= 0 ? null : path[..sepIndex].ToString();
-    }
-
-    #endregion
-
-    private sealed class UnknownEntry
-    {
-        public required uint BaseFormId { get; init; }
-        public required string RecordType { get; init; }
-        public string? EditorId { get; init; }
-        public string? ModelPath { get; init; }
-        public required RootCause RootCause { get; init; }
-        public PlacedObjectCategory? ProposedCategory { get; init; }
-    }
-
-    private enum RootCause
-    {
-        MissingRecordTypeHandler,
-        UnrecognizedModelFolder,
-        UnreconstructedType,
-        EngineFormId,
-        Uncategorizable
-    }
 }
-

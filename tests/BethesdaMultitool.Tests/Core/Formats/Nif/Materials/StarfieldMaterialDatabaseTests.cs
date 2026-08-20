@@ -49,8 +49,10 @@ public class StarfieldMaterialDatabaseTests
     }
 
     [Fact]
-    public void Parse_RejectsNonReflectionStream() =>
+    public void Parse_RejectsNonReflectionStream()
+    {
         Assert.Null(StarfieldMaterialDatabase.Parse(Encoding.ASCII.GetBytes("not a cdb at all........")));
+    }
 
     [Fact]
     public void Parse_ResolvesTextureThroughTheObjectGraph()
@@ -73,7 +75,7 @@ public class StarfieldMaterialDatabaseTests
     [Fact]
     public void Parse_IgnoresComponentChunksPrecedingTheComponentTable()
     {
-        var db = StarfieldMaterialDatabase.Parse(BuildDatabase(leadingStrayComponent: true));
+        var db = StarfieldMaterialDatabase.Parse(BuildDatabase(true));
 
         Assert.NotNull(db);
         Assert.Equal(@"Data\Textures\Ground\Dirt_color.dds", db!.ResolveDiffuse(@"materials\test\mat.mat"));
@@ -118,7 +120,7 @@ public class StarfieldMaterialDatabaseTests
     [Fact]
     public void ResolveDiffuse_ExcludesBlenderTexturesFromTheFallbackDescent()
     {
-        var db = StarfieldMaterialDatabase.Parse(BuildLayeredDatabase(omitLayerStack: true));
+        var db = StarfieldMaterialDatabase.Parse(BuildLayeredDatabase(true));
 
         Assert.NotNull(db);
         Assert.Equal(@"Data\Textures\Base_color.dds", db!.ResolveDiffuse(@"materials\test\layered.mat"));
@@ -242,14 +244,14 @@ public class StarfieldMaterialDatabaseTests
         var owners = new List<(uint Owner, uint Slot)>();
         if (!omitLayerStack)
         {
-            owners.Add((materialId, 0));       // LayerID
-            owners.Add((layerId, 0));          // MaterialID
-            owners.Add((layerMaterialId, 0));  // TextureSetID
+            owners.Add((materialId, 0)); // LayerID
+            owners.Add((layerId, 0)); // MaterialID
+            owners.Add((layerMaterialId, 0)); // TextureSetID
         }
 
-        owners.Add((materialId, 0));           // BlenderID
-        owners.Add((textureSetId, 0));         // albedo (texture or replacement)
-        owners.Add((blenderId, 0));            // the blender's mask
+        owners.Add((materialId, 0)); // BlenderID
+        owners.Add((textureSetId, 0)); // albedo (texture or replacement)
+        owners.Add((blenderId, 0)); // the blender's mask
 
         var components = new List<byte>();
         components.AddRange(U32(offsets["BSComponentDB2::DBFileIndex::ComponentInfo"]));
@@ -305,7 +307,10 @@ public class StarfieldMaterialDatabaseTests
         return [.. file];
     }
 
-    private static byte[] F32(float v) => BitConverter.GetBytes(v);
+    private static byte[] F32(float v)
+    {
+        return BitConverter.GetBytes(v);
+    }
 
     /// <summary>
     ///     A base material with a full layer-0 stack (→ Base_color) and a DERIVED material
@@ -350,7 +355,7 @@ public class StarfieldMaterialDatabaseTests
         objects.AddRange(U32(8));
         objects.AddRange(ObjectRecord(baseResource.File, baseResource.Ext, baseResource.Dir, baseMatId));
         objects.AddRange(ObjectRecord(derivedResource.File, derivedResource.Ext, derivedResource.Dir,
-            derivedMatId, baseId: baseMatId));
+            derivedMatId, baseMatId));
         objects.AddRange(ObjectRecord(0, 0, 0, baseLayerId));
         objects.AddRange(ObjectRecord(0, 0, 0, baseLayerMatId));
         objects.AddRange(ObjectRecord(0, 0, 0, baseTexSetId));
@@ -363,14 +368,14 @@ public class StarfieldMaterialDatabaseTests
         // LayerID sits at component slot 1 — a DECAL layer — which is the whole point.
         var owners = new (uint Owner, uint Slot)[]
         {
-            (baseMatId, 0),        // LayerID → baseLayer          (layer index 0)
-            (baseLayerId, 0),      // MaterialID → baseLayerMat
-            (baseLayerMatId, 0),   // TextureSetID → baseTexSet
-            (baseTexSetId, 0),     // MRTextureFile Base_color
-            (derivedMatId, 1),     // LayerID → decalLayer         (layer index 1)
-            (decalLayerId, 0),     // MaterialID → decalLayerMat
-            (decalLayerMatId, 0),  // TextureSetID → decalTexSet
-            (decalTexSetId, 0)     // MRTextureFile Decal_color
+            (baseMatId, 0), // LayerID → baseLayer          (layer index 0)
+            (baseLayerId, 0), // MaterialID → baseLayerMat
+            (baseLayerMatId, 0), // TextureSetID → baseTexSet
+            (baseTexSetId, 0), // MRTextureFile Base_color
+            (derivedMatId, 1), // LayerID → decalLayer         (layer index 1)
+            (decalLayerId, 0), // MaterialID → decalLayerMat
+            (decalLayerMatId, 0), // TextureSetID → decalTexSet
+            (decalTexSetId, 0) // MRTextureFile Decal_color
         };
 
         var components = new List<byte>();
@@ -411,7 +416,7 @@ public class StarfieldMaterialDatabaseTests
         // STRT payload: every string the chunks reference, by byte offset.
         var strings = new List<string>
         {
-            "BSComponentDB2::DBFileIndex::ObjectInfo",     // 0
+            "BSComponentDB2::DBFileIndex::ObjectInfo", // 0
             "BSComponentDB2::DBFileIndex::ComponentInfo",
             "BSComponentDB2::DBFileIndex::EdgeInfo",
             "BSMaterial::MRTextureFile"
@@ -479,8 +484,8 @@ public class StarfieldMaterialDatabaseTests
         var file = new List<byte>();
         file.AddRange(Encoding.ASCII.GetBytes("BETH"));
         file.AddRange(U32(8));
-        file.AddRange(U32(4));                       // version
-        file.AddRange(U32((uint)chunks.Count + 2));  // total chunks, incl. BETH + STRT
+        file.AddRange(U32(4)); // version
+        file.AddRange(U32((uint)chunks.Count + 2)); // total chunks, incl. BETH + STRT
         file.AddRange(Encoding.ASCII.GetBytes("STRT"));
         file.AddRange(U32((uint)strt.Count));
         file.AddRange(strt);
@@ -494,25 +499,39 @@ public class StarfieldMaterialDatabaseTests
     ///     The stride is what the reader walks by, so a wrong length here silently shears every
     ///     subsequent record — which is exactly what the old 28-byte assumption did.
     /// </summary>
-    private static byte[] ObjectRecord(uint file, uint ext, uint dir, uint dbId, uint baseId = 0) =>
-        Concat(U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId), [1]);
+    private static byte[] ObjectRecord(uint file, uint ext, uint dir, uint dbId, uint baseId = 0)
+    {
+        return Concat(U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId), [1]);
+    }
 
     /// <summary>
     ///     One 33-byte ObjectInfo record — the layout current retail announces via a 5-field CLAS
     ///     (build ≥ 1.11.33 appends a 12-byte parent BSResourceID before <c>hasData</c>).
     /// </summary>
-    private static byte[] ObjectRecordWide(uint file, uint ext, uint dir, uint dbId, uint baseId = 0) =>
-        Concat(U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId), new byte[12], [1]);
+    private static byte[] ObjectRecordWide(uint file, uint ext, uint dir, uint dbId, uint baseId = 0)
+    {
+        return Concat(U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId), new byte[12], [1]);
+    }
 
-    private static byte[] Chunk(string tag, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(tag), U32((uint)body.Length), body);
+    private static byte[] Chunk(string tag, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(tag), U32((uint)body.Length), body);
+    }
 
-    private static byte[] Str(string value) =>
-        Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
+    private static byte[] Str(string value)
+    {
+        return Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
+    }
 
-    private static byte[] U32(uint v) => BitConverter.GetBytes(v);
+    private static byte[] U32(uint v)
+    {
+        return BitConverter.GetBytes(v);
+    }
 
-    private static byte[] U16(ushort v) => BitConverter.GetBytes(v);
+    private static byte[] U16(ushort v)
+    {
+        return BitConverter.GetBytes(v);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

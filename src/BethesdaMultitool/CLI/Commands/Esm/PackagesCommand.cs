@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Text.Json;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
@@ -328,4 +327,3 @@ public static class PackagesCommand
             : null;
     }
 }
-

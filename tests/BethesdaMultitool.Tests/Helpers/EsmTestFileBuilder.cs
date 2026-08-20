@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -279,8 +278,10 @@ internal sealed class EsmTestFileBuilder
 
     /// <summary>Build a LE record with subrecords.</summary>
     public static byte[] BuildRecord(string sig, uint formId, uint flags,
-        params (string sig, byte[] data)[] subrecords) =>
-        BuildRecord(sig, formId, flags, 0, subrecords);
+        params (string sig, byte[] data)[] subrecords)
+    {
+        return BuildRecord(sig, formId, flags, 0, subrecords);
+    }
 
     /// <summary>Build a LE record with an explicit form-version word at header offset 20.</summary>
     public static byte[] BuildRecord(string sig, uint formId, uint flags, ushort formVersion,

@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Show;
@@ -94,4 +93,3 @@ internal static class ShowHelpers
         };
     }
 }
-

@@ -1,11 +1,6 @@
-using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dump;
 
@@ -421,8 +416,8 @@ internal static class DumpCommandsRecordCompare
         return offset + 4 > data.Length
             ? 0
             : bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
+                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
     }
 
     private static string GetPartialMatchIcon(bool sigMatch, bool sizeMatch)
@@ -446,7 +441,7 @@ internal static class DumpCommandsRecordCompare
         }
 
         var max = Math.Min(count, data.Length);
-        var builder = new StringBuilder((max * 3) - 1);
+        var builder = new StringBuilder(max * 3 - 1);
         for (var i = 0; i < max; i++)
         {
             if (i > 0)

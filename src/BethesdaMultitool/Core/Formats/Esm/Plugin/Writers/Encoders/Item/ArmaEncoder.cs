@@ -22,7 +22,7 @@ public sealed class ArmaEncoder : IRecordEncoder
     {
         ["Value"] = m => m.Value,
         ["MaxCondition"] = m => m.MaxCondition,
-        ["Weight"] = m => m.Weight,
+        ["Weight"] = m => m.Weight
     };
 
     public string RecordType => "ARMA";

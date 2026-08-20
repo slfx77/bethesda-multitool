@@ -26,6 +26,8 @@ public static class MoonSky
     /// <summary>Morrowind's documented lunar cycle is 24 days → 3 days per phase across 8 phases.</summary>
     public const int MorrowindPhaseLengthDays = 3;
 
+    private const float Deg2Rad = MathF.PI / 180f;
+
     /// <summary>
     ///     The engine moon-phase index (0..7) for a given day count, per the decompiled
     ///     <c>Moon::UpdatePhase</c>: <c>(round(daysPassed) + offset) mod (phaseLength*8)) / phaseLength</c>.
@@ -42,11 +44,9 @@ public static class MoonSky
 
         var day = (long)Math.Round(daysPassed, MidpointRounding.AwayFromZero) + phaseOffsetDays;
         var cycle = (long)phaseLengthDays * PhaseCount;
-        var wrapped = ((day % cycle) + cycle) % cycle; // non-negative modulo
+        var wrapped = (day % cycle + cycle) % cycle; // non-negative modulo
         return (int)(wrapped / phaseLengthDays);
     }
-
-    private const float Deg2Rad = MathF.PI / 180f;
 
     /// <summary>
     ///     FO3/FNV and Skyrim <c>Moon::Update</c>'s recovered rotated-arm path. The moon starts on local
@@ -80,8 +80,8 @@ public static class MoonSky
     /// </summary>
     public static float ComputeRotatedArmAngleDegrees(float speed, float gameHour, float day)
     {
-        var absoluteHours = (day * 24f) + gameHour;
-        var angle = 90f + (absoluteHours * speed * 60f);
+        var absoluteHours = day * 24f + gameHour;
+        var angle = 90f + absoluteHours * speed * 60f;
         angle %= 360f;
         return angle < 0f ? angle + 360f : angle;
     }
@@ -125,40 +125,20 @@ public static class MoonSky
 
     /// <summary>Evaluates the recovered disc fade at a game day/hour using the same arm angle as the path.</summary>
     public static float ComputeRotatedArmDiscFade(
-        float speed, float gameHour, float day, float fadeStartDegrees, float fadeEndDegrees) =>
-        EvaluateRotatedArmDiscFade(
+        float speed, float gameHour, float day, float fadeStartDegrees, float fadeEndDegrees)
+    {
+        return EvaluateRotatedArmDiscFade(
             ComputeRotatedArmAngleDegrees(speed, gameHour, day),
             fadeStartDegrees,
             fadeEndDegrees);
+    }
 
     /// <summary>Compatibility name for the FO3/FNV caller of the shared recovered rotated-arm math.</summary>
     public static Vector3 ComputeFalloutRotatedArmDirection(
-        float speed, float inclinationDegrees, float gameHour, float day) =>
-        ComputeRotatedArmDirection(speed, inclinationDegrees, gameHour, day);
-
-    /// <summary>
-    ///     A single moon's sky orbit, derived in form from the decompiled <c>Moon::Update</c> (the moon
-    ///     accumulates a sky angle that advances with elapsed game time, and its node is rotated by that
-    ///     angle plus a fixed inclination). The literal Morrowind constants aren't recoverable from the
-    ///     shared calendar code, so these are seeded plausibly and visually calibrated against OpenMW. Two
-    ///     moons differ by their period, starting offset, peak altitude and compass orientation, so they
-    ///     trace <em>distinct</em> arcs (vanilla Morrowind drew both on the same path — the bug being fixed).
-    /// </summary>
-    /// <param name="PeriodHours">Apparent orbital period — how long the moon takes to go once around the
-    /// sky. Near 24h keeps it roughly nightly; a small per-moon difference makes the two moons separate and
-    /// each drift across days.</param>
-    /// <param name="PhaseOffsetTurns">Starting fraction (0..1) along the orbit at day 0 / hour 0, so the two
-    /// moons aren't co-located.</param>
-    /// <param name="MaxAltitudeDeg">Peak elevation above the horizon at culmination (the orbit inclination).</param>
-    /// <param name="PeakAzimuthDeg">Compass azimuth the moon culminates toward (0 = +X / east-ish in the
-    /// viewer's world basis), so the two arcs lean different ways.</param>
-    /// <param name="AzSwingDeg">How far the azimuth swings to either side of the peak across the arc.</param>
-    public readonly record struct MoonOrbit(
-        float PeriodHours,
-        float PhaseOffsetTurns,
-        float MaxAltitudeDeg,
-        float PeakAzimuthDeg,
-        float AzSwingDeg);
+        float speed, float inclinationDegrees, float gameHour, float day)
+    {
+        return ComputeRotatedArmDirection(speed, inclinationDegrees, gameHour, day);
+    }
 
     /// <summary>
     ///     The unit sky direction (+Z up) of a moon at the given game hour and day, from its
@@ -170,13 +150,43 @@ public static class MoonSky
     /// </summary>
     public static Vector3 ComputeMoonDirection(MoonOrbit orbit, float gameHour, float day)
     {
-        var absHours = (day * 24f) + gameHour;
-        var turn = (absHours / MathF.Max(orbit.PeriodHours, 0.001f)) + orbit.PhaseOffsetTurns;
+        var absHours = day * 24f + gameHour;
+        var turn = absHours / MathF.Max(orbit.PeriodHours, 0.001f) + orbit.PhaseOffsetTurns;
         var theta = turn * MathF.Tau;
 
         var el = orbit.MaxAltitudeDeg * Deg2Rad * MathF.Cos(theta);
-        var az = (orbit.PeakAzimuthDeg * Deg2Rad) + (orbit.AzSwingDeg * Deg2Rad * MathF.Sin(theta));
+        var az = orbit.PeakAzimuthDeg * Deg2Rad + orbit.AzSwingDeg * Deg2Rad * MathF.Sin(theta);
         var cosE = MathF.Cos(el);
         return Vector3.Normalize(new Vector3(MathF.Cos(az) * cosE, MathF.Sin(az) * cosE, MathF.Sin(el)));
     }
+
+    /// <summary>
+    ///     A single moon's sky orbit, derived in form from the decompiled <c>Moon::Update</c> (the moon
+    ///     accumulates a sky angle that advances with elapsed game time, and its node is rotated by that
+    ///     angle plus a fixed inclination). The literal Morrowind constants aren't recoverable from the
+    ///     shared calendar code, so these are seeded plausibly and visually calibrated against OpenMW. Two
+    ///     moons differ by their period, starting offset, peak altitude and compass orientation, so they
+    ///     trace <em>distinct</em> arcs (vanilla Morrowind drew both on the same path — the bug being fixed).
+    /// </summary>
+    /// <param name="PeriodHours">
+    ///     Apparent orbital period — how long the moon takes to go once around the
+    ///     sky. Near 24h keeps it roughly nightly; a small per-moon difference makes the two moons separate and
+    ///     each drift across days.
+    /// </param>
+    /// <param name="PhaseOffsetTurns">
+    ///     Starting fraction (0..1) along the orbit at day 0 / hour 0, so the two
+    ///     moons aren't co-located.
+    /// </param>
+    /// <param name="MaxAltitudeDeg">Peak elevation above the horizon at culmination (the orbit inclination).</param>
+    /// <param name="PeakAzimuthDeg">
+    ///     Compass azimuth the moon culminates toward (0 = +X / east-ish in the
+    ///     viewer's world basis), so the two arcs lean different ways.
+    /// </param>
+    /// <param name="AzSwingDeg">How far the azimuth swings to either side of the peak across the arc.</param>
+    public readonly record struct MoonOrbit(
+        float PeriodHours,
+        float PhaseOffsetTurns,
+        float MaxAltitudeDeg,
+        float PeakAzimuthDeg,
+        float AzSwingDeg);
 }

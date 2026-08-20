@@ -5,7 +5,6 @@ using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Scanning;
 using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 using BethesdaMultitool.Core.Minidump;
-using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
 
@@ -102,7 +101,7 @@ internal static class SpeedTreeExtractDumpCommand
                 Leaves = t.Submeshes.Count(s => s.Kind == TreeGeometryKind.Leaf),
                 Billboards = t.Submeshes.Count(s => s.Kind == TreeGeometryKind.Billboard),
                 Vertices = t.TotalVertices,
-                Triangles = t.TotalTriangles,
+                Triangles = t.TotalTriangles
             })
             .OrderByDescending(g => g.Count())
             .ThenByDescending(g => g.Key.Vertices)
@@ -313,7 +312,7 @@ internal static class SpeedTreeExtractDumpCommand
     private static float ReadFloat(RuntimeMemoryContext context, long va)
     {
         var bytes = context.ReadBytesAtVa(va, 4);
-        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadFloatBE(bytes, 0);
+        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadFloatBE(bytes);
     }
 
     private static uint ReadPointer(RuntimeMemoryContext context, long va)
@@ -324,16 +323,16 @@ internal static class SpeedTreeExtractDumpCommand
     private static uint ReadUInt32(RuntimeMemoryContext context, long va)
     {
         var bytes = context.ReadBytesAtVa(va, 4);
-        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadUInt32BE(bytes, 0);
+        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadUInt32BE(bytes);
     }
 
     private static ushort ReadUInt16(RuntimeMemoryContext context, long va)
     {
         var bytes = context.ReadBytesAtVa(va, 2);
-        return bytes is null || bytes.Length < 2 ? (ushort)0 : BinaryUtils.ReadUInt16BE(bytes, 0);
+        return bytes is null || bytes.Length < 2 ? (ushort)0 : BinaryUtils.ReadUInt16BE(bytes);
     }
 
-    private static void PrintTreeClassDiagnostic(IEnumerable<BethesdaMultitool.Core.Minidump.CensusEntry> census)
+    private static void PrintTreeClassDiagnostic(IEnumerable<CensusEntry> census)
     {
         string[] keys = ["Tree", "Speed", "Billboard", "NiTriShape", "NiNode"];
         foreach (var e in census

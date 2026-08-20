@@ -10,8 +10,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     climate is stripped from the output, and any worldspace whose CNAM referenced it falls
 ///     back to engine defaults — the worldspace loses its weather list and day/night curve.
 ///     <para>
-///     Canonical order from xEdit <c>wbRecord(CLMT)</c> (wbDefinitionsFNV.pas):
-///     EDID(req), WLST?, FNAM?, GNAM?, MODL?, TNAM?.
+///         Canonical order from xEdit <c>wbRecord(CLMT)</c> (wbDefinitionsFNV.pas):
+///         EDID(req), WLST?, FNAM?, GNAM?, MODL?, TNAM?.
 ///     </para>
 /// </summary>
 public sealed class ClmtEncoder : IRecordEncoder

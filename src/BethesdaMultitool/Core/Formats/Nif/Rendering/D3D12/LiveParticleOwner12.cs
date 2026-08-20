@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -16,7 +17,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 internal sealed class LiveParticleOwner12
 {
     private readonly ParticleRuntimeDefinition _runtime;
-    private readonly global::BethesdaMultitool.ParticleRenderTelemetry _definitionTelemetry;
+    private readonly global::BethesdaMultitool.Core.WorldData.ParticleRenderTelemetry _definitionTelemetry;
     private float _cachedSampleTime = float.NaN;
     private ParticleGeometrySnapshot? _cachedSnapshot;
 
@@ -25,7 +26,7 @@ internal sealed class LiveParticleOwner12
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         var definition = runtime.Definition;
         var emitter = definition.Emitter;
-        _definitionTelemetry = new global::BethesdaMultitool.ParticleRenderTelemetry(
+        _definitionTelemetry = new global::BethesdaMultitool.Core.WorldData.ParticleRenderTelemetry(
             definition.BlockIndex,
             definition.SourceTypeName,
             definition.SupportTelemetry,
@@ -54,7 +55,7 @@ internal sealed class LiveParticleOwner12
     public int AuthoredCapacity => _runtime.Definition.Capacity;
     public string? LastFailure { get; private set; }
 
-    internal global::BethesdaMultitool.ParticleRenderTelemetry CaptureTelemetry(
+    internal global::BethesdaMultitool.Core.WorldData.ParticleRenderTelemetry CaptureTelemetry(
         int renderedCount,
         string? fallbackReason)
     {

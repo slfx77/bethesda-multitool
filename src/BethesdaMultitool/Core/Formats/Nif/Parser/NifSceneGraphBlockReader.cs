@@ -8,6 +8,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Parser;
 /// </summary>
 internal static class NifSceneGraphBlockReader
 {
+    /// <summary>BSGeometry always writes four LOD slots (nif.xml <c>length="4"</c>); LOD 0 is finest.</summary>
+    private const int BsGeometryLodCount = 4;
+
+    /// <summary>
+    ///     Sanity cap on a mesh-path SizedString. Retail paths are two 20-char hex components plus a
+    ///     separator (41 chars); anything near this is a misparse, not a long name.
+    /// </summary>
+    private const int MaxMeshPathLength = 512;
+
     internal static int ParseShapeSkinInstanceRef(
         byte[] data,
         BlockInfo block,
@@ -560,22 +569,6 @@ internal static class NifSceneGraphBlockReader
     }
 
     /// <summary>
-    ///     A Starfield <c>BSGeometry</c> block: the property refs plus the path of the external
-    ///     <c>.mesh</c> blob that holds its actual vertex/index data. Starfield keeps NO geometry in
-    ///     the NIF — the scene graph names a blob and the renderer loads it separately.
-    /// </summary>
-    /// <param name="MeshPath">
-    ///     The highest-detail LOD's blob path, WITHOUT the <c>geometries\</c> prefix or <c>.mesh</c>
-    ///     suffix (both are implied — see <c>StarfieldMeshFile</c>). Null when the block declares
-    ///     inline mesh data instead, or names no blob at all.
-    /// </param>
-    internal readonly record struct BsGeometryInfo(
-        int SkinRef,
-        int ShaderRef,
-        int AlphaRef,
-        string? MeshPath);
-
-    /// <summary>
     ///     Parses a Starfield <c>BSGeometry</c> block (nif.xml, <c>versions="#STF#"</c>). Layout after
     ///     the NiAVObject base is Bounding Sphere (NiBound, 16) + Bounding Box (BSBoundingBox, 24) +
     ///     Skin/Shader/Alpha refs (3 × int32) + <c>Meshes</c>, a fixed array of four
@@ -609,11 +602,11 @@ internal static class NifSceneGraphBlockReader
         }
 
         var flags = BinaryUtils.ReadUInt32(data, pos, be);
-        pos += 4;                // Flags
-        pos += 12 + 36 + 4;      // Translation (Vector3) + Rotation (Matrix33) + Scale (float)
-        pos += 4;                // Collision Object ref
-        pos += 16;               // Bounding Sphere (NiBound)
-        pos += 24;               // Bounding Box (BSBoundingBox)
+        pos += 4; // Flags
+        pos += 12 + 36 + 4; // Translation (Vector3) + Rotation (Matrix33) + Scale (float)
+        pos += 4; // Collision Object ref
+        pos += 16; // Bounding Sphere (NiBound)
+        pos += 24; // Bounding Box (BSBoundingBox)
 
         if (pos + 12 > end)
         {
@@ -660,30 +653,6 @@ internal static class NifSceneGraphBlockReader
 
         return new BsGeometryInfo(skinRef, shaderRef, alphaRef, meshPath);
     }
-
-    /// <summary>BSGeometry always writes four LOD slots (nif.xml <c>length="4"</c>); LOD 0 is finest.</summary>
-    private const int BsGeometryLodCount = 4;
-
-    /// <summary>
-    ///     Sanity cap on a mesh-path SizedString. Retail paths are two 20-char hex components plus a
-    ///     separator (41 chars); anything near this is a misparse, not a long name.
-    /// </summary>
-    private const int MaxMeshPathLength = 512;
-
-    /// <summary>
-    ///     Header + buffer layout of a self-contained BSTriShape block (Skyrim SE / Fallout 4 /
-    ///     Fallout 76). Unlike NiTriShape, the vertex and index buffers live in the shape block
-    ///     itself rather than a separate NiTriShapeData block.
-    /// </summary>
-    internal readonly record struct BsTriShapeInfo(
-        int SkinRef,
-        int ShaderRef,
-        int AlphaRef,
-        ulong VertexDesc,
-        int NumVertices,
-        int NumTriangles,
-        int VertexBufferOffset,
-        int TriangleBufferOffset);
 
     /// <summary>
     ///     Parse a BSTriShape block's refs, vertex descriptor, counts, and buffer offsets. Returns
@@ -835,4 +804,35 @@ internal static class NifSceneGraphBlockReader
         pos += 4; // Collision Object ref
         return pos <= end;
     }
+
+    /// <summary>
+    ///     A Starfield <c>BSGeometry</c> block: the property refs plus the path of the external
+    ///     <c>.mesh</c> blob that holds its actual vertex/index data. Starfield keeps NO geometry in
+    ///     the NIF — the scene graph names a blob and the renderer loads it separately.
+    /// </summary>
+    /// <param name="MeshPath">
+    ///     The highest-detail LOD's blob path, WITHOUT the <c>geometries\</c> prefix or <c>.mesh</c>
+    ///     suffix (both are implied — see <c>StarfieldMeshFile</c>). Null when the block declares
+    ///     inline mesh data instead, or names no blob at all.
+    /// </param>
+    internal readonly record struct BsGeometryInfo(
+        int SkinRef,
+        int ShaderRef,
+        int AlphaRef,
+        string? MeshPath);
+
+    /// <summary>
+    ///     Header + buffer layout of a self-contained BSTriShape block (Skyrim SE / Fallout 4 /
+    ///     Fallout 76). Unlike NiTriShape, the vertex and index buffers live in the shape block
+    ///     itself rather than a separate NiTriShapeData block.
+    /// </summary>
+    internal readonly record struct BsTriShapeInfo(
+        int SkinRef,
+        int ShaderRef,
+        int AlphaRef,
+        ulong VertexDesc,
+        int NumVertices,
+        int NumTriangles,
+        int VertexBufferOffset,
+        int TriangleBufferOffset);
 }

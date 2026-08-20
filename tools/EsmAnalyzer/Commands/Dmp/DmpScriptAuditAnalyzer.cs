@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using EsmAnalyzer.Commands.Audits;
@@ -84,7 +83,7 @@ internal static class DmpScriptAuditAnalyzer
         }
 
         AddRuntimeHardContradictions(script, copyStatus, hard);
-        var trivial = script.DataSize == 4 && IsProvenTrivialScda(scda, isBigEndian: true);
+        var trivial = script.DataSize == 4 && IsProvenTrivialScda(scda, true);
         if (trivial && comparison.SourceStatementCount > 0)
         {
             hard.Add("executable-source-with-trivial-scda");
@@ -387,7 +386,7 @@ internal static class DmpScriptAuditAnalyzer
             script.Variables,
             references,
             formId => names.GetValueOrDefault(formId),
-            isBigEndian: true,
+            true,
             script.EditorId).Decompile(scda);
     }
 
@@ -422,11 +421,13 @@ internal static class DmpScriptAuditAnalyzer
         });
     }
 
-    private static bool IsProvenTrivialScda(byte[]? scda, bool isBigEndian) =>
-        scda is { Length: 4 }
-        && (isBigEndian
-            ? scda[0] == 0x00 && scda[1] == 0x1D && scda[2] == 0x00 && scda[3] == 0x00
-            : scda[0] == 0x1D && scda[1] == 0x00 && scda[2] == 0x00 && scda[3] == 0x00);
+    private static bool IsProvenTrivialScda(byte[]? scda, bool isBigEndian)
+    {
+        return scda is { Length: 4 }
+               && (isBigEndian
+                   ? scda[0] == 0x00 && scda[1] == 0x1D && scda[2] == 0x00 && scda[3] == 0x00
+                   : scda[0] == 0x1D && scda[1] == 0x00 && scda[2] == 0x00 && scda[3] == 0x00);
+    }
 
     private static string GetRuntimeCopyStatus(List<RuntimeScriptData> copies)
     {
@@ -445,30 +446,43 @@ internal static class DmpScriptAuditAnalyzer
             : "equivalent";
     }
 
-    private static string Classify(string? source, byte[]? scda) =>
-        (!string.IsNullOrEmpty(source), scda is { Length: > 0 }) switch
+    private static string Classify(string? source, byte[]? scda)
+    {
+        return (!string.IsNullOrEmpty(source), scda is { Length: > 0 }) switch
         {
             (true, true) => "both",
             (true, false) => "source-only",
             (false, true) => "scda-only",
             _ => "neither"
         };
+    }
 
-    private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+    private static string Hash(byte[] bytes)
+    {
+        return Convert.ToHexString(SHA256.HashData(bytes));
+    }
 
-    private static string FormatCounts(IReadOnlyDictionary<string, int>? counts) => counts is null
-        ? string.Empty
-        : string.Join(
+    private static string FormatCounts(IReadOnlyDictionary<string, int>? counts)
+    {
+        return counts is null
+            ? string.Empty
+            : string.Join(
+                '|',
+                counts.OrderBy(static item => item.Key, StringComparer.Ordinal)
+                    .Select(static item => $"{item.Key}={item.Value}"));
+    }
+
+    private static string JoinList(IEnumerable<string> values)
+    {
+        return string.Join(
             '|',
-            counts.OrderBy(static item => item.Key, StringComparer.Ordinal)
-                .Select(static item => $"{item.Key}={item.Value}"));
+            values.Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal));
+    }
 
-    private static string JoinList(IEnumerable<string> values) => string.Join(
-        '|',
-        values.Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal));
-
-    private static string[] SplitList(string value) =>
-        value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private static string[] SplitList(string value)
+    {
+        return value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
 
     private sealed record ScriptAuditComparison(
         int SourceStatementCount,

@@ -1,14 +1,11 @@
 using System.Numerics;
-using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Nif;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
 
@@ -330,7 +327,9 @@ internal static class NpcSkeletonLoader
                 continue;
             }
 
-            localTransform = NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian);
+            localTransform =
+                NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.BinaryVersion,
+                    nif.IsBigEndian);
             return true;
         }
 
@@ -532,4 +531,3 @@ internal static class NpcSkeletonLoader
         return model;
     }
 }
-

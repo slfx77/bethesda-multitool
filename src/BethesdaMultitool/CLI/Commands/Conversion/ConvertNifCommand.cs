@@ -1,6 +1,5 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using Spectre.Console;
 

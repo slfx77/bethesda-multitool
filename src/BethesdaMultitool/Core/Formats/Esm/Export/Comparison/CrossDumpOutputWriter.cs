@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 
 internal static class CrossDumpOutputWriter
@@ -67,4 +68,3 @@ internal static class CrossDumpOutputWriter
         return writtenFiles;
     }
 }
-

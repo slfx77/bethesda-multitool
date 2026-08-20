@@ -97,10 +97,10 @@ public sealed class EsmAnalyzerCommandRegistrationTests
             var leftPath = Path.Combine(directory, "left.esm");
             var samePath = Path.Combine(directory, "same.esm");
             var differentPath = Path.Combine(directory, "different.esm");
-            var left = BuildQuestEsm(objectiveIndex: 10);
+            var left = BuildQuestEsm(10);
             File.WriteAllBytes(leftPath, left);
             File.WriteAllBytes(samePath, left);
-            File.WriteAllBytes(differentPath, BuildQuestEsm(objectiveIndex: 11));
+            File.WriteAllBytes(differentPath, BuildQuestEsm(11));
 
             Assert.Equal(0, Invoke(CreateCommand("compare-quest-links"),
                 leftPath, samePath, "--formid", "0x00001000"));
@@ -121,8 +121,8 @@ public sealed class EsmAnalyzerCommandRegistrationTests
         {
             var knownPath = Path.Combine(directory, "known.esm");
             var unknownPath = Path.Combine(directory, "unknown.esm");
-            File.WriteAllBytes(knownPath, BuildSchemaTestEsm(includeUnknown: false));
-            File.WriteAllBytes(unknownPath, BuildSchemaTestEsm(includeUnknown: true));
+            File.WriteAllBytes(knownPath, BuildSchemaTestEsm(false));
+            File.WriteAllBytes(unknownPath, BuildSchemaTestEsm(true));
 
             Assert.Equal(0, Invoke(CreateCommand("validate-subrecords"), knownPath, "--types", "QUST"));
             Assert.Equal(1, Invoke(CreateCommand("validate-subrecords"), unknownPath, "--types", "QUST"));
@@ -133,14 +133,17 @@ public sealed class EsmAnalyzerCommandRegistrationTests
         }
     }
 
-    private static Command CreateCommand(string commandName) => commandName switch
+    private static Command CreateCommand(string commandName)
     {
-        "hash" => HashCommands.CreateHashCommand(),
-        "hash-compare" => HashCommands.CreateHashCompareCommand(),
-        "compare-quest-links" => QuestCommands.CreateCompareQuestLinksCommand(),
-        "validate-subrecords" => RecordSchemaCommands.CreateValidateSubrecordsCommand(),
-        _ => throw new ArgumentOutOfRangeException(nameof(commandName), commandName, null)
-    };
+        return commandName switch
+        {
+            "hash" => HashCommands.CreateHashCommand(),
+            "hash-compare" => HashCommands.CreateHashCompareCommand(),
+            "compare-quest-links" => QuestCommands.CreateCompareQuestLinksCommand(),
+            "validate-subrecords" => RecordSchemaCommands.CreateValidateSubrecordsCommand(),
+            _ => throw new ArgumentOutOfRangeException(nameof(commandName), commandName, null)
+        };
+    }
 
     private static int Invoke(Command command, params string[] arguments)
     {
@@ -201,7 +204,10 @@ public sealed class EsmAnalyzerCommandRegistrationTests
         return bytes;
     }
 
-    private static byte[] NullTerminated(string value) => Encoding.ASCII.GetBytes(value + '\0');
+    private static byte[] NullTerminated(string value)
+    {
+        return Encoding.ASCII.GetBytes(value + '\0');
+    }
 
     private static string CreateTempDirectory()
     {

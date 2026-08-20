@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
@@ -14,8 +13,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 /// </summary>
 internal sealed class NifWaterGeometry
 {
-    private readonly Vector3[] _positions;
     private readonly ushort[] _indices;
+    private readonly Vector3[] _positions;
 
     private NifWaterGeometry(
         Vector3[] positions,
@@ -36,10 +35,6 @@ internal sealed class NifWaterGeometry
     /// </summary>
     public uint WaterFormId { get; private init; }
 
-    /// <summary>Copy sharing the vertex/index payloads, stamped with the resolved water identity.</summary>
-    public NifWaterGeometry WithWaterFormId(uint waterFormId) =>
-        new(_positions, _indices, BoundsMin, BoundsMax) { WaterFormId = waterFormId };
-
     /// <summary>The authored (or placement-transformed) vertex positions.</summary>
     public ReadOnlyMemory<Vector3> Positions => _positions;
 
@@ -56,6 +51,12 @@ internal sealed class NifWaterGeometry
 
     /// <inheritdoc cref="BoundsMin" />
     public Vector3 BoundsMax { get; }
+
+    /// <summary>Copy sharing the vertex/index payloads, stamped with the resolved water identity.</summary>
+    public NifWaterGeometry WithWaterFormId(uint waterFormId)
+    {
+        return new NifWaterGeometry(_positions, _indices, BoundsMin, BoundsMax) { WaterFormId = waterFormId };
+    }
 
     /// <summary>
     ///     Validates and copies one triangle list. Malformed geometry is rejected as a unit: silently
@@ -178,14 +179,22 @@ internal sealed class NifWaterGeometry
                && BoundsMin.Y <= center.Y + radius;
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
-    private static bool IsFinite(Matrix4x4 value) =>
-        float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13) && float.IsFinite(value.M14) &&
-        float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23) && float.IsFinite(value.M24) &&
-        float.IsFinite(value.M31) && float.IsFinite(value.M32) && float.IsFinite(value.M33) && float.IsFinite(value.M34) &&
-        float.IsFinite(value.M41) && float.IsFinite(value.M42) && float.IsFinite(value.M43) && float.IsFinite(value.M44);
+    private static bool IsFinite(Matrix4x4 value)
+    {
+        return float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13) &&
+               float.IsFinite(value.M14) &&
+               float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23) &&
+               float.IsFinite(value.M24) &&
+               float.IsFinite(value.M31) && float.IsFinite(value.M32) && float.IsFinite(value.M33) &&
+               float.IsFinite(value.M34) &&
+               float.IsFinite(value.M41) && float.IsFinite(value.M42) && float.IsFinite(value.M43) &&
+               float.IsFinite(value.M44);
+    }
 }
 
 /// <summary>Two triangle-list primitives prepared for one six-vertex water draw instance.</summary>

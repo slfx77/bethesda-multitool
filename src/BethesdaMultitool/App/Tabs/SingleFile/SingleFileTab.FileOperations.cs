@@ -442,4 +442,3 @@ public sealed partial class SingleFileTab
 
     #endregion
 }
-

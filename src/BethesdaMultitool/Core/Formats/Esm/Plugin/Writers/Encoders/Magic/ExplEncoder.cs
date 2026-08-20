@@ -14,22 +14,23 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class ExplEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<ExplosionRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["Force"] = m => m.Force,
-        ["Damage"] = m => m.Damage,
-        ["Radius"] = m => m.Radius,
-        ["Light"] = m => m.Light,
-        ["Sound1"] = m => m.Sound1,
-        ["Flags"] = m => m.Flags,
-        ["IsRadius"] = m => m.IsRadius,
-        ["ImpactDataSet"] = m => m.ImpactDataSet,
-        ["Sound2"] = m => m.Sound2,
-        ["RadiationLevel"] = m => m.RadiationLevel,
-        ["RadiationDissipationTime"] = m => m.RadiationDissipationTime,
-        ["RadiationRadius"] = m => m.RadiationRadius,
-        ["SoundLevel"] = m => m.SoundLevel,
-    };
+    private static readonly Dictionary<string, Func<ExplosionRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Force"] = m => m.Force,
+            ["Damage"] = m => m.Damage,
+            ["Radius"] = m => m.Radius,
+            ["Light"] = m => m.Light,
+            ["Sound1"] = m => m.Sound1,
+            ["Flags"] = m => m.Flags,
+            ["IsRadius"] = m => m.IsRadius,
+            ["ImpactDataSet"] = m => m.ImpactDataSet,
+            ["Sound2"] = m => m.Sound2,
+            ["RadiationLevel"] = m => m.RadiationLevel,
+            ["RadiationDissipationTime"] = m => m.RadiationDissipationTime,
+            ["RadiationRadius"] = m => m.RadiationRadius,
+            ["SoundLevel"] = m => m.SoundLevel
+        };
 
     public string RecordType => "EXPL";
     public Type ModelType => typeof(ExplosionRecord);

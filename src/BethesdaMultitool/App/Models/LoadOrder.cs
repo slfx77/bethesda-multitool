@@ -132,4 +132,3 @@ internal sealed class LoadOrder : IDisposable
         SubtitleCsvPath = null;
     }
 }
-

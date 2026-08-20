@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 public sealed class Tes3PlacedWaterRetailTests
 {
     private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+
     private static readonly string[] RetailBsas =
     [
         Bsa,
@@ -66,8 +67,8 @@ public sealed class Tes3PlacedWaterRetailTests
         }
 
         var match = Assert.Single(matches);
-        Assert.Equal("Morrowind.bsa", match.Archive, ignoreCase: true);
-        Assert.Equal(@"meshes\x\ex_vivec_p_water_01.nif", match.Mesh, ignoreCase: true);
+        Assert.Equal("Morrowind.bsa", match.Archive, true);
+        Assert.Equal(@"meshes\x\ex_vivec_p_water_01.nif", match.Mesh, true);
     }
 
     private static NifRenderableModel ExtractModel(string meshPath)

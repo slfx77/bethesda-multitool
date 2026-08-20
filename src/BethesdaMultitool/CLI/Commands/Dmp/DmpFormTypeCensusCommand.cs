@@ -149,18 +149,24 @@ internal static class DmpFormTypeCensusCommand
             .GroupBy(b => Path.GetFileName(b.SourcePath!), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        string BuildDate(CensusEntry e) =>
-            buildsByFile.TryGetValue(e.FileName, out var b) && b.BuildDate.HasValue
+        string BuildDate(CensusEntry e)
+        {
+            return buildsByFile.TryGetValue(e.FileName, out var b) && b.BuildDate.HasValue
                 ? b.BuildDate.Value.ToString("yyyy-MM-dd")
                 : "";
+        }
 
-        string BuildType(CensusEntry e) =>
-            buildsByFile.TryGetValue(e.FileName, out var b) ? b.BuildType ?? "" : "";
+        string BuildType(CensusEntry e)
+        {
+            return buildsByFile.TryGetValue(e.FileName, out var b) ? b.BuildType ?? "" : "";
+        }
 
-        string PeStamp(CensusEntry e) =>
-            buildsByFile.TryGetValue(e.FileName, out var b) && b.PeTimestamp.HasValue
+        string PeStamp(CensusEntry e)
+        {
+            return buildsByFile.TryGetValue(e.FileName, out var b) && b.PeTimestamp.HasValue
                 ? $"0x{b.PeTimestamp.Value:X8}"
                 : "";
+        }
 
         var ordered = entries.OrderBy(e => BuildDate(e), StringComparer.Ordinal)
             .ThenBy(e => e.FileDate)

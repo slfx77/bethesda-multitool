@@ -46,7 +46,7 @@ internal sealed class MagicEffectSubrecordParser(bool bigEndian)
                     Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
                     Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
                     Type = GameStatNormalizer.IsPlausibleEffectTarget(targetType) ? targetType : 0,
-                    ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1,
+                    ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
                 });
                 return true;
 
@@ -58,7 +58,7 @@ internal sealed class MagicEffectSubrecordParser(bool bigEndian)
 
                 Effects[^1] = Effects[^1] with
                 {
-                    Conditions = [.. Effects[^1].Conditions, effectCondition],
+                    Conditions = [.. Effects[^1].Conditions, effectCondition]
                 };
                 _conditionStrings.Begin(Effects[^1].Conditions);
                 return true;

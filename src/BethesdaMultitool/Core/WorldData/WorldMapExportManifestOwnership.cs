@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Identifies the companion JSON files owned by the 2D tiled-map exporter. A filename convention
@@ -109,6 +109,7 @@ internal static class WorldMapExportManifestOwnership
             {
                 return false;
             }
+
             if (!hasFormatMarker &&
                 (!root.TryGetProperty("layer", out var layer) || layer.ValueKind != JsonValueKind.String ||
                  !HasInteger(root, "pixelsPerCell") ||
@@ -183,10 +184,12 @@ internal static class WorldMapExportManifestOwnership
         return true;
     }
 
-    private static bool HasInteger(JsonElement root, string propertyName) =>
-        root.TryGetProperty(propertyName, out var value) &&
-        value.ValueKind == JsonValueKind.Number &&
-        value.TryGetInt32(out _);
+    private static bool HasInteger(JsonElement root, string propertyName)
+    {
+        return root.TryGetProperty(propertyName, out var value) &&
+               value.ValueKind == JsonValueKind.Number &&
+               value.TryGetInt32(out _);
+    }
 
     private static bool IsNonNegativeInteger(ReadOnlySpan<char> value)
     {
@@ -195,6 +198,7 @@ internal static class WorldMapExportManifestOwnership
         {
             if (character is < '0' or > '9') return false;
         }
+
         return true;
     }
 }

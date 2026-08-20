@@ -20,9 +20,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 /// </summary>
 internal sealed class FormIdHeatmapRanking
 {
+    private int _distinct;
     private uint[] _ids = [];
     private int _pending;
-    private int _distinct;
     private bool _sealed;
 
     /// <summary>Distinct FormIDs in the sealed ranking (0 until <see cref="Seal" /> runs).</summary>

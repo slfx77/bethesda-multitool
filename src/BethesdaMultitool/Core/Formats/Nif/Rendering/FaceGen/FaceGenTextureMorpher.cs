@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Dds;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Orchestration;
@@ -344,7 +343,7 @@ internal static class FaceGenTextureMorpher
         Directory.CreateDirectory(DebugExportDir);
         var label = DebugLabel ?? "unknown";
         var lines = new List<string>();
-        foreach (var (name, arr) in new (string, float[]?)[]
+        foreach (var (name, arr) in new[]
                  {
                      ("FGGS(merged)", npc.FaceGenSymmetricCoeffs),
                      ("FGGA(merged)", npc.FaceGenAsymmetricCoeffs),
@@ -822,7 +821,10 @@ internal static class FaceGenTextureMorpher
         return (byte)(value + 0.5f);
     }
 
-    /// <summary>How per-actor face-tint deltas are accumulated onto the base texture, mirroring the various engine quantization paths (used to A/B test against the Xbox engine's output).</summary>
+    /// <summary>
+    ///     How per-actor face-tint deltas are accumulated onto the base texture, mirroring the various engine
+    ///     quantization paths (used to A/B test against the Xbox engine's output).
+    /// </summary>
     internal enum TextureAccumulationMode
     {
         CurrentFloat,
@@ -833,7 +835,10 @@ internal static class FaceGenTextureMorpher
         EngineQuantizedCombined65536
     }
 
-    /// <summary>How a FaceGen delta texture's signed values are encoded into unsigned bytes (centered at 128, or the engine's compressed half-range schemes).</summary>
+    /// <summary>
+    ///     How a FaceGen delta texture's signed values are encoded into unsigned bytes (centered at 128, or the engine's
+    ///     compressed half-range schemes).
+    /// </summary>
     internal enum DeltaTextureEncodingMode
     {
         Centered128,
@@ -841,4 +846,3 @@ internal static class FaceGenTextureMorpher
         EngineCompressed255HalfTruncate
     }
 }
-

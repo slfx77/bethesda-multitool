@@ -12,16 +12,30 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     FormIDs in its extra-data pointer slots (the Gomorrah attach AV family).
 ///     Deltas normalized here, all FNVEdit-verified against retail records:
 ///     <list type="bullet">
-///         <item><description><b>Order:</b> proto emits DATA before NVER; retail is
-///             EDID?, NVER, DATA, NVVX, NVTR, NVCA?, NVDP?, NVGD, NVEX?.</description></item>
-///         <item><description><b>NVER:</b> proto value 14; retail navmesh version is 11.</description></item>
-///         <item><description><b>DATA:</b> proto is 20 bytes; retail is 24 (Cell, Vertex
-///             Count, Triangle Count, Edge Link Count, Cover Triangle Count, Door Link
-///             Count). All five counts are re-derived from the actual sibling subrecord
-///             sizes rather than trusting proto field positions.</description></item>
-///         <item><description><b>NVGD:</b> proto captures lack the navmesh grid; a valid
-///             divisor-1 grid (single cell listing every triangle) is synthesized from the
-///             NVVX bounds. Functionally correct — grid queries just scan all triangles.</description></item>
+///         <item>
+///             <description>
+///                 <b>Order:</b> proto emits DATA before NVER; retail is
+///                 EDID?, NVER, DATA, NVVX, NVTR, NVCA?, NVDP?, NVGD, NVEX?.
+///             </description>
+///         </item>
+///         <item>
+///             <description><b>NVER:</b> proto value 14; retail navmesh version is 11.</description>
+///         </item>
+///         <item>
+///             <description>
+///                 <b>DATA:</b> proto is 20 bytes; retail is 24 (Cell, Vertex
+///                 Count, Triangle Count, Edge Link Count, Cover Triangle Count, Door Link
+///                 Count). All five counts are re-derived from the actual sibling subrecord
+///                 sizes rather than trusting proto field positions.
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <b>NVGD:</b> proto captures lack the navmesh grid; a valid
+///                 divisor-1 grid (single cell listing every triangle) is synthesized from the
+///                 NVVX bounds. Functionally correct — grid queries just scan all triangles.
+///             </description>
+///         </item>
 ///     </list>
 /// </summary>
 internal static class NavMeshRetailFormatNormalizer
@@ -122,7 +136,7 @@ internal static class NavMeshRetailFormatNormalizer
         }
 
         var triangleCount = Math.Min(nvtr.Length / TriangleSize, ushort.MaxValue);
-        var bytes = new byte[4 + 4 + 4 + 24 + 2 + (triangleCount * 2)];
+        var bytes = new byte[4 + 4 + 4 + 24 + 2 + triangleCount * 2];
         var span = bytes.AsSpan();
         BinaryPrimitives.WriteUInt32LittleEndian(span[..4], 1);
         BinaryPrimitives.WriteSingleLittleEndian(span.Slice(4, 4), maxX - minX);
@@ -136,7 +150,7 @@ internal static class NavMeshRetailFormatNormalizer
         BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(36, 2), (ushort)triangleCount);
         for (var i = 0; i < triangleCount; i++)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(38 + (i * 2), 2), (ushort)i);
+            BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(38 + i * 2, 2), (ushort)i);
         }
 
         return bytes;

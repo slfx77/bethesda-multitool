@@ -1,9 +1,8 @@
 using System.CommandLine;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
@@ -66,7 +65,8 @@ internal static class BsaDebugCommand
         var command = new Command("file-compare", "Compare a file in an archive against an extracted copy");
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA or BA2 file" };
-        var filenameArg = new Argument<string>("filename") { Description = "File path within archive (substring match)" };
+        var filenameArg = new Argument<string>("filename")
+            { Description = "File path within archive (substring match)" };
         var extractedArg = new Argument<string>("extracted") { Description = "Path to extracted file on disk" };
 
         command.Arguments.Add(inputArg);

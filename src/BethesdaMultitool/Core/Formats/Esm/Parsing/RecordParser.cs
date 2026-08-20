@@ -12,9 +12,12 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
+using BethesdaMultitool.Core.Formats.Tes3;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Minidump;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -118,7 +121,7 @@ public sealed class RecordParser
         if (_context.ScanResult.IsTes3)
         {
             progress?.Report((0, "Parsing TES3 records..."));
-            var tes3Result = new Tes3.Tes3RecordParser(_context).ParseAll();
+            var tes3Result = new Tes3RecordParser(_context).ParseAll();
             totalSw.Stop();
             Logger.Instance.Info(
                 $"[Semantic Parse] Complete (TES3). Time: {totalSw.Elapsed}, Records: {tes3Result.TotalRecordsProcessed}");
@@ -126,7 +129,7 @@ public sealed class RecordParser
             return tes3Result;
         }
 
-        var schemaPrimary = RecordModel.EsmSchemas.IsSchemaPrimary(_context.Game);
+        var schemaPrimary = EsmSchemas.IsSchemaPrimary(_context.Game);
         var progressReporter = progress == null
             ? null
             : new RecordParseProgressReporter(progress, _context.ScanResult.MainRecords, schemaPrimary);
@@ -146,7 +149,7 @@ public sealed class RecordParser
         // world/atmosphere collections overlaid from the typed parse (those are subrecord-based and parse
         // Oblivion correctly — verified: 19 climates, 84 worldspaces, 35k cells, real CLMT timing).
         RecordCollection? schemaResult = null;
-        if (RecordModel.EsmSchemas.ForGame(_context.Game) is { } gameSchema
+        if (EsmSchemas.ForGame(_context.Game) is { } gameSchema
             && schemaPrimary)
         {
             progressReporter?.SchemaProgress.Report(
@@ -321,7 +324,7 @@ public sealed class RecordParser
         // even on the schema-primary path — the schema decode has no script pipeline, so unlike the
         // other typed collections these are NOT discarded by the merge.
         var parseScripts = !typedForViewerOnly ||
-                           Games.GameProfiles.For(_context.Game).SupportsObscriptDecompilation;
+                           GameProfiles.For(_context.Game).SupportsObscriptDecompilation;
         var scripts = parseScripts ? _scripts.ParseScripts() : new List<ScriptRecord>();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
@@ -784,7 +787,7 @@ public sealed class RecordParser
                 // decode has no script/decompile pipeline, so the typed scripts must ride the
                 // bridge or the game surfaces none.
                 Scripts = result.Scripts,
-                RuntimeScripts = result.RuntimeScripts,
+                RuntimeScripts = result.RuntimeScripts
             };
         }
 
@@ -792,8 +795,8 @@ public sealed class RecordParser
         // profiled record types into a parallel DecodedTree map so the unified, profile-driven presentation
         // reads the same substrate every other game produces. Additive — the typed models are untouched.
         if (schemaResult is null
-            && RecordModel.EsmSchemas.ForGame(_context.Game) is not null
-            && RecordModel.EsmSchemas.IndexForGame(_context.Game) is { } enrichSchema)
+            && EsmSchemas.ForGame(_context.Game) is not null
+            && EsmSchemas.IndexForGame(_context.Game) is { } enrichSchema)
         {
             phaseSw.Restart();
             var decodedTrees = SchemaTreeEnricher.Enrich(_context, enrichSchema, SchemaTreeEnricher.ProfiledTypes);

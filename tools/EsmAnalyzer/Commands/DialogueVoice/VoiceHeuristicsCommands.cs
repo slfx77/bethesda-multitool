@@ -1,6 +1,4 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using Spectre.Console;
 using static EsmAnalyzer.Commands.DialogueVoice.VoiceFileMatcher;
 
@@ -253,4 +251,3 @@ public static class VoiceHeuristicsCommands
         return 0;
     }
 }
-

@@ -41,9 +41,9 @@ public sealed class ConditionSubrecordScannerTests
         Assert.Equal((ushort)0x0294, blind.FunctionIndex);
         Assert.Equal(0x11223344u, blind.Param1);
         Assert.Equal(0x55667788u, blind.Param2);
-        Assert.Equal<uint?>(bodyLength >= 24 ? 7u : null, blind.RunOn);
-        Assert.Equal<uint?>(bodyLength >= 28 ? 0x12345678u : null, blind.ReferenceStorage);
-        Assert.Equal<int?>(bodyLength >= 32 ? -42 : null, blind.Parameter3);
+        Assert.Equal(bodyLength >= 24 ? 7u : null, blind.RunOn);
+        Assert.Equal(bodyLength >= 28 ? 0x12345678u : null, blind.ReferenceStorage);
+        Assert.Equal(bodyLength >= 32 ? -42 : null, blind.Parameter3);
     }
 
     [Theory]
@@ -93,7 +93,7 @@ public sealed class ConditionSubrecordScannerTests
     public void BlindScanners_UseGlobal_PreserveRawFormIdBitsWithoutFloatPlausibilityRejection(bool bigEndian)
     {
         const uint rawGlobalBits = 0x7FC01234;
-        var bytes = BuildCtda(32, bigEndian, type: 0xA4, comparisonRawBits: rawGlobalBits);
+        var bytes = BuildCtda(32, bigEndian, 0xA4, rawGlobalBits);
 
         var byteCondition = Assert.Single(EsmRecordScanner.ScanForRecords(bytes).Conditions);
         var mappedCondition = Assert.Single(ScanViaMemoryMappedFile(bytes).Conditions);
@@ -137,7 +137,7 @@ public sealed class ConditionSubrecordScannerTests
     public void SemanticDumper_RendersUseGlobalAndPresentTailStorageWithoutInventingNumericComparison()
     {
         const uint rawGlobalBits = 0x7FC01234;
-        var bytes = BuildCtda(32, false, type: 0xA4, comparisonRawBits: rawGlobalBits);
+        var bytes = BuildCtda(32, false, 0xA4, rawGlobalBits);
         var condition = Assert.Single(EsmRecordScanner.ScanForRecords(bytes).Conditions);
         var result = new AnalysisResult
         {

@@ -20,7 +20,7 @@ public enum PlanDiagnosticKind
     ///     proceeded past. E.g. a dangling SCRO[i] that was dropped; the script will still
     ///     load but with one fewer operand.
     /// </summary>
-    Warning,
+    Warning
 }
 
 /// <summary>

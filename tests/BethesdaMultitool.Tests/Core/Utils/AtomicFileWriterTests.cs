@@ -13,7 +13,7 @@ public sealed class AtomicFileWriterTests
         await File.WriteAllTextAsync(
             targetPath,
             "old",
-            cancellationToken: TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken);
 
         await AtomicFileWriter.WriteAsync(
             targetPath,
@@ -114,7 +114,7 @@ public sealed class AtomicFileWriterTests
                 temporaryPath,
                 "new tile",
                 TestContext.Current.CancellationToken),
-            companionPathToInvalidate: companionPath,
+            companionPath,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
@@ -146,7 +146,7 @@ public sealed class AtomicFileWriterTests
                 temporaryPath,
                 "new tile",
                 TestContext.Current.CancellationToken),
-            companionPathToInvalidate: companionPath,
+            companionPath,
             cancellationToken: TestContext.Current.CancellationToken,
             phaseObserver: observed.Add);
 
@@ -180,7 +180,7 @@ public sealed class AtomicFileWriterTests
                 temporaryPath,
                 "new tile",
                 TestContext.Current.CancellationToken),
-            companionPathToInvalidate: absentCompanionPath,
+            absentCompanionPath,
             cancellationToken: TestContext.Current.CancellationToken,
             phaseObserver: observed.Add);
 
@@ -210,7 +210,7 @@ public sealed class AtomicFileWriterTests
                 temporaryPath,
                 "new tile",
                 TestContext.Current.CancellationToken),
-            companionPathToInvalidate: companionPath,
+            companionPath,
             cancellationToken: TestContext.Current.CancellationToken,
             phaseObserver: _ => throw new InvalidOperationException("synthetic observer failure"));
 
@@ -240,7 +240,7 @@ public sealed class AtomicFileWriterTests
                 temporaryPath,
                 "new tile",
                 TestContext.Current.CancellationToken),
-            companionPathToInvalidate: companionPath,
+            companionPath,
             cancellationToken: TestContext.Current.CancellationToken,
             phaseObserver: observed.Add));
         Assert.True(
@@ -278,7 +278,7 @@ public sealed class AtomicFileWriterTests
 
         public void Dispose()
         {
-            Directory.Delete(Path, recursive: true);
+            Directory.Delete(Path, true);
         }
     }
 }

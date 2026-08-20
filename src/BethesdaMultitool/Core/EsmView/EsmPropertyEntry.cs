@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
 /// <summary>
 ///     A name/value property entry displayed in the data browser detail panel.

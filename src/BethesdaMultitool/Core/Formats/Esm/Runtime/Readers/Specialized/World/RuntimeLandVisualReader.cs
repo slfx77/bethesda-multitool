@@ -7,6 +7,44 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 
 internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
 {
+    private const int LoadedDataDefaultQuadTextureOffset = 32;
+    private const int LoadedDataQuadTextureArrayOffset = 48;
+    private const int LoadedDataPercentArraysOffset = 64;
+
+    private const int LoadedDataQuadCount = 4;
+
+    // TESObjectLAND texture slots are 0..5. Slot 0 is the separate quadrant
+    // default/base texture; pQuadTextureArray and ppPercentArrays contain only
+    // the five alpha slots (engine slots 1..5). Reading beyond five walks into
+    // unrelated heap data and can manufacture striped VTXT masks.
+    private const int MaxAlphaTextureSlots = 5;
+    private const int TextureWeightSlotCount = 6;
+    private const int TextureWeightVertexCount = 17 * 17;
+    private const int TesFormEditorIdOffset = 16;
+    private const int TesFormFormIdOffset = 12;
+    private const byte TextureSetFormType = 0x04;
+    private const byte LandTextureFormType = 0x12;
+    private const byte GrassFormType = 0x24;
+    private const int RuntimeTextureSetSize = 192;
+    private const int RuntimeTextureSetBoundsOffset = 52;
+    private const int RuntimeTextureSetTexturesOffset = 72;
+    private const int RuntimeTextureSetTextureEntrySize = 12;
+    private const int RuntimeTextureSetTextureEntryPathOffset = 4;
+    private const int RuntimeTextureSetFlagsOffset = 160;
+    private const int RuntimeTextureSetTextureFileEntriesOffset = 164;
+    private const int TextureSetPathSlotCount = 6;
+    private const int TextureFileEntryProbeSize = 32;
+    private const int NiSourceTextureSize = 72;
+    private const int NiRefObjectRefCountOffset = 4;
+    private const int NiSourceTextureFilenameOffset = 48;
+    private const int MaxNiRefCount = 10000;
+    private const int MaxTexturePathBytes = 260;
+    private const int RuntimeLandTextureSize = 56;
+    private const int RuntimeLandTextureTextureSetOffset = 40;
+    private const int RuntimeLandTextureHavokDataOffset = 44;
+    private const int RuntimeLandTextureSpecularOffset = 47;
+    private const int RuntimeLandTextureGrassListOffset = 48;
+    private static readonly string[] NormalMapSuffixes = ["_n", "_normal", "_nrm"];
     private readonly RuntimeMemoryContext _context = context;
     private readonly Dictionary<uint, RuntimeLandTextureRead?> _runtimeLandTextureByPointer = new();
     private readonly Dictionary<uint, TextureSetRecord?> _runtimeTextureSetByPointer = new();
@@ -622,43 +660,6 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
 
         return path.Contains('\\') ? path : null;
     }
-
-    private const int LoadedDataDefaultQuadTextureOffset = 32;
-    private const int LoadedDataQuadTextureArrayOffset = 48;
-    private const int LoadedDataPercentArraysOffset = 64;
-    private const int LoadedDataQuadCount = 4;
-    // TESObjectLAND texture slots are 0..5. Slot 0 is the separate quadrant
-    // default/base texture; pQuadTextureArray and ppPercentArrays contain only
-    // the five alpha slots (engine slots 1..5). Reading beyond five walks into
-    // unrelated heap data and can manufacture striped VTXT masks.
-    private const int MaxAlphaTextureSlots = 5;
-    private const int TextureWeightSlotCount = 6;
-    private const int TextureWeightVertexCount = 17 * 17;
-    private const int TesFormEditorIdOffset = 16;
-    private const int TesFormFormIdOffset = 12;
-    private const byte TextureSetFormType = 0x04;
-    private const byte LandTextureFormType = 0x12;
-    private const byte GrassFormType = 0x24;
-    private const int RuntimeTextureSetSize = 192;
-    private const int RuntimeTextureSetBoundsOffset = 52;
-    private const int RuntimeTextureSetTexturesOffset = 72;
-    private const int RuntimeTextureSetTextureEntrySize = 12;
-    private const int RuntimeTextureSetTextureEntryPathOffset = 4;
-    private const int RuntimeTextureSetFlagsOffset = 160;
-    private const int RuntimeTextureSetTextureFileEntriesOffset = 164;
-    private const int TextureSetPathSlotCount = 6;
-    private const int TextureFileEntryProbeSize = 32;
-    private const int NiSourceTextureSize = 72;
-    private const int NiRefObjectRefCountOffset = 4;
-    private const int NiSourceTextureFilenameOffset = 48;
-    private const int MaxNiRefCount = 10000;
-    private const int MaxTexturePathBytes = 260;
-    private static readonly string[] NormalMapSuffixes = ["_n", "_normal", "_nrm"];
-    private const int RuntimeLandTextureSize = 56;
-    private const int RuntimeLandTextureTextureSetOffset = 40;
-    private const int RuntimeLandTextureHavokDataOffset = 44;
-    private const int RuntimeLandTextureSpecularOffset = 47;
-    private const int RuntimeLandTextureGrassListOffset = 48;
 }
 
 internal sealed record RuntimeLandTextureRead(

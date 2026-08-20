@@ -10,7 +10,7 @@ internal enum CollisionNodeState : byte
     Unknown = 0,
     Republishable = 1,
     AuthoritativeNone = 2,
-    TerminalUnavailable = 3,
+    TerminalUnavailable = 3
 }
 
 /// <summary>
@@ -107,7 +107,7 @@ internal sealed class CollisionRecoveryRegistry
                 CollisionMeshResolution.From(CollisionBuildResult.None),
             CollisionNodeState.TerminalUnavailable =>
                 CollisionMeshResolution.TerminalUnavailable,
-            _ => CollisionMeshResolution.Unresolved,
+            _ => CollisionMeshResolution.Unresolved
         };
     }
 

@@ -1,8 +1,9 @@
 using System.CommandLine;
 using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.DialogueVoice;
@@ -104,14 +105,14 @@ internal static class NpcDialogueCoverageCommand
                 .Select(g => g.FormId))
             .ToHashSet();
         var topicsBySpeaker =
-            global::BethesdaMultitool.DialogueMetadataBuilder.BuildTopicsBySpeaker(tree, npcsWithFullName);
+            DialogueMetadataBuilder.BuildTopicsBySpeaker(tree, npcsWithFullName);
         var pickerTopics = topicsBySpeaker.GetValueOrDefault(npc.Value.FormId) ?? [];
 
         var resolved = new Dictionary<uint, (TopicDialogueNode Topic, DialogueRecord Info)>();
         foreach (var topic in pickerTopics)
         {
             var filtered = DialogueViewerHelper.FilterInfoChain(
-                topic.InfoChain, questFilter: null, speakerFilter: npc.Value.FormId);
+                topic.InfoChain, null, npc.Value.FormId);
             foreach (var node in filtered)
             {
                 resolved.TryAdd(node.Info.FormId, (topic, node.Info));
@@ -133,6 +134,7 @@ internal static class NpcDialogueCoverageCommand
             $"(extra-shown INFOs from faction/race/unconditioned attribution: {extra.Count})");
 
         var topicById = new Dictionary<uint, TopicDialogueNode>();
+
         void IndexAll(IEnumerable<TopicDialogueNode> topics)
         {
             foreach (var t in topics) topicById.TryAdd(t.TopicFormId, t);
@@ -204,8 +206,10 @@ internal static class NpcDialogueCoverageCommand
         return missing.Count == 0 ? 0 : 2;
     }
 
-    private static bool HasPositiveGetIsId(DialogueRecord info, uint npcFormId) =>
-        HasPositiveCondition(info, GetIsIdFunction, npcFormId);
+    private static bool HasPositiveGetIsId(DialogueRecord info, uint npcFormId)
+    {
+        return HasPositiveCondition(info, GetIsIdFunction, npcFormId);
+    }
 
     private static bool HasPositiveCondition(DialogueRecord info, ushort function, uint parameter)
     {
@@ -234,7 +238,7 @@ internal static class NpcDialogueCoverageCommand
     ///     tree (Oblivion path) or the typed NpcRecord when present.
     /// </summary>
     private static (uint? Race, List<uint> Factions) ResolveRaceAndFactions(
-        BethesdaMultitool.Core.Formats.Esm.Models.RecordCollection records, uint npcFormId)
+        RecordCollection records, uint npcFormId)
     {
         var generic = records.GenericRecords.FirstOrDefault(g =>
             g.RecordType == "NPC_" && g.FormId == npcFormId);
@@ -246,7 +250,7 @@ internal static class NpcDialogueCoverageCommand
         uint? race = null;
         var factions = new List<uint>();
 
-        void Walk(IEnumerable<BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding.DecodedNode> nodes)
+        void Walk(IEnumerable<DecodedNode> nodes)
         {
             foreach (var node in nodes)
             {
@@ -258,7 +262,7 @@ internal static class NpcDialogueCoverageCommand
                     case "SNAM":
                     {
                         var factionId = node.FormId
-                            ?? node.Children.Select(c => c.FormId).FirstOrDefault(f => f is > 0);
+                                        ?? node.Children.Select(c => c.FormId).FirstOrDefault(f => f is > 0);
                         if (factionId is { } f and > 0)
                         {
                             factions.Add(f);
@@ -284,7 +288,7 @@ internal static class NpcDialogueCoverageCommand
     ///     GenericRecords (Oblivion and other schema-first games route NPC_ there).
     /// </summary>
     private static (uint FormId, string? EditorId, string? FullName)? ResolveNpc(
-        BethesdaMultitool.Core.Formats.Esm.Models.RecordCollection records, string text)
+        RecordCollection records, string text)
     {
         uint? wantedFormId = null;
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
@@ -293,9 +297,12 @@ internal static class NpcDialogueCoverageCommand
             wantedFormId = parsed;
         }
 
-        bool Matches(uint formId, string? editorId) => wantedFormId is { } id
-            ? formId == id
-            : string.Equals(editorId, text, StringComparison.OrdinalIgnoreCase);
+        bool Matches(uint formId, string? editorId)
+        {
+            return wantedFormId is { } id
+                ? formId == id
+                : string.Equals(editorId, text, StringComparison.OrdinalIgnoreCase);
+        }
 
         var typed = records.Npcs.FirstOrDefault(n => Matches(n.FormId, n.EditorId));
         if (typed is not null)

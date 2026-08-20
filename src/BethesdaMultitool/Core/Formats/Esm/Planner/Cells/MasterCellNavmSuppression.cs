@@ -12,11 +12,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     Gomorrah01 cold-<c>coc</c> null-deref. Opt out via
 ///     <c>--emit-master-cell-navm-augmentation</c>.
 ///     <para>
-///     The gate's yield is entirely a function of WHERE the capture's crash site was: a dump
-///     that died in a proto-only worldspace keeps everything (xex21: 46/46), one that died in
-///     retail-shipped territory loses nearly everything (xex44: 51 of 71). That made the silent
-///     version of this gate indistinguishable from "the dump held no navmeshes" — hence the
-///     mandatory aggregate diagnostic.
+///         The gate's yield is entirely a function of WHERE the capture's crash site was: a dump
+///         that died in a proto-only worldspace keeps everything (xex21: 46/46), one that died in
+///         retail-shipped territory loses nearly everything (xex44: 51 of 71). That made the silent
+///         version of this gate indistinguishable from "the dump held no navmeshes" — hence the
+///         mandatory aggregate diagnostic.
 ///     </para>
 /// </summary>
 internal static class MasterCellNavmSuppression

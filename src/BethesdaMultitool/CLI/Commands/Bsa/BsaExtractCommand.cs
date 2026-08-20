@@ -4,7 +4,6 @@ using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Orchestration;
 using Spectre.Console;

@@ -15,7 +15,7 @@ public sealed class EsmEditorIdExtractorTests
     [Theory]
     [InlineData((byte)0x22, 20)] // MSTT: BGSMovableStatic::TESForm
     [InlineData((byte)0x26, 12)] // FLOR: TESFlora::TESForm
-    [InlineData((byte)0x41, 0)]  // WRLD: TESForm-first control
+    [InlineData((byte)0x41, 0)] // WRLD: TESForm-first control
     public void TesFormInteriorOffset_ComesFromObjectRelativePdbLayout(byte formType, int expected)
     {
         var layout = PdbStructLayouts.Get(formType);

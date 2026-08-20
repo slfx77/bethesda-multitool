@@ -63,7 +63,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     }
 
     // Legacy property for compatibility
-    /// <summary>Legacy boolean view of <see cref="Status"/>: true only when fully extracted.</summary>
+    /// <summary>Legacy boolean view of <see cref="Status" />: true only when fully extracted.</summary>
     public bool IsExtracted
     {
         get => _status == ExtractionStatus.Extracted;

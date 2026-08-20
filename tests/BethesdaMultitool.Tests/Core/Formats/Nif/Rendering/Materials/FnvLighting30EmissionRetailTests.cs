@@ -109,6 +109,6 @@ public sealed class FnvLighting30EmissionRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC-final meshes BSA not available");
-        return MeshArchiveSet.Open(bsaPath!, null, false, false);
+        return MeshArchiveSet.Open(bsaPath!, null, false);
     }
 }

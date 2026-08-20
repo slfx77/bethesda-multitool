@@ -33,11 +33,6 @@ public static class FinalMasterXmlArchive
     /// <summary>Bytes preceding the first entry: version, count, payload size.</summary>
     private const int HeaderLength = 12;
 
-    /// <summary>One document recovered from the container.</summary>
-    /// <param name="Name">The flat name as stored, e.g. <c>hud_main_menu.xml</c>.</param>
-    /// <param name="Xml">The document bytes.</param>
-    public readonly record struct Entry(string Name, byte[] Xml);
-
     /// <summary>
     ///     True when the bytes look like a final_master_xml container (version 100, and a header
     ///     whose declared payload size matches the buffer).
@@ -105,4 +100,9 @@ public static class FinalMasterXmlArchive
 
         return entries;
     }
+
+    /// <summary>One document recovered from the container.</summary>
+    /// <param name="Name">The flat name as stored, e.g. <c>hud_main_menu.xml</c>.</param>
+    /// <param name="Xml">The document bytes.</param>
+    public readonly record struct Entry(string Name, byte[] Xml);
 }

@@ -119,7 +119,7 @@ public sealed class Tes4GrassInstancingTests
         foreach (var game in new[]
                  {
                      BethesdaGame.Oblivion, BethesdaGame.FalloutNewVegas,
-                     BethesdaGame.Fallout3, BethesdaGame.Skyrim,
+                     BethesdaGame.Fallout3, BethesdaGame.Skyrim
                  })
         {
             Assert.True(

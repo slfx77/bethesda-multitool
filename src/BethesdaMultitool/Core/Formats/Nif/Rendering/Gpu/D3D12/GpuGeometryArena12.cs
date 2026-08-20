@@ -21,33 +21,55 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposable
 {
-    /// <summary>16 MB per standard block. A handful of monolithic meshes exceed it (RepBay.NIF and
-    /// B29_RiseAnim.NIF run ~25 MB) — those get a dedicated block sized to the allocation.</summary>
+    /// <summary>
+    ///     16 MB per standard block. A handful of monolithic meshes exceed it (RepBay.NIF and
+    ///     B29_RiseAnim.NIF run ~25 MB) — those get a dedicated block sized to the allocation.
+    /// </summary>
     public const long DefaultBlockSize = 16L * 1024L * 1024L;
 
     private const int RegionAlignment = 16;
+    private readonly GeometryArenaAllocator _allocator;
+    private readonly List<IntPtr> _blockPointers = new();
+    private readonly List<ID3D12Resource> _blockResources = new();
 
     private readonly GpuDevice12 _gpu;
-    private readonly GeometryArenaAllocator _allocator;
-    private readonly List<ID3D12Resource> _blockResources = new();
-    private readonly List<IntPtr> _blockPointers = new();
     private long _committedBytes;
-    private ResourceRegistration? _registration;
     private bool _disposed;
+    private ResourceRegistration? _registration;
 
     public GpuGeometryArena12(GpuDevice12 gpu, long blockSize = DefaultBlockSize)
     {
         _gpu = gpu;
-        _allocator = new GeometryArenaAllocator(blockSize, RegionAlignment)
+        _allocator = new GeometryArenaAllocator(blockSize)
         {
             // FALLOUT_VIEWER_GEOMETRY_VALIDATE: double-free / overlap throws at the offending
             // call site and QueryLiveness can distinguish freed from recycled ranges.
-            StrictValidation = GeometryArenaDiagnostics.Enabled,
+            StrictValidation = GeometryArenaDiagnostics.Enabled
         };
     }
 
     /// <summary>Arena blocks currently committed.</summary>
     public int BlockCount => _blockResources.Count;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _registration?.Dispose();
+        _registration = null;
+        for (var i = 0; i < _blockResources.Count; i++)
+        {
+            _blockResources[i].Unmap(0);
+            _blockResources[i].Dispose();
+        }
+
+        _blockResources.Clear();
+        _blockPointers.Clear();
+    }
 
     public string ResourceName => nameof(GpuGeometryArena12);
 
@@ -58,11 +80,14 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     ///     The arena is never trimmed — allocations are owned by live meshes and reclaimed through
     ///     the mesh LRU's eviction cascade.
     /// </summary>
-    public ResourceStats GetStats() => new()
+    public ResourceStats GetStats()
     {
-        EstimatedBytes = _committedBytes,
-        EntryCount = _blockResources.Count,
-    };
+        return new ResourceStats
+        {
+            EstimatedBytes = _committedBytes,
+            EntryCount = _blockResources.Count
+        };
+    }
 
     /// <summary>
     ///     Registers the arena with <paramref name="registry" /> (unregistered again on
@@ -116,11 +141,11 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         var gpuBase = _blockResources[allocation.BlockIndex].GPUVirtualAddress + (ulong)allocation.Offset;
         return new GeometryAllocation12(
             allocation,
-            vertexBufferLocation: gpuBase,
-            indexBufferLocation: gpuBase + (ulong)alignedVertexBytes,
-            vertexBytes: (uint)vertexBytes.Length,
-            indexBytes: (uint)indexBytes.Length,
-            debugTag: debugTag);
+            gpuBase,
+            gpuBase + (ulong)alignedVertexBytes,
+            (uint)vertexBytes.Length,
+            (uint)indexBytes.Length,
+            debugTag);
     }
 
     /// <summary>Returns an allocation's range to the free-list. No-op after <see cref="Dispose" />.</summary>
@@ -148,10 +173,14 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         return new FreeHandle(this, allocation);
     }
 
-    /// <summary>Liveness of <paramref name="allocation" />'s range under strict tracking
-    /// (<see cref="ArenaLiveness.Untracked" /> when FALLOUT_VIEWER_GEOMETRY_VALIDATE is off).</summary>
-    public ArenaLiveness QueryLiveness(in GeometryAllocation12 allocation) =>
-        _disposed ? ArenaLiveness.Untracked : _allocator.QueryLiveness(allocation.Allocation);
+    /// <summary>
+    ///     Liveness of <paramref name="allocation" />'s range under strict tracking
+    ///     (<see cref="ArenaLiveness.Untracked" /> when FALLOUT_VIEWER_GEOMETRY_VALIDATE is off).
+    /// </summary>
+    public ArenaLiveness QueryLiveness(in GeometryAllocation12 allocation)
+    {
+        return _disposed ? ArenaLiveness.Untracked : _allocator.QueryLiveness(allocation.Allocation);
+    }
 
     /// <summary>
     ///     Hashes the mapped arena bytes that a view over <paramref name="gpuAddress" /> /
@@ -195,28 +224,8 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
             ["block"] = allocation.BlockIndex,
             ["offset"] = allocation.Offset,
             ["alignedSize"] = allocation.AlignedSize,
-            ["tag"] = tag,
+            ["tag"] = tag
         });
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        for (var i = 0; i < _blockResources.Count; i++)
-        {
-            _blockResources[i].Unmap(0, null);
-            _blockResources[i].Dispose();
-        }
-
-        _blockResources.Clear();
-        _blockPointers.Clear();
     }
 
     /// <summary>
@@ -236,8 +245,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
                 HeapProperties.UploadHeapProperties,
                 HeapFlags.None,
                 ResourceDescription.Buffer((ulong)blockBytes),
-                ResourceStates.GenericRead,
-                optimizedClearValue: null);
+                ResourceStates.GenericRead);
 
             void* mapped = null;
             try
@@ -256,7 +264,10 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         }
     }
 
-    private static long AlignUp(long value, int alignment) => (value + alignment - 1) & ~((long)alignment - 1);
+    private static long AlignUp(long value, int alignment)
+    {
+        return (value + alignment - 1) & ~((long)alignment - 1);
+    }
 
     private sealed class FreeHandle(GpuGeometryArena12 arena, GeometryAllocation12 allocation) : IDisposable
     {

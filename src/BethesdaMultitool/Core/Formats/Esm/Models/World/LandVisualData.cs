@@ -44,7 +44,10 @@ public record LandVisualData
     /// <summary>Total byte count of unattached VTXT subrecords.</summary>
     public int UnattachedVtxtByteCount { get; init; }
 
-    /// <summary>Aggregate provenance. Equals the unanimous per-field source, or <see cref="VisualDataSource.Merged" /> when fields disagree.</summary>
+    /// <summary>
+    ///     Aggregate provenance. Equals the unanimous per-field source, or <see cref="VisualDataSource.Merged" /> when
+    ///     fields disagree.
+    /// </summary>
     public VisualDataSource Source { get; init; } = VisualDataSource.None;
 
     /// <summary>Provenance of <see cref="VertexColors" />.</summary>

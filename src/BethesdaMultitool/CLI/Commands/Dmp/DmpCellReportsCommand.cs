@@ -1,8 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -149,4 +147,3 @@ internal static class DmpCellReportsCommand
         return string.IsNullOrEmpty(sanitized) ? "Unknown" : sanitized;
     }
 }
-

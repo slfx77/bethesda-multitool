@@ -20,21 +20,23 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal static class GpuSceneFormats
 {
-    /// <summary>HDR scene color the whole 3D pass renders into (MSAA + resolve). Holds values &gt; 1
-    /// (emissive glow, sun specular, imagespace scales) so the tonemap pass can roll highlights off +
-    /// lift midtones instead of the 8-bit target clipping them. Both scene targets tonemap this into
-    /// <see cref="LdrOutput" /> for display; the tonemap runs passthrough when this is an 8-bit format.
-    /// <para>
-    ///     <c>FALLOUT_VIEWER_HDR=0</c> reverts this to the legacy 8-bit format, so the ENTIRE HDR path
-    ///     (float targets + tonemap curve) collapses to the pre-HDR behavior — a true kill-switch, in
-    ///     case a hardware/driver combination misbehaves with the float scene target. Resolved once at
-    ///     first use.
-    /// </para></summary>
+    /// <summary>8-bit display format the tonemap pass writes and readback/present consume.</summary>
+    internal const Format LdrOutput = Format.B8G8R8A8_UNorm;
+
+    /// <summary>
+    ///     HDR scene color the whole 3D pass renders into (MSAA + resolve). Holds values &gt; 1
+    ///     (emissive glow, sun specular, imagespace scales) so the tonemap pass can roll highlights off +
+    ///     lift midtones instead of the 8-bit target clipping them. Both scene targets tonemap this into
+    ///     <see cref="LdrOutput" /> for display; the tonemap runs passthrough when this is an 8-bit format.
+    ///     <para>
+    ///         <c>FALLOUT_VIEWER_HDR=0</c> reverts this to the legacy 8-bit format, so the ENTIRE HDR path
+    ///         (float targets + tonemap curve) collapses to the pre-HDR behavior — a true kill-switch, in
+    ///         case a hardware/driver combination misbehaves with the float scene target. Resolved once at
+    ///         first use.
+    ///     </para>
+    /// </summary>
     internal static readonly Format SceneColor =
         Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") == "0"
             ? Format.B8G8R8A8_UNorm
             : Format.R16G16B16A16_Float;
-
-    /// <summary>8-bit display format the tonemap pass writes and readback/present consume.</summary>
-    internal const Format LdrOutput = Format.B8G8R8A8_UNorm;
 }

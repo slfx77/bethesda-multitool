@@ -3,11 +3,63 @@ using System.Globalization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    // Profiler-driving surface --------------------------------------------------------------
+
+    internal long Profiler_FrameIndex => _profileFrameIndex;
+
+    /// <summary>
+    ///     Profiler hook: true once the asynchronously-selected worldspace has built its spatial
+    ///     index and, for the WastelandNVHeavy stress scene, applied the deterministic bookmark.
+    ///     <see cref="LoadData" /> returns before the selection handler resumes after its UI yield,
+    ///     so starting a timed profile before this point races the centroid reset against the
+    ///     stress bookmark and can benchmark different camera positions across identical runs.
+    /// </summary>
+    internal bool Profiler_IsSceneReady =>
+        _spatialIndex is not null &&
+        _sceneReadyGeneration == _sceneSelectionGeneration &&
+        (_selectedInterior is not null || !IsWastelandNvHeavyStressScene() || _stressBookmarkApplied);
+
+    internal RendererProfilerCameraPose Profiler_CameraPose =>
+        new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
+
+    /// <summary>
+    ///     Profiler hook: the loaded worldspace's cell-edge size in world units. The harness takes its
+    ///     span/distance arguments in CELLS and previously converted them with the hard-coded
+    ///     <c>WorldGridConstants.CellSize</c>, which is 40.96× too large on Starfield (100-unit cells) —
+    ///     so every headless measurement was taken at a different distance than it reported. Convert
+    ///     through this instead.
+    /// </summary>
+    internal float Profiler_CellWorldSize => _cellSize;
+
+    internal WorldRenderStats? Profiler_TerrainStats => _terrain?.LastStats.Snapshot();
+    internal WorldRenderStats? Profiler_ReferenceStats => _references?.LastStats.Snapshot();
+    internal WorldRenderStats? Profiler_WaterStats => _water?.LastStats.Snapshot();
+    internal WorldRenderStats? Profiler_WireframeStats => _cellGrid?.LastStats.Snapshot();
+
+    /// <summary>
+    ///     Profiler hook: the FormId of the currently-selected exterior worldspace (null when an
+    ///     unlinked-exterior / interior entry is selected). Lets the capture harness round-trip the
+    ///     worldspace-sync parameter without switching.
+    /// </summary>
+    internal uint? Profiler_SelectedWorldspaceFormId =>
+        _data is null ? null : GetSelectedWorldspaceFormId(_data);
+
+    /// <summary>Profiler hook: number of exterior worldspaces (for the capture harness to iterate).</summary>
+    internal int Profiler_ExteriorWorldspaceCount => _data?.Worldspaces.Count ?? 0;
+
+    /// <summary>
+    ///     Profiler hook: the live perspective vertical FOV in degrees, so the P-key pose can copy
+    ///     it and a headless <c>--capture-frame</c> reproduces the SAME zoom/framing. Without this a capture
+    ///     always renders at the 60° default and a non-default live FOV looked like a different angle.
+    /// </summary>
+    internal float Profiler_CameraFovDegrees => _camera.FovYRadians * (180f / MathF.PI);
+
     private void EmitCompletedGpuFrames()
     {
         if (_gpuTimestampProfiler12 is null || !RendererProfilerTrace.IsEnabled)
@@ -183,10 +235,6 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    // Profiler-driving surface --------------------------------------------------------------
-
-    internal long Profiler_FrameIndex => _profileFrameIndex;
-
     private int BeginSceneSelection()
     {
         _sceneReadyGeneration = -1;
@@ -205,46 +253,10 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Profiler hook: true once the asynchronously-selected worldspace has built its spatial
-    ///     index and, for the WastelandNVHeavy stress scene, applied the deterministic bookmark.
-    ///     <see cref="LoadData"/> returns before the selection handler resumes after its UI yield,
-    ///     so starting a timed profile before this point races the centroid reset against the
-    ///     stress bookmark and can benchmark different camera positions across identical runs.
+    ///     Profiler hook: FormId + world-space centroid (north-Y) + name of exterior worldspace
+    ///     <paramref name="index" />, so the capture harness can target a specific worldspace and verify
+    ///     the top-down sync switches to it. Null when the index is out of range or has no placed cells.
     /// </summary>
-    internal bool Profiler_IsSceneReady =>
-        _spatialIndex is not null &&
-        _sceneReadyGeneration == _sceneSelectionGeneration &&
-        (_selectedInterior is not null || !IsWastelandNvHeavyStressScene() || _stressBookmarkApplied);
-
-    internal RendererProfilerCameraPose Profiler_CameraPose =>
-        new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
-
-    /// <summary>
-    ///     Profiler hook: the loaded worldspace's cell-edge size in world units. The harness takes its
-    ///     span/distance arguments in CELLS and previously converted them with the hard-coded
-    ///     <c>WorldGridConstants.CellSize</c>, which is 40.96× too large on Starfield (100-unit cells) —
-    ///     so every headless measurement was taken at a different distance than it reported. Convert
-    ///     through this instead.
-    /// </summary>
-    internal float Profiler_CellWorldSize => _cellSize;
-
-    internal WorldRenderStats? Profiler_TerrainStats => _terrain?.LastStats.Snapshot();
-    internal WorldRenderStats? Profiler_ReferenceStats => _references?.LastStats.Snapshot();
-    internal WorldRenderStats? Profiler_WaterStats => _water?.LastStats.Snapshot();
-    internal WorldRenderStats? Profiler_WireframeStats => _cellGrid?.LastStats.Snapshot();
-
-    /// <summary>Profiler hook: the FormId of the currently-selected exterior worldspace (null when an
-    /// unlinked-exterior / interior entry is selected). Lets the capture harness round-trip the
-    /// worldspace-sync parameter without switching.</summary>
-    internal uint? Profiler_SelectedWorldspaceFormId =>
-        _data is null ? null : GetSelectedWorldspaceFormId(_data);
-
-    /// <summary>Profiler hook: number of exterior worldspaces (for the capture harness to iterate).</summary>
-    internal int Profiler_ExteriorWorldspaceCount => _data?.Worldspaces.Count ?? 0;
-
-    /// <summary>Profiler hook: FormId + world-space centroid (north-Y) + name of exterior worldspace
-    /// <paramref name="index" />, so the capture harness can target a specific worldspace and verify
-    /// the top-down sync switches to it. Null when the index is out of range or has no placed cells.</summary>
     internal (uint FormId, float CenterX, float CenterY, string Name)? Profiler_GetWorldspaceCenter(int index)
     {
         if (_data is null || index < 0 || index >= _data.Worldspaces.Count) return null;
@@ -252,8 +264,14 @@ public sealed partial class WorldView3DControl
         long sumX = 0, sumY = 0, n = 0;
         foreach (var c in ws.Cells)
         {
-            if (c.GridX is int gx && c.GridY is int gy) { sumX += gx; sumY += gy; n++; }
+            if (c.GridX is int gx && c.GridY is int gy)
+            {
+                sumX += gx;
+                sumY += gy;
+                n++;
+            }
         }
+
         if (n == 0) return null;
         var cx = (float)((sumX / (double)n + 0.5) * _data.CellWorldSize);
         var cy = (float)((sumY / (double)n + 0.5) * _data.CellWorldSize);
@@ -296,13 +314,10 @@ public sealed partial class WorldView3DControl
         SetRenderDistance(pose.RenderDistance);
     }
 
-    /// <summary>Profiler hook: the live perspective vertical FOV in degrees, so the P-key pose can copy
-    /// it and a headless <c>--capture-frame</c> reproduces the SAME zoom/framing. Without this a capture
-    /// always renders at the 60° default and a non-default live FOV looked like a different angle.</summary>
-    internal float Profiler_CameraFovDegrees => _camera.FovYRadians * (180f / MathF.PI);
-
-    /// <summary>Profiler hook: apply <c>--capture-fov</c>. Clamped to the same [30,110]° range the live
-    /// FOV slider enforces so a replayed pose can never exceed what the viewer itself allows.</summary>
+    /// <summary>
+    ///     Profiler hook: apply <c>--capture-fov</c>. Clamped to the same [30,110]° range the live
+    ///     FOV slider enforces so a replayed pose can never exceed what the viewer itself allows.
+    /// </summary>
     internal void Profiler_SetCameraFov(float degrees)
     {
         var clamped = Math.Clamp(degrees, MinFovDegrees, MaxFovDegrees);

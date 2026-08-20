@@ -1,3 +1,5 @@
+using System.Security;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 internal static class ReferenceDiskCachePaths
@@ -45,7 +47,7 @@ internal static class ReferenceDiskCachePaths
 
                 try
                 {
-                    Directory.Delete(dir, recursive: true);
+                    Directory.Delete(dir, true);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -53,7 +55,7 @@ internal static class ReferenceDiskCachePaths
                 }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
             // Enumeration failed — the cache still works, the orphan sweep just didn't run.
         }

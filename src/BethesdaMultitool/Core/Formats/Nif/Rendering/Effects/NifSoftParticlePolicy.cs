@@ -8,7 +8,7 @@ internal enum NifSoftParticleSource
     None = 0,
     AuthoredSoftEffect = 1,
     ParticleSystemFallback = 2,
-    EffectsGeometryFallback = 3,
+    EffectsGeometryFallback = 3
 }
 
 /// <summary>
@@ -20,7 +20,7 @@ internal enum NifSoftParticleFadeTarget
 {
     Alpha = 0,
     ColorTowardZero = 1,
-    ColorTowardWhite = 2,
+    ColorTowardWhite = 2
 }
 
 internal readonly record struct NifSoftParticleSettings(
@@ -72,7 +72,7 @@ internal static class NifSoftParticlePolicy
         "fxmistlow01.nif",
         "fxmistlow01halfvis.nif",
         "fxmistlow01long.nif",
-        "fxmistlow01longhalfvis.nif",
+        "fxmistlow01longhalfvis.nif"
     };
 
     internal static NifSoftParticleSettings Resolve(in NifSoftParticleCandidate candidate)
@@ -137,12 +137,16 @@ internal static class NifSoftParticlePolicy
             : NifSoftParticleFadeTarget.ColorTowardZero;
     }
 
-    private static string NormalizePath(string? path) =>
-        (path ?? string.Empty).Replace('/', '\\').TrimStart('\\');
+    private static string NormalizePath(string? path)
+    {
+        return (path ?? string.Empty).Replace('/', '\\').TrimStart('\\');
+    }
 
-    private static bool IsEffectsPath(string normalizedPath) =>
-        normalizedPath.StartsWith("effects\\", StringComparison.OrdinalIgnoreCase) ||
-        normalizedPath.Contains("\\effects\\", StringComparison.OrdinalIgnoreCase);
+    private static bool IsEffectsPath(string normalizedPath)
+    {
+        return normalizedPath.StartsWith("effects\\", StringComparison.OrdinalIgnoreCase) ||
+               normalizedPath.Contains("\\effects\\", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>CPU reference for the HLSL reversed-Z occlusion and soft-intersection equations.</summary>
@@ -155,7 +159,8 @@ internal static class NifSoftParticleDepthMath
         if (!float.IsFinite(ndcDepth) || !float.IsFinite(nearPlane) || !float.IsFinite(farPlane) ||
             nearPlane <= 0f || farPlane <= nearPlane)
         {
-            throw new ArgumentOutOfRangeException(nameof(nearPlane), "Depth inputs must describe a finite perspective range.");
+            throw new ArgumentOutOfRangeException(nameof(nearPlane),
+                "Depth inputs must describe a finite perspective range.");
         }
 
         return nearPlane * farPlane /
@@ -195,7 +200,7 @@ internal static class NifSoftParticleDepthMath
                 1f + (source.Y - 1f) * feather,
                 1f + (source.Z - 1f) * feather,
                 source.W * feather),
-            _ => source,
+            _ => source
         };
     }
 }

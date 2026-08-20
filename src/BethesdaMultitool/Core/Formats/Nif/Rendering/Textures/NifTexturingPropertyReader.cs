@@ -72,7 +72,8 @@ internal static class NifTexturingPropertyReader
 
             var pos = block.DataOffset;
             var end = block.DataOffset + block.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings,
+                    nif.BinaryVersion))
             {
                 return null;
             }
@@ -103,7 +104,8 @@ internal static class NifTexturingPropertyReader
         sourceRef = -1;
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings,
+                nif.BinaryVersion))
         {
             return false;
         }
@@ -189,7 +191,8 @@ internal static class NifTexturingPropertyReader
 
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings,
+                nif.BinaryVersion))
         {
             return false;
         }

@@ -1,7 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
@@ -108,7 +106,7 @@ internal static class CoordBasedCellPairingPass
             result[masterIdx] = masterEntry with
             {
                 Source = SourceKind.DmpOverride,
-                DmpModel = entry.DmpModel,
+                DmpModel = entry.DmpModel
             };
             foldedDmpIndices.Add(i);
 
@@ -177,5 +175,3 @@ internal static class CoordBasedCellPairingPass
         return false;
     }
 }
-
-

@@ -19,12 +19,11 @@ internal sealed class RecordParseProgressReporter
     private readonly bool _schemaPrimary;
     private readonly HashSet<RecordDescriptor> _seenRecords = [];
     private readonly IProgress<(int percent, string phase)> _sink;
-    private readonly IProgress<(int percent, string phase)> _schemaSink;
     private readonly long _totalRecordBytes;
-    private long _seenRecordBytes;
     private int _lastPercent = -1;
     private string _lastPhase = string.Empty;
     private string _schemaPhase = "Decoding records...";
+    private long _seenRecordBytes;
 
     internal RecordParseProgressReporter(
         IProgress<(int percent, string phase)> sink,
@@ -33,7 +32,7 @@ internal sealed class RecordParseProgressReporter
     {
         _sink = sink;
         _schemaPrimary = schemaPrimary;
-        _schemaSink = new InlineProgress<(int percent, string phase)>(ReportSchemaProgress);
+        SchemaProgress = new InlineProgress<(int percent, string phase)>(ReportSchemaProgress);
 
         // The scan can retain repeated references to the same descriptor. Use the same identity as
         // ObserveRecordRead so the denominator and numerator agree and progress cannot exceed 99.
@@ -48,7 +47,7 @@ internal sealed class RecordParseProgressReporter
     ///     0..50 range; its internal "Complete" is deliberately replaced by the active decode label,
     ///     because only the complete semantic parse may announce final completion.
     /// </summary>
-    internal IProgress<(int percent, string phase)> SchemaProgress => _schemaSink;
+    internal IProgress<(int percent, string phase)> SchemaProgress { get; }
 
     /// <summary>
     ///     Installs the read observer for the typed pass. Call this only after the display-name
@@ -67,13 +66,13 @@ internal sealed class RecordParseProgressReporter
         var typedOffset = clamped == 0 ? 0 : (int)Math.Ceiling(clamped * typedRange / 100d);
         var mapped = _schemaPrimary ? SchemaStageEndPercent + typedOffset : clamped;
 
-        Report(mapped, phase, forcePhase: true);
+        Report(mapped, phase, true);
     }
 
     /// <summary>Emits the sole final 100% update.</summary>
     internal void Complete()
     {
-        Report(100, "Complete", forcePhase: true);
+        Report(100, "Complete", true);
     }
 
     private void ReportSchemaProgress((int percent, string phase) update)
@@ -88,7 +87,7 @@ internal sealed class RecordParseProgressReporter
             _schemaPhase = update.phase;
         }
 
-        Report(mapped, _schemaPhase, forcePhase: true);
+        Report(mapped, _schemaPhase, true);
     }
 
     private void ObserveRecordRead(DetectedMainRecord record)
@@ -112,7 +111,7 @@ internal sealed class RecordParseProgressReporter
 
         // Integer-percent throttling caps record-driven traffic at 99 notifications even for a
         // million-record plugin. Phase boundaries are still forced so their labels stay visible.
-        Report(mapped, _lastPhase, forcePhase: false);
+        Report(mapped, _lastPhase, false);
     }
 
     private void Report(int percent, string phase, bool forcePhase)
@@ -154,7 +153,7 @@ internal sealed class RecordParseProgressReporter
     }
 
     /// <summary>
-    ///     Unlike <see cref="Progress{T}"/>, this adapter does not post through a synchronization
+    ///     Unlike <see cref="Progress{T}" />, this adapter does not post through a synchronization
     ///     context: scaling and monotonicity are applied in the exact parser call that reports them.
     /// </summary>
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>

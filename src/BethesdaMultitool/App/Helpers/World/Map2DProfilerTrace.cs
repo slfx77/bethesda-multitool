@@ -23,9 +23,9 @@ internal static class Map2DProfilerTrace
 
     public static bool IsEnabled => s_enabled;
 
-    public static int IncrementFrame() => Interlocked.Increment(ref s_frameCounter);
-
     public static int Frame => Volatile.Read(ref s_frameCounter);
+
+    public static int IncrementFrame() => Interlocked.Increment(ref s_frameCounter);
 
     /// <summary>Writes a single trace event with formatted detail to the log when tracing is enabled.</summary>
     public static void Event(string evt, FormattableString detail)

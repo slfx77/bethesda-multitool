@@ -1,7 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -482,6 +481,6 @@ public sealed class FnvActiveLocalLightOracleTests
 
     private static byte At(byte[] red, int x, int y)
     {
-        return red[(y * 128) + x];
+        return red[y * 128 + x];
     }
 }

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

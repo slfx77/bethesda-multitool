@@ -3,7 +3,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;

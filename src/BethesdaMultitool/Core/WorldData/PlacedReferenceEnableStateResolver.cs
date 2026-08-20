@@ -1,7 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Resolves authored XESP enable-parent chains without UI or renderer state. The returned set
@@ -11,8 +11,10 @@ namespace BethesdaMultitool;
 internal static class PlacedReferenceEnableStateResolver
 {
     /// <summary>Convenience wrapper for callers without a prebuilt index (tests, small worlds).</summary>
-    internal static HashSet<uint> ResolveXespDisabledRefs(IReadOnlyList<CellRecord> cells) =>
-        ResolveXespDisabledRefs(PlacedRefIndex.Build(cells));
+    internal static HashSet<uint> ResolveXespDisabledRefs(IReadOnlyList<CellRecord> cells)
+    {
+        return ResolveXespDisabledRefs(PlacedRefIndex.Build(cells));
+    }
 
     /// <summary>
     ///     Index-driven resolve: the shared <see cref="PlacedRefIndex" /> replaces the private

@@ -35,6 +35,8 @@ internal static class ExternalEmittanceResolver
     ///     Retail BSEffect unlit path: <c>rgb *= lerp(1, externalColor, LightingInfluence)</c>.
     ///     Classic external-emittance properties have no packed influence and pass 1.
     /// </summary>
-    public static Vector3 Modulation(Vector3 externalColor, float influence) =>
-        Vector3.Lerp(Vector3.One, externalColor, Math.Clamp(influence, 0f, 1f));
+    public static Vector3 Modulation(Vector3 externalColor, float influence)
+    {
+        return Vector3.Lerp(Vector3.One, externalColor, Math.Clamp(influence, 0f, 1f));
+    }
 }

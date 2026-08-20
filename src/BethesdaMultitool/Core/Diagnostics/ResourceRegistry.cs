@@ -19,11 +19,11 @@ namespace BethesdaMultitool.Core.Diagnostics;
 /// </summary>
 internal sealed class ResourceRegistry
 {
-    private static ResourceRegistry? _instance;
-    private static readonly Lock InstanceLock = new();
-
     /// <summary>Cap on retained final-stats records of disposed resources (FIFO beyond this).</summary>
     private const int MaxRetiredRecords = 256;
+
+    private static ResourceRegistry? _instance;
+    private static readonly Lock InstanceLock = new();
 
     private readonly Lock _gate = new();
     private readonly List<ResourceRegistration> _registrations = [];
@@ -211,7 +211,7 @@ internal sealed class ResourceRegistry
             Evictions = existing.Stats.Evictions + latest.Evictions,
             Processed = existing.Stats.Processed + latest.Processed,
             Failures = existing.Stats.Failures + latest.Failures,
-            LastError = latest.LastError ?? existing.Stats.LastError,
+            LastError = latest.LastError ?? existing.Stats.LastError
         };
         return existing with { Stats = merged, RunCount = existing.RunCount + 1 };
     }

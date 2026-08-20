@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
@@ -16,7 +17,7 @@ internal static class RecordValidator
     ///     main dump scanner and the gap-recovery scanner so both apply exactly one plausibility gate.
     /// </summary>
     private static readonly IReadOnlySet<string> KnownSubrecordSignatures =
-        Conversion.Schema.SubrecordSchemaRegistry.GetAllSignatures();
+        SubrecordSchemaRegistry.GetAllSignatures();
 
     #region Detection Helpers
 
@@ -275,7 +276,7 @@ internal static class RecordValidator
 
         // Uncompressed: the subrecord chain must tile the payload. Garbage after a torn
         // header misaligns within a few steps; a genuine NAVI/WRLD walks clean.
-        var end = (long)payloadStart + dataSize;
+        var end = payloadStart + dataSize;
         var verifiableEnd = Math.Min(end, dataLength);
         long pos = payloadStart;
         var xxxxOverride = 0u;
@@ -291,7 +292,7 @@ internal static class RecordValidator
             for (var b = 0; b < 4; b++)
             {
                 var c = data[pos + b];
-                if (c is not ((>= (byte)'A' and <= (byte)'Z') or (>= (byte)'0' and <= (byte)'9') or (byte)'_'))
+                if (c is not (>= (byte)'A' and <= (byte)'Z' or >= (byte)'0' and <= (byte)'9' or (byte)'_'))
                 {
                     return false;
                 }

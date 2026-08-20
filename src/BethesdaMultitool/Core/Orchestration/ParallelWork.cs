@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool.Core.Orchestration;
@@ -21,7 +22,10 @@ internal readonly record struct WorkProgress(int Completed, int Total);
 /// </summary>
 internal static class ParallelWork
 {
-    /// <summary>Runs <paramref name="body" /> over <paramref name="source" /> in parallel at the policy's degree, with named timing logs and a transient diagnostics row.</summary>
+    /// <summary>
+    ///     Runs <paramref name="body" /> over <paramref name="source" /> in parallel at the policy's degree, with named
+    ///     timing logs and a transient diagnostics row.
+    /// </summary>
     public static void ForEach<T>(
         string name,
         IEnumerable<T> source,
@@ -49,7 +53,10 @@ internal static class ParallelWork
             });
     }
 
-    /// <summary>Async counterpart to <see cref="ForEach" />: awaits <paramref name="body" /> over <paramref name="source" /> in parallel at the policy's degree.</summary>
+    /// <summary>
+    ///     Async counterpart to <see cref="ForEach" />: awaits <paramref name="body" /> over <paramref name="source" />
+    ///     in parallel at the policy's degree.
+    /// </summary>
     public static async Task ForEachAsync<T>(
         string name,
         IEnumerable<T> source,
@@ -77,7 +84,10 @@ internal static class ParallelWork
             }).ConfigureAwait(false);
     }
 
-    /// <summary>Runs <paramref name="body" /> over the integer range [<paramref name="fromInclusive" />, <paramref name="toExclusive" />) in parallel at the policy's degree.</summary>
+    /// <summary>
+    ///     Runs <paramref name="body" /> over the integer range [<paramref name="fromInclusive" />,
+    ///     <paramref name="toExclusive" />) in parallel at the policy's degree.
+    /// </summary>
     public static void For(
         string name,
         int fromInclusive,
@@ -101,7 +111,7 @@ internal static class ParallelWork
                 }
                 finally
                 {
-                    run.OnItemFinished(progress: null);
+                    run.OnItemFinished(null);
                 }
             });
     }
@@ -130,8 +140,10 @@ internal static class ParallelWork
             cancellationToken);
     }
 
-    private static int TryCount<T>(IEnumerable<T> source) =>
-        source.TryGetNonEnumeratedCount(out var count) ? count : -1;
+    private static int TryCount<T>(IEnumerable<T> source)
+    {
+        return source.TryGetNonEnumeratedCount(out var count) ? count : -1;
+    }
 
     /// <summary>
     ///     Per-run scope: debug logs, elapsed time, and a transient registry row reporting in-flight
@@ -139,11 +151,11 @@ internal static class ParallelWork
     /// </summary>
     private sealed class RunScope : ITrackableResource, IDisposable
     {
-        private readonly Stopwatch _stopwatch;
         private readonly ResourceRegistration _registration;
+        private readonly Stopwatch _stopwatch;
         private readonly int _total;
-        private int _inFlight;
         private int _completed;
+        private int _inFlight;
 
         internal RunScope(string name, int degree, int total)
         {
@@ -151,28 +163,8 @@ internal static class ParallelWork
             _total = total;
             _stopwatch = Stopwatch.StartNew();
             Logger.Instance.Debug("{0}: started (dop {1}, {2} items).", ResourceName, degree,
-                total < 0 ? "?" : total.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                total < 0 ? "?" : total.ToString(CultureInfo.InvariantCulture));
             _registration = ResourceRegistry.Instance.Register(this);
-        }
-
-        public string ResourceName { get; }
-
-        public ResourceCategory Category => ResourceCategory.Queue;
-
-        public ResourceStats GetStats() => new()
-        {
-            EntryCount = _total < 0 ? 0 : _total,
-            InFlight = Volatile.Read(ref _inFlight),
-            Processed = Volatile.Read(ref _completed),
-        };
-
-        internal void OnItemStarted() => Interlocked.Increment(ref _inFlight);
-
-        internal void OnItemFinished(IProgress<WorkProgress>? progress)
-        {
-            Interlocked.Decrement(ref _inFlight);
-            var completed = Interlocked.Increment(ref _completed);
-            progress?.Report(new WorkProgress(completed, _total));
         }
 
         public void Dispose()
@@ -181,6 +173,32 @@ internal static class ParallelWork
             Logger.Instance.Debug(
                 "{0}: finished {1:N0} items in {2:N0} ms.",
                 ResourceName, Volatile.Read(ref _completed), _stopwatch.Elapsed.TotalMilliseconds);
+        }
+
+        public string ResourceName { get; }
+
+        public ResourceCategory Category => ResourceCategory.Queue;
+
+        public ResourceStats GetStats()
+        {
+            return new ResourceStats
+            {
+                EntryCount = _total < 0 ? 0 : _total,
+                InFlight = Volatile.Read(ref _inFlight),
+                Processed = Volatile.Read(ref _completed)
+            };
+        }
+
+        internal void OnItemStarted()
+        {
+            Interlocked.Increment(ref _inFlight);
+        }
+
+        internal void OnItemFinished(IProgress<WorkProgress>? progress)
+        {
+            Interlocked.Decrement(ref _inFlight);
+            var completed = Interlocked.Increment(ref _completed);
+            progress?.Report(new WorkProgress(completed, _total));
         }
     }
 }

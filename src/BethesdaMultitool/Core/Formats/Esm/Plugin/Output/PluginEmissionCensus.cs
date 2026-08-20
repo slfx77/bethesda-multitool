@@ -9,13 +9,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 /// <summary>
 ///     Counts what a finished plugin actually contains, by walking the assembled bytes.
 ///     <para>
-///     This exists because per-emission counters cannot be trusted: records are written
-///     into buckets that later passes can still discard wholesale (the cell gates clear
-///     NAVM prefixes and drop whole cells after their children encode), and the planner's
-///     top-level writer skips encoder-declined overrides. Counting at each write site
-///     therefore drifts from the file — the defect that left the TES4 HEDR record count
-///     35% low and made <see cref="Validation.PluginRoundTripValidator" /> warn on every
-///     affected conversion. The assembled byte stream is the only source that cannot lie.
+///         This exists because per-emission counters cannot be trusted: records are written
+///         into buckets that later passes can still discard wholesale (the cell gates clear
+///         NAVM prefixes and drop whole cells after their children encode), and the planner's
+///         top-level writer skips encoder-declined overrides. Counting at each write site
+///         therefore drifts from the file — the defect that left the TES4 HEDR record count
+///         35% low and made <see cref="Validation.PluginRoundTripValidator" /> warn on every
+///         affected conversion. The assembled byte stream is the only source that cannot lie.
 ///     </para>
 /// </summary>
 internal readonly record struct PluginEmissionCensus
@@ -80,7 +80,7 @@ internal readonly record struct PluginEmissionCensus
                 byType[signature] = byType.GetValueOrDefault(signature) + 1;
 
                 var formId = BinaryPrimitives.ReadUInt32LittleEndian(plugin.Slice(pos + 12, 4));
-                if ((formId >> 24) == FormIdAllocator.PluginIndex)
+                if (formId >> 24 == FormIdAllocator.PluginIndex)
                 {
                     newRecords++;
                 }
@@ -105,7 +105,7 @@ internal readonly record struct PluginEmissionCensus
             Groups = groups,
             NewRecords = newRecords,
             OverrideRecords = overrideRecords,
-            ByType = byType,
+            ByType = byType
         };
     }
 

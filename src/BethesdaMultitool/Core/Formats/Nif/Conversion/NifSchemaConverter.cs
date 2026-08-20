@@ -5,7 +5,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Schema;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
@@ -25,7 +24,9 @@ internal sealed class NifSchemaConverter
     // concurrent so the cache is shared across concurrent batch conversions and bounded by the schema.
     private static readonly ConcurrentDictionary<string, uint> VersionParseCache = new(StringComparer.Ordinal);
 
-    private readonly NifSchema _schema;
+    // Reused across blocks (one converter instance is confined to a single conversion = single thread;
+    // see NifOutputWriter). Cleared per TryConvert instead of allocating a fresh dictionary per block.
+    private readonly Dictionary<string, object> _fieldValues = new();
 
     // Measure-only mode: walk fields and advance position WITHOUT byte-swapping or block-ref remapping.
     // Used by NifParser to recover per-block byte ranges for older NIFs (Oblivion 20.0.0.x, Morrowind
@@ -35,11 +36,9 @@ internal sealed class NifSchemaConverter
     // `string` struct's String/Index fields are version-gated since=20.1.0.3 / until=20.0.0.5).
     private readonly bool _measure;
 
-    private readonly NifValueConverter _valueConverter;
+    private readonly NifSchema _schema;
 
-    // Reused across blocks (one converter instance is confined to a single conversion = single thread;
-    // see NifOutputWriter). Cleared per TryConvert instead of allocating a fresh dictionary per block.
-    private readonly Dictionary<string, object> _fieldValues = new();
+    private readonly NifValueConverter _valueConverter;
 
     public NifSchemaConverter(NifSchema schema, uint version = 0x14020007, int userVersion = 0,
         int bsVersion = 34, bool measure = false)

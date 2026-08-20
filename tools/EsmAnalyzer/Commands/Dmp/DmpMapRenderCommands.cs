@@ -1,12 +1,7 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Export.Map;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Semantic;
 using ImageMagick;
 using ImageMagick.Drawing;
@@ -33,23 +28,29 @@ public static class DmpMapRenderCommands
         command.Arguments.Add(dirArg);
 
         var outputOption = new Option<string?>("-o", "--output")
-        { Description = "Output directory (default: {directory}/maps/)" };
+            { Description = "Output directory (default: {directory}/maps/)" };
         command.Options.Add(outputOption);
 
         var sizeOption = new Option<int>("--size")
-        { Description = "Long edge in pixels (default: 4096)", DefaultValueFactory = _ => DefaultLongEdge };
+            { Description = "Long edge in pixels (default: 4096)", DefaultValueFactory = _ => DefaultLongEdge };
         command.Options.Add(sizeOption);
 
         var schemeOption = new Option<string>("--scheme")
-        { Description = "Color scheme: amber, green, white, blue, red (default: amber)", DefaultValueFactory = _ => "amber" };
+        {
+            Description = "Color scheme: amber, green, white, blue, red (default: amber)",
+            DefaultValueFactory = _ => "amber"
+        };
         command.Options.Add(schemeOption);
 
         var gifDelayOption = new Option<int>("--gif-delay")
-        { Description = "GIF frame delay in 1/100ths of a second (default: 100 = 1s per frame)", DefaultValueFactory = _ => 100 };
+        {
+            Description = "GIF frame delay in 1/100ths of a second (default: 100 = 1s per frame)",
+            DefaultValueFactory = _ => 100
+        };
         command.Options.Add(gifDelayOption);
 
         var fo3EsmOption = new Option<string?>("--fo3-esm")
-        { Description = "Path to Fallout3.esm — markers from this ESM are excluded from output" };
+            { Description = "Path to Fallout3.esm — markers from this ESM are excluded from output" };
         command.Options.Add(fo3EsmOption);
 
         command.SetAction(async (parseResult, cancellationToken) =>
@@ -65,9 +66,6 @@ public static class DmpMapRenderCommands
 
         return command;
     }
-
-    private sealed record FrameData(
-        string FileName, string Stem, List<PlacedReference> Markers, DateTime? ModuleTimestamp);
 
     private static async Task RunAsync(string dirPath, string? outputDir, int longEdge, string schemeName,
         int gifDelay, string? fo3EsmPath, CancellationToken cancellationToken)
@@ -295,12 +293,6 @@ public static class DmpMapRenderCommands
         }
     }
 
-    // ========================================================================
-    // World Bounds
-    // ========================================================================
-
-    private sealed record WorldBounds(float MinX, float MaxX, float MinY, float MaxY, float WorldW, float WorldH);
-
     private static WorldBounds ComputeWorldBounds(List<PlacedReference> allMarkers)
     {
         var minX = allMarkers.Min(m => m.X);
@@ -383,7 +375,7 @@ public static class DmpMapRenderCommands
 
         // Draw grid lines
         var gridColor = MagickColor.FromRgba(255, 255, 255, 40);
-        var gridWidth = Math.Max(0.5, (double)sizing.OutlineWidth * 0.5);
+        var gridWidth = Math.Max(0.5, sizing.OutlineWidth * 0.5);
 
         foreach (var line in layout.GridLines)
         {
@@ -397,7 +389,7 @@ public static class DmpMapRenderCommands
 
         // Draw cell coordinate labels at each cell's top-left corner
         const float cellWorldSize = 4096f;
-        var cellLabelFontSize = (double)(sizing.LabelFontSize * 0.6);
+        var cellLabelFontSize = sizing.LabelFontSize * 0.6;
         var cellPixelSize = cellWorldSize * pixelsPerUnit;
 
         if (cellPixelSize >= cellLabelFontSize * 4)
@@ -418,8 +410,8 @@ public static class DmpMapRenderCommands
                         bounds.MinX, bounds.MaxY, pixelsPerUnit);
 
                     var inset = cellLabelFontSize * 0.3;
-                    var drawX = (double)px + inset;
-                    var drawY = (double)py + inset + cellLabelFontSize;
+                    var drawX = px + inset;
+                    var drawY = py + inset + cellLabelFontSize;
 
                     if (drawX < 0 || drawX > imageW || drawY < 0 || drawY > imageH)
                         continue;
@@ -438,7 +430,7 @@ public static class DmpMapRenderCommands
 
         // Draw marker icons tinted to scheme color (fallback: colored circle + glyph)
         var iconSize = (uint)(sizing.MarkerRadius * 2);
-        var glyphFontSize = (double)sizing.MarkerRadius * 1.2;
+        var glyphFontSize = sizing.MarkerRadius * 1.2;
         var tintColor = MagickColor.FromRgb(scheme.R, scheme.G, scheme.B);
 
         foreach (var m in layout.Markers)
@@ -488,7 +480,7 @@ public static class DmpMapRenderCommands
         }
 
         // Draw leader lines (behind labels)
-        var leaderWidth = Math.Max(1.0, (double)sizing.MarkerRadius * 0.1);
+        var leaderWidth = Math.Max(1.0, sizing.MarkerRadius * 0.1);
 
         foreach (var lp in layout.Labels)
         {
@@ -622,15 +614,16 @@ public static class DmpMapRenderCommands
         return new MagickImage(MagickColor.FromRgb(bgR, bgG, bgB), (uint)imageW, (uint)imageH);
     }
 
-    private static MapMarkerType? ToMarkerType(ushort? value) =>
-        value.HasValue && Enum.IsDefined(typeof(MapMarkerType), value.Value)
+    private static MapMarkerType? ToMarkerType(ushort? value)
+    {
+        return value.HasValue && Enum.IsDefined(typeof(MapMarkerType), value.Value)
             ? (MapMarkerType)value.Value
             : null;
+    }
 
-    private sealed record SchemeColor(string Name, byte R, byte G, byte B);
-
-    private static SchemeColor ParseScheme(string schemeName) =>
-        schemeName.ToLowerInvariant() switch
+    private static SchemeColor ParseScheme(string schemeName)
+    {
+        return schemeName.ToLowerInvariant() switch
         {
             "green" => new SchemeColor("Green", 26, 255, 128),
             "white" => new SchemeColor("White", 255, 255, 255),
@@ -638,5 +631,19 @@ public static class DmpMapRenderCommands
             "red" => new SchemeColor("Red", 255, 67, 42),
             _ => new SchemeColor("Amber", 255, 182, 66)
         };
-}
+    }
 
+    private sealed record FrameData(
+        string FileName,
+        string Stem,
+        List<PlacedReference> Markers,
+        DateTime? ModuleTimestamp);
+
+    // ========================================================================
+    // World Bounds
+    // ========================================================================
+
+    private sealed record WorldBounds(float MinX, float MaxX, float MinY, float MaxY, float WorldW, float WorldH);
+
+    private sealed record SchemeColor(string Name, byte R, byte G, byte B);
+}

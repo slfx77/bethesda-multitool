@@ -10,10 +10,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 ///     for the NPC, so it shows the dialogue menu with no topics — the only choice the
 ///     player sees is Goodbye, even when the NPC has dozens of conversation topics emitted.
 ///     <para>
-///     This mirrors how vanilla NPCs (e.g. Arcade Gannon — 55 INFOs under master GREETING,
-///     each TCLT-linked to topic-tree entry points) reach their topic trees. Proto-build
-///     captures may not include any GREETING INFO for a given new NPC; the synth covers
-///     that gap.
+///         This mirrors how vanilla NPCs (e.g. Arcade Gannon — 55 INFOs under master GREETING,
+///         each TCLT-linked to topic-tree entry points) reach their topic trees. Proto-build
+///         captures may not include any GREETING INFO for a given new NPC; the synth covers
+///         that gap.
 ///     </para>
 /// </summary>
 internal static class GreetingEntrySynthesizer
@@ -27,7 +27,7 @@ internal static class GreetingEntrySynthesizer
     /// <summary>
     ///     Synthesize GREETING INFOs for every (speaker, quest) pair that has at least one
     ///     new topic DIAL but no existing INFO under master GREETING. Each synth INFO carries
-///     a single <c>GetIsID(speaker) == 1.0</c> condition so only this NPC speaks it, and
+    ///     a single <c>GetIsID(speaker) == 1.0</c> condition so only this NPC speaks it, and
     ///     TCLT entries linking to the inferred root DIALs for that speaker's quest tree so
     ///     the engine can surface those as topic-tree entry points after the greeting plays.
     /// </summary>

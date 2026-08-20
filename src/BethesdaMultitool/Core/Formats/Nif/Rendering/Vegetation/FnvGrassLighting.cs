@@ -208,7 +208,10 @@ internal static class FnvGrassLighting
         return true;
     }
 
-    private static int Index(int i, int j) => j * LandGridSize + i;
+    private static int Index(int i, int j)
+    {
+        return j * LandGridSize + i;
+    }
 
     private static Vector3? ReadColor(byte[] data, int vertexIndex)
     {
@@ -229,8 +232,10 @@ internal static class FnvGrassLighting
             unchecked((sbyte)data[offset + 2]) / 127f);
     }
 
-    private static Vector3 Blend(Vector3 a, Vector3 b, Vector3 c, float wa, float wb, float wc) =>
-        a * wa + b * wb + c * wc;
+    private static Vector3 Blend(Vector3 a, Vector3 b, Vector3 c, float wa, float wb, float wc)
+    {
+        return a * wa + b * wb + c * wc;
+    }
 
     private readonly record struct Triangle(
         int IndexA,

@@ -24,7 +24,7 @@ public sealed class PlannedCpthEncoder : IPlannedRecordEncoder<CameraPathRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedCpthEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedCpthEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

@@ -144,7 +144,8 @@ public sealed class EsmConversionStats
         sb.AppendLine("Script IsPlayerInRegion parameter fixups:");
         sb.AppendLine($"  Call sites rewritten: {ScriptRegionSitesRewritten:N0} " +
                       $"(in {ScriptRegionScriptsTouched:N0} scripts, {ScriptRegionScrosAppended:N0} SCRO entries appended)");
-        sb.AppendLine("  (July-era compiler stored the Region param as an inline string; PC engines require SCRO refs)");
+        sb.AppendLine(
+            "  (July-era compiler stored the Region param as an inline string; PC engines require SCRO refs)");
     }
 
     private void AppendSkippedStats(StringBuilder sb)

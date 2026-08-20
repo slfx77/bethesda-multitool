@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -102,7 +103,9 @@ internal static class WorldMapWaterRenderer
         if (waterPalette is not null)
         {
             const float MaskInteriorMax = 180f; // Mirror OverlayWaterColored: lerp Shallow→Deep by mask/180.
-            float shallowR = waterPalette.Shallow.R, shallowG = waterPalette.Shallow.G, shallowB = waterPalette.Shallow.B;
+            float shallowR = waterPalette.Shallow.R,
+                shallowG = waterPalette.Shallow.G,
+                shallowB = waterPalette.Shallow.B;
             float deepR = waterPalette.Deep.R, deepG = waterPalette.Deep.G, deepB = waterPalette.Deep.B;
             for (var i = 0; i < pixelCount; i++)
             {
@@ -184,8 +187,12 @@ internal static class WorldMapWaterRenderer
         const float MaskInteriorMax = 180f; // BuildLowResWaterMaskWithNeighbors plants 180 pre-blur
 
         var pixelCount = width * height;
-        var shallowR = colors.Shallow.R; var shallowG = colors.Shallow.G; var shallowB = colors.Shallow.B;
-        var deepR = colors.Deep.R; var deepG = colors.Deep.G; var deepB = colors.Deep.B;
+        var shallowR = colors.Shallow.R;
+        var shallowG = colors.Shallow.G;
+        var shallowB = colors.Shallow.B;
+        var deepR = colors.Deep.R;
+        var deepG = colors.Deep.G;
+        var deepB = colors.Deep.B;
 
         for (var i = 0; i < pixelCount; i++)
         {

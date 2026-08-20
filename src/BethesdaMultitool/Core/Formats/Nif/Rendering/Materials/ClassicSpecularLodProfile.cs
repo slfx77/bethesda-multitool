@@ -14,16 +14,6 @@ internal readonly record struct ClassicSpecularLodProfile(
     float FadeRange,
     float LodAdjust)
 {
-    internal static ClassicSpecularLodProfile ForGame(BethesdaGame game) => game switch
-    {
-        // FO3 parity 2026-08-10: FO3's shipped Fallout_default.ini authors the identical
-        // fSpecularLODDefaultStartFade=500 / fSpecularLODRange=300 pair, so the same envelope
-        // applies. The fade LAW (sphere-surface distance, piecewise ramp) remains an FNV
-        // decompile recovery assumed shared — flagged for opportunistic FO3 confirmation.
-        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new(true, 500f, 300f, 1f),
-        _ => default,
-    };
-
     internal float EndFade => StartFade + FadeRange;
 
     internal bool Enabled =>
@@ -33,11 +23,27 @@ internal readonly record struct ClassicSpecularLodProfile(
         float.IsFinite(LodAdjust) &&
         EndFade > 0f;
 
+    internal static ClassicSpecularLodProfile ForGame(BethesdaGame game)
+    {
+        return game switch
+        {
+            // FO3 parity 2026-08-10: FO3's shipped Fallout_default.ini authors the identical
+            // fSpecularLODDefaultStartFade=500 / fSpecularLODRange=300 pair, so the same envelope
+            // applies. The fade LAW (sphere-surface distance, piecewise ramp) remains an FNV
+            // decompile recovery assumed shared — flagged for opportunistic FO3 confirmation.
+            BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 =>
+                new ClassicSpecularLodProfile(true, 500f, 300f, 1f),
+            _ => default
+        };
+    }
+
     /// <summary>
     ///     x=start, y=end, z=LOD adjust, w=enabled. A stinger draw bypasses the retail fade.
     /// </summary>
-    internal Vector4 ShaderParameters(bool specularEligible, bool isStinger = false) =>
-        new(StartFade, EndFade, LodAdjust, Enabled && specularEligible && !isStinger ? 1f : 0f);
+    internal Vector4 ShaderParameters(bool specularEligible, bool isStinger = false)
+    {
+        return new Vector4(StartFade, EndFade, LodAdjust, Enabled && specularEligible && !isStinger ? 1f : 0f);
+    }
 }
 
 /// <summary>CPU mirror of the retail sphere-surface specular-LOD distance and piecewise fade.</summary>
@@ -102,6 +108,8 @@ internal static class ClassicSpecularLodFade
         return 1f - (distance - profile.StartFade) / (profile.EndFade - profile.StartFade);
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }

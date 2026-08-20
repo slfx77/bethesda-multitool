@@ -33,14 +33,14 @@ internal static class CellPlanFinalizer
         {
             CellsByFormId = PlacedRefLinkPlanner.Apply(
                 plan.CellsByFormId, masterByFormId, plan.SourceToEmittedFormId,
-                plan.EmittedFormIds, plan.NavmDoorLinks.ValidDoorRefFormIds),
+                plan.EmittedFormIds, plan.NavmDoorLinks.ValidDoorRefFormIds)
         };
 
         return plan with
         {
             NavmConnectivityByFormId = PlanNavmConnectivity.Compute(
                 plan.CellsByFormId, plan.EmittedNavmFormIds, masterByFormId,
-                plan.SourceToEmittedFormId, plan.NavmDoorLinks, plan.EmittedFormIds),
+                plan.SourceToEmittedFormId, plan.NavmDoorLinks, plan.EmittedFormIds)
         };
     }
 }

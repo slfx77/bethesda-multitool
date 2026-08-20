@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.CLI.Commands.Dmp;
 
 internal static class CellWorldspaceAuthorityJson
 {
@@ -210,6 +210,7 @@ internal static class CellWorldspaceAuthorityJson
             writer.WriteNumber("observed", src.ObservedCells);
             writer.WriteEndObject();
         }
+
         writer.WriteEndArray();
 
         writer.WriteStartObject("worldspaces");
@@ -217,6 +218,7 @@ internal static class CellWorldspaceAuthorityJson
         {
             writer.WriteString($"0x{ws:X8}", name);
         }
+
         writer.WriteEndObject();
 
         writer.WriteStartObject("cells");
@@ -251,6 +253,7 @@ internal static class CellWorldspaceAuthorityJson
 
             writer.WriteEndObject();
         }
+
         writer.WriteEndObject();
 
         writer.WriteStartObject("references");
@@ -258,6 +261,7 @@ internal static class CellWorldspaceAuthorityJson
         {
             writer.WriteString($"0x{reference:X8}", $"0x{cell:X8}");
         }
+
         writer.WriteEndObject();
 
         writer.WriteStartArray("reference_windows");
@@ -304,6 +308,7 @@ internal static class CellWorldspaceAuthorityJson
 
             writer.WriteEndObject();
         }
+
         writer.WriteEndArray();
 
         writer.WriteStartObject("conflicts");
@@ -314,8 +319,10 @@ internal static class CellWorldspaceAuthorityJson
             {
                 writer.WriteStringValue($"0x{ws:X8}");
             }
+
             writer.WriteEndArray();
         }
+
         writer.WriteEndObject();
 
         writer.WriteStartObject("reference_conflicts");
@@ -326,8 +333,10 @@ internal static class CellWorldspaceAuthorityJson
             {
                 writer.WriteStringValue($"0x{cell:X8}");
             }
+
             writer.WriteEndArray();
         }
+
         writer.WriteEndObject();
 
         writer.WriteEndObject();

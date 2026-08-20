@@ -1,10 +1,6 @@
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Audits;
@@ -61,7 +57,7 @@ internal static class OrphanedRefAnalyzer
             byte[]? compiledData = null;
             uint pendingSlsdIndex = 0;
             byte pendingSlsdType = 0;
-            bool havePendingSlsd = false;
+            var havePendingSlsd = false;
 
             foreach (var sub in subrecords)
             {
@@ -78,6 +74,7 @@ internal static class OrphanedRefAnalyzer
                         {
                             referencedObjects.Add(BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian));
                         }
+
                         break;
                     case "SCRV":
                         // Local variable ref — store with high bit marker
@@ -85,6 +82,7 @@ internal static class OrphanedRefAnalyzer
                         {
                             referencedObjects.Add(BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian) | 0x80000000);
                         }
+
                         break;
                     case "SLSD":
                         if (sub.Data.Length >= 16)
@@ -94,6 +92,7 @@ internal static class OrphanedRefAnalyzer
                             pendingSlsdType = ScriptLocalVariableLayout.ReadType(sub.Data);
                             havePendingSlsd = true;
                         }
+
                         break;
                     case "SCVR":
                         if (havePendingSlsd)
@@ -102,6 +101,7 @@ internal static class OrphanedRefAnalyzer
                             variables.Add(new ScriptVariableInfo(pendingSlsdIndex, varName, pendingSlsdType));
                             havePendingSlsd = false;
                         }
+
                         break;
                 }
             }
@@ -154,7 +154,7 @@ internal static class OrphanedRefAnalyzer
 
             try
             {
-                var analyzer = new BethesdaMultitool.Core.Minidump.MinidumpAnalyzer();
+                var analyzer = new MinidumpAnalyzer();
                 var analysisResult = await analyzer.AnalyzeAsync(dumpFile, includeMetadata: true);
 
                 if (analysisResult.EsmRecords == null)
@@ -178,7 +178,7 @@ internal static class OrphanedRefAnalyzer
                     dumpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
                 using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-                var reconstructor = new BethesdaMultitool.Core.Formats.Esm.Parsing.RecordParser(
+                var reconstructor = new RecordParser(
                     analysisResult.EsmRecords,
                     analysisResult.FormIdMap,
                     accessor,
@@ -284,7 +284,7 @@ internal static class OrphanedRefAnalyzer
                                 ? BitConverter.ToUInt32(sub.Data, offset)
                                 : BinaryUtils.ReadUInt32(sub.Data, offset, bigEndian);
 
-                            if (formId != 0 && (formId >> 24) == 0 && !knownFormIds.Contains(formId))
+                            if (formId != 0 && formId >> 24 == 0 && !knownFormIds.Contains(formId))
                             {
                                 orphans.Add(new AllRecordOrphanedReference
                                 {
@@ -436,4 +436,3 @@ internal static class OrphanedRefAnalyzer
         public int AllRecordFormIdFieldsChecked { get; set; }
     }
 }
-

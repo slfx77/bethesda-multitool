@@ -24,7 +24,7 @@ public sealed class PlannedQustEncoder : IPlannedRecordEncoder<QuestRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedQustEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedQustEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

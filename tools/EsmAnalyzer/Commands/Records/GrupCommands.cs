@@ -1,15 +1,8 @@
-using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Records;
 
@@ -44,9 +37,9 @@ public static class GrupCommands
         var typeOption = new Option<int[]?>("-t", "--type") { Description = "Filter to specific GRUP type(s) (0-10)" };
         var topLevelOption = new Option<bool>("--top-level") { Description = "Show only top-level GRUPs (depth 0)" };
         var duplicatesOption = new Option<bool>("--duplicates")
-        { Description = "Find duplicate GRUP labels (same type + label at different depths)" };
+            { Description = "Find duplicate GRUP labels (same type + label at different depths)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of GRUPs to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of GRUPs to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(typeOption);

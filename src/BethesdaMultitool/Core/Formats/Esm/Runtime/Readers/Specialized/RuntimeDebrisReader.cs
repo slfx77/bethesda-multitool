@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -12,9 +11,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 internal sealed class RuntimeDebrisReader(RuntimeMemoryContext context)
 {
     private const byte DebrFormType = 0x52;
+    private readonly RuntimeMemoryContext _context = context;
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
-    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>Reads the runtime debris record for the given DMP entry, or null if it can't be read.</summary>
     public DebrisRecord? ReadRuntimeDebris(RuntimeEditorIdEntry entry)

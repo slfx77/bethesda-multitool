@@ -13,7 +13,7 @@ public enum ScriptSourceCorrespondenceStatus
     Unverified,
     Accepted,
     AcceptedSourceOnly,
-    Rejected,
+    Rejected
 }
 
 /// <summary>

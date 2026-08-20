@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Formats.SaveGame.Reading;
+
 namespace BethesdaMultitool.Core.Formats.SaveGame.Decoding;
 
 /// <summary>

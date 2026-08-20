@@ -1,16 +1,14 @@
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
-using BethesdaMultitool;
 using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -18,6 +16,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
 using Vortice.Mathematics;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaRendererProfiler;
 
@@ -144,7 +143,7 @@ internal static class NifHeadlessRenderer
             $"[nif-render] {nifPath}  via {Path.GetFileName(meshArchive)}  -> {outPng} ({size}px) " +
             $"EmissiveMult={emissiveMult.ToString("G9", CultureInfo.InvariantCulture)}");
 
-        var gpu = GpuDevice12.Create(false);
+        var gpu = GpuDevice12.Create();
         if (gpu is null)
         {
             Console.Error.WriteLine("D3D12 device unavailable.");
@@ -166,15 +165,15 @@ internal static class NifHeadlessRenderer
         try
         {
             recorder = new GpuCommandRecorder12(gpu);
-            ring = new GpuRingBuffer12(gpu, GpuCommandRecorder12.FramesInFlight, bytesPerFrame: 64u * 1024 * 1024);
+            ring = new GpuRingBuffer12(gpu, GpuCommandRecorder12.FramesInFlight, 64u * 1024 * 1024);
             heap = new GpuDescriptorHeapAllocator12(
                 gpu, DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-                capacity: 131072, framesInFlight: GpuCommandRecorder12.FramesInFlight, persistentCapacity: 16384);
+                131072, GpuCommandRecorder12.FramesInFlight, 16384);
             rootSig = GpuRootSignature12.Create(gpu);
-            deletion = new GpuDeletionQueue12(framesToHold: GpuCommandRecorder12.FramesInFlight);
+            deletion = new GpuDeletionQueue12(GpuCommandRecorder12.FramesInFlight);
 
             meshArchives = MeshArchiveSet.Open(
-                meshArchive, null, enableFuzzy: false, includeLooseFiles: false);
+                meshArchive, null, false);
             var texArr = textureArchives.ToArray();
             var textureResolver = new NifTextureResolver(texArr);
             var gpuTextureResolver = new NifGpuTextureResolver(texArr);
@@ -207,7 +206,7 @@ internal static class NifHeadlessRenderer
 
             meshCache = new ReferenceMeshCache12(
                 gpu, meshArchives, textureResolver, textureCache, deletion,
-                capacity: 2048, decodedCacheByteBudget: 256L * 1024 * 1024,
+                2048,
                 autoSizeMeshCapacity: false, speedTreeLeafTextures: leafTextures,
                 speedTreeDimming: dimming);
             references = new ReferenceRenderer12(gpu, recorder, ring, rootSig, heap, meshCache)
@@ -281,8 +280,8 @@ internal static class NifHeadlessRenderer
                 var focus = frameRadius > 1f ? frameCenter : Vector3.Zero;
                 var halfHeight = (frameRadius > 1f ? frameRadius : localRadius) * 1.1f;
                 // 3/4 view (default NW azimuth, ~30° elevation) — reads form better than flat top-down.
-                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg, elevationDeg: 30f,
-                    orthoHalfHeight: halfHeight, aspect: 1f);
+                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg, 30f,
+                    halfHeight, 1f);
                 var cameraPosition = OrthoViewProjBuilder.EyePosition(focus, azimuthDeg, 30f);
                 var cameraForward = Vector3.Normalize(focus - cameraPosition);
                 var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
@@ -331,12 +330,11 @@ internal static class NifHeadlessRenderer
                 if (guiShape)
                 {
                     // Live-viewer call shape: tolerant cull pose + deferred blended pass.
-                    var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12
-                        .ReferenceRenderer12.CullCameraPose(
-                            cameraForward, 0.9f, 1f);
-                    references.Render(viewProj, cylinder, deferBlended: true,
-                        cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
-                        cameraPosition: cameraPosition, cameraForward: cameraForward);
+                    var pose = new ReferenceRenderer12.CullCameraPose(
+                        cameraForward, 0.9f, 1f);
+                    references.Render(viewProj, cylinder, true,
+                        viewProj, default, pose,
+                        cameraPosition, cameraForward);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
                     // Match the live viewer: submerged translucent geometry is issued BEFORE the
                     // water surface, since water writes no depth and anything drawn afterwards
@@ -360,7 +358,7 @@ internal static class NifHeadlessRenderer
                 else
                 {
                     references.Render(
-                        viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition,
+                        viewProj, cylinder, false, cameraPosition: cameraPosition,
                         cameraForward: cameraForward);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
                     waterDraws = water.Render(viewProj, cylinder);
@@ -464,8 +462,8 @@ internal static class NifHeadlessRenderer
                 var localRadius = references.TryGetMeshLocalRadius(meshId, out var hr) && hr > 1f ? hr : 300f;
                 var focus = frameRadius > 1f ? frameCenter : Vector3.Zero;
                 var halfHeight = (frameRadius > 1f ? frameRadius : localRadius) * 1.1f;
-                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg,
-                    elevationDeg: 30f, orthoHalfHeight: halfHeight, aspect: 1f);
+                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg,
+                    30f, halfHeight, 1f);
                 var cameraPosition = OrthoViewProjBuilder.EyePosition(focus, azimuthDeg, 30f);
                 var cameraForward = Vector3.Normalize(focus - cameraPosition);
                 var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
@@ -497,12 +495,11 @@ internal static class NifHeadlessRenderer
                     references.SetWind(Vector2.UnitX, 0f, animTime + k / 30f);
                     if (guiShape)
                     {
-                        var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12
-                            .ReferenceRenderer12.CullCameraPose(
-                                cameraForward, 0.9f, 1f);
-                        references.Render(viewProj, cylinder, deferBlended: true,
-                            cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
-                            cameraPosition: cameraPosition, cameraForward: cameraForward);
+                        var pose = new ReferenceRenderer12.CullCameraPose(
+                            cameraForward, 0.9f, 1f);
+                        references.Render(viewProj, cylinder, true,
+                            viewProj, default, pose,
+                            cameraPosition, cameraForward);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
                         // Same below-water ordering as the live viewer (see the first pass above).
                         var framePartitioned = water.HasVisibleWaterToPartition(cylinder);
@@ -524,7 +521,7 @@ internal static class NifHeadlessRenderer
                     else
                     {
                         references.Render(
-                            viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition,
+                            viewProj, cylinder, false, cameraPosition: cameraPosition,
                             cameraForward: cameraForward);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
                         water.Render(viewProj, cylinder);
@@ -607,7 +604,7 @@ internal static class NifHeadlessRenderer
         cb[9 * 4 + 3] = emissiveMult;
         var bytes = new byte[atmosphereBytes];
         Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
-        var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
+        var alloc = ring.Allocate(frameIndex, atmosphereBytes);
         Marshal.Copy(bytes, 0, alloc.CpuPtr, atmosphereBytes);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
         BindEmptyPointLights(cmd, frameIndex, ring);
@@ -629,7 +626,7 @@ internal static class NifHeadlessRenderer
         Vector3 focus,
         float emissiveMult)
     {
-        var a = AtmosphereState.Resolve(gameHour, weather: null, climate: null, lightingEnabled: true);
+        var a = AtmosphereState.Resolve(gameHour);
         // Zero the complete append-only b3 layout (ten atmosphere vectors, four shadow matrices,
         // four shadow vectors, six directional-ambient vectors). In particular Params.w remains
         // zero: this verifier has no world placement cache, so it binds an empty local-light list.
@@ -662,7 +659,7 @@ internal static class NifHeadlessRenderer
         // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
         Put(9, 0f, 0f, 0f, emissiveMult); // absolute origin + requested IMGS EmissiveMult
 
-        var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
+        var alloc = ring.Allocate(frameIndex, atmosphereBytes);
         var bytes = new byte[atmosphereBytes];
         Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
         Marshal.Copy(bytes, 0, alloc.CpuPtr, atmosphereBytes);
@@ -674,10 +671,10 @@ internal static class NifHeadlessRenderer
         ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring)
     {
         const int pointLightBytes = 4 * 16;
-        var alloc = ring.Allocate(frameIndex, pointLightBytes, alignment: 16);
+        var alloc = ring.Allocate(frameIndex, pointLightBytes, 16);
         Marshal.Copy(new byte[pointLightBytes], 0, alloc.CpuPtr, pointLightBytes);
         cmd.SetGraphicsRootShaderResourceView(
-            (uint)GpuRootSignature12.Slots.PointLightsSrv,
+            GpuRootSignature12.Slots.PointLightsSrv,
             alloc.GpuAddress);
     }
 

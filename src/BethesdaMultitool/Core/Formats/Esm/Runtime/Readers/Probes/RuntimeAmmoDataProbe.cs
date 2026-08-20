@@ -96,7 +96,7 @@ internal static class RuntimeAmmoDataProbe
         var projectile = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(d + 8, 4));
 
         var speedOk = float.IsFinite(speed) && !float.IsSubnormal(speed) && speed > 0 && speed <= 100000;
-        var flagsOk = flags <= 3;                                   // FNV AMMO defines only 2 flag bits
+        var flagsOk = flags <= 3; // FNV AMMO defines only 2 flag bits
         var projectileOk = projectile == 0 || projectile >= 0x40000000; // null or a plausible Xbox 360 VA
         return new RuntimeLayoutProbeScore(speedOk && flagsOk && projectileOk ? 1 : 0, 1);
     }

@@ -90,8 +90,9 @@ internal sealed class PackageProfile : IRecordProfile
     }
 
     // PSDT: 5 single-byte schedule fields + Duration (S32).
-    private static PackageSchedule? Schedule(DecodedNode? psdt) =>
-        psdt is null
+    private static PackageSchedule? Schedule(DecodedNode? psdt)
+    {
+        return psdt is null
             ? null
             : new PackageSchedule
             {
@@ -101,12 +102,15 @@ internal sealed class PackageProfile : IRecordProfile
                 Time = (sbyte)(Int(ChildByLabel(psdt, "Time")) ?? 0),
                 Duration = (int)(Int(ChildByLabel(psdt, "Duration")) ?? 0)
             };
+    }
 
     // PLDT is unmodeled → a top-level raw node: Type(byte) @0, Union(u32) @4, Radius(s32) @8.
-    private static PackageLocation? LocationFromRaw(DecodedNode? node) =>
-        Bytes(node) is { Length: >= 12 } b
+    private static PackageLocation? LocationFromRaw(DecodedNode? node)
+    {
+        return Bytes(node) is { Length: >= 12 } b
             ? new PackageLocation { Type = b[0], Union = ReadU32(b, 4) ?? 0, Radius = ReadS32(b, 8) ?? 0 }
             : null;
+    }
 
     // PLD2: "Type"(S32, low byte) + a mid-struct "Location" union (4-byte variants) + "Radius"(S32). The union
     // now decodes; its 4 bytes are the same value the typed model reads as a U32 whichever variant applies.

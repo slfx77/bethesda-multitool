@@ -1,7 +1,6 @@
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using BethesdaMultitool.Core.Formats.Bsa.Ba2;
-using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -20,8 +19,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 /// </summary>
 internal static class NifTextureArchiveSourceFactory
 {
-    internal static List<INifTextureSource> Create(params string[] textureSourcePaths) =>
-        Create(ArchiveHandleRegistry.Shared, textureSourcePaths);
+    internal static List<INifTextureSource> Create(params string[] textureSourcePaths)
+    {
+        return Create(ArchiveHandleRegistry.Shared, textureSourcePaths);
+    }
 
     internal static List<INifTextureSource> Create(
         ArchiveHandleRegistry? registry, params string[] textureSourcePaths)
@@ -66,7 +67,8 @@ internal static class NifTextureArchiveSourceFactory
             // the reader itself is shared state owned by the registry.
             return lease.Reader.AsBsaExtractor is { } bsaExtractor
                 ? new NifTextureArchiveSource(bsaExtractor, BuildBsaIndex(bsaExtractor), lease)
-                : new Ba2TextureArchiveSource(lease.Reader.AsBa2Extractor!, BuildBa2Index(lease.Reader.AsBa2Extractor!), lease);
+                : new Ba2TextureArchiveSource(lease.Reader.AsBa2Extractor!, BuildBa2Index(lease.Reader.AsBa2Extractor!),
+                    lease);
         }
         catch
         {
@@ -75,8 +77,10 @@ internal static class NifTextureArchiveSourceFactory
         }
     }
 
-    private static INifTextureSource CreatePrivateSource(string sourcePath) =>
-        Ba2Parser.IsBa2File(sourcePath) ? CreateBa2Source(sourcePath) : CreateBsaSource(sourcePath);
+    private static INifTextureSource CreatePrivateSource(string sourcePath)
+    {
+        return Ba2Parser.IsBa2File(sourcePath) ? CreateBa2Source(sourcePath) : CreateBsaSource(sourcePath);
+    }
 
     private static NifTextureArchiveSource CreateBsaSource(string sourcePath)
     {

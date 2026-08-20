@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm;
 namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
@@ -19,8 +18,10 @@ internal sealed class Tes3RefDraft
     /// <summary>True when the reference carries a DODT door-teleport destination position.</summary>
     public bool HasTeleportDestination { get; set; }
 
-    /// <summary>DODT destination position (world coords). For exterior destinations (no
-    /// <see cref="DestinationCellName" />) the target cell derives from these via the 8192 grid.</summary>
+    /// <summary>
+    ///     DODT destination position (world coords). For exterior destinations (no
+    ///     <see cref="DestinationCellName" />) the target cell derives from these via the 8192 grid.
+    /// </summary>
     public float DestX { get; set; }
 
     /// <inheritdoc cref="DestX" />

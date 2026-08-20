@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
-
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;

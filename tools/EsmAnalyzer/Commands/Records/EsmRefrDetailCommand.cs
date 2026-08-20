@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -51,6 +50,7 @@ internal static class EsmRefrDetailCommand
                 targets.Add(fid);
             }
         }
+
         if (targets.Count == 0)
         {
             AnsiConsole.MarkupLine("[red]No valid FormIDs.[/]");
@@ -63,7 +63,7 @@ internal static class EsmRefrDetailCommand
         var resolver = loaded.Resolver;
         var found = 0;
 
-        void DumpRef(uint cellFid, BethesdaMultitool.Core.Formats.Esm.Models.World.PlacedReference r)
+        void DumpRef(uint cellFid, PlacedReference r)
         {
             found++;
             var baseName = resolver.GetDisplayName(r.BaseFormId)
@@ -72,8 +72,10 @@ internal static class EsmRefrDetailCommand
                            ?? "(unknown)";
             AnsiConsole.MarkupLine($"\n[yellow]REFR 0x{r.FormId:X8}[/] ({r.RecordType})  parent cell 0x{cellFid:X8}");
             AnsiConsole.WriteLine($"  Editor ID    : {r.EditorId ?? "(none)"}");
-            AnsiConsole.WriteLine($"  Base         : 0x{r.BaseFormId:X8}  {baseName}  (edid={r.BaseEditorId ?? "(none)"})");
-            AnsiConsole.WriteLine($"  Position     : ({r.X:F1}, {r.Y:F1}, {r.Z:F1})  rot=({r.RotX:F3}, {r.RotY:F3}, {r.RotZ:F3})  scale={r.Scale:F2}");
+            AnsiConsole.WriteLine(
+                $"  Base         : 0x{r.BaseFormId:X8}  {baseName}  (edid={r.BaseEditorId ?? "(none)"})");
+            AnsiConsole.WriteLine(
+                $"  Position     : ({r.X:F1}, {r.Y:F1}, {r.Z:F1})  rot=({r.RotX:F3}, {r.RotY:F3}, {r.RotZ:F3})  scale={r.Scale:F2}");
             AnsiConsole.WriteLine($"  Model path   : {r.ModelPath ?? "(none)"}");
             AnsiConsole.WriteLine($"  IsPersistent : {r.IsPersistent}    IsInitiallyDisabled: {r.IsInitiallyDisabled}");
 
@@ -85,21 +87,26 @@ internal static class EsmRefrDetailCommand
                     var destDoorName = resolver.GetEditorId(r.DestinationDoorFormId.Value)
                                        ?? resolver.GetDisplayName(r.DestinationDoorFormId.Value)
                                        ?? "(unresolved)";
-                    AnsiConsole.WriteLine($"    Destination door FormID : 0x{r.DestinationDoorFormId.Value:X8}  {destDoorName}");
+                    AnsiConsole.WriteLine(
+                        $"    Destination door FormID : 0x{r.DestinationDoorFormId.Value:X8}  {destDoorName}");
                 }
+
                 if (r.DestinationCellFormId.HasValue)
                 {
                     var destCellName = resolver.GetEditorId(r.DestinationCellFormId.Value)
                                        ?? resolver.GetDisplayName(r.DestinationCellFormId.Value)
                                        ?? "(unresolved — cell may have been removed)";
-                    AnsiConsole.WriteLine($"    Destination cell FormID : 0x{r.DestinationCellFormId.Value:X8}  {destCellName}");
+                    AnsiConsole.WriteLine(
+                        $"    Destination cell FormID : 0x{r.DestinationCellFormId.Value:X8}  {destCellName}");
                 }
+
                 if (r.TeleportPosRot is not null)
                 {
                     var t = r.TeleportPosRot;
                     AnsiConsole.WriteLine(
                         $"    Teleport pos/rot        : ({t.X:F1}, {t.Y:F1}, {t.Z:F1})  rot=({t.RotX:F3}, {t.RotY:F3}, {t.RotZ:F3})");
                 }
+
                 if (r.TeleportFlags.HasValue)
                 {
                     AnsiConsole.WriteLine($"    XTEL flags              : 0x{r.TeleportFlags.Value:X2}");
@@ -110,14 +117,19 @@ internal static class EsmRefrDetailCommand
             {
                 AnsiConsole.WriteLine($"  Owner       : 0x{r.OwnerFormId.Value:X8}");
             }
+
             if (r.EnableParentFormId.HasValue)
             {
-                AnsiConsole.WriteLine($"  XESP parent : 0x{r.EnableParentFormId.Value:X8} flags=0x{r.EnableParentFlags ?? 0:X2}");
+                AnsiConsole.WriteLine(
+                    $"  XESP parent : 0x{r.EnableParentFormId.Value:X8} flags=0x{r.EnableParentFlags ?? 0:X2}");
             }
+
             if (r.LinkedRefFormId.HasValue)
             {
-                AnsiConsole.WriteLine($"  XLKR        : 0x{r.LinkedRefFormId.Value:X8} keyword=0x{r.LinkedRefKeywordFormId ?? 0:X8}");
+                AnsiConsole.WriteLine(
+                    $"  XLKR        : 0x{r.LinkedRefFormId.Value:X8} keyword=0x{r.LinkedRefKeywordFormId ?? 0:X8}");
             }
+
             if (r.IsMapMarker)
             {
                 AnsiConsole.WriteLine($"  Map marker  : name=\"{r.MarkerName}\" type={r.MarkerType}");
@@ -134,6 +146,7 @@ internal static class EsmRefrDetailCommand
                 }
             }
         }
+
         foreach (var ws in loaded.Records.Worldspaces)
         {
             foreach (var cell in ws.Cells)
@@ -165,11 +178,13 @@ internal static class EsmRefrDetailCommand
         {
             return false;
         }
+
         var span = s.AsSpan();
         if (span.Length > 2 && span[0] == '0' && (span[1] == 'x' || span[1] == 'X'))
         {
             span = span[2..];
         }
+
         return uint.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
     }
 }

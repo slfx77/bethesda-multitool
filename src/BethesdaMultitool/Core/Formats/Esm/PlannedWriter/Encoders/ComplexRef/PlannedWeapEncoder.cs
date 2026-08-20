@@ -25,7 +25,7 @@ public sealed class PlannedWeapEncoder : IPlannedRecordEncoder<WeaponRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedWeapEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedWeapEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

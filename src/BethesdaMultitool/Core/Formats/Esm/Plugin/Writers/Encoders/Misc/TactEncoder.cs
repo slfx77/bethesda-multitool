@@ -7,8 +7,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///     base form behind radio stations and talking terminals; missing the encoder strips proto-only
 ///     ones, so any REFR placed on them loses its base object and the radio it broadcast.
 ///     <para>
-///     Canonical order from xEdit <c>wbRecord(TACT)</c> (wbDefinitionsFNV.pas):
-///     EDID(req), OBND(req), FULL?, MODL(req), SCRI?, DEST?, SNAM?, VNAM?, INAM?.
+///         Canonical order from xEdit <c>wbRecord(TACT)</c> (wbDefinitionsFNV.pas):
+///         EDID(req), OBND(req), FULL?, MODL(req), SCRI?, DEST?, SNAM?, VNAM?, INAM?.
 ///     </para>
 /// </summary>
 public sealed class TactEncoder : IRecordEncoder

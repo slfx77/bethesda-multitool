@@ -3,7 +3,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
-/// <summary>Classifies a NIF shape's transparency into a <see cref="NifAlphaRenderMode" /> from its alpha and shader flags.</summary>
+/// <summary>
+///     Classifies a NIF shape's transparency into a <see cref="NifAlphaRenderMode" /> from its alpha and shader
+///     flags.
+/// </summary>
 internal static class NifAlphaClassifier
 {
     internal static NifAlphaRenderState Classify(
@@ -184,5 +187,4 @@ internal static class NifAlphaClassifier
                    value.Contains("lash", StringComparison.OrdinalIgnoreCase);
         }
     }
-
 }

@@ -1,7 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Probes;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;

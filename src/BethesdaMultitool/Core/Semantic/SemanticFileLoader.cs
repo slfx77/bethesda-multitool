@@ -2,14 +2,13 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.FileFormat;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
-using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Land;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Recovery;
 
@@ -42,7 +41,10 @@ internal static class SemanticFileLoader
         return fileType;
     }
 
-    /// <summary>Analyzes the file and parses it into a disposable <see cref="UnifiedAnalysisResult" /> with records and a FormID resolver.</summary>
+    /// <summary>
+    ///     Analyzes the file and parses it into a disposable <see cref="UnifiedAnalysisResult" /> with records and a
+    ///     FormID resolver.
+    /// </summary>
     internal static async Task<UnifiedAnalysisResult> LoadAsync(
         string filePath,
         SemanticFileLoadOptions? options = null,
@@ -55,7 +57,10 @@ internal static class SemanticFileLoader
         return LoadFromAnalysisResult(filePath, analysisResult, fileType, options);
     }
 
-    /// <summary>Runs only the format-specific analysis phase (no semantic parse), returning the raw <see cref="AnalysisResult" />.</summary>
+    /// <summary>
+    ///     Runs only the format-specific analysis phase (no semantic parse), returning the raw
+    ///     <see cref="AnalysisResult" />.
+    /// </summary>
     internal static async Task<AnalysisResult> AnalyzeOnlyAsync(
         string filePath,
         SemanticFileLoadOptions? options = null,
@@ -85,7 +90,10 @@ internal static class SemanticFileLoader
             });
     }
 
-    /// <summary>Parses an already-computed <see cref="AnalysisResult" /> into a <see cref="UnifiedAnalysisResult" /> using the given options.</summary>
+    /// <summary>
+    ///     Parses an already-computed <see cref="AnalysisResult" /> into a <see cref="UnifiedAnalysisResult" /> using the
+    ///     given options.
+    /// </summary>
     internal static UnifiedAnalysisResult LoadFromAnalysisResult(
         string filePath,
         AnalysisResult analysisResult,
@@ -173,11 +181,11 @@ internal static class SemanticFileLoader
         // other game. Large worldspaces (Appalachia) get LAZY per-cell height providers over a
         // kept-open BTD — the injection object owns those sources and rides on the result, disposed
         // with it (the same lifetime the ESM's own memory map already has).
-        Formats.Esm.Land.BtdTerrainInjection? terrain = null;
+        BtdTerrainInjection? terrain = null;
         if (fileType == AnalysisFileType.EsmFile)
         {
             ReleaseEsmScanIntermediates(analysisResult.EsmRecords);
-            terrain = Formats.Esm.Land.BtdTerrainInjector.Inject(records, filePath);
+            terrain = BtdTerrainInjector.Inject(records, filePath);
         }
 
         try
@@ -307,8 +315,8 @@ internal static class SemanticFileLoader
     }
 
     private static void ApplyCellWorldspaceAuthorityIfNeeded(
-        Formats.Esm.Models.RecordCollection records,
-        Formats.Esm.Records.EsmRecordScanResult scanResult,
+        RecordCollection records,
+        EsmRecordScanResult scanResult,
         AnalysisFileType fileType,
         SemanticFileLoadOptions options)
     {
@@ -346,4 +354,3 @@ internal static class SemanticFileLoader
             refWindows);
     }
 }
-

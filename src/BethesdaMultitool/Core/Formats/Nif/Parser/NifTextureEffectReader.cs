@@ -51,7 +51,7 @@ internal readonly record struct NifTextureEffectInfo(
 internal static class NifTextureEffectReader
 {
     internal const uint TextureTypeEnvironmentMap = 2; // TEX_ENVIRONMENT_MAP
-    internal const uint CoordGenTypeSphereMap = 2;     // CG_SPHERE_MAP
+    internal const uint CoordGenTypeSphereMap = 2; // CG_SPHERE_MAP
 
     private const int MaxAffectedNodes = 512;
 
@@ -78,7 +78,7 @@ internal static class NifTextureEffectReader
 
         // NiAVObject base (same field walk as NifSceneGraphBlockReader.SkipNiGeometryHeader).
         pos += bsVersion > 26 ? 4 : 2; // Flags (uint Bethesda > 26, else ushort)
-        pos += 12 + 36 + 4;            // Translation (Vector3) + Rotation (Matrix33) + Scale (float)
+        pos += 12 + 36 + 4; // Translation (Vector3) + Rotation (Matrix33) + Scale (float)
         if (NifVersions.HasAvObjectVelocity(binaryVersion))
         {
             pos += 12; // Velocity (Vector3, until 4.2.2.0)

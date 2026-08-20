@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

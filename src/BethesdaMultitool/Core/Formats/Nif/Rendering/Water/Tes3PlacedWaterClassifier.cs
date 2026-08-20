@@ -54,11 +54,13 @@ internal static class Tes3PlacedWaterClassifier
             StringComparison.Ordinal);
     }
 
-    private static bool HasWhiteDiffuse((float R, float G, float B)? diffuse) =>
-        diffuse is { } color
-        && NearlyEquals(color.R, 1f)
-        && NearlyEquals(color.G, 1f)
-        && NearlyEquals(color.B, 1f);
+    private static bool HasWhiteDiffuse((float R, float G, float B)? diffuse)
+    {
+        return diffuse is { } color
+               && NearlyEquals(color.R, 1f)
+               && NearlyEquals(color.G, 1f)
+               && NearlyEquals(color.B, 1f);
+    }
 
     private static bool HasActiveFiniteUvScroll(Vector2 velocity)
     {
@@ -145,9 +147,13 @@ internal static class Tes3PlacedWaterClassifier
         return new Vector3(positions[offset], positions[offset + 1], positions[offset + 2]);
     }
 
-    private static bool NearlyEquals(float value, float expected) =>
-        float.IsFinite(value) && MathF.Abs(value - expected) <= ScalarTolerance;
+    private static bool NearlyEquals(float value, float expected)
+    {
+        return float.IsFinite(value) && MathF.Abs(value - expected) <= ScalarTolerance;
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }

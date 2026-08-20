@@ -29,7 +29,7 @@ public sealed class LighEncoder : IRecordEncoder
         ["FalloffExponent"] = m => m.FalloffExponent,
         ["FOV"] = m => m.Fov,
         ["Value"] = m => m.Value,
-        ["Weight"] = m => m.Weight,
+        ["Weight"] = m => m.Weight
     };
 
     public string RecordType => "LIGH";

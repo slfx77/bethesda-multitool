@@ -19,15 +19,14 @@ internal sealed class RuntimeItemReader(
     RuntimeWeaponSoundProbeResult? weaponSoundProbe = null,
     RuntimeLayoutProbeResult<int>? ammoDataProbe = null)
 {
+    // Probed AMMO_DATA (fSpeed/iFlags/pProjectile) start offset — that block drifts per build (172/184/188),
+    // so the PDB-derived layout default is only used when no confident probe result is available.
+    private readonly int? _ammoDataOffset = ammoDataProbe?.Winner.Layout;
     private readonly RuntimeMemoryContext _context = context;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
-
-    // Probed AMMO_DATA (fSpeed/iFlags/pProjectile) start offset — that block drifts per build (172/184/188),
-    // so the PDB-derived layout default is only used when no confident probe result is available.
-    private readonly int? _ammoDataOffset = ammoDataProbe?.Winner.Layout;
 
     // Selected weapon sound layout variant. V1 corresponds to the early FO3-derived
     // layout, V2 to the FNV layout. The probe picks whichever pattern matches better,
@@ -648,4 +647,3 @@ internal sealed class RuntimeItemReader(
         return relOffset < 0 ? null : _context.ReadBsStringT(structFileOffset, relOffset);
     }
 }
-

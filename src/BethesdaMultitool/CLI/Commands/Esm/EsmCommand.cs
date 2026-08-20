@@ -2,14 +2,10 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
-using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -455,5 +451,3 @@ public static class EsmCommand
         return group;
     }
 }
-
-

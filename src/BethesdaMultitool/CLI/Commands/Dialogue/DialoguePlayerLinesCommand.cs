@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using Spectre.Console;
 

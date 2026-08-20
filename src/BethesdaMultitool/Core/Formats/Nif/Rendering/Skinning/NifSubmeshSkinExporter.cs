@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
@@ -97,12 +98,12 @@ internal static class NifSubmeshSkinExporter
 
                 for (var k = 0; k < top.Length; k++)
                 {
-                    boneIndices[(v * 4) + k] = (byte)Math.Clamp(top[k].BoneIdx, 0, 255);
-                    boneWeights[(v * 4) + k] = top[k].Weight / total;
+                    boneIndices[v * 4 + k] = (byte)Math.Clamp(top[k].BoneIdx, 0, 255);
+                    boneWeights[v * 4 + k] = top[k].Weight / total;
                 }
             }
 
-            var inverseBinds = new System.Numerics.Matrix4x4[skinData.Bones.Length];
+            var inverseBinds = new Matrix4x4[skinData.Bones.Length];
             var skinBoneToAnimBone = new int[skinData.Bones.Length];
             for (var b = 0; b < skinData.Bones.Length; b++)
             {

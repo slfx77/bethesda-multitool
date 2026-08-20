@@ -36,7 +36,7 @@ public sealed class NifParticleMeshEmitterColumnTests
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
 
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false);
         Assert.True(archives.TryExtractFile(FxDustPath, out var data, out _), "FXDust NIF not found in BSA");
 
         var nif = NifParser.Parse(data);

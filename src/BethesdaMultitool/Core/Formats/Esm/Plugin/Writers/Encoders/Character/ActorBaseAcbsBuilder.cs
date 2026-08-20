@@ -1,7 +1,4 @@
 using System.Buffers.Binary;
-using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
@@ -33,7 +30,7 @@ internal static class ActorBaseAcbsBuilder
             ["SpeedMult"] = m => m.SpeedMultiplier,
             ["KarmaAlignment"] = m => m.KarmaAlignment,
             ["Disposition"] = m => m.DispositionBase,
-            ["TemplateFlags"] = m => m.TemplateFlags,
+            ["TemplateFlags"] = m => m.TemplateFlags
         };
 
     /// <summary>
@@ -42,24 +39,24 @@ internal static class ActorBaseAcbsBuilder
     /// </summary>
     /// <remarks>
     ///     ACBS Flags bits (per FlagRegistry.ActorBaseFlags / fopdoc):
-    ///       0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
-    ///       0x10=AutoCalcStats, 0x20=PCLevelMult, 0x40=UseTemplate,
-    ///       0x80=NoLowLevelProcessing, etc.
+    ///     0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
+    ///     0x10=AutoCalcStats, 0x20=PCLevelMult, 0x40=UseTemplate,
+    ///     0x80=NoLowLevelProcessing, etc.
     ///     <para>
-    ///     <c>forceAutoCalc</c> sets bit 0x10 so the engine derives HP/AP from
-    ///     Level + Class + SPECIAL instead of trusting the captured runtime Flags. DMP
-    ///     captures often clear AutoCalc once the runtime computed stats, so re-asserting
-    ///     it on emission keeps the engine path correct. DO NOT OR in 0x01 — that's
-    ///     Female (NOT Biped, despite an earlier spec misreading).
+    ///         <c>forceAutoCalc</c> sets bit 0x10 so the engine derives HP/AP from
+    ///         Level + Class + SPECIAL instead of trusting the captured runtime Flags. DMP
+    ///         captures often clear AutoCalc once the runtime computed stats, so re-asserting
+    ///         it on emission keeps the engine path correct. DO NOT OR in 0x01 — that's
+    ///         Female (NOT Biped, despite an earlier spec misreading).
     ///     </para>
     ///     <para>
-    ///     <c>0x40 (UseTemplate)</c> must be set whenever TemplateFlags is nonzero —
-    ///     without it the engine treats the actor as a "templated instance" and appends
-    ///     a per-spawn numeric suffix to the display name (e.g. "Ulysses (20755)" for
-    ///     NPCs, "Speedy (20755)" for CREAs).
+    ///         <c>0x40 (UseTemplate)</c> must be set whenever TemplateFlags is nonzero —
+    ///         without it the engine treats the actor as a "templated instance" and appends
+    ///         a per-spawn numeric suffix to the display name (e.g. "Ulysses (20755)" for
+    ///         NPCs, "Speedy (20755)" for CREAs).
     ///     </para>
     ///     <para>
-    ///     <c>SpeedMultiplier</c> is clamped to 100 when zero — the FNV engine default.
+    ///         <c>SpeedMultiplier</c> is clamped to 100 when zero — the FNV engine default.
     ///     </para>
     /// </remarks>
     public static byte[] Build(
@@ -83,7 +80,7 @@ internal static class ActorBaseAcbsBuilder
         {
             Flags = flags,
             SpeedMultiplier = s.SpeedMultiplier == 0 ? (ushort)100 : s.SpeedMultiplier,
-            TemplateFlags = (ushort)(s.TemplateFlags | extraTemplateFlags),
+            TemplateFlags = (ushort)(s.TemplateFlags | extraTemplateFlags)
         };
 
         return SchemaModelSerializer.Serialize("ACBS", recordType, 24, mutated, AcbsExtractors);
@@ -145,18 +142,18 @@ internal static class ActorBaseAcbsBuilder
     public static byte[] BuildDefault(string recordType, ushort extraTemplateFlags = 0)
     {
         var defaults = new ActorBaseSubrecord(
-            Flags: extraTemplateFlags != 0 ? 0x00000040u : 0u,
-            FatigueBase: 0,
-            BarterGold: 0,
-            Level: 1,
-            CalcMin: 0,
-            CalcMax: 0,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 0f,
-            DispositionBase: 0,
-            TemplateFlags: extraTemplateFlags,
-            Offset: 0,
-            IsBigEndian: false);
+            extraTemplateFlags != 0 ? 0x00000040u : 0u,
+            0,
+            0,
+            1,
+            0,
+            0,
+            100,
+            0f,
+            0,
+            extraTemplateFlags,
+            0,
+            false);
 
         return SchemaModelSerializer.Serialize("ACBS", recordType, 24, defaults, AcbsExtractors);
     }

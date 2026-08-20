@@ -39,7 +39,10 @@ public sealed record PexHeader(
 /// <summary>A checked index into <see cref="PexFile.StringTable" /> and its resolved value.</summary>
 public readonly record struct PexStringReference(ushort Index, string Value)
 {
-    public override string ToString() => Value;
+    public override string ToString()
+    {
+        return Value;
+    }
 }
 
 public sealed record PexDebugInfo(
@@ -168,7 +171,7 @@ public sealed record PexFunction(
 
     /// <summary>Raw flag bits other than the public Global and Native bits.</summary>
     public byte UnmappedFlags => (byte)(RawFlags &
-        ~(byte)(PexFunctionFlags.Global | PexFunctionFlags.Native));
+                                        ~(byte)(PexFunctionFlags.Global | PexFunctionFlags.Native));
 }
 
 public readonly record struct PexTypedName(

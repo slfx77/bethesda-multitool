@@ -27,7 +27,9 @@ internal sealed class RuntimeMemoryContext(
 
     /// <summary>
     ///     FormID → enumerated runtime entry (editor id, form type, base offset). Populated
-    ///     by <see cref="RuntimeStructReader.CreateWithAutoDetect(IMemoryAccessor,long,MinidumpInfo,System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry})" />
+    ///     by
+    ///     <see
+    ///         cref="RuntimeStructReader.CreateWithAutoDetect(IMemoryAccessor,long,MinidumpInfo,System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry},System.Collections.Generic.IReadOnlyList{RuntimeEditorIdEntry})" />
     ///     when an <c>allEntries</c> list is available. The QUST script scan uses this to
     ///     resolve candidate Script* pointers to EditorIds before validating via the
     ///     Script.pOwnerQuest backpointer; other specialized readers may use it for

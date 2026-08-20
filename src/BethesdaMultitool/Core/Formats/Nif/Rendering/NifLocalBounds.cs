@@ -57,11 +57,13 @@ internal static class NifLocalBoundsResolver
         return new NifLocalBounds(center, radius);
     }
 
-    internal static NifLocalBounds Resolve(RenderableSubmesh submesh) =>
-        submesh.LocalBounds is { } bounds &&
-        IsFinite(bounds.Center) && float.IsFinite(bounds.Radius) && bounds.Radius >= 0f
+    internal static NifLocalBounds Resolve(RenderableSubmesh submesh)
+    {
+        return submesh.LocalBounds is { } bounds &&
+               IsFinite(bounds.Center) && float.IsFinite(bounds.Radius) && bounds.Radius >= 0f
             ? bounds
             : FromPositions(submesh.Positions);
+    }
 
     /// <summary>
     ///     Existing viewer fallback: AABB midpoint followed by the maximum finite vertex distance
@@ -114,6 +116,8 @@ internal static class NifLocalBoundsResolver
         return false;
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }

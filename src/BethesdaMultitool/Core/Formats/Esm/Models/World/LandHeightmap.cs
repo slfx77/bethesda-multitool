@@ -6,6 +6,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.World;
 /// </summary>
 public record LandHeightmap
 {
+    private readonly float[,]? _exactHeights;
+
     /// <summary>Base height offset for the cell.</summary>
     public float HeightOffset { get; init; }
 
@@ -20,8 +22,6 @@ public record LandHeightmap
     ///     provenance to avoid copying grid-matched terrain onto a different CELL at the same coordinates.
     /// </summary>
     internal uint? SourceParentCellFormId { get; set; }
-
-    private readonly float[,]? _exactHeights;
 
     /// <summary>
     ///     Optional exact height grid (from runtime mesh data, or decoded on demand from an external

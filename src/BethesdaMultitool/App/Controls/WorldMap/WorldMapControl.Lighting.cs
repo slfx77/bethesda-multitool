@@ -11,10 +11,12 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldMapControl
 {
+    private AtmosphereState.ClimateTiming _currentClimateTiming = AtmosphereState.ClimateTiming.Default;
+
+    private float _gameHour = 12f;
+
     // OFF by default → fixed NW hillshade (the proven look). The user opts in to time-of-day lighting.
     private bool _hillshadeLightingEnabled;
-    private float _gameHour = 12f;
-    private AtmosphereState.ClimateTiming _currentClimateTiming = AtmosphereState.ClimateTiming.Default;
 
     private void LightingPanel_LightingToggled(object? sender, bool isOn)
     {
@@ -36,8 +38,10 @@ public sealed partial class WorldMapControl
         }
     }
 
-    /// <summary>Per-game hillshade slope-emphasis scale derived from the active worldspace cell size
-    /// (Morrowind's 8192-unit cells get a gentler scale so the relief isn't harsh).</summary>
+    /// <summary>
+    ///     Per-game hillshade slope-emphasis scale derived from the active worldspace cell size
+    ///     (Morrowind's 8192-unit cells get a gentler scale so the relief isn't harsh).
+    /// </summary>
     private float CurrentHillshadeZScale() => WorldMapHillshadeRenderer.ZScaleForCellSize(_cellSize);
 
     /// <summary>
@@ -57,9 +61,11 @@ public sealed partial class WorldMapControl
         return Vector3.Normalize(new Vector3(sun.X, -sun.Y, MathF.Max(minElevation, sun.Z)));
     }
 
-    /// <summary>Re-bakes the affected layer after a hillshade light-direction change. Only the Slope
-    /// layer and the textured hill-shade modulation depend on the light direction; everything else is a
-    /// no-op (avoids a needless rebuild when hillshade isn't on screen).</summary>
+    /// <summary>
+    ///     Re-bakes the affected layer after a hillshade light-direction change. Only the Slope
+    ///     layer and the textured hill-shade modulation depend on the light direction; everything else is a
+    ///     no-op (avoids a needless rebuild when hillshade isn't on screen).
+    /// </summary>
     private void RebuildForHillshadeChange()
     {
         if (_currentLayer == WorldMapLayer.Slope)
@@ -81,6 +87,7 @@ public sealed partial class WorldMapControl
         {
             RebuildCellDetailBitmaps(_state.SelectedCell);
         }
+
         MapCanvas?.Invalidate();
     }
 }

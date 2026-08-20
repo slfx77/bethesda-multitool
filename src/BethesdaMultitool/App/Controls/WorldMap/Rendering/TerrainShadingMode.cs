@@ -26,7 +26,9 @@ internal enum TerrainShadingMode
 ///     (null = the renderer's NW default). <c>default</c> is neither (raw diffuse).
 /// </summary>
 internal readonly record struct TerrainShadingOptions(
-    bool VertexColors, bool HillShade, Vector3? LightDir = null,
+    bool VertexColors,
+    bool HillShade,
+    Vector3? LightDir = null,
     float ZScale = WorldMapHillshadeRenderer.DefaultZScale)
 {
     internal static readonly TerrainShadingOptions None = new(false, false);

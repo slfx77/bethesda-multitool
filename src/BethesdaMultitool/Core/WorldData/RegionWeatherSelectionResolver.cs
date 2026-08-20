@@ -1,7 +1,7 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>Why a CELL/REGN weather query resolved or fell back to the owning climate.</summary>
 internal enum RegionWeatherSelectionStatus
@@ -22,7 +22,7 @@ internal enum RegionWeatherSelectionStatus
     GlobalGatedWeather,
     WeightedWeather,
     AmbiguousWeatherEntries,
-    UnresolvedWeather,
+    UnresolvedWeather
 }
 
 /// <summary>
@@ -43,7 +43,11 @@ internal readonly record struct ResolvedRegionWeatherSelection(
     {
         get
         {
-            static string Id(uint? value) => value is { } id ? $"{id:X8}" : "none";
+            static string Id(uint? value)
+            {
+                return value is { } id ? $"{id:X8}" : "none";
+            }
+
             var source = UsesRegionWeather ? "region-rdwt" : "climate-fallback";
             var reason = Status switch
             {
@@ -64,7 +68,7 @@ internal readonly record struct ResolvedRegionWeatherSelection(
                 RegionWeatherSelectionStatus.WeightedWeather => "weighted-rdwt",
                 RegionWeatherSelectionStatus.AmbiguousWeatherEntries => "ambiguous-rdwt",
                 RegionWeatherSelectionStatus.UnresolvedWeather => "unresolved-weather",
-                _ => "unknown",
+                _ => "unknown"
             };
             return $"regionWeatherSource={source} cell={Id(CellFormId)} region={Id(RegionFormId)} " +
                    $"weather={Id(Weather?.FormId)} point=({WorldX.ToString("0.###", CultureInfo.InvariantCulture)}," +
@@ -91,8 +95,10 @@ internal static class RegionWeatherSelectionResolver
     {
         ResolvedRegionWeatherSelection Fail(
             RegionWeatherSelectionStatus status,
-            uint? regionFormId = null) =>
-            new(null, status, cell?.FormId, regionFormId, worldX, worldY);
+            uint? regionFormId = null)
+        {
+            return new ResolvedRegionWeatherSelection(null, status, cell?.FormId, regionFormId, worldX, worldY);
+        }
 
         if (cell is null)
         {
@@ -219,7 +225,7 @@ internal static class RegionWeatherSelectionResolver
         {
             var current = points[i];
             var next = points[(i + 1) % points.Count];
-            twiceArea += ((double)current.X * next.Y) - ((double)next.X * current.Y);
+            twiceArea += (double)current.X * next.Y - (double)next.X * current.Y;
         }
 
         return Math.Abs(twiceArea) > 1e-4;
@@ -237,15 +243,15 @@ internal static class RegionWeatherSelectionResolver
                 return true;
             }
 
-            var crossesScanline = (current.Y > worldY) != (previous.Y > worldY);
+            var crossesScanline = current.Y > worldY != previous.Y > worldY;
             if (!crossesScanline)
             {
                 continue;
             }
 
             var intersectionX = previous.X +
-                                (((double)worldY - previous.Y) * (current.X - previous.X) /
-                                 (current.Y - previous.Y));
+                                ((double)worldY - previous.Y) * (current.X - previous.X) /
+                                (current.Y - previous.Y);
             if (worldX < intersectionX)
             {
                 inside = !inside;
@@ -259,22 +265,22 @@ internal static class RegionWeatherSelectionResolver
     {
         var dx = (double)end.X - start.X;
         var dy = (double)end.Y - start.Y;
-        var lengthSquared = (dx * dx) + (dy * dy);
+        var lengthSquared = dx * dx + dy * dy;
         const double epsilon = 1e-4;
         if (lengthSquared <= epsilon * epsilon)
         {
             var pointDx = (double)x - start.X;
             var pointDy = (double)y - start.Y;
-            return (pointDx * pointDx) + (pointDy * pointDy) <= epsilon * epsilon;
+            return pointDx * pointDx + pointDy * pointDy <= epsilon * epsilon;
         }
 
-        var cross = (((double)x - start.X) * dy) - (((double)y - start.Y) * dx);
+        var cross = ((double)x - start.X) * dy - ((double)y - start.Y) * dx;
         if (Math.Abs(cross) > epsilon * Math.Sqrt(lengthSquared))
         {
             return false;
         }
 
-        var dot = (((double)x - start.X) * dx) + (((double)y - start.Y) * dy);
+        var dot = ((double)x - start.X) * dx + ((double)y - start.Y) * dy;
         return dot >= -epsilon && dot <= lengthSquared + epsilon;
     }
 }

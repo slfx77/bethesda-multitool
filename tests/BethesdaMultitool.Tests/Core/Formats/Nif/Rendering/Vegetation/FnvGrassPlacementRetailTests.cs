@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;

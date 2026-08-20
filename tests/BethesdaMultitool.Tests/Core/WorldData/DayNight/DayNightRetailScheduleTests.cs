@@ -40,7 +40,7 @@ public sealed class DayNightRetailScheduleTests(SampleFileFixture samples)
         foreach (var starter in new[]
                  {
                      RetailStreetLightOneParent, RetailStreetLightTwoParent,
-                     RetailStreetLightThreeParent,
+                     RetailStreetLightThreeParent
                  })
         {
             Assert.True(
@@ -56,9 +56,8 @@ public sealed class DayNightRetailScheduleTests(SampleFileFixture samples)
 
         // The generic self-toggling glow activator: every placed FXGlowSimpFillRnd02DayNight
         // instance gates itself on the same 20→6 window.
-        var glowBase = records.Activators.Single(
-            activator => string.Equals(
-                activator.EditorId, "FXGlowSimpFillRnd02DayNight", StringComparison.OrdinalIgnoreCase));
+        var glowBase = records.Activators.Single(activator => string.Equals(
+            activator.EditorId, "FXGlowSimpFillRnd02DayNight", StringComparison.OrdinalIgnoreCase));
         var glowInstances = records.Cells
             .SelectMany(cell => cell.PlacedObjects)
             .Where(placement => placement.BaseFormId == glowBase.FormId)

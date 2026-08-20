@@ -20,12 +20,20 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 public sealed class AssetLooseDeliveryAndDonorProbeTests : IDisposable
 {
+    /// <summary>"TES4" byte-reversed — what a big-endian Xbox 360 plugin header reads as.</summary>
+    private static readonly byte[] BigEndianEsmHeader = "4SET"u8.ToArray();
+
+    private static readonly byte[] LittleEndianEsmHeader = "TES4"u8.ToArray();
+
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), $"loosedonor-{Guid.NewGuid():N}");
 
     private bool _disposed;
 
-    public AssetLooseDeliveryAndDonorProbeTests() => Directory.CreateDirectory(_root);
+    public AssetLooseDeliveryAndDonorProbeTests()
+    {
+        Directory.CreateDirectory(_root);
+    }
 
     public void Dispose()
     {
@@ -49,11 +57,6 @@ public sealed class AssetLooseDeliveryAndDonorProbeTests : IDisposable
 
         GC.SuppressFinalize(this);
     }
-
-    /// <summary>"TES4" byte-reversed — what a big-endian Xbox 360 plugin header reads as.</summary>
-    private static readonly byte[] BigEndianEsmHeader = "4SET"u8.ToArray();
-
-    private static readonly byte[] LittleEndianEsmHeader = "TES4"u8.ToArray();
 
     private string MakeTree(string relativeDataDir, byte[] esmHeader)
     {

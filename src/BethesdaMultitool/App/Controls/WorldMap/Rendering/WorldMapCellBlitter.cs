@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.WorldData;
+
 namespace BethesdaMultitool;
 
 /// <summary>
@@ -13,8 +15,10 @@ internal static class WorldMapCellBlitter
     /// <summary>Cells lacking the layer's source data render in this neutral gray.</summary>
     private const byte MissingR = 40, MissingG = 40, MissingB = 45;
 
-    /// <summary>Copies a <paramref name="cellSize" />×<paramref name="cellSize" /> RGBA cell block into
-    /// the aggregate buffer at pixel offset (<paramref name="dstX" />,<paramref name="dstY" />).</summary>
+    /// <summary>
+    ///     Copies a <paramref name="cellSize" />×<paramref name="cellSize" /> RGBA cell block into
+    ///     the aggregate buffer at pixel offset (<paramref name="dstX" />,<paramref name="dstY" />).
+    /// </summary>
     internal static void BlitCellRgbaBlock(byte[] dst, int dstStride, byte[] cell, int cellSize, int dstX, int dstY)
     {
         var rowBytes = cellSize * 4;
@@ -26,9 +30,11 @@ internal static class WorldMapCellBlitter
         }
     }
 
-    /// <summary>Box-downsamples a square <paramref name="srcSize" />² RGBA cell tile to
-    /// <paramref name="dstSize" />² (averaging the covered source texels). Used to render coarse-tile
-    /// cells below the native 33 px/cell so a large worldspace's overview stays memory-bounded.</summary>
+    /// <summary>
+    ///     Box-downsamples a square <paramref name="srcSize" />² RGBA cell tile to
+    ///     <paramref name="dstSize" />² (averaging the covered source texels). Used to render coarse-tile
+    ///     cells below the native 33 px/cell so a large worldspace's overview stays memory-bounded.
+    /// </summary>
     internal static byte[] DownsampleCell(byte[] src, int srcSize, int dstSize)
     {
         if (dstSize >= srcSize) return src;
@@ -70,8 +76,10 @@ internal static class WorldMapCellBlitter
         return dst;
     }
 
-    /// <summary>Fills one cell's px block with opaque white — the engine's default (no-tint) vertex
-    /// color, used for valid terrain cells that carry no VCLR subrecord.</summary>
+    /// <summary>
+    ///     Fills one cell's px block with opaque white — the engine's default (no-tint) vertex
+    ///     color, used for valid terrain cells that carry no VCLR subrecord.
+    /// </summary>
     internal static void FillCellWhite(byte[] rgba, int stride, int imgCellX, int imgCellY)
     {
         for (var py = 0; py < HmGridSize; py++)
@@ -120,6 +128,7 @@ internal static class WorldMapCellBlitter
                 dst[d + 2] = vc[src + 2];
             }
         }
+
         return dst;
     }
 
@@ -146,7 +155,8 @@ internal static class WorldMapCellBlitter
         }
     }
 
-    internal static void BlitTerrainRegionsToCell(byte[] rgba, int stride, TextureWinnerGrid winners, int imgCellX, int imgCellY)
+    internal static void BlitTerrainRegionsToCell(byte[] rgba, int stride, TextureWinnerGrid winners, int imgCellX,
+        int imgCellY)
     {
         for (var py = 0; py < HmGridSize; py++)
         {

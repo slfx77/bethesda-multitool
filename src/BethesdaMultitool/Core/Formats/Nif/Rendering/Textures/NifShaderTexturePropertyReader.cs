@@ -36,7 +36,7 @@ internal static class NifShaderTexturePropertyReader
                 // slots don't convey — e.g. SLSF1_Refraction / SLSF1_Fire_Refraction (heat-haze/vapor planes
                 // that must NOT draw as opaque normal-map "gems"). Best-effort; null when the layout is unknown.
                 TryReadBsLightingShaderFlags(data, nif, propBlock, out var lsFlags1, out var lsFlags2);
-                ReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: true,
+                ReadBsShaderUvTransform(data, nif, propBlock, true,
                     out var uvOffset, out var uvScale);
 
                 return new NifShaderTextureMetadata
@@ -54,8 +54,8 @@ internal static class NifShaderTexturePropertyReader
                     {
                         >= 155 => ReadMaterialName(data, nif, propBlock.DataOffset),
                         >= 130 => ReadMaterialName(data, nif, propBlock.DataOffset + 4),
-                        _ => null,
-                    },
+                        _ => null
+                    }
                 };
             }
 
@@ -79,7 +79,7 @@ internal static class NifShaderTexturePropertyReader
                 // Fallout 4+ layouts diverge (external BGEM / CRC flag arrays), so this deliberately
                 // only decodes the Skyrim-family layout.
                 var inline = ReadClassicBsEffectShaderData(data, nif, propBlock);
-                ReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: false,
+                ReadBsShaderUvTransform(data, nif, propBlock, false,
                     out var uvOffset, out var uvScale);
 
                 return new NifShaderTextureMetadata
@@ -105,7 +105,7 @@ internal static class NifShaderTexturePropertyReader
                     // FO4/FO76) sits at the block data offset.
                     MaterialPath = nif.BsVersion >= 130
                         ? ReadMaterialName(data, nif, propBlock.DataOffset)
-                        : null,
+                        : null
                 };
             }
 
@@ -165,7 +165,7 @@ internal static class NifShaderTexturePropertyReader
                     ShaderFlags2 = shaderFlags2,
                     EnvMapScale = envMapScale,
                     TextureSlots = CreateFixedTextureSlots(
-                        ResolveTallGrassTexture(data, nif, propBlock)),
+                        ResolveTallGrassTexture(data, nif, propBlock))
                 };
             }
 
@@ -178,7 +178,7 @@ internal static class NifShaderTexturePropertyReader
                 EnvMapScale = envMapScale,
                 TextureSlots = CreateFixedTextureSlots(
                     ResolveNoLightingTexture(data, nif, propBlock)),
-                NoLightingFalloff = ReadNoLightingFalloff(data, nif, propBlock),
+                NoLightingFalloff = ReadNoLightingFalloff(data, nif, propBlock)
             };
         }
 
@@ -488,8 +488,10 @@ internal static class NifShaderTexturePropertyReader
     ///     path. Returned as the diffuse slot so the resolver can parse the material and load its
     ///     textures. Returns empty when the Name isn't a material path.
     /// </summary>
-    private static List<string?> ReadFallout76MaterialSlot(byte[] data, NifInfo nif, BlockInfo propBlock) =>
-        ReadMaterialNameSlot(data, nif, propBlock.DataOffset);
+    private static List<string?> ReadFallout76MaterialSlot(byte[] data, NifInfo nif, BlockInfo propBlock)
+    {
+        return ReadMaterialNameSlot(data, nif, propBlock.DataOffset);
+    }
 
     /// <summary>
     ///     Resolve a shader's material from its NiObjectNET <c>Name</c> (a String-table index) at
@@ -562,7 +564,10 @@ internal static class NifShaderTexturePropertyReader
     }
 
     /// <summary>True when the diffuse (slot 0) of a texture-slot list is populated.</summary>
-    private static bool HasDiffuse(List<string?> slots) => slots.Count > 0 && !string.IsNullOrEmpty(slots[0]);
+    private static bool HasDiffuse(List<string?> slots)
+    {
+        return slots.Count > 0 && !string.IsNullOrEmpty(slots[0]);
+    }
 
     /// <summary>
     ///     Reads the pre-FO4 inline <c>BSEffectShaderProperty</c> material payload. Skyrim's shipped
@@ -628,9 +633,9 @@ internal static class NifShaderTexturePropertyReader
             : float.NaN;
 
         var falloffFinite = float.IsFinite(startAngle) && float.IsFinite(stopAngle)
-                            && float.IsFinite(startOpacity) && float.IsFinite(stopOpacity);
+                                                       && float.IsFinite(startOpacity) && float.IsFinite(stopOpacity);
         var baseFinite = float.IsFinite(baseR) && float.IsFinite(baseG)
-                         && float.IsFinite(baseB) && float.IsFinite(baseA);
+                                               && float.IsFinite(baseB) && float.IsFinite(baseA);
 
         return new ClassicBsEffectShaderData(
             flags1,
@@ -707,15 +712,6 @@ internal static class NifShaderTexturePropertyReader
         maxPasses = float.IsFinite(parsedMaxPasses) ? parsedMaxPasses : null;
         scale = float.IsFinite(parsedScale) ? parsedScale : null;
     }
-
-    private sealed record ClassicBsEffectShaderData(
-        uint ShaderFlags1,
-        uint ShaderFlags2,
-        float? LightingInfluence,
-        (float R, float G, float B, float A)? BaseColor,
-        float? BaseColorScale,
-        (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? Falloff,
-        float? SoftFalloffDepth);
 
     /// <summary>
     ///     Reads the inline "Source Texture" of a Skyrim / SE / Fallout 4 BSEffectShaderProperty (the
@@ -849,4 +845,13 @@ internal static class NifShaderTexturePropertyReader
 
         return fixedSlots;
     }
+
+    private sealed record ClassicBsEffectShaderData(
+        uint ShaderFlags1,
+        uint ShaderFlags2,
+        float? LightingInfluence,
+        (float R, float G, float B, float A)? BaseColor,
+        float? BaseColorScale,
+        (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? Falloff,
+        float? SoftFalloffDepth);
 }

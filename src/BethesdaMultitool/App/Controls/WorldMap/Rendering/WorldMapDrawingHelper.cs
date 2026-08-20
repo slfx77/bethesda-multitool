@@ -5,6 +5,7 @@ using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.Geometry;
 using Windows.Foundation;
 using Windows.UI;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 

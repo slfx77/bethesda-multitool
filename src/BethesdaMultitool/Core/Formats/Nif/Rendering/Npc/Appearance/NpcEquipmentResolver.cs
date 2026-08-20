@@ -6,16 +6,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 /// <summary>Resolves the armor/clothing an NPC wears, from ESM inventory or runtime BipedAnim slots captured in a DMP.</summary>
 internal sealed class NpcEquipmentResolver
 {
-    /// <summary>
-    ///     Worn-armor FormIDs read from a memory dump's runtime BipedAnim slots
-    ///     for a specific actor instance. Mirrors
-    ///     <see cref="NpcWeaponResolver.RuntimeWeaponSelection" />.
-    /// </summary>
-    internal readonly record struct RuntimeEquipmentSelection(
-        bool HasRuntimeTarget,
-        uint? ActorRefFormId,
-        IReadOnlyList<uint>? WornArmorFormIds);
-
     private readonly IReadOnlyDictionary<uint, ArmaAddonScanEntry> _armorAddons;
     private readonly IReadOnlyDictionary<uint, ArmoScanEntry> _armors;
     private readonly IReadOnlyDictionary<uint, List<uint>> _formLists;
@@ -290,6 +280,15 @@ internal sealed class NpcEquipmentResolver
         return addon.FemaleModelPath ?? addon.MaleModelPath;
     }
 
+    /// <summary>
+    ///     Worn-armor FormIDs read from a memory dump's runtime BipedAnim slots
+    ///     for a specific actor instance. Mirrors
+    ///     <see cref="NpcWeaponResolver.RuntimeWeaponSelection" />.
+    /// </summary>
+    internal readonly record struct RuntimeEquipmentSelection(
+        bool HasRuntimeTarget,
+        uint? ActorRefFormId,
+        IReadOnlyList<uint>? WornArmorFormIds);
+
     private readonly record struct ResolvedArmorChoice(uint FormId, ArmoScanEntry Armor);
 }
-

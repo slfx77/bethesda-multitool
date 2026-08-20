@@ -32,6 +32,7 @@ internal static class FnvClassicBasicShaderPolicy
     private const uint DecalFlags = (1u << 26) | (1u << 27);
     private const uint ParallaxOcclusionFlag = 1u << 28;
     private const uint ExternalEmittanceFlag = 1u << 29;
+
     private const uint UnsupportedFlags =
         SpecularFlag | SkinnedFlag | LowDetailFlag | ForcedSinglePassFlag |
         EnvironmentMappingFlag | FaceGenFlag | ParallaxFlag |
@@ -48,8 +49,10 @@ internal static class FnvClassicBasicShaderPolicy
     ///     cache. It never activates the dormant PS1 family; FO3 and FNV share BS34 NIF layouts and can
     ///     share decoded assets.
     /// </summary>
-    internal static FnvClassicBasicShaderMode Resolve(NifInfo nif, RenderableSubmesh submesh) =>
-        Resolve(nif, submesh, submesh.DiffuseTexturePath, submesh.NormalMapTexturePath);
+    internal static FnvClassicBasicShaderMode Resolve(NifInfo nif, RenderableSubmesh submesh)
+    {
+        return Resolve(nif, submesh, submesh.DiffuseTexturePath, submesh.NormalMapTexturePath);
+    }
 
     /// <summary>
     ///     Resolves against the effective draw paths. MODS/TXST alternate textures are applied after
@@ -93,8 +96,10 @@ internal static class FnvClassicBasicShaderPolicy
     }
 
     /// <summary>CPU oracle for SLS1009/1013: <c>Ambient + rawSignedDp3 * PSLightColor</c>.</summary>
-    internal static Vector3 EvaluateShade(Vector3 ambient, float rawSignedDp3, Vector3 psLightColor) =>
-        ambient + psLightColor * rawSignedDp3;
+    internal static Vector3 EvaluateShade(Vector3 ambient, float rawSignedDp3, Vector3 psLightColor)
+    {
+        return ambient + psLightColor * rawSignedDp3;
+    }
 
     /// <summary>
     ///     CPU oracle for the final RGB instructions. SLS1009 returns BaseMap*shade; SLS1013
@@ -117,11 +122,13 @@ internal static class FnvClassicBasicShaderPolicy
         emission is { } value && (value.R != 0f || value.G != 0f || value.B != 0f);
 #pragma warning restore S1244
 
-    private static bool HasCompleteVertexColorData(RenderableSubmesh submesh) =>
-        submesh.UseVertexColors &&
-        submesh.VertexColors is { } colors &&
-        submesh.Positions.Length % 3 == 0 &&
-        colors.Length >= submesh.Positions.Length / 3 * 4;
+    private static bool HasCompleteVertexColorData(RenderableSubmesh submesh)
+    {
+        return submesh.UseVertexColors &&
+               submesh.VertexColors is { } colors &&
+               submesh.Positions.Length % 3 == 0 &&
+               colors.Length >= submesh.Positions.Length / 3 * 4;
+    }
 
     private static bool HasUsableBumpGeometry(RenderableSubmesh submesh)
     {

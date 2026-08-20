@@ -25,9 +25,9 @@ internal sealed record MasterDialogueTopic(
 internal sealed class MasterDialogueIndex
 {
     private const uint GreetingDialFormId = 0x000000C8;
+    private readonly HashSet<uint> _exactGreetingSpeakers;
     private readonly Dictionary<uint, MasterDialogueInfo> _infosByFormId;
     private readonly Dictionary<uint, MasterDialogueTopic> _topicsByFormId;
-    private readonly HashSet<uint> _exactGreetingSpeakers;
 
     private MasterDialogueIndex(
         Dictionary<uint, MasterDialogueInfo> infosByFormId,
@@ -44,14 +44,20 @@ internal sealed class MasterDialogueIndex
 
     public IReadOnlyCollection<MasterDialogueInfo> Infos => _infosByFormId.Values;
 
-    public bool TryGetInfo(uint formId, out MasterDialogueInfo info) =>
-        _infosByFormId.TryGetValue(formId, out info!);
+    public bool TryGetInfo(uint formId, out MasterDialogueInfo info)
+    {
+        return _infosByFormId.TryGetValue(formId, out info!);
+    }
 
-    public bool TryGetTopic(uint formId, out MasterDialogueTopic topic) =>
-        _topicsByFormId.TryGetValue(formId, out topic!);
+    public bool TryGetTopic(uint formId, out MasterDialogueTopic topic)
+    {
+        return _topicsByFormId.TryGetValue(formId, out topic!);
+    }
 
-    public bool HasExactGreetingCoverage(uint speakerFormId) =>
-        speakerFormId != 0 && _exactGreetingSpeakers.Contains(speakerFormId);
+    public bool HasExactGreetingCoverage(uint speakerFormId)
+    {
+        return speakerFormId != 0 && _exactGreetingSpeakers.Contains(speakerFormId);
+    }
 
     /// <summary>Build from the parsed master stream and its raw GRUP headers.</summary>
     public static MasterDialogueIndex Build(

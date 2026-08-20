@@ -644,4 +644,3 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
         return null;
     }
 }
-

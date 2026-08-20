@@ -1,6 +1,6 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Inspection;
@@ -8,8 +8,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Inspection;
 /// <summary>
 ///     Covers the alpha classification in <see cref="NifAlphaClassifier" /> — BOTH bits:
 ///     <list type="bullet">
-///         <item>Alpha BLEND is enabled by NiAlphaProperty bit 0 (decompiled from
-///             BSShader::SetupGeometryAlphaBlending).</item>
+///         <item>
+///             Alpha BLEND is enabled by NiAlphaProperty bit 0 (decompiled from
+///             BSShader::SetupGeometryAlphaBlending).
+///         </item>
 ///         <item>
 ///             LEGACY <c>DepthWritingBlend</c> (blend + test + cutting threshold) — the viewer
 ///             heuristic serving every stream-off route. NOTE the 2026-08-04 RE round proved the

@@ -32,8 +32,10 @@ internal readonly record struct WalkCollisionInstance(
         return new WalkCollisionInstance(mesh, world, min, max);
     }
 
-    public static WalkCollisionInstance FromAxisAlignedBox(Vector3 min, Vector3 max) =>
-        new(null, Matrix4x4.Identity, Vector3.Min(min, max), Vector3.Max(min, max));
+    public static WalkCollisionInstance FromAxisAlignedBox(Vector3 min, Vector3 max)
+    {
+        return new WalkCollisionInstance(null, Matrix4x4.Identity, Vector3.Min(min, max), Vector3.Max(min, max));
+    }
 
     /// <summary>
     ///     Cold-OBND box honoring the full placement transform: the broadphase AABB comes from the
@@ -55,7 +57,7 @@ internal readonly record struct WalkCollisionInstance(
             ProjectXY(new Vector3(localMin.X, localMin.Y, localMax.Z), world),
             ProjectXY(new Vector3(localMax.X, localMin.Y, localMax.Z), world),
             ProjectXY(new Vector3(localMax.X, localMax.Y, localMax.Z), world),
-            ProjectXY(new Vector3(localMin.X, localMax.Y, localMax.Z), world),
+            ProjectXY(new Vector3(localMin.X, localMax.Y, localMax.Z), world)
         };
         return new WalkCollisionInstance(null, world, min, max) { FootprintCorners = corners };
     }
@@ -214,6 +216,7 @@ internal static class WalkHorizontalCollision
                 {
                     TestBox(candidate.WorldMin, candidate.WorldMax);
                 }
+
                 continue;
             }
 
@@ -254,9 +257,9 @@ internal static class WalkHorizontalCollision
                 clippedA[0] = a;
                 clippedA[1] = b;
                 clippedA[2] = c;
-                var count = ClipAgainstZ(clippedA[..3], clippedB, bodyMinZ, keepAbove: true);
+                var count = ClipAgainstZ(clippedA[..3], clippedB, bodyMinZ, true);
                 if (count < 2) continue;
-                count = ClipAgainstZ(clippedB[..count], clippedA, bodyMaxZ, keepAbove: false);
+                count = ClipAgainstZ(clippedB[..count], clippedA, bodyMaxZ, false);
                 if (count < 2) continue;
 
                 for (var edge = 0; edge < count; edge++)
@@ -442,5 +445,8 @@ internal static class WalkHorizontalCollision
         }
     }
 
-    private static bool IsFinite(Vector2 v) => float.IsFinite(v.X) && float.IsFinite(v.Y);
+    private static bool IsFinite(Vector2 v)
+    {
+        return float.IsFinite(v.X) && float.IsFinite(v.Y);
+    }
 }

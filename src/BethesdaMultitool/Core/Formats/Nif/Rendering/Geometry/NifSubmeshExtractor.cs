@@ -93,7 +93,8 @@ internal static class NifSubmeshExtractor
                 // BSTriShape and its variants are self-contained (the shape block IS its own data block,
                 // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
                 "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
-                    => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, transform, shapeName),
+                    => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, transform,
+                        shapeName),
                 // Starfield. The block holds NO vertex data — it names an external geometries\ blob,
                 // so this arm is inert without a loader (standalone callers that have no archive
                 // simply get no geometry rather than a wrong mesh).
@@ -244,6 +245,7 @@ internal static class NifSubmeshExtractor
         {
             pos += 4;
         }
+
         if (pos + 2 > end)
         {
             return null;
@@ -428,7 +430,7 @@ internal static class NifSubmeshExtractor
         }
 
         if (positions == null ||
-            (!hasLocalTriangles || numTriangles == 0) && fallbackTriangles is not { Length: > 0 })
+            ((!hasLocalTriangles || numTriangles == 0) && fallbackTriangles is not { Length: > 0 }))
         {
             return null;
         }
@@ -490,7 +492,7 @@ internal static class NifSubmeshExtractor
                 authoredBounds,
                 transform,
                 transformed.Positions,
-                sourceDeformed: skinning.HasValue || preSkinMorphDeltas is not null),
+                skinning.HasValue || preSkinMorphDeltas is not null),
             Triangles = triangles,
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
@@ -677,7 +679,7 @@ internal static class NifSubmeshExtractor
                 authoredBounds,
                 transform,
                 transformed.Positions,
-                sourceDeformed: skinning.HasValue || preSkinMorphDeltas is not null),
+                skinning.HasValue || preSkinMorphDeltas is not null),
             Triangles = triangles,
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
@@ -969,7 +971,7 @@ internal static class NifSubmeshExtractor
                 authoredBounds,
                 transform,
                 transformed.Positions,
-                sourceDeformed: skinning.HasValue || preSkinMorphDeltas is not null),
+                skinning.HasValue || preSkinMorphDeltas is not null),
             Triangles = triangles,
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
@@ -1276,12 +1278,12 @@ internal static class NifSubmeshExtractor
         var bitangents = new float[tangents.Length];
         for (var i = 0; i < signs.Length; i++)
         {
-            var n = new Vector3(normals[i * 3], normals[(i * 3) + 1], normals[(i * 3) + 2]);
-            var t = new Vector3(tangents[i * 3], tangents[(i * 3) + 1], tangents[(i * 3) + 2]);
+            var n = new Vector3(normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]);
+            var t = new Vector3(tangents[i * 3], tangents[i * 3 + 1], tangents[i * 3 + 2]);
             var b = Vector3.Cross(n, t) * signs[i];
             bitangents[i * 3] = b.X;
-            bitangents[(i * 3) + 1] = b.Y;
-            bitangents[(i * 3) + 2] = b.Z;
+            bitangents[i * 3 + 1] = b.Y;
+            bitangents[i * 3 + 2] = b.Z;
         }
 
         return bitangents;
@@ -1457,11 +1459,13 @@ internal static class NifSubmeshExtractor
                 : null);
     }
 
-    private static NifLocalBounds ReadLocalBounds(byte[] data, int offset, bool be) =>
-        new(
+    private static NifLocalBounds ReadLocalBounds(byte[] data, int offset, bool be)
+    {
+        return new NifLocalBounds(
             new Vector3(
                 BinaryUtils.ReadFloat(data, offset, be),
                 BinaryUtils.ReadFloat(data, offset + 4, be),
                 BinaryUtils.ReadFloat(data, offset + 8, be)),
             BinaryUtils.ReadFloat(data, offset + 12, be));
+    }
 }

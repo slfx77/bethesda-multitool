@@ -25,7 +25,7 @@ internal static class DmpScriptAuditCsv
     internal static void Write(string path, IReadOnlyList<DmpScriptAuditRow> rows)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
-        using var writer = new StreamWriter(path, append: false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        using var writer = new StreamWriter(path, false, new UTF8Encoding(false));
         writer.WriteLine(string.Join(',', Header));
         foreach (var row in rows)
         {
@@ -95,8 +95,18 @@ internal static class DmpScriptAuditCsv
         return $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     }
 
-    private static string Bool(bool value) => value ? "true" : "false";
-    private static string NullableBool(bool? value) => value.HasValue ? Bool(value.Value) : string.Empty;
-    private static string Invariant<T>(T value) where T : IFormattable =>
-        value.ToString(null, CultureInfo.InvariantCulture);
+    private static string Bool(bool value)
+    {
+        return value ? "true" : "false";
+    }
+
+    private static string NullableBool(bool? value)
+    {
+        return value.HasValue ? Bool(value.Value) : string.Empty;
+    }
+
+    private static string Invariant<T>(T value) where T : IFormattable
+    {
+        return value.ToString(null, CultureInfo.InvariantCulture);
+    }
 }

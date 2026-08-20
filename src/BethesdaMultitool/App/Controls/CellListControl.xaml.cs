@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -16,25 +17,11 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class CellListControl : UserControl
 {
-    /// <summary>How a user picks a cell: 3D uses ItemClick (only a real click loads), 2D uses selection.</summary>
-    public enum ActivationMode
-    {
-        ItemClick,
-        SelectionChanged
-    }
-
-    /// <summary>Which grouping the list uses. AllCells groups interiors/worldspaces; Interiors groups A–Z.</summary>
-    public enum CellListMode
-    {
-        AllCells,
-        Interiors
-    }
-
     private readonly DispatcherQueueTimer _filterDebounce;
     private List<WorldMapControl.CellListItem> _allItems = [];
     private CellSortMode _sortMode = CellSortMode.Grid;
-    private bool _suppressSortEvent;
     private bool _suppressFilterEvents;
+    private bool _suppressSortEvent;
 
     public CellListControl()
     {
@@ -51,11 +38,10 @@ public sealed partial class CellListControl : UserControl
     /// <summary>Whether a cell is activated by ItemClick (3D) or by selection (2D). Defaults to selection.</summary>
     public ActivationMode Activation { get; set; } = ActivationMode.SelectionChanged;
 
-    /// <summary>Raised when the user picks a cell (per <see cref="Activation" />).</summary>
-    public event EventHandler<CellRecord>? CellActivated;
-
-    /// <summary>Current within-group sort. Setting it syncs the combo and re-sorts without re-firing.
-    ///     Internal because <see cref="CellSortMode" /> is internal (all callers are in this assembly).</summary>
+    /// <summary>
+    ///     Current within-group sort. Setting it syncs the combo and re-sorts without re-firing.
+    ///     Internal because <see cref="CellSortMode" /> is internal (all callers are in this assembly).
+    /// </summary>
     internal CellSortMode SortMode
     {
         get => _sortMode;
@@ -77,6 +63,9 @@ public sealed partial class CellListControl : UserControl
         }
     }
 
+    /// <summary>Raised when the user picks a cell (per <see cref="Activation" />).</summary>
+    public event EventHandler<CellRecord>? CellActivated;
+
     /// <summary>
     ///     Populates the list with <paramref name="cells" /> in the given <paramref name="mode" />. Builds
     ///     the row items off the UI thread (the expensive part for big cell sets), then filters + groups.
@@ -93,8 +82,7 @@ public sealed partial class CellListControl : UserControl
         FilterNamedOnly.IsChecked = false;
         _suppressFilterEvents = false;
 
-        var items = await Task.Run(
-            () => WorldMapCellBrowser.BuildCellListItems(cellList, groupInteriors, data));
+        var items = await Task.Run(() => WorldMapCellBrowser.BuildCellListItems(cellList, groupInteriors, data));
         _allItems = items;
         await RunFilterAsync();
     }
@@ -197,5 +185,19 @@ public sealed partial class CellListControl : UserControl
         {
             CellActivated?.Invoke(this, item.Cell);
         }
+    }
+
+    /// <summary>How a user picks a cell: 3D uses ItemClick (only a real click loads), 2D uses selection.</summary>
+    public enum ActivationMode
+    {
+        ItemClick,
+        SelectionChanged
+    }
+
+    /// <summary>Which grouping the list uses. AllCells groups interiors/worldspaces; Interiors groups A–Z.</summary>
+    public enum CellListMode
+    {
+        AllCells,
+        Interiors
     }
 }

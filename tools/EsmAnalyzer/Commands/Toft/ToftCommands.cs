@@ -1,10 +1,6 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.CommandLine;
 using System.Security.Cryptography;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Toft;
 
@@ -247,4 +243,3 @@ public static class ToftCommands
         int CompareStringsLimit,
         string? CompareFormIdText);
 }
-

@@ -1,9 +1,8 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Esm;
@@ -190,4 +189,3 @@ public static class EsmConvertCommand
         }
     }
 }
-

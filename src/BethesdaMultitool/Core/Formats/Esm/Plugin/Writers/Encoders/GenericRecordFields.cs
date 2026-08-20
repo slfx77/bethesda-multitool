@@ -6,8 +6,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 /// <summary>
 ///     Field accessors shared by the encoders that emit from <see cref="GenericEsmRecord" />.
 ///     <para>
-///     These records reach the writer from two different producers that key
-///     <see cref="GenericEsmRecord.Fields" /> differently, so every lookup has to try both:
+///         These records reach the writer from two different producers that key
+///         <see cref="GenericEsmRecord.Fields" /> differently, so every lookup has to try both:
 ///     </para>
 ///     <list type="bullet">
 ///         <item>
@@ -26,15 +26,22 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///         </item>
 ///     </list>
 ///     <para>
-///     Value shapes also vary by producer. <c>RuntimeGenericReader.ReadPointerField</c> resolves a
-///     TESForm pointer to a boxed <see cref="uint" /> FormID, while
-///     <c>ReadEmbeddedStruct</c> renders a struct of ≤8 bytes as an uppercase hex
-///     <see cref="string" /> and anything larger as a <c>"[TypeName, NB]"</c> descriptor that
-///     carries no data — <see cref="TryBytes" /> rejects the latter rather than emitting garbage.
+///         Value shapes also vary by producer. <c>RuntimeGenericReader.ReadPointerField</c> resolves a
+///         TESForm pointer to a boxed <see cref="uint" /> FormID, while
+///         <c>ReadEmbeddedStruct</c> renders a struct of ≤8 bytes as an uppercase hex
+///         <see cref="string" /> and anything larger as a <c>"[TypeName, NB]"</c> descriptor that
+///         carries no data — <see cref="TryBytes" /> rejects the latter rather than emitting garbage.
 ///     </para>
 /// </summary>
 internal static class GenericRecordFields
 {
+    /// <summary>
+    ///     Highest load-order byte a captured FormID can legitimately carry at encode time.
+    ///     Models reach the encoders before post-emit remapping, so every real reference is
+    ///     either master-range (0x00xxxxxx) or allocator-issued plugin-range (0x01xxxxxx).
+    /// </summary>
+    private const uint MaxFormIdIndex = 0x01;
+
     /// <summary>
     ///     Look up a field by any of the supplied keys, in order. Pass the subrecord signature
     ///     first and the PDB <c>Owner.Name</c> identifiers after it.
@@ -53,22 +60,15 @@ internal static class GenericRecordFields
     }
 
     /// <summary>
-    ///     Highest load-order byte a captured FormID can legitimately carry at encode time.
-    ///     Models reach the encoders before post-emit remapping, so every real reference is
-    ///     either master-range (0x00xxxxxx) or allocator-issued plugin-range (0x01xxxxxx).
-    /// </summary>
-    private const uint MaxFormIdIndex = 0x01;
-
-    /// <summary>
     ///     Resolve a FormID-bearing field. Returns null when absent or zero so callers can omit
     ///     the subrecord entirely rather than writing a null reference the engine would fail to
     ///     resolve.
     ///     <para>
-    ///     Values that cannot be FormIDs are rejected: <c>RuntimeGenericReader.ReadPointerField</c>
-    ///     falls back to returning the <b>raw Xbox virtual address</b> when a pointer target does
-    ///     not resolve to a TESForm (heap ≥ 0x40000000, module space 0x82xxxxxx). Encoding one of
-    ///     those as a FormID produces a reference whose load-order byte points at a nonexistent
-    ///     131st master — observed as SNAM=0x82339658 on every v138 MSTT before this guard.
+    ///         Values that cannot be FormIDs are rejected: <c>RuntimeGenericReader.ReadPointerField</c>
+    ///         falls back to returning the <b>raw Xbox virtual address</b> when a pointer target does
+    ///         not resolve to a TESForm (heap ≥ 0x40000000, module space 0x82xxxxxx). Encoding one of
+    ///         those as a FormID produces a reference whose load-order byte points at a nonexistent
+    ///         131st master — observed as SNAM=0x82339658 on every v138 MSTT before this guard.
     ///     </para>
     /// </summary>
     public static uint? TryFormId(GenericEsmRecord record, params string[] keys)

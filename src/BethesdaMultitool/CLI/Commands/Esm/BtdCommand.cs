@@ -1,5 +1,4 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using Spectre.Console;
@@ -44,7 +43,10 @@ public static class BtdCommand
         var outputOption = new Option<string>("-o", "--output")
             { Description = "Output PNG path", Required = true };
         var lodOption = new Option<int>("--lod")
-            { Description = "Level of detail 0..4 (0 = full 128px/cell, higher = coarser; default 3)", DefaultValueFactory = _ => 3 };
+        {
+            Description = "Level of detail 0..4 (0 = full 128px/cell, higher = coarser; default 3)",
+            DefaultValueFactory = _ => 3
+        };
         command.Arguments.Add(inputArg);
         command.Options.Add(outputOption);
         command.Options.Add(lodOption);
@@ -78,7 +80,8 @@ public static class BtdCommand
             table.AddRow("Variant", btd.IsStarfield ? "Starfield" : "Fallout 76");
             table.AddRow("Cell range X", $"{btd.CellMinX} .. {btd.CellMaxX}");
             table.AddRow("Cell range Y", $"{btd.CellMinY} .. {btd.CellMaxY}");
-            table.AddRow("Grid (cells)", $"{btd.NCellsX} x {btd.NCellsY}  ({(long)btd.NCellsX * btd.NCellsY:N0} cells)");
+            table.AddRow("Grid (cells)",
+                $"{btd.NCellsX} x {btd.NCellsY}  ({(long)btd.NCellsX * btd.NCellsY:N0} cells)");
             table.AddRow("World height", $"{btd.MinHeight:F2} .. {btd.MaxHeight:F2}");
             table.AddRow("Land textures", btd.LandTextureCount.ToString("N0"));
             table.AddRow("Ground covers", btd.GroundCoverCount.ToString("N0"));
@@ -103,7 +106,7 @@ public static class BtdCommand
     /// </summary>
     private static void VerifyHeights(BtdFile btd, string input, int samples)
     {
-        long totalCells = (long)btd.NCellsX * btd.NCellsY;
+        var totalCells = (long)btd.NCellsX * btd.NCellsY;
         samples = (int)Math.Min(samples, totalCells);
         if (samples <= 0)
         {
@@ -113,14 +116,14 @@ public static class BtdCommand
         btd.SetTileCacheSize(16);
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[bold]Decode verification[/]");
-        int stride = (int)Math.Max(1, totalCells / Math.Min(samples, 256));
+        var stride = (int)Math.Max(1, totalCells / Math.Min(samples, 256));
 
         // (A) Offset-chain check: the per-cell min/max map's global extremes equal the header range.
-        float mapMin = float.MaxValue;
-        float mapMax = float.MinValue;
-        for (int cy = btd.CellMinY; cy <= btd.CellMaxY; cy++)
+        var mapMin = float.MaxValue;
+        var mapMax = float.MinValue;
+        for (var cy = btd.CellMinY; cy <= btd.CellMaxY; cy++)
         {
-            for (int cx = btd.CellMinX; cx <= btd.CellMaxX; cx++)
+            for (var cx = btd.CellMinX; cx <= btd.CellMaxX; cx++)
             {
                 var (lo, hi) = btd.GetCellHeightRange(cx, cy);
                 mapMin = Math.Min(mapMin, lo);
@@ -134,7 +137,7 @@ public static class BtdCommand
         // assertion is containment — a bad offset chain still shows up as values far outside it.
         // Starfield.esm corroborates the envelope: the SFBK record whose ANAM is akilacity.btd carries
         // the same -500..1000 as its ENAM height.
-        bool mapOk = btd.IsStarfield
+        var mapOk = btd.IsStarfield
             ? mapMin >= btd.MinHeight - 4f && mapMax <= btd.MaxHeight + 4f && mapMin <= mapMax
             : Math.Abs(mapMin - btd.MinHeight) < 4f && Math.Abs(mapMax - btd.MaxHeight) < 4f;
         AnsiConsole.MarkupLine(
@@ -144,16 +147,16 @@ public static class BtdCommand
 
         // (B) Decoded LOD4 base values span the world range (cheap — no zlib).
         var b4 = new ushort[64];
-        float dMin = float.MaxValue;
-        float dMax = float.MinValue;
-        for (int cy = btd.CellMinY; cy <= btd.CellMaxY; cy++)
+        var dMin = float.MaxValue;
+        var dMax = float.MinValue;
+        for (var cy = btd.CellMinY; cy <= btd.CellMaxY; cy++)
         {
-            for (int cx = btd.CellMinX; cx <= btd.CellMaxX; cx++)
+            for (var cx = btd.CellMinX; cx <= btd.CellMaxX; cx++)
             {
                 btd.GetCellHeightMap(b4, cx, cy, 4);
                 foreach (var v in b4)
                 {
-                    float h = btd.SampleToHeight(v);
+                    var h = btd.SampleToHeight(v);
                     dMin = Math.Min(dMin, h);
                     dMax = Math.Max(dMax, h);
                 }
@@ -170,13 +173,13 @@ public static class BtdCommand
         long consMismatch = 0;
         for (long idx = 0; idx < totalCells; idx += stride)
         {
-            int cy = btd.CellMinY + (int)(idx / btd.NCellsX);
-            int cx = btd.CellMinX + (int)(idx % btd.NCellsX);
-            btd.GetCellHeightMap(buf0, cx, cy, 0);
+            var cy = btd.CellMinY + (int)(idx / btd.NCellsX);
+            var cx = btd.CellMinX + (int)(idx % btd.NCellsX);
+            btd.GetCellHeightMap(buf0, cx, cy);
             btdBase.GetCellHeightMap(bufBase, cx, cy, 4);
-            for (int j = 0; j < 8; j++)
+            for (var j = 0; j < 8; j++)
             {
-                for (int i = 0; i < 8; i++)
+                for (var i = 0; i < 8; i++)
                 {
                     consChecked++;
                     if (buf0[(j << 11) | (i << 4)] != bufBase[(j << 3) | i])
@@ -217,9 +220,9 @@ public static class BtdCommand
             using var btd = new BtdFile(input);
             btd.SetTileCacheSize(8);
 
-            int n = 128 >> lod;
-            long width = (long)btd.NCellsX * n;
-            long height = (long)btd.NCellsY * n;
+            var n = 128 >> lod;
+            var width = (long)btd.NCellsX * n;
+            var height = (long)btd.NCellsY * n;
             if (width * height > 400_000_000L)
             {
                 AnsiConsole.MarkupLine(
@@ -229,29 +232,29 @@ public static class BtdCommand
 
             var pixels = new byte[width * height];
             var raw = new ushort[n * n];
-            float range = btd.MaxHeight - btd.MinHeight;
-            float scale = range > 0 ? 255.0f / range : 0f;
+            var range = btd.MaxHeight - btd.MinHeight;
+            var scale = range > 0 ? 255.0f / range : 0f;
 
             AnsiConsole.MarkupLine(
                 "Rendering [cyan]{0:N0}x{1:N0}[/] px heightmap at LOD {2} ({3} px/cell)...", width, height, lod, n);
 
-            for (int cy = btd.CellMaxY; cy >= btd.CellMinY; cy--)
+            for (var cy = btd.CellMaxY; cy >= btd.CellMinY; cy--)
             {
-                for (int cx = btd.CellMinX; cx <= btd.CellMaxX; cx++)
+                for (var cx = btd.CellMinX; cx <= btd.CellMaxX; cx++)
                 {
                     btd.GetCellHeightMap(raw, cx, cy, lod);
-                    long baseCol = (long)(cx - btd.CellMinX) * n;
-                    long cellTopRow = (long)(btd.CellMaxY - cy) * n; // north-up
+                    var baseCol = (long)(cx - btd.CellMinX) * n;
+                    var cellTopRow = (long)(btd.CellMaxY - cy) * n; // north-up
 
-                    for (int yc = 0; yc < n; yc++)
+                    for (var yc = 0; yc < n; yc++)
                     {
                         // sample yc = 0 is the south edge -> bottom of this cell's band
-                        long row = cellTopRow + (n - 1 - yc);
-                        long dst = (row * width) + baseCol;
-                        for (int xc = 0; xc < n; xc++)
+                        var row = cellTopRow + (n - 1 - yc);
+                        var dst = row * width + baseCol;
+                        for (var xc = 0; xc < n; xc++)
                         {
-                            float h = btd.SampleToHeight(raw[(yc << (7 - lod)) | xc]);
-                            int g = (int)((h - btd.MinHeight) * scale);
+                            var h = btd.SampleToHeight(raw[(yc << (7 - lod)) | xc]);
+                            var g = (int)((h - btd.MinHeight) * scale);
                             pixels[dst + xc] = (byte)Math.Clamp(g, 0, 255);
                         }
                     }

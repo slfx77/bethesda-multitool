@@ -3,7 +3,6 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
@@ -13,6 +12,99 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 {
     private readonly AudioRecordHandler _audio = new(context);
     private readonly TerrainTextureRecordHandler _terrainTextures = new(context);
+
+    #region Sounds
+
+    /// <summary>
+    ///     Parse all Sound (SOUN) records.
+    /// </summary>
+    internal List<SoundRecord> ParseSounds()
+    {
+        return _audio.ParseSounds();
+    }
+
+    #endregion
+
+    #region Music Types
+
+    /// <summary>
+    ///     Parse all Music Type (MUSC) records.
+    /// </summary>
+    internal List<MusicTypeRecord> ParseMusicTypes()
+    {
+        return _audio.ParseMusicTypes();
+    }
+
+    #endregion
+
+    #region Texture Sets
+
+    /// <summary>
+    ///     Parse all Texture Set (TXST) records.
+    /// </summary>
+    internal List<TextureSetRecord> ParseTextureSets()
+    {
+        return _terrainTextures.ParseTextureSets();
+    }
+
+    #endregion
+
+    #region Material Swaps
+
+    /// <summary>
+    ///     Parse all Material Swap (MSWP) records (FO4/FO76 per-placement <c>.bgsm</c> substitutions).
+    /// </summary>
+    internal List<MaterialSwapRecord> ParseMaterialSwaps()
+    {
+        return _terrainTextures.ParseMaterialSwaps();
+    }
+
+    #endregion
+
+    #region Landscape Textures
+
+    /// <summary>
+    ///     Parse all Landscape Texture (LTEX) records used by LAND texture layers.
+    /// </summary>
+    internal List<LandscapeTextureRecord> ParseLandscapeTextures()
+    {
+        return _terrainTextures.ParseLandscapeTextures();
+    }
+
+    #endregion
+
+    #region Grass
+
+    /// <summary>
+    ///     Parse all Grass (GRAS) records. Referenced from LTEX via the GNAM subrecord:
+    ///     each grass type is a small mesh the engine scatters across terrain painted with
+    ///     a particular landscape texture.
+    /// </summary>
+    internal List<GrassRecord> ParseGrass()
+    {
+        return _terrainTextures.ParseGrass();
+    }
+
+    #endregion
+
+    #region Audio Location Controllers
+
+    /// <summary>
+    ///     Parse all Audio Location Controller (ALOC) records.
+    /// </summary>
+    internal List<AudioLocationControllerRecord> ParseAudioLocationControllers()
+    {
+        return _audio.ParseAudioLocationControllers();
+    }
+
+    #endregion
+
+    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool isBigEndian)
+    {
+        return isBigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
+            : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
+    }
 
     #region Water
 
@@ -100,6 +192,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                             noiseTexture ??= texture;
                         }
                     }
+
                     break;
                 }
                 case "TNAM" when Context.Game == BethesdaGame.Oblivion:
@@ -143,7 +236,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         86 => 84,
                         62 => 60,
                         42 => 40,
-                        _ => -1, // non-retail length — no trustworthy damage position
+                        _ => -1 // non-retail length — no trustworthy damage position
                     };
                     if (damageOffset >= 0)
                     {
@@ -151,6 +244,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                             ? BinaryPrimitives.ReadUInt16BigEndian(subData.Slice(damageOffset, 2))
                             : BinaryPrimitives.ReadUInt16LittleEndian(subData.Slice(damageOffset, 2));
                     }
+
                     break;
                 }
                 // Skyrim WATR DNAM (xEdit wbDefinitionsTES5): a longer struct (~228 bytes LE / 232 SSE)
@@ -268,8 +362,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     //  102: five-float Rain @60..79 and Displacement @80..99, damage @100.
     internal static Dictionary<string, object?> ReadOblivionWaterData(ReadOnlySpan<byte> d, bool isBigEndian)
     {
-        static uint Color(ReadOnlySpan<byte> d, int off) =>
-            (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+        static uint Color(ReadOnlySpan<byte> d, int off)
+        {
+            return (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+        }
 
         var props = new Dictionary<string, object?>
         {
@@ -279,7 +375,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ["WaveFrequency"] = ReadFloat(d, 12, isBigEndian),
             ["SunPower"] = ReadFloat(d, 16, isBigEndian),
             ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
-            ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
+            ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian)
         };
 
         if (d.Length < 62)
@@ -338,8 +434,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // Surfaced under the SAME dictionary keys WaterAppearance reads (see ReadOblivionWaterData).
     internal static Dictionary<string, object?> ReadSkyrimWaterData(ReadOnlySpan<byte> d, bool isBigEndian)
     {
-        static uint Color(ReadOnlySpan<byte> d, int off) =>
-            (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+        static uint Color(ReadOnlySpan<byte> d, int off)
+        {
+            return (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+        }
 
         var props = new Dictionary<string, object?>
         {
@@ -353,7 +451,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ["FogFar"] = ReadFloat(d, 36, isBigEndian),
             ["ShallowColor"] = Color(d, 40),
             ["DeepColor"] = Color(d, 44),
-            ["ReflectionColor"] = Color(d, 48),
+            ["ReflectionColor"] = Color(d, 48)
         };
 
         // Static local (the ReadOnlySpan must be passed, not captured): adds a float only when the
@@ -465,7 +563,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             // Sun Specular Power/Magnitude: the FO4 shader's Blinn exponent + amplitude sources
             // (engine feeds them through the gloss pipeline; the DNAM values are the authored analogs).
             ["SunPower"] = ReadFloat(d, 100, isBigEndian),
-            ["SunSpecularMagnitude"] = ReadFloat(d, 104, isBigEndian),
+            ["SunSpecularMagnitude"] = ReadFloat(d, 104, isBigEndian)
         };
         AddOptionalCreationFloat(properties, d, "SunSparklePower", 108, isBigEndian);
         AddOptionalCreationFloat(properties, d, "SunSparkleMagnitude", 112, isBigEndian);
@@ -486,8 +584,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             properties[key] = ReadFloat(data, offset, isBigEndian);
     }
 
-    private static uint ReadWaterColor(ReadOnlySpan<byte> d, int offset) =>
-        (uint)(d[offset] | (d[offset + 1] << 8) | (d[offset + 2] << 16));
+    private static uint ReadWaterColor(ReadOnlySpan<byte> d, int offset)
+    {
+        return (uint)(d[offset] | (d[offset + 1] << 8) | (d[offset + 2] << 16));
+    }
 
     #endregion
 
@@ -693,7 +793,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 legacyImageSpaceIds[2].GetValueOrDefault(), legacyImageSpaceIds[3].GetValueOrDefault())
             {
                 HighNoon = legacyImageSpaceIds[4],
-                Midnight = legacyImageSpaceIds[5],
+                Midnight = legacyImageSpaceIds[5]
             };
         }
 
@@ -703,7 +803,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             cloudSpeedsX ??=
             [
                 NormalizeLegacyCloudSpeedByte(tes4Data.CloudSpeedLower ?? 0),
-                NormalizeLegacyCloudSpeedByte(tes4Data.CloudSpeedUpper ?? 0),
+                NormalizeLegacyCloudSpeedByte(tes4Data.CloudSpeedUpper ?? 0)
             ];
         }
 
@@ -760,7 +860,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // actual signature), so no game gate is needed — no FO3/FNV record carries ?0TX, and Skyrim+ weathers
     // that ship the legacy DNAM/CNAM/ANAM/BNAM map them to the same layers, overwritten by ?0TX if present.
     internal static bool TryCloudLayerIndex(string signature, out int layer)
-        => TryCloudLayerIndex(signature, BethesdaGame.Unknown, out layer);
+    {
+        return TryCloudLayerIndex(signature, BethesdaGame.Unknown, out layer);
+    }
 
     internal static bool TryCloudLayerIndex(string signature, BethesdaGame game, out int layer)
     {
@@ -768,16 +870,33 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         // two legacy signatures (DNAM layer 0 / CNAM layer 1).
         if (game == BethesdaGame.Oblivion)
         {
-            if (signature == "CNAM") { layer = 0; return true; }
-            if (signature == "DNAM") { layer = 1; return true; }
+            if (signature == "CNAM")
+            {
+                layer = 0;
+                return true;
+            }
+
+            if (signature == "DNAM")
+            {
+                layer = 1;
+                return true;
+            }
         }
 
         switch (signature)
         {
-            case "DNAM": layer = 0; return true;
-            case "CNAM": layer = 1; return true;
-            case "ANAM": layer = 2; return true;
-            case "BNAM": layer = 3; return true;
+            case "DNAM":
+                layer = 0;
+                return true;
+            case "CNAM":
+                layer = 1;
+                return true;
+            case "ANAM":
+                layer = 2;
+                return true;
+            case "BNAM":
+                layer = 3;
+                return true;
         }
 
         if (signature.Length == 4 && signature[1] == '0' && signature[2] == 'T' && signature[3] == 'X')
@@ -858,7 +977,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // the atmosphere renderer consumes the base lighting rows plus Skyrim's far-fog category 12; those
     // ordinals are stable across the modern games. Reading whatever fits at the correct stride is therefore
     // sufficient. Each band is one endian-aware uint with RGBA from fixed bit slots.
-    internal static List<WeatherColor> ReadWeatherColorsModern(ReadOnlySpan<byte> data, bool isBigEndian, int strideBytes)
+    internal static List<WeatherColor> ReadWeatherColorsModern(ReadOnlySpan<byte> data, bool isBigEndian,
+        int strideBytes)
     {
         const int bandBytes = 4;
         if (strideBytes < 4 * bandBytes)
@@ -883,7 +1003,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     EarlySunrise = ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian),
                     LateSunrise = ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian),
                     EarlySunset = ReadRgba(data.Slice(b + 6 * bandBytes, bandBytes), isBigEndian),
-                    LateSunset = ReadRgba(data.Slice(b + 7 * bandBytes, bandBytes), isBigEndian),
+                    LateSunset = ReadRgba(data.Slice(b + 7 * bandBytes, bandBytes), isBigEndian)
                 };
             }
 
@@ -896,8 +1016,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // The widening game set and threshold (form version 111, xEdit wbWeatherTimeOfDay's
     // wbFromVersion(111, …)) live on GameProfile so the NAM0/PNAM color and JNAM cloud-alpha
     // strides can't drift from each other or from the profile registry.
-    internal static bool HasWideTimeOfDayBands(BethesdaGame game, int formVersion) =>
-        GameProfiles.For(game).WideTimeOfDayBandsFormVersion is { } widensAt && formVersion >= widensAt;
+    internal static bool HasWideTimeOfDayBands(BethesdaGame game, int formVersion)
+    {
+        return GameProfiles.For(game).WideTimeOfDayBandsFormVersion is { } widensAt && formVersion >= widensAt;
+    }
 
     // Per-category NAM0/PNAM stride for the version-trailered games. Stride = bands × 4 bytes (16 or 32).
     internal static int ModernWeatherStride(BethesdaGame game, int formVersion)
@@ -936,9 +1058,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return speeds;
     }
 
-    internal static float NormalizeCloudSpeedByte(byte value) => (value - 127f) / 127f;
+    internal static float NormalizeCloudSpeedByte(byte value)
+    {
+        return (value - 127f) / 127f;
+    }
 
-    internal static float NormalizeLegacyCloudSpeedByte(byte value) => value / 255f;
+    internal static float NormalizeLegacyCloudSpeedByte(byte value)
+    {
+        return value / 255f;
+    }
 
     // Reads the JNAM cloud-alpha array: one per-layer <see cref="WeatherCloudAlpha" /> (Sunrise/Day/Sunset/
     // Night floats) per stride-byte block. Floats are endian-aware so Xbox (byte-swapped) and PC agree.
@@ -957,17 +1085,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             var b = i * strideBytes;
             var sunrise = ReadFloat(data, b, isBigEndian);
             var day = ReadFloat(data, b + floatBytes, isBigEndian);
-            var sunset = ReadFloat(data, b + (2 * floatBytes), isBigEndian);
-            var night = ReadFloat(data, b + (3 * floatBytes), isBigEndian);
+            var sunset = ReadFloat(data, b + 2 * floatBytes, isBigEndian);
+            var night = ReadFloat(data, b + 3 * floatBytes, isBigEndian);
             var bands = new WeatherTimeBands<float>(sunrise, day, sunset, night);
             if (strideBytes >= 8 * floatBytes)
             {
                 bands = bands with
                 {
-                    EarlySunrise = ReadFloat(data, b + (4 * floatBytes), isBigEndian),
-                    LateSunrise = ReadFloat(data, b + (5 * floatBytes), isBigEndian),
-                    EarlySunset = ReadFloat(data, b + (6 * floatBytes), isBigEndian),
-                    LateSunset = ReadFloat(data, b + (7 * floatBytes), isBigEndian),
+                    EarlySunrise = ReadFloat(data, b + 4 * floatBytes, isBigEndian),
+                    LateSunrise = ReadFloat(data, b + 5 * floatBytes, isBigEndian),
+                    EarlySunset = ReadFloat(data, b + 6 * floatBytes, isBigEndian),
+                    LateSunset = ReadFloat(data, b + 7 * floatBytes, isBigEndian)
                 };
             }
 
@@ -981,7 +1109,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // 20-byte header has none. Scanners parse that field once into the semantic record descriptor so
     // every decoder shares one endian-correct authority. Unknown/legacy records use zero, which keeps
     // the narrow pre-111 weather layout as the safe fallback.
-    private static int ReadRecordFormVersion(DetectedMainRecord record) => record.FormVersion ?? 0;
+    private static int ReadRecordFormVersion(DetectedMainRecord record)
+    {
+        return record.FormVersion ?? 0;
+    }
 
     // The number of RGBA time bands per weather-color entry (4 for FO3, 6 for FNV). NAM0 carries a fixed
     // 10 color categories in both games, so its byte length / 10 gives the per-category stride and /4 the
@@ -1017,10 +1148,13 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // sun already lights those) and down/occluded faces brighter, so the mean tracks the overall
     // authored ambient level per band.
     internal static WeatherRgba ReadDirectionalAmbientMean(ReadOnlySpan<byte> data, bool isBigEndian)
-        => ReadDirectionalAmbientCube(data, isBigEndian).Mean;
+    {
+        return ReadDirectionalAmbientCube(data, isBigEndian).Mean;
+    }
 
-    internal static WeatherAmbientCube ReadDirectionalAmbientCube(ReadOnlySpan<byte> data, bool isBigEndian) =>
-        new()
+    internal static WeatherAmbientCube ReadDirectionalAmbientCube(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        return new WeatherAmbientCube
         {
             PositiveX = ReadRgba(data.Slice(0, 4), isBigEndian),
             NegativeX = ReadRgba(data.Slice(4, 4), isBigEndian),
@@ -1029,8 +1163,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             PositiveZ = ReadRgba(data.Slice(16, 4), isBigEndian),
             NegativeZ = ReadRgba(data.Slice(20, 4), isBigEndian),
             Specular = data.Length >= 28 ? ReadRgba(data.Slice(24, 4), isBigEndian) : null,
-            FresnelPower = data.Length >= 32 ? ReadFloat(data, 28, isBigEndian) : null,
+            FresnelPower = data.Length >= 32 ? ReadFloat(data, 28, isBigEndian) : null
         };
+    }
 
     // Assembles the per-band DALC means into a WeatherColor in NAM0 band order (Sunrise/Day/
     // Sunset/Night followed by FO4's four explicit transition bands). HighNoon/Midnight remain
@@ -1043,7 +1178,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             return null;
         }
 
-        WeatherAmbientCube Band(int i) => bands[Math.Min(i, bands.Count - 1)];
+        WeatherAmbientCube Band(int i)
+        {
+            return bands[Math.Min(i, bands.Count - 1)];
+        }
+
         var result = new WeatherTimeBands<WeatherAmbientCube>(Band(0), Band(1), Band(2), Band(3));
         if (bands.Count >= 8)
         {
@@ -1052,7 +1191,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 EarlySunrise = Band(4),
                 LateSunrise = Band(5),
                 EarlySunset = Band(6),
-                LateSunset = Band(7),
+                LateSunset = Band(7)
             };
         }
 
@@ -1068,7 +1207,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             EarlySunrise = bands.EarlySunrise?.Mean,
             LateSunrise = bands.LateSunrise?.Mean,
             EarlySunset = bands.EarlySunset?.Mean,
-            LateSunset = bands.LateSunset?.Mean,
+            LateSunset = bands.LateSunset?.Mean
         });
     }
 
@@ -1087,7 +1226,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 EarlySunrise = RecordParserContext.ReadFormId(data.Slice(16, 4), isBigEndian),
                 LateSunrise = RecordParserContext.ReadFormId(data.Slice(20, 4), isBigEndian),
                 EarlySunset = RecordParserContext.ReadFormId(data.Slice(24, 4), isBigEndian),
-                LateSunset = RecordParserContext.ReadFormId(data.Slice(28, 4), isBigEndian),
+                LateSunset = RecordParserContext.ReadFormId(data.Slice(28, 4), isBigEndian)
             };
         }
 
@@ -1118,15 +1257,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 SpeedU = i < (speedsX?.Length ?? 0) ? speedsX![i] : 0f,
                 SpeedV = i < (speedsY?.Length ?? 0) ? speedsY![i] : 0f,
                 Color = i < (colors?.Count ?? 0) ? colors![i] : null,
-                Opacity = i < (alphas?.Count ?? 0) ? alphas![i] : null,
+                Opacity = i < (alphas?.Count ?? 0) ? alphas![i] : null
             });
         }
 
         return layers;
     }
 
-    internal static WeatherHdr ReadWeatherHdr(ReadOnlySpan<byte> data, bool isBigEndian) =>
-        new()
+    internal static WeatherHdr ReadWeatherHdr(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        return new WeatherHdr
         {
             EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
             BlurRadius = ReadFloat(data, 4, isBigEndian),
@@ -1141,16 +1281,19 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             LumRampMax = ReadFloat(data, 40, isBigEndian),
             SunlightDimmer = ReadFloat(data, 44, isBigEndian),
             GrassDimmer = ReadFloat(data, 48, isBigEndian),
-            TreeDimmer = ReadFloat(data, 52, isBigEndian),
+            TreeDimmer = ReadFloat(data, 52, isBigEndian)
         };
+    }
 
     internal static WeatherColor ReadWeatherRgbRow(ReadOnlySpan<byte> data, bool isBigEndian)
     {
         // Skyrim NAM2/NAM3 are four RGBX rows. Preserve the fourth byte losslessly: captures show
         // retail records commonly store zero there, and Sun/Moon::Update supplies visibility through
         // separate alpha state rather than interpreting this padding as opacity.
-        static WeatherRgba Band(ReadOnlySpan<byte> source, int offset, bool bigEndian) =>
-            ReadRgba(source.Slice(offset, 4), bigEndian);
+        static WeatherRgba Band(ReadOnlySpan<byte> source, int offset, bool bigEndian)
+        {
+            return ReadRgba(source.Slice(offset, 4), bigEndian);
+        }
 
         return new WeatherColor(
             Band(data, 0, isBigEndian),
@@ -1179,11 +1322,12 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return fog;
     }
 
-    private static WeatherData ReadWeatherData(ReadOnlySpan<byte> d, BethesdaGame game) =>
+    private static WeatherData ReadWeatherData(ReadOnlySpan<byte> d, BethesdaGame game)
+    {
         // 15-byte layout per the DATA/WTHR converter schema: WindSpeed(0), pad(1,2), TransDelta(3),
         // SunGlare(4), SunDamage(5), PrecipBeginFadeIn(6), PrecipEndFadeOut(7), ThunderBeginFadeIn(8),
         // ThunderEndFadeOut(9), ThunderFreq(10), Flags(11), LightningR/G/B(12,13,14).
-        new()
+        return new WeatherData
         {
             WindSpeed = d[0],
             CloudSpeedLower = game == BethesdaGame.Oblivion ? d[1] : null,
@@ -1197,8 +1341,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ThunderLightningEndFadeOut = d[9],
             ThunderLightningFrequency = d[10],
             Flags = d[11],
-            LightningColor = new WeatherRgba(d[12], d[13], d[14], 255),
+            LightningColor = new WeatherRgba(d[12], d[13], d[14], 255)
         };
+    }
 
     /// <summary>
     ///     Reads the low-nibble cinematic-enable flags from the terminal source-endian dword in the
@@ -1218,7 +1363,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         {
             148 => 144,
             152 => 148,
-            _ => -1,
+            _ => -1
         };
         if (offset < 0) return ImageSpaceCinematicFlags.None;
 
@@ -1259,7 +1404,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             152 => ImageSpaceClassicDnamLayout.Dnam152,
             _ => throw new ArgumentException(
                 "FO3/FNV IMGS DNAM must use the measured 132-, 148-, or 152-byte layout.",
-                nameof(data)),
+                nameof(data))
         };
         var hasSkinDimmer = sourceLayout == ImageSpaceClassicDnamLayout.Dnam152;
         var auxiliaryBase = hasSkinDimmer ? 60 : 56;
@@ -1275,6 +1420,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 ? BinaryPrimitives.ReadUInt32BigEndian(wordBytes)
                 : BinaryPrimitives.ReadUInt32LittleEndian(wordBytes);
         }
+
         var hdr = new ImageSpaceHdr
         {
             EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
@@ -1291,7 +1437,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             SunlightDimmer = ReadFloat(data, 44, isBigEndian),
             GrassDimmer = ReadFloat(data, 48, isBigEndian),
             TreeDimmer = ReadFloat(data, 52, isBigEndian),
-            SkinDimmer = hasSkinDimmer ? ReadFloat(data, 56, isBigEndian) : 1f,
+            SkinDimmer = hasSkinDimmer ? ReadFloat(data, 56, isBigEndian) : 1f
         };
         var bloom = new ImageSpaceClassicBloom(
             ReadFloat(data, auxiliaryBase, isBigEndian),
@@ -1313,14 +1459,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             Saturation = ReadFloat(data, cinematicBase, isBigEndian),
             ContrastAvgLum = ReadFloat(data, cinematicBase + 4, isBigEndian),
             Contrast = ReadFloat(data, cinematicBase + 8, isBigEndian),
-            Brightness = ReadFloat(data, cinematicBase + 12, isBigEndian),
+            Brightness = ReadFloat(data, cinematicBase + 12, isBigEndian)
         };
         var tint = new ImageSpaceTint
         {
             Red = ReadFloat(data, cinematicBase + 16, isBigEndian),
             Green = ReadFloat(data, cinematicBase + 20, isBigEndian),
             Blue = ReadFloat(data, cinematicBase + 24, isBigEndian),
-            Amount = ReadFloat(data, cinematicBase + 28, isBigEndian),
+            Amount = ReadFloat(data, cinematicBase + 28, isBigEndian)
         };
         return new ImageSpaceClassicData
         {
@@ -1331,7 +1477,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             NightEye = nightEye,
             Cinematic = cinematic,
             Tint = tint,
-            PostBodyWords = postBodyWords,
+            PostBodyWords = postBodyWords
         };
     }
 
@@ -1454,7 +1600,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
     }
 
-    private static List<ClimateWeatherEntry> ReadClimateWeatherList(ReadOnlySpan<byte> data, bool isBigEndian, int entryBytes)
+    private static List<ClimateWeatherEntry> ReadClimateWeatherList(ReadOnlySpan<byte> data, bool isBigEndian,
+        int entryBytes)
     {
         var count = data.Length / entryBytes;
         var list = new List<ClimateWeatherEntry>(count);
@@ -1488,7 +1635,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 FormId = record.FormId,
                 EditorId = Context.GetEditorId(record.FormId),
                 Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian,
+                IsBigEndian = record.IsBigEndian
             });
 
         // Append only runtime-only forms. A byte-stream IMAD remains the lossless authority
@@ -1510,7 +1657,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 FormId = record.FormId,
                 EditorId = Context.GetEditorId(record.FormId),
                 Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian,
+                IsBigEndian = record.IsBigEndian
             };
         }
 
@@ -1559,13 +1706,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     outroSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "BNAM" or "VNAM" or "RNAM" or "SNAM" or "UNAM" or
-                     "NAM1" or "NAM2" or "WNAM" or "XNAM" or "YNAM" or "NAM4":
+                    "NAM1" or "NAM2" or "WNAM" or "XNAM" or "YNAM" or "NAM4":
                 {
                     if (!scalarKeys.TryGetValue(sub.Signature, out var keys))
                     {
                         keys = [];
                         scalarKeys.Add(sub.Signature, keys);
                     }
+
                     keys.AddRange(ReadImageSpaceModifierFloatKeys(subData, record.IsBigEndian));
                     break;
                 }
@@ -1596,7 +1744,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             OutroSoundFormId = outroSound is not 0 ? outroSound : null,
             OrderedSubrecords = ordered,
             Offset = record.Offset,
-            IsBigEndian = record.IsBigEndian,
+            IsBigEndian = record.IsBigEndian
         };
     }
 
@@ -1621,7 +1769,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         {
             AnimatableFlag = data[0] != 0 ? 1u : 0u,
             Duration = ReadFloat(data, 4, isBigEndian),
-            RawPayload = payload,
+            RawPayload = payload
         };
     }
 
@@ -1635,6 +1783,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 ReadFloat(data, offset, isBigEndian),
                 ReadFloat(data, offset + 4, isBigEndian)));
         }
+
         return keys;
     }
 
@@ -1651,6 +1800,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 ReadFloat(data, offset + 12, isBigEndian),
                 ReadFloat(data, offset + 16, isBigEndian)));
         }
+
         return keys;
     }
 
@@ -1666,6 +1816,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 operation = ImageSpaceModifierOperation.Multiply;
                 return true;
             }
+
             if (prefix is >= '@' and <= 'T')
             {
                 parameter = (ImageSpaceModifierParameter)(prefix - '@');
@@ -1782,7 +1933,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         UpperLumClamp = ReadFloat(subData, 20, record.IsBigEndian),
                         BrightScale = ReadFloat(subData, 24, record.IsBigEndian),
                         BrightClamp = ReadFloat(subData, 28, record.IsBigEndian),
-                        LumRampNoTex = ReadFloat(subData, 32, record.IsBigEndian),
+                        LumRampNoTex = ReadFloat(subData, 32, record.IsBigEndian)
                     };
                     break;
                 case "CNAM" when sub.DataLength >= 12:
@@ -1791,7 +1942,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         HasExplicitFlags = false,
                         Saturation = ReadFloat(subData, 0, record.IsBigEndian),
                         Brightness = ReadFloat(subData, 4, record.IsBigEndian),
-                        Contrast = ReadFloat(subData, 8, record.IsBigEndian),
+                        Contrast = ReadFloat(subData, 8, record.IsBigEndian)
                     };
                     break;
                 case "TNAM" when sub.DataLength >= 16:
@@ -1800,7 +1951,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         Amount = ReadFloat(subData, 0, record.IsBigEndian),
                         Red = ReadFloat(subData, 4, record.IsBigEndian),
                         Green = ReadFloat(subData, 8, record.IsBigEndian),
-                        Blue = ReadFloat(subData, 12, record.IsBigEndian),
+                        Blue = ReadFloat(subData, 12, record.IsBigEndian)
                     };
                     break;
                 case "DNAM" when modernImageSpace && sub.DataLength >= 16:
@@ -1816,11 +1967,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         if (depthOfFieldData is not null)
         {
             depthOfField = depthOfFieldData.VignetteRadius is { } vignetteRadius
-                ? [depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
+                ?
+                [
+                    depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
                     depthOfFieldData.SkyBlurRadius, vignetteRadius,
-                    depthOfFieldData.VignetteStrength.GetValueOrDefault()]
-                : [depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
-                    depthOfFieldData.SkyBlurRadius];
+                    depthOfFieldData.VignetteStrength.GetValueOrDefault()
+                ]
+                :
+                [
+                    depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
+                    depthOfFieldData.SkyBlurRadius
+                ];
         }
 
         return new ImageSpaceRecord
@@ -1857,7 +2014,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 AutoExposureMin = ReadFloat(data, 20, isBigEndian),
                 SunlightScale = ReadFloat(data, 24, isBigEndian),
                 SkyScale = ReadFloat(data, 28, isBigEndian),
-                MiddleGray = ReadFloat(data, 32, isBigEndian),
+                MiddleGray = ReadFloat(data, 32, isBigEndian)
             }
             : new ImageSpaceModernHdr
             {
@@ -1870,7 +2027,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 White = ReadFloat(data, 20, isBigEndian),
                 SunlightScale = ReadFloat(data, 24, isBigEndian),
                 SkyScale = ReadFloat(data, 28, isBigEndian),
-                EyeAdaptStrength = ReadFloat(data, 32, isBigEndian),
+                EyeAdaptStrength = ReadFloat(data, 32, isBigEndian)
             };
     }
 
@@ -1892,7 +2049,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 AutoExposureMax = combined,
                 AutoExposureMin = combined,
                 SunlightScale = ReadFloat(data, 20, isBigEndian),
-                SkyScale = ReadFloat(data, 24, isBigEndian),
+                SkyScale = ReadFloat(data, 24, isBigEndian)
             }
             : new ImageSpaceModernHdr
             {
@@ -1904,7 +2061,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 BloomScale = ReadFloat(data, 12, isBigEndian),
                 ReceiveBloomThreshold = combined,
                 SunlightScale = ReadFloat(data, 20, isBigEndian),
-                SkyScale = ReadFloat(data, 24, isBigEndian),
+                SkyScale = ReadFloat(data, 24, isBigEndian)
             };
         return new ImageSpacePackedData(
             modernHdr,
@@ -1913,14 +2070,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 HasExplicitFlags = false,
                 Saturation = ReadFloat(data, 28, isBigEndian),
                 Brightness = ReadFloat(data, 32, isBigEndian),
-                Contrast = ReadFloat(data, 36, isBigEndian),
+                Contrast = ReadFloat(data, 36, isBigEndian)
             },
             new ImageSpaceTint
             {
                 Amount = ReadFloat(data, 40, isBigEndian),
                 Red = ReadFloat(data, 44, isBigEndian),
                 Green = ReadFloat(data, 48, isBigEndian),
-                Blue = ReadFloat(data, 52, isBigEndian),
+                Blue = ReadFloat(data, 52, isBigEndian)
             });
     }
 
@@ -1941,75 +2098,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             SkyBlurRadius = skyBlurRadius,
             VignetteRadius = data.Length >= 20 ? ReadFloat(data, 16, isBigEndian) : null,
             VignetteStrength = data.Length >= 24 ? ReadFloat(data, 20, isBigEndian) : null,
-            RawData = data.ToArray(),
+            RawData = data.ToArray()
         };
     }
-
-    #endregion
-
-    #region Sounds
-
-    /// <summary>
-    ///     Parse all Sound (SOUN) records.
-    /// </summary>
-    internal List<SoundRecord> ParseSounds() => _audio.ParseSounds();
-
-    #endregion
-
-    #region Music Types
-
-    /// <summary>
-    ///     Parse all Music Type (MUSC) records.
-    /// </summary>
-    internal List<MusicTypeRecord> ParseMusicTypes() => _audio.ParseMusicTypes();
-
-    #endregion
-
-    #region Texture Sets
-
-    /// <summary>
-    ///     Parse all Texture Set (TXST) records.
-    /// </summary>
-    internal List<TextureSetRecord> ParseTextureSets() => _terrainTextures.ParseTextureSets();
-
-    #endregion
-
-    #region Material Swaps
-
-    /// <summary>
-    ///     Parse all Material Swap (MSWP) records (FO4/FO76 per-placement <c>.bgsm</c> substitutions).
-    /// </summary>
-    internal List<MaterialSwapRecord> ParseMaterialSwaps() => _terrainTextures.ParseMaterialSwaps();
-
-    #endregion
-
-    #region Landscape Textures
-
-    /// <summary>
-    ///     Parse all Landscape Texture (LTEX) records used by LAND texture layers.
-    /// </summary>
-    internal List<LandscapeTextureRecord> ParseLandscapeTextures() => _terrainTextures.ParseLandscapeTextures();
-
-    #endregion
-
-    #region Grass
-
-    /// <summary>
-    ///     Parse all Grass (GRAS) records. Referenced from LTEX via the GNAM subrecord:
-    ///     each grass type is a small mesh the engine scatters across terrain painted with
-    ///     a particular landscape texture.
-    /// </summary>
-    internal List<GrassRecord> ParseGrass() => _terrainTextures.ParseGrass();
-
-    #endregion
-
-    #region Audio Location Controllers
-
-    /// <summary>
-    ///     Parse all Audio Location Controller (ALOC) records.
-    /// </summary>
-    internal List<AudioLocationControllerRecord> ParseAudioLocationControllers() =>
-        _audio.ParseAudioLocationControllers();
 
     #endregion
 
@@ -2077,11 +2168,4 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     #endregion
-
-    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool isBigEndian)
-    {
-        return isBigEndian
-            ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
-            : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
-    }
 }

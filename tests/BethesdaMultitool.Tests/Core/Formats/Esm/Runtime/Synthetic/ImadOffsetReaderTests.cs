@@ -105,21 +105,21 @@ public sealed class ImadOffsetReaderTests
                     {
                         VirtualAddress = BaseVa,
                         FileOffset = 0,
-                        Size = split,
+                        Size = split
                     },
                     new MinidumpMemoryRegion
                     {
                         VirtualAddress = BaseVa + (uint)split,
                         FileOffset = objectSuffixFileOffset,
-                        Size = Early.Size - split,
+                        Size = Early.Size - split
                     },
                     new MinidumpMemoryRegion
                     {
-                        VirtualAddress = BaseVa + (uint)namePayloadSourceOffset,
+                        VirtualAddress = BaseVa + namePayloadSourceOffset,
                         FileOffset = namePayloadFileOffset,
-                        Size = editorId.Length,
-                    },
-                ],
+                        Size = editorId.Length
+                    }
+                ]
             });
 
         var result = new RuntimeImageSpaceModifierReader(context, true)

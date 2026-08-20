@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>Where the cell used for image-space selection came from.</summary>
 internal enum ImageSpaceCellContextSource : uint
@@ -8,7 +8,7 @@ internal enum ImageSpaceCellContextSource : uint
     Unavailable = 0,
     SelectedInterior = 1,
     CameraGrid = 2,
-    ProjectionFocusGrid = 3,
+    ProjectionFocusGrid = 3
 }
 
 /// <summary>
@@ -29,11 +29,13 @@ internal readonly record struct ImageSpaceCellContext(
         ImageSpaceCellContextSource.SelectedInterior => "selected-interior",
         ImageSpaceCellContextSource.CameraGrid => "camera-grid",
         ImageSpaceCellContextSource.ProjectionFocusGrid => "projection-focus-grid",
-        _ => "unavailable",
+        _ => "unavailable"
     };
 
-    internal static ImageSpaceCellContext ForSelectedInterior(CellRecord cell) =>
-        new(cell, cell.GridX, cell.GridY, ImageSpaceCellContextSource.SelectedInterior);
+    internal static ImageSpaceCellContext ForSelectedInterior(CellRecord cell)
+    {
+        return new ImageSpaceCellContext(cell, cell.GridX, cell.GridY, ImageSpaceCellContextSource.SelectedInterior);
+    }
 }
 
 /// <summary>The authoritative source of the base IMGS selected for the current view.</summary>
@@ -45,7 +47,7 @@ internal enum ImageSpaceSelectionSource : uint
     ParentWorldspaceInam = 3,
     DefaultInterior = 4,
     DefaultExterior = 5,
-    GameFamilyDefault = 6,
+    GameFamilyDefault = 6
 }
 
 /// <summary>
@@ -67,7 +69,7 @@ internal readonly record struct ResolvedImageSpaceSelection(
         ImageSpaceSelectionSource.DefaultInterior => "default-interior",
         ImageSpaceSelectionSource.DefaultExterior => "default-exterior",
         ImageSpaceSelectionSource.GameFamilyDefault => "game-family-default",
-        _ => "unavailable",
+        _ => "unavailable"
     };
 }
 
@@ -125,7 +127,7 @@ internal static class ImageSpaceSelectionResolver
                 ImageSpaceSelectionSource.CellXcim,
                 cellContext,
                 contextWorldspace?.FormId,
-                SourceWorldspaceFormId: null);
+                null);
         }
 
         if (TryResolveWorldspaceImageSpace(
@@ -149,15 +151,15 @@ internal static class ImageSpaceSelectionResolver
                 interior ? ImageSpaceSelectionSource.DefaultInterior : ImageSpaceSelectionSource.DefaultExterior,
                 cellContext,
                 contextWorldspace?.FormId,
-                SourceWorldspaceFormId: null);
+                null);
         }
 
         return new ResolvedImageSpaceSelection(
-            ImageSpaceFormId: null,
+            null,
             ImageSpaceSelectionSource.GameFamilyDefault,
             cellContext,
             contextWorldspace?.FormId,
-            SourceWorldspaceFormId: null);
+            null);
     }
 
     private static bool TryResolveWorldspaceImageSpace(

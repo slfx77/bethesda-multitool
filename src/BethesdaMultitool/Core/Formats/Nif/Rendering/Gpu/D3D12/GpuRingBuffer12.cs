@@ -25,11 +25,8 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
 
     private readonly ID3D12Resource[] _buffers;
     private readonly IntPtr[] _cpuPointers;
-    private readonly ulong[] _gpuAddresses;
-    private readonly uint _bytesPerFrame;
     private readonly int _framesInFlight;
-    private uint _bumpOffset;
-    private uint _reservedTailBytes;
+    private readonly ulong[] _gpuAddresses;
     private bool _disposed;
 
     public GpuRingBuffer12(GpuDevice12 gpu, int framesInFlight, uint bytesPerFrame)
@@ -40,7 +37,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
             throw new ArgumentOutOfRangeException(nameof(bytesPerFrame), "Must be > 0.");
 
         _framesInFlight = framesInFlight;
-        _bytesPerFrame = bytesPerFrame;
+        BytesPerFrame = bytesPerFrame;
         _buffers = new ID3D12Resource[framesInFlight];
         _cpuPointers = new IntPtr[framesInFlight];
         _gpuAddresses = new ulong[framesInFlight];
@@ -54,8 +51,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
                 heapProps,
                 HeapFlags.None,
                 desc,
-                ResourceStates.GenericRead,
-                optimizedClearValue: null);
+                ResourceStates.GenericRead);
 
             // Persistent map. UPLOAD heap resources can stay mapped for their entire life;
             // no per-frame Map/Unmap pair needed. CPU writes are visible to the GPU
@@ -68,19 +64,33 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     }
 
     /// <summary>Total bytes available in each frame slot. Allocations beyond this throw.</summary>
-    public uint BytesPerFrame => _bytesPerFrame;
+    public uint BytesPerFrame { get; }
 
-    public uint CurrentFrameBytes => _bumpOffset;
+    public uint CurrentFrameBytes { get; private set; }
 
     /// <summary>
     ///     Bytes protected at the end of the current frame slot. Ordinary allocations stop before
     ///     this tail until <see cref="ReleaseTailReservation()" /> is called. This lets a late pass
     ///     guarantee its small constant-buffer budget before dense scene draws consume the ring.
     /// </summary>
-    public uint ReservedTailBytes => _reservedTailBytes;
+    public uint ReservedTailBytes { get; private set; }
 
     /// <summary>Exclusive upper bound currently available to ordinary bump allocations.</summary>
-    public uint AllocationLimitBytes => _bytesPerFrame - _reservedTailBytes;
+    public uint AllocationLimitBytes => BytesPerFrame - ReservedTailBytes;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        for (var i = 0; i < _framesInFlight; i++)
+        {
+            // Unmap is optional for committed resources (they're released on Dispose) but
+            // makes the intent explicit. Pass null range = "we wrote nothing the runtime
+            // needs to invalidate" — accurate for upload heaps.
+            _buffers[i].Unmap(0);
+            _buffers[i].Dispose();
+        }
+    }
 
     /// <summary>
     ///     Adds a protected tail to the current frame slot without advancing the bump pointer.
@@ -91,19 +101,19 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     public bool TryReserveTail(uint size)
     {
         if (!TryPlanTailReservation(
-                _bumpOffset, _bytesPerFrame, _reservedTailBytes, size, out var plannedReserved))
+                CurrentFrameBytes, BytesPerFrame, ReservedTailBytes, size, out var plannedReserved))
         {
             return false;
         }
 
-        _reservedTailBytes = plannedReserved;
+        ReservedTailBytes = plannedReserved;
         return true;
     }
 
     /// <summary>Makes the entire protected tail available to subsequent allocations.</summary>
     public void ReleaseTailReservation()
     {
-        _reservedTailBytes = 0;
+        ReservedTailBytes = 0;
     }
 
     /// <summary>
@@ -115,7 +125,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     /// </summary>
     public void ReleaseTailReservation(uint bytes)
     {
-        _reservedTailBytes = PlanTailRelease(_reservedTailBytes, bytes);
+        ReservedTailBytes = PlanTailRelease(ReservedTailBytes, bytes);
     }
 
     /// <summary>
@@ -123,8 +133,10 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     ///     <paramref name="releaseBytes" /> from <paramref name="reservedTailBytes" />, clamped at zero
     ///     so over-releasing a partial reservation simply empties it.
     /// </summary>
-    internal static uint PlanTailRelease(uint reservedTailBytes, uint releaseBytes) =>
-        reservedTailBytes - Math.Min(releaseBytes, reservedTailBytes);
+    internal static uint PlanTailRelease(uint reservedTailBytes, uint releaseBytes)
+    {
+        return reservedTailBytes - Math.Min(releaseBytes, reservedTailBytes);
+    }
 
     internal static bool TryPlanTailReservation(
         uint currentOffset,
@@ -174,12 +186,13 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     {
         if (!TryAllocate(frameIndex, size, out var allocation, alignment))
         {
-            var aligned = (_bumpOffset + alignment - 1) & ~(alignment - 1);
+            var aligned = (CurrentFrameBytes + alignment - 1) & ~(alignment - 1);
             throw new InvalidOperationException(
                 $"GpuRingBuffer12: frame slot exhausted (requested {size}B at +{aligned}, " +
-                $"slot size {_bytesPerFrame}B, reserved tail {_reservedTailBytes}B). " +
+                $"slot size {BytesPerFrame}B, reserved tail {ReservedTailBytes}B). " +
                 "Increase bytesPerFrame at construction or split this draw across frames.");
         }
+
         return allocation;
     }
 
@@ -196,19 +209,20 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
 
         if (!TryPlanAllocation(
-                _bumpOffset, _bytesPerFrame, _reservedTailBytes, size, alignment,
+                CurrentFrameBytes, BytesPerFrame, ReservedTailBytes, size, alignment,
                 out var byteOffset, out var nextOffset))
         {
             allocation = default;
             return false;
         }
-        _bumpOffset = nextOffset;
+
+        CurrentFrameBytes = nextOffset;
 
         allocation = new RingAllocation(
-            CpuPtr: _cpuPointers[frameIndex] + checked((int)byteOffset),
-            GpuAddress: _gpuAddresses[frameIndex] + byteOffset,
-            Size: size,
-            ByteOffset: byteOffset);
+            _cpuPointers[frameIndex] + checked((int)byteOffset),
+            _gpuAddresses[frameIndex] + byteOffset,
+            size,
+            byteOffset);
         return true;
     }
 
@@ -227,6 +241,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(alignment), "Alignment must be a power of two.");
         }
+
         if (reservedTailBytes > totalBytes)
         {
             return false;
@@ -252,22 +267,8 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     /// </summary>
     public void ResetFrame()
     {
-        _bumpOffset = 0;
-        _reservedTailBytes = 0;
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        for (var i = 0; i < _framesInFlight; i++)
-        {
-            // Unmap is optional for committed resources (they're released on Dispose) but
-            // makes the intent explicit. Pass null range = "we wrote nothing the runtime
-            // needs to invalidate" — accurate for upload heaps.
-            _buffers[i].Unmap(0, null);
-            _buffers[i].Dispose();
-        }
+        CurrentFrameBytes = 0;
+        ReservedTailBytes = 0;
     }
 
     /// <summary>Result of a single <see cref="Allocate" /> call — CPU write target + GPU read address.</summary>

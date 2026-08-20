@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -31,8 +30,10 @@ internal sealed record EsmDescriptorScanResult(
 
 internal static class EsmDescriptorScanner
 {
-    /// <summary>Walks every record/GRUP in the plugin (TES3 or TES4+ framing), collecting record
-    /// descriptors, GRUP headers, and a FormID → EditorID map.</summary>
+    /// <summary>
+    ///     Walks every record/GRUP in the plugin (TES3 or TES4+ framing), collecting record
+    ///     descriptors, GRUP headers, and a FormID → EditorID map.
+    /// </summary>
     /// <param name="onBytesScanned">
     ///     Optional progress callback invoked once per top-level record/GRUP with the byte offset consumed
     ///     so far. Fires at top-level granularity only (NOT inside <see cref="ParseGroupRecursive" />, which
@@ -63,7 +64,7 @@ internal static class EsmDescriptorScanner
             return new EsmDescriptorScanResult(scanResult, grupHeaders, formIdMap);
         }
 
-        var offset = (long)format.RecordHeaderSize + tes4Header.DataSize;
+        var offset = format.RecordHeaderSize + tes4Header.DataSize;
         while (offset + format.RecordHeaderSize <= data.Length)
         {
             onBytesScanned?.Invoke(offset);
@@ -687,41 +688,6 @@ internal static class EsmDescriptorScanner
         return state;
     }
 
-    private sealed class RefrState(DetectedMainRecord header)
-    {
-        public DetectedMainRecord Header { get; } = header;
-        public uint BaseFormId { get; set; }
-        public PositionSubrecord? Position { get; set; }
-        public float Scale { get; set; } = 1.0f;
-        public float? Radius { get; set; }
-        public short? Count { get; set; }
-        public uint? OwnerFormId { get; set; }
-        public uint? EncounterZoneFormId { get; set; }
-        public uint? MaterialSwapFormId { get; set; }
-        public uint? EmittanceFormId { get; set; }
-        public byte? LockLevel { get; set; }
-        public uint? LockKeyFormId { get; set; }
-        public byte? LockFlags { get; set; }
-        public uint? LockNumTries { get; set; }
-        public uint? LockTimesUnlocked { get; set; }
-        public uint? DestinationDoorFormId { get; set; }
-        public PositionSubrecord? TeleportPosRot { get; set; }
-        public byte? TeleportFlags { get; set; }
-        public uint? EnableParentFormId { get; set; }
-        public byte? EnableParentFlags { get; set; }
-        public uint? SpecialRenderingFlags { get; set; }
-        public uint? LinkedRefKeywordFormId { get; set; }
-        public uint? LinkedRefFormId { get; set; }
-        public bool IsMapMarker { get; set; }
-        public ushort? MarkerType { get; set; }
-        public string? MarkerName { get; set; }
-
-        /// <summary>Raw FULL subrecord bytes (a 4-byte string ID in a localized plugin) for late resolution
-        /// against the .STRINGS table, which isn't loaded at scan time. See the FULL case above.</summary>
-        public byte[]? MarkerNameRaw { get; set; }
-        public string? EditorId { get; set; }
-    }
-
     private static string ReadSignature(ReadOnlySpan<byte> data, bool bigEndian)
     {
         if (data.Length < 4)
@@ -761,23 +727,68 @@ internal static class EsmDescriptorScanner
     }
 
     private static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-        => bigEndian
+    {
+        return bigEndian
             ? BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2))
             : BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(offset, 2));
+    }
 
     private static uint ReadUInt32(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-        => bigEndian
+    {
+        return bigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, 4));
+    }
 
     private static int ReadInt32(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-        => bigEndian
+    {
+        return bigEndian
             ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(offset, 4))
             : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(offset, 4));
+    }
 
     private static float ReadSingle(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-        => bigEndian
+    {
+        return bigEndian
             ? BinaryPrimitives.ReadSingleBigEndian(data.Slice(offset, 4))
             : BinaryPrimitives.ReadSingleLittleEndian(data.Slice(offset, 4));
-}
+    }
 
+    private sealed class RefrState(DetectedMainRecord header)
+    {
+        public DetectedMainRecord Header { get; } = header;
+        public uint BaseFormId { get; set; }
+        public PositionSubrecord? Position { get; set; }
+        public float Scale { get; set; } = 1.0f;
+        public float? Radius { get; set; }
+        public short? Count { get; set; }
+        public uint? OwnerFormId { get; set; }
+        public uint? EncounterZoneFormId { get; set; }
+        public uint? MaterialSwapFormId { get; set; }
+        public uint? EmittanceFormId { get; set; }
+        public byte? LockLevel { get; set; }
+        public uint? LockKeyFormId { get; set; }
+        public byte? LockFlags { get; set; }
+        public uint? LockNumTries { get; set; }
+        public uint? LockTimesUnlocked { get; set; }
+        public uint? DestinationDoorFormId { get; set; }
+        public PositionSubrecord? TeleportPosRot { get; set; }
+        public byte? TeleportFlags { get; set; }
+        public uint? EnableParentFormId { get; set; }
+        public byte? EnableParentFlags { get; set; }
+        public uint? SpecialRenderingFlags { get; set; }
+        public uint? LinkedRefKeywordFormId { get; set; }
+        public uint? LinkedRefFormId { get; set; }
+        public bool IsMapMarker { get; set; }
+        public ushort? MarkerType { get; set; }
+        public string? MarkerName { get; set; }
+
+        /// <summary>
+        ///     Raw FULL subrecord bytes (a 4-byte string ID in a localized plugin) for late resolution
+        ///     against the .STRINGS table, which isn't loaded at scan time. See the FULL case above.
+        /// </summary>
+        public byte[]? MarkerNameRaw { get; set; }
+
+        public string? EditorId { get; set; }
+    }
+}

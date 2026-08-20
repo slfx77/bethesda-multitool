@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
@@ -8,13 +9,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 /// </summary>
 internal interface ICellGridRenderer : IWorldRenderer
 {
-    /// <summary>Total exterior-cell count from the most recent <see cref="LoadData(IEnumerable{CellRecord})" />.
-    /// Used in the HUD status overlay.</summary>
+    /// <summary>
+    ///     Total exterior-cell count from the most recent <see cref="LoadData(IEnumerable{CellRecord})" />.
+    ///     Used in the HUD status overlay.
+    /// </summary>
     int CellCount { get; }
 
     void LoadData(IEnumerable<CellRecord> exteriorCells);
 
     void LoadData(
         IEnumerable<CellRecord> exteriorCells,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex);
+        WorldSpatialIndex? spatialIndex);
 }

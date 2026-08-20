@@ -1,9 +1,8 @@
 using System.CommandLine;
+using System.Numerics;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -139,7 +138,7 @@ internal static class WeatherDumpCommand
         return $"{c.R:X2}{c.G:X2}{c.B:X2}/{c.A:X2} {lum:0.00}";
     }
 
-    private static string Vec(System.Numerics.Vector3 v)
+    private static string Vec(Vector3 v)
     {
         var lum = 0.299f * v.X + 0.587f * v.Y + 0.114f * v.Z;
         return $"{v.X:0.00},{v.Y:0.00},{v.Z:0.00} ({lum:0.00})";

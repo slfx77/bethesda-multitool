@@ -21,34 +21,37 @@ internal static class PersistentContainerPlans
         uint containerFormId,
         ParsedMainRecord masterCell,
         PcEsmCellContext containerContext,
-        List<RecordPlan> children) => new()
+        List<RecordPlan> children)
     {
-        CellFormId = containerFormId,
-        CellRecordPlan = new RecordPlan
+        return new CellPlan
         {
-            Type = "CELL",
-            Disposition = RecordDisposition.Override,
-            FormId = containerFormId,
-            Model = null,
-            Master = masterCell,
-            References = ImmutableArray<ResolvedRef>.Empty,
-            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance
+            CellFormId = containerFormId,
+            CellRecordPlan = new RecordPlan
             {
-                PolicyId = "PersistentCellReparenting",
-                Reason = "Container override created to host re-parented exterior persistent refs + map markers.",
+                Type = "CELL",
+                Disposition = RecordDisposition.Override,
+                FormId = containerFormId,
+                Model = null,
+                Master = masterCell,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance
+                {
+                    PolicyId = "PersistentCellReparenting",
+                    Reason = "Container override created to host re-parented exterior persistent refs + map markers."
+                }
             },
-        },
-        Context = containerContext,
-        PersistentChildren = [.. children],
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
-        ParentWorldspaceFormId = containerContext.WorldspaceFormId,
-        // Persistent-only content by construction; carry-forward skips master's own
-        // GroupType-8 children, so this override never bloats with master persistents.
-        Mode = CellMergeMode.PersistentOnly,
-        DropRenderCullingMarkers = false,
-    };
+            Context = containerContext,
+            PersistentChildren = [.. children],
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            ParentWorldspaceFormId = containerContext.WorldspaceFormId,
+            // Persistent-only content by construction; carry-forward skips master's own
+            // GroupType-8 children, so this override never bloats with master persistents.
+            Mode = CellMergeMode.PersistentOnly,
+            DropRenderCullingMarkers = false
+        };
+    }
 
     /// <summary>
     ///     Minimal NEW persistent-container cell for a worldspace with neither a master nor
@@ -58,44 +61,47 @@ internal static class PersistentContainerPlans
     internal static CellPlan BuildNewContainerPlan(
         uint containerFormId,
         uint worldspaceFormId,
-        List<RecordPlan> children) => new()
+        List<RecordPlan> children)
     {
-        CellFormId = containerFormId,
-        CellRecordPlan = new RecordPlan
-        {
-            Type = "CELL",
-            Disposition = RecordDisposition.New,
-            FormId = containerFormId,
-            Model = new CellRecord
-            {
-                FormId = containerFormId,
-                WorldspaceFormId = worldspaceFormId,
-                IsPersistentCell = true,
-            },
-            Master = null,
-            References = ImmutableArray<ResolvedRef>.Empty,
-            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance
-            {
-                PolicyId = "PersistentCellReparenting",
-                Reason = "New persistent-container cell synthesized for a worldspace without one.",
-            },
-        },
-        Context = new PcEsmCellContext
+        return new CellPlan
         {
             CellFormId = containerFormId,
-            IsInterior = false,
-            WorldspaceFormId = worldspaceFormId,
-            BlockGroupType = 0,
-            SubblockGroupType = 0,
-            BlockLabel = null,
-            SubblockLabel = null,
-        },
-        PersistentChildren = [.. children],
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
-        ParentWorldspaceFormId = worldspaceFormId,
-        Mode = CellMergeMode.LoadedReplacement,
-        DropRenderCullingMarkers = false,
-    };
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.New,
+                FormId = containerFormId,
+                Model = new CellRecord
+                {
+                    FormId = containerFormId,
+                    WorldspaceFormId = worldspaceFormId,
+                    IsPersistentCell = true
+                },
+                Master = null,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance
+                {
+                    PolicyId = "PersistentCellReparenting",
+                    Reason = "New persistent-container cell synthesized for a worldspace without one."
+                }
+            },
+            Context = new PcEsmCellContext
+            {
+                CellFormId = containerFormId,
+                IsInterior = false,
+                WorldspaceFormId = worldspaceFormId,
+                BlockGroupType = 0,
+                SubblockGroupType = 0,
+                BlockLabel = null,
+                SubblockLabel = null
+            },
+            PersistentChildren = [.. children],
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            ParentWorldspaceFormId = worldspaceFormId,
+            Mode = CellMergeMode.LoadedReplacement,
+            DropRenderCullingMarkers = false
+        };
+    }
 }

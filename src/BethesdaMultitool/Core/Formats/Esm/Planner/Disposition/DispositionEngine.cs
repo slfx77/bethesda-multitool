@@ -16,10 +16,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 /// </remarks>
 public sealed class DispositionEngine
 {
-    private readonly List<IDispositionPolicy> _firstPriority = [];
     private readonly Dictionary<string, List<IDispositionPolicy>> _byType =
         new(StringComparer.Ordinal);
+
     private readonly List<IDispositionPolicy> _fallback = [];
+    private readonly List<IDispositionPolicy> _firstPriority = [];
 
     public DispositionEngine(IEnumerable<IDispositionPolicy> policies)
     {
@@ -70,8 +71,8 @@ public sealed class DispositionEngine
         foreach (var entry in entries)
         {
             var decision = DecideOne(entry)
-                ?? throw new InvalidOperationException(
-                    $"No policy returned a decision for {entry.Type} 0x{entry.MasterFormId ?? entry.DmpFormId ?? 0:X8}.");
+                           ?? throw new InvalidOperationException(
+                               $"No policy returned a decision for {entry.Type} 0x{entry.MasterFormId ?? entry.DmpFormId ?? 0:X8}.");
             result.Add((entry, decision));
         }
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Script;
 
@@ -34,7 +35,7 @@ public sealed class ScriptDecompiler(
     ScriptFunctionSet? functions = null)
 {
     private readonly ScriptFunctionSet _functions =
-        functions ?? ScriptFunctionTables.For(Games.BethesdaGame.FalloutNewVegas);
+        functions ?? ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas);
 
     private readonly bool _isBigEndian = isBigEndian;
     private readonly StringBuilder _output = new();
@@ -583,8 +584,10 @@ public sealed class ScriptDecompiler(
         }
     }
 
-    private static bool CanReadPayloadBytes(BytecodeReader reader, int payloadEnd, int count) =>
-        count >= 0 && reader.Position <= payloadEnd - count && reader.CanRead(count);
+    private static bool CanReadPayloadBytes(BytecodeReader reader, int payloadEnd, int count)
+    {
+        return count >= 0 && reader.Position <= payloadEnd - count && reader.CanRead(count);
+    }
 
     #endregion
 }

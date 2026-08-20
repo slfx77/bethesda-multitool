@@ -1,8 +1,7 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Esm;
@@ -170,4 +169,3 @@ public static class EsmStatsCommand
 
     private sealed record RecordTypeStats(string Type, int Count, long TotalSize, uint MinSize, uint MaxSize);
 }
-

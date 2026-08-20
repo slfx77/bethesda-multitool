@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Report;
@@ -754,4 +753,3 @@ internal static class ReportFieldDomain
         internal List<UnknownKey> UnknownKeys { get; } = [];
     }
 }
-

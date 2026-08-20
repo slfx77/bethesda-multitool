@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -45,15 +46,19 @@ internal readonly record struct FormIdNodeEntry(
 public sealed partial class SingleFileTab
 {
     private const int UnifiedNavStackLimit = 100;
+
+    /// <summary>
+    ///     Realize-to-target ceiling for <see cref="SelectAndScrollToNodeAsync" />: ~2k node
+    ///     Adds stay comfortably sub-second; past it the WinUI flat-list resync cost is user-visible and
+    ///     growing, so deeper targets take the filtered-tree jump instead.
+    /// </summary>
+    private const int MaxRealizedPrefixNodes = 2_000;
+
     private readonly Stack<UnifiedNavLocation> _unifiedBackStack = new();
     private readonly Stack<UnifiedNavLocation> _unifiedForwardStack = new();
     private Task? _formIdBuildTask;
     private Dictionary<uint, FormIdNodeEntry>? _formIdNodeIndex;
     private bool _isNavigating;
-
-    /// <summary>Suppresses <c>EsmSearchBox_TextChanged</c> during programmatic Text sets (the
-    /// deep-target filter jump) so the debounced handler doesn't re-filter and stomp the selection.</summary>
-    private bool _suppressSearchTextChanged;
 
     /// <summary>
     ///     Invalidation token for in-flight index builds. ResetNavigation bumps it; a build
@@ -61,6 +66,12 @@ public sealed partial class SingleFileTab
     ///     so it can never install a stale index (or _flatListBuilt) over the next load's state.
     /// </summary>
     private int _navIndexGeneration;
+
+    /// <summary>
+    ///     Suppresses <c>EsmSearchBox_TextChanged</c> during programmatic Text sets (the
+    ///     deep-target filter jump) so the debounced handler doesn't re-filter and stomp the selection.
+    /// </summary>
+    private bool _suppressSearchTextChanged;
 
     /// <summary>
     ///     Builds a lookup from FormID to EsmBrowserNode by walking the data model tree.
@@ -621,11 +632,6 @@ public sealed partial class SingleFileTab
         }
     }
 
-    /// <summary>Realize-to-target ceiling for <see cref="SelectAndScrollToNodeAsync" />: ~2k node
-    /// Adds stay comfortably sub-second; past it the WinUI flat-list resync cost is user-visible and
-    /// growing, so deeper targets take the filtered-tree jump instead.</summary>
-    private const int MaxRealizedPrefixNodes = 2_000;
-
     /// <summary>
     ///     Lands on a record too deep in its type group to realize scroll context for: applies the
     ///     FormID as the search filter (so the tree shows just the target ± a handful of matches,
@@ -660,6 +666,7 @@ public sealed partial class SingleFileTab
                     {
                         container.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
                     }
+
                     return;
                 }
             }
@@ -714,4 +721,3 @@ public sealed partial class SingleFileTab
         return index;
     }
 }
-

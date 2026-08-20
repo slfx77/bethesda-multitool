@@ -762,4 +762,3 @@ internal static class ComparisonJsonBlobBuilder
         writer.WriteEndArray();
     }
 }
-

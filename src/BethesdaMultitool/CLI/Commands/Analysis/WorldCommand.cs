@@ -1,10 +1,9 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 using BethesdaMultitool.Core.Formats.Esm.Export.ModelExport;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -254,12 +253,12 @@ public static class WorldCommand
             return;
         }
 
-        int minGx = cells.Min(c => c.GridX!.Value);
-        int maxGx = cells.Max(c => c.GridX!.Value);
-        int minGy = cells.Min(c => c.GridY!.Value);
-        int maxGy = cells.Max(c => c.GridY!.Value);
-        long width = (long)(maxGx - minGx + 1) * cellPx;
-        long height = (long)(maxGy - minGy + 1) * cellPx;
+        var minGx = cells.Min(c => c.GridX!.Value);
+        var maxGx = cells.Max(c => c.GridX!.Value);
+        var minGy = cells.Min(c => c.GridY!.Value);
+        var maxGy = cells.Max(c => c.GridY!.Value);
+        var width = (long)(maxGx - minGx + 1) * cellPx;
+        var height = (long)(maxGy - minGy + 1) * cellPx;
         if (width * height > 400_000_000L)
         {
             AnsiConsole.MarkupLine("[red]Heightmap would be {0:N0}x{1:N0} px — lower --cell-px.[/]", width, height);
@@ -304,7 +303,7 @@ public static class WorldCommand
             {
                 var sy = cellPx == 1 ? 0 : (int)Math.Round(py * (double)(edge - 1) / (cellPx - 1));
                 var row = cellTopRow + (cellPx - 1 - py); // sample row 0 is the south edge -> bottom
-                var dst = (row * width) + baseCol;
+                var dst = row * width + baseCol;
                 for (var px = 0; px < cellPx; px++)
                 {
                     var sx = cellPx == 1 ? 0 : (int)Math.Round(px * (double)(edge - 1) / (cellPx - 1));
@@ -320,7 +319,7 @@ public static class WorldCommand
             Directory.CreateDirectory(dir);
         }
 
-        Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveGrayscale(pixels, (int)width, (int)height, output);
+        PngWriter.SaveGrayscale(pixels, (int)width, (int)height, output);
         var label = ws.EditorId ?? ws.FullName ?? $"0x{ws.FormId:X8}";
         AnsiConsole.MarkupLine(
             "[green]Wrote[/] {0} ({1:N0}x{2:N0}) — worldspace [cyan]{3}[/], {4:N0} cells, height {5:F0}..{6:F0}",
@@ -636,4 +635,3 @@ public static class WorldCommand
 
     #endregion
 }
-

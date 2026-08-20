@@ -210,6 +210,7 @@ internal static class StandaloneHeightmapResolver
             {
                 worldspace = "ws_unknown";
             }
+
             var cell = land.BestCellX.HasValue && land.BestCellY.HasValue
                 ? $"({land.BestCellX.Value},{land.BestCellY.Value})"
                 : "(?,?)";
@@ -252,4 +253,3 @@ internal sealed record StandaloneHeightmapMatch(
     ExtractedLandRecord? Land,
     int MatchedLandCount,
     IReadOnlyList<ExtractedLandRecord> CandidateLands);
-

@@ -1,13 +1,15 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
@@ -24,10 +26,11 @@ public sealed class PlanWriter
     /// <summary>Record header flag bit indicating the body is zlib-compressed.</summary>
     private const uint CompressedFlag = 0x00040000u;
 
+    private readonly HashSet<QuestVariableProducerOwner> _emittedProducerOwners = [];
+
     private readonly PlannedEncoderRegistry _encoders;
     private readonly IConversionProgressSink _sink;
     private readonly ConversionPipelineStats? _stats;
-    private readonly HashSet<QuestVariableProducerOwner> _emittedProducerOwners = [];
 
     public PlanWriter(
         PlannedEncoderRegistry encoders,
@@ -40,12 +43,6 @@ public sealed class PlanWriter
     }
 
     /// <summary>
-    ///     True when this writer can handle the given record type (an encoder is registered).
-    ///     The dispatch shim should only consult the writer for types it owns.
-    /// </summary>
-    public bool Handles(string recordType) => _encoders.Contains(recordType);
-
-    /// <summary>
     ///     Exact model-owned script paths whose enclosing records have reached the output
     ///     byte stream. A planned record is intentionally absent when its encoder declines
     ///     late (for example, after PACK inline-script sanitation).
@@ -56,6 +53,15 @@ public sealed class PlanWriter
             .ThenBy(static owner => owner.SourceFormId)
             .ThenBy(static owner => owner.ScriptPath, StringComparer.Ordinal)
             .ToImmutableArray());
+
+    /// <summary>
+    ///     True when this writer can handle the given record type (an encoder is registered).
+    ///     The dispatch shim should only consult the writer for types it owns.
+    /// </summary>
+    public bool Handles(string recordType)
+    {
+        return _encoders.Contains(recordType);
+    }
 
     /// <summary>
     ///     Produce the wrapped top-level GRUP bytes for one record type from the plan.
@@ -113,7 +119,7 @@ public sealed class PlanWriter
                         $"SCPT variable augmentation for 0x{record.FormId:X8} requires a master override.");
                 }
 
-                var subrecordBytes = Encoders.ComplexRef.MasterScriptVariableAugmentationEncoder
+                var subrecordBytes = MasterScriptVariableAugmentationEncoder
                     .EncodeSubrecordStream(record);
                 var augmentedRecord = PluginRecordByteBuilder.BuildOverrideRecordBytes(
                     record.Master, subrecordBytes, options);
@@ -184,7 +190,7 @@ public sealed class PlanWriter
             {
                 RecordDisposition.New => BuildNewRecord(recordType, record.FormId, encoded.Subrecords, options),
                 RecordDisposition.Override => BuildOverrideRecord(record, encoded, policy, options),
-                _ => throw new InvalidOperationException($"Unexpected disposition {record.Disposition}."),
+                _ => throw new InvalidOperationException($"Unexpected disposition {record.Disposition}.")
             };
 
             grupBodyStream.Write(recordBytes);
@@ -274,7 +280,7 @@ public sealed class PlanWriter
         // — the Omerta entrance guard's forcegreet died to a leaked UseScript template flag.
         if (record.Type is "NPC_" or "CREA")
         {
-            subrecordBytes = Plugin.Writers.Encoders.Character.ActorBaseAcbsBuilder
+            subrecordBytes = ActorBaseAcbsBuilder
                 .RestoreMasterIdentityFlags(subrecordBytes, record.Master);
         }
 

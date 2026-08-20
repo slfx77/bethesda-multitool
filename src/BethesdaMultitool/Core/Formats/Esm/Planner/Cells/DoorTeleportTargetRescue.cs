@@ -44,7 +44,7 @@ internal static class DoorTeleportTargetRescue
             .Where(entry => entry.Child.Disposition == RecordDisposition.New
                             && entry.Child.SourceFormId is { } source
                             && clonesBySource.ContainsKey(source)
-                            && entry.Child.Model is PlacedReference { DestinationDoorFormId: { } })
+                            && entry.Child.Model is PlacedReference { DestinationDoorFormId: not null })
             .Select(entry => ((PlacedReference)entry.Child.Model!).DestinationDoorFormId!.Value)
             .Where(target => IsIncompatibleMasterDoorTarget(target, masterRecordsByFormId))
             .Distinct()
@@ -81,7 +81,7 @@ internal static class DoorTeleportTargetRescue
                 FormId = target,
                 Message = $"Captured XTEL target REFR 0x{target:X8} is a DOOR in the DMP but "
                           + "the same retail FormID has a non-DOOR base; cloned the captured "
-                          + $"counterpart as 0x{emittedFormId:X8} and retained the retail record.",
+                          + $"counterpart as 0x{emittedFormId:X8} and retained the retail record."
             });
         }
 
@@ -102,7 +102,7 @@ internal static class DoorTeleportTargetRescue
                 {
                     PersistentChildren = persistent,
                     VwdChildren = vwd,
-                    TemporaryChildren = temporary,
+                    TemporaryChildren = temporary
                 };
             }
         }
@@ -142,8 +142,8 @@ internal static class DoorTeleportTargetRescue
                     PolicyId = TargetRescuePolicyId,
                     Reason = "Captured reciprocal XTEL target is a DOOR, while its retail "
                              + $"REFR identity 0x{child.FormId:X8} resolves to a non-DOOR base; "
-                             + "cloned as NEW without overriding the retail static placement.",
-                },
+                             + "cloned as NEW without overriding the retail static placement."
+                }
             });
             changed = true;
         }
@@ -172,7 +172,7 @@ internal static class DoorTeleportTargetRescue
                 {
                     PersistentChildren = persistent,
                     VwdChildren = vwd,
-                    TemporaryChildren = temporary,
+                    TemporaryChildren = temporary
                 };
             }
         }
@@ -209,7 +209,7 @@ internal static class DoorTeleportTargetRescue
             {
                 builder.Add(child with
                 {
-                    Model = placed with { DestinationDoorFormId = emittedTarget },
+                    Model = placed with { DestinationDoorFormId = emittedTarget }
                 });
                 changed = true;
                 continue;
@@ -231,8 +231,8 @@ internal static class DoorTeleportTargetRescue
                     DestinationDoorFormId = null,
                     DestinationCellFormId = null,
                     TeleportPosRot = null,
-                    TeleportFlags = null,
-                },
+                    TeleportFlags = null
+                }
             });
             changed = true;
             diagnostics.Add(new PlanDiagnostic
@@ -244,7 +244,7 @@ internal static class DoorTeleportTargetRescue
                 FormId = child.FormId,
                 Message = $"Dropped XTEL from cloned door REFR 0x{child.FormId:X8}: target "
                           + $"0x{target:X8} is live in the master but is not a DOOR-base REFR, "
-                          + "and no unique captured DOOR counterpart could be rescued.",
+                          + "and no unique captured DOOR counterpart could be rescued."
             });
         }
 
@@ -268,34 +268,42 @@ internal static class DoorTeleportTargetRescue
     private static bool CanRescueCapturedDoorTarget(
         CellPlan cell,
         RecordPlan child,
-        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId) =>
-        cell.CellRecordPlan.Disposition != RecordDisposition.Skip
-        && cell.CellRecordPlan.Model is not CellRecord { IsVirtual: true }
-        && child.Disposition == RecordDisposition.Override
-        && child.Type == "REFR"
-        && child.Model is PlacedReference placed
-        && IsDoorBase(placed.BaseFormId, masterRecordsByFormId)
-        && IsIncompatibleMasterDoorTarget(child.FormId, masterRecordsByFormId);
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+    {
+        return cell.CellRecordPlan.Disposition != RecordDisposition.Skip
+               && cell.CellRecordPlan.Model is not CellRecord { IsVirtual: true }
+               && child.Disposition == RecordDisposition.Override
+               && child.Type == "REFR"
+               && child.Model is PlacedReference placed
+               && IsDoorBase(placed.BaseFormId, masterRecordsByFormId)
+               && IsIncompatibleMasterDoorTarget(child.FormId, masterRecordsByFormId);
+    }
 
     private static bool IsIncompatibleMasterDoorTarget(
         uint refFormId,
-        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId) =>
-        masterRecordsByFormId.ContainsKey(refFormId)
-        && !IsLiveMasterDoorReference(refFormId, masterRecordsByFormId);
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+    {
+        return masterRecordsByFormId.ContainsKey(refFormId)
+               && !IsLiveMasterDoorReference(refFormId, masterRecordsByFormId);
+    }
 
     private static bool IsLiveMasterDoorReference(
         uint refFormId,
-        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId) =>
-        masterRecordsByFormId.TryGetValue(refFormId, out var target)
-        && target.Header.Signature == "REFR"
-        && TryReadNameFormId(target, out var baseFormId)
-        && IsDoorBase(baseFormId, masterRecordsByFormId);
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+    {
+        return masterRecordsByFormId.TryGetValue(refFormId, out var target)
+               && target.Header.Signature == "REFR"
+               && TryReadNameFormId(target, out var baseFormId)
+               && IsDoorBase(baseFormId, masterRecordsByFormId);
+    }
 
     private static bool IsDoorBase(
         uint baseFormId,
-        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId) =>
-        masterRecordsByFormId.TryGetValue(baseFormId, out var baseRecord)
-        && baseRecord.Header.Signature == "DOOR";
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+    {
+        return masterRecordsByFormId.TryGetValue(baseFormId, out var baseRecord)
+               && baseRecord.Header.Signature == "DOOR";
+    }
 
     private static bool TryReadNameFormId(ParsedMainRecord record, out uint formId)
     {

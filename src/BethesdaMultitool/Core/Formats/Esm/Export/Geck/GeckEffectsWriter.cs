@@ -555,4 +555,3 @@ internal static class GeckEffectsWriter
         return sb.ToString();
     }
 }
-

@@ -26,16 +26,21 @@ public sealed class PlannedEncoderRegistry
         }
     }
 
+    /// <summary>Total registered encoder count.</summary>
+    public int Count => _byType.Count;
+
     /// <summary>Returns true when an encoder is registered for the given type.</summary>
-    public bool Contains(string recordType) => _byType.ContainsKey(recordType);
+    public bool Contains(string recordType)
+    {
+        return _byType.ContainsKey(recordType);
+    }
 
     /// <summary>Strongly-typed lookup. Throws on miss; pair with <see cref="Contains" />.</summary>
-    public IPlannedRecordEncoder Get(string recordType) =>
-        _byType.TryGetValue(recordType, out var encoder)
+    public IPlannedRecordEncoder Get(string recordType)
+    {
+        return _byType.TryGetValue(recordType, out var encoder)
             ? encoder
             : throw new KeyNotFoundException(
                 $"No planned encoder registered for record type {recordType}.");
-
-    /// <summary>Total registered encoder count.</summary>
-    public int Count => _byType.Count;
+    }
 }

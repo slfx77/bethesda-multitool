@@ -20,6 +20,219 @@ public class EsmScriptParamFixerTests
     private const ushort IsPlayerInRegionOpcode = 0x1260;
     private const ushort GetGameSettingOpcode = 0x1100;
 
+    [Fact]
+    public void FixScriptRegionParams_InlineStringCall_RewritesParamAndAppendsScro()
+    {
+        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
+        var scda = new byte[] { 0x1D, 0x00 }.Concat(call).Concat(new byte[] { 0x1E, 0x00 }).ToArray();
+        var recordData = BuildScptRecordData(scda, 0);
+        var stats = new EsmConversionStats();
+
+        var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
+
+        Assert.NotNull(fixedData);
+        // One appended SCRO = 6-byte header + 4-byte payload.
+        Assert.Equal(recordData.Length + 10, fixedData!.Length);
+
+        var subrecords = ParseSubrecords(fixedData);
+        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
+        Assert.Equal(scda.Length, newScda.Length); // SCDA size never changes
+
+        // Call header (58 opcode paramBytesLen) and paramCount are untouched.
+        Assert.Equal(scda.AsSpan(0, 7).ToArray(), newScda.AsSpan(0, 7).ToArray());
+        // Param rewritten: 72 <u16 index=1> + zero fill over the old strLen+chars bytes.
+        Assert.Equal(0x72, newScda[9]);
+        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(10, 2)));
+        for (var i = 12; i < 9 + 2 + RegionEdid.Length; i++)
+        {
+            Assert.Equal(0, newScda[i]);
+        }
+
+        // Trailing bytes after the call site survive.
+        Assert.Equal(0x1E, newScda[^2]);
+        Assert.Equal(0x00, newScda[^1]);
+
+        // SCRO appended with the region FormID; SCHR.RefCount bumped to the SCRO count.
+        var scros = subrecords.Where(s => s.Signature == "SCRO").ToList();
+        var scro = Assert.Single(scros);
+        Assert.Equal(RegionFormId, BinaryPrimitives.ReadUInt32LittleEndian(scro.Payload));
+        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
+
+        // SCRO lands after SCTX (last subrecord group).
+        Assert.Equal("SCRO", subrecords[^1].Signature);
+
+        Assert.Equal(1, stats.ScriptRegionSitesRewritten);
+        Assert.Equal(1, stats.ScriptRegionScrosAppended);
+        Assert.Equal(1, stats.ScriptRegionScriptsTouched);
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_AlreadyRefEncoded_Untouched()
+    {
+        var scda = BuildRefCall(IsPlayerInRegionOpcode, 1);
+        var recordData = BuildScptRecordData(scda, 1, RegionFormId);
+
+        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
+
+        Assert.Null(fixedData);
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_GetGameSettingInlineString_Untouched()
+    {
+        // GetGameSetting (0x1100) legitimately takes an inline string — must NOT be rewritten.
+        var scda = BuildInlineStringCall(GetGameSettingOpcode, "fGravity");
+        var recordData = BuildScptRecordData(scda, 0);
+
+        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
+
+        Assert.Null(fixedData);
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_FalsePositiveByteRun_Untouched()
+    {
+        // Bytes that happen to contain 58 60 12 but whose "strLen" is bogus (0x0190 = 400 > 64).
+        var scda = new byte[] { 0x58, 0x60, 0x12, 0x08, 0x00, 0x01, 0x00, 0x90, 0x01, 0xAA, 0xBB, 0xCC, 0xDD };
+        var recordData = BuildScptRecordData(scda, 0);
+
+        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
+
+        Assert.Null(fixedData);
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_UnresolvableEdid_Untouched()
+    {
+        var scda = BuildInlineStringCall(IsPlayerInRegionOpcode, "NoSuchRegion");
+        var recordData = BuildScptRecordData(scda, 0);
+
+        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
+
+        Assert.Null(fixedData);
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_RegionAlreadyInScro_ReusesIndexWithoutDuplicate()
+    {
+        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
+        // SCRO list: [some other form, the region] — expect index 2 reused, no append.
+        var recordData = BuildScptRecordData(call, 2, 0x00AA0001, RegionFormId);
+        var stats = new EsmConversionStats();
+
+        var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
+
+        Assert.NotNull(fixedData);
+        Assert.Equal(recordData.Length, fixedData!.Length); // no growth
+
+        var subrecords = ParseSubrecords(fixedData);
+        Assert.Equal(2, subrecords.Count(s => s.Signature == "SCRO"));
+
+        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
+        Assert.Equal(0x72, newScda[7]);
+        Assert.Equal(2, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(8, 2)));
+
+        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
+
+        Assert.Equal(1, stats.ScriptRegionSitesRewritten);
+        Assert.Equal(0, stats.ScriptRegionScrosAppended);
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_ScrvOccupiesRefSlot_ReuseUsesCombinedIndex()
+    {
+        // The runtime reference array is the combined SCRO+SCRV sequence in subrecord order
+        // (verified against PC final). Refs: SCRO(other)=1, SCRV=2, SCRO(region)=3.
+        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
+        var recordData = BuildScptRecordDataWithRefs(call, 3,
+            ("SCRO", 0x00AA0001), ("SCRV", 2), ("SCRO", RegionFormId));
+
+        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
+
+        Assert.NotNull(fixedData);
+        Assert.Equal(recordData.Length, fixedData!.Length); // reuse, no growth
+
+        var subrecords = ParseSubrecords(fixedData);
+        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
+        Assert.Equal(0x72, newScda[7]);
+        Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(8, 2)));
+
+        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_AppendAfterScrv_IndexCountsScrvSlots()
+    {
+        // Refs before fix: SCRO(other)=1, SCRV=2. Appended region SCRO gets combined index 3,
+        // and RefCount becomes 3 (SCRO+SCRV+appended), not the SCRO-only count of 2.
+        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
+        var recordData = BuildScptRecordDataWithRefs(call, 2,
+            ("SCRO", 0x00AA0001), ("SCRV", 2));
+
+        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
+
+        Assert.NotNull(fixedData);
+        Assert.Equal(recordData.Length + 10, fixedData!.Length);
+
+        var subrecords = ParseSubrecords(fixedData);
+        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
+        Assert.Equal(0x72, newScda[7]);
+        Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(8, 2)));
+
+        Assert.Equal("SCRO", subrecords[^1].Signature); // appended after the SCRV tail
+        Assert.Equal(RegionFormId, BinaryPrimitives.ReadUInt32LittleEndian(subrecords[^1].Payload));
+
+        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
+    }
+
+    [Fact]
+    public void FixScriptRegionParams_MultipleSitesSameRegion_AppendsSingleScro()
+    {
+        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
+        var scda = call.Concat(new byte[] { 0x00, 0x00 }).Concat(call).ToArray();
+        var recordData = BuildScptRecordData(scda, 0);
+        var stats = new EsmConversionStats();
+
+        var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
+
+        Assert.NotNull(fixedData);
+        var subrecords = ParseSubrecords(fixedData!);
+        _ = Assert.Single(subrecords, s => s.Signature == "SCRO");
+        Assert.Equal(2, stats.ScriptRegionSitesRewritten);
+        Assert.Equal(1, stats.ScriptRegionScrosAppended);
+    }
+
+    [Fact]
+    public void SchrSchema_TypeAndFlags_PassThroughLittleEndian()
+    {
+        // SCHR tail (Type u16 @16, Flags u16 @18) is stored little-endian in the Xbox ESM —
+        // {01 00 01 00} = Quest/Enabled must survive conversion byte-identical, while the
+        // big-endian u32 fields before it are swapped.
+        var xbox = new byte[20];
+        xbox[7] = 0x02; // RefCount BE = 2
+        xbox[11] = 0x40; // CompiledSize BE = 0x40
+        xbox[15] = 0x03; // VariableCount BE = 3
+        xbox[16] = 0x01; // Type LE = 1 (Quest)
+        xbox[18] = 0x01; // Flags LE = 1 (Enabled)
+
+        var converted = EsmSubrecordConverter.ConvertSubrecordData("SCHR", xbox, "SCPT");
+
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(4, 4)));
+        Assert.Equal(0x40u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(8, 4)));
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(12, 4)));
+        // Tail bytes pass through UNswapped.
+        Assert.Equal(new byte[] { 0x01, 0x00, 0x01, 0x00 }, converted.AsSpan(16, 4).ToArray());
+
+        var schema = SubrecordSchemaRegistry.GetSchema("SCHR", "SCPT", 20);
+        Assert.NotNull(schema);
+        Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema!.Fields[^2].Type);
+        Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema.Fields[^1].Type);
+    }
+
     #region Fixture builders
 
     private static EsmScriptParamFixer CreateFixer(EsmConversionStats? stats = null)
@@ -118,217 +331,4 @@ public class EsmScriptParamFixerTests
     }
 
     #endregion
-
-    [Fact]
-    public void FixScriptRegionParams_InlineStringCall_RewritesParamAndAppendsScro()
-    {
-        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
-        var scda = new byte[] { 0x1D, 0x00 }.Concat(call).Concat(new byte[] { 0x1E, 0x00 }).ToArray();
-        var recordData = BuildScptRecordData(scda, refCount: 0);
-        var stats = new EsmConversionStats();
-
-        var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
-
-        Assert.NotNull(fixedData);
-        // One appended SCRO = 6-byte header + 4-byte payload.
-        Assert.Equal(recordData.Length + 10, fixedData!.Length);
-
-        var subrecords = ParseSubrecords(fixedData);
-        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
-        Assert.Equal(scda.Length, newScda.Length); // SCDA size never changes
-
-        // Call header (58 opcode paramBytesLen) and paramCount are untouched.
-        Assert.Equal(scda.AsSpan(0, 7).ToArray(), newScda.AsSpan(0, 7).ToArray());
-        // Param rewritten: 72 <u16 index=1> + zero fill over the old strLen+chars bytes.
-        Assert.Equal(0x72, newScda[9]);
-        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(10, 2)));
-        for (var i = 12; i < 9 + 2 + RegionEdid.Length; i++)
-        {
-            Assert.Equal(0, newScda[i]);
-        }
-
-        // Trailing bytes after the call site survive.
-        Assert.Equal(0x1E, newScda[^2]);
-        Assert.Equal(0x00, newScda[^1]);
-
-        // SCRO appended with the region FormID; SCHR.RefCount bumped to the SCRO count.
-        var scros = subrecords.Where(s => s.Signature == "SCRO").ToList();
-        var scro = Assert.Single(scros);
-        Assert.Equal(RegionFormId, BinaryPrimitives.ReadUInt32LittleEndian(scro.Payload));
-        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
-        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
-
-        // SCRO lands after SCTX (last subrecord group).
-        Assert.Equal("SCRO", subrecords[^1].Signature);
-
-        Assert.Equal(1, stats.ScriptRegionSitesRewritten);
-        Assert.Equal(1, stats.ScriptRegionScrosAppended);
-        Assert.Equal(1, stats.ScriptRegionScriptsTouched);
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_AlreadyRefEncoded_Untouched()
-    {
-        var scda = BuildRefCall(IsPlayerInRegionOpcode, 1);
-        var recordData = BuildScptRecordData(scda, refCount: 1, RegionFormId);
-
-        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
-
-        Assert.Null(fixedData);
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_GetGameSettingInlineString_Untouched()
-    {
-        // GetGameSetting (0x1100) legitimately takes an inline string — must NOT be rewritten.
-        var scda = BuildInlineStringCall(GetGameSettingOpcode, "fGravity");
-        var recordData = BuildScptRecordData(scda, refCount: 0);
-
-        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
-
-        Assert.Null(fixedData);
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_FalsePositiveByteRun_Untouched()
-    {
-        // Bytes that happen to contain 58 60 12 but whose "strLen" is bogus (0x0190 = 400 > 64).
-        var scda = new byte[] { 0x58, 0x60, 0x12, 0x08, 0x00, 0x01, 0x00, 0x90, 0x01, 0xAA, 0xBB, 0xCC, 0xDD };
-        var recordData = BuildScptRecordData(scda, refCount: 0);
-
-        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
-
-        Assert.Null(fixedData);
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_UnresolvableEdid_Untouched()
-    {
-        var scda = BuildInlineStringCall(IsPlayerInRegionOpcode, "NoSuchRegion");
-        var recordData = BuildScptRecordData(scda, refCount: 0);
-
-        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
-
-        Assert.Null(fixedData);
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_RegionAlreadyInScro_ReusesIndexWithoutDuplicate()
-    {
-        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
-        // SCRO list: [some other form, the region] — expect index 2 reused, no append.
-        var recordData = BuildScptRecordData(call, refCount: 2, 0x00AA0001, RegionFormId);
-        var stats = new EsmConversionStats();
-
-        var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
-
-        Assert.NotNull(fixedData);
-        Assert.Equal(recordData.Length, fixedData!.Length); // no growth
-
-        var subrecords = ParseSubrecords(fixedData);
-        Assert.Equal(2, subrecords.Count(s => s.Signature == "SCRO"));
-
-        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
-        Assert.Equal(0x72, newScda[7]);
-        Assert.Equal(2, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(8, 2)));
-
-        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
-        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
-
-        Assert.Equal(1, stats.ScriptRegionSitesRewritten);
-        Assert.Equal(0, stats.ScriptRegionScrosAppended);
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_ScrvOccupiesRefSlot_ReuseUsesCombinedIndex()
-    {
-        // The runtime reference array is the combined SCRO+SCRV sequence in subrecord order
-        // (verified against PC final). Refs: SCRO(other)=1, SCRV=2, SCRO(region)=3.
-        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
-        var recordData = BuildScptRecordDataWithRefs(call, refCount: 3,
-            ("SCRO", 0x00AA0001), ("SCRV", 2), ("SCRO", RegionFormId));
-
-        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
-
-        Assert.NotNull(fixedData);
-        Assert.Equal(recordData.Length, fixedData!.Length); // reuse, no growth
-
-        var subrecords = ParseSubrecords(fixedData);
-        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
-        Assert.Equal(0x72, newScda[7]);
-        Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(8, 2)));
-
-        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
-        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_AppendAfterScrv_IndexCountsScrvSlots()
-    {
-        // Refs before fix: SCRO(other)=1, SCRV=2. Appended region SCRO gets combined index 3,
-        // and RefCount becomes 3 (SCRO+SCRV+appended), not the SCRO-only count of 2.
-        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
-        var recordData = BuildScptRecordDataWithRefs(call, refCount: 2,
-            ("SCRO", 0x00AA0001), ("SCRV", 2));
-
-        var fixedData = CreateFixer().FixScriptRegionParams(recordData);
-
-        Assert.NotNull(fixedData);
-        Assert.Equal(recordData.Length + 10, fixedData!.Length);
-
-        var subrecords = ParseSubrecords(fixedData);
-        var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
-        Assert.Equal(0x72, newScda[7]);
-        Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(newScda.AsSpan(8, 2)));
-
-        Assert.Equal("SCRO", subrecords[^1].Signature); // appended after the SCRV tail
-        Assert.Equal(RegionFormId, BinaryPrimitives.ReadUInt32LittleEndian(subrecords[^1].Payload));
-
-        var schr = subrecords.Single(s => s.Signature == "SCHR").Payload;
-        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(schr.AsSpan(4, 4)));
-    }
-
-    [Fact]
-    public void FixScriptRegionParams_MultipleSitesSameRegion_AppendsSingleScro()
-    {
-        var call = BuildInlineStringCall(IsPlayerInRegionOpcode, RegionEdid);
-        var scda = call.Concat(new byte[] { 0x00, 0x00 }).Concat(call).ToArray();
-        var recordData = BuildScptRecordData(scda, refCount: 0);
-        var stats = new EsmConversionStats();
-
-        var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
-
-        Assert.NotNull(fixedData);
-        var subrecords = ParseSubrecords(fixedData!);
-        _ = Assert.Single(subrecords, s => s.Signature == "SCRO");
-        Assert.Equal(2, stats.ScriptRegionSitesRewritten);
-        Assert.Equal(1, stats.ScriptRegionScrosAppended);
-    }
-
-    [Fact]
-    public void SchrSchema_TypeAndFlags_PassThroughLittleEndian()
-    {
-        // SCHR tail (Type u16 @16, Flags u16 @18) is stored little-endian in the Xbox ESM —
-        // {01 00 01 00} = Quest/Enabled must survive conversion byte-identical, while the
-        // big-endian u32 fields before it are swapped.
-        var xbox = new byte[20];
-        xbox[7] = 0x02; // RefCount BE = 2
-        xbox[11] = 0x40; // CompiledSize BE = 0x40
-        xbox[15] = 0x03; // VariableCount BE = 3
-        xbox[16] = 0x01; // Type LE = 1 (Quest)
-        xbox[18] = 0x01; // Flags LE = 1 (Enabled)
-
-        var converted = EsmSubrecordConverter.ConvertSubrecordData("SCHR", xbox, "SCPT");
-
-        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(4, 4)));
-        Assert.Equal(0x40u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(8, 4)));
-        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(12, 4)));
-        // Tail bytes pass through UNswapped.
-        Assert.Equal(new byte[] { 0x01, 0x00, 0x01, 0x00 }, converted.AsSpan(16, 4).ToArray());
-
-        var schema = SubrecordSchemaRegistry.GetSchema("SCHR", "SCPT", 20);
-        Assert.NotNull(schema);
-        Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema!.Fields[^2].Type);
-        Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema.Fields[^1].Type);
-    }
 }

@@ -32,33 +32,36 @@ public sealed class PackEncoder : IRecordEncoder
         ["iPackFlags"] = m => m.GeneralFlags,
         ["cPackType"] = m => m.Type,
         ["iFOBehaviorFlags"] = m => m.FalloutBehaviorFlags,
-        ["iPackageSpecificFlags"] = m => m.TypeSpecificFlags,
+        ["iPackageSpecificFlags"] = m => m.TypeSpecificFlags
         // Unused, Unknown1, Unknown2 → zero-fill.
     };
 
-    private static readonly Dictionary<string, Func<PackageSchedule, object?>> PsdtExtractors = new(StringComparer.Ordinal)
-    {
-        ["Month"] = m => (byte)m.Month,
-        ["DayOfWeek"] = m => (byte)m.DayOfWeek,
-        ["Date"] = m => (byte)m.Date,
-        ["Time"] = m => m.Time,
-        ["Duration"] = m => m.Duration,
-    };
+    private static readonly Dictionary<string, Func<PackageSchedule, object?>> PsdtExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Month"] = m => (byte)m.Month,
+            ["DayOfWeek"] = m => (byte)m.DayOfWeek,
+            ["Date"] = m => (byte)m.Date,
+            ["Time"] = m => m.Time,
+            ["Duration"] = m => m.Duration
+        };
 
-    private static readonly Dictionary<string, Func<PackageLocation, object?>> PldtExtractors = new(StringComparer.Ordinal)
-    {
-        ["Type"] = m => m.Type,
-        ["Union"] = m => m.Union,
-        ["Radius"] = m => m.Radius,
-    };
+    private static readonly Dictionary<string, Func<PackageLocation, object?>> PldtExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Type"] = m => m.Type,
+            ["Union"] = m => m.Union,
+            ["Radius"] = m => m.Radius
+        };
 
-    private static readonly Dictionary<string, Func<PackageTarget, object?>> PtdtExtractors = new(StringComparer.Ordinal)
-    {
-        ["Type"] = m => m.Type,
-        ["Union"] = m => m.FormIdOrType,
-        ["CountDistance"] = m => m.CountDistance,
-        ["Unknown"] = m => m.AcquireRadius,
-    };
+    private static readonly Dictionary<string, Func<PackageTarget, object?>> PtdtExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Type"] = m => m.Type,
+            ["Union"] = m => m.FormIdOrType,
+            ["CountDistance"] = m => m.CountDistance,
+            ["Unknown"] = m => m.AcquireRadius
+        };
 
     public string RecordType => "PACK";
     public Type ModelType => typeof(PackageRecord);
@@ -210,8 +213,8 @@ public sealed class PackEncoder : IRecordEncoder
             else
             {
                 warnings.Add($"New PACK 0x{pack.FormId:X8} CNAM combat style " +
-                    $"0x{pack.CombatStyleFormId.Value:X8} dangles — subrecord skipped " +
-                    "(engine inherits the actor's base combat style).");
+                             $"0x{pack.CombatStyleFormId.Value:X8} dangles — subrecord skipped " +
+                             "(engine inherits the actor's base combat style).");
             }
         }
 

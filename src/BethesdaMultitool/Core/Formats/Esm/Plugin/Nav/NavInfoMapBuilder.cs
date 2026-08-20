@@ -38,23 +38,21 @@ internal readonly record struct NewNavmEntry(
 ///     NAVI with NVMI + NVCI subrecord pairs for newly-emitted NAVMs. Required so the engine's
 ///     NavMeshInfoMap setup can resolve our new NAVM FormIDs during plugin load — without this
 ///     the engine null-derefs at NavMeshInfoMap iteration (verified on xex4 crash @ FalloutNV+0x0069E09A).
-///
 ///     NVMI byte layout (32 bytes, non-island only — flags bit 5 unset) per
 ///     <see cref="Conversion.Processing.EsmSubrecordConverter.ConvertNvmi" />:
-///         0..3   uint32  Flags (0)
-///         4..7   uint32  NavmFormId
-///         8..11  uint32  LocationFormId (0 — synthesized NAVMs have no named location)
-///         12..13 int16   GridY
-///         14..15 int16   GridX
-///         16..27 Vec3    ApproxX/Y/Z (centroid from NVVX or grid-center fallback)
-///         28..31 float   Preferred% (0)
-///
+///     0..3   uint32  Flags (0)
+///     4..7   uint32  NavmFormId
+///     8..11  uint32  LocationFormId (0 — synthesized NAVMs have no named location)
+///     12..13 int16   GridY
+///     14..15 int16   GridX
+///     16..27 Vec3    ApproxX/Y/Z (centroid from NVVX or grid-center fallback)
+///     28..31 float   Preferred% (0)
 ///     NVCI byte layout (16 bytes, empty links) per
 ///     <see cref="Conversion.Processing.EsmSubrecordConverter.ConvertNvci" />:
-///         0..3   uint32  NavmFormId
-///         4..7   int32   StandardCount = 0
-///         8..11  int32   PreferredCount = 0
-///         12..15 int32   DoorLinksCount = 0
+///     0..3   uint32  NavmFormId
+///     4..7   int32   StandardCount = 0
+///     8..11  int32   PreferredCount = 0
+///     12..15 int32   DoorLinksCount = 0
 /// </summary>
 internal static class NavInfoMapBuilder
 {
@@ -137,10 +135,12 @@ internal static class NavInfoMapBuilder
         PluginBuildOptions options,
         IReadOnlyDictionary<uint, NavmConnectivity>? connectivityByNavm = null)
     {
-        NavmConnectivity Connectivity(uint navmFormId) =>
-            connectivityByNavm is not null && connectivityByNavm.TryGetValue(navmFormId, out var c)
+        NavmConnectivity Connectivity(uint navmFormId)
+        {
+            return connectivityByNavm is not null && connectivityByNavm.TryGetValue(navmFormId, out var c)
                 ? c
                 : default;
+        }
 
         using var bodyStream = new MemoryStream();
         using (var writer = new BinaryWriter(bodyStream, Encoding.Latin1, true))
@@ -167,6 +167,7 @@ internal static class NavInfoMapBuilder
                     {
                         SubrecordEncoder.WriteSubrecord(writer, "NVMI", BuildNvmi(entry));
                     }
+
                     newNvmisEmitted = true;
                 }
 
@@ -175,8 +176,10 @@ internal static class NavInfoMapBuilder
                 {
                     foreach (var entry in newEntries)
                     {
-                        SubrecordEncoder.WriteSubrecord(writer, "NVCI", BuildNvci(entry, Connectivity(entry.NavmFormId)));
+                        SubrecordEncoder.WriteSubrecord(writer, "NVCI",
+                            BuildNvci(entry, Connectivity(entry.NavmFormId)));
                     }
+
                     newNvcisEmitted = true;
                 }
             }
@@ -191,6 +194,7 @@ internal static class NavInfoMapBuilder
                     SubrecordEncoder.WriteSubrecord(writer, "NVMI", BuildNvmi(entry));
                 }
             }
+
             if (!newNvcisEmitted)
             {
                 foreach (var entry in newEntries)
@@ -238,4 +242,3 @@ internal static class NavInfoMapBuilder
         return (entry.GridX * 4096f + 2048f, entry.GridY * 4096f + 2048f, 0f);
     }
 }
-

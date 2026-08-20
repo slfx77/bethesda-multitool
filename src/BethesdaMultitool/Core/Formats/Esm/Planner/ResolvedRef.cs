@@ -37,7 +37,7 @@ public enum ResolvedRefAction
     ///     subrecord) and is passed through to the writer unchanged. Sentinel for
     ///     unmigrated codepaths; should be empty post-Tier-5.
     /// </summary>
-    KeepAsIs,
+    KeepAsIs
 }
 
 /// <summary>

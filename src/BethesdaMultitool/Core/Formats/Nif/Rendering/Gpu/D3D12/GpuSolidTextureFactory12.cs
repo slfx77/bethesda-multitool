@@ -1,4 +1,3 @@
-using System.Threading;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 
@@ -25,8 +24,10 @@ internal sealed unsafe class GpuSolidTextureFactory12
         _heap = heap;
     }
 
-    internal GpuTextureCache12.Entry CreateSolid(byte r, byte g, byte b, byte a) =>
-        CreateFromRgba(1, 1, [r, g, b, a]);
+    internal GpuTextureCache12.Entry CreateSolid(byte r, byte g, byte b, byte a)
+    {
+        return CreateFromRgba(1, 1, [r, g, b, a]);
+    }
 
     /// <summary>
     ///     Uploads a raw RGBA8 pixel block as a frame-independent pinned texture entry (row-pitch
@@ -46,13 +47,11 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 $"RGBA payload too small: {rgba.Length} bytes for {width}x{height}.", nameof(rgba));
         }
 
-        List<byte[]> mips = generateMips ? BuildMipChain(width, height, rgba) : [rgba];
+        var mips = generateMips ? BuildMipChain(width, height, rgba) : [rgba];
         var mipCount = (ushort)mips.Count;
         var desc = ResourceDescription.Texture2D(
             Format.R8G8B8A8_UNorm, (uint)width, (uint)height,
-            arraySize: 1, mipLevels: mipCount,
-            sampleCount: 1, sampleQuality: 0,
-            ResourceFlags.None);
+            1, mipCount);
 
         ID3D12Resource? texture = null;
         ID3D12Resource? staging = null;
@@ -62,8 +61,7 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 HeapProperties.DefaultHeapProperties,
                 HeapFlags.None,
                 desc,
-                ResourceStates.CopyDest,
-                optimizedClearValue: null);
+                ResourceStates.CopyDest);
 
             var footprints = new PlacedSubresourceFootPrint[mipCount];
             var numRows = new uint[mipCount];
@@ -76,8 +74,7 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 HeapProperties.UploadHeapProperties,
                 HeapFlags.None,
                 ResourceDescription.Buffer(totalBytes),
-                ResourceStates.GenericRead,
-                optimizedClearValue: null);
+                ResourceStates.GenericRead);
 
             void* cpuPtr = null;
             staging.Map(0, &cpuPtr).CheckError();
@@ -104,7 +101,7 @@ internal sealed unsafe class GpuSolidTextureFactory12
             }
             finally
             {
-                staging.Unmap(0, null);
+                staging.Unmap(0);
             }
 
             // The two 1×1 fallback textures (WhitePixel/FlatNormal) are created lazily — the first
@@ -124,6 +121,7 @@ internal sealed unsafe class GpuSolidTextureFactory12
                         new TextureCopyLocation(textureResource, mip), 0, 0, 0,
                         new TextureCopyLocation(stagingResource, footprints[mip]));
                 }
+
                 // The placeholder/flat-normal entries can back the compute-sampled FNV NNAM slot
                 // while streaming. Make the shared bindless texture legal in both shader classes.
                 cmd.ResourceBarrierTransition(
@@ -141,8 +139,8 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 GpuTextureFormatHelpers12.MakeSrvDesc(mipCount, Format.R8G8B8A8_UNorm),
                 GpuTexturePayloadFormat.Rgba8,
                 GpuNormalDecodeMode.None,
-                isResident: true,
-                cacheKey: null); // pinned singleton (fallbacks + synthesized frames) — never evicted.
+                true,
+                null); // pinned singleton (fallbacks + synthesized frames) — never evicted.
             texture = null;
             return entry;
         }
@@ -180,13 +178,13 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 {
                     var x0 = Math.Min(x * 2, previousWidth - 1);
                     var x1 = Math.Min(x0 + 1, previousWidth - 1);
-                    var destination = ((y * mipWidth) + x) * 4;
+                    var destination = (y * mipWidth + x) * 4;
                     for (var channel = 0; channel < 4; channel++)
                     {
-                        var sum = previous[(((y0 * previousWidth) + x0) * 4) + channel]
-                                  + previous[(((y0 * previousWidth) + x1) * 4) + channel]
-                                  + previous[(((y1 * previousWidth) + x0) * 4) + channel]
-                                  + previous[(((y1 * previousWidth) + x1) * 4) + channel];
+                        var sum = previous[(y0 * previousWidth + x0) * 4 + channel]
+                                  + previous[(y0 * previousWidth + x1) * 4 + channel]
+                                  + previous[(y1 * previousWidth + x0) * 4 + channel]
+                                  + previous[(y1 * previousWidth + x1) * 4 + channel];
                         mip[destination + channel] = (byte)((sum + 2) >> 2);
                     }
                 }
@@ -201,14 +199,16 @@ internal sealed unsafe class GpuSolidTextureFactory12
         return mips;
     }
 
-    internal GpuTextureCache12.Entry CreatePlaceholder(GpuTextureCache12.Entry fallback, string cacheKey) =>
-        CreateEntry(
+    internal GpuTextureCache12.Entry CreatePlaceholder(GpuTextureCache12.Entry fallback, string cacheKey)
+    {
+        return CreateEntry(
             fallback.Texture,
             fallback.SrvDesc,
             fallback.Format,
             fallback.NormalDecodeMode,
-            isResident: false,
-            cacheKey: cacheKey);
+            false,
+            cacheKey);
+    }
 
     internal GpuTextureCache12.Entry CreateEntry(
         ID3D12Resource texture,
@@ -220,7 +220,8 @@ internal sealed unsafe class GpuSolidTextureFactory12
     {
         var alloc = _heap.AllocatePersistent();
         _gpu.Device.CreateShaderResourceView(texture, srvDesc, alloc.Cpu);
-        return new GpuTextureCache12.Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode, isResident, cacheKey);
+        return new GpuTextureCache12.Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode,
+            isResident, cacheKey);
     }
 
     /// <summary>
@@ -239,13 +240,13 @@ internal sealed unsafe class GpuSolidTextureFactory12
     {
         using var allocator = _gpu.Device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
         using var list = _gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
-            nodeMask: 0, CommandListType.Direct, allocator, initialState: null);
+            0, CommandListType.Direct, allocator);
         record(list);
         list.Close();
 
         _gpu.DirectQueue.ExecuteCommandList(list);
 
-        using var fence = _gpu.Device.CreateFence(0, FenceFlags.None);
+        using var fence = _gpu.Device.CreateFence();
         using var fenceEvent = new AutoResetEvent(false);
         _gpu.DirectQueue.Signal(fence, 1).CheckError();
         D3D12FenceWaiter.WaitForFence(fence, 1, fenceEvent);

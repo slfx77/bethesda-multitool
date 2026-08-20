@@ -106,6 +106,7 @@ public sealed partial class FalloutApp : Application
             {
                 log.Error("[CRASH] [{0}] RestrictedError: {1}", depth, restricted);
             }
+
             if (ex.StackTrace != null)
             {
                 log.Error("[CRASH] [{0}] StackTrace:\n{1}", depth, ex.StackTrace);
@@ -155,6 +156,7 @@ public sealed partial class FalloutApp : Application
             {
                 Console.WriteLine($"[CRASH] [{depth}] RestrictedError: {restricted}");
             }
+
             if (ex.StackTrace != null && depth > 0)
             {
                 Console.WriteLine($"[CRASH] [{depth}] StackTrace: {ex.StackTrace}");

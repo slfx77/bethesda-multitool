@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -108,8 +109,8 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
         }
 
         swapFormId = mods.IsBigEndian
-            ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(mods.ModsPayload)
-            : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(mods.ModsPayload);
+            ? BinaryPrimitives.ReadUInt32BigEndian(mods.ModsPayload)
+            : BinaryPrimitives.ReadUInt32LittleEndian(mods.ModsPayload);
         return swapFormId != 0;
     }
 
@@ -135,8 +136,8 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
                 // MODC "Color Remapping Index" — one float (xEdit wbGenericModel; FO4-family).
                 case "MODC" when sub.DataLength >= 4:
                     var raw = record.IsBigEndian
-                        ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(sub.DataOffset, 4))
-                        : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(sub.DataOffset, 4));
+                        ? BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(sub.DataOffset, 4))
+                        : BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(sub.DataOffset, 4));
                     if (float.IsFinite(raw))
                     {
                         colorRemap = raw;

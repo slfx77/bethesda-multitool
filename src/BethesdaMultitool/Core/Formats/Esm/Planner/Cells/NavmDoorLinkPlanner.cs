@@ -60,7 +60,7 @@ public static class NavmDoorLinkPlanner
         return new NavmDoorLinkPlan
         {
             SourceToEmittedDoorRef = rewrites.ToImmutable(),
-            ValidDoorRefFormIds = valid.ToImmutable(),
+            ValidDoorRefFormIds = valid.ToImmutable()
         };
     }
 

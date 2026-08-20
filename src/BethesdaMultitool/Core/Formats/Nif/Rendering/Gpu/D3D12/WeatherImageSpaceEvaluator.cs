@@ -16,7 +16,7 @@ internal enum WeatherImageSpaceBand
     EarlySunrise,
     LateSunrise,
     EarlySunset,
-    LateSunset,
+    LateSunset
 }
 
 internal readonly record struct WeatherImageSpaceContribution(
@@ -42,8 +42,6 @@ internal sealed record WeatherImageSpaceEvaluation(
 /// </summary>
 internal static class WeatherImageSpaceEvaluator
 {
-    private readonly record struct BandWeight(WeatherImageSpaceBand Band, float Weight);
-
     internal static WeatherImageSpaceEvaluation Evaluate(
         GpuTonemapSettings baseSettings,
         float gameHour,
@@ -85,16 +83,16 @@ internal static class WeatherImageSpaceEvaluator
                     if (contribution.TimelineTime is { } time)
                     {
                         multiply += contribution.Weight * Sample(
-                            timeline?.Multiply, time, neutral: 1f);
+                            timeline?.Multiply, time, 1f);
                         add += contribution.Weight * Sample(
-                            timeline?.Add, time, neutral: 0f);
+                            timeline?.Add, time, 0f);
                     }
                     else
                     {
                         multiply += contribution.Weight * SampleTimeInvariant(
-                            timeline?.Multiply, neutral: 1f);
+                            timeline?.Multiply, 1f);
                         add += contribution.Weight * SampleTimeInvariant(
-                            timeline?.Add, neutral: 0f);
+                            timeline?.Add, 0f);
                     }
                 }
                 else
@@ -138,7 +136,7 @@ internal static class WeatherImageSpaceEvaluator
             ContrastAvgLum = Apply(ImageSpaceModifierParameter.CinematicContrastAvgLum,
                 baseSettings.ContrastAvgLum),
             Contrast = Apply(ImageSpaceModifierParameter.CinematicContrast, baseSettings.Contrast),
-            Brightness = Apply(ImageSpaceModifierParameter.CinematicBrightness, baseSettings.Brightness),
+            Brightness = Apply(ImageSpaceModifierParameter.CinematicBrightness, baseSettings.Brightness)
         };
 
         settings = ApplyTint(settings, contributions, modifiersByFormId);
@@ -180,6 +178,7 @@ internal static class WeatherImageSpaceEvaluator
                 s = GpuTonemapSettings.ApplyModernImageSpace(s, imgs);
                 lut = imgs.LutTexturePath;
             }
+
             weighted.Add((s, contribution.Weight, lut));
         }
 
@@ -195,9 +194,12 @@ internal static class WeatherImageSpaceEvaluator
         GpuTonemapSettings settings,
         IReadOnlyDictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> channels)
     {
-        float Apply(ImageSpaceModifierParameter p, float value) => channels.TryGetValue(p, out var c)
-            ? value * c.Multiply + c.Add
-            : value;
+        float Apply(ImageSpaceModifierParameter p, float value)
+        {
+            return channels.TryGetValue(p, out var c)
+                ? value * c.Multiply + c.Add
+                : value;
+        }
 
         settings = settings with
         {
@@ -212,7 +214,7 @@ internal static class WeatherImageSpaceEvaluator
             ContrastAvgLum = Apply(ImageSpaceModifierParameter.CinematicContrastAvgLum,
                 settings.ContrastAvgLum),
             Contrast = Apply(ImageSpaceModifierParameter.CinematicContrast, settings.Contrast),
-            Brightness = Apply(ImageSpaceModifierParameter.CinematicBrightness, settings.Brightness),
+            Brightness = Apply(ImageSpaceModifierParameter.CinematicBrightness, settings.Brightness)
         };
         return settings.ModernFamily == ImageSpaceModernFamily.Skyrim
             ? settings with
@@ -221,7 +223,7 @@ internal static class WeatherImageSpaceEvaluator
                     settings.ReceiveBloomThreshold),
                 White = Apply(ImageSpaceModifierParameter.HdrUpperLumClamp, settings.White),
                 EyeAdaptStrength = Apply(ImageSpaceModifierParameter.HdrLumRampNoTex,
-                    settings.EyeAdaptStrength),
+                    settings.EyeAdaptStrength)
             }
             : settings with
             {
@@ -230,14 +232,14 @@ internal static class WeatherImageSpaceEvaluator
                     settings.AutoExposureMax),
                 AutoExposureMin = Apply(ImageSpaceModifierParameter.HdrUpperLumClamp,
                     settings.AutoExposureMin),
-                MiddleGray = Apply(ImageSpaceModifierParameter.HdrLumRampNoTex, settings.MiddleGray),
+                MiddleGray = Apply(ImageSpaceModifierParameter.HdrLumRampNoTex, settings.MiddleGray)
             };
     }
 
     private static Dictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> NeutralChannels()
     {
         var result = new Dictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel>(21);
-        for (var i = 0; i < 21; i++) result[(ImageSpaceModifierParameter)i] = new(1f, 0f);
+        for (var i = 0; i < 21; i++) result[(ImageSpaceModifierParameter)i] = new WeatherImageSpaceChannel(1f, 0f);
         return result;
     }
 
@@ -257,7 +259,11 @@ internal static class WeatherImageSpaceEvaluator
         GpuTonemapSettings template,
         IReadOnlyList<(GpuTonemapSettings Settings, float Weight, string? Lut)> sources)
     {
-        float W(Func<GpuTonemapSettings, float> select) => sources.Sum(s => select(s.Settings) * s.Weight);
+        float W(Func<GpuTonemapSettings, float> select)
+        {
+            return sources.Sum(s => select(s.Settings) * s.Weight);
+        }
+
         var dominant = sources.OrderByDescending(s => s.Weight).First();
         return template with
         {
@@ -284,7 +290,7 @@ internal static class WeatherImageSpaceEvaluator
             TintG = W(static s => s.TintG),
             TintB = W(static s => s.TintB),
             LutTexturePath = dominant.Lut,
-            BloomEnabled = false,
+            BloomEnabled = false
         };
     }
 
@@ -315,6 +321,7 @@ internal static class WeatherImageSpaceEvaluator
                 var fallingWeight = (srE - hour) / Math.Max(srE - midpoint, float.Epsilon);
                 return Pair(WeatherImageSpaceBand.Sunrise, fallingWeight, WeatherImageSpaceBand.Day);
             }
+
             if (hour < ssB) return [new BandWeight(WeatherImageSpaceBand.Day, 1f)];
             if (ssE > ssB)
             {
@@ -328,6 +335,7 @@ internal static class WeatherImageSpaceEvaluator
                 var fallingWeight = (ssE - hour) / Math.Max(ssE - midpoint, float.Epsilon);
                 return Pair(WeatherImageSpaceBand.Sunset, fallingWeight, WeatherImageSpaceBand.Night);
             }
+
             return [new BandWeight(WeatherImageSpaceBand.Night, 1f)];
         }
 
@@ -337,16 +345,20 @@ internal static class WeatherImageSpaceEvaluator
             return SelectFive([
                 WeatherImageSpaceBand.Night, WeatherImageSpaceBand.EarlySunrise,
                 WeatherImageSpaceBand.Sunrise, WeatherImageSpaceBand.LateSunrise,
-                WeatherImageSpaceBand.Day], (hour - srB) / (srE - srB));
+                WeatherImageSpaceBand.Day
+            ], (hour - srB) / (srE - srB));
         }
+
         if (hour < ssB) return [new BandWeight(WeatherImageSpaceBand.Day, 1f)];
         if (ssE > ssB)
         {
             return SelectFive([
                 WeatherImageSpaceBand.Day, WeatherImageSpaceBand.EarlySunset,
                 WeatherImageSpaceBand.Sunset, WeatherImageSpaceBand.LateSunset,
-                WeatherImageSpaceBand.Night], (hour - ssB) / (ssE - ssB));
+                WeatherImageSpaceBand.Night
+            ], (hour - ssB) / (ssE - ssB));
         }
+
         return [new BandWeight(WeatherImageSpaceBand.Night, 1f)];
     }
 
@@ -378,6 +390,7 @@ internal static class WeatherImageSpaceEvaluator
                     ? Math.Clamp(elapsed / data.Duration, 0f, 1f)
                     : null;
             }
+
             destination.Add(new WeatherImageSpaceContribution(
                 weather.FormId, band.Band, id, weatherWeight * band.Weight, normalizedTime));
         }
@@ -397,7 +410,7 @@ internal static class WeatherImageSpaceEvaluator
             WeatherImageSpaceBand.LateSunrise => bands.LateSunrise ?? bands.Sunrise,
             WeatherImageSpaceBand.EarlySunset => bands.EarlySunset ?? bands.Sunset,
             WeatherImageSpaceBand.LateSunset => bands.LateSunset ?? bands.Sunset,
-            _ => 0,
+            _ => 0
         };
     }
 
@@ -483,6 +496,7 @@ internal static class WeatherImageSpaceEvaluator
             var t = (time - previous.Time) / span;
             return previous.Value + (next.Value - previous.Value) * t;
         }
+
         return keys[^1].Value;
     }
 
@@ -497,6 +511,7 @@ internal static class WeatherImageSpaceEvaluator
             if (keys[i].Value != value) return neutral;
 #pragma warning restore S1244
         }
+
         return value;
     }
 
@@ -517,6 +532,7 @@ internal static class WeatherImageSpaceEvaluator
                 Lerp(previous.Red, next.Red, t), Lerp(previous.Green, next.Green, t),
                 Lerp(previous.Blue, next.Blue, t), Lerp(previous.Alpha, next.Alpha, t));
         }
+
         return keys[^1];
     }
 
@@ -540,6 +556,7 @@ internal static class WeatherImageSpaceEvaluator
                 return false;
 #pragma warning restore S1244
         }
+
         return true;
     }
 
@@ -555,7 +572,8 @@ internal static class WeatherImageSpaceEvaluator
         foreach (var contribution in contributions)
         {
             if (contribution.Weight <= 0f || contribution.ModifierFormId == 0
-                || !modifiersByFormId.TryGetValue(contribution.ModifierFormId, out var modifier)) continue;
+                                          || !modifiersByFormId.TryGetValue(contribution.ModifierFormId,
+                                              out var modifier)) continue;
             ImageSpaceModifierColorKey color;
             if (contribution.TimelineTime is { } timelineTime)
             {
@@ -565,6 +583,7 @@ internal static class WeatherImageSpaceEvaluator
             {
                 continue;
             }
+
             // ApplyWeather scales all four sampled channels by the instance weight and the weather
             // accumulator sums that raw RGBA. EndWeatherModifiers then passes the aggregate through
             // ApplyTintColorParamModifier, which premultiplies RGB by the aggregate alpha once.
@@ -594,11 +613,14 @@ internal static class WeatherImageSpaceEvaluator
             TintR = red,
             TintG = green,
             TintB = blue,
-            TintAmount = Math.Max(settings.TintAmount, weatherAlpha),
+            TintAmount = Math.Max(settings.TintAmount, weatherAlpha)
         };
     }
 
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
+    private static float Lerp(float a, float b, float t)
+    {
+        return a + (b - a) * t;
+    }
 
     private static string FormatTelemetry(
         float hour,
@@ -606,8 +628,16 @@ internal static class WeatherImageSpaceEvaluator
         GpuTonemapSettings settings,
         Dictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> channels)
     {
-        static string F(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
-        static string Time(float? value) => value is { } time ? F(time) : "unknown";
+        static string F(float value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        static string Time(float? value)
+        {
+            return value is { } time ? F(time) : "unknown";
+        }
+
         var selected = contributions.Count == 0
             ? "neutral"
             : string.Join(",", contributions.Select(c =>
@@ -631,9 +661,15 @@ internal static class WeatherImageSpaceEvaluator
         GpuTonemapSettings settings,
         IReadOnlyList<(GpuTonemapSettings Settings, float Weight, string? Lut)> sources)
     {
-        static string F(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
-        var selected = contributions.Count == 0 ? "neutral" : string.Join(",", contributions.Select(c =>
-            $"W{c.WeatherFormId:X8}:{c.Band}=S{c.ModifierFormId:X8}@{F(c.Weight)}"));
+        static string F(float value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        var selected = contributions.Count == 0
+            ? "neutral"
+            : string.Join(",", contributions.Select(c =>
+                $"W{c.WeatherFormId:X8}:{c.Band}=S{c.ModifierFormId:X8}@{F(c.Weight)}"));
         var luts = string.Join(",", sources.Where(s => !string.IsNullOrWhiteSpace(s.Lut))
             .Select(s => $"{s.Lut}@{F(s.Weight)}"));
         if (luts.Length == 0) luts = "none";
@@ -643,4 +679,6 @@ internal static class WeatherImageSpaceEvaluator
                $"tonemapE={F(settings.TonemapE)} sun={F(settings.SunlightScale)} sky={F(settings.SkyScale)} " +
                $"cin={F(settings.Saturation)}/{F(settings.Brightness)}/{F(settings.Contrast)} luts=[{luts}](retained-only)";
     }
+
+    private readonly record struct BandWeight(WeatherImageSpaceBand Band, float Weight);
 }

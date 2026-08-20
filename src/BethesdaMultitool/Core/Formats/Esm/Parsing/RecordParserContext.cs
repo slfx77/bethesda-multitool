@@ -3,7 +3,6 @@ using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -25,20 +24,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 public sealed class RecordParserContext
 {
     private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
+    private readonly bool _recoverPartialCompressed;
     private Action<DetectedMainRecord>? _recordReadObserver;
     private Dictionary<uint, uint>? _refToBase;
-    private readonly bool _recoverPartialCompressed;
-
-    /// <summary>
-    ///     Base-object bounds index (FormID → OBND), set by <c>RecordParser</c> before cell parsing so
-    ///     <c>CellLinkageHandler.ToPlacedReference</c> constructs each <c>PlacedReference</c> already
-    ///     enriched — the post-parse enrichment sweep used to <c>with</c>-clone essentially every
-    ///     placed ref (5.1M clones on Fallout 76). Null until the base-object parses have run.
-    /// </summary>
-    internal Dictionary<uint, Models.ObjectBounds>? PlacedObjectBoundsIndex { get; set; }
-
-    /// <summary>Base-object model-path index (FormID → MODL); see <see cref="PlacedObjectBoundsIndex" />.</summary>
-    internal Dictionary<uint, string>? PlacedObjectModelIndex { get; set; }
 
     /// <summary>
     ///     Creates the parser context over a scan result, optionally backed by a memory-mapped
@@ -79,7 +67,8 @@ public sealed class RecordParserContext
         // compressed payloads are often cut short by the partial capture) and never applies to clean
         // on-disk ESMs. Opt out via EnvironmentVariables.Esm.DisableDmpPartialRecovery.
         _recoverPartialCompressed = minidumpInfo != null
-            && !EnvironmentVariables.IsEnabled(EnvironmentVariables.Esm.DisableDmpPartialRecovery);
+                                    && !EnvironmentVariables.IsEnabled(EnvironmentVariables.Esm
+                                        .DisableDmpPartialRecovery);
 
         // Create runtime struct reader if we have both accessor and minidump info
         // Uses probe-based auto-detection of early vs final build struct layout
@@ -177,6 +166,17 @@ public sealed class RecordParserContext
         }
     }
 
+    /// <summary>
+    ///     Base-object bounds index (FormID → OBND), set by <c>RecordParser</c> before cell parsing so
+    ///     <c>CellLinkageHandler.ToPlacedReference</c> constructs each <c>PlacedReference</c> already
+    ///     enriched — the post-parse enrichment sweep used to <c>with</c>-clone essentially every
+    ///     placed ref (5.1M clones on Fallout 76). Null until the base-object parses have run.
+    /// </summary>
+    internal Dictionary<uint, ObjectBounds>? PlacedObjectBoundsIndex { get; set; }
+
+    /// <summary>Base-object model-path index (FormID → MODL); see <see cref="PlacedObjectBoundsIndex" />.</summary>
+    internal Dictionary<uint, string>? PlacedObjectModelIndex { get; set; }
+
     public EsmRecordScanResult ScanResult { get; }
     public IMemoryAccessor? Accessor { get; }
     public long FileSize { get; }
@@ -203,6 +203,30 @@ public sealed class RecordParserContext
     public LocalizedStringTables? LocalizedStrings { get; }
 
     /// <summary>
+    ///     Mutable: handlers write to this during parsing (e.g., EDID subrecord enrichment).
+    /// </summary>
+    public Dictionary<uint, string> FormIdToEditorId { get; }
+
+    public Dictionary<string, uint> EditorIdToFormId { get; }
+
+    /// <summary>
+    ///     Mutable: handlers write to this during parsing (e.g., FULL subrecord enrichment).
+    /// </summary>
+    public Dictionary<uint, string> FormIdToFullName { get; } = new();
+
+    /// <summary>
+    ///     Runtime worldspace cell maps from walking TESWorldSpace pCellMap hash tables.
+    ///     Keyed by worldspace FormID. Set during RecordParser enrichment phase.
+    /// </summary>
+    public Dictionary<uint, RuntimeWorldspaceData>? RuntimeWorldspaceCellMaps { get; set; }
+
+    /// <summary>
+    ///     Pre-built Ref→Base mapping from ScanResult.RefrRecords.
+    ///     Cached for reuse by both ScriptRecordHandler (during parsing) and CreateResolver().
+    /// </summary>
+    public Dictionary<uint, uint> RefToBase => _refToBase ??= BuildRefToBase();
+
+    /// <summary>
     ///     Read a localizable string subrecord. For a localized plugin the subrecord holds a 4-byte
     ///     string ID resolved against the matching external table; for a non-localized plugin the bytes are
     ///     inline Windows-1252 null-terminated text. On a localized plugin a MISSED lookup returns empty (not
@@ -227,43 +251,31 @@ public sealed class RecordParserContext
     }
 
     /// <summary>Read a FULL display-name subrecord (resolves via the .STRINGS table if localized).</summary>
-    public string ReadFullName(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.Strings);
+    public string ReadFullName(ReadOnlySpan<byte> subData)
+    {
+        return ReadLString(subData, LStringKind.Strings);
+    }
 
     /// <summary>Read a DESC description subrecord (resolves via the .DLSTRINGS table if localized).</summary>
-    public string ReadDescription(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.DlStrings);
+    public string ReadDescription(ReadOnlySpan<byte> subData)
+    {
+        return ReadLString(subData, LStringKind.DlStrings);
+    }
 
     /// <summary>Read a dialogue response text subrecord (resolves via the .ILSTRINGS table if localized).</summary>
-    public string ReadDialogueText(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.IlStrings);
+    public string ReadDialogueText(ReadOnlySpan<byte> subData)
+    {
+        return ReadLString(subData, LStringKind.IlStrings);
+    }
 
     /// <summary>
     ///     Read a dialogue prompt subrecord (INFO RNAM). xEdit models this as <c>wbLStringKC</c> like FULL, so
     ///     it resolves via the .STRINGS table (not .ILSTRINGS, which holds the longer NAM1 response text).
     /// </summary>
-    public string ReadPromptText(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.Strings);
-
-    /// <summary>
-    ///     Mutable: handlers write to this during parsing (e.g., EDID subrecord enrichment).
-    /// </summary>
-    public Dictionary<uint, string> FormIdToEditorId { get; }
-
-    public Dictionary<string, uint> EditorIdToFormId { get; }
-
-    /// <summary>
-    ///     Mutable: handlers write to this during parsing (e.g., FULL subrecord enrichment).
-    /// </summary>
-    public Dictionary<uint, string> FormIdToFullName { get; } = new();
-
-    /// <summary>
-    ///     Runtime worldspace cell maps from walking TESWorldSpace pCellMap hash tables.
-    ///     Keyed by worldspace FormID. Set during RecordParser enrichment phase.
-    /// </summary>
-    public Dictionary<uint, RuntimeWorldspaceData>? RuntimeWorldspaceCellMaps { get; set; }
-
-    /// <summary>
-    ///     Pre-built Ref→Base mapping from ScanResult.RefrRecords.
-    ///     Cached for reuse by both ScriptRecordHandler (during parsing) and CreateResolver().
-    /// </summary>
-    public Dictionary<uint, uint> RefToBase => _refToBase ??= BuildRefToBase();
+    public string ReadPromptText(ReadOnlySpan<byte> subData)
+    {
+        return ReadLString(subData, LStringKind.Strings);
+    }
 
     #region Runtime Merge
 
@@ -909,4 +921,3 @@ public sealed class RecordParserContext
 
     #endregion
 }
-

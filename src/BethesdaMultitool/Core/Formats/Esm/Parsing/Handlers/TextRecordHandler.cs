@@ -225,7 +225,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                                           curCompiledData,
                                           curVariables,
                                           curReferencedObjects,
-                                          fallbackIsBigEndian: record.IsBigEndian);
+                                          record.IsBigEndian);
             var decompiledText = CapturedScriptEmissionContract.DecompileInline(
                 curCompiledData,
                 curVariables,
@@ -252,18 +252,18 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             var hasInconsistentBundle = curScriptBundleAmbiguous
                                         || curSerializedLocals.IsMalformed
                                         || curHasMalformedSerializedHeader
-                                        || curCompiledData is { Length: > 0 } compiled
-                                        && (!curHasSerializedHeader
-                                            || curExpectedCompiledSize != (uint)compiled.Length
-                                            || curExpectedVariableCount != (uint)curVariables.Count
-                                            || curExpectedReferenceCount !=
-                                            (uint)curReferencedObjects.Count)
-                                        || curCompiledData is not { Length: > 0 }
-                                        && (curVariables.Count != 0
-                                            || curReferencedObjects.Count != 0
-                                            || curExpectedCompiledSize != 0
-                                            || curExpectedVariableCount != 0
-                                            || curExpectedReferenceCount != 0);
+                                        || (curCompiledData is { Length: > 0 } compiled
+                                            && (!curHasSerializedHeader
+                                                || curExpectedCompiledSize != (uint)compiled.Length
+                                                || curExpectedVariableCount != (uint)curVariables.Count
+                                                || curExpectedReferenceCount !=
+                                                (uint)curReferencedObjects.Count))
+                                        || (curCompiledData is not { Length: > 0 }
+                                            && (curVariables.Count != 0
+                                                || curReferencedObjects.Count != 0
+                                                || curExpectedCompiledSize != 0
+                                                || curExpectedVariableCount != 0
+                                                || curExpectedReferenceCount != 0));
             menuItems.Add(new TerminalMenuItem
             {
                 Text = curText,
@@ -283,7 +283,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : [],
                 IsBigEndianBytecode = isBigEndianBytecode,
                 IsIncompleteExecutableBundle = hasInconsistentBundle
-                                               || !sourceDecision.ExecutableBundleSafe,
+                                               || !sourceDecision.ExecutableBundleSafe
             });
             curText = null;
             curResultText = null;

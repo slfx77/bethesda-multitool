@@ -5,25 +5,18 @@ using System.Resources;
 namespace Xbox360MemoryCarver.Tools;
 
 /// <summary>
-/// Strongly-typed accessor for CLI tool localized strings.
-/// Provides centralized string management for all command-line tools.
+///     Strongly-typed accessor for CLI tool localized strings.
+///     Provides centralized string management for all command-line tools.
 /// </summary>
 /// <remarks>
-/// Spectre.Console markup ([red], [bold], etc.) should be applied in code,
-/// not in the resource strings, to keep resources markup-agnostic.
+///     Spectre.Console markup ([red], [bold], etc.) should be applied in code,
+///     not in the resource strings, to keep resources markup-agnostic.
 /// </remarks>
 [SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
 public static class CliStrings
 {
     private static readonly ResourceManager _rm =
         new("Xbox360MemoryCarver.Tools.CliStrings", typeof(CliStrings).Assembly);
-
-    /// <summary>Gets a localized string by key.</summary>
-    public static string Get(string key) => _rm.GetString(key, CultureInfo.CurrentUICulture) ?? key;
-
-    /// <summary>Gets a localized string and formats it with arguments.</summary>
-    public static string GetFormat(string key, params object[] args)
-        => string.Format(CultureInfo.CurrentCulture, Get(key), args);
 
     // ===== Common Argument Descriptions =====
     public static string Arg_FilePath => Get("Arg_FilePath");
@@ -59,25 +52,13 @@ public static class CliStrings
     public static string Table_Status => Get("Table_Status");
     public static string Table_Path => Get("Table_Path");
 
-    // ===== Common Status Messages =====
-    public static string Status_Loading(string file) => GetFormat("Status_Loading", file);
     public static string Status_Processing => Get("Status_Processing");
     public static string Status_Complete => Get("Status_Complete");
-    public static string Status_Found(int count) => GetFormat("Status_Found", count);
+
     public static string Status_NoResults => Get("Status_NoResults");
-    public static string Status_WritingOutput(string path) => GetFormat("Status_WritingOutput", path);
+
     public static string Status_Scanning => Get("Status_Scanning");
     public static string Status_Converting => Get("Status_Converting");
-
-    // ===== Common Error Messages =====
-    public static string Error_FileNotFound(string path) => GetFormat("Error_FileNotFound", path);
-    public static string Error_DirectoryNotFound(string path) => GetFormat("Error_DirectoryNotFound", path);
-    public static string Error_InvalidFormId(string value) => GetFormat("Error_InvalidFormId", value);
-    public static string Error_InvalidRecordType(string value) => GetFormat("Error_InvalidRecordType", value);
-    public static string Error_FailedToLoad(string message) => GetFormat("Error_FailedToLoad", message);
-    public static string Error_FailedToWrite(string message) => GetFormat("Error_FailedToWrite", message);
-    public static string Error_InvalidOffset(string value) => GetFormat("Error_InvalidOffset", value);
-    public static string Error_UnexpectedError(string message) => GetFormat("Error_UnexpectedError", message);
 
     // ===== Common Display Text =====
     public static string Display_NotAvailable => Get("Display_NotAvailable");
@@ -108,4 +89,73 @@ public static class CliStrings
     public static string Bsa_Cmd_List => Get("Bsa_Cmd_List");
     public static string Bsa_Cmd_Extract => Get("Bsa_Cmd_Extract");
     public static string Bsa_Cmd_Info => Get("Bsa_Cmd_Info");
+
+    /// <summary>Gets a localized string by key.</summary>
+    public static string Get(string key)
+    {
+        return _rm.GetString(key, CultureInfo.CurrentUICulture) ?? key;
+    }
+
+    /// <summary>Gets a localized string and formats it with arguments.</summary>
+    public static string GetFormat(string key, params object[] args)
+    {
+        return string.Format(CultureInfo.CurrentCulture, Get(key), args);
+    }
+
+    // ===== Common Status Messages =====
+    public static string Status_Loading(string file)
+    {
+        return GetFormat("Status_Loading", file);
+    }
+
+    public static string Status_Found(int count)
+    {
+        return GetFormat("Status_Found", count);
+    }
+
+    public static string Status_WritingOutput(string path)
+    {
+        return GetFormat("Status_WritingOutput", path);
+    }
+
+    // ===== Common Error Messages =====
+    public static string Error_FileNotFound(string path)
+    {
+        return GetFormat("Error_FileNotFound", path);
+    }
+
+    public static string Error_DirectoryNotFound(string path)
+    {
+        return GetFormat("Error_DirectoryNotFound", path);
+    }
+
+    public static string Error_InvalidFormId(string value)
+    {
+        return GetFormat("Error_InvalidFormId", value);
+    }
+
+    public static string Error_InvalidRecordType(string value)
+    {
+        return GetFormat("Error_InvalidRecordType", value);
+    }
+
+    public static string Error_FailedToLoad(string message)
+    {
+        return GetFormat("Error_FailedToLoad", message);
+    }
+
+    public static string Error_FailedToWrite(string message)
+    {
+        return GetFormat("Error_FailedToWrite", message);
+    }
+
+    public static string Error_InvalidOffset(string value)
+    {
+        return GetFormat("Error_InvalidOffset", value);
+    }
+
+    public static string Error_UnexpectedError(string message)
+    {
+        return GetFormat("Error_UnexpectedError", message);
+    }
 }

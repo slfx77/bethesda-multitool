@@ -1,11 +1,6 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Terrain;
 
@@ -487,4 +482,3 @@ internal static class HeightmapDataParser
         public required AnalyzerRecordInfo CellRecord { get; init; }
     }
 }
-

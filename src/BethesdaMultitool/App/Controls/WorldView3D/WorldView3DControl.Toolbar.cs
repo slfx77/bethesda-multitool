@@ -8,6 +8,15 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    private bool _heatmapKeySeeded;
+    private int _lastHeatmapKeyRankedCount;
+
+    // Last window pushed into the key labels; refreshed from the render loop (UI thread) only on a
+    // real change, so a static frame costs one property read and a tuple compare.
+    private (uint Min, uint Max)? _lastHeatmapKeyWindow;
+
+    private bool _suppressImagespaceSelectionEvent;
+
     /// <summary>
     ///     The viewer's settings panel (Lighting / Overlays / Visibility / Camera expanders),
     ///     constructed in the ctor and displayed by the host's right-panel Settings tab. Owned here
@@ -170,9 +179,11 @@ public sealed partial class WorldView3DControl
         SetCanopyShadows(SettingsPanel.CanopyShadowsToggle.IsOn);
     }
 
-    /// <summary>Single funnel for the retail Screen-effects radio (None/Bloom/HDR). The enum's
-    /// numeric values ARE the radio's item indices; the panel reseat is guarded so a programmatic
-    /// selection (profiler parity, LoadData coercion) cannot ping-pong the handler.</summary>
+    /// <summary>
+    ///     Single funnel for the retail Screen-effects radio (None/Bloom/HDR). The enum's
+    ///     numeric values ARE the radio's item indices; the panel reseat is guarded so a programmatic
+    ///     selection (profiler parity, LoadData coercion) cannot ping-pong the handler.
+    /// </summary>
     private void SetTonemapGuiMode(Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode mode)
     {
         _tonemapGuiMode = mode;
@@ -187,9 +198,11 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Single funnel for the video-settings water-reflection toggle
-    /// (bUseWaterReflections). Consumed per frame by the reflection pass gate in Frame.cs — no
-    /// renderer state to push here.</summary>
+    /// <summary>
+    ///     Single funnel for the video-settings water-reflection toggle
+    ///     (bUseWaterReflections). Consumed per frame by the reflection pass gate in Frame.cs — no
+    ///     renderer state to push here.
+    /// </summary>
     private void SetWaterReflections(bool on)
     {
         _waterReflectionsEnabled = on;
@@ -199,8 +212,10 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Single funnel for the video-settings water-ripples toggle
-    /// (bUseWaterDisplacements → the animated surface field, per the 2026-08-18 ruling).</summary>
+    /// <summary>
+    ///     Single funnel for the video-settings water-ripples toggle
+    ///     (bUseWaterDisplacements → the animated surface field, per the 2026-08-18 ruling).
+    /// </summary>
     private void SetWaterRipples(bool on)
     {
         _waterRipplesEnabled = on;
@@ -208,14 +223,17 @@ public sealed partial class WorldView3DControl
         {
             _water.RipplesEnabled = on;
         }
+
         if (WaterRipplesToggle is not null && WaterRipplesToggle.IsOn != on)
         {
             WaterRipplesToggle.IsOn = on;
         }
     }
 
-    /// <summary>Single funnel for the video-settings window-reflection toggle
-    /// (bDynamicWindowReflections → the classic env-map term).</summary>
+    /// <summary>
+    ///     Single funnel for the video-settings window-reflection toggle
+    ///     (bDynamicWindowReflections → the classic env-map term).
+    /// </summary>
     private void SetWindowReflections(bool on)
     {
         _windowReflectionsEnabled = on;
@@ -223,14 +241,17 @@ public sealed partial class WorldView3DControl
         {
             _references.WindowReflectionsEnabled = on;
         }
+
         if (WindowReflectionsToggle is not null && WindowReflectionsToggle.IsOn != on)
         {
             WindowReflectionsToggle.IsOn = on;
         }
     }
 
-    /// <summary>Single funnel for the video-settings grass-shadow toggle (bShadowsOnGrass —
-    /// grass RECEIVING the sun shadow map; grass never casts, matching retail).</summary>
+    /// <summary>
+    ///     Single funnel for the video-settings grass-shadow toggle (bShadowsOnGrass —
+    ///     grass RECEIVING the sun shadow map; grass never casts, matching retail).
+    /// </summary>
     private void SetGrassShadows(bool on)
     {
         _grassShadowsEnabled = on;
@@ -238,14 +259,17 @@ public sealed partial class WorldView3DControl
         {
             _references.GrassShadowsEnabled = on;
         }
+
         if (GrassShadowsToggle is not null && GrassShadowsToggle.IsOn != on)
         {
             GrassShadowsToggle.IsOn = on;
         }
     }
 
-    /// <summary>Single funnel for the video-settings canopy-shadow toggle (bDoCanopyShadowPass —
-    /// tree canopies CASTING into the sun shadow map; the trees stay visible).</summary>
+    /// <summary>
+    ///     Single funnel for the video-settings canopy-shadow toggle (bDoCanopyShadowPass —
+    ///     tree canopies CASTING into the sun shadow map; the trees stay visible).
+    /// </summary>
     private void SetCanopyShadows(bool on)
     {
         _canopyShadowsEnabled = on;
@@ -253,6 +277,7 @@ public sealed partial class WorldView3DControl
         {
             _references.TreeShadowsEnabled = on;
         }
+
         if (CanopyShadowsToggle is not null && CanopyShadowsToggle.IsOn != on)
         {
             CanopyShadowsToggle.IsOn = on;
@@ -278,7 +303,7 @@ public sealed partial class WorldView3DControl
         var items = new List<ImagespaceDropdownItem>
         {
             new("(Automatic)", ImagespaceSelectionMode.Automatic, 0),
-            new("(None)", ImagespaceSelectionMode.None, 0),
+            new("(None)", ImagespaceSelectionMode.None, 0)
         };
         if (_data is not null)
         {
@@ -315,15 +340,6 @@ public sealed partial class WorldView3DControl
                 _suppressImagespaceSelectionEvent = false;
             }
         }
-    }
-
-    private bool _suppressImagespaceSelectionEvent;
-
-    /// <summary>One imagespace dropdown entry; <see cref="ToString" /> drives the display.
-    /// <see cref="FormId" /> is meaningful only for <see cref="ImagespaceSelectionMode.Explicit" />.</summary>
-    private sealed record ImagespaceDropdownItem(string Label, ImagespaceSelectionMode Mode, uint FormId)
-    {
-        public override string ToString() => Label;
     }
 
     // Settings-panel checkboxes mirror the 2D viewer. Handlers are subscribed programmatically in
@@ -484,8 +500,10 @@ public sealed partial class WorldView3DControl
         SetShowEffects(EffectsCheckBox.IsChecked == true);
     }
 
-    /// <summary>Single funnel for every draw-distance change (PageUp/PageDown, the settings-panel
-    /// slider, and worldspace/cell-size switches) so field, camera, slider, and label stay in sync.</summary>
+    /// <summary>
+    ///     Single funnel for every draw-distance change (PageUp/PageDown, the settings-panel
+    ///     slider, and worldspace/cell-size switches) so field, camera, slider, and label stay in sync.
+    /// </summary>
     private void SetRenderDistance(float distance)
     {
         _renderDistance = Math.Clamp(distance, MinRenderDistanceCells * _cellSize, MaxRenderDistance);
@@ -523,9 +541,11 @@ public sealed partial class WorldView3DControl
         SetRenderDistance(RenderDistanceScale.CellsFromSlider(e.NewValue) * _cellSize);
     }
 
-    /// <summary>Single funnel for fly/walk (keyboard F + the settings-panel toggle) so the
-    /// controller mode and the ToggleSwitch stay in sync (the controller setter early-returns on
-    /// no-change, killing feedback loops).</summary>
+    /// <summary>
+    ///     Single funnel for fly/walk (keyboard F + the settings-panel toggle) so the
+    ///     controller mode and the ToggleSwitch stay in sync (the controller setter early-returns on
+    ///     no-change, killing feedback loops).
+    /// </summary>
     private void SetCameraMode(CameraMode mode)
     {
         _controller.Mode = mode;
@@ -542,8 +562,10 @@ public sealed partial class WorldView3DControl
         SetCameraMode(FlyModeToggle.IsOn ? CameraMode.Fly : CameraMode.Walk);
     }
 
-    /// <summary>Single point for the navmesh-layer toggle (keyboard key 6 + the toolbar
-    /// checkbox both route here so field, checkbox, and render state stay in sync).</summary>
+    /// <summary>
+    ///     Single point for the navmesh-layer toggle (keyboard key 6 + the toolbar
+    ///     checkbox both route here so field, checkbox, and render state stay in sync).
+    /// </summary>
     private void SetShowNavMesh(bool on)
     {
         _showNavMesh = on;
@@ -553,8 +575,10 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Single point for the Havok collision-cage overlay toggle (checkbox routes here).
-    /// Off by default; renders each visible ref's walk-mode collision mesh as a wireframe.</summary>
+    /// <summary>
+    ///     Single point for the Havok collision-cage overlay toggle (checkbox routes here).
+    ///     Off by default; renders each visible ref's walk-mode collision mesh as a wireframe.
+    /// </summary>
     private void SetShowCollision(bool on)
     {
         _showCollision = on;
@@ -564,11 +588,13 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Single funnel for the FormID-heatmap debug overlay toggle (Overlays checkbox routes
-    /// here). Off by default; tints placed refs blue→red by FormID (authoring order) inside the
-    /// selected camera range. Applies straight to the live reference renderer (render-time tint —
-    /// the renderer forces its own one-frame batch rebuild) and gates the range slider's
-    /// availability, mirroring how dependent controls stay latent while their parent is off.</summary>
+    /// <summary>
+    ///     Single funnel for the FormID-heatmap debug overlay toggle (Overlays checkbox routes
+    ///     here). Off by default; tints placed refs blue→red by FormID (authoring order) inside the
+    ///     selected camera range. Applies straight to the live reference renderer (render-time tint —
+    ///     the renderer forces its own one-frame batch rebuild) and gates the range slider's
+    ///     availability, mirroring how dependent controls stay latent while their parent is off.
+    /// </summary>
     private void SetFormIdHeatmap(bool on)
     {
         _formIdHeatmap = on;
@@ -576,28 +602,27 @@ public sealed partial class WorldView3DControl
         {
             _references.FormIdHeatmapEnabled = on;
         }
+
         if (FormIdHeatmapCheckBox is not null && FormIdHeatmapCheckBox.IsChecked != on)
         {
             FormIdHeatmapCheckBox.IsChecked = on;
         }
+
         if (HeatmapRangeSlider is not null)
         {
             HeatmapRangeSlider.IsEnabled = on;
         }
+
         // The key (gradient bar + live min/max FormID labels) only means something while the
         // overlay is on; collapse it otherwise and force a label refresh on the next frame.
         SettingsPanel.SetHeatmapKeyVisible(on);
         _heatmapKeySeeded = false;
     }
 
-    // Last window pushed into the key labels; refreshed from the render loop (UI thread) only on a
-    // real change, so a static frame costs one property read and a tuple compare.
-    private (uint Min, uint Max)? _lastHeatmapKeyWindow;
-    private int _lastHeatmapKeyRankedCount;
-    private bool _heatmapKeySeeded;
-
-    /// <summary>Per-frame (render loop) refresh of the heatmap key's live endpoints — the
-    /// lowest/highest FormID inside the selected cell block plus the number of ranked steps.</summary>
+    /// <summary>
+    ///     Per-frame (render loop) refresh of the heatmap key's live endpoints — the
+    ///     lowest/highest FormID inside the selected cell block plus the number of ranked steps.
+    /// </summary>
     private void UpdateFormIdHeatmapKey()
     {
         if (!_formIdHeatmap)
@@ -618,11 +643,13 @@ public sealed partial class WorldView3DControl
         SettingsPanel.UpdateHeatmapKeyWindow(window, rankedCount);
     }
 
-    /// <summary>Single funnel for the heatmap selection range (settings-panel slider). Stored in
-    /// WHOLE CELLS (<see cref="float.PositiveInfinity" /> = the slider's unlimited top stop) so it
-    /// survives worldspace switches; the renderer receives cells too and selects the full
-    /// (2N+1)×(2N+1) cell block around the camera's cell on its own grid. Keeps field, slider,
-    /// renderer, and value label in sync.</summary>
+    /// <summary>
+    ///     Single funnel for the heatmap selection range (settings-panel slider). Stored in
+    ///     WHOLE CELLS (<see cref="float.PositiveInfinity" /> = the slider's unlimited top stop) so it
+    ///     survives worldspace switches; the renderer receives cells too and selects the full
+    ///     (2N+1)×(2N+1) cell block around the camera's cell on its own grid. Keeps field, slider,
+    ///     renderer, and value label in sync.
+    /// </summary>
     private void SetFormIdHeatmapRange(float cells)
     {
         _formIdHeatmapRangeCells = float.IsPositiveInfinity(cells)
@@ -633,6 +660,7 @@ public sealed partial class WorldView3DControl
         {
             _references.FormIdHeatmapRangeCells = _formIdHeatmapRangeCells;
         }
+
         SyncHeatmapRangeSlider();
     }
 
@@ -658,9 +686,11 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Single point for the initially-disabled-objects toggle. Default off = disabled
-    /// REFRs hidden, matching the 2D viewer. Applies straight to the live reference renderer
-    /// (render-time filter — no cache rebuild).</summary>
+    /// <summary>
+    ///     Single point for the initially-disabled-objects toggle. Default off = disabled
+    ///     REFRs hidden, matching the 2D viewer. Applies straight to the live reference renderer
+    ///     (render-time filter — no cache rebuild).
+    /// </summary>
     private void SetShowDisabled(bool on)
     {
         _showDisabled = on;
@@ -668,19 +698,23 @@ public sealed partial class WorldView3DControl
         {
             _references.ShowInitiallyDisabled = on;
         }
+
         if (_collisionDebug is not null)
         {
             _collisionDebug.ShowDisabled = on; // keep the collision overlay in sync with the scene
         }
+
         if (DisabledCheckBox is not null && DisabledCheckBox.IsChecked != on)
         {
             DisabledCheckBox.IsChecked = on;
         }
     }
 
-    /// <summary>NIF animation playback toggle (banner sway, waterfall/lava UV scroll). Default on.
-    /// Applies straight to the live reference renderer — off pauses playback at the rest pose /
-    /// base frame (render-time only, no rebuild).</summary>
+    /// <summary>
+    ///     NIF animation playback toggle (banner sway, waterfall/lava UV scroll). Default on.
+    ///     Applies straight to the live reference renderer — off pauses playback at the rest pose /
+    ///     base frame (render-time only, no rebuild).
+    /// </summary>
     private void SetAnimationsEnabled(bool on)
     {
         _animationsEnabled = on;
@@ -688,14 +722,17 @@ public sealed partial class WorldView3DControl
         {
             _references.AnimationsEnabled = on;
         }
+
         if (AnimationsCheckBox is not null && AnimationsCheckBox.IsChecked != on)
         {
             AnimationsCheckBox.IsChecked = on;
         }
     }
 
-    /// <summary>Editor/engine-marker visibility toggle. Default off = markers hidden (matches the
-    /// game). Applies straight to the live reference renderer (render-time filter, no rebuild).</summary>
+    /// <summary>
+    ///     Editor/engine-marker visibility toggle. Default off = markers hidden (matches the
+    ///     game). Applies straight to the live reference renderer (render-time filter, no rebuild).
+    /// </summary>
     private void SetShowMarkers(bool on)
     {
         _showMarkers = on;
@@ -703,14 +740,17 @@ public sealed partial class WorldView3DControl
         {
             _references.ShowMarkers = on;
         }
+
         if (EditorMarkersCheckBox is not null && EditorMarkersCheckBox.IsChecked != on)
         {
             EditorMarkersCheckBox.IsChecked = on;
         }
     }
 
-    /// <summary>LAND/GRAS visibility toggle. The synthetic placements stay cached; filtering before
-    /// mesh resolution means grass hidden before streaming never decodes or uploads.</summary>
+    /// <summary>
+    ///     LAND/GRAS visibility toggle. The synthetic placements stay cached; filtering before
+    ///     mesh resolution means grass hidden before streaming never decodes or uploads.
+    /// </summary>
     private void SetShowGrass(bool on)
     {
         _showGrass = on;
@@ -721,8 +761,10 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Activator-category visibility toggle. Default on. Updates the
-    /// per-category filter on the reference renderer (render-time, no cache rebuild).</summary>
+    /// <summary>
+    ///     Activator-category visibility toggle. Default on. Updates the
+    ///     per-category filter on the reference renderer (render-time, no cache rebuild).
+    /// </summary>
     private void SetShowActivators(bool on)
     {
         if (on) _hiddenCategories.Remove(PlacedObjectCategory.Activator);
@@ -734,9 +776,11 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Sky-category visibility toggle. Default off = placed sky/glow meshes (FO4's Sky\ folder,
-    /// e.g. DiamondCityGlow) hidden — they're atmosphere props that otherwise clutter the scene. Distinct
-    /// from the Skybox toggle, which controls the procedural sky DOME. Render-time filter, no rebuild.</summary>
+    /// <summary>
+    ///     Sky-category visibility toggle. Default off = placed sky/glow meshes (FO4's Sky\ folder,
+    ///     e.g. DiamondCityGlow) hidden — they're atmosphere props that otherwise clutter the scene. Distinct
+    ///     from the Skybox toggle, which controls the procedural sky DOME. Render-time filter, no rebuild.
+    /// </summary>
     private void SetShowSkyMeshes(bool on)
     {
         if (on) _hiddenCategories.Remove(PlacedObjectCategory.Sky);
@@ -748,10 +792,12 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Tree-category visibility toggle. Default on. Covers ALL tree kinds through the one
-    /// reference funnel — Gamebryo .spt SpeedTrees (TREE records) and Skyrim/FO4 NIF trees (TREE
-    /// records + landscape\trees\ statics). Render-time filter before the resolve/decode pass, so
-    /// trees hidden before streaming never decode or upload.</summary>
+    /// <summary>
+    ///     Tree-category visibility toggle. Default on. Covers ALL tree kinds through the one
+    ///     reference funnel — Gamebryo .spt SpeedTrees (TREE records) and Skyrim/FO4 NIF trees (TREE
+    ///     records + landscape\trees\ statics). Render-time filter before the resolve/decode pass, so
+    ///     trees hidden before streaming never decode or upload.
+    /// </summary>
     private void SetShowTrees(bool on)
     {
         if (on) _hiddenCategories.Remove(PlacedObjectCategory.Tree);
@@ -763,10 +809,12 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Effects-category visibility toggle. Default on. Placed effect meshes (the Effects\
-    /// folder: mist sheets, dust, glows, ambient FX planes) — real atmosphere in the scene, but the
-    /// first thing to hide when inspecting the geometry they hover over. Render-time filter through
-    /// the same per-category funnel as trees/activators (no cache rebuild).</summary>
+    /// <summary>
+    ///     Effects-category visibility toggle. Default on. Placed effect meshes (the Effects\
+    ///     folder: mist sheets, dust, glows, ambient FX planes) — real atmosphere in the scene, but the
+    ///     first thing to hide when inspecting the geometry they hover over. Render-time filter through
+    ///     the same per-category funnel as trees/activators (no cache rebuild).
+    /// </summary>
     private void SetShowEffects(bool on)
     {
         if (on) _hiddenCategories.Remove(PlacedObjectCategory.Effects);
@@ -776,6 +824,15 @@ public sealed partial class WorldView3DControl
         {
             EffectsCheckBox.IsChecked = on;
         }
+    }
+
+    /// <summary>
+    ///     One imagespace dropdown entry; <see cref="ToString" /> drives the display.
+    ///     <see cref="FormId" /> is meaningful only for <see cref="ImagespaceSelectionMode.Explicit" />.
+    /// </summary>
+    private sealed record ImagespaceDropdownItem(string Label, ImagespaceSelectionMode Mode, uint FormId)
+    {
+        public override string ToString() => Label;
     }
 }
 
@@ -789,5 +846,5 @@ internal enum ImagespaceSelectionMode
 {
     Automatic,
     None,
-    Explicit,
+    Explicit
 }

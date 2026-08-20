@@ -29,12 +29,27 @@ internal sealed class BtdHeightSource(BtdFile btd) : IDisposable
     /// </summary>
     private const int MaxCachedCells = 512;
 
-    private readonly object _gate = new();
     private readonly Dictionary<(int X, int Y), LinkedListNode<CachedCell>> _byCell = new();
+
+    private readonly object _gate = new();
     private readonly LinkedList<CachedCell> _recency = new();
     private bool _disposed;
 
-    private sealed record CachedCell((int X, int Y) Key, float[,] Heights);
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _byCell.Clear();
+            _recency.Clear();
+            btd.Dispose();
+        }
+    }
 
     /// <summary>
     ///     Returns the cell's 129×129 exact-height grid, decoding it from the BTD on first request.
@@ -85,19 +100,5 @@ internal sealed class BtdHeightSource(BtdFile btd) : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        lock (_gate)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            _byCell.Clear();
-            _recency.Clear();
-            btd.Dispose();
-        }
-    }
+    private sealed record CachedCell((int X, int Y) Key, float[,] Heights);
 }

@@ -47,27 +47,26 @@ public sealed class BtdFile : IDisposable
     // "BTDB" read as a little-endian uint32.
     private const uint MagicBtdb = 'B' | ('T' << 8) | ('D' << 16) | ('B' << 24);
 
-    private readonly IBtdBytes _source;
-    private readonly long _fileSize;
-    private bool _disposed;
-
     // Header / layout, mirroring BTDFile member names.
     private readonly long _cellHeightMinMaxMapOffs;
-    private readonly long _ltexOffs;
-    private readonly long _ltexMapOffs;
-    private readonly long _gcvrOffs;
     private readonly long _gcvrMapOffs;
+    private readonly long _gcvrOffs;
     private readonly long _heightMapLod4;
     private readonly long _landTexturesLod4;
-    private readonly long _vertexColorLod4; // 0 for Starfield
-    private readonly long _zlibBlkTableOffsLod3;
-    private readonly long _zlibBlkTableOffsLod2;
-    private readonly long _zlibBlkTableOffsLod1;
-    private readonly long _zlibBlkTableOffsLod0;
-    private readonly long _zlibBlocksDataOffs;
+    private readonly long _ltexMapOffs;
+    private readonly long _ltexOffs;
+
+    private readonly IBtdBytes _source;
 
     // Tile cache (8x8 cells per tile). Ring buffer + map, matching the reference implementation.
     private readonly Dictionary<uint, TileData> _tileCacheMap = new();
+    private readonly long _vertexColorLod4; // 0 for Starfield
+    private readonly long _zlibBlkTableOffsLod0;
+    private readonly long _zlibBlkTableOffsLod1;
+    private readonly long _zlibBlkTableOffsLod2;
+    private readonly long _zlibBlkTableOffsLod3;
+    private readonly long _zlibBlocksDataOffs;
+    private bool _disposed;
     private List<TileData> _tileCache = [];
     private int _tileCacheIndex;
 
@@ -89,10 +88,10 @@ public sealed class BtdFile : IDisposable
     private BtdFile(IBtdBytes source)
     {
         _source = source;
-        _fileSize = source.Length;
+        SourceLength = source.Length;
 
         long pos = 0;
-        if (_fileSize < 4 || ReadU32(pos) != MagicBtdb)
+        if (SourceLength < 4 || ReadU32(pos) != MagicBtdb)
         {
             _source.Dispose();
             throw new InvalidDataException("Input file format is not BTD (missing 'BTDB' magic).");
@@ -152,7 +151,7 @@ public sealed class BtdFile : IDisposable
             throw new InvalidDataException($"BTD cell grid {NCellsX}x{NCellsY} is invalid or unreasonably large.");
         }
 
-        long nCells = (long)NCellsX * NCellsY;
+        var nCells = (long)NCellsX * NCellsY;
 
         LandTextureCount = (int)ReadU32(pos);
         pos += 4;
@@ -255,7 +254,7 @@ public sealed class BtdFile : IDisposable
     public bool IsMemoryMapped => _source is MappedBtdBytes;
 
     /// <summary>Length of the underlying BTD payload in bytes.</summary>
-    public long SourceLength => _fileSize;
+    public long SourceLength { get; }
 
     public void Dispose()
     {
@@ -269,7 +268,10 @@ public sealed class BtdFile : IDisposable
     }
 
     /// <summary>Converts a raw 16-bit height sample (0..65535) to a world height in game units.</summary>
-    public float SampleToHeight(ushort value) => MinHeight + (value * ((MaxHeight - MinHeight) / 65535.0f));
+    public float SampleToHeight(ushort value)
+    {
+        return MinHeight + value * ((MaxHeight - MinHeight) / 65535.0f);
+    }
 
     /// <summary>Land-texture form ID at table index <paramref name="n" /> (0 if out of range).</summary>
     public uint GetLandTexture(int n)
@@ -304,8 +306,8 @@ public sealed class BtdFile : IDisposable
     /// </summary>
     public (float Min, float Max) GetCellHeightRange(int cellX, int cellY)
     {
-        long index = ((long)(cellY - CellMinY) * NCellsX) + (cellX - CellMinX);
-        long offs = _cellHeightMinMaxMapOffs + (index << 3);
+        var index = (long)(cellY - CellMinY) * NCellsX + (cellX - CellMinX);
+        var offs = _cellHeightMinMaxMapOffs + (index << 3);
         return (ReadF32(offs), ReadF32(offs + 4));
     }
 
@@ -317,13 +319,13 @@ public sealed class BtdFile : IDisposable
     public void GetCellHeightMap(ushort[] buf, int cellX, int cellY, int lod = 0)
     {
         var tile = LoadTile(cellX, cellY, (~0u << (lod + lod)) & 0x0155u);
-        int x0 = ((cellX - CellMinX) & 7) << 7;
-        int y0 = ((cellY - CellMinY) & 7) << 7;
-        int n = 128 >> lod;
-        int m = 7 - lod;
-        for (int yc = 0; yc < n; yc++)
+        var x0 = ((cellX - CellMinX) & 7) << 7;
+        var y0 = ((cellY - CellMinY) & 7) << 7;
+        var n = 128 >> lod;
+        var m = 7 - lod;
+        for (var yc = 0; yc < n; yc++)
         {
-            for (int xc = 0; xc < n; xc++)
+            for (var xc = 0; xc < n; xc++)
             {
                 buf[(yc << m) | xc] = tile.HmapData![((y0 + (yc << lod)) << 10) + x0 + (xc << lod)];
             }
@@ -336,11 +338,11 @@ public sealed class BtdFile : IDisposable
     /// </summary>
     public float[] GetCellHeightGrid(int cellX, int cellY, int lod = 0)
     {
-        int n = 128 >> lod;
+        var n = 128 >> lod;
         var raw = new ushort[n * n];
         GetCellHeightMap(raw, cellX, cellY, lod);
         var heights = new float[n * n];
-        for (int i = 0; i < heights.Length; i++)
+        for (var i = 0; i < heights.Length; i++)
         {
             heights[i] = SampleToHeight(raw[i]);
         }
@@ -358,8 +360,8 @@ public sealed class BtdFile : IDisposable
     public float GetCellHeightSample(int cellX, int cellY, int sampleX, int sampleY, int lod = 0)
     {
         var tile = LoadTile(cellX, cellY, (~0u << (lod + lod)) & 0x0155u);
-        int x0 = ((cellX - CellMinX) & 7) << 7;
-        int y0 = ((cellY - CellMinY) & 7) << 7;
+        var x0 = ((cellX - CellMinX) & 7) << 7;
+        var y0 = ((cellY - CellMinY) & 7) << 7;
         return SampleToHeight(tile.HmapData![((y0 + (sampleY << lod)) << 10) + x0 + (sampleX << lod)]);
     }
 
@@ -367,13 +369,13 @@ public sealed class BtdFile : IDisposable
     public void GetCellLandTexture(ushort[] buf, int cellX, int cellY, int lod = 0)
     {
         var tile = LoadTile(cellX, cellY, (~0u << (lod + lod)) & 0x0155u);
-        int x0 = ((cellX - CellMinX) & 7) << 7;
-        int y0 = ((cellY - CellMinY) & 7) << 7;
-        int n = 128 >> lod;
-        int m = 7 - lod;
-        for (int yc = 0; yc < n; yc++)
+        var x0 = ((cellX - CellMinX) & 7) << 7;
+        var y0 = ((cellY - CellMinY) & 7) << 7;
+        var n = 128 >> lod;
+        var m = 7 - lod;
+        for (var yc = 0; yc < n; yc++)
         {
-            for (int xc = 0; xc < n; xc++)
+            for (var xc = 0; xc < n; xc++)
             {
                 uint tmp = tile.LtexData![((y0 + (yc << lod)) << 10) + x0 + (xc << lod)];
                 tmp = ((tmp & 0x7E00) >> 9) | (tmp & 0x01C0) | ((tmp & 0x003F) << 9);
@@ -387,25 +389,25 @@ public sealed class BtdFile : IDisposable
     public void GetCellGroundCover(byte[] buf, int cellX, int cellY, int lod = 0)
     {
         var tile = LoadTile(cellX, cellY, 0x0002);
-        int x = cellX - CellMinX;
-        int y = cellY - CellMinY;
-        int x0 = (x & 7) << 7;
-        int y0 = (y & 7) << 7;
-        int n = 128 >> lod;
-        int m = 7 - lod;
+        var x = cellX - CellMinX;
+        var y = cellY - CellMinY;
+        var x0 = (x & 7) << 7;
+        var y0 = (y & 7) << 7;
+        var n = 128 >> lod;
+        var m = 7 - lod;
         uint gcvrMask = 0;
-        for (int yc = 0; yc < n; yc++)
+        for (var yc = 0; yc < n; yc++)
         {
-            for (int xc = 0; xc < n; xc++)
+            for (var xc = 0; xc < n; xc++)
             {
                 if ((xc & ((n >> 1) - 1)) == 0)
                 {
                     // gcvrMask is intentionally NOT reset here: like the reference, it accumulates the
                     // union of ground-cover presence across the cell's quadrants as they are scanned.
-                    long inner = (((long)(y << 1) | (uint)(yc >> (m - 1))) * (NCellsX << 1))
-                                 + ((x << 1) | (xc >> (m - 1)));
-                    long offs = (inner << 3) + _gcvrMapOffs;
-                    for (int i = 7; i >= 0; i--, offs++)
+                    var inner = (y << 1 | (uint)(yc >> (m - 1))) * (NCellsX << 1)
+                                + ((x << 1) | (xc >> (m - 1)));
+                    var offs = (inner << 3) + _gcvrMapOffs;
+                    for (var i = 7; i >= 0; i--, offs++)
                     {
                         gcvrMask |= (uint)(ReadU8(offs) < GroundCoverCount ? 1 : 0) << i;
                     }
@@ -424,16 +426,16 @@ public sealed class BtdFile : IDisposable
     public void GetCellTerrainColor(ushort[] buf, int cellX, int cellY, int lod = 2)
     {
         var tile = LoadTile(cellX, cellY, (~0u << (lod + lod)) & 0x02A0u);
-        int x0 = ((cellX - CellMinX) & 7) << 5;
-        int y0 = ((cellY - CellMinY) & 7) << 5;
-        int n = 128 >> lod;
-        int m = 7 - lod;
-        for (int yc = 0; yc < n; yc++)
+        var x0 = ((cellX - CellMinX) & 7) << 5;
+        var y0 = ((cellY - CellMinY) & 7) << 5;
+        var n = 128 >> lod;
+        var m = 7 - lod;
+        for (var yc = 0; yc < n; yc++)
         {
-            int yy = lod >= 2 ? (yc << (lod - 2)) : (yc >> (2 - lod));
-            for (int xc = 0; xc < n; xc++)
+            var yy = lod >= 2 ? yc << (lod - 2) : yc >> (2 - lod);
+            for (var xc = 0; xc < n; xc++)
             {
-                int xx = lod >= 2 ? (xc << (lod - 2)) : (xc >> (2 - lod));
+                var xx = lod >= 2 ? xc << (lod - 2) : xc >> (2 - lod);
                 buf[(yc << m) | xc] = tile.VclrData![((y0 + yy) << 8) + x0 + xx];
             }
         }
@@ -447,15 +449,15 @@ public sealed class BtdFile : IDisposable
     /// </summary>
     public void GetCellTextureSet(byte[] buf, int cellX, int cellY)
     {
-        int x = cellX - CellMinX;
-        int y = cellY - CellMinY;
-        for (int q = 0; q < 4; q++)
+        var x = cellX - CellMinX;
+        var y = cellY - CellMinY;
+        for (var q = 0; q < 4; q++)
         {
-            long offs = ((((long)(y << 1) | (uint)(q >> 1)) * (NCellsX << 1)) + ((x << 1) | (q & 1))) << 3;
-            int t = q << 4;
-            for (int i = 0; i < 8; i++)
+            var offs = ((y << 1 | (uint)(q >> 1)) * (NCellsX << 1) + ((x << 1) | (q & 1))) << 3;
+            var t = q << 4;
+            for (var i = 0; i < 8; i++)
             {
-                byte tmp = ReadU8(_ltexMapOffs + offs + i);
+                var tmp = ReadU8(_ltexMapOffs + offs + i);
                 if (tmp == 0 || tmp > LandTextureCount)
                 {
                     tmp = 0xFF;
@@ -478,10 +480,10 @@ public sealed class BtdFile : IDisposable
 
             buf[t + 6] = 0xFF;
             buf[t + 7] = 0xFF;
-            int g = (q << 4) + 8;
-            for (int i = 0; i < 8; i++)
+            var g = (q << 4) + 8;
+            for (var i = 0; i < 8; i++)
             {
-                byte tmp = GroundCoverCount > 0 ? ReadU8(_gcvrMapOffs + offs + i) : (byte)0xFF;
+                var tmp = GroundCoverCount > 0 ? ReadU8(_gcvrMapOffs + offs + i) : (byte)0xFF;
                 if (tmp >= GroundCoverCount)
                 {
                     tmp = 0xFF;
@@ -495,7 +497,7 @@ public sealed class BtdFile : IDisposable
     /// <summary>Sets the number of decompressed 8x8-cell tiles kept resident (default 2).</summary>
     public void SetTileCacheSize(int n)
     {
-        int prevSize = _tileCache.Count;
+        var prevSize = _tileCache.Count;
         if (n <= prevSize)
         {
             return;
@@ -503,7 +505,7 @@ public sealed class BtdFile : IDisposable
 
         var newCache = new List<TileData>(n);
         newCache.AddRange(_tileCache);
-        for (int i = prevSize; i < n; i++)
+        for (var i = prevSize; i < n; i++)
         {
             newCache.Add(new TileData { X0 = 0x8000, Y0 = 0x8000, BlockMask = 0 });
         }
@@ -516,13 +518,13 @@ public sealed class BtdFile : IDisposable
 
     private TileData LoadTile(int cellX, int cellY, uint blockMask)
     {
-        uint x0 = (uint)(cellX - CellMinX) & 0xFFF8u;
-        uint y0 = (uint)(cellY - CellMinY) & 0xFFF8u;
-        uint cacheKey = (y0 << 16) | x0;
+        var x0 = (uint)(cellX - CellMinX) & 0xFFF8u;
+        var y0 = (uint)(cellY - CellMinY) & 0xFFF8u;
+        var cacheKey = (y0 << 16) | x0;
         if (!_tileCacheMap.TryGetValue(cacheKey, out var tileData))
         {
             tileData = _tileCache[_tileCacheIndex];
-            uint oldKey = ((uint)tileData.Y0 << 16) | tileData.X0;
+            var oldKey = ((uint)tileData.Y0 << 16) | tileData.X0;
             _tileCacheMap.Remove(oldKey);
             tileData.X0 = (ushort)x0;
             tileData.Y0 = (ushort)y0;
@@ -535,7 +537,7 @@ public sealed class BtdFile : IDisposable
             }
         }
 
-        blockMask = (blockMask & ~tileData.BlockMask) & 0x03F7u;
+        blockMask = blockMask & ~tileData.BlockMask & 0x03F7u;
         if (blockMask == 0)
         {
             return tileData;
@@ -570,21 +572,21 @@ public sealed class BtdFile : IDisposable
         // LOD4 base layer (read directly from the uncompressed header maps).
         if ((blockMask & 0x0300) != 0)
         {
-            for (int yy = 0; yy < 64; yy++)
+            for (var yy = 0; yy < 64; yy++)
             {
                 if (CellMinY + (int)((yy >> 3) + y0) > CellMaxY)
                 {
                     break;
                 }
 
-                for (int xx = 0; xx < 64; xx++)
+                for (var xx = 0; xx < 64; xx++)
                 {
                     if (CellMinX + (int)((xx >> 3) + x0) > CellMaxX)
                     {
                         break;
                     }
 
-                    long offs = ((yy + (y0 << 3)) * (NCellsX << 3)) + (xx + (x0 << 3));
+                    var offs = (yy + (y0 << 3)) * (NCellsX << 3) + xx + (x0 << 3);
                     if ((blockMask & 0x0155) != 0)
                     {
                         tileData.HmapData![((yy << 10) + xx) << 4] = ReadU16(_heightMapLod4 + (offs << 1));
@@ -616,25 +618,25 @@ public sealed class BtdFile : IDisposable
         var zlibBuf = ArrayPool<byte>.Shared.Rent(0xC000); // 0x6000 uint16
         try
         {
-            for (int l = 4; l-- > 0;) // LOD3..LOD0
+            for (var l = 4; l-- > 0;) // LOD3..LOD0
             {
-                for (int yy = 0; yy < (8 >> l); yy++)
+                for (var yy = 0; yy < 8 >> l; yy++)
                 {
                     long yc = (y >> l) + (uint)yy;
-                    if (yc >= ((NCellsY + (1 << l) - 1) >> l))
+                    if (yc >= (NCellsY + (1 << l) - 1) >> l)
                     {
                         break;
                     }
 
-                    for (int xx = 0; xx < (8 >> l); xx++)
+                    for (var xx = 0; xx < 8 >> l; xx++)
                     {
                         long xc = (x >> l) + (uint)xx;
-                        if (xc >= ((NCellsX + (1 << l) - 1) >> l))
+                        if (xc >= (NCellsX + (1 << l) - 1) >> l)
                         {
                             break;
                         }
 
-                        long n = (yc * ((NCellsX + (1 << l) - 1) >> l)) + xc;
+                        var n = yc * ((NCellsX + (1 << l) - 1) >> l) + xc;
                         if ((blockMask & 0x55 & (1 << (l + l))) != 0)
                         {
                             LoadBlock(tileData, ((yy << 10) + xx) << (l + 7), n, l, 0, zlibBuf);
@@ -664,30 +666,30 @@ public sealed class BtdFile : IDisposable
         var zlibBuf = ArrayPool<byte>.Shared.Rent(0x10000); // 0x8000 uint16
         try
         {
-            for (int l = 0; l < 4; l++) // LOD0..LOD3, first present level only
+            for (var l = 0; l < 4; l++) // LOD0..LOD3, first present level only
             {
                 if ((blockMask & (1u << (l + l))) == 0)
                 {
                     continue;
                 }
 
-                for (int yy = 0; yy < (8 >> l); yy++)
+                for (var yy = 0; yy < 8 >> l; yy++)
                 {
                     long yc = (y >> l) + (uint)yy;
-                    if (yc >= ((NCellsY + (1 << l) - 1) >> l))
+                    if (yc >= (NCellsY + (1 << l) - 1) >> l)
                     {
                         break;
                     }
 
-                    for (int xx = 0; xx < (8 >> l); xx++)
+                    for (var xx = 0; xx < 8 >> l; xx++)
                     {
                         long xc = (x >> l) + (uint)xx;
-                        if (xc >= ((NCellsX + (1 << l) - 1) >> l))
+                        if (xc >= (NCellsX + (1 << l) - 1) >> l)
                         {
                             break;
                         }
 
-                        long n = (yc * ((NCellsX + (1 << l) - 1) >> l)) + xc;
+                        var n = yc * ((NCellsX + (1 << l) - 1) >> l) + xc;
                         LoadBlockStarfield(tileData, ((yy << 10) + xx) << (l + 7), n, l, zlibBuf);
                     }
                 }
@@ -712,7 +714,7 @@ public sealed class BtdFile : IDisposable
             n += (long)NCellsY * NCellsX;
         }
 
-        long tableOffs = l switch
+        var tableOffs = l switch
         {
             1 => _zlibBlkTableOffsLod1,
             2 => _zlibBlkTableOffsLod2,
@@ -720,9 +722,9 @@ public sealed class BtdFile : IDisposable
             _ => _zlibBlkTableOffsLod0
         } + (n << 3);
 
-        long offs = ReadU32(tableOffs) + _zlibBlocksDataOffs;
-        int compressedSize = (int)ReadU32(tableOffs + 4);
-        if (offs + compressedSize > _fileSize)
+        var offs = ReadU32(tableOffs) + _zlibBlocksDataOffs;
+        var compressedSize = (int)ReadU32(tableOffs + 4);
+        if (offs + compressedSize > SourceLength)
         {
             throw new InvalidDataException("BTD: compressed block extends past end of file.");
         }
@@ -743,10 +745,10 @@ public sealed class BtdFile : IDisposable
 
         DecompressBlock(offs, compressedSize, zlibBuf, expected);
 
-        int xd = 1 << (b == 0 || l == 0 ? l : l - 2);
-        int yd = (b == 0 || l == 0 ? 1024 - 128 : (256 - 128) >> 2) << l;
-        int p = 0;
-        for (int yRow = 0; yRow < 128; yRow += 2)
+        var xd = 1 << (b == 0 || l == 0 ? l : l - 2);
+        var yd = (b == 0 || l == 0 ? 1024 - 128 : (256 - 128) >> 2) << l;
+        var p = 0;
+        for (var yRow = 0; yRow < 128; yRow += 2)
         {
             if (b == 0) // vertex height
             {
@@ -770,7 +772,7 @@ public sealed class BtdFile : IDisposable
             return;
         }
 
-        for (int yRow = 0; yRow < 128; yRow += 2) // land textures (second half of the height block)
+        for (var yRow = 0; yRow < 128; yRow += 2) // land textures (second half of the height block)
         {
             LoadBlockLines16(tileData.LtexData!, dataOffs + (yRow << (l + 10)), zlibBuf, p, xd, yd);
             p += 384;
@@ -779,7 +781,7 @@ public sealed class BtdFile : IDisposable
 
     private void LoadBlockStarfield(TileData tileData, int dataOffs, long n, int l, byte[] zlibBuf)
     {
-        long tableOffs = l switch
+        var tableOffs = l switch
         {
             1 => _zlibBlkTableOffsLod1,
             2 => _zlibBlkTableOffsLod2,
@@ -787,30 +789,30 @@ public sealed class BtdFile : IDisposable
             _ => _zlibBlkTableOffsLod0
         } + (n << 3);
 
-        long offs = ReadU32(tableOffs) + _zlibBlocksDataOffs;
-        int compressedSize = (int)ReadU32(tableOffs + 4);
-        if (offs + compressedSize > _fileSize)
+        var offs = ReadU32(tableOffs) + _zlibBlocksDataOffs;
+        var compressedSize = (int)ReadU32(tableOffs + 4);
+        if (offs + compressedSize > SourceLength)
         {
             throw new InvalidDataException("BTD: compressed block extends past end of file.");
         }
 
         DecompressBlock(offs, compressedSize, zlibBuf, 65536);
 
-        int xd = 1 << l;
-        int p = 0;
-        for (int yRow = 0; yRow < 128; yRow++) // vertex height
+        var xd = 1 << l;
+        var p = 0;
+        for (var yRow = 0; yRow < 128; yRow++) // vertex height
         {
-            int dst = dataOffs + (yRow << (l + 10));
-            for (int i = 0; i < 128; i++, dst += xd, p += 2)
+            var dst = dataOffs + (yRow << (l + 10));
+            for (var i = 0; i < 128; i++, dst += xd, p += 2)
             {
                 tileData.HmapData![dst] = (ushort)(zlibBuf[p] | (zlibBuf[p + 1] << 8));
             }
         }
 
-        for (int yRow = 0; yRow < 128; yRow++) // land textures
+        for (var yRow = 0; yRow < 128; yRow++) // land textures
         {
-            int dst = dataOffs + (yRow << (l + 10));
-            for (int i = 0; i < 128; i++, dst += xd, p += 2)
+            var dst = dataOffs + (yRow << (l + 10));
+            for (var i = 0; i < 128; i++, dst += xd, p += 2)
             {
                 tileData.LtexData![dst] = (ushort)(zlibBuf[p] | (zlibBuf[p + 1] << 8));
             }
@@ -819,9 +821,9 @@ public sealed class BtdFile : IDisposable
 
     private static void LoadBlockLines16(ushort[] dst, int dstStart, byte[] src, int srcStart, int xd, int yd)
     {
-        int d = dstStart;
-        int s = srcStart;
-        for (int i = 0; i < 64; i++)
+        var d = dstStart;
+        var s = srcStart;
+        for (var i = 0; i < 64; i++)
         {
             d += xd;
             dst[d] = (ushort)(src[s] | (src[s + 1] << 8));
@@ -830,7 +832,7 @@ public sealed class BtdFile : IDisposable
         }
 
         d += yd;
-        for (int i = 0; i < 128; i++)
+        for (var i = 0; i < 128; i++)
         {
             dst[d] = (ushort)(src[s] | (src[s + 1] << 8));
             d += xd;
@@ -840,15 +842,15 @@ public sealed class BtdFile : IDisposable
 
     private static void LoadBlockLines8(byte[] dst, int dstStart, byte[] src, int srcStart)
     {
-        int d = dstStart;
-        int s = srcStart;
-        for (int i = 0; i < 128; i++)
+        var d = dstStart;
+        var s = srcStart;
+        for (var i = 0; i < 128; i++)
         {
             dst[d++] = src[s++];
         }
 
         d += 1024 - 128;
-        for (int i = 0; i < 128; i++)
+        for (var i = 0; i < 128; i++)
         {
             dst[d++] = src[s++];
         }
@@ -895,25 +897,40 @@ public sealed class BtdFile : IDisposable
         }
     }
 
-    private byte ReadU8(long offset) => _source.ReadU8(offset);
+    private byte ReadU8(long offset)
+    {
+        return _source.ReadU8(offset);
+    }
 
-    private ushort ReadU16(long offset) => _source.ReadU16(offset);
+    private ushort ReadU16(long offset)
+    {
+        return _source.ReadU16(offset);
+    }
 
-    private uint ReadU32(long offset) => _source.ReadU32(offset);
+    private uint ReadU32(long offset)
+    {
+        return _source.ReadU32(offset);
+    }
 
-    private int ReadI32(long offset) => _source.ReadI32(offset);
+    private int ReadI32(long offset)
+    {
+        return _source.ReadI32(offset);
+    }
 
-    private float ReadF32(long offset) => _source.ReadF32(offset);
+    private float ReadF32(long offset)
+    {
+        return _source.ReadF32(offset);
+    }
 
     /// <summary>One decompressed 8x8-cell tile (1024x1024 height/ltex, 256x256 vertex color).</summary>
     private sealed class TileData
     {
-        public ushort X0;
-        public ushort Y0;
         public uint BlockMask;
+        public byte[]? GcvrData;
         public ushort[]? HmapData;
         public ushort[]? LtexData;
-        public byte[]? GcvrData;
         public ushort[]? VclrData;
+        public ushort X0;
+        public ushort Y0;
     }
 }

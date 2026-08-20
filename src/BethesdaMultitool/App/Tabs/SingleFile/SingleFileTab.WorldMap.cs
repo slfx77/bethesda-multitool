@@ -7,9 +7,11 @@ using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.UI.Text;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -178,6 +180,7 @@ public sealed partial class SingleFileTab
             {
                 WorldMapProgressBar.Visibility = Visibility.Collapsed;
             }
+
             _worldMapLoadGate.Release();
         }
     }
@@ -228,6 +231,7 @@ public sealed partial class SingleFileTab
         {
             if (!string.IsNullOrEmpty(entry.FilePath)) paths.Add(entry.FilePath);
         }
+
         return paths;
     }
 
@@ -340,7 +344,8 @@ public sealed partial class SingleFileTab
         if (!string.IsNullOrEmpty(requestedModel) &&
             WorldView3DControl.TryResolveFallbackMeshPath(requestedModel) is { } fallbackMesh)
         {
-            var fallbackEntry = new EsmPropertyEntry { Name = "Fallback Mesh", Value = fallbackMesh, Category = "Identity" };
+            var fallbackEntry = new EsmPropertyEntry
+                { Name = "Fallback Mesh", Value = fallbackMesh, Category = "Identity" };
             var modelIndex = properties.FindIndex(p => p.Name == "Model" && p.Category == "Identity");
             if (modelIndex >= 0)
             {
@@ -394,7 +399,7 @@ public sealed partial class SingleFileTab
         {
             true => "; base LIGH emission: On",
             false => "; base LIGH emission: Off By Default",
-            null => string.Empty,
+            null => string.Empty
         };
         ReferenceStateHint.Text = enabledOverride switch
         {
@@ -403,7 +408,7 @@ public sealed partial class SingleFileTab
             ReferenceEnabledOverride.On =>
                 $"Preview forces Form ID 0x{obj.FormId:X8} Shown at the authored-state gate; independent layer, category, lighting, and water filters still apply.",
             _ =>
-                $"Preview hides Form ID 0x{obj.FormId:X8} from supported 3D output (mesh, light, and embedded water as applicable), picks, collision preview, and walk collision; the parsed record is unchanged.",
+                $"Preview hides Form ID 0x{obj.FormId:X8} from supported 3D output (mesh, light, and embedded water as applicable), picks, collision preview, and walk collision; the parsed record is unchanged."
         };
     }
 
@@ -900,4 +905,3 @@ public sealed partial class SingleFileTab
         else WorldMapControl.RefreshExportBounds();
     }
 }
-

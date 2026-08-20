@@ -11,6 +11,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 internal static class GpuMeshUploader
 {
+    /// <summary>Interleaved <see cref="GpuVertex" /> stride in bytes (Sequential layout, packed floats).</summary>
+    public const int GpuVertexSize = 72;
+
     /// <summary>
     ///     Converts a <see cref="RenderableSubmesh" /> to a GPU vertex array.
     /// </summary>
@@ -78,8 +81,4 @@ internal static class GpuMeshUploader
         public Vector3 Tangent;
         public Vector3 Bitangent;
     }
-
-    /// <summary>Interleaved <see cref="GpuVertex" /> stride in bytes (Sequential layout, packed floats).</summary>
-    public const int GpuVertexSize = 72;
 }
-

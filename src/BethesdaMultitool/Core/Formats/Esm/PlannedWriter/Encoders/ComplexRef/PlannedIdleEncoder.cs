@@ -21,7 +21,7 @@ public sealed class PlannedIdleEncoder : IPlannedRecordEncoder<IdleAnimationReco
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedIdleEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedIdleEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

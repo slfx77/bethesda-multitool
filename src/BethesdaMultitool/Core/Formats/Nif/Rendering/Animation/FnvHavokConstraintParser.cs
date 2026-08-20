@@ -14,7 +14,7 @@ internal enum FnvHavokAngularConstraintKind
 {
     Hinge,
     LimitedHinge,
-    Ragdoll,
+    Ragdoll
 }
 
 /// <summary>Values serialized by Havok's <c>hkpMotion::MotionType</c>.</summary>
@@ -29,7 +29,7 @@ internal enum FnvHavokMotionSystem : byte
     Keyframed = 6,
     Fixed = 7,
     ThinBox = 8,
-    Character = 9,
+    Character = 9
 }
 
 internal readonly record struct FnvHavokHingeFrame(
@@ -97,7 +97,7 @@ internal sealed record FnvHavokAngularConstraint(
     {
         var body when body == EntityABlockIndex => EntityA,
         var body when body == EntityBBlockIndex => EntityB,
-        _ => null,
+        _ => null
     };
 }
 
@@ -156,7 +156,7 @@ internal static class FnvHavokConstraintParser
         for (var blockIndex = 0; blockIndex < nif.Blocks.Count; blockIndex++)
         {
             var block = nif.Blocks[blockIndex];
-            FnvHavokAngularConstraint? constraint = block.TypeName switch
+            var constraint = block.TypeName switch
             {
                 "bhkHingeConstraint" => TryParseHinge(
                     data, nif, blockIndex, block, nodeChildren, nodeWorldTransforms,
@@ -167,7 +167,7 @@ internal static class FnvHavokConstraintParser
                 "bhkRagdollConstraint" => TryParseRagdoll(
                     data, nif, blockIndex, block, nodeChildren, nodeWorldTransforms,
                     bodyTargets, constraintOwners),
-                _ => null,
+                _ => null
             };
 
             if (constraint is not null)
@@ -191,8 +191,10 @@ internal static class FnvHavokConstraintParser
             "bhkHingeConstraint" or "bhkLimitedHingeConstraint" or "bhkRagdollConstraint");
     }
 
-    private static bool IsSupportedLayout(NifInfo nif) =>
-        nif.BinaryVersion == ModernBinaryVersion && nif.BsVersion == FnvBsVersion;
+    private static bool IsSupportedLayout(NifInfo nif)
+    {
+        return nif.BinaryVersion == ModernBinaryVersion && nif.BsVersion == FnvBsVersion;
+    }
 
     private static FnvHavokAngularConstraint? TryParseHinge(
         byte[] data,
@@ -375,11 +377,11 @@ internal static class FnvHavokConstraintParser
             // bhkRigidBodyT applies them relative to its collision object's target NiAVObject. This
             // is the same composition used by HavokCollisionExtractor and is byte-verified by the
             // two-body office hanging-light retail fixture.
-            Matrix4x4? bodyRelative = bodyBlock.TypeName switch
+            var bodyRelative = bodyBlock.TypeName switch
             {
                 "bhkRigidBodyT" => TryReadRigidBodyTTransform(data, bodyBlock, nif.IsBigEndian),
                 "bhkRigidBody" => Matrix4x4.Identity,
-                _ => null,
+                _ => null
             };
             if (bodyRelative is { } relative)
             {
@@ -471,7 +473,7 @@ internal static class FnvHavokConstraintParser
             if (block.TypeName is not ("bhkRigidBody" or "bhkRigidBodyT") ||
                 !TryReadUInt32(data, block, RigidBodyConstraintCountOffset, nif.IsBigEndian, out var count) ||
                 count > MaxOwnedConstraints ||
-                (uint)RigidBodyConstraintRefsOffset + count * 4u > (uint)block.Size)
+                RigidBodyConstraintRefsOffset + count * 4u > (uint)block.Size)
             {
                 continue;
             }
@@ -687,9 +689,15 @@ internal static class FnvHavokConstraintParser
         return block.DataOffset >= 0 && absoluteOffset >= 0 && absoluteOffset + byteCount <= data.Length;
     }
 
-    private static bool IsFinite(Matrix4x4 value) =>
-        float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13) && float.IsFinite(value.M14) &&
-        float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23) && float.IsFinite(value.M24) &&
-        float.IsFinite(value.M31) && float.IsFinite(value.M32) && float.IsFinite(value.M33) && float.IsFinite(value.M34) &&
-        float.IsFinite(value.M41) && float.IsFinite(value.M42) && float.IsFinite(value.M43) && float.IsFinite(value.M44);
+    private static bool IsFinite(Matrix4x4 value)
+    {
+        return float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13) &&
+               float.IsFinite(value.M14) &&
+               float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23) &&
+               float.IsFinite(value.M24) &&
+               float.IsFinite(value.M31) && float.IsFinite(value.M32) && float.IsFinite(value.M33) &&
+               float.IsFinite(value.M34) &&
+               float.IsFinite(value.M41) && float.IsFinite(value.M42) && float.IsFinite(value.M43) &&
+               float.IsFinite(value.M44);
+    }
 }

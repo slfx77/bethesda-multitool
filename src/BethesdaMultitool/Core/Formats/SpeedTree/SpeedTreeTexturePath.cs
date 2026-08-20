@@ -19,13 +19,22 @@ public enum SpeedTreeTextureKind
 ///     paths the asset pipeline actually ships, confirmed against the extracted texture BSAs:
 ///     <list type="bullet">
 ///         <item>bark   → <c>textures\trees\branches\&lt;name&gt;bark.dds</c></item>
-///         <item>foliage → <c>textures\trees\leaves\&lt;name&gt;foliage.dds</c> (one shared atlas;
-///               the <c>.spt</c>'s FoliageNN names all resolve to it)</item>
+///         <item>
+///             foliage → <c>textures\trees\leaves\&lt;name&gt;foliage.dds</c> (one shared atlas;
+///             the <c>.spt</c>'s FoliageNN names all resolve to it)
+///         </item>
 ///         <item>other  → <c>textures\trees\&lt;name&gt;.dds</c></item>
 ///     </list>
 /// </summary>
 public static class SpeedTreeTexturePath
 {
+    /// <summary>
+    ///     The season tokens Oblivion appends to a tree's leaf atlas (TreeXLeaves<b>SU</b>.dds, …FA, …).
+    ///     A numeric per-card index that sits BETWEEN "leaves" and one of these (e.g. <c>…leaves01su</c>) is a
+    ///     dev-era artifact: every numbered card collapses to the one shipped <c>…leavessu.dds</c>.
+    /// </summary>
+    private static readonly string[] LeafSeasonSuffixes = ["su", "fa", "wi", "sp"];
+
     /// <summary>
     ///     Map a <c>TREE</c> record's <c>ICON</c> value (the AUTHORITATIVE leaf atlas the engine applies,
     ///     overriding the <c>.spt</c>'s dev-era material) to a game-relative path. FNV stores a bare name
@@ -142,21 +151,20 @@ public static class SpeedTreeTexturePath
         return $@"textures\trees\{stem}.dds";
     }
 
-    /// <summary>The season tokens Oblivion appends to a tree's leaf atlas (TreeXLeaves<b>SU</b>.dds, …FA, …).
-    /// A numeric per-card index that sits BETWEEN "leaves" and one of these (e.g. <c>…leaves01su</c>) is a
-    /// dev-era artifact: every numbered card collapses to the one shipped <c>…leavessu.dds</c>.</summary>
-    private static readonly string[] LeafSeasonSuffixes = ["su", "fa", "wi", "sp"];
-
     /// <summary>
     ///     For a leaf-kind card, collapse a per-card numeric index to the shared atlas name. Two shapes:
     ///     <list type="bullet">
-    ///         <item>Oblivion MEDIAL index before a season suffix — <c>treewillowoakleaves01su</c> /
-    ///               <c>…02su</c> / <c>…03su</c> → <c>treewillowoakleavessu</c>. Oblivion ships ONE combined
-    ///               leaf atlas per tree+season; the .spt's per-card materials all index into it (the token
-    ///               10002 UVs pick each card's region), so a numbered file never shipped and every card
-    ///               would otherwise resolve to a missing texture and render untextured (white).</item>
-    ///         <item>TRAILING index on a non-"leaves" stem — <c>wastelandundergrowthbranches01</c> /
-    ///               <c>…branches02</c> → <c>…branches</c>, matching the single shipped <c>…branches.ddx</c>.</item>
+    ///         <item>
+    ///             Oblivion MEDIAL index before a season suffix — <c>treewillowoakleaves01su</c> /
+    ///             <c>…02su</c> / <c>…03su</c> → <c>treewillowoakleavessu</c>. Oblivion ships ONE combined
+    ///             leaf atlas per tree+season; the .spt's per-card materials all index into it (the token
+    ///             10002 UVs pick each card's region), so a numbered file never shipped and every card
+    ///             would otherwise resolve to a missing texture and render untextured (white).
+    ///         </item>
+    ///         <item>
+    ///             TRAILING index on a non-"leaves" stem — <c>wastelandundergrowthbranches01</c> /
+    ///             <c>…branches02</c> → <c>…branches</c>, matching the single shipped <c>…branches.ddx</c>.
+    ///         </item>
     ///     </list>
     ///     A TRAILING index on a "leaf"/"leaves" stem with NO season suffix is kept: FNV ships those per-number
     ///     (<c>pineleaves01.dds</c>, <c>whiteoakleaves01.dds</c>).
@@ -179,9 +187,11 @@ public static class SpeedTreeTexturePath
         return stripped.Length > 0 ? stripped : stem;
     }
 
-    /// <summary>Drop a digit run that sits immediately after "leaves"/"leaf" and is followed only by a season
-    /// suffix (the Oblivion <c>…leaves01su</c> → <c>…leavessu</c> case). Returns the stem unchanged when there
-    /// is no such medial index, so FNV's trailing-numbered atlases and every non-leaf stem are untouched.</summary>
+    /// <summary>
+    ///     Drop a digit run that sits immediately after "leaves"/"leaf" and is followed only by a season
+    ///     suffix (the Oblivion <c>…leaves01su</c> → <c>…leavessu</c> case). Returns the stem unchanged when there
+    ///     is no such medial index, so FNV's trailing-numbered atlases and every non-leaf stem are untouched.
+    /// </summary>
     private static string CollapseMedialLeafSeasonIndex(string stem)
     {
         var marker = stem.LastIndexOf("leaves", StringComparison.Ordinal);

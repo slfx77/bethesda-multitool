@@ -16,28 +16,38 @@ internal static class ReferenceRendererConstants12
         public Matrix4x4 World;
         public Vector4 AlphaState;
         public Vector4 RenderState;
+
         public Vector4 TextureState;
+
         // Bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
         // PS interface stays uniform (it expects vTexIndices regardless of which VS produced it).
         public TexIndexQuad TexIndices;
+
         // Sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Matches the uSpecular field
         // in reference.vert.hlsl.
         public Vector4 Specular;
+
         // Camera world-space right/up for per-card leaf billboards (baked particle clouds on the blended
         // path). Only read when TextureState.y marks a leaf submesh.
         public Vector4 CameraRight;
+
         public Vector4 CameraUp;
+
         // BGEM effect terms (uEffectTint / uEffectFalloff): rgb tint + falloff-enabled flag in .w,
         // then the |N·V| opacity ramp params. For classic PP Lighting30 (TextureState bit 4), the
         // mutually-exclusive EffectFalloff slot carries raw emission rgb + material multiplier.
         public Vector4 EffectTint;
+
         public Vector4 EffectFalloff;
+
         // FO4 cubemap environment mapping (uEnvMap): x = cube bindless slot (−1 until the cube
         // texture is resident), y = envMapScale, z = material smoothness, w = blend operation.
         public Vector4 EnvMap;
+
         // uUvScroll: xy = fractional UV phase for scrolled materials (NiUVController — waterfalls
         // draw on this blended path); z = CPU-computed classic sun-specular LOD fade; w unused.
         public Vector4 UvScroll;
+
         // uSoftParticle: encoded depth SRV slot/view kind, near/far, signed falloff. Total = 256 bytes.
         public Vector4 SoftParticle;
     }
@@ -112,10 +122,10 @@ internal static class ReferenceRendererConstants12
     [StructLayout(LayoutKind.Sequential)]
     internal struct InstancedShadowPerFrameConstants
     {
-        public Matrix4x4 ViewProj;          // offset 0   — shared with the main variant
+        public Matrix4x4 ViewProj; // offset 0   — shared with the main variant
         public WindMatrixQuad WindMatrices; // offset 64  — MUST match the main variant
-        public Vector4 CardRight;           // offset 320 — shadow-only tail
-        public Vector4 CardUp;              // offset 336
+        public Vector4 CardRight; // offset 320 — shadow-only tail
+        public Vector4 CardUp; // offset 336
 
         /// <summary>Total 352 bytes: 64 viewProj + 256 wind + 32 card basis.</summary>
         public const uint ByteSize = 64 + 256 + 32;

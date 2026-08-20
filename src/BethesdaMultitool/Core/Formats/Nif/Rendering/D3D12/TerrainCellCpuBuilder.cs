@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -29,7 +30,7 @@ internal static class TerrainCellCpuBuilder
         (int gx, int gy) key,
         CellRecord cell,
         Dictionary<(int gx, int gy), CellRecord>? cells,
-        global::BethesdaMultitool.WorldRenderCache? renderCache,
+        global::BethesdaMultitool.Core.WorldData.WorldRenderCache? renderCache,
         int gridSize,
         int generation)
     {
@@ -114,10 +115,14 @@ internal static class TerrainCellCpuBuilder
 
     private static readonly IReadOnlyList<LandTextureLayer> s_engineDefaultSyntheticLayers =
     [
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 0 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 1 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 2 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 3 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId =
+ CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 0 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId =
+ CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 1 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId =
+ CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 2 },
+        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId =
+ CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 3 },
     ];
 
     /// <summary>

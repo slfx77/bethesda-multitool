@@ -41,7 +41,10 @@ internal sealed class RuntimeSkyWeatherReader
             LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
-    public WeatherTransitionSnapshot? Read() => _snapshot.Value;
+    public WeatherTransitionSnapshot? Read()
+    {
+        return _snapshot.Value;
+    }
 
     private WeatherTransitionSnapshot? ReadCore()
     {
@@ -100,7 +103,7 @@ internal sealed class RuntimeSkyWeatherReader
 
             var snapshot = WeatherTransitionSnapshotParser.Parse(
                 bytes,
-                isBigEndian: true,
+                true,
                 skyVa,
                 pointer => ResolveWeatherFormId(pointer, module));
             if (snapshot == null)
@@ -299,7 +302,7 @@ internal sealed class RuntimeSkyWeatherReader
 
                     var fileOffset = _context.MinidumpInfo.VirtualAddressToFileOffset(startVaLong);
                     if (!fileOffset.HasValue || fileOffset.Value < 0
-                                              || fileOffset.Value + readLength > _context.FileSize)
+                                             || fileOffset.Value + readLength > _context.FileSize)
                     {
                         break;
                     }
@@ -369,8 +372,10 @@ internal sealed class RuntimeSkyWeatherReader
         return start >= moduleStart && end <= moduleEnd;
     }
 
-    private static ulong ModuleEnd(MinidumpModule module) =>
-        (ulong)module.BaseAddress32 + (uint)Math.Max(module.Size, 0);
+    private static ulong ModuleEnd(MinidumpModule module)
+    {
+        return (ulong)module.BaseAddress32 + (uint)Math.Max(module.Size, 0);
+    }
 
     private static byte[] GetBigEndianBytes(uint value)
     {
@@ -432,7 +437,7 @@ internal static class WeatherTransitionSnapshotParser
             outgoingPointer == 0 ? null : outgoingPointer,
             outgoingFormId,
             currentWeight,
-            ModifierElapsedSeconds: null);
+            null);
     }
 
     private static uint? Resolve(uint pointer, Func<uint, uint?> resolveWeatherFormId)

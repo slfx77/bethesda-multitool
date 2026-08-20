@@ -1,17 +1,15 @@
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
-using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using Vortice.Mathematics;
-using D12 = Vortice.Direct3D12;
+using ShaderResourceViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
@@ -30,21 +28,23 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 {
     private const int ConstantBufferSize = 240; // sizeof(GpuUniforms) — must be 16-byte aligned
     private const int MsaaSampleCount = 4;
-    private const uint SrvTableSize = 2;     // t0 diffuse + t1 normal
+    private const uint SrvTableSize = 2; // t0 diffuse + t1 normal
     private const uint SamplerTableSize = 2; // s0 + s1; skin.frag.hlsl binds both
     private const uint SamplerModeCount = 4; // wrap/wrap, clampU, clampV, clampUV
     private const uint SamplerHeapSize = SamplerTableSize * SamplerModeCount;
+    private readonly AutoResetEvent _fenceEvent = new(false);
+    private readonly ShaderResourceViewDescription _flatNormalSrvDesc;
+    private readonly ID3D12Resource _flatNormalTexture;
 
     private readonly GpuDevice12 _gpu;
+    private readonly InputElementDescription[] _inputElements;
+    private readonly byte[] _psBytecode;
+    private readonly Dictionary<PsoKey, ID3D12PipelineState> _psoCache = new();
+    private readonly ID3D12Fence _renderFence;
     private readonly ID3D12RootSignature _rootSignature;
     private readonly ID3D12DescriptorHeap _samplerHeap;
     private readonly byte[] _vsBytecode;
-    private readonly byte[] _psBytecode;
-    private readonly InputElementDescription[] _inputElements;
-    private readonly Dictionary<PsoKey, ID3D12PipelineState> _psoCache = new();
-    private readonly ID3D12Fence _renderFence;
-    private readonly AutoResetEvent _fenceEvent = new(false);
-    private ulong _nextFenceValue = 1;
+    private readonly ShaderResourceViewDescription _whitePixelSrvDesc;
 
     // Built-in fallback textures (1×1 RGBA), uploaded once at construction. White is the
     // diffuse fallback; flat normal (128,128,255) is the normal-map fallback. Per-render
@@ -52,10 +52,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     // list and are disposed in CompleteRender — no shared texture cache across renders,
     // which keeps SubmitRender self-contained and side-effect-free.
     private readonly ID3D12Resource _whitePixelTexture;
-    private readonly ShaderResourceViewDescription _whitePixelSrvDesc;
-    private readonly ID3D12Resource _flatNormalTexture;
-    private readonly ShaderResourceViewDescription _flatNormalSrvDesc;
     private bool _disposed;
+    private ulong _nextFenceValue = 1;
 
     public GpuSpriteRenderer12(GpuDevice12 gpu)
     {
@@ -66,7 +64,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
         _rootSignature = CreateRootSignature(gpu.Device);
         _samplerHeap = CreateSamplerHeap(gpu.Device);
-        _renderFence = gpu.Device.CreateFence<ID3D12Fence>(0, FenceFlags.None);
+        _renderFence = gpu.Device.CreateFence<ID3D12Fence>();
 
         // Upload white + flat pixels on a one-shot init command list, fence-waited so the
         // textures are guaranteed in PIXEL_SHADER_RESOURCE state before any SubmitRender.
@@ -97,7 +95,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     }
 
     public SpriteResult? Render(NifRenderableModel model,
-        global::BethesdaMultitool.Core.Formats.Nif.Rendering.NifTextureResolver? textureResolver,
+        NifTextureResolver? textureResolver,
         float pixelsPerUnit, int minSize, int maxSize,
         float azimuthDeg, float elevationDeg,
         int? fixedSize = null)
@@ -108,7 +106,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     }
 
     public SpriteResult? Render(NifRenderableModel model,
-        global::BethesdaMultitool.Core.Formats.Nif.Rendering.NifTextureResolver? textureResolver = null,
+        NifTextureResolver? textureResolver = null,
         float pixelsPerUnit = 1.0f, int minSize = 32, int maxSize = 1024,
         int? fixedSize = null)
     {
@@ -117,7 +115,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     }
 
     public PendingRender? SubmitRender(NifRenderableModel model,
-        global::BethesdaMultitool.Core.Formats.Nif.Rendering.NifTextureResolver? textureResolver,
+        NifTextureResolver? textureResolver,
         float pixelsPerUnit, int minSize, int maxSize,
         float azimuthDeg, float elevationDeg,
         int? fixedSize = null)
@@ -125,8 +123,11 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         // Drain any pending validation messages from the previous frame so they're attributed
         // to the correct render. No-op if the debug layer wasn't enabled.
         _gpu.PumpDebugMessages();
-        try { return SubmitRenderCore(model, textureResolver, pixelsPerUnit, minSize, maxSize,
-            azimuthDeg, elevationDeg, fixedSize); }
+        try
+        {
+            return SubmitRenderCore(model, textureResolver, pixelsPerUnit, minSize, maxSize,
+                azimuthDeg, elevationDeg, fixedSize);
+        }
         catch
         {
             _gpu.PumpDebugMessages();
@@ -135,7 +136,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     }
 
     private PendingRender? SubmitRenderCore(NifRenderableModel model,
-        global::BethesdaMultitool.Core.Formats.Nif.Rendering.NifTextureResolver? textureResolver,
+        NifTextureResolver? textureResolver,
         float pixelsPerUnit, int minSize, int maxSize,
         float azimuthDeg, float elevationDeg,
         int? fixedSize)
@@ -195,13 +196,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var allocator = device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
         pendingResources.Add(allocator);
         var cmd = device.CreateCommandList<ID3D12GraphicsCommandList>(
-            nodeMask: 0, CommandListType.Direct, allocator, initialState: null);
+            0, CommandListType.Direct, allocator);
 
         // MSAA color RT.
         var colorTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
             ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, ssWidth, ssHeight,
-                arraySize: 1, mipLevels: 1, sampleCount: MsaaSampleCount, sampleQuality: 0,
+                1, 1, MsaaSampleCount, 0,
                 ResourceFlags.AllowRenderTarget),
             ResourceStates.RenderTarget,
             new ClearValue(Format.R8G8B8A8_UNorm, new Color4(0f, 0f, 0f, 0f)));
@@ -211,20 +212,18 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var resolveTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
             ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, ssWidth, ssHeight,
-                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
-                ResourceFlags.None),
-            ResourceStates.ResolveDest,
-            optimizedClearValue: null);
+                1, 1),
+            ResourceStates.ResolveDest);
         pendingResources.Add(resolveTex);
 
         // MSAA depth.
         var depthTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
             ResourceDescription.Texture2D(Format.D32_Float_S8X24_UInt, ssWidth, ssHeight,
-                arraySize: 1, mipLevels: 1, sampleCount: MsaaSampleCount, sampleQuality: 0,
+                1, 1, MsaaSampleCount, 0,
                 ResourceFlags.AllowDepthStencil),
             ResourceStates.DepthWrite,
-            new ClearValue(Format.D32_Float_S8X24_UInt, new DepthStencilValue(1.0f, 0)));
+            new ClearValue(Format.D32_Float_S8X24_UInt, new DepthStencilValue(1.0f)));
         pendingResources.Add(depthTex);
 
         // Small per-render RTV + DSV heaps (CPU-only).
@@ -232,14 +231,14 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         {
             Type = DescriptorHeapType.RenderTargetView,
             DescriptorCount = 1,
-            Flags = DescriptorHeapFlags.None,
+            Flags = DescriptorHeapFlags.None
         });
         pendingResources.Add(rtvHeap);
         var dsvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.DepthStencilView,
             DescriptorCount = 1,
-            Flags = DescriptorHeapFlags.None,
+            Flags = DescriptorHeapFlags.None
         });
         pendingResources.Add(dsvHeap);
         var rtvHandle = rtvHeap.GetCPUDescriptorHandleForHeapStart();
@@ -289,7 +288,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         {
             Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
             DescriptorCount = srvHeapCapacity,
-            Flags = DescriptorHeapFlags.ShaderVisible,
+            Flags = DescriptorHeapFlags.ShaderVisible
         });
         pendingResources.Add(srvHeap);
         var srvIncrement = device.GetDescriptorHandleIncrementSize(
@@ -342,7 +341,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 TintColor = new Vector4(
                     sub.TintColor?.R ?? 1f, sub.TintColor?.G ?? 1f, sub.TintColor?.B ?? 1f, 0),
                 Flags = new Vector4(flags, sub.SubsurfaceColor.R, sub.SubsurfaceColor.G, sub.SubsurfaceColor.B),
-                EffectTint = new Vector4(sub.EffectTint.R, sub.EffectTint.G, sub.EffectTint.B, 1f),
+                EffectTint = new Vector4(sub.EffectTint.R, sub.EffectTint.G, sub.EffectTint.B, 1f)
             };
 
             // Per-submesh CB lives in a fresh UPLOAD-heap buffer. Persistent-mapped + filled +
@@ -350,18 +349,18 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             var cb = device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.UploadHeapProperties, HeapFlags.None,
                 ResourceDescription.Buffer(ConstantBufferSize),
-                ResourceStates.GenericRead, optimizedClearValue: null);
+                ResourceStates.GenericRead);
             pendingResources.Add(cb);
             void* cbCpu = null;
             cb.Map(0, &cbCpu).CheckError();
             *(GpuUniforms*)cbCpu = uniforms;
-            cb.Unmap(0, null);
+            cb.Unmap(0);
 
             // Mesh upload.
             var vertices = GpuMeshUploader.BuildVertices(sub);
-            var vb = GpuMeshBufferFactory12.CreateUploadBuffer<GpuMeshUploader.GpuVertex>(_gpu, vertices);
+            var vb = GpuMeshBufferFactory12.CreateUploadBuffer(_gpu, vertices);
             pendingResources.Add(vb);
-            var ib = GpuMeshBufferFactory12.CreateUploadBuffer<ushort>(_gpu, sub.Triangles);
+            var ib = GpuMeshBufferFactory12.CreateUploadBuffer(_gpu, sub.Triangles);
             pendingResources.Add(ib);
 
             // Texture binds — default to the white-pixel + flat-normal builtins; if the
@@ -377,17 +376,22 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 var upload = UploadTextureOn(cmd, textureResolver, sub.DiffuseTexturePath);
                 if (upload is { } u)
                 {
-                    diffuseTex = u.Texture; diffuseSrv = u.SrvDesc;
-                    pendingResources.Add(u.Texture); pendingResources.Add(u.Staging);
+                    diffuseTex = u.Texture;
+                    diffuseSrv = u.SrvDesc;
+                    pendingResources.Add(u.Texture);
+                    pendingResources.Add(u.Staging);
                 }
             }
+
             if (textureResolver != null && sub.NormalMapTexturePath != null)
             {
                 var upload = UploadTextureOn(cmd, textureResolver, sub.NormalMapTexturePath);
                 if (upload is { } u)
                 {
-                    normalTex = u.Texture; normalSrv = u.SrvDesc;
-                    pendingResources.Add(u.Texture); pendingResources.Add(u.Staging);
+                    normalTex = u.Texture;
+                    normalSrv = u.SrvDesc;
+                    pendingResources.Add(u.Texture);
+                    pendingResources.Add(u.Staging);
                 }
             }
 
@@ -422,13 +426,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             {
                 BufferLocation = vb.GPUVirtualAddress,
                 SizeInBytes = (uint)vertices.Length * (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>(),
-                StrideInBytes = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>(),
+                StrideInBytes = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>()
             });
             cmd.IASetIndexBuffer(new IndexBufferView
             {
                 BufferLocation = ib.GPUVirtualAddress,
                 SizeInBytes = (uint)sub.Triangles.Length * sizeof(ushort),
-                Format = Format.R16_UInt,
+                Format = Format.R16_UInt
             });
             cmd.DrawIndexedInstanced((uint)sub.Triangles.Length, 1, 0, 0, 0);
         }
@@ -440,7 +444,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
         // Allocate readback buffer sized to fit the resolved texture.
         var resolveDesc = ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, ssWidth, ssHeight,
-            arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None);
+            1, 1);
         var footprints = new PlacedSubresourceFootPrint[1];
         var numRows = new uint[1];
         var rowSize = new ulong[1];
@@ -449,12 +453,12 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var readback = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.ReadbackHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(readbackBytes),
-            ResourceStates.CopyDest, optimizedClearValue: null);
+            ResourceStates.CopyDest);
         pendingResources.Add(readback);
 
         cmd.CopyTextureRegion(
             new TextureCopyLocation(readback, footprints[0]), 0, 0, 0,
-            new TextureCopyLocation(resolveTex, 0));
+            new TextureCopyLocation(resolveTex));
 
         cmd.Close();
         _gpu.DirectQueue.ExecuteCommandList(cmd);
@@ -474,7 +478,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             FenceValue = fenceValue,
             ReadbackBuffer = readback,
             ReadbackRowPitch = footprints[0].Footprint.RowPitch,
-            Disposables = pendingResources,
+            Disposables = pendingResources
         };
     }
 
@@ -497,7 +501,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             Height = pending.Height,
             BoundsWidth = pending.BoundsWidth,
             BoundsHeight = pending.BoundsHeight,
-            HasTexture = pending.HasTexture,
+            HasTexture = pending.HasTexture
         };
     }
 
@@ -510,7 +514,10 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     // Intentionally an instance method (not static) for API parity with the old GpuSpriteRenderer —
     // the NPC pipeline evicts unconditionally on the renderer instance regardless of backend.
 #pragma warning disable CA1822, S2325
-    public void EvictTexture(string key) { _ = key; }
+    public void EvictTexture(string key)
+    {
+        _ = key;
+    }
 #pragma warning restore CA1822, S2325
 
     /// <summary>
@@ -523,7 +530,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     private (ID3D12Resource Texture, ShaderResourceViewDescription SrvDesc, ID3D12Resource Staging)?
         UploadTextureOn(
             ID3D12GraphicsCommandList cmd,
-            global::BethesdaMultitool.Core.Formats.Nif.Rendering.NifTextureResolver resolver,
+            NifTextureResolver resolver,
             string path)
     {
         var decoded = resolver.GetTexture(path);
@@ -535,10 +542,10 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
         var device = _gpu.Device;
         var desc = ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, width, height,
-            arraySize: 1, mipLevels: mipCount, sampleCount: 1, sampleQuality: 0, ResourceFlags.None);
+            1, mipCount);
         var texture = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None, desc,
-            ResourceStates.CopyDest, optimizedClearValue: null);
+            ResourceStates.CopyDest);
 
         var footprints = new PlacedSubresourceFootPrint[mipCount];
         var numRows = new uint[mipCount];
@@ -548,7 +555,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var staging = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.UploadHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(totalBytes),
-            ResourceStates.GenericRead, optimizedClearValue: null);
+            ResourceStates.GenericRead);
 
         void* cpuPtr = null;
         staging.Map(0, &cpuPtr).CheckError();
@@ -566,13 +573,16 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                     for (uint row = 0; row < (uint)level.Height; row++)
                     {
                         var copyBytes = Math.Min(srcRowPitch, dstRowPitch);
-                        System.Buffer.MemoryCopy(
+                        Buffer.MemoryCopy(
                             src + row * srcRowPitch, dstBase + row * dstRowPitch, dstRowPitch, copyBytes);
                     }
                 }
             }
         }
-        finally { staging.Unmap(0, null); }
+        finally
+        {
+            staging.Unmap(0);
+        }
 
         for (uint mip = 0; mip < mipCount; mip++)
         {
@@ -580,6 +590,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 new TextureCopyLocation(texture, mip), 0, 0, 0,
                 new TextureCopyLocation(staging, footprints[mip]));
         }
+
         cmd.ResourceBarrierTransition(texture, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
 
         return (texture, MakeSrv(Format.R8G8B8A8_UNorm, mipCount), staging);
@@ -594,10 +605,10 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     {
         var device = _gpu.Device;
         var desc = ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, 1, 1,
-            arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None);
+            1, 1);
         var texture = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None, desc,
-            ResourceStates.CopyDest, optimizedClearValue: null);
+            ResourceStates.CopyDest);
 
         var footprints = new PlacedSubresourceFootPrint[1];
         var numRows = new uint[1];
@@ -606,22 +617,28 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var staging = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.UploadHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(totalBytes),
-            ResourceStates.GenericRead, optimizedClearValue: null);
+            ResourceStates.GenericRead);
 
         void* cpuPtr = null;
         staging.Map(0, &cpuPtr).CheckError();
         try
         {
             var p = (byte*)cpuPtr + (long)footprints[0].Offset;
-            p[0] = r; p[1] = g; p[2] = b; p[3] = a;
+            p[0] = r;
+            p[1] = g;
+            p[2] = b;
+            p[3] = a;
         }
-        finally { staging.Unmap(0, null); }
+        finally
+        {
+            staging.Unmap(0);
+        }
 
         var allocator = device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
         var cmd = device.CreateCommandList<ID3D12GraphicsCommandList>(
-            nodeMask: 0, CommandListType.Direct, allocator, initialState: null);
+            0, CommandListType.Direct, allocator);
         cmd.CopyTextureRegion(
-            new TextureCopyLocation(texture, 0), 0, 0, 0,
+            new TextureCopyLocation(texture), 0, 0, 0,
             new TextureCopyLocation(staging, footprints[0]));
         cmd.ResourceBarrierTransition(texture, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
         cmd.Close();
@@ -640,9 +657,9 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         return new ShaderResourceViewDescription
         {
             Format = format,
-            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+            ViewDimension = ShaderResourceViewDimension.Texture2D,
             Shader4ComponentMapping = ShaderComponentMapping.Default,
-            Texture2D = new Texture2DShaderResourceView { MipLevels = mipCount, MostDetailedMip = 0 },
+            Texture2D = new Texture2DShaderResourceView { MipLevels = mipCount, MostDetailedMip = 0 }
         };
     }
 
@@ -660,43 +677,14 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 var dstOffset = (int)(y * rowSize);
                 Marshal.Copy((IntPtr)cpuPtr + srcOffset, pixels, dstOffset, rowSize);
             }
+
             return pixels;
         }
         finally
         {
-            buffer.Unmap(0, null);
+            buffer.Unmap(0);
         }
     }
-
-    // ---- Per-render structures ----------------------------------------------------------
-
-    /// <summary>State for an in-flight async sprite render: target dimensions, model bounds, and texture flags, completed later by <c>CompleteRender</c>.</summary>
-    internal sealed class PendingRender
-    {
-        public required int Width { get; init; }
-        public required int Height { get; init; }
-        public required int SsWidth { get; init; }
-        public required int SsHeight { get; init; }
-        public required float BoundsWidth { get; init; }
-        public required float BoundsHeight { get; init; }
-        public required bool HasTexture { get; init; }
-        public required ulong FenceValue { get; init; }
-        public required ID3D12Resource ReadbackBuffer { get; init; }
-        public required uint ReadbackRowPitch { get; init; }
-        public required List<IDisposable> Disposables { get; init; }
-    }
-
-    private sealed record RenderItem(
-        RenderableSubmesh Submesh,
-        NifAlphaRenderState AlphaState,
-        float AverageZ,
-        bool HasDiffuseTexture);
-
-    private readonly record struct PsoKey(
-        NifAlphaRenderMode Mode,
-        byte SrcBlend,
-        byte DstBlend,
-        bool DoubleSided);
 
     // ---- PSO + RootSig + sampler setup --------------------------------------------------
 
@@ -710,54 +698,54 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
     private ID3D12PipelineState CreatePso(PsoKey key)
     {
-        var rasterizer = new D12.RasterizerDescription
+        var rasterizer = new RasterizerDescription
         {
-            FillMode = D12.FillMode.Solid,
-            CullMode = key.DoubleSided ? D12.CullMode.None : D12.CullMode.Back,
+            FillMode = FillMode.Solid,
+            CullMode = key.DoubleSided ? CullMode.None : CullMode.Back,
             FrontCounterClockwise = true,
             DepthClipEnable = true,
             MultisampleEnable = true,
-            AntialiasedLineEnable = false,
+            AntialiasedLineEnable = false
         };
 
         var depthWriteEnabled = key.Mode != NifAlphaRenderMode.Blend;
-        var depth = new D12.DepthStencilDescription
+        var depth = new DepthStencilDescription
         {
             DepthEnable = true,
-            DepthWriteMask = depthWriteEnabled ? D12.DepthWriteMask.All : D12.DepthWriteMask.Zero,
+            DepthWriteMask = depthWriteEnabled ? DepthWriteMask.All : DepthWriteMask.Zero,
             DepthFunc = ComparisonFunction.LessEqual,
-            StencilEnable = false,
+            StencilEnable = false
         };
 
-        var blend = new D12.BlendDescription
+        var blend = new BlendDescription
         {
             // A2C is done manually in the pixel shader via SV_Coverage (IS_A2C flag):
             // the fixed-function path derives coverage from the WRITTEN alpha, which
             // would force covered samples to carry texture alpha and double-attenuate
             // after resolve. The shader instead writes opaque alpha + a coverage mask.
             AlphaToCoverageEnable = false,
-            IndependentBlendEnable = false,
+            IndependentBlendEnable = false
         };
         if (key.Mode == NifAlphaRenderMode.Blend)
         {
-            blend.RenderTarget[0] = new D12.RenderTargetBlendDescription
+            blend.RenderTarget[0] = new RenderTargetBlendDescription
             {
                 BlendEnable = true,
                 SourceBlend = MapBlend(key.SrcBlend),
                 DestinationBlend = MapBlend(key.DstBlend),
-                BlendOperation = D12.BlendOperation.Add,
-                SourceBlendAlpha = D12.Blend.One,
-                DestinationBlendAlpha = D12.Blend.One,
-                BlendOperationAlpha = D12.BlendOperation.Max,
-                RenderTargetWriteMask = D12.ColorWriteEnable.All,
+                BlendOperation = BlendOperation.Add,
+                SourceBlendAlpha = Blend.One,
+                DestinationBlendAlpha = Blend.One,
+                BlendOperationAlpha = BlendOperation.Max,
+                RenderTargetWriteMask = ColorWriteEnable.All
             };
         }
         else
         {
-            blend.RenderTarget[0] = new D12.RenderTargetBlendDescription
+            blend.RenderTarget[0] = new RenderTargetBlendDescription
             {
                 BlendEnable = false,
-                RenderTargetWriteMask = D12.ColorWriteEnable.All,
+                RenderTargetWriteMask = ColorWriteEnable.All
             };
         }
 
@@ -774,19 +762,19 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             RenderTargetFormats = new[] { Format.R8G8B8A8_UNorm },
             DepthStencilFormat = Format.D32_Float_S8X24_UInt,
             SampleDescription = new SampleDescription(MsaaSampleCount, 0),
-            SampleMask = uint.MaxValue,
+            SampleMask = uint.MaxValue
         };
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
-    private static D12.Blend MapBlend(byte nifBlendMode)
+    private static Blend MapBlend(byte nifBlendMode)
     {
         // Keep the standalone sprite path on the same OpenGL-order NIF mapping as the world
         // renderer — a shifted ordering of modes 4..9 turns the common 6/7 pair into
         // DestinationAlpha/InverseDestinationAlpha instead of SourceAlpha/InverseSourceAlpha,
         // which on a transparent sprite target turns the first blended draw black, and over an
         // opaque draw replaces rather than blends.
-        return global::BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.NifD3D12BlendMapper
+        return NifD3D12BlendMapper
             .ResolveBlendFactor(nifBlendMode);
     }
 
@@ -795,21 +783,21 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         // Slot 0: root CBV b0 (per-submesh uniforms). VS + PS.
         var cbv = new RootParameter1(
             RootParameterType.ConstantBufferView,
-            new RootDescriptor1(shaderRegister: 0, registerSpace: 0),
+            new RootDescriptor1(0, 0),
             ShaderVisibility.All);
 
         // Slot 1: SRV table t0..t1 (diffuse + normal). PS.
         var srvRange = new DescriptorRange1(
             DescriptorRangeType.ShaderResourceView,
-            numDescriptors: SrvTableSize,
-            baseShaderRegister: 0, registerSpace: 0);
+            SrvTableSize,
+            0);
         var srvTable = new RootParameter1(new RootDescriptorTable1(srvRange), ShaderVisibility.Pixel);
 
         // Slot 2: sampler table s0. PS.
         var samplerRange = new DescriptorRange1(
             DescriptorRangeType.Sampler,
-            numDescriptors: SamplerTableSize,
-            baseShaderRegister: 0, registerSpace: 0);
+            SamplerTableSize,
+            0);
         var samplerTable = new RootParameter1(new RootDescriptorTable1(samplerRange), ShaderVisibility.Pixel);
 
         var desc = new RootSignatureDescription1(
@@ -824,7 +812,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         {
             Type = DescriptorHeapType.Sampler,
             DescriptorCount = SamplerHeapSize,
-            Flags = DescriptorHeapFlags.ShaderVisible,
+            Flags = DescriptorHeapFlags.ShaderVisible
         });
         var samplerSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
         var heapStart = heap.GetCPUDescriptorHandleForHeapStart();
@@ -839,7 +827,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 MaxAnisotropy = 1,
                 ComparisonFunction = ComparisonFunction.Never,
                 MinLOD = 0,
-                MaxLOD = float.MaxValue,
+                MaxLOD = float.MaxValue
             };
             // skin.frag.hlsl binds diffuse s0 and normal s1. Give both the same independently
             // authored BGSM/BGEM address mode, and select the two-descriptor table per draw.
@@ -850,6 +838,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                     new CpuDescriptorHandle(heapStart, descriptorIndex, samplerSize));
             }
         }
+
         return heap;
     }
 
@@ -889,6 +878,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 if (viewPos.Y > maxY) maxY = viewPos.Y;
             }
         }
+
         return (minX, minY, maxX - minX, maxY - minY, viewMatrix);
     }
 
@@ -902,6 +892,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             var pos = new Vector3(sub.Positions[i], sub.Positions[i + 1], sub.Positions[i + 2]);
             sum += Vector3.Transform(pos, viewMatrix).Z;
         }
+
         return sum / count;
     }
 
@@ -910,22 +901,57 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
     ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
     /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
-        GpuShaderCompiler12.Compile(name, entryPoint, profile);
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
+    {
+        return GpuShaderCompiler12.Compile(name, entryPoint, profile);
+    }
+
+    // ---- Per-render structures ----------------------------------------------------------
+
+    /// <summary>
+    ///     State for an in-flight async sprite render: target dimensions, model bounds, and texture flags, completed
+    ///     later by <c>CompleteRender</c>.
+    /// </summary>
+    internal sealed class PendingRender
+    {
+        public required int Width { get; init; }
+        public required int Height { get; init; }
+        public required int SsWidth { get; init; }
+        public required int SsHeight { get; init; }
+        public required float BoundsWidth { get; init; }
+        public required float BoundsHeight { get; init; }
+        public required bool HasTexture { get; init; }
+        public required ulong FenceValue { get; init; }
+        public required ID3D12Resource ReadbackBuffer { get; init; }
+        public required uint ReadbackRowPitch { get; init; }
+        public required List<IDisposable> Disposables { get; init; }
+    }
+
+    private sealed record RenderItem(
+        RenderableSubmesh Submesh,
+        NifAlphaRenderState AlphaState,
+        float AverageZ,
+        bool HasDiffuseTexture);
+
+    private readonly record struct PsoKey(
+        NifAlphaRenderMode Mode,
+        byte SrcBlend,
+        byte DstBlend,
+        bool DoubleSided);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct GpuUniforms
     {
         public Matrix4x4 ViewProj; // 64
-        public Matrix4x4 View;     // 64
-        public Vector4 LightDir;   // 16
-        public Vector4 HalfVec;    // 16
-        public Vector4 Ambient;    // 16
-        public Vector4 Material;   // 16
-        public Vector4 TintColor;  // 16
-        public Vector4 Flags;      // 16
+        public Matrix4x4 View; // 64
+        public Vector4 LightDir; // 16
+        public Vector4 HalfVec; // 16
+        public Vector4 Ambient; // 16
+        public Vector4 Material; // 16
+        public Vector4 TintColor; // 16
+        public Vector4 Flags; // 16
+
         public Vector4 EffectTint; // 16 — BSEffect/BGEM base RGB × HDR scale
         // Total: 240 bytes
     }
 }
-

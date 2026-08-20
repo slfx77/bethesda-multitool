@@ -64,7 +64,7 @@ public sealed class RenderableReferenceTests
             ModelPath = @"effects\nv\fortfirefx.nif",
             RecordType = "REFR",
             Scale = 1f,
-            SpecialRenderingFlags = xsrf,
+            SpecialRenderingFlags = xsrf
         };
 
         var built = RenderableReference.TryBuild(placement);

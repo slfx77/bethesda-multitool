@@ -80,8 +80,8 @@ internal static class ResultsFormatter
         IReadOnlyList<DmpGapRecoveryCandidate>? recoverableCandidates = null)
     {
         var candidatesByGap = recoverableCandidates?
-            .GroupBy(c => (c.GapFileOffset, c.GapSize))
-            .ToDictionary(g => g.Key, g => g.ToList()) ??
+                                  .GroupBy(c => (c.GapFileOffset, c.GapSize))
+                                  .ToDictionary(g => g.Key, g => g.ToList()) ??
                               new Dictionary<(long GapFileOffset, long GapSize), List<DmpGapRecoveryCandidate>>();
         var entries = new List<CoverageGapEntry>(coverage.Gaps.Count);
         for (var i = 0; i < coverage.Gaps.Count; i++)
@@ -245,7 +245,8 @@ internal static class ResultsFormatter
                 ("Potions", C(0, "ALCH")), ("Ingredients", C(r.Ingredients.Count, "INGR")),
                 ("Apparatus", C(0, "APPA")), ("Tools", C(0, "REPA", "PROB", "LOCK")),
                 ("Misc Items", C(r.MiscItems.Count, "MISC")), ("Keys", r.Keys.Count),
-                ("Containers", C(r.Containers.Count, "CONT")), ("Leveled Lists", C(r.LeveledLists.Count, "LEVI", "LEVC"))
+                ("Containers", C(r.Containers.Count, "CONT")),
+                ("Leveled Lists", C(r.LeveledLists.Count, "LEVI", "LEVC"))
             ]),
             ("Abilities",
             [

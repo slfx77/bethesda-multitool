@@ -33,13 +33,16 @@ public sealed record Ba2TextureChunk
     public bool Compressed => PackedSize != 0;
 
     /// <summary>Reads one 24-byte chunk record from the current reader position.</summary>
-    public static Ba2TextureChunk Read(BinaryReader reader) => new()
+    public static Ba2TextureChunk Read(BinaryReader reader)
     {
-        Offset = reader.ReadUInt64(),
-        PackedSize = reader.ReadUInt32(),
-        FullSize = reader.ReadUInt32(),
-        StartMip = reader.ReadUInt16(),
-        EndMip = reader.ReadUInt16(),
-        Align = reader.ReadUInt32()
-    };
+        return new Ba2TextureChunk
+        {
+            Offset = reader.ReadUInt64(),
+            PackedSize = reader.ReadUInt32(),
+            FullSize = reader.ReadUInt32(),
+            StartMip = reader.ReadUInt16(),
+            EndMip = reader.ReadUInt16(),
+            Align = reader.ReadUInt32()
+        };
+    }
 }

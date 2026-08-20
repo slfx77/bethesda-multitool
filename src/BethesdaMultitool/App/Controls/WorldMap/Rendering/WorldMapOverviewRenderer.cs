@@ -14,6 +14,7 @@ using Windows.Foundation;
 using Windows.UI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -23,14 +24,14 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapOverviewRenderer
 {
-    [ThreadStatic] private static List<PlacedReference>? t_refScratch;
-
     /// <summary>
     ///     Maximum half-extent in world units for rendering a placed object's bounding box.
     ///     Half a cell (2048) is generous for even the largest buildings; anything beyond
     ///     this is likely corrupted OBND data or extreme scale and would obscure the map.
     /// </summary>
     private const float MaxHalfExtent = 2048f;
+
+    [ThreadStatic] private static List<PlacedReference>? t_refScratch;
 
     internal static void DrawWorldOverview(
         CanvasDrawingSession ds,
@@ -129,7 +130,7 @@ internal static class WorldMapOverviewRenderer
         {
             DrawCellGrid(ds, activeCells, cellGridLookup,
                 worldHeightmapBitmap is not null || textureCellBitmaps is not null
-                || (coarseTileBitmaps is not null && coarseTileCellSpan > 0),
+                                                 || (coarseTileBitmaps is not null && coarseTileCellSpan > 0),
                 zoom, panOffset, canvasWidth, canvasHeight, cellWorldSize);
         }
 
@@ -315,6 +316,7 @@ internal static class WorldMapOverviewRenderer
             pathBuilder.AddLine(worldX, endWorldY);
             pathBuilder.EndFigure(CanvasFigureLoop.Open);
         }
+
         for (var cy = startCellY; cy <= endCellY; cy++)
         {
             var worldY = cy * cellWorldSize;
@@ -322,6 +324,7 @@ internal static class WorldMapOverviewRenderer
             pathBuilder.AddLine(endWorldX, worldY);
             pathBuilder.EndFigure(CanvasFigureLoop.Open);
         }
+
         using var gridGeometry = CanvasGeometry.CreatePath(pathBuilder);
         ds.DrawGeometry(gridGeometry, gridColor, lineWidth);
 

@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.UI.Text;
+using BethesdaMultitool.Core.EsmView;
 
 namespace BethesdaMultitool;
 
@@ -11,6 +12,13 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class PropertyPanelBuilder
 {
+    /// <summary>
+    ///     Hard cap on rendered sub-rows. The detail grid is not virtualized, so a record placed
+    ///     thousands of times would freeze the UI building every row on expand; we render the first N and
+    ///     state the remainder in a footer (no silent truncation).
+    /// </summary>
+    private const int MaxRenderedSubItems = 1000;
+
     /// <summary>
     ///     Builds the main property panel Grid from a list of property entries.
     /// </summary>
@@ -188,11 +196,6 @@ internal static class PropertyPanelBuilder
         propertyRowIndex++;
         currentRow++;
     }
-
-    /// <summary>Hard cap on rendered sub-rows. The detail grid is not virtualized, so a record placed
-    /// thousands of times would freeze the UI building every row on expand; we render the first N and
-    /// state the remainder in a footer (no silent truncation).</summary>
-    private const int MaxRenderedSubItems = 1000;
 
     private static Grid BuildSubItemsGrid(EsmPropertyEntry prop, Callbacks callbacks)
     {

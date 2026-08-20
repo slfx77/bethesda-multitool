@@ -13,16 +13,17 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 /// </summary>
 public sealed class ChalEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<ChallengeRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["ChallengeType"] = m => (int)m.ChallengeType,
-        ["Threshold"] = m => (int)m.Threshold,
-        ["Flags"] = m => (ushort)m.Flags,
-        ["Interval"] = m => (int)m.Interval,
-        ["SpecialDataOne"] = m => (ushort)m.Value1,
-        ["SpecialDataTwo"] = m => (ushort)m.Value2,
-        ["SpecialDataThree"] = m => (ushort)m.Value3,
-    };
+    private static readonly Dictionary<string, Func<ChallengeRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["ChallengeType"] = m => (int)m.ChallengeType,
+            ["Threshold"] = m => (int)m.Threshold,
+            ["Flags"] = m => (ushort)m.Flags,
+            ["Interval"] = m => (int)m.Interval,
+            ["SpecialDataOne"] = m => (ushort)m.Value1,
+            ["SpecialDataTwo"] = m => (ushort)m.Value2,
+            ["SpecialDataThree"] = m => (ushort)m.Value3
+        };
 
     public string RecordType => "CHAL";
     public Type ModelType => typeof(ChallengeRecord);

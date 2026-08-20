@@ -2,10 +2,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -189,7 +187,7 @@ internal static class DmpUnresolvedRefsCommand
                             p.Offset.ToString(CultureInfo.InvariantCulture),
                             nearest is not null ? $"0x{nearest.FormId:X8}" : "",
                             (nearest?.EditorId ?? "").Replace('\t', ' '),
-                            nearest is null ? "" : (nearest.IsInterior ? "Y" : "N"),
+                            nearest is null ? "" : nearest.IsInterior ? "Y" : "N",
                             gap.ToString(CultureInfo.InvariantCulture),
                             (p.EditorId ?? "").Replace('\t', ' ')));
                     }
@@ -210,6 +208,7 @@ internal static class DmpUnresolvedRefsCommand
                 {
                     AnsiConsole.MarkupLine($"    [grey]{count,4}[/] {Markup.Escape(modelPath)}");
                 }
+
                 if (modelCounts.Count > 25)
                 {
                     AnsiConsole.MarkupLine($"    [grey]… {modelCounts.Count - 25} more (full list in TSV)[/]");
@@ -248,6 +247,7 @@ internal static class DmpUnresolvedRefsCommand
             bestGap = anchorOffsets[idx] - offset;
             best = anchors[idx].Cell;
         }
+
         if (idx - 1 >= 0)
         {
             var gapBelow = offset - anchorOffsets[idx - 1];
@@ -260,8 +260,6 @@ internal static class DmpUnresolvedRefsCommand
 
         return (best, best is null ? -1 : bestGap);
     }
-
-    private sealed record OffsetAnchor(CellRecord Cell, long Min, long Max);
 
     /// <summary>
     ///     Builds a base FormID → model (NIF) path map from the scenery-bearing base record types
@@ -290,5 +288,10 @@ internal static class DmpUnresolvedRefsCommand
         return map;
     }
 
-    private static string Hex(uint? value) => value is { } v && v != 0 ? $"0x{v:X8}" : "";
+    private static string Hex(uint? value)
+    {
+        return value is { } v && v != 0 ? $"0x{v:X8}" : "";
+    }
+
+    private sealed record OffsetAnchor(CellRecord Cell, long Min, long Max);
 }

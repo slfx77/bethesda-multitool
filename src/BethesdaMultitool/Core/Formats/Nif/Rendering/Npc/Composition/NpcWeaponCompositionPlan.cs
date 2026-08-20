@@ -1,12 +1,14 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
-/// <summary>The weapon portion of an NPC composition plan: the resolved weapon visual and how/where it attaches to the skeleton.</summary>
+/// <summary>
+///     The weapon portion of an NPC composition plan: the resolved weapon visual and how/where it attaches to the
+///     skeleton.
+/// </summary>
 internal sealed class NpcWeaponCompositionPlan
 {
     public required WeaponVisual WeaponVisual { get; init; }
@@ -33,4 +35,3 @@ internal sealed class NpcWeaponCompositionPlan
 
     public IReadOnlyList<WeaponAddonVisual> AddonMeshes { get; init; } = [];
 }
-

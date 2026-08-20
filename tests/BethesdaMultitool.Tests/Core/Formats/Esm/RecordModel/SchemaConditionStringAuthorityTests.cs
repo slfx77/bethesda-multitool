@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel;
@@ -19,7 +20,7 @@ public sealed class SchemaConditionStringAuthorityTests
     {
         var groups = Decode(
             [
-                new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x048)),
+                new RawSubrecord("CTDA", BuildCtda(0x048)),
                 new RawSubrecord("CIS1", ZString("QuestVariable"))
             ],
             resolveName: _ => "FalseResolverName");
@@ -44,16 +45,17 @@ public sealed class SchemaConditionStringAuthorityTests
     {
         var groups = Decode(
             [
-                new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x240, bigEndian: true)),
+                new RawSubrecord("CTDA", BuildCtda(0x240, true)),
                 new RawSubrecord("CIS2", ZString("EventMember"))
             ],
-            bigEndian: true,
-            resolveName: _ => "FalseResolverName");
+            true,
+            _ => "FalseResolverName");
 
         var group = Assert.Single(groups);
         var ctda = ChildBySignature(group, "CTDA");
         Assert.NotNull(ChildByLabel(ctda, "Parameter #1"));
-        Assert.DoesNotContain(ctda.Children, node => node.Label.Contains("Parameter #1 (CTDA placeholder)", StringComparison.Ordinal));
+        Assert.DoesNotContain(ctda.Children,
+            node => node.Label.Contains("Parameter #1 (CTDA placeholder)", StringComparison.Ordinal));
 
         var placeholder = ChildByLabel(ctda, "Parameter #2 (CTDA placeholder)");
         Assert.Equal(Param2Bits, Assert.IsType<uint>(placeholder.RawValue));
@@ -70,7 +72,7 @@ public sealed class SchemaConditionStringAuthorityTests
     {
         var group = Assert.Single(Decode(
         [
-            new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x048)),
+            new RawSubrecord("CTDA", BuildCtda(0x048)),
             new RawSubrecord("CIS1", [])
         ]));
 
@@ -86,7 +88,7 @@ public sealed class SchemaConditionStringAuthorityTests
     {
         var group = Assert.Single(Decode(
         [
-            new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x240)),
+            new RawSubrecord("CTDA", BuildCtda(0x240)),
             new RawSubrecord("CIS1", ZString("Selector")),
             new RawSubrecord("CIS2", ZString("Member"))
         ]));
@@ -103,7 +105,7 @@ public sealed class SchemaConditionStringAuthorityTests
     public void NoCis_ControlRetainsOriginalTypedParameterAndResolverDisplay()
     {
         var group = Assert.Single(Decode(
-            [new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x048))],
+            [new RawSubrecord("CTDA", BuildCtda(0x048))],
             resolveName: _ => "ResolvedBase"));
 
         var param1 = ChildByLabel(ChildBySignature(group, "CTDA"), "Parameter #1");
@@ -118,10 +120,10 @@ public sealed class SchemaConditionStringAuthorityTests
         var groups = Decode(
         [
             new RawSubrecord("CIS1", ZString("orphan-before")),
-            new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x240)),
+            new RawSubrecord("CTDA", BuildCtda(0x240)),
             new RawSubrecord("CIS2", ZString("second-only")),
             new RawSubrecord("CIS1", ZString("out-of-order")),
-            new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x048)),
+            new RawSubrecord("CTDA", BuildCtda(0x048)),
             new RawSubrecord("CIS1", ZString("first")),
             new RawSubrecord("CIS1", ZString("repeated"))
         ]);
@@ -147,7 +149,7 @@ public sealed class SchemaConditionStringAuthorityTests
     {
         var tree = DecodeTree(
             [
-                new RawSubrecord("CTDA", BuildCtda(functionIndex: 0x048)),
+                new RawSubrecord("CTDA", BuildCtda(0x048)),
                 new RawSubrecord("CIS1", ZString("QuestVariable"))
             ],
             resolveName: _ => "DecodeResolverName");
@@ -155,7 +157,7 @@ public sealed class SchemaConditionStringAuthorityTests
             new Dictionary<uint, string> { [Param1Bits] = "AdapterResolverName" },
             []);
 
-        var rows = global::BethesdaMultitool.DecodedTreePropertyAdapter.Convert(
+        var rows = DecodedTreePropertyAdapter.Convert(
             new GenericEsmRecord { FormId = 0x01000001, RecordType = "INFO" },
             tree,
             resolver);
@@ -174,8 +176,10 @@ public sealed class SchemaConditionStringAuthorityTests
     private static IReadOnlyList<DecodedNode> Decode(
         IReadOnlyList<RawSubrecord> subrecords,
         bool bigEndian = false,
-        SchemaRecordDecoder.FormIdNameResolver? resolveName = null) =>
-        Assert.Single(DecodeTree(subrecords, bigEndian, resolveName)).Children;
+        SchemaRecordDecoder.FormIdNameResolver? resolveName = null)
+    {
+        return Assert.Single(DecodeTree(subrecords, bigEndian, resolveName)).Children;
+    }
 
     private static IReadOnlyList<DecodedNode> DecodeTree(
         IReadOnlyList<RawSubrecord> subrecords,
@@ -217,16 +221,23 @@ public sealed class SchemaConditionStringAuthorityTests
         return data;
     }
 
-    private static byte[] ZString(string value) => Encoding.ASCII.GetBytes(value + '\0');
+    private static byte[] ZString(string value)
+    {
+        return Encoding.ASCII.GetBytes(value + '\0');
+    }
 
-    private static DecodedNode ChildBySignature(DecodedNode parent, string signature) =>
-        Assert.Single(parent.Children, node => node.Signature == signature);
+    private static DecodedNode ChildBySignature(DecodedNode parent, string signature)
+    {
+        return Assert.Single(parent.Children, node => node.Signature == signature);
+    }
 
-    private static DecodedNode ChildByLabel(DecodedNode parent, string label) =>
-        Assert.Single(parent.Children, node => node.Label == label);
+    private static DecodedNode ChildByLabel(DecodedNode parent, string label)
+    {
+        return Assert.Single(parent.Children, node => node.Label == label);
+    }
 
-    private static global::BethesdaMultitool.EsmPropertyEntry? FindRow(
-        IEnumerable<global::BethesdaMultitool.EsmPropertyEntry> rows,
+    private static EsmPropertyEntry? FindRow(
+        IEnumerable<EsmPropertyEntry> rows,
         string name)
     {
         foreach (var row in rows)

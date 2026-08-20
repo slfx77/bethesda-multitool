@@ -19,9 +19,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 ///     so the subrecord is omitted instead. Remap-via-alias-table comes first (same policy as
 ///     IDLE ANAM / CTDA params / PACK PLDT).
 ///     <para>
-///     The policy itself moved to <c>PlacedRefLinkPlanner</c> in retirement Stage H5
-///     (2026-08-12) — these run it plan-then-encode, which is what production does, so the
-///     assertions still describe the bytes that reach the file.
+///         The policy itself moved to <c>PlacedRefLinkPlanner</c> in retirement Stage H5
+///         (2026-08-12) — these run it plan-then-encode, which is what production does, so the
+///         assertions still describe the bytes that reach the file.
 ///     </para>
 /// </summary>
 public class PlacedRefSanitizerTests

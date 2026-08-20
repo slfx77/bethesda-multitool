@@ -320,4 +320,3 @@ internal static class CsvActorWriter
         return sb.ToString();
     }
 }
-

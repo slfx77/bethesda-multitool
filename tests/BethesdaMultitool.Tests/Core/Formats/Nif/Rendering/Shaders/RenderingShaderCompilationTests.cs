@@ -373,5 +373,8 @@ public sealed class RenderingShaderCompilationTests
         Assert.NotEmpty(bytecode);
     }
 
-    private static string ReadEmbeddedShader(string name) => GpuShaderCompiler12.ReadSource(name);
+    private static string ReadEmbeddedShader(string name)
+    {
+        return GpuShaderCompiler12.ReadSource(name);
+    }
 }

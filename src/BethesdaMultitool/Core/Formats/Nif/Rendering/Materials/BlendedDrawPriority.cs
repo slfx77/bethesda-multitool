@@ -7,8 +7,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 /// </summary>
 internal static class BlendedDrawPriority
 {
-    internal readonly record struct Plan(int FirstSelected, int SelectedCount, int TruncatedCount);
-
     /// <summary>
     ///     Plans the nearest drawable suffix. Zero entries represent authored quiet particle frames;
     ///     they consume no capacity and count as neither selected nor truncated draws.
@@ -37,7 +35,7 @@ internal static class BlendedDrawPriority
             firstSelected = i;
         }
 
-        return new Plan(firstSelected, selected, TruncatedCount: 0);
+        return new Plan(firstSelected, selected, 0);
     }
 
     /// <summary>Exact count of repeated bump allocations that fit after alignment.</summary>
@@ -54,11 +52,13 @@ internal static class BlendedDrawPriority
         }
 
         var mask = (ulong)alignment - 1;
-        var first = ((ulong)currentOffset + mask) & ~mask;
+        var first = (currentOffset + mask) & ~mask;
         if (first + allocationSize > totalBytes) return 0;
 
-        var stride = ((ulong)allocationSize + mask) & ~mask;
-        var count = 1UL + (((ulong)totalBytes - allocationSize - first) / stride);
+        var stride = (allocationSize + mask) & ~mask;
+        var count = 1UL + ((ulong)totalBytes - allocationSize - first) / stride;
         return count > int.MaxValue ? int.MaxValue : (int)count;
     }
+
+    internal readonly record struct Plan(int FirstSelected, int SelectedCount, int TruncatedCount);
 }

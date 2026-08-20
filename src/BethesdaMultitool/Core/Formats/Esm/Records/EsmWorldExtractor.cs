@@ -3,12 +3,11 @@ using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Utils;
@@ -946,4 +945,3 @@ internal static class EsmWorldExtractor
 
     #endregion
 }
-

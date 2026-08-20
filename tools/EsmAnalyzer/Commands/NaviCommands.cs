@@ -1,7 +1,5 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.CommandLine;
-using BethesdaMultitool.Core.Utils;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
@@ -15,7 +13,7 @@ public static class NaviCommands
         var leftArg = new Argument<string>("left") { Description = "First ESM file (e.g., converted)" };
         var rightArg = new Argument<string>("right") { Description = "Second ESM file (e.g., PC reference)" };
         var limitOpt = new Option<int>("-l", "--limit")
-        { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
 
         var command = new Command("compare-navi", "Compare NAVI NVMI entries by Navmesh FormID")
         {

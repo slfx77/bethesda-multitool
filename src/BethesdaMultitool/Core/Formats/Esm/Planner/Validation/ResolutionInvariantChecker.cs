@@ -28,7 +28,7 @@ public static class ResolutionInvariantChecker
                             FormId = record.FormId,
                             Message =
                                 $"ResolvedRef for {record.Type} 0x{record.FormId:X8} field {resolved.FieldPath} " +
-                                "has Action=Resolved but FinalFormId is null.",
+                                "has Action=Resolved but FinalFormId is null."
                         };
                     }
 
@@ -46,7 +46,7 @@ public static class ResolutionInvariantChecker
                         FormId = record.FormId,
                         Message =
                             $"ResolvedRef for {record.Type} 0x{record.FormId:X8} field {resolved.FieldPath} " +
-                            $"has Action={resolved.Action} but no Reason.",
+                            $"has Action={resolved.Action} but no Reason."
                     };
                 }
             }

@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -12,13 +13,11 @@ namespace BethesdaMultitool;
 ///     Each candidate's containing folder is probed once via <see cref="BsaDiscovery" />, with
 ///     directory + BSA-path dedup so a DLC ESM in the same Data folder as the main game ESM
 ///     doesn't double-list shared archives.
-///
 ///     Ordering: primary first, then load-order entries in order. <c>NifTextureLoader</c>
 ///     walks the sources list and returns the FIRST hit, so the primary's archives win any
 ///     path collision and load-order entries only fill gaps — matching the engine's
 ///     SArchiveList convention, where the first registered archive containing a path wins
 ///     (the reason ArchiveInvalidation exists). Later DLC does NOT override the primary here.
-///
 ///     A DMP file has no adjacent BSAs of its own, so without <c>AdditionalDataPaths</c> the
 ///     world map's terrain-texture layer renders only the fallback brown. This helper is
 ///     the single source of truth for both the 2D map (<c>LandscapeTexturePalette</c>) and
@@ -42,6 +41,7 @@ internal static class WorldDataBsaPathResolver
             var i = 0;
             foreach (var path in data.AdditionalDataPaths) AddFrom(path, $"load-order[{i++}]");
         }
+
         return result.ToArray();
 
         void AddFrom(string? candidatePath, string label)
@@ -51,17 +51,20 @@ internal static class WorldDataBsaPathResolver
                 Log.Info("BsaResolver {0}: skipped (path empty)", label);
                 return;
             }
+
             var dir = Path.GetDirectoryName(Path.GetFullPath(candidatePath));
             if (string.IsNullOrEmpty(dir))
             {
                 Log.Info("BsaResolver {0} '{1}': skipped (no parent directory)", label, candidatePath);
                 return;
             }
+
             if (!seenDirs.Add(dir))
             {
                 Log.Info("BsaResolver {0} '{1}': dir already probed", label, dir);
                 return;
             }
+
             var discovery = BsaDiscovery.Discover(candidatePath);
             if (discovery.TexturesBsaPaths.Length == 0)
             {
@@ -71,6 +74,7 @@ internal static class WorldDataBsaPathResolver
                     label, dir, discovery.MeshesBsaPaths.Length);
                 return;
             }
+
             var added = 0;
             foreach (var bsa in discovery.TexturesBsaPaths)
             {
@@ -80,6 +84,7 @@ internal static class WorldDataBsaPathResolver
                     added++;
                 }
             }
+
             Log.Info("BsaResolver {0} '{1}': +{2} texture BSA(s).", label, dir, added);
         }
     }

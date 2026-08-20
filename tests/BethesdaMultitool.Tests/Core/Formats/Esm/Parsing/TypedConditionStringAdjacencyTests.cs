@@ -4,8 +4,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
-using BethesdaMultitool.Core.Formats.Esm.Records;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
@@ -129,7 +127,7 @@ public sealed class TypedConditionStringAdjacencyTests
             ("CTDA", BuildCtda(1, 20)),
             ("CTDA", BuildCtda(2, 24)),
             ("CTDA", BuildCtda(3, 29)),
-            ("CTDA", BuildCtda(4, 28)),
+            ("CTDA", BuildCtda(4)),
             ("CTDA", BuildCtda(5, 31)),
             ("CTDA", BuildCtda(6, 32))
         ]);
@@ -138,7 +136,7 @@ public sealed class TypedConditionStringAdjacencyTests
 
         Assert.Equal<ushort>([1, 2, 4, 6], conditions.Select(condition => condition.FunctionIndex));
         Assert.All(conditions.Take(3), condition => Assert.Null(condition.Parameter3));
-        Assert.Equal<int?>(0, conditions[3].Parameter3);
+        Assert.Equal(0, conditions[3].Parameter3);
     }
 
     private static List<DialogueCondition> ParseConditions(

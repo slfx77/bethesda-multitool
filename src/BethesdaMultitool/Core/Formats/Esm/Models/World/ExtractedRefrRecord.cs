@@ -32,8 +32,10 @@ public record ExtractedRefrRecord
     /// <summary>XEZN - Encounter zone FormID.</summary>
     public uint? EncounterZoneFormId { get; init; }
 
-    /// <summary>XMSP - Material swap (MSWP) FormID. FO4/FO76 only: re-skins this placement's mesh by
-    /// substituting whole <c>.bgsm</c> materials at decode time.</summary>
+    /// <summary>
+    ///     XMSP - Material swap (MSWP) FormID. FO4/FO76 only: re-skins this placement's mesh by
+    ///     substituting whole <c>.bgsm</c> materials at decode time.
+    /// </summary>
     public uint? MaterialSwapFormId { get; init; }
 
     /// <summary>XEMI - external-emittance REGN/LIGH FormID used by effect shader properties.</summary>
@@ -119,12 +121,16 @@ public record ExtractedRefrRecord
     /// <summary>TNAM - Map marker type enum value.</summary>
     public ushort? MarkerType { get; init; }
 
-    /// <summary>FULL - Map marker display name (eager null-term decode; garbage for a localized plugin's
-    /// 4-byte string ID — prefer resolving <see cref="MarkerNameRaw" /> via the .STRINGS table).</summary>
+    /// <summary>
+    ///     FULL - Map marker display name (eager null-term decode; garbage for a localized plugin's
+    ///     4-byte string ID — prefer resolving <see cref="MarkerNameRaw" /> via the .STRINGS table).
+    /// </summary>
     public string? MarkerName { get; init; }
 
-    /// <summary>Raw FULL subrecord bytes, resolved late against the localized .STRINGS table (the table isn't
-    /// loaded during the descriptor scan). Null for records without a FULL.</summary>
+    /// <summary>
+    ///     Raw FULL subrecord bytes, resolved late against the localized .STRINGS table (the table isn't
+    ///     loaded during the descriptor scan). Null for records without a FULL.
+    /// </summary>
     public byte[]? MarkerNameRaw { get; init; }
 
     /// <summary>XLKR - Linked reference keyword FormID when present on the 8-byte variant.</summary>

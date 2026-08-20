@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -23,24 +24,28 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldView3DControl
 {
-    /// <summary>Per-tile offscreen edge cap. Tiling delivers resolution beyond this; one MSAA target at
-    /// this size is the memory ceiling per tile (~160 MiB at 4× MSAA; the 1-sample path additionally
-    /// supersamples 2×, so raising this risks exceeding the D3D12 16384 texture limit). Matches the
-    /// top-down overlay's conservative bound. This is NOT the output-size cap — see
-    /// <see cref="Export3DMaxImageDimension" />.</summary>
+    /// <summary>
+    ///     Per-tile offscreen edge cap. Tiling delivers resolution beyond this; one MSAA target at
+    ///     this size is the memory ceiling per tile (~160 MiB at 4× MSAA; the 1-sample path additionally
+    ///     supersamples 2×, so raising this risks exceeding the D3D12 16384 texture limit). Matches the
+    ///     top-down overlay's conservative bound. This is NOT the output-size cap — see
+    ///     <see cref="Export3DMaxImageDimension" />.
+    /// </summary>
     private const int Export3DMaxTileDimension = 2048;
 
-    /// <summary>Long-edge cap for a NON-tiled export's single output PNG, rendered internally tiled
-    /// and stitched (<see cref="Core.Formats.Nif.Rendering.Export.ExportTileStitcher" />). 16384
-    /// matches <see cref="WorldMapExporter" />'s non-tiled cap; the stitched RGBA buffer at this size
-    /// is 1 GiB (managed-array ceiling would allow ~23k). Tiled exports have no overall cap.</summary>
+    /// <summary>
+    ///     Long-edge cap for a NON-tiled export's single output PNG, rendered internally tiled
+    ///     and stitched (<see cref="Core.Formats.Nif.Rendering.Export.ExportTileStitcher" />). 16384
+    ///     matches <see cref="WorldMapExporter" />'s non-tiled cap; the stitched RGBA buffer at this size
+    ///     is 1 GiB (managed-array ceiling would allow ~23k). Tiled exports have no overall cap.
+    /// </summary>
     private const int Export3DMaxImageDimension = 16384;
 
     // Reused across export tiles (all the same size); separate from the top-down overlay target so the
     // two don't fight over dimensions. Disposed in DisposeRenderResources via DisposeExport3DTarget().
     private GpuOffscreenSceneTarget12? _export3DTarget;
-    private int _export3DTargetW;
     private int _export3DTargetH;
+    private int _export3DTargetW;
 
     /// <summary>True when the D3D12 backend + scene renderers are ready for an offscreen export.</summary>
     internal bool CanRenderProjectionExport => CanRenderTopDownCore;
@@ -88,6 +93,7 @@ public sealed partial class WorldView3DControl
                 _export3DTargetW = ssWidth;
                 _export3DTargetH = ssHeight;
             }
+
             target = _export3DTarget;
         }
         catch (Exception ex)
@@ -181,6 +187,7 @@ public sealed partial class WorldView3DControl
                         cameraPosition: shadingEye,
                         cameraForward: Vector3.Normalize(Vector3.Cross(leafUp, leafRight)));
                 }
+
                 var exportWaterPartitioned = false;
                 if (opts.ShowWater && _water is not null)
                 {
@@ -202,6 +209,7 @@ public sealed partial class WorldView3DControl
                     // water phase depend on wall-clock at export time (byte-unstable re-exports).
                     _water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);
                 }
+
                 if (opts.ShowReferences)
                 {
                     // Orthographic exports have no perspective-compatible scene-depth SRV; clear
@@ -216,6 +224,7 @@ public sealed partial class WorldView3DControl
                         _references.RenderBlendedDeferred();
                     }
                 }
+
                 if (opts.ShowNavMesh) _navMesh?.Render(viewProj, cylinder);
                 // An offscreen export has no XAML composition scale, so the analytic overlay keeps
                 // its scale-1 profile in supersample pixels. It therefore becomes proportionally
@@ -228,6 +237,7 @@ public sealed partial class WorldView3DControl
                         showReferences: opts.ShowReferences,
                         hiddenCategories: opts.HiddenCategories);
                 }
+
                 if (opts.ShowGrid) _cellGrid?.Render(viewProj, cylinder);
 
                 // Gate only on the layers THIS render drew: a disabled layer's LastStats is stale (frozen
@@ -261,12 +271,26 @@ public sealed partial class WorldView3DControl
         }
         catch (Exception ex)
         {
-            try { _commandRecorder12?.WaitForGpuIdle(); }
-            catch (Exception waitEx) { Log.Warn("WaitForGpuIdle after 3D export failure threw: {0}", waitEx.Message); }
+            try
+            {
+                _commandRecorder12?.WaitForGpuIdle();
+            }
+            catch (Exception waitEx)
+            {
+                Log.Warn("WaitForGpuIdle after 3D export failure threw: {0}", waitEx.Message);
+            }
+
             DisposeExport3DTarget();
             Log.Warn("WorldView3DControl: 3D export render failed: {0}", ex.Message);
-            try { _gpu12?.PumpDebugMessages(); }
-            catch (Exception pumpEx) { Log.Warn("PumpDebugMessages threw: {0}", pumpEx.Message); }
+            try
+            {
+                _gpu12?.PumpDebugMessages();
+            }
+            catch (Exception pumpEx)
+            {
+                Log.Warn("PumpDebugMessages threw: {0}", pumpEx.Message);
+            }
+
             return null;
         }
         finally

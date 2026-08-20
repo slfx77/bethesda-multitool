@@ -110,13 +110,22 @@ public sealed class OblivionWaterDataTests
     public void ReadOblivionWaterData_42ByteVintage_ColorsFollowTheSevenFloats()
     {
         var d = new byte[42];
-        WriteFloat(d, 16, 50f, false);    // SunPower
-        WriteFloat(d, 20, 0.5f, false);   // Reflectivity
+        WriteFloat(d, 16, 50f, false); // SunPower
+        WriteFloat(d, 20, 0.5f, false); // Reflectivity
         WriteFloat(d, 24, 0.025f, false); // Fresnel
-        d[28] = 60; d[29] = 0; d[30] = 0; d[31] = 0xFF;    // Shallow (Blood's authored red)
-        d[32] = 150; d[33] = 0; d[34] = 0; d[35] = 0xFF;   // Deep
-        d[36] = 255; d[37] = 102; d[38] = 102; d[39] = 0xFF; // Reflection
-        var props = MiscEnvironmentHandler.ReadOblivionWaterData(d, isBigEndian: false);
+        d[28] = 60;
+        d[29] = 0;
+        d[30] = 0;
+        d[31] = 0xFF; // Shallow (Blood's authored red)
+        d[32] = 150;
+        d[33] = 0;
+        d[34] = 0;
+        d[35] = 0xFF; // Deep
+        d[36] = 255;
+        d[37] = 102;
+        d[38] = 102;
+        d[39] = 0xFF; // Reflection
+        var props = MiscEnvironmentHandler.ReadOblivionWaterData(d, false);
 
         Assert.Equal(0x00_00_00_3Cu, Assert.IsType<uint>(props["ShallowColor"]));
         Assert.Equal(0x00_00_00_96u, Assert.IsType<uint>(props["DeepColor"]));
@@ -133,7 +142,7 @@ public sealed class OblivionWaterDataTests
     public void ReadOblivionWaterData_62ByteVintage_EndsAtTheTextureBlend()
     {
         var props = MiscEnvironmentHandler.ReadOblivionWaterData(
-            BuildOblivionData(bigEndian: false).AsSpan(0, 62), isBigEndian: false);
+            BuildOblivionData(false).AsSpan(0, 62), false);
 
         Assert.Equal(0x00_30_20_10u, Assert.IsType<uint>(props["ShallowColor"]));
         Assert.Equal(0x00_60_50_40u, Assert.IsType<uint>(props["DeepColor"]));
@@ -147,14 +156,14 @@ public sealed class OblivionWaterDataTests
     public void ReadOblivionWaterData_86ByteVintage_ReadsThreeFloatSims()
     {
         var d = new byte[86];
-        BuildOblivionData(bigEndian: false).AsSpan(0, 60).CopyTo(d);
-        WriteFloat(d, 60, 0.1f, false);   // Rain Force
-        WriteFloat(d, 64, 0.6f, false);   // Rain Velocity
+        BuildOblivionData(false).AsSpan(0, 60).CopyTo(d);
+        WriteFloat(d, 60, 0.1f, false); // Rain Force
+        WriteFloat(d, 64, 0.6f, false); // Rain Velocity
         WriteFloat(d, 68, 0.985f, false); // Rain Falloff
-        WriteFloat(d, 72, 0.4f, false);   // Displacement Force — @72 is RainDampener in the 102-form
-        WriteFloat(d, 76, 0.6f, false);   // Displacement Velocity
+        WriteFloat(d, 72, 0.4f, false); // Displacement Force — @72 is RainDampener in the 102-form
+        WriteFloat(d, 76, 0.6f, false); // Displacement Velocity
         WriteFloat(d, 80, 0.985f, false); // Displacement Falloff
-        var props = MiscEnvironmentHandler.ReadOblivionWaterData(d, isBigEndian: false);
+        var props = MiscEnvironmentHandler.ReadOblivionWaterData(d, false);
 
         Assert.Equal(0x00_30_20_10u, Assert.IsType<uint>(props["ShallowColor"]));
         Assert.Equal(0.1f, Assert.IsType<float>(props["RainForce"]), 4);

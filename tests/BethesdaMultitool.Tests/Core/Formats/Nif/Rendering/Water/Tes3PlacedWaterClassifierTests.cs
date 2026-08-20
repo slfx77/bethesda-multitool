@@ -13,7 +13,7 @@ public sealed class Tes3PlacedWaterClassifierTests
     [InlineData("textures/tx_v_water_01.tga")]
     public void ExactCombinedSignature_IsClassifiedWithoutModelOrShapeName(string texturePath)
     {
-        var candidate = CreateCandidate(texturePath: texturePath);
+        var candidate = CreateCandidate(texturePath);
 
         Assert.True(Tes3PlacedWaterClassifier.IsWaterSurface(0x04000002u, candidate));
     }
@@ -40,9 +40,9 @@ public sealed class Tes3PlacedWaterClassifierTests
     [Fact]
     public void OrdinaryTes3TexturedMesh_IsNotDiverted()
     {
-        var ordinary = CreateCandidate(texturePath: @"textures\x\vivec_palace_wall_01.tga");
+        var ordinary = CreateCandidate(@"textures\x\vivec_palace_wall_01.tga");
         var duplicateLeafInAnotherDirectory = CreateCandidate(
-            texturePath: @"textures\architecture\tx_v_water_01.tga");
+            @"textures\architecture\tx_v_water_01.tga");
 
         Assert.False(Tes3PlacedWaterClassifier.IsWaterSurface(0x04000002u, ordinary));
         Assert.False(Tes3PlacedWaterClassifier.IsWaterSurface(
@@ -104,8 +104,9 @@ public sealed class Tes3PlacedWaterClassifierTests
         Vector2? uvScroll = null,
         float[]? positions = null,
         ushort[]? triangles = null,
-        float[]? normals = null) =>
-        new()
+        float[]? normals = null)
+    {
+        return new RenderableSubmesh
         {
             Positions = positions ?? [0f, 0f, 10f, 4f, 0f, 10f, 0f, 4f, 10f],
             Triangles = triangles ?? [0, 1, 2],
@@ -119,13 +120,14 @@ public sealed class Tes3PlacedWaterClassifierTests
             MaterialDiffuse = materialDiffuse ?? (1f, 1f, 1f),
             UvScrollVelocity = uvScroll ?? new Vector2(-0.05f, 0f)
         };
+    }
 
     private static float[] UpNormals(int count)
     {
         var normals = new float[count * 3];
         for (var i = 0; i < count; i++)
         {
-            normals[(i * 3) + 2] = 1f;
+            normals[i * 3 + 2] = 1f;
         }
 
         return normals;

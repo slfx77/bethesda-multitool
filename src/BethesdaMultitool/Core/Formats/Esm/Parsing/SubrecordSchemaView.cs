@@ -16,12 +16,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 /// </summary>
 public sealed class SubrecordSchemaView
 {
-    private readonly Dictionary<string, object?> _fields;
-
     private SubrecordSchemaView(Dictionary<string, object?> fields)
     {
-        _fields = fields;
+        Raw = fields;
     }
+
+    /// <summary>
+    ///     Underlying decoded field dictionary. Most callers should prefer the typed accessors
+    ///     below — this exists for the small set of consumers (CSTY/LGTM/WATR/LSCT records)
+    ///     that hold the dict verbatim instead of projecting to a typed model. Returned as a
+    ///     mutable Dictionary to match the consumers' existing storage type; treat as read-only.
+    /// </summary>
+    public Dictionary<string, object?> Raw { get; }
 
     /// <summary>
     ///     Reads the subrecord using the registered schema. Throws if no schema is
@@ -64,35 +70,54 @@ public sealed class SubrecordSchemaView
         return new SubrecordSchemaView(SubrecordSchemaReader.ReadFields(signature, data, rt, bigEndian));
     }
 
-    /// <summary>
-    ///     Underlying decoded field dictionary. Most callers should prefer the typed accessors
-    ///     below — this exists for the small set of consumers (CSTY/LGTM/WATR/LSCT records)
-    ///     that hold the dict verbatim instead of projecting to a typed model. Returned as a
-    ///     mutable Dictionary to match the consumers' existing storage type; treat as read-only.
-    /// </summary>
-    public Dictionary<string, object?> Raw => _fields;
+    public bool HasField(string name)
+    {
+        return Raw.ContainsKey(name);
+    }
 
-    public bool HasField(string name) => _fields.ContainsKey(name);
+    public byte Byte(string name, byte def = 0)
+    {
+        return SubrecordDataReader.GetByte(Raw, name, def);
+    }
 
-    public byte Byte(string name, byte def = 0) => SubrecordDataReader.GetByte(_fields, name, def);
+    public sbyte SByte(string name, sbyte def = 0)
+    {
+        return SubrecordDataReader.GetSByte(Raw, name, def);
+    }
 
-    public sbyte SByte(string name, sbyte def = 0) => SubrecordDataReader.GetSByte(_fields, name, def);
+    public ushort UInt16(string name, ushort def = 0)
+    {
+        return SubrecordDataReader.GetUInt16(Raw, name, def);
+    }
 
-    public ushort UInt16(string name, ushort def = 0) => SubrecordDataReader.GetUInt16(_fields, name, def);
+    public short Int16(string name, short def = 0)
+    {
+        return SubrecordDataReader.GetInt16(Raw, name, def);
+    }
 
-    public short Int16(string name, short def = 0) => SubrecordDataReader.GetInt16(_fields, name, def);
+    public uint UInt32(string name, uint def = 0)
+    {
+        return SubrecordDataReader.GetUInt32(Raw, name, def);
+    }
 
-    public uint UInt32(string name, uint def = 0) => SubrecordDataReader.GetUInt32(_fields, name, def);
+    public int Int32(string name, int def = 0)
+    {
+        return SubrecordDataReader.GetInt32(Raw, name, def);
+    }
 
-    public int Int32(string name, int def = 0) => SubrecordDataReader.GetInt32(_fields, name, def);
+    public float Float(string name, float def = 0f)
+    {
+        return SubrecordDataReader.GetFloat(Raw, name, def);
+    }
 
-    public float Float(string name, float def = 0f) => SubrecordDataReader.GetFloat(_fields, name, def);
-
-    public string? String(string name) => SubrecordDataReader.GetString(_fields, name);
+    public string? String(string name)
+    {
+        return SubrecordDataReader.GetString(Raw, name);
+    }
 
     public byte[]? Bytes(string name)
     {
-        return _fields.TryGetValue(name, out var value) && value is byte[] arr ? arr : null;
+        return Raw.TryGetValue(name, out var value) && value is byte[] arr ? arr : null;
     }
 
     /// <summary>
@@ -101,7 +126,7 @@ public sealed class SubrecordSchemaView
     /// </summary>
     public uint? FormId(string name)
     {
-        var value = SubrecordDataReader.GetUInt32(_fields, name, 0);
+        var value = SubrecordDataReader.GetUInt32(Raw, name);
         return value != 0 ? value : null;
     }
 }

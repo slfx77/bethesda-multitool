@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;

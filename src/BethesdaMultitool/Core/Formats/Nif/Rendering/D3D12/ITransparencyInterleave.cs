@@ -9,8 +9,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 internal interface ITransparencyInterleave
 {
-    /// <summary>Draws every queued water batch with view-axis depth ≥ <paramref name="depth" />.
-    /// Returns true when at least one batch drew — the caller must then rebind its shared frame
-    /// state (per-frame CBV, bindless tables) before its next draw.</summary>
+    /// <summary>
+    ///     Draws every queued water batch with view-axis depth ≥ <paramref name="depth" />.
+    ///     Returns true when at least one batch drew — the caller must then rebind its shared frame
+    ///     state (per-frame CBV, bindless tables) before its next draw.
+    /// </summary>
     bool DrainDownTo(float depth);
 }

@@ -28,7 +28,7 @@ public sealed class PlannedScolEncoder : IPlannedRecordEncoder<StaticCollectionR
                 refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedScolEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedScolEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

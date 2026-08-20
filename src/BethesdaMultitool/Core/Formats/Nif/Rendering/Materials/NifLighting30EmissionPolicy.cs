@@ -20,6 +20,7 @@ internal static class NifLighting30EmissionPolicy
 
     private const uint UnsupportedShaderFlags =
         LowDetailShaderFlag | FaceGenShaderFlag | HairShaderFlag;
+
     private const uint UnsupportedShaderFlags2 =
         LodLandscapeShaderFlag2 | LodBuildingShaderFlag2;
 
@@ -65,7 +66,9 @@ internal static class NifLighting30EmissionPolicy
         Vector3? materialColor,
         float materialMultiplier,
         bool externalEmittance,
-        Vector3? resolvedExternalColor) =>
-        (externalEmittance && resolvedExternalColor is { } external ? external : materialColor,
+        Vector3? resolvedExternalColor)
+    {
+        return (externalEmittance && resolvedExternalColor is { } external ? external : materialColor,
             materialMultiplier);
+    }
 }

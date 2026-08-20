@@ -290,7 +290,8 @@ internal static class DialogueTreeRenderer
     /// <summary>
     ///     Creates one clickable block for all response text lines in an INFO.
     /// </summary>
-    public static Button CreateClickableResponseBlock(IReadOnlyList<string> responseLines, bool isSubtitleFallback = false)
+    public static Button CreateClickableResponseBlock(IReadOnlyList<string> responseLines,
+        bool isSubtitleFallback = false)
     {
         var content = new StackPanel();
         foreach (var line in responseLines)

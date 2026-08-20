@@ -33,7 +33,7 @@ public sealed class TesFormHeaderProbeTests
             header.AsSpan(TesFormHeaderProbe.FormIdOffset, sizeof(uint)), 0x00111111);
 
         var result = TesFormHeaderProbe.TryProbe(
-            header, out var formType, out var formId, expectedFormId: 0x00222222);
+            header, out var formType, out var formId, 0x00222222);
 
         Assert.False(result);
         Assert.Equal((byte)0, formType);
@@ -73,7 +73,7 @@ public sealed class TesFormHeaderProbeTests
             buffer.AsSpan(decoyFormIdOffset, sizeof(uint)), decoyFormId);
 
         var result = TesFormHeaderProbe.TryProbe(
-            buffer, out var formType, out var formId, expectedFormId: decoyFormId);
+            buffer, out var formType, out var formId, decoyFormId);
 
         Assert.False(result);
         Assert.Equal((byte)0, formType);

@@ -14,6 +14,7 @@ using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using D12 = Vortice.Direct3D12;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -64,7 +65,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 
     private LruCache<(int gx, int gy), CellNavGeometry> _meshCache = CreateMeshCache();
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
-    private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateScratch = new();
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _candidateScratch = new();
     private readonly List<(int gx, int gy)> _visibleKeyScratch = new();
     private readonly List<CellNavGeometry> _visibleGeometryScratch = new();
     private readonly HashSet<(int gx, int gy)> _lastVisibleKeys = new();
@@ -78,7 +79,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 
     private IReadOnlyDictionary<uint, List<NavMeshRecord>>? _navMeshesByCell;
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
-    private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
+    private global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? _spatialIndex;
     private bool _disposed;
 
     public NavMeshRenderer12(
@@ -212,13 +213,13 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         _lastVisibleKeys.Clear();
     }
 
-    public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
+    public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
 
     public void LoadData(
         IReadOnlyDictionary<uint, List<NavMeshRecord>> navMeshesByCell,
         Dictionary<(int gx, int gy), CellRecord> cells,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex)
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex)
     {
         _meshCache.Dispose();
         _meshCache = CreateMeshCache();

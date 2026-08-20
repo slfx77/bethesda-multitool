@@ -358,4 +358,3 @@ public static class RecordTraversalHelpers
         int DataEnd,
         int DataSize);
 }
-

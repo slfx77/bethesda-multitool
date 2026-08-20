@@ -28,7 +28,7 @@ public enum SkyObjectType
     Stars = 5,
 
     /// <summary>BSSM_SKY_MOON_STARS_MASK — the moon/stars fade mask (not the moon disc itself).</summary>
-    MoonStarsMask = 7,
+    MoonStarsMask = 7
 }
 
 /// <summary>One sky-shader block harvested from a sky-dome NIF: its texture path and what it's for.</summary>
@@ -117,8 +117,12 @@ public static class SkyNifTextureHarvester
     /// <summary>
     ///     Reads a single sky-shader block's FileName + Sky Object Type from the block content at
     ///     <paramref name="dataOffset" /> (length <paramref name="size" />). Both <c>SkyShaderProperty</c>
-    ///     (FO3/FNV) and <c>BSSkyShaderProperty</c> (Skyrim+) end with <c>[SizedString FileName][uint
-    ///     SkyObjectType]</c>, so the parse anchors on the END: read the trailing type, then walk back to
+    ///     (FO3/FNV) and <c>BSSkyShaderProperty</c> (Skyrim+) end with
+    ///     <c>
+    ///         [SizedString FileName][uint
+    ///         SkyObjectType]
+    ///     </c>
+    ///     , so the parse anchors on the END: read the trailing type, then walk back to
     ///     the SizedString length prefix that exactly bridges to it. This avoids the version-dependent
     ///     header (FO3/FNV has a 2-byte NiProperty.Flags + 3 shader uints; Skyrim has shader-flag uints +
     ///     UV offset/scale — neither needs to be understood). Internal for unit testing.

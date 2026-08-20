@@ -1,13 +1,13 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
-using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
 /// <summary>
 ///     Reverse index of FormID usages across scripts, lists, inventories, packages, and attached scripts.

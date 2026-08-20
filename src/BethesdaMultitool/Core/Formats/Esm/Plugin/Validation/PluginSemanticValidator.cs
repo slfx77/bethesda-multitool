@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
@@ -192,12 +191,12 @@ public static class PluginSemanticValidator
                     }
                 }
                 else if (masterFormIds is not null
-                    && baseId.HasValue && baseId.Value != 0 && baseId.Value != 0xFFFFFFFFu
-                    // Engine-hardcoded forms (FormIDs below 0x800: PlayerRef, marker/default
-                    // objects, etc.) live in the game EXE, not any ESM, so they're legitimately
-                    // absent from master ∪ plugin — don't flag a ref that points at one.
-                    && baseId.Value >= 0x800u
-                    && !masterFormIds.Contains(baseId.Value) && !pluginFormIds.Contains(baseId.Value))
+                         && baseId.HasValue && baseId.Value != 0 && baseId.Value != 0xFFFFFFFFu
+                         // Engine-hardcoded forms (FormIDs below 0x800: PlayerRef, marker/default
+                         // objects, etc.) live in the game EXE, not any ESM, so they're legitimately
+                         // absent from master ∪ plugin — don't flag a ref that points at one.
+                         && baseId.Value >= 0x800u
+                         && !masterFormIds.Contains(baseId.Value) && !pluginFormIds.Contains(baseId.Value))
                 {
                     refrBaseDangling.Add(
                         $"{signature} 0x{formId:X8} base FormID 0x{baseId.Value:X8} is " +
@@ -579,8 +578,8 @@ public static class PluginSemanticValidator
         uint formId)
     {
         return formIdsByType is not null
-            && formIdsByType.TryGetValue(signature, out var formIds)
-            && formIds.Contains(formId);
+               && formIdsByType.TryGetValue(signature, out var formIds)
+               && formIds.Contains(formId);
     }
 
     private static uint ReadLabelFormId(GrupHeaderInfo grup)
@@ -628,4 +627,3 @@ public sealed record SemanticValidationResult(int ErrorCount, int WarningCount, 
     /// <summary>True when no semantic errors or warnings were found.</summary>
     public bool IsClean => ErrorCount == 0 && WarningCount == 0;
 }
-

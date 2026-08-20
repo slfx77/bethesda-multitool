@@ -131,4 +131,3 @@ public static class RecordHeaderProcessor
         stream.Position = currentPos;
     }
 }
-

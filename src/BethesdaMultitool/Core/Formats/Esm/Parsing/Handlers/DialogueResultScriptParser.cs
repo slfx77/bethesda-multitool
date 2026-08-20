@@ -59,7 +59,7 @@ internal static class DialogueResultScriptParser
                 ReferencedObjects = [.. block.ReferencedObjects],
                 HasNextSeparator = block.HasNextSeparator,
                 IsBigEndianBytecode = isBigEndianBytecode,
-                IsIncompleteExecutableBundle = isIncomplete,
+                IsIncompleteExecutableBundle = isIncomplete
             });
         }
 
@@ -176,7 +176,7 @@ internal static class DialogueResultScriptParser
         var block = new DialogueResultScriptBuilder
         {
             HasSerializedHeader = headerData.Length >= 20,
-            HasMalformedSerializedHeader = headerData.Length < 20,
+            HasMalformedSerializedHeader = headerData.Length < 20
         };
         if (headerData.Length >= 20)
         {
@@ -310,10 +310,12 @@ internal static class DialogueResultScriptParser
                || block.ExpectedReferenceCount != 0;
     }
 
-    private static uint ReadUInt32(ReadOnlySpan<byte> data, bool isBigEndian) =>
-        isBigEndian
+    private static uint ReadUInt32(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        return isBigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data)
             : BinaryPrimitives.ReadUInt32LittleEndian(data);
+    }
 
     private static string? TryDecompileResultScript(
         DialogueResultScriptBuilder block,
@@ -348,11 +350,13 @@ internal static class DialogueResultScriptParser
     }
 
     private static bool InferBytecodeEndian(DialogueResultScriptBuilder block)
-        => CapturedScriptEmissionContract.InferBytecodeEndian(
+    {
+        return CapturedScriptEmissionContract.InferBytecodeEndian(
             block.CompiledData,
             block.Variables,
             block.ReferencedObjects,
             block.IsBigEndianBytecode);
+    }
 
     internal sealed class DialogueResultScriptBuilder
     {

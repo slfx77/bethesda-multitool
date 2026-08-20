@@ -34,7 +34,10 @@ internal sealed class SptCursor
     public int Length => _data.Length;
 
     /// <summary>True when at least <paramref name="count" /> more bytes are available.</summary>
-    public bool HasBytes(int count) => Position + count <= _data.Length;
+    public bool HasBytes(int count)
+    {
+        return Position + count <= _data.Length;
+    }
 
     /// <summary>Read a 4-byte little-endian token and advance.</summary>
     public uint ReadToken()
@@ -89,7 +92,10 @@ internal sealed class SptCursor
     }
 
     /// <summary>Read a boolean stored as a single byte and advance 1.</summary>
-    public bool ReadBool() => ReadByte() != 0;
+    public bool ReadBool()
+    {
+        return ReadByte() != 0;
+    }
 
     /// <summary>
     ///     Read a SpeedTree string: a length token (uint32 LE) followed by that many raw ASCII bytes,

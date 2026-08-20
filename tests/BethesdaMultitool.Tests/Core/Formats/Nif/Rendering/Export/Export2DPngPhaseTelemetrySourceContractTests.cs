@@ -150,7 +150,7 @@ public sealed class Export2DPngPhaseTelemetrySourceContractTests
             "temporaryPath = null;");
         SourceContract.AssertOrder(
             publicationMove,
-            "File.Move(temporaryPath, fullTargetPath, overwrite: true);",
+            "File.Move(temporaryPath, fullTargetPath, true);",
             "AtomicFileWritePhase.TargetPublishMove");
         Assert.Contains(
             "Diagnostics must never alter the target/companion recovery contract",

@@ -63,8 +63,8 @@ public sealed record CellPlan
     ///     Binary cell-merge classification (PersistentOnly vs LoadedReplacement vs Skip) that
     ///     drives per-ref preservation. Settled by <c>CellSectionPlanner.PlanMergeMode</c>.
     ///     <para>
-    ///     Nullable only as a construction-state marker for hand-built/intermediate plans.
-    ///     Both verdict planning and writing reject an unset value.
+    ///         Nullable only as a construction-state marker for hand-built/intermediate plans.
+    ///         Both verdict planning and writing reject an unset value.
     ///     </para>
     /// </summary>
     public CellMergeMode? Mode { get; init; }

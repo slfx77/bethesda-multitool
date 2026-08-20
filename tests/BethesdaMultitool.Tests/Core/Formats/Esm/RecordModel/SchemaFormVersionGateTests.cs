@@ -1,9 +1,11 @@
 using System.Buffers.Binary;
+using System.Globalization;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Generated;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Games;
@@ -16,35 +18,35 @@ public sealed class SchemaFormVersionGateTests
     [Fact]
     public void Fallout4ExplosionData_Decodes_Pre97_Layout_Without_InnerRadius_Shift()
     {
-        var tree = DecodeExplosionData(formVersion: 96, includeInnerRadius: false);
+        var tree = DecodeExplosionData(96, false);
 
         Assert.DoesNotContain(tree, node => node.Label == "Inner Radius");
         Assert.Equal("33", Assert.Single(tree, node => node.Label == "Outer Radius").Value);
         Assert.Equal("44", Assert.Single(tree, node => node.Label == "IS Radius").Value);
-        Assert.Equal(60, BuildExplosionData(includeInnerRadius: false).Length);
+        Assert.Equal(60, BuildExplosionData(false).Length);
         Assert.Equal(3u, Convert.ToUInt32(
             Assert.Single(tree, node => node.Label == "Stagger").RawValue,
-            System.Globalization.CultureInfo.InvariantCulture));
+            CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void Fallout4ExplosionData_Decodes_97Plus_Layout_With_InnerRadius()
     {
-        var tree = DecodeExplosionData(formVersion: 97, includeInnerRadius: true);
+        var tree = DecodeExplosionData(97, true);
 
         Assert.Equal("22", Assert.Single(tree, node => node.Label == "Inner Radius").Value);
         Assert.Equal("33", Assert.Single(tree, node => node.Label == "Outer Radius").Value);
         Assert.Equal("44", Assert.Single(tree, node => node.Label == "IS Radius").Value);
-        Assert.Equal(64, BuildExplosionData(includeInnerRadius: true).Length);
+        Assert.Equal(64, BuildExplosionData(true).Length);
         Assert.Equal(3u, Convert.ToUInt32(
             Assert.Single(tree, node => node.Label == "Stagger").RawValue,
-            System.Globalization.CultureInfo.InvariantCulture));
+            CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void Unknown_FormVersion_Preserves_Legacy_LengthBounded_Behavior()
     {
-        var tree = DecodeExplosionData(formVersion: null, includeInnerRadius: true);
+        var tree = DecodeExplosionData(null, true);
 
         Assert.Equal("22", Assert.Single(tree, node => node.Label == "Inner Radius").Value);
     }
@@ -199,11 +201,11 @@ public sealed class SchemaFormVersionGateTests
     public void SkyrimEncounterZone_Known_Pre34_Version_Decodes_Old_EightByte_Arm(
         ushort formVersion, bool bigEndian)
     {
-        var payload = BuildEncounterZoneData(expanded: false, bigEndian);
+        var payload = BuildEncounterZoneData(false, bigEndian);
 
         var data = Assert.Single(SchemaRecordDecoder.Decode(
             Record("ECZN"), [new RawSubrecord("DATA", payload)],
-            bigEndian: bigEndian, game: BethesdaGame.Skyrim, formVersion: formVersion));
+            bigEndian, game: BethesdaGame.Skyrim, formVersion: formVersion));
 
         Assert.False(data.IsRaw);
         Assert.Equal("DATA", data.Signature);
@@ -217,11 +219,11 @@ public sealed class SchemaFormVersionGateTests
     [InlineData(true)]
     public void SkyrimEncounterZone_V34_Decodes_Expanded_TwelveByte_Arm(bool bigEndian)
     {
-        var payload = BuildEncounterZoneData(expanded: true, bigEndian);
+        var payload = BuildEncounterZoneData(true, bigEndian);
 
         var data = Assert.Single(SchemaRecordDecoder.Decode(
             Record("ECZN"), [new RawSubrecord("DATA", payload)],
-            bigEndian: bigEndian, game: BethesdaGame.Skyrim, formVersion: 34));
+            bigEndian, game: BethesdaGame.Skyrim, formVersion: 34));
 
         Assert.False(data.IsRaw);
         Assert.Equal(["Owner", "Location", "Rank", "Min Level", "Flags", "Max Level"],
@@ -239,7 +241,7 @@ public sealed class SchemaFormVersionGateTests
     [Fact]
     public void SkyrimEncounterZone_Unknown_FormVersion_Preserves_Whole_Subrecord_Raw()
     {
-        var payload = BuildEncounterZoneData(expanded: true);
+        var payload = BuildEncounterZoneData(true);
 
         var data = Assert.Single(SchemaRecordDecoder.Decode(
             Record("ECZN"), [new RawSubrecord("DATA", payload)],
@@ -316,7 +318,7 @@ public sealed class SchemaFormVersionGateTests
     [Fact]
     public void SkyrimSoundDescriptor_V34_Decodes_Fnam_And_Lnam_As_Typed_Members()
     {
-        var tree = DecodeSkyrimSound(formVersion: 34);
+        var tree = DecodeSkyrimSound(34);
 
         var fnam = Assert.Single(tree, node => node.Signature == "FNAM");
         Assert.False(fnam.IsRaw);
@@ -330,7 +332,7 @@ public sealed class SchemaFormVersionGateTests
     [Fact]
     public void SkyrimSoundDescriptor_V35_Leaves_Unexpected_Physical_Fnam_Raw_But_Decodes_Lnam()
     {
-        var tree = DecodeSkyrimSound(formVersion: 35);
+        var tree = DecodeSkyrimSound(35);
 
         Assert.True(Assert.Single(tree, node => node.Signature == "FNAM").IsRaw);
         var lnam = Assert.Single(tree, node => node.Signature == "LNAM");
@@ -342,7 +344,7 @@ public sealed class SchemaFormVersionGateTests
     [Fact]
     public void SkyrimSoundDescriptor_Unknown_FormVersion_Fails_Open_For_Both_Bounds()
     {
-        var tree = DecodeSkyrimSound(formVersion: null);
+        var tree = DecodeSkyrimSound(null);
 
         Assert.False(Assert.Single(tree, node => node.Signature == "FNAM").IsRaw);
         Assert.False(Assert.Single(tree, node => node.Signature == "LNAM").IsRaw);
@@ -351,7 +353,7 @@ public sealed class SchemaFormVersionGateTests
     [Fact]
     public void SkyrimSoundDescriptor_Known_Zero_Honors_Upper_Bound_And_Lower_Bound()
     {
-        var tree = DecodeSkyrimSound(formVersion: 0);
+        var tree = DecodeSkyrimSound(0);
 
         Assert.False(Assert.Single(tree, node => node.Signature == "FNAM").IsRaw);
         Assert.True(Assert.Single(tree, node => node.Signature == "LNAM").IsRaw);
@@ -510,7 +512,7 @@ public sealed class SchemaFormVersionGateTests
     public void Both_Production_Schema_Decode_Paths_Receive_Record_FormVersion(bool schemaPrimary)
     {
         var schema = Assert.Single(Fallout4Schema.Records, record => record.Signature == "EXPL");
-        var body = BuildExplosionData(includeInnerRadius: false);
+        var body = BuildExplosionData(false);
         var recordBytes = BuildRecordBytes("EXPL", body);
         var record = new DetectedMainRecord("EXPL", (uint)(recordBytes.Length - 24), 0, 0x1234, 0, false)
         {
@@ -566,12 +568,17 @@ public sealed class SchemaFormVersionGateTests
             formVersion: formVersion);
     }
 
-    private static MemberDef Gate(MemberDef member, bool upperBound) => upperBound
-        ? member with { MaxFormVersionExclusive = 35 }
-        : member with { MinFormVersion = 10 };
+    private static MemberDef Gate(MemberDef member, bool upperBound)
+    {
+        return upperBound
+            ? member with { MaxFormVersionExclusive = 35 }
+            : member with { MinFormVersion = 10 };
+    }
 
-    private static RecordDef Record(string signature) =>
-        Assert.Single(SkyrimSchema.Records, record => record.Signature == signature);
+    private static RecordDef Record(string signature)
+    {
+        return Assert.Single(SkyrimSchema.Records, record => record.Signature == signature);
+    }
 
     private static IEnumerable<MemberDef> Descendants(IEnumerable<MemberDef> members)
     {
@@ -593,10 +600,13 @@ public sealed class SchemaFormVersionGateTests
         }
     }
 
-    private static bool IsNumeric(PrimType type) => type is
-        PrimType.U8 or PrimType.S8 or PrimType.U16 or PrimType.S16 or PrimType.U24 or
-        PrimType.U32 or PrimType.S32 or PrimType.U64 or PrimType.S64 or PrimType.Float or
-        PrimType.Double or PrimType.Half or PrimType.FormId;
+    private static bool IsNumeric(PrimType type)
+    {
+        return type is
+            PrimType.U8 or PrimType.S8 or PrimType.U16 or PrimType.S16 or PrimType.U24 or
+            PrimType.U32 or PrimType.S32 or PrimType.U64 or PrimType.S64 or PrimType.Float or
+            PrimType.Double or PrimType.Half or PrimType.FormId;
+    }
 
     private static byte[] BuildMovementSpeedData(int floatCount)
     {
@@ -663,10 +673,10 @@ public sealed class SchemaFormVersionGateTests
     private static byte[] BuildRecordBytes(string signature, byte[] subrecordData)
     {
         var bytes = new byte[24 + 6 + subrecordData.Length];
-        System.Text.Encoding.ASCII.GetBytes(signature, bytes);
+        Encoding.ASCII.GetBytes(signature, bytes);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), (uint)(6 + subrecordData.Length));
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(12), 0x1234);
-        System.Text.Encoding.ASCII.GetBytes("DATA", bytes.AsSpan(24));
+        Encoding.ASCII.GetBytes("DATA", bytes.AsSpan(24));
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(28), (ushort)subrecordData.Length);
         subrecordData.CopyTo(bytes.AsSpan(30));
         return bytes;

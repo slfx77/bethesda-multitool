@@ -36,7 +36,7 @@ public sealed class PlacedNifWaterRegistryTests
     {
         var store = new ReferenceEnabledOverrideStore();
         var registry = new PlacedNifWaterRegistry();
-        var owner = CreateOwner(0x202, initiallyDisabled: true);
+        var owner = CreateOwner(0x202, true);
         registry.Register(owner, [CreateSurface(owner.FormId)]);
 
         Assert.Empty(registry.GetPublished(CreateKey(store), store));
@@ -81,7 +81,7 @@ public sealed class PlacedNifWaterRegistryTests
                 registry,
                 CreateKey(
                     store,
-                    hiddenCategories: [PlacedObjectCategory.Effects],
+                    [PlacedObjectCategory.Effects],
                     showMarkers: true,
                     showImposters: true),
                 store));
@@ -128,14 +128,18 @@ public sealed class PlacedNifWaterRegistryTests
         Assert.Equal(3u, Assert.Single(registry.GetPublished(CreateKey(store), store)).WaterFormId);
     }
 
-    private static void Register(PlacedNifWaterRegistry registry, RenderableReference owner) =>
+    private static void Register(PlacedNifWaterRegistry registry, RenderableReference owner)
+    {
         Assert.True(registry.Register(owner, [CreateSurface(owner.FormId)]));
+    }
 
     private static uint[] PublishedIds(
         PlacedNifWaterRegistry registry,
         ReferenceVisibilityKey key,
-        ReferenceEnabledOverrideStore store) =>
-        registry.GetPublished(key, store).Select(surface => surface.WaterFormId).ToArray();
+        ReferenceEnabledOverrideStore store)
+    {
+        return registry.GetPublished(key, store).Select(surface => surface.WaterFormId).ToArray();
+    }
 
     private static ReferenceVisibilityKey CreateKey(
         ReferenceEnabledOverrideStore store,
@@ -143,14 +147,16 @@ public sealed class PlacedNifWaterRegistryTests
         bool showInitiallyDisabled = false,
         bool showGrass = true,
         bool showMarkers = false,
-        bool showImposters = false) =>
-        ReferenceVisibilityKey.Capture(
+        bool showImposters = false)
+    {
+        return ReferenceVisibilityKey.Capture(
             store,
             hiddenCategories ?? [],
             showInitiallyDisabled,
             showGrass,
             showMarkers,
             showImposters);
+    }
 
     private static RenderableReference CreateOwner(
         uint formId,
@@ -158,19 +164,21 @@ public sealed class PlacedNifWaterRegistryTests
         bool isMarker = false,
         bool isImposter = false,
         PlacedObjectCategory category = PlacedObjectCategory.Static,
-        bool isGrass = false) =>
-        new(
-            FormId: formId,
-            WorldMatrix: Matrix4x4.Identity,
-            ModelPath: $"water-{formId:X8}.nif",
-            BoundsCenter: Vector3.Zero,
-            BoundsRadius: 1f,
-            MeshId: formId,
-            IsInitiallyDisabled: initiallyDisabled,
-            IsMarker: isMarker,
-            IsImposter: isImposter,
-            Category: category,
+        bool isGrass = false)
+    {
+        return new RenderableReference(
+            formId,
+            Matrix4x4.Identity,
+            $"water-{formId:X8}.nif",
+            Vector3.Zero,
+            1f,
+            formId,
+            initiallyDisabled,
+            isMarker,
+            isImposter,
+            category,
             IsGrass: isGrass);
+    }
 
     private static NifWaterGeometry CreateSurface(uint waterFormId)
     {

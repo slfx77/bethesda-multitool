@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -13,6 +14,9 @@ internal static class WorldMapViewportHelper
 {
     private const float MinZoom = 0.001f;
     private const float MaxZoom = 50f;
+
+    /// <summary>Legacy floor for the culling margin, in Fallout/TES units (4096 per cell).</summary>
+    private const float DefaultObjectViewMargin = 500f;
 
     /// <summary>
     ///     World-units per cell edge for the given cell (8192 Morrowind, 4096 Fallout-family), with the
@@ -101,9 +105,6 @@ internal static class WorldMapViewportHelper
 
         return DefaultObjectViewMargin;
     }
-
-    /// <summary>Legacy floor for the culling margin, in Fallout/TES units (4096 per cell).</summary>
-    private const float DefaultObjectViewMargin = 500f;
 
     /// <summary>
     ///     Lower bound for <see cref="GetObjectViewMargin" />, never above <paramref name="cellWorldSize" />

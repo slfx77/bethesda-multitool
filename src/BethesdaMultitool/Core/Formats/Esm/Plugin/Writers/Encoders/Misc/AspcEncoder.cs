@@ -7,22 +7,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///     already emit an <c>XCAS</c> FormID pointing at an acoustic space, so without this encoder a
 ///     proto-only ASPC leaves that XCAS dangling.
 ///     <para>
-///     Canonical order from xEdit <c>wbRecord(ASPC)</c> (wbDefinitionsFNV.pas):
-///     EDID(req), OBND(req), SNAM ×5(req), WNAM(req), RDAT?, ANAM(req), INAM(req).
+///         Canonical order from xEdit <c>wbRecord(ASPC)</c> (wbDefinitionsFNV.pas):
+///         EDID(req), OBND(req), SNAM ×5(req), WNAM(req), RDAT?, ANAM(req), INAM(req).
 ///     </para>
 ///     <para>
-///     The five SNAMs are <b>positional</b> — Dawn/Default, Afternoon, Dusk, Night, Walla — and are
-///     marked required with NULL permitted. They must therefore all be emitted, in order, even
-///     when a slot is null; dropping an empty one would silently shift every later sound into the
-///     wrong time-of-day slot.
+///         The five SNAMs are <b>positional</b> — Dawn/Default, Afternoon, Dusk, Night, Walla — and are
+///         marked required with NULL permitted. They must therefore all be emitted, in order, even
+///         when a slot is null; dropping an empty one would silently shift every later sound into the
+///         wrong time-of-day slot.
 ///     </para>
 /// </summary>
 public sealed class AspcEncoder : IRecordEncoder
 {
-    public string RecordType => "ASPC";
-
-    public Type ModelType => typeof(GenericEsmRecord);
-
     /// <summary>
     ///     Highest valid ANAM environment type. xEdit's FNV enum has 31 entries, so the top index
     ///     is 0x1E; the previous 0x40 bound was looser than the schema it was guarding.
@@ -38,6 +34,10 @@ public sealed class AspcEncoder : IRecordEncoder
         "BGSAcousticSpace.pNightSound",
         "BGSAcousticSpace.pWallaSound"
     ];
+
+    public string RecordType => "ASPC";
+
+    public Type ModelType => typeof(GenericEsmRecord);
 
     internal static EncodedRecord EncodeNew(GenericEsmRecord aspc)
     {

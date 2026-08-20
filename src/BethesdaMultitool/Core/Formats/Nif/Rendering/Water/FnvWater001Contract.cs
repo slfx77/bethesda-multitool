@@ -30,7 +30,7 @@ internal enum FnvWater001FallbackReason
     InvalidUnderwaterFogFar,
     InvalidUnderwaterFogRange,
     InvalidAboveWaterFogAmount,
-    InvalidRefractionDistortion,
+    InvalidRefractionDistortion
 }
 
 /// <summary>
@@ -43,9 +43,6 @@ internal readonly record struct FnvWater001Preflight(
     float PlaneHeight,
     uint? EffectiveWaterFormId)
 {
-    internal static FnvWater001Preflight Fallback(FnvWater001FallbackReason reason) =>
-        new(false, reason, 0f, null);
-
     internal string ReasonCode => Reason switch
     {
         FnvWater001FallbackReason.None => "eligible",
@@ -69,8 +66,13 @@ internal readonly record struct FnvWater001Preflight(
         FnvWater001FallbackReason.InvalidUnderwaterFogRange => "invalid-underwater-fog-range",
         FnvWater001FallbackReason.InvalidAboveWaterFogAmount => "invalid-above-water-fog-amount",
         FnvWater001FallbackReason.InvalidRefractionDistortion => "invalid-refraction-distortion",
-        _ => "unknown",
+        _ => "unknown"
     };
+
+    internal static FnvWater001Preflight Fallback(FnvWater001FallbackReason reason)
+    {
+        return new FnvWater001Preflight(false, reason, 0f, null);
+    }
 }
 
 /// <summary>Pure scalar inputs for the global WATER001 eligibility gate.</summary>
@@ -149,11 +151,13 @@ internal static class FnvWater001Contract
         {
             return FnvWater001Preflight.Fallback(FnvWater001FallbackReason.CameraNotAbovePlane);
         }
+
         if (!float.IsFinite(input.DepthFalloffStart) || !float.IsFinite(input.DepthFalloffEnd) ||
             input.DepthFalloffEnd <= input.DepthFalloffStart)
         {
             return FnvWater001Preflight.Fallback(FnvWater001FallbackReason.InvalidDepthFalloffRange);
         }
+
         if (!float.IsFinite(input.UnderwaterFogFar) || input.UnderwaterFogFar <= 0f)
             return FnvWater001Preflight.Fallback(FnvWater001FallbackReason.InvalidUnderwaterFogFar);
         if (!float.IsFinite(input.UnderwaterFogNear) ||
@@ -161,11 +165,13 @@ internal static class FnvWater001Contract
         {
             return FnvWater001Preflight.Fallback(FnvWater001FallbackReason.InvalidUnderwaterFogRange);
         }
+
         if (!float.IsFinite(input.AboveWaterFogAmount) ||
             input.AboveWaterFogAmount < 0f || input.AboveWaterFogAmount > 1f)
         {
             return FnvWater001Preflight.Fallback(FnvWater001FallbackReason.InvalidAboveWaterFogAmount);
         }
+
         if (!float.IsFinite(input.RefractionDistortionAmount) || input.RefractionDistortionAmount < 0f)
             return FnvWater001Preflight.Fallback(FnvWater001FallbackReason.InvalidRefractionDistortion);
 
@@ -216,21 +222,28 @@ internal static class FnvWater001Contract
             scenePoint = default;
             return false;
         }
+
         return true;
     }
 
-    internal static Vector2 CorrectDepthLanes(Vector2 depth, float noiseFade) =>
-        Vector2.Clamp(Vector2.Lerp(Vector2.One, depth, noiseFade), Vector2.Zero, Vector2.One);
+    internal static Vector2 CorrectDepthLanes(Vector2 depth, float noiseFade)
+    {
+        return Vector2.Clamp(Vector2.Lerp(Vector2.One, depth, noiseFade), Vector2.Zero, Vector2.One);
+    }
 
     internal static Vector2 DistortionDelta(
         Vector2 rawDepth,
         float depthFactor,
         float distortionScale,
-        Vector3 normal) =>
-        rawDepth.Y * depthFactor * distortionScale * new Vector2(normal.X, normal.Y);
+        Vector3 normal)
+    {
+        return rawDepth.Y * depthFactor * distortionScale * new Vector2(normal.X, normal.Y);
+    }
 
-    /// <summary>Projects the displaced world point exactly as the water VS does, then validates one
-    /// bilinear sample footprint against the single-sample opaque snapshot.</summary>
+    /// <summary>
+    ///     Projects the displaced world point exactly as the water VS does, then validates one
+    ///     bilinear sample footprint against the single-sample opaque snapshot.
+    /// </summary>
     internal static bool TryProjectSnapshotUv(
         Matrix4x4 viewProjection,
         Vector3 renderOrigin,
@@ -268,6 +281,7 @@ internal static class FnvWater001Contract
             uv = default;
             return false;
         }
+
         return true;
     }
 
@@ -281,11 +295,13 @@ internal static class FnvWater001Contract
         float sceneDistance,
         float waterDistance,
         float scenePointZ,
-        float planeHeight) =>
-        sceneNdc > 0f && sceneNdc <= 1f &&
-        float.IsFinite(sceneDistance) && float.IsFinite(waterDistance) &&
-        float.IsFinite(scenePointZ) && float.IsFinite(planeHeight) &&
-        waterDistance > 0f && sceneDistance > waterDistance && scenePointZ < planeHeight;
+        float planeHeight)
+    {
+        return sceneNdc > 0f && sceneNdc <= 1f &&
+               float.IsFinite(sceneDistance) && float.IsFinite(waterDistance) &&
+               float.IsFinite(scenePointZ) && float.IsFinite(planeHeight) &&
+               waterDistance > 0f && sceneDistance > waterDistance && scenePointZ < planeHeight;
+    }
 
     /// <summary>
     ///     The color snapshot uses bilinear filtering, so all four depth texels in the matching
@@ -309,6 +325,7 @@ internal static class FnvWater001Contract
                 return false;
             }
         }
+
         return true;
     }
 
@@ -324,13 +341,19 @@ internal static class FnvWater001Contract
         return waterFog * aboveWaterFogAmount;
     }
 
-    private static bool IsFinite(Vector2 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y);
+    private static bool IsFinite(Vector2 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y);
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
-    private static bool IsFinite(Vector4 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) && float.IsFinite(value.W);
+    private static bool IsFinite(Vector4 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) &&
+               float.IsFinite(value.Z) && float.IsFinite(value.W);
+    }
 }

@@ -4,8 +4,10 @@ using Microsoft.UI.Xaml.Data;
 
 namespace BethesdaMultitool;
 
-/// <summary>Formats the FormID-heatmap range slider's logarithmic position as a distance in
-/// cells, or "Unlimited" at the dedicated top stop (mirrors <see cref="DrawDistanceTooltipConverter" />).</summary>
+/// <summary>
+///     Formats the FormID-heatmap range slider's logarithmic position as a distance in
+///     cells, or "Unlimited" at the dedicated top stop (mirrors <see cref="DrawDistanceTooltipConverter" />).
+/// </summary>
 public sealed class HeatmapRangeTooltipConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)

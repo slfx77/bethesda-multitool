@@ -16,7 +16,13 @@ internal sealed class AuthorityView
     public Dictionary<uint, uint> RefToCell { get; } = [];
 }
 
-internal sealed record CellInfo(uint FormId, uint? WorldspaceFormId, int? GridX, int? GridY, bool IsInterior, string EditorId);
+internal sealed record CellInfo(
+    uint FormId,
+    uint? WorldspaceFormId,
+    int? GridX,
+    int? GridY,
+    bool IsInterior,
+    string EditorId);
 
 // ---------------- Sweep CSV loading ----------------
 
@@ -115,22 +121,22 @@ internal sealed record ReferenceEnrichment(
 
 internal sealed class GridAttribution
 {
+    public int RefCount; // mutable: accumulate across dumps
     public uint WorldspaceFormId { get; init; }
     public string WorldspaceEditorId { get; init; } = "";
     public uint CellFormId { get; init; }
     public string CellEditorId { get; init; } = "";
     public int CandidateCount { get; init; }
     public string Confidence { get; init; } = "";
-    public int RefCount; // mutable: accumulate across dumps
     public HashSet<string> EvidenceDumps { get; } = new(StringComparer.Ordinal);
     public HashSet<uint> SampleFormIds { get; } = [];
 }
 
 internal sealed class CutRegion
 {
+    public int RefCount;
     public int Gx { get; init; }
     public int Gy { get; init; }
-    public int RefCount;
     public HashSet<string> EvidenceDumps { get; } = new(StringComparer.Ordinal);
     public HashSet<uint> SampleFormIds { get; } = [];
 }
@@ -138,5 +144,13 @@ internal sealed class CutRegion
 // ---------------- Per-REFR positions ----------------
 
 internal sealed record PositionRow(
-    uint FormId, float X, float Y, float Z, float Scale, int GridX, int GridY,
-    uint BaseFormId, byte BaseFormType, int FoundInDumps);
+    uint FormId,
+    float X,
+    float Y,
+    float Z,
+    float Scale,
+    int GridX,
+    int GridY,
+    uint BaseFormId,
+    byte BaseFormType,
+    int FoundInDumps);

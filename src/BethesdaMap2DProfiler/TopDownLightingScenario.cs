@@ -28,7 +28,7 @@ internal sealed class TopDownLightingScenario : TopDownScenarioBase
         AssertReferenceGeometry(flat, "flat-lighting overlay");
         LogSnapshot("lighting-off", flat);
 
-        await UiAsync(queue, () => control.Profiler_SetLighting(enabled: true, gameHour: 12f));
+        await UiAsync(queue, () => control.Profiler_SetLighting(true, 12f));
         var noon = await WaitForNewConvergedRenderAsync(
             control, queue, flat, "enabled-noon overlay");
         AssertNonempty(noon, "enabled-noon overlay");
@@ -37,7 +37,7 @@ internal sealed class TopDownLightingScenario : TopDownScenarioBase
         AssertMaterialColorChange(flat, noon, "lighting off -> enabled noon");
         LogSnapshot("lighting-on-hour-12", noon);
 
-        await UiAsync(queue, () => control.Profiler_SetLighting(enabled: true, gameHour: 0f));
+        await UiAsync(queue, () => control.Profiler_SetLighting(true, 0f));
         var midnight = await WaitForNewConvergedRenderAsync(
             control, queue, noon, "enabled-midnight overlay");
         AssertNonempty(midnight, "enabled-midnight overlay");

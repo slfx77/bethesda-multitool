@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Shared;

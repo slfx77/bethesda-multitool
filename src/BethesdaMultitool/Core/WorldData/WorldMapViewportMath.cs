@@ -1,7 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Pure viewport math for the 2D world map: centre-preserving resize and the canvas-world bounds
@@ -11,36 +11,26 @@ namespace BethesdaMultitool;
 internal static class WorldMapViewportMath
 {
     /// <summary>
-    ///     A canvas-world rectangle. X grows east; Y is the NEGATED grid Y (north is min-Y), matching
-    ///     <c>WorldMapViewportHelper.GetViewTransform</c> and the cell rects drawn in the overview.
-    /// </summary>
-    internal readonly record struct CanvasBounds(float MinX, float MinY, float MaxX, float MaxY)
-    {
-        internal Vector2 Center => new((MinX + MaxX) * 0.5f, (MinY + MaxY) * 0.5f);
-
-        /// <summary>Clamps a canvas-world point into this rectangle (component-wise).</summary>
-        internal Vector2 Clamp(Vector2 canvasPoint) => new(
-            Math.Clamp(canvasPoint.X, MinX, MaxX),
-            Math.Clamp(canvasPoint.Y, MinY, MaxY));
-    }
-
-    /// <summary>
     ///     Structural terrain test — cheap (no LAND decode), unlike
     ///     <c>DecodedTerrainCell.HasTerrain</c>, which the heightmap builder uses per cell. Both answer
     ///     the same question; this one is the form a whole-worldspace bounds pass can afford.
     /// </summary>
-    internal static bool HasTerrainData(CellRecord cell) =>
-        cell.Heightmap is not null ||
-        cell.LandVisualData?.HasAny == true ||
-        cell.RuntimeTerrainMesh is not null;
+    internal static bool HasTerrainData(CellRecord cell)
+    {
+        return cell.Heightmap is not null ||
+               cell.LandVisualData?.HasAny == true ||
+               cell.RuntimeTerrainMesh is not null;
+    }
 
     /// <summary>
     ///     A cell carries authored data when it has terrain or at least one placed reference. A WRLD's
     ///     declared extents are NOT data: WastelandNV's cell list reaches well past its authored region,
     ///     so framing on every grid cell centres the view off the playable area.
     /// </summary>
-    internal static bool HasAuthoredData(CellRecord cell) =>
-        HasTerrainData(cell) || cell.PlacedObjects.Count > 0;
+    internal static bool HasAuthoredData(CellRecord cell)
+    {
+        return HasTerrainData(cell) || cell.PlacedObjects.Count > 0;
+    }
 
     /// <summary>
     ///     Canvas-world bounds of the cells that carry authored data, falling back to every grid-bearing
@@ -50,8 +40,8 @@ internal static class WorldMapViewportMath
     internal static CanvasBounds? TryGetOccupiedCellBounds(IReadOnlyList<CellRecord> cells)
     {
         var cellWorldSize = ResolveCellWorldSize(cells);
-        return Accumulate(cells, cellWorldSize, requireAuthoredData: true)
-               ?? Accumulate(cells, cellWorldSize, requireAuthoredData: false);
+        return Accumulate(cells, cellWorldSize, true)
+               ?? Accumulate(cells, cellWorldSize, false);
     }
 
     /// <summary>
@@ -124,5 +114,22 @@ internal static class WorldMapViewportMath
             -(maxGridY + 1) * cellWorldSize,
             (maxGridX + 1) * cellWorldSize,
             -minGridY * cellWorldSize);
+    }
+
+    /// <summary>
+    ///     A canvas-world rectangle. X grows east; Y is the NEGATED grid Y (north is min-Y), matching
+    ///     <c>WorldMapViewportHelper.GetViewTransform</c> and the cell rects drawn in the overview.
+    /// </summary>
+    internal readonly record struct CanvasBounds(float MinX, float MinY, float MaxX, float MaxY)
+    {
+        internal Vector2 Center => new((MinX + MaxX) * 0.5f, (MinY + MaxY) * 0.5f);
+
+        /// <summary>Clamps a canvas-world point into this rectangle (component-wise).</summary>
+        internal Vector2 Clamp(Vector2 canvasPoint)
+        {
+            return new Vector2(
+                Math.Clamp(canvasPoint.X, MinX, MaxX),
+                Math.Clamp(canvasPoint.Y, MinY, MaxY));
+        }
     }
 }

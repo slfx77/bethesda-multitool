@@ -18,9 +18,11 @@ internal readonly record struct WeatherCloudTransition(
     bool UsesSameTexture)
 {
     internal float OutgoingWeatherWeight => HasOutgoingWeather ? 1f - CurrentWeatherWeight : 0f;
+
     internal float CurrentTextureWeight => !HasOutgoingWeather || UsesSameTexture
         ? 1f
         : CurrentWeatherWeight;
+
     internal float OutgoingTextureWeight => !HasOutgoingWeather || UsesSameTexture
         ? 0f
         : 1f - CurrentWeatherWeight;
@@ -39,21 +41,29 @@ internal static class WeatherCloudTransitionResolver
             return offset;
         }
 
-        var advanced = offset + (velocity * deltaSeconds);
+        var advanced = offset + velocity * deltaSeconds;
         return new Vector2(WrapUv(advanced.X), WrapUv(advanced.Y));
     }
 
-    internal static Vector2 OffsetAtTime(Vector2 velocity, float elapsedSeconds) =>
-        AdvanceOffset(Vector2.Zero, velocity, elapsedSeconds);
+    internal static Vector2 OffsetAtTime(Vector2 velocity, float elapsedSeconds)
+    {
+        return AdvanceOffset(Vector2.Zero, velocity, elapsedSeconds);
+    }
 
-    internal static Vector4 BlendSample(Vector4 current, Vector4 outgoing, float currentWeatherWeight) =>
-        Vector4.Lerp(outgoing, current, Math.Clamp(currentWeatherWeight, 0f, 1f));
+    internal static Vector4 BlendSample(Vector4 current, Vector4 outgoing, float currentWeatherWeight)
+    {
+        return Vector4.Lerp(outgoing, current, Math.Clamp(currentWeatherWeight, 0f, 1f));
+    }
 
-    internal static Vector3 BlendSample(Vector3 current, Vector3 outgoing, float currentWeatherWeight) =>
-        Vector3.Lerp(outgoing, current, Math.Clamp(currentWeatherWeight, 0f, 1f));
+    internal static Vector3 BlendSample(Vector3 current, Vector3 outgoing, float currentWeatherWeight)
+    {
+        return Vector3.Lerp(outgoing, current, Math.Clamp(currentWeatherWeight, 0f, 1f));
+    }
 
-    internal static float BlendSample(float current, float outgoing, float currentWeatherWeight) =>
-        outgoing + ((current - outgoing) * Math.Clamp(currentWeatherWeight, 0f, 1f));
+    internal static float BlendSample(float current, float outgoing, float currentWeatherWeight)
+    {
+        return outgoing + (current - outgoing) * Math.Clamp(currentWeatherWeight, 0f, 1f);
+    }
 
     internal static WeatherCloudTransition Resolve(
         WeatherRecord? currentWeather,
@@ -70,7 +80,7 @@ internal static class WeatherCloudTransitionResolver
         Vector2 velocity;
         // FO3 parity 2026-08-10: FO3's Clouds::Update (0x006BD930) uses the identical
         // blend-ONAM-first-then-multiply-blended-wind order (fo3-decompile-spotchecks.md).
-        if (game is (BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3) &&
+        if (game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 &&
             outgoingWeather is not null)
         {
             // FNV Clouds::Update blends the current/outgoing ONAM scalar first. Sky::UpdateWind
@@ -123,5 +133,8 @@ internal static class WeatherCloudTransitionResolver
             : normalized;
     }
 
-    private static float WrapUv(float value) => value - MathF.Floor(value);
+    private static float WrapUv(float value)
+    {
+        return value - MathF.Floor(value);
+    }
 }

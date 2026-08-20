@@ -9,12 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Parity;
 /// </summary>
 public sealed class MigrationDeltaRegistry
 {
-    public ImmutableArray<MigrationDelta> Deltas { get; }
-
     public MigrationDeltaRegistry(ImmutableArray<MigrationDelta> deltas)
     {
         Deltas = deltas;
     }
+
+    public ImmutableArray<MigrationDelta> Deltas { get; }
 
     /// <summary>
     ///     The default registry shipped with the build. Starts empty at the Tier 6.6

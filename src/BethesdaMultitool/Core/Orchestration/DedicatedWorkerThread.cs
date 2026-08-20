@@ -25,10 +25,10 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
 
     private readonly BlockingCollection<Action> _queue;
     private readonly Thread _thread;
-    private ResourceRegistration? _registration;
-    private long _processed;
     private long _failures;
     private volatile string? _lastError;
+    private long _processed;
+    private ResourceRegistration? _registration;
     private volatile bool _stopping;
 
     public DedicatedWorkerThread(string name, int capacity = DefaultCapacity)
@@ -38,25 +38,10 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
         _thread = new Thread(Run)
         {
             IsBackground = true,
-            Name = name,
+            Name = name
         };
         _thread.Start();
     }
-
-    /// <summary>
-    ///     Registers the worker with <paramref name="registry" /> (unregistered again on
-    ///     <see cref="Dispose" />). Returns the worker for fluent construction.
-    /// </summary>
-    public DedicatedWorkerThread RegisterWith(ResourceRegistry registry, string? instanceTag = null)
-    {
-        _registration?.Dispose();
-        _registration = registry.Register(this, instanceTag);
-        return this;
-    }
-
-    public string ResourceName { get; }
-
-    public ResourceCategory Category => ResourceCategory.Queue;
 
     /// <summary>Work items queued but not yet picked up by the worker thread.</summary>
     public int PendingCount => _queue.Count;
@@ -70,13 +55,38 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
     /// <summary>Message of the most recent work-item exception, when one has occurred.</summary>
     public string? LastError => _lastError;
 
-    public ResourceStats GetStats() => new()
+    public void Dispose()
     {
-        QueueDepth = _queue.Count,
-        Processed = ProcessedCount,
-        Failures = Failures,
-        LastError = _lastError,
-    };
+        Stop();
+        _queue.Dispose();
+        _registration?.Dispose();
+    }
+
+    public string ResourceName { get; }
+
+    public ResourceCategory Category => ResourceCategory.Queue;
+
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats
+        {
+            QueueDepth = _queue.Count,
+            Processed = ProcessedCount,
+            Failures = Failures,
+            LastError = _lastError
+        };
+    }
+
+    /// <summary>
+    ///     Registers the worker with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the worker for fluent construction.
+    /// </summary>
+    public DedicatedWorkerThread RegisterWith(ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
+    }
 
     /// <summary>
     ///     Queues a work item. Returns false (without blocking) when the queue is full or the worker
@@ -118,13 +128,6 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
         {
             _thread.Join();
         }
-    }
-
-    public void Dispose()
-    {
-        Stop();
-        _queue.Dispose();
-        _registration?.Dispose();
     }
 
     private void Run()

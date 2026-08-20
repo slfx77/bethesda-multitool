@@ -10,8 +10,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 internal static class MeshPackingValidator12
 {
-    /// <summary>Returns a violation description, or null when the submesh's packed windows are
-    /// internally consistent.</summary>
+    /// <summary>
+    ///     Returns a violation description, or null when the submesh's packed windows are
+    ///     internally consistent.
+    /// </summary>
     public static string? ValidateSubmeshWindow(
         int submeshIndex,
         int vertexCount,
@@ -29,7 +31,7 @@ internal static class MeshPackingValidator12
             return $"submesh {submeshIndex}: zero vertex stride";
         }
 
-        if (vertexByteSize != (long)vertexCount * stride)
+        if (vertexByteSize != vertexCount * stride)
         {
             return $"submesh {submeshIndex}: vertex window {vertexByteSize} B != " +
                    $"{vertexCount} vertices × stride {stride}";

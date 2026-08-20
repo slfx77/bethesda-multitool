@@ -1,6 +1,7 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -23,7 +24,8 @@ internal static class NifBlockParsers
         bool be,
         bool hasInlineStrings = false)
     {
-        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
+        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, binaryVersion, be,
+            hasInlineStrings);
     }
 
     internal static string? ReadBlockName(byte[] data, BlockInfo block, NifInfo nif)
@@ -38,7 +40,8 @@ internal static class NifBlockParsers
     /// </summary>
     internal static bool IsHiddenShape(byte[] data, BlockInfo block, NifInfo nif)
     {
-        return NifObjectBlockReader.IsHidden(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
+        return NifObjectBlockReader.IsHidden(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian,
+            nif.HasInlineStrings);
     }
 
     internal static string? ReadParentNodeExtraData(byte[] data, BlockInfo block, NifInfo nif)
@@ -162,7 +165,8 @@ internal static class NifBlockParsers
         bool be,
         bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
+        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, binaryVersion, be,
+            hasInlineStrings);
     }
 
     internal static int[]? ParseDismemberPartitions(byte[] data, BlockInfo block, bool be)
@@ -227,7 +231,8 @@ internal static class NifBlockParsers
         bool be,
         bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
+        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, binaryVersion, be,
+            hasInlineStrings);
     }
 
     internal static RenderableSubmesh? ExtractSubmesh(
@@ -374,7 +379,7 @@ internal static class NifBlockParsers
         // that combination; alpha-test is left untouched (shipped parallax shapes author test=off).
         if (hasAlphaBlend &&
             dstBlendMode == 7 &&
-            Textures.NifTexturingPropertyReader.ReadApplyMode(data, nif, propertyRefs) is 3 or 4)
+            NifTexturingPropertyReader.ReadApplyMode(data, nif, propertyRefs) is 3 or 4)
         {
             hasAlphaBlend = false;
         }

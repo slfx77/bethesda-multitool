@@ -29,7 +29,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("QSTI"),
-                FormId = quest,
+                FormId = quest
             };
         }
 
@@ -38,7 +38,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("ANAM"),
-                FormId = speaker,
+                FormId = speaker
             };
         }
 
@@ -47,7 +47,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("SNAM"),
-                FormId = anim,
+                FormId = anim
             };
         }
 
@@ -56,7 +56,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("PNAM"),
-                FormId = prev,
+                FormId = prev
             };
         }
 
@@ -65,7 +65,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("TCLT", i),
-                FormId = info.LinkToTopics[i],
+                FormId = info.LinkToTopics[i]
             };
         }
 
@@ -74,7 +74,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("TCLF", i),
-                FormId = info.LinkFromTopics[i],
+                FormId = info.LinkFromTopics[i]
             };
         }
 
@@ -83,7 +83,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("NAME", i),
-                FormId = info.AddTopics[i],
+                FormId = info.AddTopics[i]
             };
         }
 
@@ -98,7 +98,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.IndexedMember("CTDA", c, "Reference"),
-                    FormId = reference,
+                    FormId = reference
                 };
             }
         }
@@ -116,7 +116,7 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = $"ResultScripts[{s}].SCRO[{i}]",
-                    FormId = script.ReferencedObjects[i],
+                    FormId = script.ReferencedObjects[i]
                 };
             }
         }

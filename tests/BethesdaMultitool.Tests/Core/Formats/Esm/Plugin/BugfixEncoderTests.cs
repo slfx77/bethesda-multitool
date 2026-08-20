@@ -4,7 +4,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;

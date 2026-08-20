@@ -14,6 +14,9 @@ namespace BethesdaMultitool;
 /// </summary>
 internal sealed class HexDataManager : IDisposable
 {
+    private bool _disposed;
+    private Color _esmColor;
+
     /// <summary>
     ///     Replaced wholesale, never mutated after publication: BuildFileRegions and
     ///     AddCoverageGapRegionsCore run on background threads (LoadAsync/AddCoverageGapRegionsAsync)
@@ -23,8 +26,6 @@ internal sealed class HexDataManager : IDisposable
     /// </summary>
     private List<FileRegion> _fileRegions = [];
 
-    private bool _disposed;
-    private Color _esmColor;
     private List<DetectedMainRecord>? _mainRecords;
     private MemoryMappedFile? _mmf;
     private bool _ownsAccessor = true;
@@ -146,8 +147,8 @@ internal sealed class HexDataManager : IDisposable
         IReadOnlyList<DmpGapRecoveryCandidate>? recoverableCandidates)
     {
         var candidatesByGap = recoverableCandidates?
-            .GroupBy(c => (c.GapFileOffset, c.GapSize))
-            .ToDictionary(g => g.Key, g => g.ToList()) ??
+                                  .GroupBy(c => (c.GapFileOffset, c.GapSize))
+                                  .ToDictionary(g => g.Key, g => g.ToList()) ??
                               new Dictionary<(long GapFileOffset, long GapSize), List<DmpGapRecoveryCandidate>>();
 
         // Merge into a local copy and publish atomically — this runs on a thread-pool thread

@@ -781,4 +781,3 @@ internal static class RecordFieldFlattener
         return !string.IsNullOrEmpty(editorId) ? $"{editorId} ({hex})" : hex;
     }
 }
-

@@ -1,13 +1,11 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.SpeedTree;
-using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
 
@@ -22,9 +20,10 @@ internal static class SpeedTreeRenderCommands
         var command = new Command("render-all",
             "Render EVERY .spt in a BSA (or directory) to individual PNGs, sharing one texture source");
         var bsaOption = new Option<string?>("--bsa") { Description = "Meshes BSA to enumerate .spt from" };
-        var dirOption = new Option<string?>("--dir") { Description = "Directory to enumerate .spt from (instead of --bsa)" };
+        var dirOption = new Option<string?>("--dir")
+            { Description = "Directory to enumerate .spt from (instead of --bsa)" };
         var dataOption = new Option<string>("--data")
-        { Description = "Texture source(s) — BSA or dir, semicolon-separated", DefaultValueFactory = _ => "" };
+            { Description = "Texture source(s) — BSA or dir, semicolon-separated", DefaultValueFactory = _ => "" };
         var outOption = new Option<string>("-o", "--output") { Description = "Output directory", Required = true };
         var azimuthOption = new Option<float>("--azimuth") { DefaultValueFactory = _ => 45f };
         var elevationOption = new Option<float>("--elevation") { DefaultValueFactory = _ => 18f };
@@ -32,10 +31,13 @@ internal static class SpeedTreeRenderCommands
         var esmOption = new Option<string?>("--esm")
         {
             Description = "ESM to source each tree's leaf atlas from its TREE.ICON (the authoritative " +
-                          "leaf texture; the .spt's own material is a dev-era path that often never shipped).",
+                          "leaf texture; the .spt's own material is a dev-era path that often never shipped)."
         };
         var billboardsOption = new Option<bool>("--billboards")
-        { Description = "Also dump each tree's engine billboard (textures\\trees\\billboards\\<name>.dds) for comparison" };
+        {
+            Description =
+                "Also dump each tree's engine billboard (textures\\trees\\billboards\\<name>.dds) for comparison"
+        };
         command.Options.Add(bsaOption);
         command.Options.Add(dirOption);
         command.Options.Add(dataOption);
@@ -70,7 +72,7 @@ internal static class SpeedTreeRenderCommands
         var bsaOption = new Option<string?>("--bsa") { Description = "Meshes BSA to enumerate .spt from" };
         var dirOption = new Option<string?>("--dir") { Description = "Directory to enumerate .spt from" };
         var esmOption = new Option<string?>("--esm")
-        { Description = "ESM to source the per-tree TREE.SNAM seed (matches the viewer build)" };
+            { Description = "ESM to source the per-tree TREE.SNAM seed (matches the viewer build)" };
         command.Options.Add(bsaOption);
         command.Options.Add(dirOption);
         command.Options.Add(esmOption);
@@ -134,7 +136,6 @@ internal static class SpeedTreeRenderCommands
     }
 
     /// <summary>Enumerate <c>(archivePath, name, bytes)</c> for every <c>.spt</c> in a BSA or directory.</summary>
-
     private static List<(string ArchivePath, string Name, byte[] Bytes)>? EnumerateSptItems(string? bsa, string? dir)
     {
         var items = new List<(string ArchivePath, string Name, byte[] Bytes)>();
@@ -252,11 +253,11 @@ internal static class SpeedTreeRenderCommands
 
         var azR = azimuth * (float)Math.PI / 180f;
         var elR = elevation * (float)Math.PI / 180f;
-        var camDir = new System.Numerics.Vector3(
+        var camDir = new Vector3(
             (float)(Math.Cos(azR) * Math.Cos(elR)), (float)(Math.Sin(azR) * Math.Cos(elR)), (float)Math.Sin(elR));
         var baseOpt = SptGeometryOptions.FromEnvironment() with
         {
-            LeafFaceDirection = camDir,
+            LeafFaceDirection = camDir
         };
 
         int ok = 0, fail = 0, textured = 0, bbDumped = 0;
@@ -268,7 +269,7 @@ internal static class SpeedTreeRenderCommands
                 treeByPath.TryGetValue(archivePath, out var treeMeta);
                 var opt = baseOpt with
                 {
-                    LeafTextureOverride = treeMeta?.LeafTexture,
+                    LeafTextureOverride = treeMeta?.LeafTexture
                 };
                 var seed = treeMeta?.Seed ?? model.General.Token2005;
                 var renderable = SptGeometryBuilder.Build(model, seed, opt);
@@ -300,7 +301,8 @@ internal static class SpeedTreeRenderCommands
             }
         }
 
-        Console.WriteLine($"Done: {ok} rendered ({textured} textured), {fail} failed, {bbDumped} billboards → {outDir}");
+        Console.WriteLine(
+            $"Done: {ok} rendered ({textured} textured), {fail} failed, {bbDumped} billboards → {outDir}");
         return 0;
     }
 
@@ -311,18 +313,18 @@ internal static class SpeedTreeRenderCommands
     ///     leaf-billboard vertex shader does — using a camera-facing frame about <paramref name="camDir" />.
     ///     A correct result is identical to the camera-facing still, proving the encoding + billboard math.
     /// </summary>
-    private static void ExpandLeafBillboards(NifRenderableModel model, System.Numerics.Vector3 camDir,
+    private static void ExpandLeafBillboards(NifRenderableModel model, Vector3 camDir,
         float windStrength = 0f, float windTime = 0f)
     {
-        var dir = System.Numerics.Vector3.Normalize(camDir);
-        var reference = MathF.Abs(dir.Z) > 0.99f ? System.Numerics.Vector3.UnitX : System.Numerics.Vector3.UnitZ;
-        var right = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(reference, dir));
-        var up = System.Numerics.Vector3.Cross(dir, right);
+        var dir = Vector3.Normalize(camDir);
+        var reference = MathF.Abs(dir.Z) > 0.99f ? Vector3.UnitX : Vector3.UnitZ;
+        var right = Vector3.Normalize(Vector3.Cross(reference, dir));
+        var up = Vector3.Cross(dir, right);
         // Mirror reference_instanced.vert.hlsl's leaf wind EXACTLY so this still validates the shader math.
         var windDir = windStrength > 0f
-            ? System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(0.82f, 0.57f, 0f))
-            : System.Numerics.Vector3.Zero;
-        var phaseScale = new System.Numerics.Vector3(0.03f, 0.027f, 0.05f);
+            ? Vector3.Normalize(new Vector3(0.82f, 0.57f, 0f))
+            : Vector3.Zero;
+        var phaseScale = new Vector3(0.03f, 0.027f, 0.05f);
         foreach (var sub in model.Submeshes)
         {
             if (!sub.IsLeafBillboard || sub.Tangents is not { } t || sub.Bitangents is not { } b)
@@ -333,12 +335,12 @@ internal static class SpeedTreeRenderCommands
             var p = sub.Positions;
             for (var i = 0; i < p.Length; i += 3)
             {
-                var center = new System.Numerics.Vector3(t[i], t[i + 1], t[i + 2]);
+                var center = new Vector3(t[i], t[i + 1], t[i + 2]);
                 if (windStrength > 0f)
                 {
                     var windWeight = b[i + 2];
                     var sizeProxy = MathF.Max(MathF.Abs(b[i]), MathF.Abs(b[i + 1]));
-                    var phase = windTime * 0.7f + System.Numerics.Vector3.Dot(center, phaseScale);
+                    var phase = windTime * 0.7f + Vector3.Dot(center, phaseScale);
                     var gust = MathF.Sin(phase) + 0.25f * MathF.Sin(phase * 2.9f + 1.7f);
                     center += windDir * (gust * windStrength * windWeight * sizeProxy);
                 }
@@ -370,30 +372,30 @@ internal static class SpeedTreeRenderCommands
         {
             Description = "Texture source dir or BSA (resolves textures\\trees\\...). " +
                           "Default: Sample/Unpacked_Builds/PC_Final_Unpacked/Data",
-            DefaultValueFactory = _ => "Sample/Unpacked_Builds/PC_Final_Unpacked/Data",
+            DefaultValueFactory = _ => "Sample/Unpacked_Builds/PC_Final_Unpacked/Data"
         };
         var azimuthOption = new Option<float>("--azimuth")
-        { Description = "Camera azimuth degrees (0=S,45=NE,90=E)", DefaultValueFactory = _ => 45f };
+            { Description = "Camera azimuth degrees (0=S,45=NE,90=E)", DefaultValueFactory = _ => 45f };
         var elevationOption = new Option<float>("--elevation")
-        { Description = "Camera elevation degrees above horizontal", DefaultValueFactory = _ => 18f };
+            { Description = "Camera elevation degrees above horizontal", DefaultValueFactory = _ => 18f };
         var sizeOption = new Option<int>("--size")
-        { Description = "Output longest-edge size in px", DefaultValueFactory = _ => 512 };
+            { Description = "Output longest-edge size in px", DefaultValueFactory = _ => 512 };
         var dumpTexOption = new Option<bool>("--dump-textures")
-        { Description = "Also save each resolved texture's mip-0 as a PNG next to the output" };
+            { Description = "Also save each resolved texture's mip-0 as a PNG next to the output" };
         var bsaOption = new Option<string?>("--bsa")
-        { Description = "Read <file> from this BSA archive instead of disk (e.g. an Oblivion Meshes BSA)" };
+            { Description = "Read <file> from this BSA archive instead of disk (e.g. an Oblivion Meshes BSA)" };
         var leafTexOption = new Option<string?>("--leaf-texture")
         {
             Description = "Override the leaf atlas (the engine uses TREE.ICON, not the .spt material). " +
-                          "Bare name like 'WhiteOakLeaves01.dds' → textures\\trees\\leaves\\..., or a full path.",
+                          "Bare name like 'WhiteOakLeaves01.dds' → textures\\trees\\leaves\\..., or a full path."
         };
         var esmOption = new Option<string?>("--esm")
         {
-            Description = "ESM to source TREE.ICON and the TREE.SNAM seed for this .spt.",
+            Description = "ESM to source TREE.ICON and the TREE.SNAM seed for this .spt."
         };
         var seedOption = new Option<uint?>("--seed")
         {
-            Description = "Override the SpeedTree seed (TREE.SNAM / GECK SpeedTree Seed).",
+            Description = "Override the SpeedTree seed (TREE.SNAM / GECK SpeedTree Seed)."
         };
         command.Arguments.Add(fileArg);
         command.Options.Add(outOption);
@@ -446,7 +448,7 @@ internal static class SpeedTreeRenderCommands
         // billboards). Camera direction matches NifSpriteRenderer's az/el basis.
         var azR = azimuth * (float)Math.PI / 180f;
         var elR = elevation * (float)Math.PI / 180f;
-        var camDir = new System.Numerics.Vector3(
+        var camDir = new Vector3(
             (float)(Math.Cos(azR) * Math.Cos(elR)),
             (float)(Math.Sin(azR) * Math.Cos(elR)),
             (float)Math.Sin(elR));
@@ -464,9 +466,9 @@ internal static class SpeedTreeRenderCommands
             {
                 Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                     $"ESM TREE metadata: {treeMeta.DisplayName} path={treeMeta.ArchivePath} " +
-                    $"seed={(treeMeta.Seed?.ToString(CultureInfo.InvariantCulture) ?? "(none)")} " +
-                    $"OBNDh={(treeMeta.ObndHeight?.ToString(CultureInfo.InvariantCulture) ?? "(none)")} " +
-                    $"BNAM={(treeMeta.BillboardWidth?.ToString(CultureInfo.InvariantCulture) ?? "?")}x{(treeMeta.BillboardHeight?.ToString(CultureInfo.InvariantCulture) ?? "?")} " +
+                    $"seed={treeMeta.Seed?.ToString(CultureInfo.InvariantCulture) ?? "(none)"} " +
+                    $"OBNDh={treeMeta.ObndHeight?.ToString(CultureInfo.InvariantCulture) ?? "(none)"} " +
+                    $"BNAM={treeMeta.BillboardWidth?.ToString(CultureInfo.InvariantCulture) ?? "?"}x{treeMeta.BillboardHeight?.ToString(CultureInfo.InvariantCulture) ?? "?"} " +
                     $"leaf={treeMeta.LeafTexture ?? "(none)"}"));
             }
         }
@@ -486,7 +488,7 @@ internal static class SpeedTreeRenderCommands
         {
             LeafFaceDirection = crossed || billboard ? null : camDir,
             LeafBillboard = billboard,
-            LeafTextureOverride = resolvedLeafTexture,
+            LeafTextureOverride = resolvedLeafTexture
         };
 
         var seed = seedOverride ?? treeMeta?.Seed ?? model.General.Token2005;
@@ -500,6 +502,7 @@ internal static class SpeedTreeRenderCommands
             var windTime = ParseFloatEnv("FALLOUT_SPT_WIND_TIME", 2f);
             ExpandLeafBillboards(renderable, camDir, windStrength, windTime);
         }
+
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"Built geometry: seed={seed} {renderable.Submeshes.Count} submeshes, bounds W={renderable.Width:F1} H={renderable.Height:F1} D={renderable.Depth:F1}"));
         foreach (var sub in renderable.Submeshes)
@@ -551,8 +554,8 @@ internal static class SpeedTreeRenderCommands
 
         var sprite = NifSpriteRenderer.Render(
             renderable, resolver,
-            pixelsPerUnit: 1f, minSize: size, maxSize: size,
-            azimuthDeg: azimuth, elevationDeg: elevation, fixedSize: size);
+            1f, size, size,
+            azimuth, elevation, size);
         if (sprite is null)
         {
             Console.Error.WriteLine("Render produced no output (no geometry?).");
@@ -566,4 +569,3 @@ internal static class SpeedTreeRenderCommands
         return 0;
     }
 }
-

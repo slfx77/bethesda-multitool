@@ -76,19 +76,22 @@ public static class Ba2Parser
 
     // GNRL record (36 bytes): name hash, extension, dir hash, flags, data offset (u64),
     // packed size, real size, trailing alignment dword.
-    private static Ba2FileRecord ReadGeneralRecord(BinaryReader reader, int index) => new()
+    private static Ba2FileRecord ReadGeneralRecord(BinaryReader reader, int index)
     {
-        Kind = Ba2HeaderType.General,
-        Index = index,
-        NameHash = reader.ReadUInt32(),
-        Extension = ReadExtension(reader),
-        DirHash = reader.ReadUInt32(),
-        Flags = reader.ReadUInt32(),
-        Offset = reader.ReadUInt64(),
-        PackedSize = reader.ReadUInt32(),
-        RealSize = reader.ReadUInt32(),
-        Align = reader.ReadUInt32()
-    };
+        return new Ba2FileRecord
+        {
+            Kind = Ba2HeaderType.General,
+            Index = index,
+            NameHash = reader.ReadUInt32(),
+            Extension = ReadExtension(reader),
+            DirHash = reader.ReadUInt32(),
+            Flags = reader.ReadUInt32(),
+            Offset = reader.ReadUInt64(),
+            PackedSize = reader.ReadUInt32(),
+            RealSize = reader.ReadUInt32(),
+            Align = reader.ReadUInt32()
+        };
+    }
 
     // DX10 record (24 bytes) followed by ChunkCount × 24-byte chunk records. The two bytes at
     // offset 22-23 are a little-endian flag word: bit 0 (low byte) marks a cubemap; the high byte
@@ -139,7 +142,9 @@ public static class Ba2Parser
     }
 
     private static string ReadExtension(BinaryReader reader)
-        => Encoding.ASCII.GetString(reader.ReadBytes(4)).TrimEnd('\0');
+    {
+        return Encoding.ASCII.GetString(reader.ReadBytes(4)).TrimEnd('\0');
+    }
 
     /// <summary>
     ///     Reads only the header so callers can classify an archive cheaply. Returns null when the
@@ -177,5 +182,7 @@ public static class Ba2Parser
 
     /// <summary>Returns true when <paramref name="data" /> begins with the BA2 "BTDX" magic.</summary>
     public static bool IsBa2File(ReadOnlySpan<byte> data)
-        => data.Length >= 4 && data[..4].SequenceEqual(Ba2Magic);
+    {
+        return data.Length >= 4 && data[..4].SequenceEqual(Ba2Magic);
+    }
 }

@@ -2,30 +2,29 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
 ///     Typed runtime reader for <c>BGSAcousticSpace</c> (ASPC, FormType 0x0E).
 ///     <para>
-///     ASPC has no record model of its own — it reaches the writer as a
-///     <see cref="GenericEsmRecord" /> — so this reader deliberately returns one too, keyed by the
-///     same PDB-style field names <c>AspcEncoder</c> already looks up. That keeps the fix on the
-///     read side: no new model, no writer change.
+///         ASPC has no record model of its own — it reaches the writer as a
+///         <see cref="GenericEsmRecord" /> — so this reader deliberately returns one too, keyed by the
+///         same PDB-style field names <c>AspcEncoder</c> already looks up. That keeps the fix on the
+///         read side: no new model, no writer change.
 ///     </para>
 ///     <para>
-///     What it replaces: the PDB-driven generic reader applied a probed uniform shift, and for
-///     0x0E the generic shift probe reported <c>+4</c>. Every emitted record therefore carried the
-///     runtime's <c>pSoundRegion</c> in the SNAM Night slot — a REGN where a SOUN belongs, which
-///     the engine logged as <c>Could not find pNightSound</c> — while the real Dawn sound was
-///     never read at all. See <see cref="RuntimeAcousticSpaceLayout" /> for the three captured
-///     layouts and how they were mapped.
+///         What it replaces: the PDB-driven generic reader applied a probed uniform shift, and for
+///         0x0E the generic shift probe reported <c>+4</c>. Every emitted record therefore carried the
+///         runtime's <c>pSoundRegion</c> in the SNAM Night slot — a REGN where a SOUN belongs, which
+///         the engine logged as <c>Could not find pNightSound</c> — while the real Dawn sound was
+///         never read at all. See <see cref="RuntimeAcousticSpaceLayout" /> for the three captured
+///         layouts and how they were mapped.
 ///     </para>
 ///     <para>
-///     Every pointer read here is <b>type-validated</b>: a sound slot that does not resolve to a
-///     SOUN yields null rather than a wrong FormID, per the standing rule that we decline to emit
-///     rather than invent.
+///         Every pointer read here is <b>type-validated</b>: a sound slot that does not resolve to a
+///         SOUN yields null rather than a wrong FormID, per the standing rule that we decline to emit
+///         rather than invent.
 ///     </para>
 /// </summary>
 internal sealed class RuntimeAcousticSpaceReader(
@@ -55,10 +54,9 @@ internal sealed class RuntimeAcousticSpaceReader(
 
     private readonly RuntimeMemoryContext _context = context;
     private readonly RuntimePdbFieldAccessor _fields = new(context);
-    private readonly RuntimeAcousticSpaceLayout _layout = ResolveLayout(probeResult);
 
     /// <summary>The layout in use, so <c>dmp probe-shifts</c> and diagnostics can report it.</summary>
-    public RuntimeAcousticSpaceLayout Layout => _layout;
+    public RuntimeAcousticSpaceLayout Layout { get; } = ResolveLayout(probeResult);
 
     private static RuntimeAcousticSpaceLayout ResolveLayout(
         RuntimeLayoutProbeResult<RuntimeAcousticSpaceLayout>? probeResult)
@@ -103,25 +101,25 @@ internal sealed class RuntimeAcousticSpaceReader(
         // Slots the captured build does not have are left absent rather than zero-filled: the
         // encoder emits schema-required subrecords as 0 either way, but an absent key keeps
         // "not in this build" distinguishable from "captured as null".
-        for (var slot = 0; slot < _layout.SoundOffsets.Count && slot < SoundFieldNames.Length; slot++)
+        for (var slot = 0; slot < Layout.SoundOffsets.Count && slot < SoundFieldNames.Length; slot++)
         {
-            if (_context.FollowPointerToFormId(buffer, _layout.SoundOffsets[slot], SounFormType) is { } sound)
+            if (_context.FollowPointerToFormId(buffer, Layout.SoundOffsets[slot], SounFormType) is { } sound)
             {
                 fields[SoundFieldNames[slot]] = sound;
             }
         }
 
-        if (_context.FollowPointerToFormId(buffer, _layout.RegionOffset, RegnFormType) is { } region)
+        if (_context.FollowPointerToFormId(buffer, Layout.RegionOffset, RegnFormType) is { } region)
         {
             fields["BGSAcousticSpace.pSoundRegion"] = region;
         }
 
-        if (TryReadScalar(buffer, _layout.EnvTypeOffset) is { } envType)
+        if (TryReadScalar(buffer, Layout.EnvTypeOffset) is { } envType)
         {
             fields["BGSAcousticSpace.eEnvType"] = envType;
         }
 
-        if (_layout.WallaPopOffset is { } wallaPopOffset && TryReadScalar(buffer, wallaPopOffset) is { } wallaPop)
+        if (Layout.WallaPopOffset is { } wallaPopOffset && TryReadScalar(buffer, wallaPopOffset) is { } wallaPop)
         {
             fields["BGSAcousticSpace.iWallaPop"] = wallaPop;
         }

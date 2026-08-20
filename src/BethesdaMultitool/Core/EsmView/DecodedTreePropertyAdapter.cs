@@ -2,7 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
 /// <summary>
 ///     Adapts a schema-decoded <see cref="DecodedNode" /> tree (produced for games read by the

@@ -2,7 +2,10 @@ using BethesdaMultitool.Core.RuntimeBuffer;
 
 namespace BethesdaMultitool.Core.Pdb;
 
-/// <summary>A <see cref="PdbGlobal" /> resolved to a dump location, with the pointer value it holds and how that pointer was classified.</summary>
+/// <summary>
+///     A <see cref="PdbGlobal" /> resolved to a dump location, with the pointer value it holds and how that pointer
+///     was classified.
+/// </summary>
 public sealed class ResolvedGlobal
 {
     public required PdbGlobal Global { get; init; }

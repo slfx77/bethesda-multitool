@@ -21,7 +21,7 @@ internal static class GpuTextureFormatHelpers12
             Texture2D = new Texture2DShaderResourceView
             {
                 MipLevels = mipCount,
-                MostDetailedMip = 0,
+                MostDetailedMip = 0
             }
         };
     }
@@ -41,22 +41,25 @@ internal static class GpuTextureFormatHelpers12
             TextureCube = new TextureCubeShaderResourceView
             {
                 MipLevels = mipCount,
-                MostDetailedMip = 0,
+                MostDetailedMip = 0
             }
         };
     }
 
-    internal static Format ToDxgiFormat(GpuTexturePayloadFormat format) => format switch
+    internal static Format ToDxgiFormat(GpuTexturePayloadFormat format)
     {
-        GpuTexturePayloadFormat.Rgba8 => Format.R8G8B8A8_UNorm,
-        GpuTexturePayloadFormat.BC1 => Format.BC1_UNorm,
-        GpuTexturePayloadFormat.BC2 => Format.BC2_UNorm,
-        GpuTexturePayloadFormat.BC3 => Format.BC3_UNorm,
-        GpuTexturePayloadFormat.BC4 => Format.BC4_UNorm,
-        GpuTexturePayloadFormat.BC5 => Format.BC5_UNorm,
-        GpuTexturePayloadFormat.BC7 => Format.BC7_UNorm,
-        _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
-    };
+        return format switch
+        {
+            GpuTexturePayloadFormat.Rgba8 => Format.R8G8B8A8_UNorm,
+            GpuTexturePayloadFormat.BC1 => Format.BC1_UNorm,
+            GpuTexturePayloadFormat.BC2 => Format.BC2_UNorm,
+            GpuTexturePayloadFormat.BC3 => Format.BC3_UNorm,
+            GpuTexturePayloadFormat.BC4 => Format.BC4_UNorm,
+            GpuTexturePayloadFormat.BC5 => Format.BC5_UNorm,
+            GpuTexturePayloadFormat.BC7 => Format.BC7_UNorm,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
+        };
+    }
 
     internal static uint GetSourceRowPitch(GpuTexturePayload payload, GpuTextureMipPayload level)
     {

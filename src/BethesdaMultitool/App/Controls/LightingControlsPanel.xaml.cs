@@ -16,6 +16,14 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class LightingControlsPanel : UserControl
 {
+    // ---- Segmented HH:MM stepper ----------------------------------------------------------------
+    // The selected segment (hours or minutes) is what the chevron RepeatButtons — and Up/Down on a
+    // focused segment — step. Minutes wrap 0↔59 WITHOUT carrying into the hour (deliberate: fine
+    // minute nudges must not yank the scene across an hour boundary); hours wrap 0↔23. The slider
+    // stays the canonical value: stepping writes TimeSlider.Value, which raises TimeChanged and
+    // refreshes the segment text, so hosts see one unified time source.
+
+    private bool _minutesSegmentSelected;
     private bool _suppressWeatherSelectionEvent;
     private bool _suppressWindEvents;
 
@@ -26,36 +34,6 @@ public sealed partial class LightingControlsPanel : UserControl
         SelectTimeSegment(minutes: false); // hours selected by default
         UpdateDayValueText();
     }
-
-    /// <summary>Raised when the Lighting toggle changes. Argument is the new on/off state.</summary>
-    public event EventHandler<bool>? LightingToggled;
-
-    /// <summary>Raised when the Fog toggle changes. Argument is the new on/off state.</summary>
-    public event EventHandler<bool>? FogToggled;
-
-    /// <summary>Raised when the Sun-shadows toggle changes. Argument is the new on/off state.</summary>
-    public event EventHandler<bool>? ShadowsToggled;
-
-    /// <summary>Raised when the Skybox toggle changes. Argument is the new on/off state.</summary>
-    public event EventHandler<bool>? SkyboxToggled;
-
-    /// <summary>Raised when the "Override wind" checkbox changes. Argument is the new state
-    /// (true = the host should use <see cref="WindSpeed" />; false = follow the weather).</summary>
-    public event EventHandler<bool>? WindOverrideChanged;
-
-    /// <summary>Raised when the user moves the wind-speed slider while the override is on
-    /// (programmatic display updates via <see cref="SetWindSpeedDisplay" /> do not raise it).</summary>
-    public event EventHandler<double>? WindSpeedChanged;
-
-    /// <summary>Raised when the time-of-day slider changes. Argument is the new game hour (0–24).</summary>
-    public event EventHandler<double>? TimeChanged;
-
-    /// <summary>Raised when the day slider changes. Argument is the new day of the lunar cycle (drives the
-    /// moon phase + sky position in the 3D viewer).</summary>
-    public event EventHandler<double>? DayChanged;
-
-    /// <summary>Raised when the weather selection changes (suppressed during programmatic population).</summary>
-    public event EventHandler<WeatherSelection>? WeatherChanged;
 
     /// <summary>Lighting on/off. Setting this updates the toggle (and fires <see cref="LightingToggled" />).</summary>
     public bool LightingEnabled
@@ -95,8 +73,10 @@ public sealed partial class LightingControlsPanel : UserControl
     /// <summary>Whether the wind override is active (the "Override wind" checkbox).</summary>
     public bool WindOverrideEnabled => WindOverrideCheck.IsChecked == true;
 
-    /// <summary>The wind-speed slider value (engine scale, 0–1). Meaningful as an override only
-    /// while <see cref="WindOverrideEnabled" /> is true.</summary>
+    /// <summary>
+    ///     The wind-speed slider value (engine scale, 0–1). Meaningful as an override only
+    ///     while <see cref="WindOverrideEnabled" /> is true.
+    /// </summary>
     public double WindSpeed => WindSpeedSlider.Value;
 
     /// <summary>Time of day (0–24h).</summary>
@@ -113,8 +93,10 @@ public sealed partial class LightingControlsPanel : UserControl
         set => DaySlider.Value = value;
     }
 
-    /// <summary>Whether the Day header + slider are shown (default true; the 2D map hides it — the day only
-    /// affects the 3D moon billboards).</summary>
+    /// <summary>
+    ///     Whether the Day header + slider are shown (default true; the 2D map hides it — the day only
+    ///     affects the 3D moon billboards).
+    /// </summary>
     public bool ShowDay
     {
         get => DaySlider.Visibility == Visibility.Visible;
@@ -133,29 +115,37 @@ public sealed partial class LightingControlsPanel : UserControl
         set => FogToggle.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>Whether the Sun-shadows toggle row is shown (default true; the 2D map hides it —
-    /// the shadow pass only exists in the 3D scene).</summary>
+    /// <summary>
+    ///     Whether the Sun-shadows toggle row is shown (default true; the 2D map hides it —
+    ///     the shadow pass only exists in the 3D scene).
+    /// </summary>
     public bool ShowShadows
     {
         get => ShadowsToggle.Visibility == Visibility.Visible;
         set => ShadowsToggle.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>Whether the Skybox toggle row is shown (default true; the 2D map hides it —
-    /// the sky only exists in the 3D scene).</summary>
+    /// <summary>
+    ///     Whether the Skybox toggle row is shown (default true; the 2D map hides it —
+    ///     the sky only exists in the 3D scene).
+    /// </summary>
     public bool ShowSkybox
     {
         get => SkyboxToggle.Visibility == Visibility.Visible;
         set => SkyboxToggle.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>The current weather selection (concrete weather, or the climate-default sentinel). Lets
-    /// the host re-resolve the climate default after a worldspace switch without a change event.</summary>
+    /// <summary>
+    ///     The current weather selection (concrete weather, or the climate-default sentinel). Lets
+    ///     the host re-resolve the climate default after a worldspace switch without a change event.
+    /// </summary>
     public WeatherSelection CurrentWeatherSelection =>
         ToSelection(WeatherComboBox.SelectedItem as WeatherDropdownItem);
 
-    /// <summary>Whether the whole Weather section (separator, header, dropdown, wind row) is shown
-    /// (default true; the 2D map hides it).</summary>
+    /// <summary>
+    ///     Whether the whole Weather section (separator, header, dropdown, wind row) is shown
+    ///     (default true; the 2D map hides it).
+    /// </summary>
     public bool ShowWeather
     {
         get => WeatherComboBox.Visibility == Visibility.Visible;
@@ -168,6 +158,42 @@ public sealed partial class LightingControlsPanel : UserControl
             WindRow.Visibility = vis;
         }
     }
+
+    /// <summary>Raised when the Lighting toggle changes. Argument is the new on/off state.</summary>
+    public event EventHandler<bool>? LightingToggled;
+
+    /// <summary>Raised when the Fog toggle changes. Argument is the new on/off state.</summary>
+    public event EventHandler<bool>? FogToggled;
+
+    /// <summary>Raised when the Sun-shadows toggle changes. Argument is the new on/off state.</summary>
+    public event EventHandler<bool>? ShadowsToggled;
+
+    /// <summary>Raised when the Skybox toggle changes. Argument is the new on/off state.</summary>
+    public event EventHandler<bool>? SkyboxToggled;
+
+    /// <summary>
+    ///     Raised when the "Override wind" checkbox changes. Argument is the new state
+    ///     (true = the host should use <see cref="WindSpeed" />; false = follow the weather).
+    /// </summary>
+    public event EventHandler<bool>? WindOverrideChanged;
+
+    /// <summary>
+    ///     Raised when the user moves the wind-speed slider while the override is on
+    ///     (programmatic display updates via <see cref="SetWindSpeedDisplay" /> do not raise it).
+    /// </summary>
+    public event EventHandler<double>? WindSpeedChanged;
+
+    /// <summary>Raised when the time-of-day slider changes. Argument is the new game hour (0–24).</summary>
+    public event EventHandler<double>? TimeChanged;
+
+    /// <summary>
+    ///     Raised when the day slider changes. Argument is the new day of the lunar cycle (drives the
+    ///     moon phase + sky position in the 3D viewer).
+    /// </summary>
+    public event EventHandler<double>? DayChanged;
+
+    /// <summary>Raised when the weather selection changes (suppressed during programmatic population).</summary>
+    public event EventHandler<WeatherSelection>? WeatherChanged;
 
     /// <summary>
     ///     Reflects the weather-driven wind speed on the (disabled) slider while the override is off,
@@ -244,15 +270,6 @@ public sealed partial class LightingControlsPanel : UserControl
         TimeChanged?.Invoke(this, e.NewValue);
     }
 
-    // ---- Segmented HH:MM stepper ----------------------------------------------------------------
-    // The selected segment (hours or minutes) is what the chevron RepeatButtons — and Up/Down on a
-    // focused segment — step. Minutes wrap 0↔59 WITHOUT carrying into the hour (deliberate: fine
-    // minute nudges must not yank the scene across an hour boundary); hours wrap 0↔23. The slider
-    // stays the canonical value: stepping writes TimeSlider.Value, which raises TimeChanged and
-    // refreshes the segment text, so hosts see one unified time source.
-
-    private bool _minutesSegmentSelected;
-
     private void HourSegment_Click(object sender, RoutedEventArgs e) => SelectTimeSegment(minutes: false);
 
     private void MinuteSegment_Click(object sender, RoutedEventArgs e) => SelectTimeSegment(minutes: true);
@@ -261,8 +278,10 @@ public sealed partial class LightingControlsPanel : UserControl
 
     private void TimeDownButton_Click(object sender, RoutedEventArgs e) => StepSelectedTimeField(-1);
 
-    /// <summary>Up/Down on a FOCUSED segment selects and steps that segment directly (keyboard
-    /// parity with click-then-chevron).</summary>
+    /// <summary>
+    ///     Up/Down on a FOCUSED segment selects and steps that segment directly (keyboard
+    ///     parity with click-then-chevron).
+    /// </summary>
     private void TimeSegment_KeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
     {
         var isMinutes = ReferenceEquals(sender, MinuteSegment);
@@ -280,8 +299,10 @@ public sealed partial class LightingControlsPanel : UserControl
         }
     }
 
-    /// <summary>Marks the segment the chevrons drive with an accent underline (constant border
-    /// thickness in markup, so selection never shifts layout).</summary>
+    /// <summary>
+    ///     Marks the segment the chevrons drive with an accent underline (constant border
+    ///     thickness in markup, so selection never shifts layout).
+    /// </summary>
     private void SelectTimeSegment(bool minutes)
     {
         _minutesSegmentSelected = minutes;
@@ -312,8 +333,10 @@ public sealed partial class LightingControlsPanel : UserControl
         TimeSlider.Value = hours + (minutes / 60.0); // fires TimeChanged + UpdateTimeSegments
     }
 
-    /// <summary>Reflects an hour value (0–24 fractional; 24:00 wraps to 00:00) on the HH / MM
-    /// segment faces.</summary>
+    /// <summary>
+    ///     Reflects an hour value (0–24 fractional; 24:00 wraps to 00:00) on the HH / MM
+    ///     segment faces.
+    /// </summary>
     private void UpdateTimeSegments(double hourValue)
     {
         if (HourSegment is null || MinuteSegment is null) return; // parse-time early fire
@@ -339,8 +362,10 @@ public sealed partial class LightingControlsPanel : UserControl
         WeatherChanged?.Invoke(this, ToSelection(WeatherComboBox.SelectedItem as WeatherDropdownItem));
     }
 
-    /// <summary>Maps a dropdown item to a <see cref="WeatherSelection" /> (null item → no selection;
-    /// climate-default sentinel → null weather resolved per-worldspace by the host).</summary>
+    /// <summary>
+    ///     Maps a dropdown item to a <see cref="WeatherSelection" /> (null item → no selection;
+    ///     climate-default sentinel → null weather resolved per-worldspace by the host).
+    /// </summary>
     private static WeatherSelection ToSelection(WeatherDropdownItem? item)
     {
         if (item is null) return new WeatherSelection(null, false);
@@ -350,15 +375,19 @@ public sealed partial class LightingControlsPanel : UserControl
     private static string WeatherLabel(WeatherRecord w) =>
         string.IsNullOrEmpty(w.EditorId) ? $"0x{w.FormId:X8}" : $"{w.EditorId} (0x{w.FormId:X8})";
 
-    /// <summary>One weather dropdown entry. The first item is the climate-default sentinel
-    /// (<see cref="IsClimateDefault" /> true, <see cref="Weather" /> null); the rest carry a concrete
-    /// weather. <see cref="ToString" /> drives the display.</summary>
+    /// <summary>
+    ///     One weather dropdown entry. The first item is the climate-default sentinel
+    ///     (<see cref="IsClimateDefault" /> true, <see cref="Weather" /> null); the rest carry a concrete
+    ///     weather. <see cref="ToString" /> drives the display.
+    /// </summary>
     private sealed record WeatherDropdownItem(string Label, WeatherRecord? Weather, bool IsClimateDefault)
     {
         public override string ToString() => Label;
     }
 }
 
-/// <summary>A weather selection from <see cref="LightingControlsPanel" />: either a concrete weather, or
-/// the climate-default sentinel (<see cref="IsClimateDefault" /> true, resolved per-worldspace by the host).</summary>
+/// <summary>
+///     A weather selection from <see cref="LightingControlsPanel" />: either a concrete weather, or
+///     the climate-default sentinel (<see cref="IsClimateDefault" /> true, resolved per-worldspace by the host).
+/// </summary>
 public readonly record struct WeatherSelection(WeatherRecord? Weather, bool IsClimateDefault);

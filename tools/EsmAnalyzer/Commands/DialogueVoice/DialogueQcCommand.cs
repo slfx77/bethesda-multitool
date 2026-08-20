@@ -2,9 +2,6 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.DialogueVoice;
@@ -19,6 +16,19 @@ namespace EsmAnalyzer.Commands.DialogueVoice;
 /// </summary>
 public static class DialogueQcCommand
 {
+    private static readonly Regex TokenSplit = new(@"[A-Za-z]{3,}", RegexOptions.Compiled);
+
+    // Collapse 2+ whitespace after sentence punctuation into a single space.
+    private static readonly Regex DoubleSpaceAfterPunct = new(
+        @"([.!?,;:])[ \t]{2,}",
+        RegexOptions.Compiled);
+
+    // Word token in text: contiguous letters/apostrophes. We match each position and
+    // decide whether to rewrite it.
+    private static readonly Regex WordToken = new(
+        @"[A-Za-z][A-Za-z']*",
+        RegexOptions.Compiled);
+
     public static Command CreateDialogueQcCommand()
     {
         var command = new Command(
@@ -26,7 +36,8 @@ public static class DialogueQcCommand
             "Quality-check a transcriber CSV against an ESM proper-noun vocabulary");
 
         var csvArg = new Argument<string>("csv") { Description = "Path to the transcriber CSV" };
-        var esmArg = new Argument<string>("esm") { Description = "Path to the ESM whose proper nouns form the vocabulary" };
+        var esmArg = new Argument<string>("esm")
+            { Description = "Path to the ESM whose proper nouns form the vocabulary" };
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would change but don't write" };
         var noBackupOption = new Option<bool>("--no-backup") { Description = "Skip writing the .csv.bak backup" };
         var reportOption = new Option<string?>("--report")
@@ -61,7 +72,8 @@ public static class DialogueQcCommand
         return command;
     }
 
-    private static int Run(string csvPath, string esmPath, bool dryRun, bool noBackup, string? reportPath, int minEditLen)
+    private static int Run(string csvPath, string esmPath, bool dryRun, bool noBackup, string? reportPath,
+        int minEditLen)
     {
         AnsiConsole.MarkupLine("[bold cyan]Dialogue CSV QC[/]");
         AnsiConsole.MarkupLine($"[grey]CSV:[/] {csvPath}");
@@ -75,7 +87,7 @@ public static class DialogueQcCommand
         }
 
         // ── 1. Build vocabulary from ESM ───────────────────────────────────────
-        var esm = EsmFileLoader.Load(esmPath, printStatus: true);
+        var esm = EsmFileLoader.Load(esmPath, true);
         if (esm == null)
         {
             return 1;
@@ -108,7 +120,8 @@ public static class DialogueQcCommand
         var voiceTypeIdx = Array.IndexOf(header, "VoiceType");
         if (textIdx < 0 || sourceIdx < 0)
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] CSV header missing 'Text' or 'Source' column: {string.Join(", ", header)}");
+            AnsiConsole.MarkupLine(
+                $"[red]ERROR:[/] CSV header missing 'Text' or 'Source' column: {string.Join(", ", header)}");
             return 1;
         }
 
@@ -189,6 +202,7 @@ public static class DialogueQcCommand
                     Markup.Escape(Truncate(before, 80)),
                     Markup.Escape(Truncate(after, 80)));
             }
+
             AnsiConsole.Write(sampleTable);
         }
 
@@ -208,77 +222,21 @@ public static class DialogueQcCommand
         if (!noBackup)
         {
             var backupPath = csvPath + ".bak";
-            File.Copy(csvPath, backupPath, overwrite: true);
+            File.Copy(csvPath, backupPath, true);
             AnsiConsole.MarkupLine($"[green]Backup:[/] {backupPath}");
         }
 
-        var sb = new StringBuilder(rawText.Length + (changedRows * 16));
+        var sb = new StringBuilder(rawText.Length + changedRows * 16);
         for (var i = 0; i < rows.Count; i++)
         {
             sb.Append(DialogueQcCsvIo.SerializeRow(rows[i]));
             sb.Append(newlineStyle);
         }
+
         File.WriteAllText(csvPath, sb.ToString());
         AnsiConsole.MarkupLine($"[green]Wrote:[/] {csvPath}");
 
         return 0;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    //  Vocabulary extraction
-    // ──────────────────────────────────────────────────────────────────────────
-
-    private sealed class Vocabulary
-    {
-        // Lowercase token → canonical capitalization. Indexes EVERY proper-noun token,
-        // including components of multi-word FULL strings — used for edit-distance fuzzy match.
-        public Dictionary<string, string> CanonicalByLower { get; } = new(StringComparer.Ordinal);
-        // Lowercase tokens that originated from a STANDALONE single-word FULL ("Marcus",
-        // "Jacobstown"). Only these are eligible for case-only auto-fixes — case-fixing on
-        // a multi-word-component like "strip" (from "The Strip") would corrupt every
-        // normal use of "strip" in dialogue.
-        public HashSet<string> StandaloneLower { get; } = new(StringComparer.Ordinal);
-        // First-letter bucketed list of canonical tokens for fast edit-distance pre-filter.
-        public Dictionary<char, List<string>> ByFirstChar { get; } = new();
-        // Full-string set of FULL display strings for context in reports.
-        public HashSet<string> FullStrings { get; } = new(StringComparer.Ordinal);
-
-        public int FullStringsScanned { get; set; }
-        public int NpcCount { get; set; }
-        public int CellCount { get; set; }
-        public int WrldCount { get; set; }
-        public int RegnCount { get; set; }
-        public int FactCount { get; set; }
-
-        public void AddToken(string token, bool isStandalone)
-        {
-            if (token.Length < 3)
-            {
-                return;
-            }
-            var lower = token.ToLowerInvariant();
-            if (isStandalone)
-            {
-                StandaloneLower.Add(lower);
-            }
-            if (CanonicalByLower.TryGetValue(lower, out var existing))
-            {
-                // Prefer the capitalization that begins with uppercase.
-                if (!char.IsUpper(existing[0]) && char.IsUpper(token[0]))
-                {
-                    CanonicalByLower[lower] = token;
-                }
-                return;
-            }
-            CanonicalByLower[lower] = token;
-            var firstLower = char.ToLowerInvariant(token[0]);
-            if (!ByFirstChar.TryGetValue(firstLower, out var list))
-            {
-                list = new List<string>();
-                ByFirstChar[firstLower] = list;
-            }
-            list.Add(token);
-        }
     }
 
     private static Vocabulary BuildVocabulary(byte[] data)
@@ -288,7 +246,7 @@ public static class DialogueQcCommand
         foreach (var rec in records)
         {
             var sig = rec.Header.Signature;
-            bool include = sig switch
+            var include = sig switch
             {
                 "NPC_" or "CREA" or "CELL" or "WRLD" or "REGN" or "FACT" => true,
                 _ => false
@@ -303,12 +261,14 @@ public static class DialogueQcCommand
             {
                 continue;
             }
+
             vocab.FullStringsScanned++;
             vocab.FullStrings.Add(full);
 
             switch (sig)
             {
-                case "NPC_": case "CREA": vocab.NpcCount++; break;
+                case "NPC_":
+                case "CREA": vocab.NpcCount++; break;
                 case "CELL": vocab.CellCount++; break;
                 case "WRLD": vocab.WrldCount++; break;
                 case "REGN": vocab.RegnCount++; break;
@@ -326,6 +286,7 @@ public static class DialogueQcCommand
                 {
                     continue;
                 }
+
                 // Multi-word FULLs add even more guards: ignore structural words
                 // and tokens too short to be distinctive.
                 if (!isSingleWord)
@@ -334,18 +295,19 @@ public static class DialogueQcCommand
                     {
                         continue;
                     }
+
                     if (DialogueQcStopWords.StructuralWords.Contains(token))
                     {
                         continue;
                     }
                 }
-                vocab.AddToken(token, isStandalone: isSingleWord);
+
+                vocab.AddToken(token, isSingleWord);
             }
         }
+
         return vocab;
     }
-
-    private static readonly Regex TokenSplit = new(@"[A-Za-z]{3,}", RegexOptions.Compiled);
 
     private static IEnumerable<string> Tokenize(string text)
     {
@@ -354,40 +316,6 @@ public static class DialogueQcCommand
             yield return m.Value;
         }
     }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    //  Text fixes
-    // ──────────────────────────────────────────────────────────────────────────
-
-    private sealed class RowContext
-    {
-        public int LineNumber;
-        public string FormId = "";
-        public string VoiceType = "";
-    }
-
-    private sealed class QcReport
-    {
-        public int WhisperRowsScanned;
-        public int DoubleSpaceFixes;
-        public int CaseOnlyFixes;
-        public int EditDistance1Fixes;
-        public int AmbiguousFlags;
-        public List<(int Line, string FormId, string Before, string After)> ChangedRowSamples = new();
-        public List<string> ChangeLog = new();
-        public List<string> AmbiguousLog = new();
-    }
-
-    // Collapse 2+ whitespace after sentence punctuation into a single space.
-    private static readonly Regex DoubleSpaceAfterPunct = new(
-        @"([.!?,;:])[ \t]{2,}",
-        RegexOptions.Compiled);
-
-    // Word token in text: contiguous letters/apostrophes. We match each position and
-    // decide whether to rewrite it.
-    private static readonly Regex WordToken = new(
-        @"[A-Za-z][A-Za-z']*",
-        RegexOptions.Compiled);
 
     private static string ApplyFixes(string text, Vocabulary vocab, RowContext ctx, QcReport report, int minEditLen)
     {
@@ -427,6 +355,7 @@ public static class DialogueQcCommand
                 lastEnd = m.Index + m.Length;
                 continue;
             }
+
             var letters = token;
             var sentenceInitial = IsSentenceInitial(text, m.Index);
 
@@ -442,6 +371,7 @@ public static class DialogueQcCommand
 
             lastEnd = m.Index + m.Length;
         }
+
         result.Append(text, lastEnd, text.Length - lastEnd);
 
         var finalText = result.ToString();
@@ -449,6 +379,7 @@ public static class DialogueQcCommand
         {
             return finalText;
         }
+
         return original;
     }
 
@@ -462,8 +393,10 @@ public static class DialogueQcCommand
             {
                 continue;
             }
+
             return c is '.' or '!' or '?';
         }
+
         return true;
     }
 
@@ -495,22 +428,26 @@ public static class DialogueQcCommand
             {
                 return null;
             }
+
             // Components of multi-word FULLs ("Strip" from "The Strip") collide with
             // normal English use — we can't safely case-fix them either way.
             if (!vocab.StandaloneLower.Contains(lower))
             {
                 return null;
             }
+
             // Sentence-initial special cases.
             if (sentenceInitial && !char.IsUpper(canonical[0]))
             {
                 return null;
             }
+
             if (sentenceInitial && string.Equals(canonical, char.ToUpperInvariant(token[0]) + token[1..],
-                StringComparison.Ordinal))
+                    StringComparison.Ordinal))
             {
                 return null;
             }
+
             report.CaseOnlyFixes++;
             report.ChangeLog.Add(
                 $"L{ctx.LineNumber} [{ctx.FormId}/{ctx.VoiceType}] case:  '{token}' → '{canonical}'");
@@ -522,10 +459,12 @@ public static class DialogueQcCommand
         {
             return null;
         }
+
         if (DialogueQcStopWords.EnglishStopWords.Contains(token))
         {
             return null;
         }
+
         // Possessive/plural guard: if removing a trailing 's' yields a vocab match,
         // the writer probably meant the possessive/plural form (e.g. "Bennys" for
         // "Benny's", "Tabithas" for "Tabitha's", "Legions" for the plural). Leave it.
@@ -542,6 +481,7 @@ public static class DialogueQcCommand
         {
             DialogueQcEditDistance.CollectEditDistance1(token, sameFirst, minEditLen, bestMatches);
         }
+
         // Also consider vocab words with different first char (covers "Kris" → "Chris")
         // but only if we haven't already found matches in the same-first-letter bucket.
         if (bestMatches.Count == 0)
@@ -574,6 +514,7 @@ public static class DialogueQcCommand
         {
             return null;
         }
+
         // Skip no-op fixes (the existing token already matches canonical, just routed
         // here because case-fix branch was disabled by the standalone-only gate).
         if (string.Equals(pick, token, StringComparison.Ordinal))
@@ -600,8 +541,10 @@ public static class DialogueQcCommand
         sb.AppendLine($"Generated: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
         sb.AppendLine($"CSV: {csvPath}");
         sb.AppendLine($"ESM: {esmPath}");
-        sb.AppendLine($"Vocabulary tokens: {vocab.CanonicalByLower.Count:N0} from {vocab.FullStringsScanned:N0} FULL strings");
-        sb.AppendLine($"  NPC/CREA: {vocab.NpcCount:N0}   CELL: {vocab.CellCount:N0}   WRLD: {vocab.WrldCount:N0}   REGN: {vocab.RegnCount:N0}   FACT: {vocab.FactCount:N0}");
+        sb.AppendLine(
+            $"Vocabulary tokens: {vocab.CanonicalByLower.Count:N0} from {vocab.FullStringsScanned:N0} FULL strings");
+        sb.AppendLine(
+            $"  NPC/CREA: {vocab.NpcCount:N0}   CELL: {vocab.CellCount:N0}   WRLD: {vocab.WrldCount:N0}   REGN: {vocab.RegnCount:N0}   FACT: {vocab.FactCount:N0}");
         sb.AppendLine();
         sb.AppendLine($"Total CSV rows (excl. header): {totalRows:N0}");
         sb.AppendLine($"Whisper rows scanned: {report.WhisperRowsScanned:N0}");
@@ -624,6 +567,7 @@ public static class DialogueQcCommand
                 sb.AppendLine(line);
             }
         }
+
         sb.AppendLine();
 
         sb.AppendLine("=== AMBIGUOUS CANDIDATES (review manually) ===");
@@ -638,6 +582,7 @@ public static class DialogueQcCommand
                 sb.AppendLine(line);
             }
         }
+
         sb.AppendLine();
 
         sb.AppendLine("=== ROW-LEVEL BEFORE/AFTER (sample, first 200) ===");
@@ -651,6 +596,96 @@ public static class DialogueQcCommand
         File.WriteAllText(path, sb.ToString());
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
-}
+    private static string Truncate(string s, int max)
+    {
+        return s.Length <= max ? s : s[..max] + "…";
+    }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Vocabulary extraction
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private sealed class Vocabulary
+    {
+        // Lowercase token → canonical capitalization. Indexes EVERY proper-noun token,
+        // including components of multi-word FULL strings — used for edit-distance fuzzy match.
+        public Dictionary<string, string> CanonicalByLower { get; } = new(StringComparer.Ordinal);
+
+        // Lowercase tokens that originated from a STANDALONE single-word FULL ("Marcus",
+        // "Jacobstown"). Only these are eligible for case-only auto-fixes — case-fixing on
+        // a multi-word-component like "strip" (from "The Strip") would corrupt every
+        // normal use of "strip" in dialogue.
+        public HashSet<string> StandaloneLower { get; } = new(StringComparer.Ordinal);
+
+        // First-letter bucketed list of canonical tokens for fast edit-distance pre-filter.
+        public Dictionary<char, List<string>> ByFirstChar { get; } = new();
+
+        // Full-string set of FULL display strings for context in reports.
+        public HashSet<string> FullStrings { get; } = new(StringComparer.Ordinal);
+
+        public int FullStringsScanned { get; set; }
+        public int NpcCount { get; set; }
+        public int CellCount { get; set; }
+        public int WrldCount { get; set; }
+        public int RegnCount { get; set; }
+        public int FactCount { get; set; }
+
+        public void AddToken(string token, bool isStandalone)
+        {
+            if (token.Length < 3)
+            {
+                return;
+            }
+
+            var lower = token.ToLowerInvariant();
+            if (isStandalone)
+            {
+                StandaloneLower.Add(lower);
+            }
+
+            if (CanonicalByLower.TryGetValue(lower, out var existing))
+            {
+                // Prefer the capitalization that begins with uppercase.
+                if (!char.IsUpper(existing[0]) && char.IsUpper(token[0]))
+                {
+                    CanonicalByLower[lower] = token;
+                }
+
+                return;
+            }
+
+            CanonicalByLower[lower] = token;
+            var firstLower = char.ToLowerInvariant(token[0]);
+            if (!ByFirstChar.TryGetValue(firstLower, out var list))
+            {
+                list = new List<string>();
+                ByFirstChar[firstLower] = list;
+            }
+
+            list.Add(token);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Text fixes
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private sealed class RowContext
+    {
+        public string FormId = "";
+        public int LineNumber;
+        public string VoiceType = "";
+    }
+
+    private sealed class QcReport
+    {
+        public readonly List<string> AmbiguousLog = new();
+        public readonly List<(int Line, string FormId, string Before, string After)> ChangedRowSamples = new();
+        public readonly List<string> ChangeLog = new();
+        public int AmbiguousFlags;
+        public int CaseOnlyFixes;
+        public int DoubleSpaceFixes;
+        public int EditDistance1Fixes;
+        public int WhisperRowsScanned;
+    }
+}

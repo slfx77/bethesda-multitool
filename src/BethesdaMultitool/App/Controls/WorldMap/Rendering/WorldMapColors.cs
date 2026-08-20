@@ -146,4 +146,3 @@ internal static class WorldMapColors
         return fullName ?? editorId ?? $"0x{ws.FormId:X8}";
     }
 }
-

@@ -13,14 +13,18 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <item>1: root CBV at <c>b1</c> — per-draw uniforms (world matrix + flags). VS + PS.</item>
 ///         <item>2: root CBV at <c>b2</c> — per-mode/debug uniforms. VS + PS.</item>
 ///         <item>3: legacy descriptor table for <c>t0..t7, space0</c> — water and transition SRVs. VS + PS.</item>
-///         <item>4: unbounded descriptor table for <c>t0..</c> in space 1 — bindless Texture2D
-///         views. VS + PS. (The TextureCube space-2 and Texture2DMS space-3 aliases over the same
-///         heap live in slots 9/10 — one unbounded range per table; see those slots.)</item>
+///         <item>
+///             4: unbounded descriptor table for <c>t0..</c> in space 1 — bindless Texture2D
+///             views. VS + PS. (The TextureCube space-2 and Texture2DMS space-3 aliases over the same
+///             heap live in slots 9/10 — one unbounded range per table; see those slots.)
+///         </item>
 ///         <item>5: root SRV at <c>t8, space0</c> — reference instance structured buffer. VS.</item>
 ///         <item>6: root CBV at <c>b3</c> — shared scene atmosphere. VS + PS.</item>
 ///         <item>7: root SRV at <c>t9, space0</c> — placed point-light buffer. PS.</item>
-///         <item>8: one-descriptor UAV table at <c>u0, space0</c> — water prepass output
-///         (classic noise or opt-in FO4/FO76 dynamic maps). Compute only.</item>
+///         <item>
+///             8: one-descriptor UAV table at <c>u0, space0</c> — water prepass output
+///             (classic noise or opt-in FO4/FO76 dynamic maps). Compute only.
+///         </item>
 ///     </list>
 ///     <para>
 ///         Root CBVs at slots 0/1 are faster than descriptor tables for the
@@ -43,50 +47,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class GpuRootSignature12 : IDisposable
 {
-    /// <summary>Root-parameter slot indices, in the order they are declared in the root signature.</summary>
-    public static class Slots
-    {
-        public const int PerFrameCbv = 0;
-        public const int PerDrawCbv = 1;
-        public const int PerModeCbv = 2;
-        public const int SrvTable = 3;
-        public const int BindlessSrvTable = 4;
-        public const int ReferenceInstanceSrv = 5;
-
-        /// <summary>Root CBV at <c>b3</c> — the shared scene atmosphere (sun direction + sky / ambient
-        /// / fog colors), uploaded once per frame and read by the lighting / sky / water shaders.</summary>
-        public const int AtmosphereCbv = 6;
-
-        /// <summary>Root SRV at <c>t9, space0</c> — per-frame placed point lights.</summary>
-        public const int PointLightsSrv = 7;
-
-        /// <summary>One-UAV descriptor table used by water compute prepasses. Existing graphics
-        /// root slots retain their original indices.</summary>
-        public const int WaterNoiseUavTable = 8;
-
-        /// <summary>
-        ///     Unbounded <c>TextureCube cubemaps[] : register(t0, space2)</c> alias over the same
-        ///     bindless heap. Split into its own root parameter (appended, so existing slots keep
-        ///     their indices): stacking three OVERLAPPING unbounded ranges inside ONE descriptor
-        ///     table put the later aliases into undefined-behavior territory in practice — the
-        ///     water shader's space3 MSAA depth loads resolved to unrelated low heap slots (the
-        ///     live view's depth/snapshot descriptors) instead of the indexed slot, nondeterministically,
-        ///     while the FIRST range (space1) always worked. Reflection and root-signature layout
-        ///     both looked correct; one-unbounded-range-per-table is the robust shape. Bind alongside
-        ///     <see cref="BindlessSrvTable" /> at the heap start.</summary>
-        public const int BindlessCubeSrvTable = 9;
-
-        /// <summary>Unbounded <c>Texture2DMS&lt;float&gt; ... : register(t0, space3)</c> multisampled
-        /// scene-depth alias — own root parameter for the same reason as
-        /// <see cref="BindlessCubeSrvTable" />. Bind alongside <see cref="BindlessSrvTable" />.</summary>
-        public const int BindlessDepthMsaaSrvTable = 10;
-    }
-
-    /// <summary>SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
-    /// <see cref="Slots.SrvTable" /> (space 0). Water still uses this path for its per-frame
-    /// structured-buffer SRV. 4a's bindless texture array lives in
-    /// <see cref="Slots.BindlessSrvTable" /> at space 1 — orthogonal to this range, so the two
-    /// coexist during the transition.</summary>
+    /// <summary>
+    ///     SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
+    ///     <see cref="Slots.SrvTable" /> (space 0). Water still uses this path for its per-frame
+    ///     structured-buffer SRV. 4a's bindless texture array lives in
+    ///     <see cref="Slots.BindlessSrvTable" /> at space 1 — orthogonal to this range, so the two
+    ///     coexist during the transition.
+    /// </summary>
     public const uint SrvTableSize = 8;
 
     private bool _disposed;
@@ -96,9 +63,18 @@ internal sealed class GpuRootSignature12 : IDisposable
         RootSignature = root;
     }
 
-    /// <summary>The underlying D3D12 root signature. Bind via
-    /// <c>commandList.SetGraphicsRootSignature(rs.RootSignature)</c> at frame start.</summary>
+    /// <summary>
+    ///     The underlying D3D12 root signature. Bind via
+    ///     <c>commandList.SetGraphicsRootSignature(rs.RootSignature)</c> at frame start.
+    /// </summary>
     public ID3D12RootSignature RootSignature { get; }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        RootSignature.Dispose();
+    }
 
     /// <summary>
     ///     Binds all three bindless alias tables (space1 Texture2D, space2 TextureCube, space3
@@ -120,20 +96,20 @@ internal sealed class GpuRootSignature12 : IDisposable
         // Slot 0: root CBV b0 (per-frame). Visible to VS + PS — both stages read viewProj.
         var perFrame = new RootParameter1(
             RootParameterType.ConstantBufferView,
-            new RootDescriptor1(shaderRegister: 0, registerSpace: 0),
+            new RootDescriptor1(0, 0),
             ShaderVisibility.All);
 
         // Slot 1: root CBV b1 (per-draw). Visible to VS + PS — PS reads alpha-test flags.
         var perDraw = new RootParameter1(
             RootParameterType.ConstantBufferView,
-            new RootDescriptor1(shaderRegister: 1, registerSpace: 0),
+            new RootDescriptor1(1, 0),
             ShaderVisibility.All);
 
         // Slot 2: root CBV b2 (per-mode / debug toggle). Used by TerrainRenderer for the
         // VCLR-only mode flag; CellGrid + Reference + Water leave it unbound (legal).
         var perMode = new RootParameter1(
             RootParameterType.ConstantBufferView,
-            new RootDescriptor1(shaderRegister: 2, registerSpace: 0),
+            new RootDescriptor1(2, 0),
             ShaderVisibility.All);
 
         // Slot 3: legacy SRV table t0..t(SrvTableSize-1) in space 0. Water still uses the
@@ -146,7 +122,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             BaseShaderRegister = 0,
             RegisterSpace = 0,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0,
+            OffsetInDescriptorsFromTableStart = 0
         };
         var srvTable = new RootParameter1(
             new RootDescriptorTable1(srvRange),
@@ -164,7 +140,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             BaseShaderRegister = 0,
             RegisterSpace = 1,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0,
+            OffsetInDescriptorsFromTableStart = 0
         };
         // Second unbounded range ALIASING the same heap slots as space 1, declared in HLSL as
         // `TextureCube cubemaps[] : register(t0, space2)`. A descriptor heap is typeless — the SRV
@@ -179,7 +155,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             BaseShaderRegister = 0,
             RegisterSpace = 2,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0,
+            OffsetInDescriptorsFromTableStart = 0
         };
         // Third alias over the same bindless slots for multisampled scene depth. A depth slot is
         // addressed through `Texture2DMS<float> depthTexturesMsaa[] : register(t0, space3)` only
@@ -192,7 +168,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             BaseShaderRegister = 0,
             RegisterSpace = 3,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0,
+            OffsetInDescriptorsFromTableStart = 0
         };
         // One unbounded range per descriptor table. The three aliases used to share ONE table
         // (ranges space1+space2+space3, all at table offset 0); reflection and layout were legal
@@ -215,7 +191,7 @@ internal sealed class GpuRootSignature12 : IDisposable
         // it does not overlap slot 3's legacy t0..t7 table while terrain/water transition.
         var referenceInstanceSrv = new RootParameter1(
             RootParameterType.ShaderResourceView,
-            new RootDescriptor1(shaderRegister: 8, registerSpace: 0),
+            new RootDescriptor1(8, 0),
             ShaderVisibility.Vertex);
 
         // Slot 6: root CBV b3 (scene atmosphere — sun dir + sky/ambient/fog colors). Uploaded once
@@ -224,7 +200,7 @@ internal sealed class GpuRootSignature12 : IDisposable
         // shader reads is legal — so it is a no-op for shaders that do not read the atmosphere buffer.
         var atmosphere = new RootParameter1(
             RootParameterType.ConstantBufferView,
-            new RootDescriptor1(shaderRegister: 3, registerSpace: 0),
+            new RootDescriptor1(3, 0),
             ShaderVisibility.All);
 
         // Slot 7: global per-frame local-light structured buffer at t9, space 0. Pixel-only: terrain
@@ -232,7 +208,7 @@ internal sealed class GpuRootSignature12 : IDisposable
         // always binds at least one zeroed dummy element and carries the active count in b3.
         var pointLights = new RootParameter1(
             RootParameterType.ShaderResourceView,
-            new RootDescriptor1(shaderRegister: 9, registerSpace: 0),
+            new RootDescriptor1(9, 0),
             ShaderVisibility.Pixel);
 
         // Slot 8: one transient UAV descriptor for classic and modern water compute prepasses.
@@ -245,7 +221,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             BaseShaderRegister = 0,
             RegisterSpace = 0,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0,
+            OffsetInDescriptorsFromTableStart = 0
         };
         var waterNoiseUav = new RootParameter1(
             new RootDescriptorTable1(waterNoiseUavRange),
@@ -262,12 +238,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 0f,
                 16,
                 ComparisonFunction.Never,
-                StaticBorderColor.OpaqueBlack,
-                0f,
-                float.MaxValue,
-                // s0 is also the recovered water-noise compute prepass's wrap sampler.
-                ShaderVisibility.All,
-                0),
+                StaticBorderColor.OpaqueBlack),
             new StaticSamplerDescription(
                 1,
                 Filter.Anisotropic,
@@ -280,8 +251,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
-                0),
+                ShaderVisibility.Pixel),
             // s2: linear CLAMP — the FO4/FO76 grayscale-to-palette lookup. Palette rows are selected
             // by v = GradientMapV × vertexColor.R, and GradientMapV is commonly exactly 1.0 (bottom
             // row): the wrap samplers above would wrap v=1.0 back to row 0, which in shipped palettes
@@ -299,8 +269,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
-                0),
+                ShaderVisibility.Pixel),
             // s3: point CLAMP — the sun-shadow-map depth taps. PCF compares each texel's stored
             // depth individually, so the taps must be unfiltered (a linear fetch would average
             // depth across a silhouette edge before the compare and smear occluders); clamp keeps
@@ -317,8 +286,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
-                0),
+                ShaderVisibility.Pixel),
             // s4-s6: material-addressing permutations selected from BGSM/BGEM TileU/TileV.
             // They otherwise match the anisotropic wrap sampler so changing an address bit cannot
             // silently change filtering quality.
@@ -334,8 +302,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
-                0),
+                ShaderVisibility.Pixel),
             new StaticSamplerDescription(
                 5,
                 Filter.Anisotropic,
@@ -348,8 +315,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
-                0),
+                ShaderVisibility.Pixel),
             new StaticSamplerDescription(
                 6,
                 Filter.Anisotropic,
@@ -362,8 +328,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
-                0),
+                ShaderVisibility.Pixel)
         };
 
         // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the
@@ -379,17 +344,56 @@ internal sealed class GpuRootSignature12 : IDisposable
             new[]
             {
                 perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv,
-                atmosphere, pointLights, waterNoiseUav, bindlessCubeTable, bindlessDepthMsaaTable,
+                atmosphere, pointLights, waterNoiseUav, bindlessCubeTable, bindlessDepthMsaaTable
             },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);
         return new GpuRootSignature12(rs);
     }
 
-    public void Dispose()
+    /// <summary>Root-parameter slot indices, in the order they are declared in the root signature.</summary>
+    public static class Slots
     {
-        if (_disposed) return;
-        _disposed = true;
-        RootSignature.Dispose();
+        public const int PerFrameCbv = 0;
+        public const int PerDrawCbv = 1;
+        public const int PerModeCbv = 2;
+        public const int SrvTable = 3;
+        public const int BindlessSrvTable = 4;
+        public const int ReferenceInstanceSrv = 5;
+
+        /// <summary>
+        ///     Root CBV at <c>b3</c> — the shared scene atmosphere (sun direction + sky / ambient
+        ///     / fog colors), uploaded once per frame and read by the lighting / sky / water shaders.
+        /// </summary>
+        public const int AtmosphereCbv = 6;
+
+        /// <summary>Root SRV at <c>t9, space0</c> — per-frame placed point lights.</summary>
+        public const int PointLightsSrv = 7;
+
+        /// <summary>
+        ///     One-UAV descriptor table used by water compute prepasses. Existing graphics
+        ///     root slots retain their original indices.
+        /// </summary>
+        public const int WaterNoiseUavTable = 8;
+
+        /// <summary>
+        ///     Unbounded <c>TextureCube cubemaps[] : register(t0, space2)</c> alias over the same
+        ///     bindless heap. Split into its own root parameter (appended, so existing slots keep
+        ///     their indices): stacking three OVERLAPPING unbounded ranges inside ONE descriptor
+        ///     table put the later aliases into undefined-behavior territory in practice — the
+        ///     water shader's space3 MSAA depth loads resolved to unrelated low heap slots (the
+        ///     live view's depth/snapshot descriptors) instead of the indexed slot, nondeterministically,
+        ///     while the FIRST range (space1) always worked. Reflection and root-signature layout
+        ///     both looked correct; one-unbounded-range-per-table is the robust shape. Bind alongside
+        ///     <see cref="BindlessSrvTable" /> at the heap start.
+        /// </summary>
+        public const int BindlessCubeSrvTable = 9;
+
+        /// <summary>
+        ///     Unbounded <c>Texture2DMS&lt;float&gt; ... : register(t0, space3)</c> multisampled
+        ///     scene-depth alias — own root parameter for the same reason as
+        ///     <see cref="BindlessCubeSrvTable" />. Bind alongside <see cref="BindlessSrvTable" />.
+        /// </summary>
+        public const int BindlessDepthMsaaSrvTable = 10;
     }
 }

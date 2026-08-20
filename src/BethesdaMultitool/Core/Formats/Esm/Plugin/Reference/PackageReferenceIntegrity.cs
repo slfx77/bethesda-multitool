@@ -31,31 +31,41 @@ internal static class PackageReferenceIntegrity
     ///     no FormID in the on-disk schema (current/editor/package/linked locations or
     ///     an object-type enum) and must not be remapped as one.
     /// </summary>
-    internal static bool LocationTypeIsFormId(byte type) => type is 0 or 1 or 4;
+    internal static bool LocationTypeIsFormId(byte type)
+    {
+        return type is 0 or 1 or 4;
+    }
 
     /// <summary>
     ///     FNV PTDT/PTD2 union arms that store FormIDs. Linked Reference (type 3) has an
     ///     unused four-byte union arm in FNV; only Specific Reference and Object ID carry
     ///     a FormID.
     /// </summary>
-    internal static bool TargetTypeIsFormId(byte type) => type is 0 or 1;
+    internal static bool TargetTypeIsFormId(byte type)
+    {
+        return type is 0 or 1;
+    }
 
-    internal static bool IsLocationTargetTypeAllowed(byte locationType, string targetRecordType) =>
-        locationType switch
+    internal static bool IsLocationTargetTypeAllowed(byte locationType, string targetRecordType)
+    {
+        return locationType switch
         {
             0 => ReferenceTargetTypes.Contains(targetRecordType),
             1 => string.Equals(targetRecordType, "CELL", StringComparison.Ordinal),
             4 => LocationObjectTargetTypes.Contains(targetRecordType),
-            _ => true,
+            _ => true
         };
+    }
 
-    internal static bool IsPackageTargetTypeAllowed(byte targetType, string targetRecordType) =>
-        targetType switch
+    internal static bool IsPackageTargetTypeAllowed(byte targetType, string targetRecordType)
+    {
+        return targetType switch
         {
             0 => ReferenceTargetTypes.Contains(targetRecordType),
             1 => PackageTargetObjectTypes.Contains(targetRecordType),
-            _ => true,
+            _ => true
         };
+    }
 
     /// <summary>
     ///     Remap every FormID-bearing package union and require the final target to be in
@@ -90,7 +100,7 @@ internal static class PackageReferenceIntegrity
                 Location = location,
                 Target = target,
                 Location2 = location2,
-                Target2 = target2,
+                Target2 = target2
             },
             true,
             null,

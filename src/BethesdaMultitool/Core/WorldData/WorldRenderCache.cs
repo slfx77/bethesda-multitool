@@ -1,36 +1,37 @@
 using System.Collections.Concurrent;
 using System.Numerics;
+using System.Runtime.CompilerServices;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Per-loaded-world render cache. Keeps decoded LAND/runtime terrain, derived texture
 ///     grids, and the v3 Phase 3 per-cell baked placement lists scoped to one
 ///     <see cref="WorldViewData" /> instance.
 /// </summary>
-internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
+internal sealed class WorldRenderCache : ITrackableResource
 {
-    private readonly ConcurrentDictionary<CellRecord, DecodedTerrainCell> _terrain =
-        new(ReferenceEqualityComparer.Instance);
-    private readonly ConcurrentDictionary<CellRecord, Cached<TextureWinnerGrid>> _textureWinners =
-        new(ReferenceEqualityComparer.Instance);
-    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements =
-        new(ReferenceEqualityComparer.Instance);
     private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<PlacedLight>> _placedLights =
         new(ReferenceEqualityComparer.Instance);
+
+    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements =
+        new(ReferenceEqualityComparer.Instance);
+
     private readonly ConcurrentDictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes =
+        new(ReferenceEqualityComparer.Instance);
+
+    private readonly ConcurrentDictionary<CellRecord, DecodedTerrainCell> _terrain =
         new(ReferenceEqualityComparer.Instance);
 
     // 4-pre Item C — bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
@@ -39,6 +40,9 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     // ~0.05 ms per cell out of TryBuildAndCache, smoothing the 16-cell-per-frame mesh
     // build burst when entering a new area.
     private readonly ConcurrentDictionary<CellRecord, Cached<CellTerrainTextureSet>> _terrainTextureSets =
+        new(ReferenceEqualityComparer.Instance);
+
+    private readonly ConcurrentDictionary<CellRecord, Cached<TextureWinnerGrid>> _textureWinners =
         new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
@@ -105,10 +109,12 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
 
     /// <summary>LTEX and GRAS lookup tables used by the lazy per-cell grass scatter bake.</summary>
     internal IReadOnlyDictionary<uint, LandscapeTextureRecord>? LandTextureIndex { get; set; }
+
     internal IReadOnlyDictionary<uint, GrassRecord>? GrassIndex { get; set; }
 
     /// <summary>Game profile and worldspace water plane used by the engine-family grass rules.</summary>
     internal BethesdaGame Game { get; set; }
+
     internal float? DefaultWaterHeight { get; set; }
 
     /// <summary>
@@ -119,7 +125,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
 
     public string ResourceName => nameof(WorldRenderCache);
 
-    public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
+    public ResourceCategory Category => ResourceCategory.CpuCache;
 
     /// <summary>
     ///     Tracking-only conformance (session-scoped; dropped wholesale with its
@@ -130,7 +136,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     ///     and are warmed for every cell of the worldspace at load, so this number is the single
     ///     largest managed consumer once a big worldspace is open; it used to report 0, hiding it.
     /// </summary>
-    public Core.Diagnostics.ResourceStats GetStats()
+    public ResourceStats GetStats()
     {
         long bytes = 0;
 
@@ -142,16 +148,16 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         foreach (var winners in _textureWinners.Values)
         {
             // uint?[] — each Nullable<uint> element is 8 bytes (value + has-value flag, padded).
-            bytes += winners.Value is { } grid ? (long)grid.Winners.Length * 8L : 0L;
+            bytes += winners.Value is { } grid ? grid.Winners.Length * 8L : 0L;
         }
 
-        var refSize = System.Runtime.CompilerServices.Unsafe.SizeOf<RenderableReference>();
+        var refSize = Unsafe.SizeOf<RenderableReference>();
         foreach (var list in _placements.Values)
         {
             bytes += (long)list.Count * refSize;
         }
 
-        var lightSize = System.Runtime.CompilerServices.Unsafe.SizeOf<PlacedLight>();
+        var lightSize = Unsafe.SizeOf<PlacedLight>();
         foreach (var list in _placedLights.Values)
         {
             bytes += (long)list.Count * lightSize;
@@ -166,21 +172,23 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         {
             if (set.Value is { } textureSet)
             {
-                bytes += (long)textureSet.VertexWeights.Length * 16L /* sizeof(Vector4) */ +
+                bytes += textureSet.VertexWeights.Length * 16L /* sizeof(Vector4) */ +
                          (long)textureSet.SlotFormIds.Length * sizeof(uint);
             }
         }
 
-        return new()
+        return new ResourceStats
         {
             EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count + _placedLights.Count +
                          _placementSpatialIndexes.Count + _terrainTextureSets.Count,
-            EstimatedBytes = bytes,
+            EstimatedBytes = bytes
         };
     }
 
-    internal DecodedTerrainCell GetTerrain(CellRecord cell) =>
-        _terrain.GetOrAdd(cell, static c => DecodedTerrainCell.Decode(c));
+    internal DecodedTerrainCell GetTerrain(CellRecord cell)
+    {
+        return _terrain.GetOrAdd(cell, static c => DecodedTerrainCell.Decode(c));
+    }
 
     internal TextureWinnerGrid? GetTextureWinners(CellRecord cell)
     {
@@ -201,6 +209,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
             {
                 winners = null;
             }
+
             return new Cached<TextureWinnerGrid>(winners);
         }).Value;
     }
@@ -229,8 +238,10 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
     ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.
     /// </summary>
-    internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell) =>
-        _placements.GetOrAdd(cell, static (c, self) => self.BuildPlacementList(c), this);
+    internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell)
+    {
+        return _placements.GetOrAdd(cell, static (c, self) => self.BuildPlacementList(c), this);
+    }
 
     /// <summary>
     ///     Returns the cell's placed LIGH emitters. The normal placement bake populates this list
@@ -333,8 +344,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 : null;
 
             Vector3? externalEmittance = p.EmittanceFormId is { } emittanceFormId &&
-                                          ExternalEmittanceIndex is { } emittanceIndex &&
-                                          emittanceIndex.TryGetValue(emittanceFormId, out var emittanceColor)
+                                         ExternalEmittanceIndex is { } emittanceIndex &&
+                                         emittanceIndex.TryGetValue(emittanceFormId, out var emittanceColor)
                 ? emittanceColor
                 : null;
 
@@ -361,6 +372,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 p, category, alternateTextures, xespDisabled, Game);
             if (renderable.HasValue) built.Add(renderable.Value);
         }
+
         _placedLights[cell] = placedLights is { Count: > 0 }
             ? placedLights
             : Array.Empty<PlacedLight>();
@@ -393,8 +405,6 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
             : built;
     }
 
-    private readonly record struct Cached<T>(T? Value) where T : class;
-
     internal static float? ResolveEffectiveWaterHeight(
         CellRecord cell, float? defaultWaterHeight, bool defaultRequiresCellHasWater = false)
     {
@@ -425,6 +435,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
             ? null
             : defaultWaterHeight;
     }
+
+    private readonly record struct Cached<T>(T? Value) where T : class;
 }
 
 internal sealed class ReferencePlacementSpatialIndex
@@ -452,8 +464,8 @@ internal sealed class ReferencePlacementSpatialIndex
     {
         get
         {
-            var refSize = System.Runtime.CompilerServices.Unsafe.SizeOf<RenderableReference>();
-            long bytes = (long)_buckets.Length * (2 * 12 + 8); // 2 Vector3 bounds + array reference
+            var refSize = Unsafe.SizeOf<RenderableReference>();
+            var bytes = (long)_buckets.Length * (2 * 12 + 8); // 2 Vector3 bounds + array reference
             foreach (var bucket in _buckets)
             {
                 bytes += (long)bucket.Placements.Length * refSize;
@@ -541,13 +553,17 @@ internal sealed class ReferencePlacementSpatialIndex
         }
     }
 
-    /// <summary>XY overlap between an AABB and a centred square of half-extent <paramref name="half" />.
-    /// A non-positive half-extent means "no ring", which never admits.</summary>
+    /// <summary>
+    ///     XY overlap between an AABB and a centred square of half-extent <paramref name="half" />.
+    ///     A non-positive half-extent means "no ring", which never admits.
+    /// </summary>
     private static bool OverlapsChebyshevSquare(
-        Vector3 min, Vector3 max, float centerX, float centerY, float half) =>
-        half > 0f &&
-        min.X <= centerX + half && max.X >= centerX - half &&
-        min.Y <= centerY + half && max.Y >= centerY - half;
+        Vector3 min, Vector3 max, float centerX, float centerY, float half)
+    {
+        return half > 0f &&
+               min.X <= centerX + half && max.X >= centerX - half &&
+               min.Y <= centerY + half && max.Y >= centerY - half;
+    }
 
     private static bool IntersectsCylinder(Vector3 min, Vector3 max, float centerX, float centerY, float radiusSq)
     {
@@ -558,8 +574,10 @@ internal sealed class ReferencePlacementSpatialIndex
         return dx * dx + dy * dy <= radiusSq;
     }
 
-    private static (int bx, int by) BucketKey(float x, float y) =>
-        ((int)MathF.Floor(x / BucketSize), (int)MathF.Floor(y / BucketSize));
+    private static (int bx, int by) BucketKey(float x, float y)
+    {
+        return ((int)MathF.Floor(x / BucketSize), (int)MathF.Floor(y / BucketSize));
+    }
 
     private readonly record struct ReferencePlacementBucket(
         RenderableReference[] Placements,
@@ -569,8 +587,8 @@ internal sealed class ReferencePlacementSpatialIndex
     private sealed class ReferencePlacementBucketBuilder
     {
         private readonly List<RenderableReference> _placements = [];
-        private Vector3 _min = new(float.PositiveInfinity);
         private Vector3 _max = new(float.NegativeInfinity);
+        private Vector3 _min = new(float.PositiveInfinity);
 
         internal void Add(RenderableReference placement)
         {
@@ -583,8 +601,10 @@ internal sealed class ReferencePlacementSpatialIndex
             _max = Vector3.Max(_max, itemMax);
         }
 
-        internal ReferencePlacementBucket ToBucket() =>
-            new(_placements.ToArray(), _min, _max);
+        internal ReferencePlacementBucket ToBucket()
+        {
+            return new ReferencePlacementBucket(_placements.ToArray(), _min, _max);
+        }
     }
 }
 
@@ -617,8 +637,10 @@ internal sealed class DecodedTerrainCell
                 minHeight = float.NegativeInfinity;
                 break;
             }
+
             if (h < minHeight) minHeight = h;
         }
+
         MinHeight = heights.Length == 0 ? float.NegativeInfinity : minHeight;
     }
 
@@ -631,6 +653,7 @@ internal sealed class DecodedTerrainCell
     ///     the 2D map's terrain-textures layer, which samples up to 1,056² per cell.
     /// </summary>
     internal float MinHeight { get; }
+
     internal byte[]? LowResWaterMask { get; private set; }
     internal bool FromEsmHeightmap { get; }
     internal bool FromRuntimeTerrain { get; }
@@ -658,7 +681,7 @@ internal sealed class DecodedTerrainCell
 
         if (source is null)
         {
-            return new DecodedTerrainCell([], fromEsmHeightmap: false, fromRuntimeTerrain: false, missingTerrain: true);
+            return new DecodedTerrainCell([], false, false, true);
         }
 
         var calculated = source.CalculateHeights();
@@ -678,10 +701,13 @@ internal sealed class DecodedTerrainCell
             }
         }
 
-        return new DecodedTerrainCell(flat, fromEsm, fromRuntime, missingTerrain: false);
+        return new DecodedTerrainCell(flat, fromEsm, fromRuntime, false);
     }
 
-    internal float HeightAt(int x, int y) => Heights[y * GridSize + x];
+    internal float HeightAt(int x, int y)
+    {
+        return Heights[y * GridSize + x];
+    }
 
     internal byte[]? GetLowResWaterMask(float? effectiveWaterHeight)
     {
@@ -815,6 +841,7 @@ internal sealed class DecodedTerrainCell
                 mask[py * pixelsPerCell + px] = v;
             }
         }
+
         return mask;
     }
 
@@ -830,6 +857,7 @@ internal sealed class DecodedTerrainCell
         {
             return null;
         }
+
         var waterH = effectiveWaterHeight.Value;
 
         // Dry-cell early-out. Unlike the single-cell paths this must also clear the NEIGHBORS, because
@@ -838,8 +866,11 @@ internal sealed class DecodedTerrainCell
         // cell's own edge row when a neighbor is null or terrain-less), and MinHeight is
         // NegativeInfinity for those, so `HasTerrain &&` keeps a terrain-less neighbor from forcing the
         // slow path — while a genuinely lower neighbor still does.
-        static bool NeighborCanWet(DecodedTerrainCell? n, float waterHeight) =>
-            n is { HasTerrain: true } && n.MinHeight < waterHeight;
+        static bool NeighborCanWet(DecodedTerrainCell? n, float waterHeight)
+        {
+            return n is { HasTerrain: true } && n.MinHeight < waterHeight;
+        }
+
         if (self.MinHeight >= waterH &&
             !NeighborCanWet(north, waterH) && !NeighborCanWet(south, waterH) &&
             !NeighborCanWet(east, waterH) && !NeighborCanWet(west, waterH))
@@ -847,8 +878,8 @@ internal sealed class DecodedTerrainCell
             return null;
         }
 
-        const int N = GridSize;      // 33
-        const int E = N + 2;         // 35 — 1 vertex of context per side
+        const int N = GridSize; // 33
+        const int E = N + 2; // 35 — 1 vertex of context per side
 
         var extMask = new byte[E * E];
 
@@ -860,7 +891,7 @@ internal sealed class DecodedTerrainCell
             {
                 if (self.HeightAt(px, srcY) < waterH)
                 {
-                    extMask[(py + 1) * E + (px + 1)] = 180;
+                    extMask[(py + 1) * E + px + 1] = 180;
                 }
             }
         }
@@ -871,12 +902,12 @@ internal sealed class DecodedTerrainCell
         {
             for (var px = 0; px < N; px++)
             {
-                if (north.HeightAt(px, 1) < waterH) extMask[(px + 1)] = 180;
+                if (north.HeightAt(px, 1) < waterH) extMask[px + 1] = 180;
             }
         }
         else
         {
-            for (var px = 0; px < N; px++) extMask[(px + 1)] = extMask[E + (px + 1)];
+            for (var px = 0; px < N; px++) extMask[px + 1] = extMask[E + px + 1];
         }
 
         // South border (extMask row N+1): south neighbor's second-from-north row (srcY=N-2).
@@ -884,12 +915,12 @@ internal sealed class DecodedTerrainCell
         {
             for (var px = 0; px < N; px++)
             {
-                if (south.HeightAt(px, N - 2) < waterH) extMask[(N + 1) * E + (px + 1)] = 180;
+                if (south.HeightAt(px, N - 2) < waterH) extMask[(N + 1) * E + px + 1] = 180;
             }
         }
         else
         {
-            for (var px = 0; px < N; px++) extMask[(N + 1) * E + (px + 1)] = extMask[N * E + (px + 1)];
+            for (var px = 0; px < N; px++) extMask[(N + 1) * E + px + 1] = extMask[N * E + px + 1];
         }
 
         // West border (extMask col 0): west neighbor's second-from-east column (x=N-2).
@@ -912,21 +943,21 @@ internal sealed class DecodedTerrainCell
             for (var py = 0; py < N; py++)
             {
                 var srcY = N - 1 - py;
-                if (east.HeightAt(1, srcY) < waterH) extMask[(py + 1) * E + (N + 1)] = 180;
+                if (east.HeightAt(1, srcY) < waterH) extMask[(py + 1) * E + N + 1] = 180;
             }
         }
         else
         {
-            for (var py = 0; py < N; py++) extMask[(py + 1) * E + (N + 1)] = extMask[(py + 1) * E + N];
+            for (var py = 0; py < N; py++) extMask[(py + 1) * E + N + 1] = extMask[(py + 1) * E + N];
         }
 
         // Corners: cheap approximation — duplicate the adjacent cardinal edge. Diagonal
         // neighbors would be ideal but the cardinal extension already kills the visible
         // cutoff; a corner approximation error is one pixel out of ~135 and dominated
         // by the blur kernel.
-        extMask[0] = extMask[1];                              // NW
-        extMask[E - 1] = extMask[E - 2];                      // NE
-        extMask[(E - 1) * E] = extMask[(E - 1) * E + 1];      // SW
+        extMask[0] = extMask[1]; // NW
+        extMask[E - 1] = extMask[E - 2]; // NE
+        extMask[(E - 1) * E] = extMask[(E - 1) * E + 1]; // SW
         extMask[(E - 1) * E + (E - 1)] = extMask[(E - 1) * E + (E - 2)]; // SE
 
         // Blur the extended 35×35; crop the center 33×33.
@@ -936,9 +967,10 @@ internal sealed class DecodedTerrainCell
         {
             for (var px = 0; px < N; px++)
             {
-                mask[py * N + px] = extMask[(py + 1) * E + (px + 1)];
+                mask[py * N + px] = extMask[(py + 1) * E + px + 1];
             }
         }
+
         return mask;
     }
 

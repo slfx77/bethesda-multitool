@@ -123,7 +123,7 @@ internal static class MasterChildCarryForward
                         || !CellStructuralReferencePreserver.IsStructuralCellRef(masterRef, context.MasterByFormId))
                     && CellStructuralReferencePreserver.ShouldPreserveInLoadedReplacement(
                         masterRef, context.MasterByFormId, dmpCapturedBaseTypes),
-                useHardDeletion: masterRef =>
+                masterRef =>
                     state.DropRenderCullingMarkers
                     && CellStructuralReferencePreserver.IsRenderCullingMarker(masterRef, context.MasterByFormId));
             persistentRecords.AddRange(deleted.Persistent);

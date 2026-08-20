@@ -1,14 +1,6 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Records;
 
@@ -117,7 +109,8 @@ public static class RecordSchemaCommands
 
     private static bool IsKnownSubrecord(string recordType, string signature, int dataLength)
     {
-        return SubrecordSchemaRegistry.IsStringSubrecord(signature, recordType) || SubrecordSchemaRegistry.GetSchema(signature, recordType, dataLength) != null;
+        return SubrecordSchemaRegistry.IsStringSubrecord(signature, recordType) ||
+               SubrecordSchemaRegistry.GetSchema(signature, recordType, dataLength) != null;
     }
 
     private static HashSet<string>? ParseTypes(string? typesCsv)

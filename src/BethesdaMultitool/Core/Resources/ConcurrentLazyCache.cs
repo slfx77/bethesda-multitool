@@ -26,18 +26,18 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
 {
     private readonly ConcurrentDictionary<TKey, Lazy<TValue?>> _cache;
 
+    private readonly Func<TKey, TValue?> _factory;
+
     // Keys whose current entry was supplied via Inject (no factory rebuild path). Trim skips these;
     // they leave the cache only through an explicit Evict/Release. Shares the cache's key comparer.
     private readonly ConcurrentDictionary<TKey, byte> _injectedKeys;
-
-    private readonly Func<TKey, TValue?> _factory;
     private readonly Func<TValue, long>? _sizeOf;
-    private ResourceRegistration? _registration;
 
     private long _estimatedBytes;
+    private long _evictions;
     private long _hits;
     private long _misses;
-    private long _evictions;
+    private ResourceRegistration? _registration;
 
     public ConcurrentLazyCache(
         string resourceName,
@@ -52,8 +52,96 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _sizeOf = sizeOf;
         TrimPriority = trimPriority;
-        _cache = comparer is null ? new() : new(comparer);
-        _injectedKeys = comparer is null ? new() : new(comparer);
+        _cache = comparer is null
+            ? new ConcurrentDictionary<TKey, Lazy<TValue?>>()
+            : new ConcurrentDictionary<TKey, Lazy<TValue?>>(comparer);
+        _injectedKeys = comparer is null
+            ? new ConcurrentDictionary<TKey, byte>()
+            : new ConcurrentDictionary<TKey, byte>(comparer);
+    }
+
+    public int Count => _cache.Count;
+
+    public long Hits => Interlocked.Read(ref _hits);
+
+    public long Misses => Interlocked.Read(ref _misses);
+
+    public void Dispose()
+    {
+        _registration?.Dispose();
+    }
+
+    public string ResourceName { get; }
+
+    public ResourceCategory Category { get; }
+
+    public int TrimPriority { get; }
+
+    public TrimAffinity TrimAffinity => TrimAffinity.AnyThread;
+
+    /// <summary>
+    ///     <see cref="TrimLevel.Aggressive" />: removes every realized positive entry that has a
+    ///     factory rebuild path (it rebuilds transparently on next request); negatives, in-flight
+    ///     entries, and <see cref="Inject" />ed entries stay (an injected value cannot be rebuilt, so
+    ///     trimming it would lose it permanently). <see cref="TrimLevel.Gentle" />: no-op — there is
+    ///     no recency order to shed cold entries by.
+    /// </summary>
+    public long Trim(TrimLevel level)
+    {
+        if (level != TrimLevel.Aggressive)
+        {
+            return 0;
+        }
+
+        long released = 0;
+        foreach (var pair in _cache)
+        {
+            if (_injectedKeys.ContainsKey(pair.Key))
+            {
+                continue;
+            }
+
+            if (!pair.Value.IsValueCreated)
+            {
+                continue;
+            }
+
+            TValue? value;
+            try
+            {
+                value = pair.Value.Value;
+            }
+            catch
+            {
+                value = null;
+            }
+
+            if (value is null)
+            {
+                continue;
+            }
+
+            if (_cache.TryRemove(pair))
+            {
+                released += _sizeOf?.Invoke(value) ?? 0;
+                SubtractBytes(value);
+                Interlocked.Increment(ref _evictions);
+            }
+        }
+
+        return released;
+    }
+
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats
+        {
+            EstimatedBytes = Interlocked.Read(ref _estimatedBytes),
+            EntryCount = _cache.Count,
+            Hits = Interlocked.Read(ref _hits),
+            Misses = Interlocked.Read(ref _misses),
+            Evictions = Interlocked.Read(ref _evictions)
+        };
     }
 
     /// <summary>
@@ -66,20 +154,6 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
         _registration = registry.Register(this, instanceTag);
         return this;
     }
-
-    public string ResourceName { get; }
-
-    public ResourceCategory Category { get; }
-
-    public int TrimPriority { get; }
-
-    public TrimAffinity TrimAffinity => TrimAffinity.AnyThread;
-
-    public int Count => _cache.Count;
-
-    public long Hits => Interlocked.Read(ref _hits);
-
-    public long Misses => Interlocked.Read(ref _misses);
 
     /// <summary>Returns the cached value for <paramref name="key" />, invoking the factory on first request.</summary>
     public TValue? GetOrCreate(TKey key)
@@ -193,77 +267,14 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
     }
 
     /// <summary>Records a cache hit observed by a caller outside this cache (parity with the resolvers' RecordCacheHit).</summary>
-    public void RecordExternalHit() => Interlocked.Increment(ref _hits);
-
-    /// <summary>
-    ///     <see cref="TrimLevel.Aggressive" />: removes every realized positive entry that has a
-    ///     factory rebuild path (it rebuilds transparently on next request); negatives, in-flight
-    ///     entries, and <see cref="Inject" />ed entries stay (an injected value cannot be rebuilt, so
-    ///     trimming it would lose it permanently). <see cref="TrimLevel.Gentle" />: no-op — there is
-    ///     no recency order to shed cold entries by.
-    /// </summary>
-    public long Trim(TrimLevel level)
+    public void RecordExternalHit()
     {
-        if (level != TrimLevel.Aggressive)
-        {
-            return 0;
-        }
-
-        long released = 0;
-        foreach (var pair in _cache)
-        {
-            if (_injectedKeys.ContainsKey(pair.Key))
-            {
-                continue;
-            }
-
-            if (!pair.Value.IsValueCreated)
-            {
-                continue;
-            }
-
-            TValue? value;
-            try
-            {
-                value = pair.Value.Value;
-            }
-            catch
-            {
-                value = null;
-            }
-
-            if (value is null)
-            {
-                continue;
-            }
-
-            if (_cache.TryRemove(pair))
-            {
-                released += _sizeOf?.Invoke(value) ?? 0;
-                SubtractBytes(value);
-                Interlocked.Increment(ref _evictions);
-            }
-        }
-
-        return released;
+        Interlocked.Increment(ref _hits);
     }
 
-    public ResourceStats GetStats() => new()
+    private Lazy<TValue?> CreateEntry(TKey key)
     {
-        EstimatedBytes = Interlocked.Read(ref _estimatedBytes),
-        EntryCount = _cache.Count,
-        Hits = Interlocked.Read(ref _hits),
-        Misses = Interlocked.Read(ref _misses),
-        Evictions = Interlocked.Read(ref _evictions),
-    };
-
-    public void Dispose()
-    {
-        _registration?.Dispose();
-    }
-
-    private Lazy<TValue?> CreateEntry(TKey key) =>
-        new(() =>
+        return new Lazy<TValue?>(() =>
         {
             Interlocked.Increment(ref _misses);
             var value = _factory(key);
@@ -274,6 +285,7 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
 
             return value;
         }, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
 
     private TValue? GetValueOrRemoveFaulted(TKey key, Lazy<TValue?> entry)
     {

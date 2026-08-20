@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 
 /// <summary>
@@ -13,4 +14,3 @@ public sealed class EsmFileLoadResult
     public required string FilePath { get; init; }
     public bool IsBigEndian => Header.IsBigEndian;
 }
-

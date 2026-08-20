@@ -168,6 +168,8 @@ public sealed class WorldViewVisibilityParitySourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string Compact(string source) =>
-        string.Concat(source.Where(character => !char.IsWhiteSpace(character)));
+    private static string Compact(string source)
+    {
+        return string.Concat(source.Where(character => !char.IsWhiteSpace(character)));
+    }
 }

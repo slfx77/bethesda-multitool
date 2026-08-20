@@ -855,4 +855,3 @@ internal static class CrossDumpJsonHtmlWriter
 
     private sealed record PayloadBundle(string CompressedPayload, int JsonLength);
 }
-

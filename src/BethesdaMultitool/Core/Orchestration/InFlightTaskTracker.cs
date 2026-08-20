@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Diagnostics;
+
 namespace BethesdaMultitool.Core.Orchestration;
 
 /// <summary>
@@ -9,9 +10,9 @@ namespace BethesdaMultitool.Core.Orchestration;
 /// </summary>
 internal sealed class InFlightTaskTracker
 {
+    private readonly Lock _gate = new();
     private readonly string _ownerName;
     private readonly List<Task> _tasks = [];
-    private readonly Lock _gate = new();
 
     public InFlightTaskTracker(string ownerName)
     {

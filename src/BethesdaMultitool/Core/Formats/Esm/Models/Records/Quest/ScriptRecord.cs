@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Models;
-
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
 /// <summary>
@@ -12,7 +10,7 @@ public enum ScriptSourceTextOrigin
 {
     None,
     DmpFragment,
-    RuntimeSameObject,
+    RuntimeSameObject
 }
 
 /// <summary>

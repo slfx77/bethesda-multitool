@@ -17,8 +17,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 /// </summary>
 internal static class TopDownViewProjBuilder
 {
-    /// <summary>Camera height above the ground plane. Large so all geometry sits within the
-    /// [near, far] ortho depth range regardless of placement Z.</summary>
+    /// <summary>
+    ///     Camera height above the ground plane. Large so all geometry sits within the
+    ///     [near, far] ortho depth range regardless of placement Z.
+    /// </summary>
     public const float EyeHeight = 1_000_000f;
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
@@ -125,9 +126,6 @@ public sealed record EmitPlan
     ///     Per-navmesh NVEX/NVDP connectivity for the NAVI record's NVCI arrays, settled by
     ///     <c>PlanNavmConnectivity</c> so NAVI need not be built from emitted NAVM bytes.
     /// </summary>
-    internal ImmutableDictionary<uint, Plugin.Nav.NavmConnectivity> NavmConnectivityByFormId
-    {
-        get;
-        init;
-    } = ImmutableDictionary<uint, Plugin.Nav.NavmConnectivity>.Empty;
+    internal ImmutableDictionary<uint, NavmConnectivity> NavmConnectivityByFormId { get; init; } =
+        ImmutableDictionary<uint, NavmConnectivity>.Empty;
 }

@@ -25,7 +25,7 @@ public sealed class PlannedContEncoder : IPlannedRecordEncoder<ContainerRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedContEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedContEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

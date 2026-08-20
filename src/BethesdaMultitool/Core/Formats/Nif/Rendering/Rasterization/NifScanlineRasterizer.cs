@@ -10,6 +10,16 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 internal static class NifScanlineRasterizer
 {
     /// <summary>
+    ///     Bayer 2x2 dither thresholds (half-centered, bytes). Each of the four supersamples
+    ///     within an output pixel (under <see cref="RenderLightingConstants.SsaaFactor" />=2)
+    ///     gets a distinct threshold, so a fragment's alpha translates into one of five
+    ///     coverage levels after the box downsample — matching what hardware 4x MSAA + A2C
+    ///     produces on the GPU path. Pattern is screen-space-stable so the noise stays still
+    ///     between frames.
+    /// </summary>
+    private static readonly byte[] BayerThresholds2X2 = [32, 159, 223, 96];
+
+    /// <summary>
     ///     Rasterize a single filled triangle using scanline algorithm with per-pixel Z-buffer.
     ///     Supports per-vertex normal interpolation, texture mapping, bump mapping, and vertex colors.
     /// </summary>
@@ -528,19 +538,25 @@ internal static class NifScanlineRasterizer
             var dstA2 = pixels[pIdx + 3] / 255f;
 
             pixels[pIdx + 0] = (byte)Math.Clamp(
-                fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2, dstG2,
+                fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2,
+                    dstG2,
                     dstB2, 0) +
-                pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2, srcB2,
+                pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2,
+                    srcB2,
                     dstR2, dstG2, dstB2, 0), 0, 255);
             pixels[pIdx + 1] = (byte)Math.Clamp(
-                fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2, dstG2,
+                fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2,
+                    dstG2,
                     dstB2, 1) +
-                pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2, srcB2,
+                pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2,
+                    srcB2,
                     dstR2, dstG2, dstB2, 1), 0, 255);
             pixels[pIdx + 2] = (byte)Math.Clamp(
-                fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2, dstG2,
+                fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2,
+                    dstG2,
                     dstB2, 2) +
-                pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2, srcB2,
+                pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2,
+                    srcB2,
                     dstR2, dstG2, dstB2, 2), 0, 255);
 
             pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
@@ -552,18 +568,10 @@ internal static class NifScanlineRasterizer
     ///     deliberately author alpha above one; clipping the material first prevented it from
     ///     amplifying a partially transparent texture/vertex envelope.
     /// </summary>
-    internal static float ComputeBlendedOpacity(float sourceAlphaByte, float materialAlpha) =>
-        Math.Clamp(sourceAlphaByte * materialAlpha / 255f, 0f, 1f);
-
-    /// <summary>
-    ///     Bayer 2x2 dither thresholds (half-centered, bytes). Each of the four supersamples
-    ///     within an output pixel (under <see cref="RenderLightingConstants.SsaaFactor" />=2)
-    ///     gets a distinct threshold, so a fragment's alpha translates into one of five
-    ///     coverage levels after the box downsample — matching what hardware 4x MSAA + A2C
-    ///     produces on the GPU path. Pattern is screen-space-stable so the noise stays still
-    ///     between frames.
-    /// </summary>
-    private static readonly byte[] BayerThresholds2X2 = [32, 159, 223, 96];
+    internal static float ComputeBlendedOpacity(float sourceAlphaByte, float materialAlpha)
+    {
+        return Math.Clamp(sourceAlphaByte * materialAlpha / 255f, 0f, 1f);
+    }
 
     private static byte StochasticAlphaThreshold(int px, int py)
     {

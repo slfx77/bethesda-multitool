@@ -2,7 +2,6 @@ using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Render;

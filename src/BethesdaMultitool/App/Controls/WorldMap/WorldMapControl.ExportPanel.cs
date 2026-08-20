@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.WorldData;
 using WinRT.Interop;
 
 namespace BethesdaMultitool;
@@ -47,19 +48,22 @@ public sealed partial class WorldMapControl
         WorldMapLayer.Slope
     ];
 
+    private bool _exportBoundsValid;
+
+    private WorldMapExportGridBounds _exportGrid;
+    private string? _exportLastFolder;
+    private bool _exportRunning;
+
+    private bool _exportSeeded;
+
+    // Guards the long-edge NumberBox against the readout refresh that the scale presets trigger.
+    private bool _suspendExportLongEdge;
+
     /// <summary>
     ///     The viewer's export panel, constructed in the ctor and displayed by the host's right-panel
     ///     Export tab. Owned here so the run action reaches the live canvas + layer caches.
     /// </summary>
     internal WorldMapExportPanel ExportPanel { get; }
-
-    private WorldMapExportGridBounds _exportGrid;
-    private bool _exportBoundsValid;
-    private bool _exportSeeded;
-    private bool _exportRunning;
-    private string? _exportLastFolder;
-    // Guards the long-edge NumberBox against the readout refresh that the scale presets trigger.
-    private bool _suspendExportLongEdge;
 
     private WorldMapLayer SelectedExportLayer =>
         ExportPanel.LayerComboBox.SelectedIndex >= 0
@@ -92,6 +96,7 @@ public sealed partial class WorldMapControl
         {
             p.LayerComboBox.Items.Add(layer.DisplayName());
         }
+
         p.LayerComboBox.SelectionChanged += ExportLayer_SelectionChanged;
 
         p.TiledCheckBox.Checked += ExportTiled_Changed;
@@ -217,6 +222,7 @@ public sealed partial class WorldMapControl
                 ExportPanel.FolderTextBox.Text =
                     _exportLastFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             }
+
             if (string.IsNullOrWhiteSpace(ExportPanel.FileNameTextBox.Text))
             {
                 ExportPanel.FileNameTextBox.Text = $"{ExportWorldspaceName()}_map";
@@ -375,6 +381,7 @@ public sealed partial class WorldMapControl
             ShowLayerBuildStatus($"Export folder does not exist: {folder}", busy: false);
             return;
         }
+
         _exportLastFolder = folder;
         var basePath = Path.Combine(folder, name + ".png");
 

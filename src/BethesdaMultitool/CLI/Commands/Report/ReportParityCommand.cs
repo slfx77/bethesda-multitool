@@ -3,8 +3,6 @@ using System.Text;
 using System.Text.Json;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -308,4 +306,3 @@ internal static class ReportParityCommand
         AnsiConsole.WriteLine();
     }
 }
-

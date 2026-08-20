@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 
@@ -199,4 +198,3 @@ internal static class SchemaDictionarySerializer
         };
     }
 }
-

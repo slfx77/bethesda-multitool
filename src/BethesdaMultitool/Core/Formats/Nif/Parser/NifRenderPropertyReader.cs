@@ -30,7 +30,8 @@ internal static class NifRenderPropertyReader
 
             var pos = propBlock.DataOffset;
             var end = propBlock.DataOffset + propBlock.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings,
+                    nif.BinaryVersion))
             {
                 return false;
             }
@@ -84,7 +85,8 @@ internal static class NifRenderPropertyReader
 
             var pos = propBlock.DataOffset;
             var end = propBlock.DataOffset + propBlock.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings,
+                    nif.BinaryVersion))
             {
                 return defaultInfo;
             }
@@ -160,7 +162,8 @@ internal static class NifRenderPropertyReader
 
             var pos = propBlock.DataOffset;
             var end = pos + propBlock.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings,
+                    nif.BinaryVersion))
             {
                 return defaultInfo;
             }
@@ -229,8 +232,8 @@ internal static class NifRenderPropertyReader
                 BinaryUtils.ReadFloat(data, alphaOffset, nif.IsBigEndian),
                 BinaryUtils.ReadFloat(data, glossinessOffset, nif.IsBigEndian),
                 specR, specG, specB,
-                emR, emG, emB, emissiveMult, HasMaterial: true,
-                Ambient: ambientColor, Diffuse: diffuseColor);
+                emR, emG, emB, emissiveMult, true,
+                ambientColor, diffuseColor);
         }
 
         return defaultInfo;
@@ -412,7 +415,10 @@ internal static class NifRenderPropertyReader
         return null;
     }
 
-    /// <summary>Parsed NiAlphaProperty fields: blend/test enables, test threshold/function, and source/destination blend modes.</summary>
+    /// <summary>
+    ///     Parsed NiAlphaProperty fields: blend/test enables, test threshold/function, and source/destination blend
+    ///     modes.
+    /// </summary>
     internal readonly record struct AlphaPropertyInfo(
         bool HasAlphaBlend,
         bool HasAlphaTest,
@@ -421,9 +427,11 @@ internal static class NifRenderPropertyReader
         byte SrcBlendMode,
         byte DstBlendMode);
 
-    /// <summary>Parsed NiMaterialProperty fields: overall alpha, glossiness, specular color, and the
-    /// emissive color (× the FO3+ Emissive Mult when present). <see cref="HasMaterial" /> is false when
-    /// the property list carried no NiMaterialProperty at all (defaults returned).</summary>
+    /// <summary>
+    ///     Parsed NiMaterialProperty fields: overall alpha, glossiness, specular color, and the
+    ///     emissive color (× the FO3+ Emissive Mult when present). <see cref="HasMaterial" /> is false when
+    ///     the property list carried no NiMaterialProperty at all (defaults returned).
+    /// </summary>
     internal readonly record struct MaterialPropertyInfo(
         float Alpha,
         float Glossiness,

@@ -1,14 +1,5 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands.Records;
 
@@ -27,15 +18,15 @@ public static class RecordDiffCommands
         var fileAArg = new Argument<string>("file-a") { Description = "First ESM file (e.g., converted Xbox)" };
         var fileBArg = new Argument<string>("file-b") { Description = "Second ESM file (e.g., PC reference)" };
         var typeOption = new Option<string?>("-t", "--type")
-        { Description = "Record type to filter (e.g., REFR, NPC_, STAT)" };
+            { Description = "Record type to filter (e.g., REFR, NPC_, STAT)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Max records to show per category (default: 100)", DefaultValueFactory = _ => 100 };
+            { Description = "Max records to show per category (default: 100)", DefaultValueFactory = _ => 100 };
         var outputOption = new Option<string?>("-o", "--output")
-        { Description = "Output TSV file for full results" };
+            { Description = "Output TSV file for full results" };
         var showEdidOption = new Option<bool>("--edid")
-        { Description = "Show EDID for records that have one" };
+            { Description = "Show EDID for records that have one" };
         var resolveOption = new Option<bool>("--resolve")
-        { Description = "For REFR/ACHR/ACRE, resolve what base objects they place and show summary" };
+            { Description = "For REFR/ACHR/ACRE, resolve what base objects they place and show summary" };
 
         command.Arguments.Add(fileAArg);
         command.Arguments.Add(fileBArg);
@@ -61,7 +52,8 @@ public static class RecordDiffCommands
         return command;
     }
 
-    private static int RunRecordDiff(string fileAPath, string fileBPath, string? recordTypeFilter, int limit, string? outputPath, bool showEdid, bool resolve = false)
+    private static int RunRecordDiff(string fileAPath, string fileBPath, string? recordTypeFilter, int limit,
+        string? outputPath, bool showEdid, bool resolve = false)
     {
         AnsiConsole.MarkupLine("[bold cyan]Record Diff[/]");
         AnsiConsole.MarkupLine($"[grey]File A:[/] {fileAPath}");
@@ -71,8 +63,8 @@ public static class RecordDiffCommands
         AnsiConsole.WriteLine();
 
         // Load files
-        var fileA = EsmFileLoader.Load(fileAPath, printStatus: false);
-        var fileB = EsmFileLoader.Load(fileBPath, printStatus: false);
+        var fileA = EsmFileLoader.Load(fileAPath, false);
+        var fileB = EsmFileLoader.Load(fileBPath, false);
 
         if (fileA == null || fileB == null)
         {
@@ -106,11 +98,15 @@ public static class RecordDiffCommands
         var recordsA = resolve
             ? ScanRecordsWithBaseObject(fileA.Data, fileA.IsBigEndian, recordTypeFilter)
             : ScanRecordsToDict(fileA.Data, fileA.IsBigEndian, recordTypeFilter)
-                .ToDictionary(kvp => kvp.Key, kvp => new RecordFullInfo { Type = kvp.Value.Type, Size = kvp.Value.Size, BaseObjectFormId = null });
+                .ToDictionary(kvp => kvp.Key,
+                    kvp => new RecordFullInfo
+                        { Type = kvp.Value.Type, Size = kvp.Value.Size, BaseObjectFormId = null });
         var recordsB = resolve
             ? ScanRecordsWithBaseObject(fileB.Data, fileB.IsBigEndian, recordTypeFilter)
             : ScanRecordsToDict(fileB.Data, fileB.IsBigEndian, recordTypeFilter)
-                .ToDictionary(kvp => kvp.Key, kvp => new RecordFullInfo { Type = kvp.Value.Type, Size = kvp.Value.Size, BaseObjectFormId = null });
+                .ToDictionary(kvp => kvp.Key,
+                    kvp => new RecordFullInfo
+                        { Type = kvp.Value.Type, Size = kvp.Value.Size, BaseObjectFormId = null });
 
         AnsiConsole.MarkupLine($"[grey]File A: {recordsA.Count:N0} records[/]");
         AnsiConsole.MarkupLine($"[grey]File B: {recordsB.Count:N0} records[/]");
@@ -219,11 +215,14 @@ public static class RecordDiffCommands
                 writer.WriteLine("Source\tFormID\tType\tSize\tEDID\tBaseObjFormID\tBaseObjType\tBaseObjEDID");
                 foreach (var r in onlyInA)
                 {
-                    writer.WriteLine($"A-only\t0x{r.FormId:X8}\t{r.Type}\t{r.Size}\t{r.Edid ?? ""}\t{(r.BaseObjectFormId.HasValue ? $"0x{r.BaseObjectFormId.Value:X8}" : "")}\t{r.BaseObjectType ?? ""}\t{r.BaseObjectEdid ?? ""}");
+                    writer.WriteLine(
+                        $"A-only\t0x{r.FormId:X8}\t{r.Type}\t{r.Size}\t{r.Edid ?? ""}\t{(r.BaseObjectFormId.HasValue ? $"0x{r.BaseObjectFormId.Value:X8}" : "")}\t{r.BaseObjectType ?? ""}\t{r.BaseObjectEdid ?? ""}");
                 }
+
                 foreach (var r in onlyInB)
                 {
-                    writer.WriteLine($"B-only\t0x{r.FormId:X8}\t{r.Type}\t{r.Size}\t{r.Edid ?? ""}\t{(r.BaseObjectFormId.HasValue ? $"0x{r.BaseObjectFormId.Value:X8}" : "")}\t{r.BaseObjectType ?? ""}\t{r.BaseObjectEdid ?? ""}");
+                    writer.WriteLine(
+                        $"B-only\t0x{r.FormId:X8}\t{r.Type}\t{r.Size}\t{r.Edid ?? ""}\t{(r.BaseObjectFormId.HasValue ? $"0x{r.BaseObjectFormId.Value:X8}" : "")}\t{r.BaseObjectType ?? ""}\t{r.BaseObjectEdid ?? ""}");
                 }
             }
             else
@@ -233,6 +232,7 @@ public static class RecordDiffCommands
                 {
                     writer.WriteLine($"A-only\t0x{r.FormId:X8}\t{r.Type}\t{r.Size}\t{r.Edid ?? ""}");
                 }
+
                 foreach (var r in onlyInB)
                 {
                     writer.WriteLine($"B-only\t0x{r.FormId:X8}\t{r.Type}\t{r.Size}\t{r.Edid ?? ""}");
@@ -294,10 +294,12 @@ public static class RecordDiffCommands
         }
     }
 
-    private static void DisplayBaseObjectSummary(List<RecordSummary> records, int limit, string colorTag, string fileName)
+    private static void DisplayBaseObjectSummary(List<RecordSummary> records, int limit, string colorTag,
+        string fileName)
     {
         // Filter to only placed references (REFR, ACHR, ACRE)
-        var placedRefs = records.Where(r => r.Type is "REFR" or "ACHR" or "ACRE" && r.BaseObjectFormId.HasValue).ToList();
+        var placedRefs = records.Where(r => r.Type is "REFR" or "ACHR" or "ACRE" && r.BaseObjectFormId.HasValue)
+            .ToList();
 
         if (placedRefs.Count == 0)
             return;
@@ -341,7 +343,8 @@ public static class RecordDiffCommands
             AnsiConsole.MarkupLine($"[grey]... and {byBaseObject.Count - limit:N0} more base objects[/]");
         }
 
-        AnsiConsole.MarkupLine($"[grey]Total unique base objects: {byBaseObject.Count:N0}, Total placements: {placedRefs.Count:N0}[/]");
+        AnsiConsole.MarkupLine(
+            $"[grey]Total unique base objects: {byBaseObject.Count:N0}, Total placements: {placedRefs.Count:N0}[/]");
     }
 
     private static Dictionary<uint, string> BuildRecordTypeMap(byte[] data, bool bigEndian)
@@ -360,7 +363,8 @@ public static class RecordDiffCommands
         return dict;
     }
 
-    private static Dictionary<uint, RecordFullInfo> ScanRecordsWithBaseObject(byte[] data, bool bigEndian, string? typeFilter)
+    private static Dictionary<uint, RecordFullInfo> ScanRecordsWithBaseObject(byte[] data, bool bigEndian,
+        string? typeFilter)
     {
         var dict = new Dictionary<uint, RecordFullInfo>();
         var records = EsmRecordParser.ScanAllRecords(data, bigEndian);
@@ -433,7 +437,8 @@ public static class RecordDiffCommands
         return null;
     }
 
-    private static Dictionary<uint, (string Type, uint Size)> ScanRecordsToDict(byte[] data, bool bigEndian, string? typeFilter)
+    private static Dictionary<uint, (string Type, uint Size)> ScanRecordsToDict(byte[] data, bool bigEndian,
+        string? typeFilter)
     {
         var dict = new Dictionary<uint, (string Type, uint Size)>();
         var records = EsmRecordParser.ScanAllRecords(data, bigEndian);
@@ -470,4 +475,3 @@ public static class RecordDiffCommands
         public uint? BaseObjectFormId { get; init; }
     }
 }
-

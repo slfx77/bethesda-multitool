@@ -1,16 +1,12 @@
 using System.Collections.Concurrent;
-using BethesdaMultitool.CLI.Rendering;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Orchestration;
 using Spectre.Console;
 
@@ -33,7 +29,7 @@ internal static class RenderNifProcessor
         var selection = SpriteRenderBackendSelector.Create(
             s.ForceCpu,
             s.ForceGpu,
-            forcedCpuMessage: null,
+            null,
             fallbackCpuMessage: "GPU not available -- using [yellow]CPU software renderer[/]");
         return (selection.Device, selection.Renderer);
     }
@@ -395,4 +391,3 @@ internal static class RenderNifProcessor
         return entries.Count > 0 ? entries : null;
     }
 }
-

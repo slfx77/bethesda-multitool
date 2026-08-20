@@ -11,10 +11,10 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
 {
     private readonly byte[] _data = data;
     private readonly bool _isBigEndian = isBigEndian;
+    private readonly List<ScriptBytecodeStructuralIssue> _structuralIssues = [];
     private List<ScriptExternalVariableRead>? _externalVariableReads;
     private List<ScriptLocalVariableRead>? _localVariableReads;
     private List<(int Offset, int Length)>? _multiByteReads;
-    private readonly List<ScriptBytecodeStructuralIssue> _structuralIssues = [];
 
     public int Position { get; set; }
 

@@ -317,7 +317,7 @@ public sealed class RecoveredHdrShaderReferenceTests
             new Vector3(-0.25f, 0.8f, 2f),
             1f, 0.5f, 1f, 1f, Vector3.One, 0f);
 
-        VectorAssert.Equal(new Vector3(0f, 0.8f, 1f), result, 1e-6f);
+        VectorAssert.Equal(new Vector3(0f, 0.8f, 1f), result);
     }
 
     private static Vector3 Adapt(
@@ -505,8 +505,9 @@ public sealed class RecoveredHdrShaderReferenceTests
         float contrast,
         float brightness,
         Vector3 tint,
-        float tintAmount) =>
-        Vector3.Clamp(
+        float tintAmount)
+    {
+        return Vector3.Clamp(
             Cinematic(
                 Vector3.Clamp(scene, Vector3.Zero, Vector3.One),
                 CinematicOperation.All,
@@ -518,6 +519,7 @@ public sealed class RecoveredHdrShaderReferenceTests
                 tintAmount),
             Vector3.Zero,
             Vector3.One);
+    }
 
     [Flags]
     private enum CinematicOperation : uint

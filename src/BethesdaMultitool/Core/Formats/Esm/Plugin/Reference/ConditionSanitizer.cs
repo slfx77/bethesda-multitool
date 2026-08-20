@@ -15,12 +15,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 ///     which is what triggered the original "every NPC plays the crucified idle every few
 ///     seconds" bug. Policy:
 ///     <list type="number">
-///         <item>Remap the FormID via the encoder remap table if possible (caller already
-///         applies this to encoded subrecord bytes; the in-model Parameter values are
-///         pre-remap so we mirror that step here).</item>
-///         <item>If the parameter is a FormID and not in master ∪ emitted and not remappable,
-///         drop the whole CTDA condition (zeroing Parameter1 would make e.g. GetIsID(0)
-///         evaluate true against the player, the original crucify bug).</item>
+///         <item>
+///             Remap the FormID via the encoder remap table if possible (caller already
+///             applies this to encoded subrecord bytes; the in-model Parameter values are
+///             pre-remap so we mirror that step here).
+///         </item>
+///         <item>
+///             If the parameter is a FormID and not in master ∪ emitted and not remappable,
+///             drop the whole CTDA condition (zeroing Parameter1 would make e.g. GetIsID(0)
+///             evaluate true against the player, the original crucify bug).
+///         </item>
 ///     </list>
 /// </summary>
 internal static class ConditionSanitizer
@@ -99,7 +103,7 @@ internal static class ConditionSanitizer
             // placeholder in that case. Otherwise validate as FormID if the function says so.
             if (cond.Parameter1String is null)
             {
-                if (!TryFixFormParameter(cond.FunctionIndex, parameterIndex: 0, cond.Parameter1,
+                if (!TryFixFormParameter(cond.FunctionIndex, 0, cond.Parameter1,
                         validFormIds, remapTable, out var newP1, out var dropP1, ref remappedParameters))
                 {
                     if (dropP1)
@@ -116,7 +120,7 @@ internal static class ConditionSanitizer
 
             if (cond.Parameter2String is null)
             {
-                if (!TryFixFormParameter(patched.FunctionIndex, parameterIndex: 1, patched.Parameter2,
+                if (!TryFixFormParameter(patched.FunctionIndex, 1, patched.Parameter2,
                         validFormIds, remapTable, out var newP2, out var dropP2, ref remappedParameters))
                 {
                     if (dropP2)
@@ -153,7 +157,7 @@ internal static class ConditionSanitizer
         {
             var patched = cond;
 
-            if (!TryFixFormParameter(cond.FunctionIndex, parameterIndex: 0, cond.Parameter1,
+            if (!TryFixFormParameter(cond.FunctionIndex, 0, cond.Parameter1,
                     validFormIds, remapTable, out var newP1, out var dropP1, ref remappedParameters))
             {
                 if (dropP1)
@@ -167,7 +171,7 @@ internal static class ConditionSanitizer
                 patched = patched with { Parameter1 = newP1 };
             }
 
-            if (!TryFixFormParameter(patched.FunctionIndex, parameterIndex: 1, patched.Parameter2,
+            if (!TryFixFormParameter(patched.FunctionIndex, 1, patched.Parameter2,
                     validFormIds, remapTable, out var newP2, out var dropP2, ref remappedParameters))
             {
                 if (dropP2)
@@ -190,12 +194,18 @@ internal static class ConditionSanitizer
     /// <summary>
     ///     Decides what to do with a single CTDA parameter. Returns:
     ///     <list type="bullet">
-    ///         <item><c>true</c> + <paramref name="newParamValue" /> = remap was applied;
-    ///         caller should substitute the new value.</item>
-    ///         <item><c>false</c> + <paramref name="shouldDropCondition" /> = parameter is a
-    ///         dangling FormID with no remap; caller should drop the whole CTDA.</item>
-    ///         <item><c>false</c> + <c>!shouldDropCondition</c> = parameter is fine as-is
-    ///         (either zero, in-set, or not a FormID for this function).</item>
+    ///         <item>
+    ///             <c>true</c> + <paramref name="newParamValue" /> = remap was applied;
+    ///             caller should substitute the new value.
+    ///         </item>
+    ///         <item>
+    ///             <c>false</c> + <paramref name="shouldDropCondition" /> = parameter is a
+    ///             dangling FormID with no remap; caller should drop the whole CTDA.
+    ///         </item>
+    ///         <item>
+    ///             <c>false</c> + <c>!shouldDropCondition</c> = parameter is fine as-is
+    ///             (either zero, in-set, or not a FormID for this function).
+    ///         </item>
     ///     </list>
     /// </summary>
     public static bool TryFixFormParameter(

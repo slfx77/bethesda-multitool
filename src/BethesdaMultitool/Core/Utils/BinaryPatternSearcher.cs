@@ -2,12 +2,18 @@ using System.Text;
 
 namespace BethesdaMultitool.Core.Utils;
 
-/// <summary>Byte-pattern search over buffers and large files, with optional ASCII case-insensitive matching and streaming for big inputs.</summary>
+/// <summary>
+///     Byte-pattern search over buffers and large files, with optional ASCII case-insensitive matching and streaming
+///     for big inputs.
+/// </summary>
 internal static class BinaryPatternSearcher
 {
     public const int DefaultStreamBufferSize = 8 * 1024 * 1024;
 
-    /// <summary>Builds a search pattern from ASCII text, precomputing a lowercased copy when <paramref name="ignoreCase" /> is set.</summary>
+    /// <summary>
+    ///     Builds a search pattern from ASCII text, precomputing a lowercased copy when <paramref name="ignoreCase" /> is
+    ///     set.
+    /// </summary>
     public static BinarySearchPattern CreateTextPattern(
         string pattern,
         bool ignoreCase = false)
@@ -40,7 +46,10 @@ internal static class BinaryPatternSearcher
         return FindMatches(data, CreateTextPattern(pattern, ignoreCase));
     }
 
-    /// <summary>Counts occurrences of <paramref name="pattern" /> in a file, reading in overlapping buffers so matches spanning buffer boundaries are not missed.</summary>
+    /// <summary>
+    ///     Counts occurrences of <paramref name="pattern" /> in a file, reading in overlapping buffers so matches
+    ///     spanning buffer boundaries are not missed.
+    /// </summary>
     public static int CountMatchesStreaming(
         string filePath,
         BinarySearchPattern pattern,

@@ -1,23 +1,19 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
-using System.Text;
+using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies;
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
@@ -25,15 +21,11 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Script;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.Recovery;
+using BethesdaMultitool.Core.Semantic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
@@ -54,36 +46,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 ///     5. Assemble ESM: TES4 header (record count counted from the emitted body) + GRUPs.
 ///     6. Optionally validate by re-parsing.
 ///     <para>
-///     The legacy single-pass emission path this class used to carry alongside the planner
-///     was deleted on 2026-08-11 — see the retirement notes in <c>BuildGrupForType</c>,
-///     <c>BuildPlannerStateIfEnabled</c> and <see cref="EsmAssembler" />.
+///         The legacy single-pass emission path this class used to carry alongside the planner
+///         was deleted on 2026-08-11 — see the retirement notes in <c>BuildGrupForType</c>,
+///         <c>BuildPlannerStateIfEnabled</c> and <see cref="EsmAssembler" />.
 ///     </para>
 /// </summary>
 public sealed class PluginConversionPipeline
 {
-    /// <summary>
-    ///     Master ESM NPCs indexed by race FormID → first master NPC FormID seen for that
-    ///     race. Used by the new-NPC emit path to retarget a renderable template when a
-    ///     captured prototype NPC's Template chain dead-ends in another new NPC (which
-    ///     would have no FaceGen .NIF / .dds files on disk, so the engine's render walk
-    ///     access-violates in NiAlphaProperty / BSFadeNode when the player gets near).
-    ///     By pointing Template at a renderable master NPC and setting the Use-Traits flag,
-    ///     the engine inherits the master's face/body and skips loading our (missing)
-    ///     FaceGen output. Reset at each Build entry.
-    /// </summary>
-    private readonly Dictionary<uint, uint> _masterNpcByRace = new();
-
-    /// <summary>
-    ///     Master ESM exterior cells indexed by (worldspace, gridX, gridY). Populated at
-    ///     <see cref="BuildAsync" /> entry by walking <c>pcRecordsByFormId</c> + the cell
-    ///     contexts. Used to detect grid collisions: when a DMP cell has a fresh FormID but
-    ///     master already has a cell at the same grid in the same worldspace, we redirect
-    ///     to override master's cell instead of allocating a duplicate (the FNV runtime
-    ///     destroys duplicate-grid cells at load time, orphaning every REFR we placed in
-    ///     them). Reset at each Build entry.
-    /// </summary>
-    private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _masterExteriorCellByGrid = new();
-
     /// <summary>
     ///     FormIDs being emitted via the new-record path in the current <c>Build</c> run.
     ///     Populated as records dispatch through <c>TryEncodeNewTopLevelRecord</c>. Feeds
@@ -99,19 +68,30 @@ public sealed class PluginConversionPipeline
     /// </summary>
     private readonly Dictionary<string, HashSet<uint>> _emittedNewFormIdsByType = new();
 
-    /// <summary>
-    ///     Read-only test surface for <see cref="_newRecordSourceToAllocated" /> so Phase 0
-    ///     tests can verify the source→allocated remap was registered.
-    /// </summary>
-    internal IReadOnlyDictionary<uint, uint> NewRecordSourceToAllocatedForTest => _newRecordSourceToAllocated;
-
-    /// <summary>
-    ///     Read-only test surface for <see cref="_emittedNewFormIdsByType" /> so Phase 0
-    ///     tests can verify the per-type validator set was extended.
-    /// </summary>
-    internal IReadOnlyDictionary<string, HashSet<uint>> EmittedNewFormIdsByTypeForTest => _emittedNewFormIdsByType;
-
     private readonly RecordEncoderRegistry _encoderRegistry;
+
+    /// <summary>
+    ///     Master ESM exterior cells indexed by (worldspace, gridX, gridY). Populated at
+    ///     <see cref="BuildAsync" /> entry by walking <c>pcRecordsByFormId</c> + the cell
+    ///     contexts. Used to detect grid collisions: when a DMP cell has a fresh FormID but
+    ///     master already has a cell at the same grid in the same worldspace, we redirect
+    ///     to override master's cell instead of allocating a duplicate (the FNV runtime
+    ///     destroys duplicate-grid cells at load time, orphaning every REFR we placed in
+    ///     them). Reset at each Build entry.
+    /// </summary>
+    private readonly Dictionary<(uint Worldspace, int GridX, int GridY), uint> _masterExteriorCellByGrid = new();
+
+    /// <summary>
+    ///     Master ESM NPCs indexed by race FormID → first master NPC FormID seen for that
+    ///     race. Used by the new-NPC emit path to retarget a renderable template when a
+    ///     captured prototype NPC's Template chain dead-ends in another new NPC (which
+    ///     would have no FaceGen .NIF / .dds files on disk, so the engine's render walk
+    ///     access-violates in NiAlphaProperty / BSFadeNode when the player gets near).
+    ///     By pointing Template at a renderable master NPC and setting the Use-Traits flag,
+    ///     the engine inherits the master's face/body and skips loading our (missing)
+    ///     FaceGen output. Reset at each Build entry.
+    /// </summary>
+    private readonly Dictionary<uint, uint> _masterNpcByRace = new();
 
     /// <summary>
     ///     DMP-source FormID → emitted FormID. Values are either freshly-allocated plugin-local
@@ -142,6 +122,14 @@ public sealed class PluginConversionPipeline
     private Dictionary<uint, string>? _dmpBaseFormIdToRecordType;
 
     /// <summary>
+    ///     Per-build planner state. Constructed once in <see cref="BuildAsync" /> after the
+    ///     DMP loads for the complete <c>PlannedEncoders</c> catalog, then consumed by
+    ///     <see cref="BuildGrupForType" /> and the planner-owned cell section. The retired
+    ///     legacy emission path no longer provides a planner-free build mode.
+    /// </summary>
+    private EmitPlan? _emitPlan;
+
+    /// <summary>
     ///     Per-type EditorID → master FormID lookup for the master ESM, built lazily at
     ///     <see cref="BuildAsync" /> entry. Used to skip new-record emission of an NPC (or
     ///     other type) whose EditorID already names a master record — those are duplicate
@@ -150,13 +138,6 @@ public sealed class PluginConversionPipeline
     ///     for the master record handles the prototype's mutations cleanly.
     /// </summary>
     private Dictionary<string, Dictionary<string, uint>>? _masterEditorIdToFormIdByType;
-
-    /// <summary>
-    ///     Exact, case-insensitive SCPT EditorID → master FormID identities. Kept separate
-    ///     from placed-reference base and stem indexes because SCPT is never a legal REFR
-    ///     base, while duplicate script names still collide in the engine's script registry.
-    /// </summary>
-    private Dictionary<string, uint>? _masterScriptFormIdByEditorId;
 
     /// <summary>
     ///     Master ESM FormID set, populated at the start of <c>Build</c>. Used by post-encode
@@ -175,21 +156,27 @@ public sealed class PluginConversionPipeline
     private Dictionary<string, HashSet<uint>>? _masterFormIdsByType;
 
     /// <summary>
-    ///     Per-build planner state. Constructed once in <see cref="BuildAsync" /> after the
-    ///     DMP loads for the complete <c>PlannedEncoders</c> catalog, then consumed by
-    ///     <see cref="BuildGrupForType" /> and the planner-owned cell section. The retired
-    ///     legacy emission path no longer provides a planner-free build mode.
+    ///     Exact, case-insensitive SCPT EditorID → master FormID identities. Kept separate
+    ///     from placed-reference base and stem indexes because SCPT is never a legal REFR
+    ///     base, while duplicate script names still collide in the engine's script registry.
     /// </summary>
-    private BethesdaMultitool.Core.Formats.Esm.Planner.EmitPlan? _emitPlan;
-    private BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter? _planWriter;
+    private Dictionary<string, uint>? _masterScriptFormIdByEditorId;
+
+    private PlanWriter? _planWriter;
 
     /// <summary>
     ///     Append-only master-script locals required by recovered INFO/PACK conditions in
     ///     the DMP currently being converted. The sanitizer owns allocation and condition
     ///     remapping; planner and legacy SCPT writers execute these same directives.
     /// </summary>
-    private IReadOnlyList<BethesdaMultitool.Core.Formats.Esm.Planner.ScriptVariableAugmentation>
+    private IReadOnlyList<ScriptVariableAugmentation>
         _scriptVariableAugmentations = [];
+
+    /// <summary>
+    ///     Surviving fresh-local mappings used to re-prove writes in INFO result scripts
+    ///     after the dialogue section has actually emitted.
+    /// </summary>
+    private IReadOnlyList<QuestVariableRecoveryMapping> _scriptVariableProducerMappings = [];
 
     /// <summary>
     ///     Fresh-local producer obligations settled before planning. The final plan must
@@ -198,18 +185,48 @@ public sealed class PluginConversionPipeline
     /// </summary>
     private IReadOnlyList<QuestVariableProducerRequirement> _scriptVariableProducerRequirements = [];
 
-    /// <summary>
-    ///     Surviving fresh-local mappings used to re-prove writes in INFO result scripts
-    ///     after the dialogue section has actually emitted.
-    /// </summary>
-    private IReadOnlyList<QuestVariableRecoveryMapping> _scriptVariableProducerMappings = [];
-
     /// <summary>Creates the builder with the record-encoder registry and an optional progress sink.</summary>
     public PluginConversionPipeline(RecordEncoderRegistry registry, IConversionProgressSink? sink = null)
     {
         _encoderRegistry = registry;
         _sink = sink ?? NullConversionProgressSink.Instance;
     }
+
+    /// <summary>
+    ///     Read-only test surface for <see cref="_newRecordSourceToAllocated" /> so Phase 0
+    ///     tests can verify the source→allocated remap was registered.
+    /// </summary>
+    internal IReadOnlyDictionary<uint, uint> NewRecordSourceToAllocatedForTest => _newRecordSourceToAllocated;
+
+    /// <summary>
+    ///     Read-only test surface for <see cref="_emittedNewFormIdsByType" /> so Phase 0
+    ///     tests can verify the per-type validator set was extended.
+    /// </summary>
+    internal IReadOnlyDictionary<string, HashSet<uint>> EmittedNewFormIdsByTypeForTest => _emittedNewFormIdsByType;
+
+    /// <summary>
+    ///     Every record-type signature <see cref="EnumerateModelsByType" /> yields — i.e. the set
+    ///     of types that can reach a top-level GRUP at all.
+    ///     <para>
+    ///         This is the authoritative reachability oracle, and it is <b>not</b> the same as
+    ///         "has a registered encoder". A type absent from here is structurally unemittable no
+    ///         matter what encoders exist: the merge loop only iterates what this yields, so such a
+    ///         type is dropped before the "No encoder for {type}" warning can even fire, leaving no
+    ///         diagnostic. GRAS/IMGS/PWAT/TREE all had registered encoders while being unreachable
+    ///         exactly this way. Conversely, membership here is necessary but not sufficient — the
+    ///         type still needs a registry entry to be encoded, and a
+    ///         <c>NewTopLevelRecordEncoderDispatcher</c> row for its <i>new</i> records.
+    ///     </para>
+    ///     <para>
+    ///         Types emitted outside the top-level loop are deliberately absent: cell children
+    ///         (REFR/ACHR/ACRE/LAND, via the cell pipeline), NAVM (byte-rewriter) and NAVI
+    ///         (<c>EsmAssembler</c> fallback).
+    ///     </para>
+    /// </summary>
+    public static IReadOnlySet<string> EmittableTopLevelRecordTypes { get; } =
+        EnumerateModelsByType(new RecordCollection())
+            .Select(entry => entry.RecordType)
+            .ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
     ///     Run the conversion pipeline. The output is a plugin ESM file at
@@ -461,7 +478,7 @@ public sealed class PluginConversionPipeline
                 _emitPlan = _emitPlan with
                 {
                     FormIdReservations = newWorldspaceReservations
-                        .AddRange(_emitPlan.FormIdReservations),
+                        .AddRange(_emitPlan.FormIdReservations)
                 };
             }
 
@@ -507,6 +524,7 @@ public sealed class PluginConversionPipeline
                             $"Diagnostic --skip-record-type: dropped {dropped:N0} {recordType} record(s) " +
                             "from emission.");
                     }
+
                     continue;
                 }
 
@@ -599,7 +617,7 @@ public sealed class PluginConversionPipeline
             // differs from what the runtime constructs).
             var questEditorIdsByFormId = BuildQuestEditorIdLookup(
                 pcRecordsByFormId, dmpRecords, _newRecordSourceToAllocated);
-            IEnumerable<uint> dialogAdditionalValidFormIds =
+            var dialogAdditionalValidFormIds =
                 _newRecordSourceToAllocated.Values.Concat(masterChildFormIds);
 
             // Every planner-emitted FormID (new plugin records + retained master records) is live —
@@ -639,18 +657,19 @@ public sealed class PluginConversionPipeline
                     dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
                     pcRecordsByFormId.Keys, pcRecordsByFormId,
                     new ConversionPipelineStats(), NullConversionProgressSink.Instance,
-                    remapTable: _newRecordSourceToAllocated,
-                    additionalValidFormIds: dialogAdditionalValidFormIds,
-                    voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
-                    npcVoiceTypeByNpcFormId: npcVoiceTypeByNpcFormId,
-                    questEditorIdsByFormId: questEditorIdsByFormId,
-                    masterDialogueIndex: masterDialogueIndex,
-                    diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
-                    diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
-                    preallocatedNewFormIds: _emitPlan?.SourceToEmittedFormId,
-                    questVariableProducerMappings: _scriptVariableProducerMappings);
+                    _newRecordSourceToAllocated,
+                    dialogAdditionalValidFormIds,
+                    voiceTypeEditorIdsByFormId,
+                    npcVoiceTypeByNpcFormId,
+                    questEditorIdsByFormId,
+                    masterDialogueIndex,
+                    inputs.Options.DiagnosticKeepMasterFormIds,
+                    inputs.Options.DiagnosticRetainMasterSubrecords,
+                    _emitPlan?.SourceToEmittedFormId,
+                    _scriptVariableProducerMappings);
                 dialogResult = new DialogSectionResult([], null);
             }
+
             var dialogReservationEndLocalId = allocator.NextLocalId;
 
             _sink.OnPhaseEnd("Merging top-level records", stats);
@@ -685,8 +704,7 @@ public sealed class PluginConversionPipeline
             // longer depends on having built the cell section first. Only NVCI connectivity
             // still reads the emitted bytes.
             var plannedNavms = _emitPlan.NavmEntries.Length;
-            var writtenNavms = _emitPlan.NavmEntries.Count(
-                e => _emitPlan.EmittedNavmFormIds.Contains(e.NavmFormId));
+            var writtenNavms = _emitPlan.NavmEntries.Count(e => _emitPlan.EmittedNavmFormIds.Contains(e.NavmFormId));
             if (writtenNavms != plannedNavms)
             {
                 _sink.Warn("Merging cell children",
@@ -731,17 +749,17 @@ public sealed class PluginConversionPipeline
                 dialogResult = DialogGrupBuilder.BuildDialogSection(
                     dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, finalDialogueAllocator,
                     pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
-                    remapTable: _newRecordSourceToAllocated,
-                    additionalValidFormIds: dialogAdditionalValidFormIds,
-                    voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
-                    npcVoiceTypeByNpcFormId: npcVoiceTypeByNpcFormId,
-                    questEditorIdsByFormId: questEditorIdsByFormId,
-                    masterDialogueIndex: masterDialogueIndex,
-                    diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
-                    diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
-                    preallocatedNewFormIds: _emitPlan?.SourceToEmittedFormId,
-                    questVariableProducerMappings: _scriptVariableProducerMappings,
-                    liveScriptVariableOwnerFormIds: liveScriptVariableOwnerFormIds);
+                    _newRecordSourceToAllocated,
+                    dialogAdditionalValidFormIds,
+                    voiceTypeEditorIdsByFormId,
+                    npcVoiceTypeByNpcFormId,
+                    questEditorIdsByFormId,
+                    masterDialogueIndex,
+                    inputs.Options.DiagnosticKeepMasterFormIds,
+                    inputs.Options.DiagnosticRetainMasterSubrecords,
+                    _emitPlan?.SourceToEmittedFormId,
+                    _scriptVariableProducerMappings,
+                    liveScriptVariableOwnerFormIds);
                 if (finalDialogueAllocator.NextLocalId != dialogReservationEndLocalId)
                 {
                     throw new InvalidOperationException(
@@ -838,7 +856,7 @@ public sealed class PluginConversionPipeline
             // Local capture: the null check above is a field test, and the compiler discards
             // field null-state across the awaits between there and here.
             var emitPlan = _emitPlan
-                ?? throw new InvalidOperationException("Plan disappeared mid-build.");
+                           ?? throw new InvalidOperationException("Plan disappeared mid-build.");
             foreach (var (cellFormId, cellPlan) in emitPlan.CellsByFormId)
             {
                 foreach (var bucket in new[]
@@ -1029,10 +1047,10 @@ public sealed class PluginConversionPipeline
             dmpRecords,
             masterRecordsByFormId,
             formIdAliases,
-            sanitizeInfoRecords: !skipRecordTypes.Contains("DIAL"),
-            sanitizePackageRecords: !skipRecordTypes.Contains("PACK"),
-            sanitizeTerminalRecords: !skipRecordTypes.Contains("TERM"),
-            sanitizeMasterAnchoredInfoFormIds: masterAnchoredDerivedInfoSources);
+            !skipRecordTypes.Contains("DIAL"),
+            !skipRecordTypes.Contains("PACK"),
+            !skipRecordTypes.Contains("TERM"),
+            masterAnchoredDerivedInfoSources);
 
         // A new appended local is only useful when an emitted script is proven to write it.
         // Analyze planner-owned SCPT/PACK/TERM bundles before mutating any bytecode, suppress
@@ -1083,7 +1101,7 @@ public sealed class PluginConversionPipeline
         if (dialogueCombinePlan is not null
             && preGateDialogues is not null
             && producerGate.SuppressedInfoCount + producerGate.SuppressedPackageCount
-               + producerGate.SuppressedTerminalMenuItemCount > 0)
+                                                + producerGate.SuppressedTerminalMenuItemCount > 0)
         {
             QuestVariableWriterDiagnostics.Report(
                 preGateDialogues,
@@ -1099,6 +1117,7 @@ public sealed class PluginConversionPipeline
                 masterDialogueIndex,
                 _sink);
         }
+
         _scriptVariableAugmentations = producerGate.ScriptVariableAugmentations;
         _scriptVariableProducerRequirements = producerGate.ProducerRequirements;
         _scriptVariableProducerMappings = QuestVariableProducerGate.SelectFreshMappings(
@@ -1168,12 +1187,13 @@ public sealed class PluginConversionPipeline
                     reportedCode = "script-variable.record-suppressed";
                 }
             }
-            IReadOnlyDictionary<string, string?> metadata = diagnostic.Metadata;
+
+            var metadata = diagnostic.Metadata;
             if (!string.Equals(reportedCode, diagnostic.Code, StringComparison.Ordinal))
             {
                 metadata = new Dictionary<string, string?>(diagnostic.Metadata, StringComparer.Ordinal)
                 {
-                    ["suppression-reason-code"] = diagnostic.Code,
+                    ["suppression-reason-code"] = diagnostic.Code
                 };
             }
 
@@ -1212,9 +1232,9 @@ public sealed class PluginConversionPipeline
                 {
                     ["script-path"] = diagnostic.ScriptPath,
                     ["read-operands-patched"] = diagnostic.ReadOperandsPatched.ToString(
-                        System.Globalization.CultureInfo.InvariantCulture),
+                        CultureInfo.InvariantCulture),
                     ["write-operands-patched"] = diagnostic.WriteOperandsPatched.ToString(
-                        System.Globalization.CultureInfo.InvariantCulture),
+                        CultureInfo.InvariantCulture),
                     ["source-text-omitted"] = diagnostic.SourceTextOmitted.ToString()
                 });
         }
@@ -1273,7 +1293,7 @@ public sealed class PluginConversionPipeline
     }
 
     internal static void EnsureScriptVariableAugmentationsCanBeEmitted(
-        IReadOnlyList<BethesdaMultitool.Core.Formats.Esm.Planner.ScriptVariableAugmentation> augmentations,
+        IReadOnlyList<ScriptVariableAugmentation> augmentations,
         IReadOnlySet<string> skipRecordTypes)
     {
         ArgumentNullException.ThrowIfNull(augmentations);
@@ -1288,9 +1308,9 @@ public sealed class PluginConversionPipeline
     }
 
     /// <summary>
-     ///     Pre-encode every new (non-master) worldspace that has at least one captured child
-     ///     cell. The cell-children pipeline emits these alongside their World Children GRUP
-     ///     so the WRLD record sits directly above its cells (canonical ESM layout). New WRLDs
+    ///     Pre-encode every new (non-master) worldspace that has at least one captured child
+    ///     cell. The cell-children pipeline emits these alongside their World Children GRUP
+    ///     so the WRLD record sits directly above its cells (canonical ESM layout). New WRLDs
     ///     with no child cells stay in the standard top-level emit path.
     /// </summary>
     /// <summary>
@@ -1352,7 +1372,9 @@ public sealed class PluginConversionPipeline
         //       was never instanced as a SCPT in our records — the encoder would log
         //       "SCRI dangles" and skip the subrecord, leaving the NPC scriptless.
         bool NeedsHeuristic(uint? script)
-            => !script.HasValue || script.Value == 0 || !validScriptFormIds.Contains(script.Value);
+        {
+            return !script.HasValue || script.Value == 0 || !validScriptFormIds.Contains(script.Value);
+        }
 
         var attachedNpcs = 0;
         var attachedQuests = 0;
@@ -1457,7 +1479,7 @@ public sealed class PluginConversionPipeline
         // just VTYP ones) would let a dangling 0x... slip through unchanged just because
         // SOME other record type uses that FormID. Filter by VTYP record-type explicitly.
         var masterVtypSet = _masterFormIdsByType is not null
-            && _masterFormIdsByType.TryGetValue("VTYP", out var masterVtyps)
+                            && _masterFormIdsByType.TryGetValue("VTYP", out var masterVtyps)
             ? masterVtyps
             : new HashSet<uint>();
         var dmpVtypSet = new HashSet<uint>();
@@ -1470,9 +1492,11 @@ public sealed class PluginConversionPipeline
         }
 
         bool NeedsHeuristic(uint? vtck)
-            => vtck.HasValue && vtck.Value != 0
-               && !masterVtypSet.Contains(vtck.Value)
-               && !dmpVtypSet.Contains(vtck.Value);
+        {
+            return vtck.HasValue && vtck.Value != 0
+                                 && !masterVtypSet.Contains(vtck.Value)
+                                 && !dmpVtypSet.Contains(vtck.Value);
+        }
 
         var attached = 0;
         var needyCount = 0;
@@ -1500,6 +1524,7 @@ public sealed class PluginConversionPipeline
                         sampleAttaches.Add(
                             $"{npc.EditorId} 0x{npc.VoiceType!.Value:X8}→0x{newVtck:X8}");
                     }
+
                     break;
                 }
             }
@@ -1539,59 +1564,59 @@ public sealed class PluginConversionPipeline
         _emitPlan = null;
         _planWriter = null;
 
-        var enabled = PlannedWriter.PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
+        var enabled = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
 
-        var registry = BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlannedEncoders.BuildRegistry();
-        var dispositionEngine = new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.DispositionEngine(
-            new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.IDispositionPolicy[]
+        var registry = PlannedEncoders.BuildRegistry();
+        var dispositionEngine = new DispositionEngine(
+            new IDispositionPolicy[]
             {
-                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.DiagnosticKeepMasterDispositionPolicy(
+                new DiagnosticKeepMasterDispositionPolicy(
                     inputs.Options.DiagnosticKeepMasterFormIds),
-                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.ScriptDispositionPolicy(),
-                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.ImageSpaceModifierDispositionPolicy(),
-                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.RuntimeStatePolicy(),
-                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.DefaultDispositionPolicy(),
+                new ScriptDispositionPolicy(),
+                new ImageSpaceModifierDispositionPolicy(),
+                new RuntimeStatePolicy(),
+                new DefaultDispositionPolicy()
             });
-        var degradationPolicy = new BethesdaMultitool.Core.Formats.Esm.Planner.References.DegradationPolicy();
+        var degradationPolicy = new DegradationPolicy();
         degradationPolicy.SetDefaultForType(
             "SCPT",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "IMAD",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "INFO",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "PACK",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "TERM",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "NPC_",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "CREA",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "PERK",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+            DanglingAction.DropSubrecord);
         degradationPolicy.SetRule(
             "ALCH",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.FieldPath.Member(
+            FieldPath.Member(
                 "ENIT", "WithdrawalEffect"),
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.NullRef);
+            DanglingAction.NullRef);
         degradationPolicy.SetRule(
             "ALCH",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.FieldPath.Member(
+            FieldPath.Member(
                 "ENIT", "ConsumeSound"),
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.NullRef);
-        var referenceResolver = new BethesdaMultitool.Core.Formats.Esm.Planner.References.ReferenceResolver(
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.PlannerReferenceWalkers.BuildAll(),
+            DanglingAction.NullRef);
+        var referenceResolver = new ReferenceResolver(
+            PlannerReferenceWalkers.BuildAll(),
             degradationPolicy);
 
-        var esmPlanner = new BethesdaMultitool.Core.Formats.Esm.Planner.EsmPlanner(
+        var esmPlanner = new EsmPlanner(
             dispositionEngine, allocator, referenceResolver);
         var plannerMasterAliases = _masterFormIds is null
             ? new Dictionary<uint, uint>()
@@ -1619,28 +1644,28 @@ public sealed class PluginConversionPipeline
             enabled,
             _masterFormIds ?? new HashSet<uint>(),
             inputs.PcEsmPath,
-            masterCellContexts: masterCellContexts,
-            masterRecordsByFormId: masterRecordsByFormId,
-            cellChildAllocator: allocator,
-            emitMasterCellNavmAugmentation: inputs.Options.EmitMasterCellNavmAugmentation,
-            masterRefFormIds: new HashSet<uint>(masterIndex.RefToCell.Keys),
-            replaceCellTemporariesOnOverride: inputs.Options.ReplaceCellTemporariesOnOverride,
-            cellVerdictInputs: new BethesdaMultitool.Core.Formats.Esm.Planner.Cells.CellVerdictInputs
+            masterCellContexts,
+            masterRecordsByFormId,
+            allocator,
+            inputs.Options.EmitMasterCellNavmAugmentation,
+            new HashSet<uint>(masterIndex.RefToCell.Keys),
+            inputs.Options.ReplaceCellTemporariesOnOverride,
+            new CellVerdictInputs
             {
                 MasterIndex = masterIndex,
                 DmpBaseTypes = _dmpBaseFormIdToRecordType,
                 RecoverLeveledSpawnActors = inputs.Options.RecoverLeveledSpawnActors,
                 EnableRefrBaseEditorIdRemap = inputs.Options.EnableRefrBaseEditorIdRemap,
                 DiagnosticSkipCellNewRefs = inputs.Options.DiagnosticSkipCellNewRefs,
-                DiagnosticSkipCellNavm = inputs.Options.DiagnosticSkipCellNavm,
+                DiagnosticSkipCellNavm = inputs.Options.DiagnosticSkipCellNavm
             },
-            diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
-            diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
-            masterFormIdAliases: plannerMasterAliases);
+            inputs.Options.DiagnosticKeepMasterFormIds,
+            inputs.Options.DiagnosticRetainMasterSubrecords,
+            plannerMasterAliases);
 
         if (_scriptVariableAugmentations.Count > 0 && enabled.Contains("SCPT"))
         {
-            _emitPlan = BethesdaMultitool.Core.Formats.Esm.Planner.ScriptVariableAugmentationPlanner.Apply(
+            _emitPlan = ScriptVariableAugmentationPlanner.Apply(
                 _emitPlan,
                 _scriptVariableAugmentations);
         }
@@ -1651,7 +1676,7 @@ public sealed class PluginConversionPipeline
 
         ReportPlannerDiagnostics(_emitPlan, _sink, stats);
 
-        _planWriter = new BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter(registry, _sink);
+        _planWriter = new PlanWriter(registry, _sink);
 
         _sink.Info("Two-pass planner",
             $"Built EmitPlan covering {enabled.Count} record type(s): " +
@@ -1662,7 +1687,7 @@ public sealed class PluginConversionPipeline
     }
 
     internal static void ReportPlannerDiagnostics(
-        BethesdaMultitool.Core.Formats.Esm.Planner.EmitPlan plan,
+        EmitPlan plan,
         IConversionProgressSink sink,
         ConversionPipelineStats? stats = null)
     {
@@ -1670,7 +1695,7 @@ public sealed class PluginConversionPipeline
         {
             switch (diagnostic.Kind)
             {
-                case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Warning:
+                case PlanDiagnosticKind.Warning:
                     sink.Warn(diagnostic.Phase, diagnostic.Message,
                         diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
                         diagnostic.Metadata);
@@ -1678,7 +1703,7 @@ public sealed class PluginConversionPipeline
                     // run summary; without this, planner-routed drops were only per-event sink lines.
                     stats?.IncrementDropReason(diagnostic.Code);
                     break;
-                case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Decision:
+                case PlanDiagnosticKind.Decision:
                     sink.Decision(diagnostic.Phase, diagnostic.Message,
                         diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
                         diagnostic.Metadata);
@@ -1881,7 +1906,7 @@ public sealed class PluginConversionPipeline
             return false;
         }
 
-        raceFormId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(rnam.Data.AsSpan(0, 4));
+        raceFormId = BinaryPrimitives.ReadUInt32LittleEndian(rnam.Data.AsSpan(0, 4));
         return true;
     }
 
@@ -1900,34 +1925,10 @@ public sealed class PluginConversionPipeline
             return false;
         }
 
-        gridX = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(0, 4));
-        gridY = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(4, 4));
+        gridX = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(0, 4));
+        gridY = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(4, 4));
         return true;
     }
-
-    /// <summary>
-    ///     Every record-type signature <see cref="EnumerateModelsByType" /> yields — i.e. the set
-    ///     of types that can reach a top-level GRUP at all.
-    ///     <para>
-    ///     This is the authoritative reachability oracle, and it is <b>not</b> the same as
-    ///     "has a registered encoder". A type absent from here is structurally unemittable no
-    ///     matter what encoders exist: the merge loop only iterates what this yields, so such a
-    ///     type is dropped before the "No encoder for {type}" warning can even fire, leaving no
-    ///     diagnostic. GRAS/IMGS/PWAT/TREE all had registered encoders while being unreachable
-    ///     exactly this way. Conversely, membership here is necessary but not sufficient — the
-    ///     type still needs a registry entry to be encoded, and a
-    ///     <c>NewTopLevelRecordEncoderDispatcher</c> row for its <i>new</i> records.
-    ///     </para>
-    ///     <para>
-    ///     Types emitted outside the top-level loop are deliberately absent: cell children
-    ///     (REFR/ACHR/ACRE/LAND, via the cell pipeline), NAVM (byte-rewriter) and NAVI
-    ///     (<c>EsmAssembler</c> fallback).
-    ///     </para>
-    /// </summary>
-    public static IReadOnlySet<string> EmittableTopLevelRecordTypes { get; } =
-        EnumerateModelsByType(new RecordCollection())
-            .Select(entry => entry.RecordType)
-            .ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
     ///     Walks the digested record collection and yields per-type model lists for the
@@ -2102,7 +2103,7 @@ public sealed class PluginConversionPipeline
     ///     master content in effect for the excluded worldspace.
     /// </summary>
     private void FilterDmpRecordsByExcludedWorldspaces(
-        Models.RecordCollection records,
+        RecordCollection records,
         IReadOnlySet<uint> excluded)
     {
         if (excluded is null || excluded.Count == 0)
@@ -2145,7 +2146,7 @@ public sealed class PluginConversionPipeline
     ///     by construction, more trustworthy than the per-DMP heuristic inference pipeline.
     /// </summary>
     private void ApplyCellWorldspaceAuthority(
-        Models.RecordCollection records,
+        RecordCollection records,
         EsmRecordScanResult? scanResult,
         IReadOnlyDictionary<uint, uint>? authority,
         IReadOnlyDictionary<uint, string>? worldspaceNames,
@@ -2162,7 +2163,7 @@ public sealed class PluginConversionPipeline
             cellMetadata,
             refToCell,
             refWindows,
-            inferUnresolvedPlacements: inferUnresolvedPlacements);
+            inferUnresolvedPlacements);
         if (result.Applied > 0 || result.ReferencesReattached > 0)
         {
             _sink.Info("Reading DMP",
@@ -2180,14 +2181,14 @@ public sealed class PluginConversionPipeline
     ///     Build a unified VTYP-FormID → VTYP-EditorId lookup so DialogGrupBuilder can resolve
     ///     speaker voice types onto the engine's runtime path-construction shape. Includes
     ///     master VTYPs (master FormID keys) AND DMP-captured new VTYPs (source FormID keys —
-    ///     same ones <see cref="BuildNpcVoiceTypeLookup"/> chains to). Without the new-VTYP
+    ///     same ones <see cref="BuildNpcVoiceTypeLookup" /> chains to). Without the new-VTYP
     ///     entries, a new NPC pointing at a new VTYP would never resolve to an EditorId and
     ///     dialogue audio bindings would be emitted with VoiceTypeEditorId=null, sending the
     ///     packer's voicetype directory to the engine's MaleAdult01Default fallback.
     /// </summary>
     private static Dictionary<uint, string> BuildVoiceTypeEditorIdLookup(
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecords,
-        Models.RecordCollection records)
+        RecordCollection records)
     {
         var lookup = new Dictionary<uint, string>();
         foreach (var (fid, rec) in masterRecords)
@@ -2235,7 +2236,7 @@ public sealed class PluginConversionPipeline
     /// </summary>
     private static Dictionary<uint, string> BuildQuestEditorIdLookup(
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecords,
-        Models.RecordCollection records,
+        RecordCollection records,
         Dictionary<uint, uint>? sourceToAllocated)
     {
         var lookup = new Dictionary<uint, string>();
@@ -2275,7 +2276,7 @@ public sealed class PluginConversionPipeline
     }
 
     private static Dictionary<uint, uint> BuildNpcVoiceTypeLookup(
-        Models.RecordCollection records,
+        RecordCollection records,
         Dictionary<uint, uint>? sourceToAllocated)
     {
         var lookup = new Dictionary<uint, uint>(records.Npcs.Count * 2);

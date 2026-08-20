@@ -2,7 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
 /// <summary>
 ///     NearRef package location: a reference FormID with a search radius.
@@ -63,7 +63,7 @@ internal sealed class SpawnResolutionIndex
 
             var resolved = new List<uint>();
             var visited = new HashSet<uint>();
-            ResolveLeveledList(ll.FormId, leveledListById, resolved, visited, maxDepth: 8);
+            ResolveLeveledList(ll.FormId, leveledListById, resolved, visited, 8);
             if (resolved.Count > 0)
             {
                 index.LeveledListEntries[ll.FormId] = resolved;

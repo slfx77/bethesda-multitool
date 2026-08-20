@@ -58,8 +58,10 @@ internal static class InGameTeleportCommandFormatter
     }
 
     /// <summary>Preserves the profiler reproduction arguments byte-for-byte as the clipboard prefix.</summary>
-    internal static string AppendToProfilerPose(string profilerPose, InGameTeleportCommandBlock teleportBlock) =>
-        string.Concat(profilerPose, Environment.NewLine, Environment.NewLine, teleportBlock.Text);
+    internal static string AppendToProfilerPose(string profilerPose, InGameTeleportCommandBlock teleportBlock)
+    {
+        return string.Concat(profilerPose, Environment.NewLine, Environment.NewLine, teleportBlock.Text);
+    }
 
     private static InGameTeleportCommandBlock FormatModern(InGameTeleportRequest request)
     {
@@ -154,22 +156,32 @@ internal static class InGameTeleportCommandFormatter
         return new InGameTeleportCommandBlock(string.Join(Environment.NewLine, lines), true);
     }
 
-    private static InGameTeleportCommandBlock Unavailable(string reason) => new(
-        string.Join(
-            Environment.NewLine,
-            Header,
-            $"No reliable in-game command was generated: {reason}."),
-        false);
+    private static InGameTeleportCommandBlock Unavailable(string reason)
+    {
+        return new InGameTeleportCommandBlock(
+            string.Join(
+                Environment.NewLine,
+                Header,
+                $"No reliable in-game command was generated: {reason}."),
+            false);
+    }
 
-    private static bool IsSafeConsoleToken(string? value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        value.All(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '_');
+    private static bool IsSafeConsoleToken(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.All(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '_');
+    }
 
-    private static bool IsSafeQuotedCellName(string? value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        value.All(c => !char.IsControl(c) && c != '"');
+    private static bool IsSafeQuotedCellName(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.All(c => !char.IsControl(c) && c != '"');
+    }
 
-    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
 
     private static bool TryGetGridCoordinate(float position, float cellSize, out int grid)
     {
@@ -238,11 +250,14 @@ internal static class InGameTeleportCommandFormatter
         return sign + digits[..decimalPosition] + "." + digits[decimalPosition..];
     }
 
-    private static string GameName(BethesdaGame game) => game switch
+    private static string GameName(BethesdaGame game)
     {
-        BethesdaGame.Fallout3 => "Fallout 3",
-        BethesdaGame.FalloutNewVegas => "Fallout: New Vegas",
-        BethesdaGame.Fallout4 => "Fallout 4",
-        _ => game.ToString()
-    };
+        return game switch
+        {
+            BethesdaGame.Fallout3 => "Fallout 3",
+            BethesdaGame.FalloutNewVegas => "Fallout: New Vegas",
+            BethesdaGame.Fallout4 => "Fallout 4",
+            _ => game.ToString()
+        };
+    }
 }

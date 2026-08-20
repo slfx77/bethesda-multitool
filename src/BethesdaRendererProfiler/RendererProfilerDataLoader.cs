@@ -2,6 +2,7 @@ using BethesdaMultitool;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaRendererProfiler;
 

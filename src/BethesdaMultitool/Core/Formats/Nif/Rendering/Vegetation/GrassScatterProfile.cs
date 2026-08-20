@@ -8,7 +8,7 @@ internal enum GrassPositionQuantization
 {
     None,
     FloorWorldUnits,
-    HalfRelativeToTwelveCellBlock,
+    HalfRelativeToTwelveCellBlock
 }
 
 /// <summary>
@@ -26,50 +26,53 @@ internal readonly record struct GrassScatterProfile(
     bool FloorSampledHeight,
     GrassDistanceEnvelope DistanceEnvelope)
 {
-    internal static GrassScatterProfile ForGame(BethesdaGame game) => game switch
+    internal static GrassScatterProfile ForGame(BethesdaGame game)
     {
-        // Oblivion_default.ini [Grass]: iMinGrassSize=80, iGrassDensityEvalSize=2,
-        // iMaxGrassTypesPerTexure=2 (sic — same inclusive zero-based semantics as the descendant
-        // FNV loop, so up to three LTEX GNAM entries), fGrassStartFadeDistance=2000 with
-        // fGrassEndDistance=3000 (TES4 authors an END distance, not a range → range 1000).
-        // Position quantization, terrain topology, and height flooring are UNVERIFIED for TES4
-        // (no CreateGrass decompile yet) — conservative None/null/false until recovered; the FNV
-        // values are plausible ancestry but not proven.
-        BethesdaGame.Oblivion => new(
-            true, 80f, 2, 3, 0f, GrassPositionQuantization.None,
-            null, false,
-            new GrassDistanceEnvelope(FadeStart: 2000f, FadeRange: 1000f)),
+        return game switch
+        {
+            // Oblivion_default.ini [Grass]: iMinGrassSize=80, iGrassDensityEvalSize=2,
+            // iMaxGrassTypesPerTexure=2 (sic — same inclusive zero-based semantics as the descendant
+            // FNV loop, so up to three LTEX GNAM entries), fGrassStartFadeDistance=2000 with
+            // fGrassEndDistance=3000 (TES4 authors an END distance, not a range → range 1000).
+            // Position quantization, terrain topology, and height flooring are UNVERIFIED for TES4
+            // (no CreateGrass decompile yet) — conservative None/null/false until recovered; the FNV
+            // values are plausible ancestry but not proven.
+            BethesdaGame.Oblivion => new GrassScatterProfile(
+                true, 80f, 2, 3, 0f, GrassPositionQuantization.None,
+                null, false,
+                new GrassDistanceEnvelope(2000f, 1000f)),
 
-        // Shipped iMinGrassSize=80 and iGrassDensityEvalSize=2. The INI's
-        // iMaxGrassTypesPerTexture=2 is an inclusive zero-based index: the engine loop uses <=,
-        // so up to three GNAM entries are consumed. CreateGrass floors jittered XY, queries
-        // TESObjectLAND's checkerboard triangle planes, then floors the returned Z.
-        // FO3 parity 2026-08-10: FO3 ships a byte-identical [Grass] INI block and quality ladder
-        // (VeryHigh fade 7000+1000), and its retail x86 implements the same CreateGrass floor
-        // quantization + floored height (0x007B3420) and GetCoordData checkerboard (0x007220D0) —
-        // TestOutput/fo3-parity-2026-08/census/fo3-decompile-spotchecks.md. Retail Fallout3.esm
-        // authors 9 GRAS records (all flags 0x06); before this arm FO3 rendered ZERO grass.
-        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new(
-            true, 80f, 2, 3, 0f, GrassPositionQuantization.FloorWorldUnits,
-            TerrainTriangleTopology.AlternatingCheckerboard, true,
-            new GrassDistanceEnvelope(FadeStart: 7000f, FadeRange: 1000f)),
+            // Shipped iMinGrassSize=80 and iGrassDensityEvalSize=2. The INI's
+            // iMaxGrassTypesPerTexture=2 is an inclusive zero-based index: the engine loop uses <=,
+            // so up to three GNAM entries are consumed. CreateGrass floors jittered XY, queries
+            // TESObjectLAND's checkerboard triangle planes, then floors the returned Z.
+            // FO3 parity 2026-08-10: FO3 ships a byte-identical [Grass] INI block and quality ladder
+            // (VeryHigh fade 7000+1000), and its retail x86 implements the same CreateGrass floor
+            // quantization + floored height (0x007B3420) and GetCoordData checkerboard (0x007220D0) —
+            // TestOutput/fo3-parity-2026-08/census/fo3-decompile-spotchecks.md. Retail Fallout3.esm
+            // authors 9 GRAS records (all flags 0x06); before this arm FO3 rendered ZERO grass.
+            BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new GrassScatterProfile(
+                true, 80f, 2, 3, 0f, GrassPositionQuantization.FloorWorldUnits,
+                TerrainTriangleTopology.AlternatingCheckerboard, true,
+                new GrassDistanceEnvelope(7000f, 1000f)),
 
-        // TESV.exe 1.9.32 dynamic initializers: 20, 2 (inclusive => three entries), and 0.
-        BethesdaGame.Skyrim => new(
-            true, 20f, 2, 3, 0f, GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
-            null, false,
-            // TESV 1.9.32 retail defaults: fGrassStartFadeDistance=3500 and
-            // fGrassFadeRange=1000. Like the recovered FNV path, the shader's fade signal is an
-            // endpoint gate rather than a gradual opacity fade.
-            new GrassDistanceEnvelope(FadeStart: 3500f, FadeRange: 1000f)),
+            // TESV.exe 1.9.32 dynamic initializers: 20, 2 (inclusive => three entries), and 0.
+            BethesdaGame.Skyrim => new GrassScatterProfile(
+                true, 20f, 2, 3, 0f, GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
+                null, false,
+                // TESV 1.9.32 retail defaults: fGrassStartFadeDistance=3500 and
+                // fGrassFadeRange=1000. Like the recovered FNV path, the shader's fade signal is an
+                // endpoint gate rather than a gradual opacity fade.
+                new GrassDistanceEnvelope(3500f, 1000f)),
 
-        // Fallout4_Default.ini ships iMinGrassSize=20; the PDB-backed manager uses eval radius 2
-        // and the same inclusive maximum-entry loop.
-        BethesdaGame.Fallout4 => new(
-            true, 20f, 2, 3, 0f, GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
-            null, false, default),
-        _ => default,
-    };
+            // Fallout4_Default.ini ships iMinGrassSize=20; the PDB-backed manager uses eval radius 2
+            // and the same inclusive maximum-entry loop.
+            BethesdaGame.Fallout4 => new GrassScatterProfile(
+                true, 20f, 2, 3, 0f, GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
+                null, false, default),
+            _ => default
+        };
+    }
 }
 
 /// <summary>
@@ -122,6 +125,7 @@ internal readonly record struct GrassDistanceEnvelope(float FadeStart, float Fad
 internal static class FnvTallGrassWind
 {
     internal const float SpatialPhaseDivisor = 128f;
+
     // Retail defaults for the fGrassWindMagnitudeMin/Max settings. The shader lerps these
     // world-unit amplitudes with BSShaderManager::fWindMagnitude (weather wind byte / 255).
     internal const float GrassWindMagnitudeMinDefault = 5f;
@@ -138,11 +142,15 @@ internal static class FnvTallGrassWind
     ///     grass-distance envelope: another game may acquire a distance policy without thereby
     ///     opting into these shader constants.
     /// </summary>
-    internal static bool IsSupported(BethesdaGame game) =>
-        game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3;
+    internal static bool IsSupported(BethesdaGame game)
+    {
+        return game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3;
+    }
 
-    internal static float SanitizeWaveMultiplier(float value) =>
-        float.IsFinite(value) && value > 0f ? value : 0f;
+    internal static float SanitizeWaveMultiplier(float value)
+    {
+        return float.IsFinite(value) && value > 0f ? value : 0f;
+    }
 
     internal static float ComputeWindMagnitude(float windMagnitudeFraction)
     {
@@ -234,7 +242,9 @@ internal static class GrassDistanceCullPolicy
     ///     only game profiles with a recovered envelope split the established non-grass topology.
     /// </summary>
     internal static bool UsesEnvelope(bool isGrass, in GrassDistanceEnvelope envelope)
-        => isGrass && envelope.Enabled;
+    {
+        return isGrass && envelope.Enabled;
+    }
 
     /// <summary>
     ///     Grass needs a per-instance copy even when generic tolerant/frustum refiltering is off.
@@ -244,7 +254,9 @@ internal static class GrassDistanceCullPolicy
     internal static bool RequiresExactPerInstanceFiltering(
         bool genericRefilter,
         bool usesGrassDistanceEnvelope)
-        => genericRefilter || usesGrassDistanceEnvelope;
+    {
+        return genericRefilter || usesGrassDistanceEnvelope;
+    }
 
     internal static bool Passes(
         bool isGrass,
@@ -285,8 +297,8 @@ internal static class GrassPositionQuantizer
                 // Skyrim/FO4 round-trip XY through binary16 relative to (cell / 12) * 12. The
                 // recovered signed integer division truncates toward zero, so negative cells
                 // -1..-11 deliberately use block origin zero rather than geometric floor(-1/12).
-                var blockOriginX = (cellX / 12) * 12 * cellSize;
-                var blockOriginY = (cellY / 12) * 12 * cellSize;
+                var blockOriginX = cellX / 12 * 12 * cellSize;
+                var blockOriginY = cellY / 12 * 12 * cellSize;
                 x = blockOriginX + (float)(Half)(x - blockOriginX);
                 y = blockOriginY + (float)(Half)(y - blockOriginY);
                 break;

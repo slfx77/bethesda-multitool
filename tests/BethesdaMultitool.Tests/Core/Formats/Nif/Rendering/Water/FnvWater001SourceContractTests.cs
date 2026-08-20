@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -541,11 +539,15 @@ public sealed class FnvWater001SourceContractTests
     ///     and the capture skips turns a reproducible report into an unreproducible one. Two such
     ///     divergences were found this way and are pinned here:
     ///     <list type="bullet">
-    ///         <item>the planar sky reflection, which the capture cleared and replaced with the
-    ///         shader's 2-row gradient stand-in;</item>
-    ///         <item>camera-relative scene rendering, which the capture hardcoded to absolute — the
-    ///         very path whose float32 precision camera-relative exists to fix, so captures far from
-    ///         the world origin exercised a strictly worse renderer.</item>
+    ///         <item>
+    ///             the planar sky reflection, which the capture cleared and replaced with the
+    ///             shader's 2-row gradient stand-in;
+    ///         </item>
+    ///         <item>
+    ///             camera-relative scene rendering, which the capture hardcoded to absolute — the
+    ///             very path whose float32 precision camera-relative exists to fix, so captures far from
+    ///             the world origin exercised a strictly worse renderer.
+    ///         </item>
     ///     </list>
     /// </summary>
     [Fact]
@@ -591,7 +593,7 @@ public sealed class FnvWater001SourceContractTests
             capture,
             "RenderSky(viewProjSky, Vector3.Zero",
             "_captureWaterReflectionBound = !captureSceneMirrorPlanned &&",
-            "TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale, target);",
+            "TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale,",
             "_water?.SetWaterReflection(",
             "(uint)target.Width,");
         // The reported field is DERIVED from the bound flag, and the unbound arm must resolve to the

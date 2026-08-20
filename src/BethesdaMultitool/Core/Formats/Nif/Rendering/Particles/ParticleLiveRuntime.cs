@@ -39,8 +39,10 @@ internal static class ParticleLiveSettings
     internal static bool UsePersistentDecodedMeshCache(
         bool liveParticlesEnabled,
         bool isNegative,
-        bool containsParticleSource) =>
-        !liveParticlesEnabled || (!isNegative && !containsParticleSource);
+        bool containsParticleSource)
+    {
+        return !liveParticlesEnabled || (!isNegative && !containsParticleSource);
+    }
 }
 
 /// <summary>
@@ -60,7 +62,7 @@ internal sealed record ParticleGeometrySnapshot(
     bool IsValid = true)
 {
     internal static ParticleGeometrySnapshot Empty { get; } = new([], [], []);
-    internal static ParticleGeometrySnapshot Invalid { get; } = new([], [], [], IsValid: false);
+    internal static ParticleGeometrySnapshot Invalid { get; } = new([], [], [], false);
 }
 
 /// <summary>
@@ -81,7 +83,7 @@ internal static class ParticleLiveSnapshotBuilder
             TimeStep = template.TimeStep,
             MaxParticles = template.MaxParticles,
             SettleMarginSeconds = template.SettleMarginSeconds,
-            SnapshotTimeSeconds = float.IsFinite(snapshotTimeSeconds) ? snapshotTimeSeconds : 0f,
+            SnapshotTimeSeconds = float.IsFinite(snapshotTimeSeconds) ? snapshotTimeSeconds : 0f
         };
         var baked = NifParticleBaker.Bake(runtime.Definition, options);
         if (baked.Count == 0 ||

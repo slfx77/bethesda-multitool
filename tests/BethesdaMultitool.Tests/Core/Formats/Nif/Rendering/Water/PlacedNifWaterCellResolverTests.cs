@@ -70,9 +70,14 @@ public sealed class PlacedNifWaterCellResolverTests
         Assert.Equal(0xCDEFu, resolved);
     }
 
-    private static CellRecord Exterior(uint waterFormId) => new() { WaterFormId = waterFormId };
+    private static CellRecord Exterior(uint waterFormId)
+    {
+        return new CellRecord { WaterFormId = waterFormId };
+    }
 
     private static Dictionary<(int gx, int gy), CellRecord> Cells(
-        ((int gx, int gy) Key, CellRecord Cell) item) =>
-        new() { [item.Key] = item.Cell };
+        ((int gx, int gy) Key, CellRecord Cell) item)
+    {
+        return new Dictionary<(int gx, int gy), CellRecord> { [item.Key] = item.Cell };
+    }
 }

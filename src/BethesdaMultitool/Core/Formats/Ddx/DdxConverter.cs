@@ -1,5 +1,5 @@
-using DDXConv;
 using BethesdaMultitool.Core.Orchestration;
+using DDXConv;
 
 namespace BethesdaMultitool.Core.Formats.Ddx;
 
@@ -164,7 +164,8 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
     }
 
     /// <summary>
-    ///     Asynchronous wrapper over <see cref="ConvertFromMemoryWithResult" /> that runs the conversion on a thread-pool thread.
+    ///     Asynchronous wrapper over <see cref="ConvertFromMemoryWithResult" /> that runs the conversion on a thread-pool
+    ///     thread.
     /// </summary>
     public Task<ConversionResult> ConvertFromMemoryWithResultAsync(byte[] ddxData)
     {

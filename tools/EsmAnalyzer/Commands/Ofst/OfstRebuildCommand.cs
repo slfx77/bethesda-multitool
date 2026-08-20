@@ -1,8 +1,5 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.CommandLine;
-using System.Globalization;
-using BethesdaMultitool.Core.Formats.Esm;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Ofst.OfstDataLoader;
 using static EsmAnalyzer.Commands.Ofst.OfstMathUtils;
 
@@ -21,7 +18,7 @@ public static class OfstRebuildCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum mismatches to show (0 = unlimited)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum mismatches to show (0 = unlimited)", DefaultValueFactory = _ => 50 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -43,9 +40,9 @@ public static class OfstRebuildCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var outputOption = new Option<string>("-o", "--output")
-        { Description = "Output PNG file path", DefaultValueFactory = _ => "ofst_map.png" };
+            { Description = "Output PNG file path", DefaultValueFactory = _ => "ofst_map.png" };
         var scaleOption = new Option<int>("-s", "--scale")
-        { Description = "Scale factor (pixels per cell)", DefaultValueFactory = _ => 4 };
+            { Description = "Scale factor (pixels per cell)", DefaultValueFactory = _ => 4 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -225,17 +222,17 @@ public static class OfstRebuildCommand
 
         for (var i = 0; i < imageWidth * imageHeight; i++)
         {
-            pixels[(i * 4) + 0] = 40;
-            pixels[(i * 4) + 1] = 40;
-            pixels[(i * 4) + 2] = 40;
-            pixels[(i * 4) + 3] = 255;
+            pixels[i * 4 + 0] = 40;
+            pixels[i * 4 + 1] = 40;
+            pixels[i * 4 + 2] = 40;
+            pixels[i * 4 + 3] = 255;
         }
 
         for (var row = 0; row < rows && row * columns < offsets.Count; row++)
         {
             for (var col = 0; col < columns; col++)
             {
-                var index = (row * columns) + col;
+                var index = row * columns + col;
                 if (index >= offsets.Count)
                 {
                     continue;
@@ -261,7 +258,7 @@ public static class OfstRebuildCommand
                 {
                     for (var sx = 0; sx < scale; sx++)
                     {
-                        var idx = (((pixelY + sy) * imageWidth) + pixelX + sx) * 4;
+                        var idx = ((pixelY + sy) * imageWidth + pixelX + sx) * 4;
                         pixels[idx + 0] = color.R;
                         pixels[idx + 1] = color.G;
                         pixels[idx + 2] = color.B;
@@ -296,7 +293,7 @@ public static class OfstRebuildCommand
         var value = 1.0f;
 
         var c = value * saturation;
-        var x = c * (1 - Math.Abs((hue / 60f % 2) - 1));
+        var x = c * (1 - Math.Abs(hue / 60f % 2 - 1));
         var m = value - c;
 
         float r1, g1, b1;

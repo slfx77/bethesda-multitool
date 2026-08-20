@@ -17,33 +17,37 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class WrldEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> DnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["Value1"] = m => m.DefaultLandHeight ?? 0f,
-        ["Value2"] = m => m.DefaultWaterHeight ?? 0f,
-    };
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> DnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Value1"] = m => m.DefaultLandHeight ?? 0f,
+            ["Value2"] = m => m.DefaultWaterHeight ?? 0f
+        };
 
-    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> MnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["UsableX"] = m => m.MapUsableWidth ?? 0,
-        ["UsableY"] = m => m.MapUsableHeight ?? 0,
-        ["NWCellX"] = m => m.MapNWCellX ?? (short)0,
-        ["NWCellY"] = m => m.MapNWCellY ?? (short)0,
-        ["SECellX"] = m => m.MapSECellX ?? (short)0,
-        ["SECellY"] = m => m.MapSECellY ?? (short)0,
-    };
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> MnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["UsableX"] = m => m.MapUsableWidth ?? 0,
+            ["UsableY"] = m => m.MapUsableHeight ?? 0,
+            ["NWCellX"] = m => m.MapNWCellX ?? 0,
+            ["NWCellY"] = m => m.MapNWCellY ?? 0,
+            ["SECellX"] = m => m.MapSECellX ?? 0,
+            ["SECellY"] = m => m.MapSECellY ?? 0
+        };
 
-    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> Nam0Extractors = new(StringComparer.Ordinal)
-    {
-        ["X"] = m => m.BoundsMinX ?? 0f,
-        ["Y"] = m => m.BoundsMinY ?? 0f,
-    };
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> Nam0Extractors =
+        new(StringComparer.Ordinal)
+        {
+            ["X"] = m => m.BoundsMinX ?? 0f,
+            ["Y"] = m => m.BoundsMinY ?? 0f
+        };
 
-    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> Nam9Extractors = new(StringComparer.Ordinal)
-    {
-        ["X"] = m => m.BoundsMaxX ?? 0f,
-        ["Y"] = m => m.BoundsMaxY ?? 0f,
-    };
+    private static readonly Dictionary<string, Func<WorldspaceRecord, object?>> Nam9Extractors =
+        new(StringComparer.Ordinal)
+        {
+            ["X"] = m => m.BoundsMaxX ?? 0f,
+            ["Y"] = m => m.BoundsMaxY ?? 0f
+        };
 
     public string RecordType => "WRLD";
     public Type ModelType => typeof(WorldspaceRecord);

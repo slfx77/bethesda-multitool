@@ -453,7 +453,8 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var stats = new ConversionPipelineStats();
         var planSettled = CellPlanTestHarness.Settle(plan, masterByFormId, masterIndex, new PluginBuildOptions());
-        var section = PlanCellSectionBuilder.BuildCellSection(planSettled, masterByFormId, new PluginBuildOptions(), stats, masterIndex);
+        var section = PlanCellSectionBuilder.BuildCellSection(planSettled, masterByFormId, new PluginBuildOptions(),
+            stats, masterIndex);
         return (section, stats);
     }
 

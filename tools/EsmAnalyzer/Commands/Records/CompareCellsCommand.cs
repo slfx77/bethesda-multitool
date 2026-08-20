@@ -1,6 +1,5 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Text;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Records;
 

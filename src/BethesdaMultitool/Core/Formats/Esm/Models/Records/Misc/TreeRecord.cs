@@ -40,19 +40,35 @@ public record TreeRecord
 /// <summary>
 ///     TREE CNAM payload — 32 bytes: seven floats and one SIGNED INT32.
 ///     <para>
-///     Field order and types are the engine's <c>OBJ_TREE</c> struct, read straight out of
-///     <c>Fallout_Release_MemDebug.pdb</c> (LF_FIELDLIST 0x0002dbf8, LF_STRUCTURE 0x0002dbf9,
-///     Size = 32), and they match xEdit's <c>wbStruct(CNAM)</c> one-for-one:
+///         Field order and types are the engine's <c>OBJ_TREE</c> struct, read straight out of
+///         <c>Fallout_Release_MemDebug.pdb</c> (LF_FIELDLIST 0x0002dbf8, LF_STRUCTURE 0x0002dbf9,
+///         Size = 32), and they match xEdit's <c>wbStruct(CNAM)</c> one-for-one:
 ///     </para>
 ///     <list type="table">
-///         <item><description><c>+0  float  fCurveScalar</c>       → <see cref="LeafCurvature" /></description></item>
-///         <item><description><c>+4  float  fMinimumLeafAngle</c>  → <see cref="MinLeafAngle" /></description></item>
-///         <item><description><c>+8  float  fMaximumLeafAngle</c>  → <see cref="MaxLeafAngle" /></description></item>
-///         <item><description><c>+12 float  fBranchDimming</c>     → <see cref="BranchDimmingValue" /></description></item>
-///         <item><description><c>+16 float  fLeafDimming</c>       → <see cref="LeafDimmingValue" /></description></item>
-///         <item><description><c>+20 int32  iCanopyShadowRadius</c> → <see cref="ShadowRadius" /></description></item>
-///         <item><description><c>+24 float  fRockSpeed</c>         → <see cref="RockSpeed" /></description></item>
-///         <item><description><c>+28 float  fRustleSpeed</c>       → <see cref="RustleSpeed" /></description></item>
+///         <item>
+///             <description><c>+0  float  fCurveScalar</c>       → <see cref="LeafCurvature" /></description>
+///         </item>
+///         <item>
+///             <description><c>+4  float  fMinimumLeafAngle</c>  → <see cref="MinLeafAngle" /></description>
+///         </item>
+///         <item>
+///             <description><c>+8  float  fMaximumLeafAngle</c>  → <see cref="MaxLeafAngle" /></description>
+///         </item>
+///         <item>
+///             <description><c>+12 float  fBranchDimming</c>     → <see cref="BranchDimmingValue" /></description>
+///         </item>
+///         <item>
+///             <description><c>+16 float  fLeafDimming</c>       → <see cref="LeafDimmingValue" /></description>
+///         </item>
+///         <item>
+///             <description><c>+20 int32  iCanopyShadowRadius</c> → <see cref="ShadowRadius" /></description>
+///         </item>
+///         <item>
+///             <description><c>+24 float  fRockSpeed</c>         → <see cref="RockSpeed" /></description>
+///         </item>
+///         <item>
+///             <description><c>+28 float  fRustleSpeed</c>       → <see cref="RustleSpeed" /></description>
+///         </item>
 ///     </list>
 /// </summary>
 public record TreeData

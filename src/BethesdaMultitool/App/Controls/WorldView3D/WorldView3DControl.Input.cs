@@ -52,6 +52,7 @@ public sealed partial class WorldView3DControl
                 else if (e.Key == VirtualKey.PageDown)
                     SetRenderDistance(_renderDistance / RenderDistanceStep);
             }
+
             e.Handled = true;
             return;
         }
@@ -75,6 +76,7 @@ public sealed partial class WorldView3DControl
                 var h = (float)RenderPanel.ActualHeight;
                 if (w > 0f && h > 0f) TryPickObject(new Vector2(w / 2f, h / 2f));
             }
+
             e.Handled = true;
             return;
         }
@@ -234,6 +236,7 @@ public sealed partial class WorldView3DControl
             {
                 TryPickObject(new Vector2((float)point.Position.X, (float)point.Position.Y));
             }
+
             e.Handled = true;
         }
     }
@@ -271,15 +274,18 @@ public sealed partial class WorldView3DControl
             queryCenter = _camera.Position;
             queryRadius = _renderDistance;
         }
+
         if (!Matrix4x4.Invert(viewProj, out var invViewProj)) return;
 
         var ndcX = 2f * (screen.X / width) - 1f;
         var ndcY = 1f - 2f * (screen.Y / height);
+
         Vector3 Unproject(float ndcZ)
         {
             var h = Vector4.Transform(new Vector4(ndcX, ndcY, ndcZ, 1f), invViewProj);
             return new Vector3(h.X, h.Y, h.Z) / h.W;
         }
+
         var nearWorld = Unproject(1f); // reversed-Z: near plane = depth 1
         var rayDir = Unproject(0f) - nearWorld; // toward the far plane (depth 0)
         var rayLen = rayDir.Length();
@@ -382,6 +388,7 @@ public sealed partial class WorldView3DControl
                         _pickHitScratch.Add(
                             new PickHit(placement, placement.FormId, collisionT, collisionInside));
                     }
+
                     continue;
                 }
 
@@ -428,6 +435,7 @@ public sealed partial class WorldView3DControl
             if (_pickSphereFallbackScratch.Count == 0) return; // empty space → keep current selection
             _pickHitScratch.AddRange(_pickSphereFallbackScratch);
         }
+
         // Order: hits whose box the camera is OUTSIDE first (the thing you're aiming at), then by ray
         // distance; hits whose box encloses the camera (fog/wind/snow effect volumes) go last so they no
         // longer steal the click — but they stay in the list, cycle-selectable on repeat clicks.
@@ -445,9 +453,14 @@ public sealed partial class WorldView3DControl
         {
             for (var i = 0; i < _pickHitScratch.Count; i++)
             {
-                if (_pickHitScratch[i].FormId == sel.FormId) { current = i; break; }
+                if (_pickHitScratch[i].FormId == sel.FormId)
+                {
+                    current = i;
+                    break;
+                }
             }
         }
+
         var next = current >= 0 ? (current + 1) % _pickHitScratch.Count : 0;
 
         var picked = _pickHitScratch[next].Placement;
@@ -469,6 +482,7 @@ public sealed partial class WorldView3DControl
             _selectionHistory.Add(prev);
             if (_selectionHistory.Count > SelectionHistoryMax) _selectionHistory.RemoveAt(0);
         }
+
         _selectedReference = next;
     }
 
@@ -487,8 +501,6 @@ public sealed partial class WorldView3DControl
         UpdateHighlightFromSelection();
         InspectObject?.Invoke(this, prev);
     }
-
-    private readonly record struct PickHit(PlacedReference Placement, uint FormId, float T, bool OriginInside);
 
     /// <summary>Rebuilds the selection outline from the current <see cref="_selectedReference" />.</summary>
     private void UpdateHighlightFromSelection()
@@ -586,12 +598,12 @@ public sealed partial class WorldView3DControl
         var m = origin - center;
         var b = Vector3.Dot(m, dir);
         var c = Vector3.Dot(m, m) - radius * radius;
-        originInside = c <= 0f;                   // origin within the sphere
-        if (c > 0f && b > 0f) return false;       // outside the sphere and pointing away
+        originInside = c <= 0f; // origin within the sphere
+        if (c > 0f && b > 0f) return false; // outside the sphere and pointing away
         var disc = b * b - c;
-        if (disc < 0f) return false;              // misses
+        if (disc < 0f) return false; // misses
         var hit = -b - MathF.Sqrt(disc);
-        t = hit < 0f ? 0f : hit;                  // origin inside the sphere → 0
+        t = hit < 0f ? 0f : hit; // origin inside the sphere → 0
         return true;
     }
 
@@ -647,4 +659,6 @@ public sealed partial class WorldView3DControl
         if (!TryZoomProjection(delta)) _controller.OnScroll(delta);
         e.Handled = true;
     }
+
+    private readonly record struct PickHit(PlacedReference Placement, uint FormId, float T, bool OriginInside);
 }

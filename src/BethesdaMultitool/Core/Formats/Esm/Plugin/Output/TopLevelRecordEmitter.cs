@@ -54,4 +54,3 @@ internal static class TopLevelRecordEmitter
         return WrapInTopLevelGrup("QUST", combined);
     }
 }
-

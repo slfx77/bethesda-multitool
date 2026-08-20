@@ -169,4 +169,3 @@ internal static class GeckContainerWriter
         return sb.ToString();
     }
 }
-

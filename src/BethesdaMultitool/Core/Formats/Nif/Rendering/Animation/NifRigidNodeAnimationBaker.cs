@@ -77,7 +77,7 @@ internal static class NifRigidNodeAnimationBaker
         var degenerate = new HashSet<int>();
         for (var sample = 0; sample < sampleCount; sample++)
         {
-            var time = animation.ClipStart + (sample / effectiveRate);
+            var time = animation.ClipStart + sample / effectiveRate;
             NifAnimationPoseEvaluator.EvaluateBoneWorlds(animation, time, boneWorlds);
             foreach (var boneIndex in animated)
             {

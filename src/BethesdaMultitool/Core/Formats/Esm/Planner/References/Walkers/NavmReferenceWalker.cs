@@ -44,7 +44,7 @@ public sealed class NavmReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.Indexed("NVEX", i),
-                    FormId = targetFormId,
+                    FormId = targetFormId
                 };
             }
         }

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
@@ -32,7 +33,7 @@ internal static class PlacedNifWaterCellResolver
 
         var effectiveCellSize = float.IsFinite(cellSize) && cellSize > 0f
             ? cellSize
-            : global::BethesdaMultitool.WorldGridConstants.CellSize;
+            : WorldGridConstants.CellSize;
         var gridX = MathF.Floor(center.X / effectiveCellSize);
         var gridY = MathF.Floor(center.Y / effectiveCellSize);
         if (!float.IsFinite(gridX) || !float.IsFinite(gridY) ||
@@ -47,6 +48,8 @@ internal static class PlacedNifWaterCellResolver
             : 0;
     }
 
-    private static uint PositiveWaterFormId(CellRecord cell) =>
-        cell.WaterFormId is > 0 ? cell.WaterFormId.Value : 0;
+    private static uint PositiveWaterFormId(CellRecord cell)
+    {
+        return cell.WaterFormId is > 0 ? cell.WaterFormId.Value : 0;
+    }
 }

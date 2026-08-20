@@ -1,6 +1,5 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
@@ -65,7 +64,7 @@ internal static class EsmScriptDiagnosticsResolvers
             return string.Empty;
         }
 
-        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
+        var buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
         var index = 0;
         foreach (var ch in value)
         {
@@ -219,4 +218,3 @@ internal static class EsmScriptDiagnosticsResolvers
         return value[..Math.Max(0, maxLength - 3)] + "...";
     }
 }
-

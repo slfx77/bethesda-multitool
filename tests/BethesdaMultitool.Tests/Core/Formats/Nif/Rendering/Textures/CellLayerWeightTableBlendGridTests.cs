@@ -18,12 +18,15 @@ public class CellLayerWeightTableBlendGridTests
     private const uint BaseId = 0xFF200001u;
     private const uint AlphaId = 0xFF200002u;
 
-    private static LandTextureLayer BaseLayer(byte quadrant) => new()
+    private static LandTextureLayer BaseLayer(byte quadrant)
     {
-        Kind = LandTextureLayerKind.Base,
-        TextureFormId = BaseId,
-        Quadrant = quadrant
-    };
+        return new LandTextureLayer
+        {
+            Kind = LandTextureLayerKind.Base,
+            TextureFormId = BaseId,
+            Quadrant = quadrant
+        };
+    }
 
     /// <summary>A quadrant-covering alpha layer: every position on the declared grid at full opacity.</summary>
     private static LandTextureLayer FullAlphaLayer(byte quadrant, int blendEdge)
@@ -121,7 +124,7 @@ public class CellLayerWeightTableBlendGridTests
         {
             for (var qx = 0; qx < 17; qx++)
             {
-                entries.Add(new LandTextureBlendEntry((ushort)((qy * 17) + qx), 0, 0, 1f));
+                entries.Add(new LandTextureBlendEntry((ushort)(qy * 17 + qx), 0, 0, 1f));
             }
         }
 
@@ -142,10 +145,10 @@ public class CellLayerWeightTableBlendGridTests
 
         // SW quadrant on the 129 grid: vx 0..64, vy 64..128 (vy 64 = its north edge). qy=9..16 of 17
         // maps to the quadrant's northern ~44%: alpha near the quadrant's north, base near its south.
-        ref var northVertex = ref table!.At(vx: 30, vy: 70);
+        ref var northVertex = ref table!.At(30, 70);
         Assert.Equal(AlphaId, northVertex.E0.FormId);
 
-        ref var southVertex = ref table.At(vx: 30, vy: 124);
+        ref var southVertex = ref table.At(30, 124);
         Assert.True(southVertex.Count > 0);
         Assert.Equal(BaseId, southVertex.E0.FormId);
     }
@@ -160,7 +163,7 @@ public class CellLayerWeightTableBlendGridTests
         Assert.Equal(17 * 17, projected.Count);
         Assert.All(projected, e => Assert.InRange(e.Position, (ushort)0, (ushort)288));
         // Spot-check the mapping: native (qx=4, qy=8) → 17-grid (1, 2).
-        Assert.Contains(projected, e => e.Position == (2 * 17) + 1);
+        Assert.Contains(projected, e => e.Position == 2 * 17 + 1);
 
         var badEdge = layer with { BlendGridEdge = 40 };
         Assert.Empty(badEdge.EnumerateVtxt17Entries());

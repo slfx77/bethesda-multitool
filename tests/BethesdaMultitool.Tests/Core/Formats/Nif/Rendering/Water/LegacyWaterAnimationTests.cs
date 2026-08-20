@@ -60,9 +60,9 @@ public sealed class LegacyWaterAnimationTests
     public void PartiallyShippedSequenceKeepsOnlyThePresentFramesInOrder()
     {
         // A replacer that ships a subset must not leave placeholder gaps in the cycle.
-        var paths = LegacyWaterAnimation.ExistingFramePaths(
-            static path => path.EndsWith("water00.dds", StringComparison.Ordinal) ||
-                           path.EndsWith("water17.dds", StringComparison.Ordinal));
+        var paths = LegacyWaterAnimation.ExistingFramePaths(static path =>
+            path.EndsWith("water00.dds", StringComparison.Ordinal) ||
+            path.EndsWith("water17.dds", StringComparison.Ordinal));
 
         Assert.Equal(
             [@"textures\water\water00.dds", @"textures\water\water17.dds"],

@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
@@ -9,11 +8,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 ///     (<c>TerrainTextureResolver</c>, GPU-upload path) so the lookup semantics stay in lock-step.
 ///     Two forms are supported:
 ///     <list type="bullet">
-///         <item>FO3 / FNV / Skyrim: LTEX → <see cref="LandscapeTextureRecord.TextureSetFormId" /> (TNAM)
-///         → the linked <see cref="TextureSetRecord" /> → <see cref="TextureSetRecord.DiffuseTexture" />.</item>
-///         <item>Oblivion (TES4): LTEX has no TNAM/TXST — the diffuse path is the LTEX's
-///         <see cref="LandscapeTextureRecord.IconPath" /> (ICON), authored relative to
-///         <c>textures\landscape\</c>.</item>
+///         <item>
+///             FO3 / FNV / Skyrim: LTEX → <see cref="LandscapeTextureRecord.TextureSetFormId" /> (TNAM)
+///             → the linked <see cref="TextureSetRecord" /> → <see cref="TextureSetRecord.DiffuseTexture" />.
+///         </item>
+///         <item>
+///             Oblivion (TES4): LTEX has no TNAM/TXST — the diffuse path is the LTEX's
+///             <see cref="LandscapeTextureRecord.IconPath" /> (ICON), authored relative to
+///             <c>textures\landscape\</c>.
+///         </item>
 ///     </list>
 ///     Returns null when no diffuse path can be derived. Caller owns any <c>.dds → .ddx</c> retry and
 ///     BSA-source lookup; those live in the loader, not the path walk.

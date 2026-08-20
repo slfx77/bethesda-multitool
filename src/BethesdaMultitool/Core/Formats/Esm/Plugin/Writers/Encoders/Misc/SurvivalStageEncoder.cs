@@ -1,7 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
-
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 
 /// <summary>
@@ -16,11 +14,12 @@ public sealed class SurvivalStageEncoder : IRecordEncoder
 {
     // The 4 survival record types (RADS/DEHY/HUNG/SLPD) all share an identical 8-byte DATA
     // schema, so we serialize using the RADS schema regardless of which type is being emitted.
-    private static readonly Dictionary<string, Func<SurvivalStageRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["TriggerThreshold"] = m => m.Threshold,
-        ["ActorEffect"] = m => m.Modifier,
-    };
+    private static readonly Dictionary<string, Func<SurvivalStageRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["TriggerThreshold"] = m => m.Threshold,
+            ["ActorEffect"] = m => m.Modifier
+        };
 
     public string RecordType => "RADS";
     public Type ModelType => typeof(SurvivalStageRecord);

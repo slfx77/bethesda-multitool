@@ -21,8 +21,13 @@ internal sealed class EmbeddedShaderInclude : CallbackBase, Include
     {
     }
 
-    public Stream Open(IncludeType type, string fileName, Stream? parentStream) =>
-        new MemoryStream(Encoding.UTF8.GetBytes(GpuShaderCompiler12.ReadSource(Path.GetFileName(fileName))));
+    public Stream Open(IncludeType type, string fileName, Stream? parentStream)
+    {
+        return new MemoryStream(Encoding.UTF8.GetBytes(GpuShaderCompiler12.ReadSource(Path.GetFileName(fileName))));
+    }
 
-    public void Close(Stream stream) => stream.Dispose();
+    public void Close(Stream stream)
+    {
+        stream.Dispose();
+    }
 }

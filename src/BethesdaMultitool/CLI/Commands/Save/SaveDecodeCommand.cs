@@ -3,7 +3,6 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.SaveGame.Decoding;
 using BethesdaMultitool.Core.Formats.SaveGame.Reading;
 using BethesdaMultitool.Core.Formats.SaveGame.Stfs;
-using BethesdaMultitool.Core.Formats.SaveGame;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Save;

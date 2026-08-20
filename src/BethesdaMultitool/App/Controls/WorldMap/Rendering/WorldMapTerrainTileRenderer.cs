@@ -14,27 +14,6 @@ namespace BethesdaMultitool;
 internal static class WorldMapTerrainTileRenderer
 {
     /// <summary>
-    ///     Per-layer culling result returned to callers that want profiler/debug counters without
-    ///     coupling the renderer to a telemetry sink. <see cref="CandidateEntries" /> and
-    ///     <see cref="VisibleEntries" /> count cached mip entries; <see cref="DrawnCells" /> counts
-    ///     the unique visible cells left after best-tier selection.
-    /// </summary>
-    internal readonly record struct TileDrawCounts(
-        int CandidateEntries, int VisibleEntries, int DrawnCells)
-    {
-        internal int CulledEntries => CandidateEntries - VisibleEntries;
-    }
-
-    /// <summary>
-    ///     Reusable per-frame dedup dict for <see cref="DrawTextureCellBitmaps" />. Sized to
-    ///     ~256 entries (typical fill viewport) on first frame; subsequent frames clear + refill
-    ///     without allocating. The dict holds <see cref="CanvasBitmap" /> references across
-    ///     frames — fine because both the source dict and this scratch live on the UI thread,
-    ///     so no stale-reference race exists.
-    /// </summary>
-    [ThreadStatic] private static Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>? t_bestPerCellScratch;
-
-    /// <summary>
     ///     Minification factor (cached-tile pixels ÷ on-screen cell pixels) above which a tile is
     ///     resampled with the expensive <see cref="CanvasImageInterpolation.HighQualityCubic" />
     ///     anti-aliasing filter. At or below it the tile is close to screen resolution (the cache holds
@@ -44,6 +23,15 @@ internal static class WorldMapTerrainTileRenderer
     ///     the matching tier streams in) — there the heavy minification WOULD alias under bilinear.
     /// </summary>
     private const float MipCubicMinifyThreshold = 2.2f;
+
+    /// <summary>
+    ///     Reusable per-frame dedup dict for <see cref="DrawTextureCellBitmaps" />. Sized to
+    ///     ~256 entries (typical fill viewport) on first frame; subsequent frames clear + refill
+    ///     without allocating. The dict holds <see cref="CanvasBitmap" /> references across
+    ///     frames — fine because both the source dict and this scratch live on the UI thread,
+    ///     so no stale-reference race exists.
+    /// </summary>
+    [ThreadStatic] private static Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>? t_bestPerCellScratch;
 
     /// <summary>Profiling A/B: when set, revert to the pre-mip "highest tier + always cubic" draw.</summary>
     private static readonly bool s_legacyTerrainDraw =
@@ -182,7 +170,7 @@ internal static class WorldMapTerrainTileRenderer
         if (aCovers && bCovers) return a.ppc <= b.ppc ? a : b; // both cover → smaller is closest to screen res
         if (aCovers) return a;
         if (bCovers) return b;
-        return a.ppc >= b.ppc ? a : b;                          // neither covers → larger magnifies best
+        return a.ppc >= b.ppc ? a : b; // neither covers → larger magnifies best
     }
 
     /// <summary>
@@ -191,17 +179,24 @@ internal static class WorldMapTerrainTileRenderer
     ///     on-screen cell size (<paramref name="targetScreenPpc" />). The progression mirrors a GPU
     ///     texture sampler:
     ///     <list type="bullet">
-    ///       <item>Heavy minification (source ≫ screen) → <see cref="CanvasImageInterpolation.Anisotropic" />:
-    ///         Direct2D resamples through an internally-generated mip pyramid with an anisotropic
-    ///         footprint. This is what actually removes the zoomed-out moire/shimmer — a fixed-tap
-    ///         cubic under-samples once the image is shrunk more than a few-fold.</item>
-    ///       <item>Mild minification (source modestly above screen) → <see cref="CanvasImageInterpolation.Linear" />
-    ///         for perf-sensitive per-cell tiles (no visible aliasing there, ~4× cheaper per output
-    ///         pixel — the steady state validated by the 2D-2/2D-3 work), or <see cref="CanvasImageInterpolation.Anisotropic" />
-    ///         when <paramref name="preferQuality" /> is set (the single aggregate draw, where cost is
-    ///         one DrawImage/frame and quality wins).</item>
-    ///       <item>Magnification (source below screen) → <see cref="CanvasImageInterpolation.HighQualityCubic" />:
-    ///         cubic upscales a low-res tier/aggregate cleanly.</item>
+    ///         <item>
+    ///             Heavy minification (source ≫ screen) → <see cref="CanvasImageInterpolation.Anisotropic" />:
+    ///             Direct2D resamples through an internally-generated mip pyramid with an anisotropic
+    ///             footprint. This is what actually removes the zoomed-out moire/shimmer — a fixed-tap
+    ///             cubic under-samples once the image is shrunk more than a few-fold.
+    ///         </item>
+    ///         <item>
+    ///             Mild minification (source modestly above screen) → <see cref="CanvasImageInterpolation.Linear" />
+    ///             for perf-sensitive per-cell tiles (no visible aliasing there, ~4× cheaper per output
+    ///             pixel — the steady state validated by the 2D-2/2D-3 work), or
+    ///             <see cref="CanvasImageInterpolation.Anisotropic" />
+    ///             when <paramref name="preferQuality" /> is set (the single aggregate draw, where cost is
+    ///             one DrawImage/frame and quality wins).
+    ///         </item>
+    ///         <item>
+    ///             Magnification (source below screen) → <see cref="CanvasImageInterpolation.HighQualityCubic" />:
+    ///             cubic upscales a low-res tier/aggregate cleanly.
+    ///         </item>
     ///     </list>
     ///     The <c>FALLOUT_MAP2D_LEGACY_TERRAIN_DRAW</c> A/B toggle forces the pre-anisotropic
     ///     "always HighQualityCubic" behavior.
@@ -283,5 +278,19 @@ internal static class WorldMapTerrainTileRenderer
         }
 
         return new TileDrawCounts(bitmaps.Count, visibleEntries, bestPerCell.Count);
+    }
+
+    /// <summary>
+    ///     Per-layer culling result returned to callers that want profiler/debug counters without
+    ///     coupling the renderer to a telemetry sink. <see cref="CandidateEntries" /> and
+    ///     <see cref="VisibleEntries" /> count cached mip entries; <see cref="DrawnCells" /> counts
+    ///     the unique visible cells left after best-tier selection.
+    /// </summary>
+    internal readonly record struct TileDrawCounts(
+        int CandidateEntries,
+        int VisibleEntries,
+        int DrawnCells)
+    {
+        internal int CulledEntries => CandidateEntries - VisibleEntries;
     }
 }

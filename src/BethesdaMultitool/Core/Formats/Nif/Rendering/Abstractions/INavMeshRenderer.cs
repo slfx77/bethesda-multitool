@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
@@ -12,5 +13,5 @@ internal interface INavMeshRenderer : IWorldRenderer
     void LoadData(
         IReadOnlyDictionary<uint, List<NavMeshRecord>> navMeshesByCell,
         Dictionary<(int gx, int gy), CellRecord> cells,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex);
+        WorldSpatialIndex? spatialIndex);
 }

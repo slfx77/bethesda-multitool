@@ -1,8 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
@@ -27,7 +25,8 @@ public static class EsmDiagnoseScriptsCommand
         };
         var sourceDmpOpt = new Option<string?>("--source-dmp")
         {
-            Description = "Optional source DMP used to compare runtime script refs/result scripts against the generated ESM"
+            Description =
+                "Optional source DMP used to compare runtime script refs/result scripts against the generated ESM"
         };
         var pcEsmOpt = new Option<string?>("--pc-esm")
         {
@@ -106,7 +105,8 @@ public static class EsmDiagnoseScriptsCommand
             {
                 if (!string.IsNullOrWhiteSpace(sourceDmp))
                 {
-                    AnsiConsole.MarkupLine($"[blue]Loading source DMP:[/] {Markup.Escape(Path.GetFileName(sourceDmp))}");
+                    AnsiConsole.MarkupLine(
+                        $"[blue]Loading source DMP:[/] {Markup.Escape(Path.GetFileName(sourceDmp))}");
                     source = await SemanticFileLoader.LoadAsync(sourceDmp, cancellationToken: cancellationToken);
                 }
 

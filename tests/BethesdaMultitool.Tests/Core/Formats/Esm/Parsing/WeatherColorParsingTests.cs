@@ -86,7 +86,8 @@ public class WeatherColorParsingTests
         if (bigEndian)
             BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)), immediateUnknown);
         else
-            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)), immediateUnknown);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)),
+                immediateUnknown);
         const uint terminalFlagsLane = 0xA5F0_0007;
         if (flagsOffset >= 0)
         {

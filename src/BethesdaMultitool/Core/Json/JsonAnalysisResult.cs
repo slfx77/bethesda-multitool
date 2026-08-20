@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Analysis;
 namespace BethesdaMultitool.Core.Json;
 
 /// <summary>

@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
@@ -90,7 +89,10 @@ public record RuntimeLoadedLandDiagnostics
     public IReadOnlyList<uint> GrassMapWords { get; init; } = [];
 }
 
-/// <summary>Diagnostic state of a runtime pointer read from a DMP: its value plus whether it (and its target) map to a file offset.</summary>
+/// <summary>
+///     Diagnostic state of a runtime pointer read from a DMP: its value plus whether it (and its target) map to a
+///     file offset.
+/// </summary>
 public record RuntimePointerDiagnostic
 {
     public static RuntimePointerDiagnostic Empty { get; } = new();
@@ -134,7 +136,10 @@ public record RuntimeLandTextureArrayDiagnostic
     public IReadOnlyList<uint> TextureFormIds { get; init; } = [];
 }
 
-/// <summary>Diagnostic for a runtime per-quadrant texture-blend percentage array (how many samples fall in normal/unit range).</summary>
+/// <summary>
+///     Diagnostic for a runtime per-quadrant texture-blend percentage array (how many samples fall in normal/unit
+///     range).
+/// </summary>
 public record RuntimePercentArrayDiagnostic
 {
     public int Quadrant { get; init; }

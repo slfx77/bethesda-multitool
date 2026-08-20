@@ -14,8 +14,8 @@ internal static class NifTextureSourcePathText
         }
 
         var paths = text.Split(
-            [';', '\r', '\n'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                [';', '\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return paths.Length == 0 ? null : paths;

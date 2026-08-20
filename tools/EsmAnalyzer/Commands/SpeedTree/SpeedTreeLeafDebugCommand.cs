@@ -4,7 +4,6 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.SpeedTree;
-using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
 
@@ -27,18 +26,18 @@ internal static class SpeedTreeLeafDebugCommand
         var dataOption = new Option<string>("--data")
         {
             Description = "Texture source dir or BSA (resolves textures\\trees\\...).",
-            DefaultValueFactory = _ => "Sample/Unpacked_Builds/PC_Final_Unpacked/Data",
+            DefaultValueFactory = _ => "Sample/Unpacked_Builds/PC_Final_Unpacked/Data"
         };
         var bsaOption = new Option<string?>("--bsa")
-        { Description = "Read <file> from this BSA archive instead of disk" };
+            { Description = "Read <file> from this BSA archive instead of disk" };
         var esmOption = new Option<string?>("--esm")
-        { Description = "ESM to source TREE.ICON (the engine's authoritative leaf atlas)." };
+            { Description = "ESM to source TREE.ICON (the engine's authoritative leaf atlas)." };
         var leafTexOption = new Option<string?>("--leaf-texture")
-        { Description = "Override the leaf atlas (bare name → textures\\trees\\leaves\\..., or a full path)." };
+            { Description = "Override the leaf atlas (bare name → textures\\trees\\leaves\\..., or a full path)." };
         var indexOption = new Option<int?>("--index")
-        { Description = "Render only this leaf template index (default: all templates)." };
+            { Description = "Render only this leaf template index (default: all templates)." };
         var cellOption = new Option<int>("--cell")
-        { Description = "Cell size in px per crop", DefaultValueFactory = _ => 192 };
+            { Description = "Cell size in px per crop", DefaultValueFactory = _ => 192 };
         command.Arguments.Add(fileArg);
         command.Options.Add(outOption);
         command.Options.Add(dataOption);
@@ -110,7 +109,7 @@ internal static class SpeedTreeLeafDebugCommand
         Console.WriteLine($"Atlas: {atlasPath} ({atlas.Width}x{atlas.Height})");
 
         var indices = index is { } i
-            ? (i >= 0 && i < model.Leaves.Count ? [i] : Array.Empty<int>())
+            ? i >= 0 && i < model.Leaves.Count ? [i] : Array.Empty<int>()
             : Enumerable.Range(0, model.Leaves.Count).ToArray();
         if (indices.Length == 0)
         {
@@ -141,12 +140,13 @@ internal static class SpeedTreeLeafDebugCommand
 
             var y = pad + row * (cell + pad);
             BlitCrop(canvas, width, atlas, ru0, rv0, ru1, rv1, pad, y, cell);
-            BlitCrop(canvas, width, atlas, fu0, fv0, fu1, fv1, pad + (cell + pad), y, cell);
+            BlitCrop(canvas, width, atlas, fu0, fv0, fu1, fv1, pad + cell + pad, y, cell);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPng))!);
         PngWriter.SaveRgba(canvas, width, height, outPng);
-        Console.WriteLine($"Saved {outPng} ({width}x{height}) — columns: [RAW | FLIPPED-V], one row per leaf template.");
+        Console.WriteLine(
+            $"Saved {outPng} ({width}x{height}) — columns: [RAW | FLIPPED-V], one row per leaf template.");
         return 0;
     }
 
@@ -189,9 +189,11 @@ internal static class SpeedTreeLeafDebugCommand
         return px;
     }
 
-    /// <summary>Nearest-neighbour blit of the atlas sub-rectangle [u0,v0]-[u1,v1] into a <paramref name="cell" />-
-    /// sized box at (<paramref name="dx" />,<paramref name="dy" />), alpha-compositing over the magenta canvas so
-    /// the leaf cutout shows through.</summary>
+    /// <summary>
+    ///     Nearest-neighbour blit of the atlas sub-rectangle [u0,v0]-[u1,v1] into a <paramref name="cell" />-
+    ///     sized box at (<paramref name="dx" />,<paramref name="dy" />), alpha-compositing over the magenta canvas so
+    ///     the leaf cutout shows through.
+    /// </summary>
     private static void BlitCrop(byte[] canvas, int canvasW, DecodedTexture atlas,
         float u0, float v0, float u1, float v1, int dx, int dy, int cell)
     {
@@ -213,7 +215,7 @@ internal static class SpeedTreeLeafDebugCommand
 
                 var si = (sy * atlas.Width + sx) * 4;
                 var a = atlas.Pixels[si + 3] / 255f;
-                var di = ((dy + py) * canvasW + (dx + px)) * 4;
+                var di = ((dy + py) * canvasW + dx + px) * 4;
                 canvas[di] = (byte)(atlas.Pixels[si] * a + canvas[di] * (1 - a));
                 canvas[di + 1] = (byte)(atlas.Pixels[si + 1] * a + canvas[di + 1] * (1 - a));
                 canvas[di + 2] = (byte)(atlas.Pixels[si + 2] * a + canvas[di + 2] * (1 - a));

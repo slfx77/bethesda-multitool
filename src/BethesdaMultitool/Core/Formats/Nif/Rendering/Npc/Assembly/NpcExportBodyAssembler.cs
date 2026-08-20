@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -622,4 +621,3 @@ internal static class NpcExportBodyAssembler
                equippedItems.Any(item => (item.BipedFlags & 0x04) != 0 && item.IsPowerArmor);
     }
 }
-

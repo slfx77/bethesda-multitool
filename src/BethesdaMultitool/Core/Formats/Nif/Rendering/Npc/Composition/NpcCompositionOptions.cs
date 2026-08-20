@@ -2,7 +2,10 @@ using BethesdaMultitool.CLI.Rendering.Npc;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
-/// <summary>The options that drive how an NPC is composed for render/export (head-only, equipment, hair, pose, morphs); used as a cache key.</summary>
+/// <summary>
+///     The options that drive how an NPC is composed for render/export (head-only, equipment, hair, pose, morphs);
+///     used as a cache key.
+/// </summary>
 internal sealed class NpcCompositionOptions : IEquatable<NpcCompositionOptions>
 {
     public bool HeadOnly { get; init; }

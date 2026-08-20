@@ -98,8 +98,10 @@ internal sealed class NifTextureDirectorySource(string rootPath) : INifTextureSo
     {
     }
 
-    private string ResolveLocalPath(string path) =>
-        Path.Combine(
+    private string ResolveLocalPath(string path)
+    {
+        return Path.Combine(
             _rootPath,
             path.Replace('\\', Path.DirectorySeparatorChar));
+    }
 }

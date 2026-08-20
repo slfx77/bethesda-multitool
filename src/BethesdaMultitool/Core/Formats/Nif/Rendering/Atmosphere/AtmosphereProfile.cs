@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -52,6 +51,60 @@ public enum StarVisibilityModel
 /// </summary>
 public sealed record AtmosphereProfile
 {
+    /// <summary>Analytic-arc stand-in (Morrowind, Oblivion, Unknown) — daylight-scaled, no extensions.</summary>
+    private static readonly AtmosphereProfile Legacy = new()
+    {
+        SunPath = SunPathModel.AnalyticArc,
+        SunColorScaledByDaylight = true,
+        ExtendsWeatherColorWindow = false,
+        WeatherDayUsesExtendedWindows = false,
+        StarVisibility = StarVisibilityModel.DaylightFade
+    };
+
+    /// <summary>FNV/FO3: recovered triangle-wave sun path; classic daylight-scaled sunlight band.</summary>
+    private static readonly AtmosphereProfile Fnv = Legacy with
+    {
+        SunPath = SunPathModel.FnvTriangleWave
+    };
+
+    /// <summary>
+    ///     TES4 (Oblivion): recovered triangle-wave sun path (see <see cref="SunPathModel.Tes4TriangleWave" />);
+    ///     classic daylight-scaled sunlight band (Sky::UpdateColors lineage, like FNV/FO3).
+    /// </summary>
+    private static readonly AtmosphereProfile Tes4 = Legacy with
+    {
+        SunPath = SunPathModel.Tes4TriangleWave
+    };
+
+    private static readonly AtmosphereProfile Skyrim = new()
+    {
+        SunPath = SunPathModel.SkyrimTriangleWave,
+        SunColorScaledByDaylight = true,
+        ExtendsWeatherColorWindow = true,
+        WeatherDayUsesExtendedWindows = true,
+        StarVisibility = StarVisibilityModel.CreationColorWindows
+    };
+
+    private static readonly AtmosphereProfile Fallout4 = new()
+    {
+        SunPath = SunPathModel.Fo4Continuous,
+        SunColorScaledByDaylight = false,
+        ExtendsWeatherColorWindow = true,
+        WeatherDayUsesExtendedWindows = false,
+        StarVisibility = StarVisibilityModel.CreationColorWindows
+    };
+
+    /// <summary>
+    ///     FO76 (and provisionally Starfield): FO4's record layout and continuous sun path, but the
+    ///     color-window extension and star controller have not been recovered from their binaries —
+    ///     both stay on the conservative fallbacks until audited.
+    /// </summary>
+    private static readonly AtmosphereProfile Fallout76 = Fallout4 with
+    {
+        ExtendsWeatherColorWindow = false,
+        StarVisibility = StarVisibilityModel.DaylightFade
+    };
+
     /// <summary>The recovered sun-path implementation for the scene sun direction.</summary>
     public required SunPathModel SunPath { get; init; }
 
@@ -80,67 +133,16 @@ public sealed record AtmosphereProfile
     /// <summary>The star-controller schedule for this game.</summary>
     public required StarVisibilityModel StarVisibility { get; init; }
 
-    /// <summary>Analytic-arc stand-in (Morrowind, Oblivion, Unknown) — daylight-scaled, no extensions.</summary>
-    private static readonly AtmosphereProfile Legacy = new()
+    public static AtmosphereProfile ForGame(BethesdaGame game)
     {
-        SunPath = SunPathModel.AnalyticArc,
-        SunColorScaledByDaylight = true,
-        ExtendsWeatherColorWindow = false,
-        WeatherDayUsesExtendedWindows = false,
-        StarVisibility = StarVisibilityModel.DaylightFade,
-    };
-
-    /// <summary>FNV/FO3: recovered triangle-wave sun path; classic daylight-scaled sunlight band.</summary>
-    private static readonly AtmosphereProfile Fnv = Legacy with
-    {
-        SunPath = SunPathModel.FnvTriangleWave,
-    };
-
-    /// <summary>
-    ///     TES4 (Oblivion): recovered triangle-wave sun path (see <see cref="SunPathModel.Tes4TriangleWave" />);
-    ///     classic daylight-scaled sunlight band (Sky::UpdateColors lineage, like FNV/FO3).
-    /// </summary>
-    private static readonly AtmosphereProfile Tes4 = Legacy with
-    {
-        SunPath = SunPathModel.Tes4TriangleWave,
-    };
-
-    private static readonly AtmosphereProfile Skyrim = new()
-    {
-        SunPath = SunPathModel.SkyrimTriangleWave,
-        SunColorScaledByDaylight = true,
-        ExtendsWeatherColorWindow = true,
-        WeatherDayUsesExtendedWindows = true,
-        StarVisibility = StarVisibilityModel.CreationColorWindows,
-    };
-
-    private static readonly AtmosphereProfile Fallout4 = new()
-    {
-        SunPath = SunPathModel.Fo4Continuous,
-        SunColorScaledByDaylight = false,
-        ExtendsWeatherColorWindow = true,
-        WeatherDayUsesExtendedWindows = false,
-        StarVisibility = StarVisibilityModel.CreationColorWindows,
-    };
-
-    /// <summary>
-    ///     FO76 (and provisionally Starfield): FO4's record layout and continuous sun path, but the
-    ///     color-window extension and star controller have not been recovered from their binaries —
-    ///     both stay on the conservative fallbacks until audited.
-    /// </summary>
-    private static readonly AtmosphereProfile Fallout76 = Fallout4 with
-    {
-        ExtendsWeatherColorWindow = false,
-        StarVisibility = StarVisibilityModel.DaylightFade,
-    };
-
-    public static AtmosphereProfile ForGame(BethesdaGame game) => game switch
-    {
-        BethesdaGame.Skyrim => Skyrim,
-        BethesdaGame.Fallout4 => Fallout4,
-        BethesdaGame.Fallout76 or BethesdaGame.Starfield => Fallout76,
-        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => Fnv,
-        BethesdaGame.Oblivion => Tes4,
-        _ => Legacy,
-    };
+        return game switch
+        {
+            BethesdaGame.Skyrim => Skyrim,
+            BethesdaGame.Fallout4 => Fallout4,
+            BethesdaGame.Fallout76 or BethesdaGame.Starfield => Fallout76,
+            BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => Fnv,
+            BethesdaGame.Oblivion => Tes4,
+            _ => Legacy
+        };
+    }
 }

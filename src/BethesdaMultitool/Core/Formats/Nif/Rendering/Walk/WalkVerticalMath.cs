@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
-
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 
 /// <summary>

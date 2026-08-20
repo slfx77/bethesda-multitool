@@ -17,12 +17,16 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 /// </summary>
 internal static class MapExport3DPlanner
 {
-    /// <summary>FNV player capsule height in world units (the camera controller's documented 128).
-    /// The visible body spans roughly this, so it's the reference height for the px/unit scale.</summary>
+    /// <summary>
+    ///     FNV player capsule height in world units (the camera controller's documented 128).
+    ///     The visible body spans roughly this, so it's the reference height for the px/unit scale.
+    /// </summary>
     public const float PlayerModelHeightUnits = 128f;
 
-    /// <summary>World-pixels per unit at <c>1×</c>: a <see cref="PlayerModelHeightUnits" />-tall object
-    /// renders 64 px tall (64 / 128 = 0.5 px/unit).</summary>
+    /// <summary>
+    ///     World-pixels per unit at <c>1×</c>: a <see cref="PlayerModelHeightUnits" />-tall object
+    ///     renders 64 px tall (64 / 128 = 0.5 px/unit).
+    /// </summary>
     public const float BaseScalePxPerUnit = 64f / PlayerModelHeightUnits;
 
     /// <summary>A hair of margin on the projected extent so independent W/H rounding never crops.</summary>
@@ -56,6 +60,7 @@ internal static class MapExport3DPlanner
             halfW = MathF.Max(halfW, MathF.Abs(Vector3.Dot(d, right)));
             halfH = MathF.Max(halfH, MathF.Abs(Vector3.Dot(d, up)));
         }
+
         halfW *= ExtentMargin;
         halfH *= ExtentMargin;
 
@@ -86,6 +91,7 @@ internal static class MapExport3DPlanner
                 wantH = Math.Max(1, (int)MathF.Round(wantH * s));
             }
         }
+
         var cols = Math.Max(1, (wantW + cap - 1) / cap);
         var rows = Math.Max(1, (wantH + cap - 1) / cap);
 

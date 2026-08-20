@@ -37,4 +37,3 @@ internal sealed class LoadOrderEntry : IDisposable
         Resolver = null;
     }
 }
-

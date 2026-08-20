@@ -93,4 +93,3 @@ internal readonly struct SortedIntervalMap
         return BinaryPrimitives.ReadUInt32LittleEndian(_labels[index]);
     }
 }
-

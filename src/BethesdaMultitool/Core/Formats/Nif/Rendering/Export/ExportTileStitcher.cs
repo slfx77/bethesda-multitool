@@ -28,6 +28,7 @@ internal static class ExportTileStitcher
         {
             throw new ArgumentException("Tile buffer smaller than tileWidth×tileHeight×4.", nameof(tileRgba));
         }
+
         var x0 = (long)tileCol * tileWidth;
         var y0 = (long)tileRow * tileHeight;
         if (x0 + tileWidth > imageWidth || y0 + tileHeight > imageHeight)
@@ -35,6 +36,7 @@ internal static class ExportTileStitcher
             throw new ArgumentException(
                 $"Tile ({tileCol},{tileRow}) of {tileWidth}×{tileHeight} exceeds the {imageWidth}×{imageHeight} image.");
         }
+
         if (imageRgba.Length < (long)imageWidth * imageHeight * 4)
         {
             throw new ArgumentException("Image buffer smaller than imageWidth×imageHeight×4.", nameof(imageRgba));
@@ -44,7 +46,7 @@ internal static class ExportTileStitcher
         for (var y = 0; y < tileHeight; y++)
         {
             var src = y * rowBytes;
-            var dst = ((((y0 + y) * imageWidth) + x0) * 4);
+            var dst = ((y0 + y) * imageWidth + x0) * 4;
             Buffer.BlockCopy(tileRgba, src, imageRgba, checked((int)dst), rowBytes);
         }
     }

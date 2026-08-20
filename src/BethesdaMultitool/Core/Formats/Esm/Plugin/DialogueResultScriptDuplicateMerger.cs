@@ -120,18 +120,22 @@ internal static class DialogueResultScriptDuplicateMerger
 
     private static bool ExecutableBundlesEqual(
         DialogueResultScript left,
-        DialogueResultScript right) =>
-        left.CompiledData!.AsSpan().SequenceEqual(right.CompiledData)
-        && left.Variables.SequenceEqual(right.Variables)
-        && left.ReferencedObjects.SequenceEqual(right.ReferencedObjects)
-        && left.IsBigEndianBytecode == right.IsBigEndianBytecode;
+        DialogueResultScript right)
+    {
+        return left.CompiledData!.AsSpan().SequenceEqual(right.CompiledData)
+               && left.Variables.SequenceEqual(right.Variables)
+               && left.ReferencedObjects.SequenceEqual(right.ReferencedObjects)
+               && left.IsBigEndianBytecode == right.IsBigEndianBytecode;
+    }
 
-    private static DialogueResultScript IncompleteSentinel(bool hasNextSeparator) =>
-        new()
+    private static DialogueResultScript IncompleteSentinel(bool hasNextSeparator)
+    {
+        return new DialogueResultScript
         {
             HasNextSeparator = hasNextSeparator,
             IsIncompleteExecutableBundle = true
         };
+    }
 
     private static string? SelectUnambiguousText(IEnumerable<string?> values)
     {
@@ -143,12 +147,14 @@ internal static class DialogueResultScriptDuplicateMerger
         return distinct.Count == 1 ? distinct[0] : null;
     }
 
-    private static string? SelectCanonicalText(IEnumerable<string?> values) =>
-        values
+    private static string? SelectCanonicalText(IEnumerable<string?> values)
+    {
+        return values
             .Where(static text => !string.IsNullOrWhiteSpace(text))
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .FirstOrDefault();
+    }
 
     private enum BundleQuality
     {

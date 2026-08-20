@@ -25,6 +25,7 @@ using BethesdaMultitool.Core.Orchestration;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using static BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRendererConstants12;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -100,7 +101,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         WhollyAboveAllWater,
     }
     private readonly HashSet<LiveParticleOwner12> _liveParticleOwners = [];
-    private readonly List<global::BethesdaMultitool.ParticleRenderTelemetry> _particleTelemetry = [];
+    private readonly List<global::BethesdaMultitool.Core.WorldData.ParticleRenderTelemetry> _particleTelemetry = [];
     // Depth-writing blend foliage (effects-folder shapes the engine marks ZBuffer_Write, e.g. NVSeaPlant02):
     // kept as alpha blend but drawn INLINE before the water pass with a depth-writing PSO, so water occludes
     // them from above. Separate from _blendedDraws, which defers to after the water pass.
@@ -510,7 +511,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     <c>FALLOUT_VIEWER_LIVE_PARTICLES=1</c>; false keeps immutable cached particle clouds.
     /// </summary>
     public bool LiveParticlesEnabled { get; set; } = ParticleLiveSettings.Enabled;
-    private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateCells = new();
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _candidateCells = new();
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
     private readonly List<RenderableReference> _cullCandidateScratch = new(256);
@@ -715,7 +716,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private int _frameHeatmapCamCellX;
     private int _frameHeatmapCamCellY;
     private int _frameHeatmapCellRadius = int.MaxValue;
-    private float _frameHeatmapCellSize = global::BethesdaMultitool.WorldGridConstants.CellSize;
+    private float _frameHeatmapCellSize = WorldGridConstants.CellSize;
     // Memo key — the same shape as GetRenderedSceneWorldZExtentCached's epoch memo, extended by the
     // camera CELL and range because a cell-block scan depends on both: the scan is O(refs in
     // range), so a static frame must not re-walk every placement list. Keying on the cell (not the
@@ -762,7 +763,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             return;
         }
 
-        var cellSize = _spatialIndex?.CellSize ?? global::BethesdaMultitool.WorldGridConstants.CellSize;
+        var cellSize = _spatialIndex?.CellSize ?? WorldGridConstants.CellSize;
         var range = FormIdHeatmapRangeCells;
         var visibilityKey = VisibilityKey;
         _frameHeatmapCellSize = cellSize;
@@ -889,8 +890,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferenceDistanceLod);
 
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
-    private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
-    private global::BethesdaMultitool.WorldRenderCache? _renderCache;
+    private global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? _spatialIndex;
+    private global::BethesdaMultitool.Core.WorldData.WorldRenderCache? _renderCache;
     private bool _disposed;
 
     // 3D-8: when Render(deferBlended: true) is used, the blended (transparent) reference submeshes are
@@ -923,7 +924,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     public int ReferencesDrawnLastFrame { get; private set; }
-    public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
+    public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
     private int _placedLightCount;
@@ -1090,9 +1091,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     public void LoadData(
-        global::BethesdaMultitool.WorldRenderCache renderCache,
+        global::BethesdaMultitool.Core.WorldData.WorldRenderCache renderCache,
         Dictionary<(int gx, int gy), CellRecord> cells,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex)
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex)
     {
         _renderCache = renderCache;
         _cells = cells;
@@ -1320,7 +1321,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // base, swap FormID) pair is a cheap stand-in for the exact VariantKey: it can only OVER-count
     // (two swaps yielding identical tables), which errs on the safe side for capacity.
     private static int CountUniqueMeshKeys(
-        global::BethesdaMultitool.WorldRenderCache renderCache,
+        global::BethesdaMultitool.Core.WorldData.WorldRenderCache renderCache,
         Dictionary<(int gx, int gy), CellRecord> cells)
     {
         var altTextureIndex = renderCache.AlternateTextureIndex;
@@ -3317,7 +3318,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
 
         var center = (placed.BoundsMin + placed.BoundsMax) * 0.5f;
-        var cellSize = _spatialIndex?.CellSize ?? global::BethesdaMultitool.WorldGridConstants.CellSize;
+        var cellSize = _spatialIndex?.CellSize ?? WorldGridConstants.CellSize;
         return PlacedNifWaterCellResolver.Resolve(_cells, new Vector2(center.X, center.Y), cellSize);
     }
 
@@ -4568,7 +4569,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     {
                         owner.UseStaticFallback();
                         LastStats.ReferenceLiveParticleFallbacks++;
-                        fallbackReason = "transient live-particle GPU budget is exhausted; static baked geometry is rendered";
+                        fallbackReason =
+ "transient live-particle GPU budget is exhausted; static baked geometry is rendered";
                     }
                     else if (!owner.TryAdvance(
                                  frameIndex, _ringBuffer, _animationClockSeconds, ownerBudget))
@@ -5292,4 +5294,3 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector2 WorldBoundsCenterXY);
 }
 #endif
-

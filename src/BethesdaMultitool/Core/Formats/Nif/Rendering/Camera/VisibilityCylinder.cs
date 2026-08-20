@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -31,7 +32,7 @@ internal readonly record struct VisibilityCylinder(Vector3 Position, float Radiu
     ///     footprint so any cell whose footprint partially clips the square counts as inside
     ///     (Chebyshev: within <see cref="Radius" /> of <see cref="Position" /> along both axes).
     /// </summary>
-    public bool ContainsCell(int gridX, int gridY, float cellSize = global::BethesdaMultitool.WorldGridConstants.CellSize)
+    public bool ContainsCell(int gridX, int gridY, float cellSize = WorldGridConstants.CellSize)
     {
         var minX = gridX * cellSize;
         var minY = gridY * cellSize;

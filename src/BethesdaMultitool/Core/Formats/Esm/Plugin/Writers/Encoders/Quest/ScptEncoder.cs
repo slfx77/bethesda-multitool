@@ -38,16 +38,17 @@ public sealed class ScptEncoder : IRecordEncoder
         ["CompiledSize"] = m => m.CompiledSize,
         ["VariableCount"] = m => (uint)m.Variables.Count,
         ["Type"] = m => GetSchrType(m),
-        ["Flags"] = m => (ushort)(m.IsCompiled ? 0x0001 : 0x0000),
+        ["Flags"] = m => (ushort)(m.IsCompiled ? 0x0001 : 0x0000)
     };
 
-    private static readonly Dictionary<string, Func<ScriptVariableInfo, object?>> SlsdExtractors = new(StringComparer.Ordinal)
-    {
-        ["Index"] = m => m.Index,
-        // Value (double) intentionally omitted — runtime stores the last-evaluated value but
-        // the encoder writes zero so the engine recomputes on first script run.
-        ["IsInteger"] = m => m.Type,
-    };
+    private static readonly Dictionary<string, Func<ScriptVariableInfo, object?>> SlsdExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Index"] = m => m.Index,
+            // Value (double) intentionally omitted — runtime stores the last-evaluated value but
+            // the encoder writes zero so the engine recomputes on first script run.
+            ["IsInteger"] = m => m.Type
+        };
 
     public string RecordType => "SCPT";
     public Type ModelType => typeof(ScriptRecord);

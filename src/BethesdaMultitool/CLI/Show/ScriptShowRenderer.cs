@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -50,7 +49,8 @@ internal sealed class ScriptShowRenderer : IRecordDisplayRenderer
         return true;
     }
 
-    private static string Truncate(string text) =>
-        text.Length > 2000 ? text[..2000] + "\n... (truncated)" : text;
+    private static string Truncate(string text)
+    {
+        return text.Length > 2000 ? text[..2000] + "\n... (truncated)" : text;
+    }
 }
-

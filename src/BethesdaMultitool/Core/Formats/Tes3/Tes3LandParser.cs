@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Formats.Tes3;
 

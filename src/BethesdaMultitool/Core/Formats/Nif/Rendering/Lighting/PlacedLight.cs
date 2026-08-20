@@ -132,5 +132,4 @@ internal readonly record struct PlacedLight(
         var ratio = distance / radius;
         return Math.Clamp(1f - ratio * ratio, 0f, 1f);
     }
-
 }

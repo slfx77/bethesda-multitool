@@ -10,8 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Records;
 /// </summary>
 internal static class EsmEditorIdStringReader
 {
-    internal readonly record struct ReadResult(string Text, long StringFileOffset);
-
     /// <summary>
     ///     Read a BSStringT&lt;char&gt; field at a complete-object-relative offset. Both the
     ///     eight-byte header and pointed-to payload are read in VA space, so VA-contiguous
@@ -77,4 +75,6 @@ internal static class EsmEditorIdStringReader
             ? ReadBsStringTAtVa(context, tesFormVa.Value, tesFormRelativeFieldOffset)
             : null;
     }
+
+    internal readonly record struct ReadResult(string Text, long StringFileOffset);
 }

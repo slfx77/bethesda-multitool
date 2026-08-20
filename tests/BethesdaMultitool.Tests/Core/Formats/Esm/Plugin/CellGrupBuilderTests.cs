@@ -507,7 +507,7 @@ public class CellGrupBuilderTests
         var table = new uint[(recordEnd - payloadOffset) / 4];
         for (var i = 0; i < table.Length; i++)
         {
-            table[i] = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(payloadOffset + (i * 4), 4));
+            table[i] = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(payloadOffset + i * 4, 4));
         }
 
         return (wrldOffset, table);
@@ -531,7 +531,7 @@ public class CellGrupBuilderTests
         {
             CellFormId = cellFormId,
             Context = MakeExteriorContext(cellFormId, wrldFormId, 0x1234, 0x5678),
-            CellRecordBytes = MakeCellBytesAt(cellFormId, gridX: 1, gridY: -1),
+            CellRecordBytes = MakeCellBytesAt(cellFormId, 1, -1),
             PersistentChildRecords = [],
             TemporaryChildRecords = [MakeMinimalRefrRecord(0xC1)]
         };
@@ -543,7 +543,7 @@ public class CellGrupBuilderTests
         Assert.Equal(24, table.Length);
 
         // The cell at (1, -1) lands at row (-1 - -3) = 2, column (1 - -2) = 3 → index 11.
-        const int expectedIndex = (2 * 4) + 3;
+        const int expectedIndex = 2 * 4 + 3;
         Assert.All(
             Enumerable.Range(0, table.Length).Where(i => i != expectedIndex),
             i => Assert.Equal(0u, table[i]));
@@ -582,7 +582,7 @@ public class CellGrupBuilderTests
                 BlockGroupType = 0,
                 SubblockGroupType = 0
             },
-            CellRecordBytes = MakeCellBytesAt(containerFormId, 0, 0, headerFlags: 0x400),
+            CellRecordBytes = MakeCellBytesAt(containerFormId, 0, 0, 0x400),
             PersistentChildRecords = [MakeMinimalRefrRecord(0xC1)],
             TemporaryChildRecords = []
         };

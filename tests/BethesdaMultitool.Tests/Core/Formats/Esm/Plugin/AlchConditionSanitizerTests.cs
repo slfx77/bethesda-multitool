@@ -28,7 +28,7 @@ public sealed class AlchConditionSanitizerTests
         0x07, 0x00, 0x00, 0x00, // Player base actor/object.
         0x00, 0x00, 0x00, 0x00, // Parameter2.
         0x00, 0x00, 0x00, 0x00, // Run On Subject.
-        0x00, 0x00, 0x00, 0x00, // Reference.
+        0x00, 0x00, 0x00, 0x00 // Reference.
     ];
 
     [Fact]
@@ -50,27 +50,27 @@ public sealed class AlchConditionSanitizerTests
                             Type = 0x01,
                             ComparisonValue = 5.0f,
                             FunctionIndex = GetActorValue,
-                            Parameter1 = 4,
+                            Parameter1 = 4
                         },
                         new DialogueCondition
                         {
                             Type = 0x01,
                             ComparisonValue = 1.0f,
                             FunctionIndex = GetIsID,
-                            Parameter1 = 0x0100DEAD,
+                            Parameter1 = 0x0100DEAD
                         },
                         new DialogueCondition
                         {
                             ComparisonValue = 10.0f,
                             FunctionIndex = GetActorValue,
-                            Parameter1 = 5,
-                        },
-                    ],
-                },
-            ],
+                            Parameter1 = 5
+                        }
+                    ]
+                }
+            ]
         };
 
-        var encoded = AlchEncoder.EncodeNew(alch, new HashSet<uint>(), null);
+        var encoded = AlchEncoder.EncodeNew(alch, new HashSet<uint>());
 
         var ctda = Assert.Single(encoded.Subrecords, static subrecord => subrecord.Signature == "CTDA");
         Assert.Equal(NeverFireCtda, ctda.Bytes);
@@ -100,23 +100,23 @@ public sealed class AlchConditionSanitizerTests
                     Conditions =
                     [
                         new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = discardedSource },
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = 0x01222222 },
-                    ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = 0x01222222 }
+                    ]
                 },
                 new EnchantmentEffect
                 {
                     EffectFormId = EffectFormId,
                     Conditions =
                     [
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = retainedSource },
-                    ],
-                },
-            ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = retainedSource }
+                    ]
+                }
+            ]
         };
         var remap = new Dictionary<uint, uint>
         {
             [discardedSource] = discardedDestination,
-            [retainedSource] = retainedDestination,
+            [retainedSource] = retainedDestination
         };
 
         var encoded = AlchEncoder.EncodeNew(
@@ -157,10 +157,10 @@ public sealed class AlchConditionSanitizerTests
                     EffectFormId = EffectFormId,
                     Conditions =
                     [
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = capturedFormId },
-                    ],
-                },
-            ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = capturedFormId }
+                    ]
+                }
+            ]
         };
 
         var encoded = AlchEncoder.EncodeNew(alch);
@@ -189,18 +189,18 @@ public sealed class AlchConditionSanitizerTests
                     EffectFormId = EffectFormId,
                     Conditions =
                     [
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = conditionSourceFormId },
-                    ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = conditionSourceFormId }
+                    ]
                 },
                 new EnchantmentEffect
                 {
                     EffectFormId = EffectFormId,
                     Conditions =
                     [
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = danglingFormId },
-                    ],
-                },
-            ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = danglingFormId }
+                    ]
+                }
+            ]
         };
         var record = new RecordPlan
         {
@@ -216,7 +216,7 @@ public sealed class AlchConditionSanitizerTests
                     FieldPath = MagicEffectReferencePath.EffectFormId(0),
                     OriginalFormId = EffectFormId,
                     Action = ResolvedRefAction.Resolved,
-                    FinalFormId = EffectFormId,
+                    FinalFormId = EffectFormId
                 },
                 new ResolvedRef
                 {
@@ -224,14 +224,14 @@ public sealed class AlchConditionSanitizerTests
                         0, 0, MagicEffectReferencePath.Parameter1),
                     OriginalFormId = conditionSourceFormId,
                     Action = ResolvedRefAction.Resolved,
-                    FinalFormId = conditionEmittedFormId,
+                    FinalFormId = conditionEmittedFormId
                 },
                 new ResolvedRef
                 {
                     FieldPath = MagicEffectReferencePath.EffectFormId(1),
                     OriginalFormId = EffectFormId,
                     Action = ResolvedRefAction.Resolved,
-                    FinalFormId = EffectFormId,
+                    FinalFormId = EffectFormId
                 },
                 new ResolvedRef
                 {
@@ -239,11 +239,11 @@ public sealed class AlchConditionSanitizerTests
                         1, 0, MagicEffectReferencePath.Parameter1),
                     OriginalFormId = danglingFormId,
                     Action = ResolvedRefAction.DropSubrecord,
-                    Reason = "Test dangling effect-condition FormID.",
-                },
+                    Reason = "Test dangling effect-condition FormID."
+                }
             ],
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
         var plan = new EmitPlan
         {
@@ -262,8 +262,8 @@ public sealed class AlchConditionSanitizerTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x901,
-                PlannerCoverage = ImmutableHashSet.Create("ALCH"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("ALCH")
+            }
         };
         var sink = new RecordingSink();
 

@@ -140,7 +140,7 @@ internal static class NifParser
         }
 
         var converter = new NifSchemaConverter(
-            NifSchema.LoadEmbedded(), info.BinaryVersion, 0, 0, measure: true);
+            NifSchema.LoadEmbedded(), info.BinaryVersion, 0, 0, true);
 
         for (var i = 0; i < info.BlockCount; i++)
         {
@@ -262,7 +262,7 @@ internal static class NifParser
             info.BinaryVersion,
             (int)info.UserVersion,
             (int)info.BsVersion,
-            measure: true);
+            true);
 
         // Pre-10.2.0.0 Gamebryo/Bethesda-stream NIFs (Oblivion's bsVersion 4/5 architecture, e.g.
         // fort-ruins 10.1.0.106 rfcastlearchfront / rfcastleruinswall3way) precede EVERY data block with
@@ -318,12 +318,6 @@ internal static class NifParser
             pos += size;
         }
     }
-
-    /// <summary>The header version identity of a NIF — read without parsing blocks. See
-    /// <see cref="ProbeVersionInfo" />. <c>BsVersion</c> is the BSStreamHeader's BS Version (0 for
-    /// NetImmerse/Morrowind and non-Bethesda Gamebryo, which have no stream header).</summary>
-    public readonly record struct NifVersionProbe(
-        string HeaderString, uint BinaryVersion, uint UserVersion, uint BsVersion, bool IsBigEndian);
 
     /// <summary>
     ///     Reads only a NIF's header version identity — binary version, user version, BS stream version —
@@ -445,8 +439,10 @@ internal static class NifParser
         return newlinePos + 1;
     }
 
-    /// <summary>Returns the position past the version fields, or -1 when the header is truncated
-    /// or the block count is implausible (the caller maps -1 to a null parse result).</summary>
+    /// <summary>
+    ///     Returns the position past the version fields, or -1 when the header is truncated
+    ///     or the block count is implausible (the caller maps -1 to a null parse result).
+    /// </summary>
     private static int ParseVersionInfo(byte[] data, int pos, NifInfo info)
     {
         if (pos + 4 > data.Length)
@@ -524,21 +520,21 @@ internal static class NifParser
         // of three ShortStrings. Getting the count wrong (e.g. FO4's Max Filepath, FO76's Unknown Int)
         // desyncs the block-types table that follows, so no geometry is found. An ExportString is a
         // 1-byte length prefix (including the null terminator) followed by that many bytes.
-        pos = SkipExportString(data, pos);          // Author (all Bethesda)
+        pos = SkipExportString(data, pos); // Author (all Bethesda)
         if (bsVersion > 130)
         {
-            pos += 4;                               // Unknown Int (uint): FO4 131+, FO76, Starfield
+            pos += 4; // Unknown Int (uint): FO4 131+, FO76, Starfield
         }
 
         if (bsVersion < 131)
         {
-            pos = SkipExportString(data, pos);      // Process Script: Skyrim SE, FO4 130
+            pos = SkipExportString(data, pos); // Process Script: Skyrim SE, FO4 130
         }
 
-        pos = SkipExportString(data, pos);          // Export Script (all Bethesda)
+        pos = SkipExportString(data, pos); // Export Script (all Bethesda)
         if (bsVersion is >= 103 and < 170)
         {
-            pos = SkipExportString(data, pos);      // Max Filepath: FO4, FO76
+            pos = SkipExportString(data, pos); // Max Filepath: FO4, FO76
         }
 
         if (bsVersion >= 170)
@@ -557,7 +553,9 @@ internal static class NifParser
 
     /// <summary>Advances past one BSStreamHeader ExportString (1-byte length incl. terminator + bytes).</summary>
     private static int SkipExportString(byte[] data, int pos)
-        => pos >= 0 && pos < data.Length ? pos + 1 + data[pos] : pos;
+    {
+        return pos >= 0 && pos < data.Length ? pos + 1 + data[pos] : pos;
+    }
 
     private static int ParseBlockTypeNames(byte[] data, int pos, int numBlockTypes, NifInfo info)
     {
@@ -602,8 +600,10 @@ internal static class NifParser
         return (blockTypeIndices, blockSizes);
     }
 
-    /// <summary>Returns the position past the group list, or -1 when the count dword is missing or
-    /// the declared groups run past EOF (callers treat -1 as a truncated header).</summary>
+    /// <summary>
+    ///     Returns the position past the group list, or -1 when the count dword is missing or
+    ///     the declared groups run past EOF (callers treat -1 as a truncated header).
+    /// </summary>
     private static int SkipGroups(byte[] data, int pos, bool isBigEndian)
     {
         if (pos < 0 || pos + 4 > data.Length)
@@ -635,8 +635,10 @@ internal static class NifParser
         }
     }
 
-    /// <summary>Returns the position past the string table, or -1 when the declared counts/lengths
-    /// don't fit the remaining bytes (the caller maps -1 to a null parse result).</summary>
+    /// <summary>
+    ///     Returns the position past the string table, or -1 when the declared counts/lengths
+    ///     don't fit the remaining bytes (the caller maps -1 to a null parse result).
+    /// </summary>
     private static int ParseStringTable(byte[] data, int pos, bool isBigEndian, List<string> strings)
     {
         if (pos < 0 || pos + 8 > data.Length)
@@ -718,4 +720,16 @@ internal static class NifParser
             _ => false
         };
     }
+
+    /// <summary>
+    ///     The header version identity of a NIF — read without parsing blocks. See
+    ///     <see cref="ProbeVersionInfo" />. <c>BsVersion</c> is the BSStreamHeader's BS Version (0 for
+    ///     NetImmerse/Morrowind and non-Bethesda Gamebryo, which have no stream header).
+    /// </summary>
+    public readonly record struct NifVersionProbe(
+        string HeaderString,
+        uint BinaryVersion,
+        uint UserVersion,
+        uint BsVersion,
+        bool IsBigEndian);
 }

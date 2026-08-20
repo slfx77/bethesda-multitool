@@ -1,10 +1,14 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
-/// <summary>Holds the world map's navigation state (view mode, selected worldspace/cell/object) and the transitions between modes.</summary>
+/// <summary>
+///     Holds the world map's navigation state (view mode, selected worldspace/cell/object) and the transitions
+///     between modes.
+/// </summary>
 internal sealed class WorldMapStateController
 {
     private WorldViewData? _data;

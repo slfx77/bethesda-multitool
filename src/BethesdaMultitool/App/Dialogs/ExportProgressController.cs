@@ -12,8 +12,8 @@ namespace BethesdaMultitool;
 /// </summary>
 internal sealed class ExportProgressController
 {
-    private readonly ContentDialog _dialog;
     private readonly ProgressBar _bar;
+    private readonly ContentDialog _dialog;
     private readonly TextBlock _status;
 
     internal ExportProgressController(XamlRoot xamlRoot)

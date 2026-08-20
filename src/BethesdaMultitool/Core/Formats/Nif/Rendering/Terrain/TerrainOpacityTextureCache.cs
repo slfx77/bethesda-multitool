@@ -18,6 +18,7 @@ internal static class TerrainOpacityTextureCache
 {
     /// <summary>VTXT positions are <c>j*17 + i</c> in [0, 17*17-1] = [0, 288].</summary>
     public const int Grid = 17;
+
     public const int GridSize = Grid * Grid;
 
     /// <summary>

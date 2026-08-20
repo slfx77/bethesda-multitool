@@ -7,18 +7,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     neighbor-triangle slots (Edge01/Edge12/Edge20) and clears any value that's
 ///     out-of-bounds, self-pointing, or non-reciprocal — i.e. triangle X claims edge Y
 ///     points at triangle Z, but Z has no edge pointing back at X.
-///
 ///     Background: NVTR bytes can reach us from two sources — the proto's ESM byte stream
 ///     (parsed via <see cref="Conversion.Schema.SubrecordSchemaProcessor" />) or runtime
 ///     <c>BSNavMesh</c> struct synthesis (via
-///     <see cref="Runtime.Readers.Specialized.NavMesh.RuntimeNavMeshDiscovery.ProjectTrianglesToNvtr"/>).
+///     <see cref="Runtime.Readers.Specialized.NavMesh.RuntimeNavMeshDiscovery.ProjectTrianglesToNvtr" />).
 ///     Both paths can carry inconsistent neighbor indices when the engine modified the mesh
 ///     dynamically before DMP capture — <c>NavMesh::FlipTriangle</c>, <c>RemoveObstacle</c>,
 ///     door-portal disabling, etc. Emitting those bytes verbatim trips the engine's load-time
 ///     reciprocity check (94+ <c>PATHFINDING ... should have a link to Triangle Z, but doesn't</c>
 ///     warnings observed in a captured Gomorrah01 dump) which feeds dangling triangle pointers into
 ///     pathfinding; AI hits a null deref inside <c>NavMeshSearchClosePoint</c>.
-///
 ///     Repair policy: clear the bad neighbor index to <c>-1</c> (canonical "no neighbor"
 ///     sentinel). Doesn't mutate flags, vertices, or any other field — only the three edge
 ///     slots per triangle. Operates in place on a single snapshot so reciprocity decisions

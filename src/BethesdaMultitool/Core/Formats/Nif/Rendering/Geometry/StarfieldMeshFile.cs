@@ -85,7 +85,7 @@ internal sealed class StarfieldMeshFile
         // Indices are u16 triples. This is also why no submesh split is needed downstream: the format
         // cannot express a vertex index above 65,535, so the renderer's R16_UInt index buffer fits.
         // Read the DECLARED count (so the stream position stays exact) but expose only whole triangles.
-        if (!Fits(data, pos, indexCount, elementSize: 2))
+        if (!Fits(data, pos, indexCount, 2))
         {
             return null;
         }
@@ -96,7 +96,7 @@ internal sealed class StarfieldMeshFile
             return null;
         }
 
-        var triangles = indexCount % 3 == 0 ? indices : indices[..(int)(indexCount - (indexCount % 3))];
+        var triangles = indexCount % 3 == 0 ? indices : indices[..(int)(indexCount - indexCount % 3)];
 
         if (!TryReadF32(data, ref pos, out var scale) || scale <= 0f || !float.IsFinite(scale))
         {
@@ -106,7 +106,7 @@ internal sealed class StarfieldMeshFile
         if (!TryReadU32(data, ref pos, out var weightsPerVertex) ||
             !TryReadU32(data, ref pos, out var vertexCount) ||
             vertexCount == 0 ||
-            !Fits(data, pos, vertexCount, elementSize: 6)) // u32 XY + u16 Z
+            !Fits(data, pos, vertexCount, 6)) // u32 XY + u16 Z
         {
             return null;
         }
@@ -122,9 +122,9 @@ internal sealed class StarfieldMeshFile
                 return null;
             }
 
-            positions[(i * 3) + 0] = (short)(xy & 0xFFFF) * perVertexScale;
-            positions[(i * 3) + 1] = (short)(xy >> 16) * perVertexScale;
-            positions[(i * 3) + 2] = (short)zRaw * perVertexScale;
+            positions[i * 3 + 0] = (short)(xy & 0xFFFF) * perVertexScale;
+            positions[i * 3 + 1] = (short)(xy >> 16) * perVertexScale;
+            positions[i * 3 + 2] = (short)zRaw * perVertexScale;
         }
 
         if (!TryReadHalfPairs(data, ref pos, out var uvs) ||
@@ -138,7 +138,7 @@ internal sealed class StarfieldMeshFile
 
         // Skin weights (u16 bone + u16 weight each). Parsed for stream position only — the worldspace
         // viewer draws statics in bind pose and skinned actors are out of scope.
-        if (!TrySkipCounted(data, ref pos, stride: 4))
+        if (!TrySkipCounted(data, ref pos, 4))
         {
             return null;
         }
@@ -154,8 +154,8 @@ internal sealed class StarfieldMeshFile
         // CENTRE + EXTENT pair, not a min/max box (vertex 0 of that blob sits exactly on two of the
         // extents). Skipped rather than modelled: GPU meshlet culling is not something this renderer
         // does, but consuming it is what lets the parse land on the exact final byte.
-        if (!TrySkipCounted(data, ref pos, stride: 16) ||   // meshlets
-            !TrySkipCounted(data, ref pos, stride: 24))      // cull data
+        if (!TrySkipCounted(data, ref pos, 16) || // meshlets
+            !TrySkipCounted(data, ref pos, 24)) // cull data
         {
             return null;
         }
@@ -189,7 +189,7 @@ internal sealed class StarfieldMeshFile
             return true;
         }
 
-        if (!Fits(data, pos, count, elementSize: 4))
+        if (!Fits(data, pos, count, 4))
         {
             return false;
         }
@@ -202,8 +202,8 @@ internal sealed class StarfieldMeshFile
                 return false;
             }
 
-            uvs[(i * 2) + 0] = (float)BitConverter.UInt16BitsToHalf((ushort)(packed & 0xFFFF));
-            uvs[(i * 2) + 1] = (float)BitConverter.UInt16BitsToHalf((ushort)(packed >> 16));
+            uvs[i * 2 + 0] = (float)BitConverter.UInt16BitsToHalf((ushort)(packed & 0xFFFF));
+            uvs[i * 2 + 1] = (float)BitConverter.UInt16BitsToHalf((ushort)(packed >> 16));
         }
 
         result = uvs;
@@ -224,7 +224,7 @@ internal sealed class StarfieldMeshFile
             return true;
         }
 
-        if (!Fits(data, pos, count, elementSize: 4))
+        if (!Fits(data, pos, count, 4))
         {
             return false;
         }
@@ -237,10 +237,10 @@ internal sealed class StarfieldMeshFile
                 return false;
             }
 
-            colors[(i * 4) + 0] = (byte)(bgra >> 16); // R
-            colors[(i * 4) + 1] = (byte)(bgra >> 8);  // G
-            colors[(i * 4) + 2] = (byte)bgra;         // B
-            colors[(i * 4) + 3] = (byte)(bgra >> 24); // A
+            colors[i * 4 + 0] = (byte)(bgra >> 16); // R
+            colors[i * 4 + 1] = (byte)(bgra >> 8); // G
+            colors[i * 4 + 2] = (byte)bgra; // B
+            colors[i * 4 + 3] = (byte)(bgra >> 24); // A
         }
 
         result = colors;
@@ -266,7 +266,7 @@ internal sealed class StarfieldMeshFile
             return true;
         }
 
-        if (!Fits(data, pos, count, elementSize: 4))
+        if (!Fits(data, pos, count, 4))
         {
             return false;
         }
@@ -280,9 +280,9 @@ internal sealed class StarfieldMeshFile
                 return false;
             }
 
-            vectors[(i * 3) + 0] = ((packed & 0x3FF) / Dec10Half) - 1f;
-            vectors[(i * 3) + 1] = (((packed >> 10) & 0x3FF) / Dec10Half) - 1f;
-            vectors[(i * 3) + 2] = (((packed >> 20) & 0x3FF) / Dec10Half) - 1f;
+            vectors[i * 3 + 0] = (packed & 0x3FF) / Dec10Half - 1f;
+            vectors[i * 3 + 1] = ((packed >> 10) & 0x3FF) / Dec10Half - 1f;
+            vectors[i * 3 + 2] = ((packed >> 20) & 0x3FF) / Dec10Half - 1f;
             ws[i] = ((packed >> 30) & 0x3) == 0 ? -1f : 1f;
         }
 
@@ -302,7 +302,7 @@ internal sealed class StarfieldMeshFile
         for (var i = 0; i < lodCount; i++)
         {
             if (!TryReadU32(data, ref pos, out var indexCount) ||
-                !Fits(data, pos, indexCount, elementSize: 2))
+                !Fits(data, pos, indexCount, 2))
             {
                 return false;
             }
@@ -332,7 +332,9 @@ internal sealed class StarfieldMeshFile
     ///     decoder's contract is to return null on bad input, never to throw.
     /// </summary>
     private static bool Fits(ReadOnlySpan<byte> data, int pos, uint count, int elementSize)
-        => (long)count * elementSize <= data.Length - (long)pos;
+    {
+        return count * elementSize <= data.Length - (long)pos;
+    }
 
     private static bool TryReadU32(ReadOnlySpan<byte> data, ref int pos, out uint value)
     {
@@ -375,14 +377,14 @@ internal sealed class StarfieldMeshFile
 
     private static bool TryReadU16Array(ReadOnlySpan<byte> data, ref int pos, ushort[] destination)
     {
-        if (pos + (destination.Length * 2) > data.Length)
+        if (pos + destination.Length * 2 > data.Length)
         {
             return false;
         }
 
         for (var i = 0; i < destination.Length; i++)
         {
-            destination[i] = BinaryPrimitives.ReadUInt16LittleEndian(data[(pos + (i * 2))..]);
+            destination[i] = BinaryPrimitives.ReadUInt16LittleEndian(data[(pos + i * 2)..]);
         }
 
         pos += destination.Length * 2;

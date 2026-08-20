@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -63,6 +64,68 @@ public sealed partial class WorldMapControl
     private CheckBox ShadeVertexColorsCheckBox => SettingsPanel.ShadeVertexColorsCheckBox;
     private CheckBox ShadeHillshadeCheckBox => SettingsPanel.ShadeHillshadeCheckBox;
     private Expander ShadingMenu => SettingsPanel.ShadingExpander;
+
+    // ========================================================================
+    // Profiler-driving surface (used by BethesdaMap2DProfiler to script
+    // viewport/zoom/pan sequences for telemetry capture).
+    // ========================================================================
+
+    internal int Profiler_WorldspaceCount => WorldspaceComboBox.Items.Count;
+
+    /// <summary>Worldspace picker labels ("Name — N cells") for the capture harness to pick a dense one.</summary>
+    internal IReadOnlyList<string> Profiler_WorldspaceLabels =>
+        [.. WorldspaceComboBox.Items.Select(o => o?.ToString() ?? string.Empty)];
+
+    /// <summary>True when the TerrainTextures aggregate-LOD bitmap is the active overview (zoomed out).</summary>
+    internal bool Profiler_TerrainAggregateActive => _terrainTexturesAggregateActive;
+
+    internal int Profiler_WorldspaceSelectedIndex
+    {
+        get => WorldspaceComboBox.SelectedIndex;
+        set => WorldspaceComboBox.SelectedIndex = value;
+    }
+
+    internal WorldMapLayer Profiler_Layer
+    {
+        get => _currentLayer;
+        set => LayerComboBox.SelectedIndex = (int)value;
+    }
+
+    /// <summary>
+    ///     Profiler hook to drive the "Rendered models" top-down overlay (so a headless run is a true
+    ///     full-path perf test, not a 2D-only one). Routes through the real checkbox so the existing
+    ///     handler runs — which gates enabling on <c>TopDownProvider.CanRenderTopDown</c> and kicks the
+    ///     first overlay request. The caller must therefore wait until the provider is ready before
+    ///     setting <c>true</c>, else the gate leaves it off.
+    /// </summary>
+    internal bool Profiler_ShowRenderedObjects
+    {
+        get => _showRenderedObjects;
+        set
+        {
+            if (RenderedObjectsCheckBox is not null) RenderedObjectsCheckBox.IsChecked = value;
+        }
+    }
+
+    internal float Profiler_Zoom => _zoom;
+
+    internal Vector2 Profiler_PanOffset => _panOffset;
+
+    internal int Profiler_CacheCount => _layerCellBitmaps?.Count ?? 0;
+    internal int Profiler_CacheCap => _layerCellBitmapCap;
+    internal int Profiler_BuildVersion => _worldHeightmapBuildVersion;
+    internal int Profiler_CacheGen => _layerCellBitmapsCacheGen;
+    internal float Profiler_CellWorldSize => _cellSize;
+
+    /// <summary>Diagnostics: which overview bitmaps are currently resident (for the layer-toggle repro).</summary>
+    internal bool Profiler_AggregateBitmapPresent => _terrainAggregateBitmap is not null;
+
+    internal bool Profiler_HeightmapBitmapPresent => _worldHeightmapBitmap is not null;
+    internal bool Profiler_AggregateUnavailable => _terrainAggregateUnavailable;
+    internal WorldMapLayer? Profiler_CellBitmapsLayer => _layerCellBitmapsLayer;
+
+    internal float Profiler_CanvasWidth => (float)MapCanvas.ActualWidth;
+    internal float Profiler_CanvasHeight => (float)MapCanvas.ActualHeight;
 
     /// <summary>
     ///     Subscribes every settings-panel control to its handler. Runs in the ctor while
@@ -215,69 +278,20 @@ public sealed partial class WorldMapControl
         {
             RebuildCellDetailBitmaps(_state.SelectedCell);
         }
+
         EnsureViewportTimerRunning();
         MapCanvas?.Invalidate();
     }
 
-    /// <summary>Current terrain-texture shading selection (independent VCLR + hillshade) plus the
-    /// hillshade light direction (from the lighting control; null = the renderer's NW default).</summary>
+    /// <summary>
+    ///     Current terrain-texture shading selection (independent VCLR + hillshade) plus the
+    ///     hillshade light direction (from the lighting control; null = the renderer's NW default).
+    /// </summary>
     private TerrainShadingOptions CurrentTerrainShading() => new(
         _shadeVertexColors,
         _shadeHillshade,
         _shadeHillshade ? CurrentHillshadeLightDir() : null,
         CurrentHillshadeZScale());
-
-    // ========================================================================
-    // Profiler-driving surface (used by BethesdaMap2DProfiler to script
-    // viewport/zoom/pan sequences for telemetry capture).
-    // ========================================================================
-
-    internal int Profiler_WorldspaceCount => WorldspaceComboBox.Items.Count;
-
-    /// <summary>Worldspace picker labels ("Name — N cells") for the capture harness to pick a dense one.</summary>
-    internal IReadOnlyList<string> Profiler_WorldspaceLabels =>
-        [.. WorldspaceComboBox.Items.Select(o => o?.ToString() ?? string.Empty)];
-
-    /// <summary>True when the TerrainTextures aggregate-LOD bitmap is the active overview (zoomed out).</summary>
-    internal bool Profiler_TerrainAggregateActive => _terrainTexturesAggregateActive;
-
-    internal int Profiler_WorldspaceSelectedIndex
-    {
-        get => WorldspaceComboBox.SelectedIndex;
-        set => WorldspaceComboBox.SelectedIndex = value;
-    }
-
-    internal WorldMapLayer Profiler_Layer
-    {
-        get => _currentLayer;
-        set => LayerComboBox.SelectedIndex = (int)value;
-    }
-
-    /// <summary>
-    ///     Profiler hook to drive the "Rendered models" top-down overlay (so a headless run is a true
-    ///     full-path perf test, not a 2D-only one). Routes through the real checkbox so the existing
-    ///     handler runs — which gates enabling on <c>TopDownProvider.CanRenderTopDown</c> and kicks the
-    ///     first overlay request. The caller must therefore wait until the provider is ready before
-    ///     setting <c>true</c>, else the gate leaves it off.
-    /// </summary>
-    internal bool Profiler_ShowRenderedObjects
-    {
-        get => _showRenderedObjects;
-        set
-        {
-            if (RenderedObjectsCheckBox is not null) RenderedObjectsCheckBox.IsChecked = value;
-        }
-    }
-
-    internal float Profiler_Zoom => _zoom;
-
-    internal Vector2 Profiler_PanOffset => _panOffset;
-
-    internal int Profiler_CacheCount => _layerCellBitmaps?.Count ?? 0;
-    internal int Profiler_CacheCap => _layerCellBitmapCap;
-    internal int Profiler_BuildVersion => _worldHeightmapBuildVersion;
-    internal int Profiler_CacheGen => _layerCellBitmapsCacheGen;
-    internal float Profiler_CellWorldSize => _cellSize;
 
     /// <summary>
     ///     Overlay request counters, convergence flags, coverage, and deterministic metrics from the
@@ -404,6 +418,7 @@ public sealed partial class WorldMapControl
         {
             WorldspaceComboBox.SelectedIndex = target.WorldspaceIndex;
         }
+
         EnsureOverviewMode();
 
         var reference = target.References
@@ -460,12 +475,6 @@ public sealed partial class WorldMapControl
         }
     }
 
-    /// <summary>Diagnostics: which overview bitmaps are currently resident (for the layer-toggle repro).</summary>
-    internal bool Profiler_AggregateBitmapPresent => _terrainAggregateBitmap is not null;
-    internal bool Profiler_HeightmapBitmapPresent => _worldHeightmapBitmap is not null;
-    internal bool Profiler_AggregateUnavailable => _terrainAggregateUnavailable;
-    internal WorldMapLayer? Profiler_CellBitmapsLayer => _layerCellBitmapsLayer;
-
     /// <summary>
     ///     Coverage of the CURRENT viewport by the per-cell bitmap cache at the target
     ///     resolution: (populated cells visible, of those cached at the current ppc tier).
@@ -516,9 +525,6 @@ public sealed partial class WorldMapControl
         _panOffset = newOffset;
         MapCanvas.Invalidate();
     }
-
-    internal float Profiler_CanvasWidth => (float)MapCanvas.ActualWidth;
-    internal float Profiler_CanvasHeight => (float)MapCanvas.ActualHeight;
 
     /// <summary>
     ///     Centers the view on the centroid of the active worldspace's grid cells at the given

@@ -101,19 +101,23 @@ public enum ImageSpaceModifierParameter
     CinematicSaturation = 17,
     CinematicContrastAvgLum = 18,
     CinematicContrast = 19,
-    CinematicBrightness = 20,
+    CinematicBrightness = 20
 }
 
 public enum ImageSpaceModifierOperation
 {
     Multiply = 0,
-    Add = 1,
+    Add = 1
 }
 
 public readonly record struct ImageSpaceModifierFloatKey(float Time, float Value);
 
 public readonly record struct ImageSpaceModifierColorKey(
-    float Time, float Red, float Green, float Blue, float Alpha);
+    float Time,
+    float Red,
+    float Green,
+    float Blue,
+    float Alpha);
 
 public sealed record ImageSpaceModifierParameterTimeline(
     ImageSpaceModifierParameter Parameter,

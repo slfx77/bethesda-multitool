@@ -30,14 +30,6 @@ internal static class AssetPathRules
     public static readonly HashSet<string> IndexOnlyExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".mesh" };
 
-    /// <summary>
-    ///     True when <paramref name="extension" /> should appear in a read-side asset index (the union
-    ///     of <see cref="AssetExtensions" /> and <see cref="IndexOnlyExtensions" />). Packing and
-    ///     renaming keep using <see cref="AssetExtensions" /> alone.
-    /// </summary>
-    public static bool IsIndexableAsset(string extension) =>
-        AssetExtensions.Contains(extension) || IndexOnlyExtensions.Contains(extension);
-
     public static readonly Dictionary<string, string> ExtensionToPrefix =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -80,6 +72,47 @@ internal static class AssetPathRules
     private static readonly string[] CategoryRoots =
         [.. ExtensionToPrefix.Values.Append("music\\").Distinct(StringComparer.Ordinal)];
 
+    /// <summary>
+    ///     Extensions the FNV engine cannot read from inside a BSA, so they have to ship as
+    ///     loose files next to the archives.
+    ///     <para>
+    ///         MP3 is the whole list. Bethesda's own data is the proof, and it is an FO3→FNV
+    ///         engine difference: Fallout 3's <c>Fallout - Sound.bsa</c> archives 66 <c>.mp3</c>,
+    ///         while FNV's archives ZERO — the same radio songs were re-encoded to <c>.ogg</c>
+    ///         for the FNV archive, and all 199 <c>Data\Music\</c> tracks were left loose. The
+    ///         GECK wiki states it outright ("MP3 files will not work in Fallout: New Vegas when
+    ///         placed inside BSA files. Use OGG/Vorbis instead.").
+    ///     </para>
+    ///     <para>
+    ///         Note this is narrower than the streaming-audio rule that also applies: <c>.wav</c>
+    ///         and <c>.ogg</c> work from a BSA but only an UNCOMPRESSED one, which
+    ///         <see cref="Bsa.BsaWriter.CreateWithAutoFlags" /> already guarantees for audio
+    ///         buckets. MP3 fails regardless of compression, hence loose delivery.
+    ///     </para>
+    /// </summary>
+    private static readonly string[] LooseOnlyExtensions = [".mp3"];
+
+    public static readonly string[] PathLikePropertyTokens =
+    [
+        "Path", "FileName", "Texture", "Model", "Icon", "Mesh"
+    ];
+
+    public static readonly string[] DmpScanStrictPrefixes =
+    [
+        "meshes\\", "textures\\", "sound\\", "music\\", "video\\",
+        "data\\meshes\\", "data\\textures\\", "data\\sound\\", "data\\music\\", "data\\video\\"
+    ];
+
+    /// <summary>
+    ///     True when <paramref name="extension" /> should appear in a read-side asset index (the union
+    ///     of <see cref="AssetExtensions" /> and <see cref="IndexOnlyExtensions" />). Packing and
+    ///     renaming keep using <see cref="AssetExtensions" /> alone.
+    /// </summary>
+    public static bool IsIndexableAsset(string extension)
+    {
+        return AssetExtensions.Contains(extension) || IndexOnlyExtensions.Contains(extension);
+    }
+
     /// <summary>Identifies which Data subtree a normalized path is rooted at.</summary>
     public static bool TryGetCategoryRoot(string normalizedPath, out string root)
     {
@@ -109,42 +142,13 @@ internal static class AssetPathRules
     }
 
     /// <summary>
-    ///     Extensions the FNV engine cannot read from inside a BSA, so they have to ship as
-    ///     loose files next to the archives.
-    ///     <para>
-    ///         MP3 is the whole list. Bethesda's own data is the proof, and it is an FO3→FNV
-    ///         engine difference: Fallout 3's <c>Fallout - Sound.bsa</c> archives 66 <c>.mp3</c>,
-    ///         while FNV's archives ZERO — the same radio songs were re-encoded to <c>.ogg</c>
-    ///         for the FNV archive, and all 199 <c>Data\Music\</c> tracks were left loose. The
-    ///         GECK wiki states it outright ("MP3 files will not work in Fallout: New Vegas when
-    ///         placed inside BSA files. Use OGG/Vorbis instead.").
-    ///     </para>
-    ///     <para>
-    ///         Note this is narrower than the streaming-audio rule that also applies: <c>.wav</c>
-    ///         and <c>.ogg</c> work from a BSA but only an UNCOMPRESSED one, which
-    ///         <see cref="Bsa.BsaWriter.CreateWithAutoFlags" /> already guarantees for audio
-    ///         buckets. MP3 fails regardless of compression, hence loose delivery.
-    ///     </para>
-    /// </summary>
-    private static readonly string[] LooseOnlyExtensions = [".mp3"];
-
-    /// <summary>
     ///     True when an asset must be delivered loose rather than packed into a BSA.
     /// </summary>
-    public static bool RequiresLooseDelivery(string path) =>
-        LooseOnlyExtensions.Contains(
+    public static bool RequiresLooseDelivery(string path)
+    {
+        return LooseOnlyExtensions.Contains(
             Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
-
-    public static readonly string[] PathLikePropertyTokens =
-    [
-        "Path", "FileName", "Texture", "Model", "Icon", "Mesh"
-    ];
-
-    public static readonly string[] DmpScanStrictPrefixes =
-    [
-        "meshes\\", "textures\\", "sound\\", "music\\", "video\\",
-        "data\\meshes\\", "data\\textures\\", "data\\sound\\", "data\\music\\", "data\\video\\"
-    ];
+    }
 
     /// <summary>
     ///     Normalizes a raw asset path to a Data-relative, lowercased path rooted at its
@@ -289,21 +293,25 @@ internal static class AssetPathRules
     ///     Covers both meshes and textures because all LOD assets are baked from one
     ///     specific build's terrain mesh layout and worldspace bounds:
     ///     <list type="bullet">
-    ///         <item><description>
-    ///             <c>meshes\landscape\lod\&lt;ws&gt;\(blocks|stinger)\*.nif</c> — LOD block
-    ///             meshes referencing STAT/SCOL base records at the prototype's FormIDs.
-    ///             Loading on top of PC final's terrain produces a scene-graph that
-    ///             references geometry/IDs that don't fit, then crashes during
-    ///             <c>BGSDistantObjectBlock::ApplyObjectsAlphaState</c> (type-3 LOD-object
-    ///             content comes up null).
-    ///         </description></item>
-    ///         <item><description>
-    ///             <c>textures\landscape\lod\&lt;ws&gt;\(diffuse|normals)\*.dds</c> — per-block
-    ///             LOD terrain textures. Coords are encoded in the filename and must match
-    ///             the LOD mesh's expected grid. Mixing prototype LOD textures with PC
-    ///             final's LOD meshes (or vice versa) produces orphaned references that
-    ///             flood the engine's asset pipeline with "Could not get file" lookups.
-    ///         </description></item>
+    ///         <item>
+    ///             <description>
+    ///                 <c>meshes\landscape\lod\&lt;ws&gt;\(blocks|stinger)\*.nif</c> — LOD block
+    ///                 meshes referencing STAT/SCOL base records at the prototype's FormIDs.
+    ///                 Loading on top of PC final's terrain produces a scene-graph that
+    ///                 references geometry/IDs that don't fit, then crashes during
+    ///                 <c>BGSDistantObjectBlock::ApplyObjectsAlphaState</c> (type-3 LOD-object
+    ///                 content comes up null).
+    ///             </description>
+    ///         </item>
+    ///         <item>
+    ///             <description>
+    ///                 <c>textures\landscape\lod\&lt;ws&gt;\(diffuse|normals)\*.dds</c> — per-block
+    ///                 LOD terrain textures. Coords are encoded in the filename and must match
+    ///                 the LOD mesh's expected grid. Mixing prototype LOD textures with PC
+    ///                 final's LOD meshes (or vice versa) produces orphaned references that
+    ///                 flood the engine's asset pipeline with "Could not get file" lookups.
+    ///             </description>
+    ///         </item>
     ///     </list>
     ///     The fix is to never repack these files — the engine falls back to master's
     ///     matching-terrain LOD instead.
@@ -318,12 +326,14 @@ internal static class AssetPathRules
         {
             return true;
         }
+
         // LOD terrain textures: textures\landscape\lod\<ws>\*.dds
         if (normalizedPath.StartsWith("textures\\landscape\\lod\\", StringComparison.OrdinalIgnoreCase)
             && normalizedPath.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
+
         return false;
     }
 

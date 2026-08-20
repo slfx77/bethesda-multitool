@@ -29,7 +29,10 @@ internal sealed class Ba2TextureArchiveSource(
         }
     }
 
-    public bool Exists(string path) => fileIndex.ContainsKey(path);
+    public bool Exists(string path)
+    {
+        return fileIndex.ContainsKey(path);
+    }
 
     public byte[]? TryLoadRaw(string path)
     {

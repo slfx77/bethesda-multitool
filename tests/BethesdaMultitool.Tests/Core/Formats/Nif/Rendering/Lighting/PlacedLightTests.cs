@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Lighting;
@@ -199,8 +200,8 @@ public sealed class PlacedLightTests
         var source = new[]
         {
             Emitter(authoredEnabled, Vector3.UnitX),
-            Emitter(authoredDisabled, Vector3.UnitY, disabled: true),
-            Emitter(authoredSibling, Vector3.UnitZ, disabled: true)
+            Emitter(authoredDisabled, Vector3.UnitY, true),
+            Emitter(authoredSibling, Vector3.UnitZ, true)
         };
         var enabledOverrides = new ReferenceEnabledOverrideStore();
         enabledOverrides.Set(authoredEnabled, ReferenceEnabledOverride.Off);
@@ -214,7 +215,7 @@ public sealed class PlacedLightTests
             enabledOverrides,
             includeInitiallyDisabled,
             destination,
-            scratch: []);
+            []);
 
         Assert.Equal(0, clipped);
         Assert.DoesNotContain(destination, static light => light.FormId == authoredEnabled);

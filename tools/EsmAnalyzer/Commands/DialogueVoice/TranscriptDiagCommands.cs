@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.DialogueVoice;
@@ -101,7 +100,8 @@ public static class TranscriptDiagCommands
         // ── Step 2: Compute BSA-level statistics ──────────────────
         var totalFiles = voiceFiles.Count;
         var uniqueFormIdResp = voiceFiles.Select(v => $"{v.FormId:X8}_{v.ResponseIndex}").ToHashSet();
-        var uniqueVtFormIdResp = voiceFiles.Select(v => $"{v.VoiceType}|{v.FormId:X8}_{v.ResponseIndex}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var uniqueVtFormIdResp = voiceFiles.Select(v => $"{v.VoiceType}|{v.FormId:X8}_{v.ResponseIndex}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var voiceTypeGroups = voiceFiles.GroupBy(v => v.VoiceType, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count())
             .ToList();
@@ -128,6 +128,7 @@ public static class TranscriptDiagCommands
                 list = [];
                 formIdRespToVoiceTypes[key] = list;
             }
+
             list.Add(vf.VoiceType);
         }
 
@@ -135,8 +136,10 @@ public static class TranscriptDiagCommands
         var collisionTable = new Table().Border(TableBorder.Rounded).Title("[bold]Key Collision Analysis[/]");
         collisionTable.AddColumn("Metric");
         collisionTable.AddColumn(new TableColumn("Count").RightAligned());
-        collisionTable.AddRow("FormID_ResponseIndex keys with 1 voice type", $"{formIdRespToVoiceTypes.Count(kv => kv.Value.Count == 1):N0}");
-        collisionTable.AddRow("[yellow]FormID_ResponseIndex keys with 2+ voice types[/]", $"[yellow]{collisions.Count:N0}[/]");
+        collisionTable.AddRow("FormID_ResponseIndex keys with 1 voice type",
+            $"{formIdRespToVoiceTypes.Count(kv => kv.Value.Count == 1):N0}");
+        collisionTable.AddRow("[yellow]FormID_ResponseIndex keys with 2+ voice types[/]",
+            $"[yellow]{collisions.Count:N0}[/]");
         collisionTable.AddRow("[yellow]Total voice files collapsed by old key format[/]",
             $"[yellow]{collisions.Sum(kv => kv.Value.Count - 1):N0}[/]");
 
@@ -212,7 +215,7 @@ public static class TranscriptDiagCommands
         }
 
         // Categorize keys by format
-        var newFormatKeys = 0;   // voicetype|FormID_ResponseIndex
+        var newFormatKeys = 0; // voicetype|FormID_ResponseIndex
         var legacyFormIdResp = 0; // FormID_ResponseIndex (no voice type)
         var legacyFormIdOnly = 0; // FormID only (8 hex chars)
         var unknownFormat = 0;
@@ -256,14 +259,15 @@ public static class TranscriptDiagCommands
         {
             jsonTable.AddRow($"  {(source.Length > 0 ? source : "(empty)")}", $"{count:N0}");
         }
+
         AnsiConsole.Write(jsonTable);
         AnsiConsole.WriteLine();
 
         // ── Step 4: Cross-reference BSA voice files vs JSON keys ──
         // For each BSA voice file, check if a JSON key would match it
-        var matchedByNew = 0;       // matched by voicetype|FormID_Resp
-        var matchedByLegacyFR = 0;  // matched by FormID_Resp (legacy)
-        var matchedByLegacyF = 0;   // matched by FormID only (legacy, resp=0)
+        var matchedByNew = 0; // matched by voicetype|FormID_Resp
+        var matchedByLegacyFR = 0; // matched by FormID_Resp (legacy)
+        var matchedByLegacyF = 0; // matched by FormID only (legacy, resp=0)
         var unmatched = 0;
 
         var unmatchedSamples = new List<string>();
@@ -388,7 +392,8 @@ public static class TranscriptDiagCommands
         }
         else if (newFormatKeys == entries.Count && newFormatKeys > 0)
         {
-            AnsiConsole.MarkupLine("[green]All JSON keys are in new format (voicetype|FormID_ResponseIndex) — no migration needed.[/]");
+            AnsiConsole.MarkupLine(
+                "[green]All JSON keys are in new format (voicetype|FormID_ResponseIndex) — no migration needed.[/]");
         }
 
         // ── Step 6: Voice type file distribution ──────────────────
@@ -423,13 +428,17 @@ public static class TranscriptDiagCommands
         AnsiConsole.MarkupLine("[bold]Summary:[/]");
         if (legacyFormIdResp + legacyFormIdOnly > 0)
         {
-            AnsiConsole.MarkupLine($"  [yellow]JSON has {legacyFormIdResp + legacyFormIdOnly:N0} legacy keys that need migration to voicetype|FormID_Resp format[/]");
-            AnsiConsole.MarkupLine($"  [yellow]This is why export shows ~{entries.Count:N0} instead of ~{totalFiles:N0}[/]");
-            AnsiConsole.MarkupLine("  [bold]Fix: Run the app with the updated ApplyToEntries to trigger migration, then re-export[/]");
+            AnsiConsole.MarkupLine(
+                $"  [yellow]JSON has {legacyFormIdResp + legacyFormIdOnly:N0} legacy keys that need migration to voicetype|FormID_Resp format[/]");
+            AnsiConsole.MarkupLine(
+                $"  [yellow]This is why export shows ~{entries.Count:N0} instead of ~{totalFiles:N0}[/]");
+            AnsiConsole.MarkupLine(
+                "  [bold]Fix: Run the app with the updated ApplyToEntries to trigger migration, then re-export[/]");
         }
         else if (entries.Count < totalFiles)
         {
-            AnsiConsole.MarkupLine($"  [yellow]JSON has {entries.Count:N0} entries but BSA has {totalFiles:N0} voice files[/]");
+            AnsiConsole.MarkupLine(
+                $"  [yellow]JSON has {entries.Count:N0} entries but BSA has {totalFiles:N0} voice files[/]");
             AnsiConsole.MarkupLine("  [yellow]Not all files have been transcribed yet[/]");
         }
         else

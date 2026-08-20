@@ -1,4 +1,5 @@
 using Vortice.Direct3D12;
+using Range = Vortice.Direct3D12.Range;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
@@ -78,23 +79,30 @@ internal readonly record struct GpuFrameTimings(
     GpuShadowCascadeTimings Cascade2,
     GpuShadowCascadeTimings Cascade3)
 {
-    /// <summary>Sum of every instrumented top-level pass. Cascade slots are NOT added — they are a
-    /// breakdown of <see cref="ShadowMilliseconds" />, not additional work.</summary>
+    /// <summary>
+    ///     Sum of every instrumented top-level pass. Cascade slots are NOT added — they are a
+    ///     breakdown of <see cref="ShadowMilliseconds" />, not additional work.
+    /// </summary>
     public double AccountedMilliseconds =>
         TerrainMilliseconds + ReferencesMilliseconds + WaterMilliseconds + WireframeMilliseconds +
         SkyMilliseconds + BlendedMilliseconds + ShadowMilliseconds + ResolveMilliseconds;
 
-    /// <summary>GPU time inside the frame that no instrumented region covers. The whole point of the
-    /// expanded region set: if this is not ~0, something expensive is still unmeasured.</summary>
+    /// <summary>
+    ///     GPU time inside the frame that no instrumented region covers. The whole point of the
+    ///     expanded region set: if this is not ~0, something expensive is still unmeasured.
+    /// </summary>
     public double OtherMilliseconds => Math.Max(0, FrameMilliseconds - AccountedMilliseconds);
 
-    public GpuShadowCascadeTimings Cascade(int index) => index switch
+    public GpuShadowCascadeTimings Cascade(int index)
     {
-        0 => Cascade0,
-        1 => Cascade1,
-        2 => Cascade2,
-        _ => Cascade3
-    };
+        return index switch
+        {
+            0 => Cascade0,
+            1 => Cascade1,
+            2 => Cascade2,
+            _ => Cascade3
+        };
+    }
 }
 
 /// <summary>Converts raw GPU timestamp ticks into elapsed milliseconds using the queue's tick frequency.</summary>
@@ -139,12 +147,12 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
     ];
 
     private readonly GpuDevice12 _gpu;
+    private readonly PendingFrame[] _pendingFrames = new PendingFrame[GpuCommandRecorder12.FramesInFlight];
     private readonly ID3D12QueryHeap _queryHeap;
     private readonly ID3D12Resource _readback;
-    private readonly PendingFrame[] _pendingFrames = new PendingFrame[GpuCommandRecorder12.FramesInFlight];
     private readonly ulong _timestampFrequency;
-    private bool _disposed;
     private int _activeFrameIndex = -1;
+    private bool _disposed;
 
     // Which slots this frame actually wrote. REQUIRED for correctness, not diagnostics: the shadow pass
     // is conditional, and the per-cascade slots are conditional WITHIN it (a frame may render 0, 2 or 4
@@ -170,12 +178,23 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
         _readback = gpu.Device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.ReadbackHeapProperties,
             HeapFlags.None,
-            ResourceDescription.Buffer((ulong)(sizeof(ulong) * QueryCountPerFrame * GpuCommandRecorder12.FramesInFlight)),
-            ResourceStates.CopyDest,
-            optimizedClearValue: null);
+            ResourceDescription.Buffer(sizeof(ulong) * QueryCountPerFrame * GpuCommandRecorder12.FramesInFlight),
+            ResourceStates.CopyDest);
     }
 
     public bool IsEnabled => !_disposed;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _readback.Dispose();
+        _queryHeap.Dispose();
+    }
 
     /// <summary>Selects the query slot set for the frame about to be recorded.</summary>
     public void BeginFrame(int frameIndex)
@@ -244,7 +263,10 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
             destinationOffset);
     }
 
-    /// <summary>Records the frame number and fence value for the active frame so its timings can be collected once the fence signals.</summary>
+    /// <summary>
+    ///     Records the frame number and fence value for the active frame so its timings can be collected once the fence
+    ///     signals.
+    /// </summary>
     public void MarkActiveFrameSubmitted(long frameNumber, ulong fenceValue)
     {
         ThrowIfDisposed();
@@ -258,22 +280,10 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
         _writtenMask = 0;
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _readback.Dispose();
-        _queryHeap.Dispose();
-    }
-
     private GpuFrameTimings ReadFrame(int frameIndex, long frameNumber, uint writtenMask)
     {
         var baseQuery = frameIndex * QueryCountPerFrame;
-        var readRange = new Vortice.Direct3D12.Range(
+        var readRange = new Range(
             (nuint)(baseQuery * sizeof(ulong)),
             (nuint)((baseQuery + QueryCountPerFrame) * sizeof(ulong)));
         void* data = null;
@@ -292,9 +302,12 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
                     : GpuTimestampMath.TicksToMilliseconds(values[(int)start], values[(int)end], _timestampFrequency);
             }
 
-            GpuShadowCascadeTimings Cascade(int i) => new(
-                Span(ShadowCascadeStart[i], ShadowCascadeRefs[i]),
-                Span(ShadowCascadeRefs[i], ShadowCascadeEnd[i]));
+            GpuShadowCascadeTimings Cascade(int i)
+            {
+                return new GpuShadowCascadeTimings(
+                    Span(ShadowCascadeStart[i], ShadowCascadeRefs[i]),
+                    Span(ShadowCascadeRefs[i], ShadowCascadeEnd[i]));
+            }
 
             return new GpuFrameTimings(
                 frameNumber,
@@ -314,12 +327,14 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
         }
         finally
         {
-            _readback.Unmap(0, new Vortice.Direct3D12.Range(0, 0));
+            _readback.Unmap(0, new Range(0, 0));
         }
     }
 
-    internal static uint QueryIndex(int frameIndex, GpuTimestampRegion region) =>
-        checked((uint)(frameIndex * QueryCountPerFrame + (int)region));
+    internal static uint QueryIndex(int frameIndex, GpuTimestampRegion region)
+    {
+        return checked((uint)(frameIndex * QueryCountPerFrame + (int)region));
+    }
 
     private void ThrowIfDisposed()
     {

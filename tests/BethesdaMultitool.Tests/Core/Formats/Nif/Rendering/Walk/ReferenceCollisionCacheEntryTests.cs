@@ -17,7 +17,7 @@ public sealed class ReferenceCollisionCacheEntryTests
         string categoryName)
     {
         var category = Enum.Parse<PlacedObjectCategory>(categoryName);
-        var visual = TriangleMesh(z: 10f);
+        var visual = TriangleMesh(10f);
         var visualBuilds = 0;
         var entry = CollisionCacheEntry.Create(
             @"meshes\landscape\trees\WastelandShrub01.nif",
@@ -74,10 +74,11 @@ public sealed class ReferenceCollisionCacheEntryTests
     public void StoreThenResolve_VisualSoupHonorsEffectAndSpeedTreePolicyAtCacheBoundary()
     {
         var visualBuilds = 0;
+
         CollisionMesh BuildVisual()
         {
             visualBuilds++;
-            return TriangleMesh(z: 20f);
+            return TriangleMesh(20f);
         }
 
         var effectEntry = CollisionCacheEntry.Create(
@@ -111,7 +112,7 @@ public sealed class ReferenceCollisionCacheEntryTests
     [Fact]
     public void StoreThenResolve_OrdinaryPathCanVaryForEffectCategoryWithoutDuplicatingSoup()
     {
-        var visual = TriangleMesh(z: 25f);
+        var visual = TriangleMesh(25f);
         var visualBuilds = 0;
         var entry = CollisionCacheEntry.Create(
             @"meshes\architecture\shared-volume.nif",
@@ -137,7 +138,7 @@ public sealed class ReferenceCollisionCacheEntryTests
     [Fact]
     public void CacheEntryByteSize_ChargesStoredGeometryAndANonzeroNegativeFloor()
     {
-        var visual = TriangleMesh(z: 30f);
+        var visual = TriangleMesh(30f);
         var positive = CollisionCacheEntry.Create(
             @"meshes\architecture\wall01.nif", HavokCollisionProvenance.AbsentOrUnsupported,
             null, null, () => visual);
@@ -183,7 +184,7 @@ public sealed class ReferenceCollisionCacheEntryTests
             () =>
             {
                 visualBuilds++;
-                return TriangleMesh(z: 40f);
+                return TriangleMesh(40f);
             });
 
         var result = CollisionMeshResolution.From(
@@ -289,13 +290,15 @@ public sealed class ReferenceCollisionCacheEntryTests
     [Fact]
     public void Create_RejectsMalformedAuthoredCollisionPayloads()
     {
-        static CollisionCacheEntry Create(Vector3[] positions, int[] triangles) =>
-            CollisionCacheEntry.Create(
+        static CollisionCacheEntry Create(Vector3[] positions, int[] triangles)
+        {
+            return CollisionCacheEntry.Create(
                 @"meshes\architecture\bad-collision.nif",
                 HavokCollisionProvenance.AuthoredMesh,
                 positions,
                 triangles,
                 () => throw new XunitException("Malformed authored data must fail before fallback."));
+        }
 
         Assert.Throws<ArgumentException>(() => Create(
             [new Vector3(float.PositiveInfinity, 0f, 0f), Vector3.UnitX, Vector3.UnitY],

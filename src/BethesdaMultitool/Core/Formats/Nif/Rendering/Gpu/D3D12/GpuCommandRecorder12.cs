@@ -31,21 +31,20 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// </summary>
     public const int FramesInFlight = 2;
 
-    private readonly GpuDevice12 _gpu;
     private readonly ID3D12CommandAllocator[] _allocators = new ID3D12CommandAllocator[FramesInFlight];
-    private readonly ID3D12GraphicsCommandList _commandList;
-    private readonly ulong[] _frameFenceValues = new ulong[FramesInFlight];
     private readonly List<IDisposable> _currentFrameRetirements = new();
-    private readonly Queue<FenceRetirement> _fenceRetirements = new();
     private readonly AutoResetEvent _fenceEvent = new(false);
-    private ulong _nextFenceValue = 1;
-    private int _frameIndex;
+    private readonly Queue<FenceRetirement> _fenceRetirements = new();
+    private readonly ulong[] _frameFenceValues = new ulong[FramesInFlight];
+
+    private readonly GpuDevice12 _gpu;
+    private bool _disposed;
 
     // True once this frame slot's wait counters have been reset, so a wait split across
     // WaitForFrameSlot + BeginFrame reports one total rather than only the second half.
     private bool _fenceWaitAccumulating;
     private bool _frameOpen;
-    private bool _disposed;
+    private ulong _nextFenceValue = 1;
 
     public GpuCommandRecorder12(GpuDevice12 gpu)
     {
@@ -54,34 +53,53 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         {
             _allocators[i] = gpu.Device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
         }
+
         // Command lists are born in the Open state; Close immediately so BeginFrame can Reset.
-        _commandList = gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
-            nodeMask: 0,
+        CommandList = gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
+            0,
             CommandListType.Direct,
             _allocators[0],
-            initialState: null);
-        _commandList.Close();
+            null);
+        CommandList.Close();
     }
 
-    /// <summary>The current frame's command list. Begin/end the frame via the recorder; the
-    /// list itself is exposed for renderers to record commands into.</summary>
-    public ID3D12GraphicsCommandList CommandList => _commandList;
+    /// <summary>
+    ///     The current frame's command list. Begin/end the frame via the recorder; the
+    ///     list itself is exposed for renderers to record commands into.
+    /// </summary>
+    public ID3D12GraphicsCommandList CommandList { get; }
 
-    /// <summary>0..<see cref="FramesInFlight" />-1 — frame-keyed accumulators (ring buffer
-    /// offset, descriptor heap slot, etc.) index off this.</summary>
-    public int FrameIndex => _frameIndex;
+    /// <summary>
+    ///     0..<see cref="FramesInFlight" />-1 — frame-keyed accumulators (ring buffer
+    ///     offset, descriptor heap slot, etc.) index off this.
+    /// </summary>
+    public int FrameIndex { get; private set; }
 
-    /// <summary>True when the most recent <see cref="BeginFrame" /> blocked on the GPU fence
-    /// (CPU was ahead of the GPU). A4 — gate for raising <see cref="FramesInFlight" /> 2→3: if
-    /// this is regularly true, the CPU is fence-bound and a deeper pipeline would help.</summary>
+    /// <summary>
+    ///     True when the most recent <see cref="BeginFrame" /> blocked on the GPU fence
+    ///     (CPU was ahead of the GPU). A4 — gate for raising <see cref="FramesInFlight" /> 2→3: if
+    ///     this is regularly true, the CPU is fence-bound and a deeper pipeline would help.
+    /// </summary>
     public bool LastFrameWaitedOnFence { get; private set; }
 
-    /// <summary>Milliseconds the most recent <see cref="BeginFrame" /> spent blocked on the fence
-    /// (0 when it did not wait). Surfaced so the bump decision is measured, not guessed.</summary>
+    /// <summary>
+    ///     Milliseconds the most recent <see cref="BeginFrame" /> spent blocked on the fence
+    ///     (0 when it did not wait). Surfaced so the bump decision is measured, not guessed.
+    /// </summary>
     public double LastFrameFenceWaitMilliseconds { get; private set; }
 
     /// <summary>Fence value signaled by the most recent <see cref="EndFrame" /> submission.</summary>
     public ulong LastSubmittedFenceValue { get; private set; }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        WaitForGpuIdle();
+        CommandList.Dispose();
+        foreach (var a in _allocators) a.Dispose();
+        _fenceEvent.Dispose();
+    }
 
     /// <summary>
     ///     Defers disposal of a short-lived resource used by the currently open command list
@@ -138,8 +156,8 @@ internal sealed class GpuCommandRecorder12 : IDisposable
 
         WaitForFrameSlotFence();
         RetireCompletedFenceResources();
-        _allocators[_frameIndex].Reset();
-        _commandList.Reset(_allocators[_frameIndex], initialState: null);
+        _allocators[FrameIndex].Reset();
+        CommandList.Reset(_allocators[FrameIndex], null);
         _frameOpen = true;
     }
 
@@ -158,7 +176,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
             _fenceWaitAccumulating = true;
         }
 
-        var waitFor = _frameFenceValues[_frameIndex];
+        var waitFor = _frameFenceValues[FrameIndex];
         if (waitFor > 0 && _gpu.FrameFence.CompletedValue < waitFor)
         {
             var waitStarted = Stopwatch.GetTimestamp();
@@ -187,7 +205,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
 
         try
         {
-            _commandList.Close();
+            CommandList.Close();
         }
         finally
         {
@@ -201,7 +219,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
             finally
             {
                 _currentFrameRetirements.Clear();
-                _frameIndex = (_frameIndex + 1) % FramesInFlight;
+                FrameIndex = (FrameIndex + 1) % FramesInFlight;
                 _frameOpen = false;
                 _fenceWaitAccumulating = false;
             }
@@ -219,20 +237,21 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     {
         if (!_frameOpen) throw new InvalidOperationException("EndFrame called without BeginFrame.");
 
-        _commandList.Close();
-        _gpu.DirectQueue.ExecuteCommandList(_commandList);
+        CommandList.Close();
+        _gpu.DirectQueue.ExecuteCommandList(CommandList);
 
         var signalValue = _nextFenceValue++;
         _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
-        _frameFenceValues[_frameIndex] = signalValue;
+        _frameFenceValues[FrameIndex] = signalValue;
         LastSubmittedFenceValue = signalValue;
         for (var i = 0; i < _currentFrameRetirements.Count; i++)
         {
             _fenceRetirements.Enqueue(new FenceRetirement(_currentFrameRetirements[i], signalValue));
         }
+
         _currentFrameRetirements.Clear();
 
-        _frameIndex = (_frameIndex + 1) % FramesInFlight;
+        FrameIndex = (FrameIndex + 1) % FramesInFlight;
         _frameOpen = false;
         _fenceWaitAccumulating = false;
     }
@@ -248,16 +267,6 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         D3D12FenceWaiter.WaitForFence(_gpu.FrameFence, signalValue, _fenceEvent);
         Array.Clear(_frameFenceValues);
         RetireAllFenceResources();
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        WaitForGpuIdle();
-        _commandList.Dispose();
-        foreach (var a in _allocators) a.Dispose();
-        _fenceEvent.Dispose();
     }
 
     private void RetireCompletedFenceResources()
@@ -281,6 +290,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         {
             resource.Dispose();
         }
+
         _currentFrameRetirements.Clear();
     }
 

@@ -66,21 +66,25 @@ internal sealed record FnvLocalLightAssociationObservation
 
     internal static FnvLocalLightAssociationObservation CreateUnknown(
         FnvGeometryLightAssociationKey key,
-        string evidenceSource) =>
-        new(
+        string evidenceSource)
+    {
+        return new FnvLocalLightAssociationObservation(
             key,
             FnvLocalLightAssociationKnowledge.Unknown,
             null,
             ValidateEvidenceSource(evidenceSource));
+    }
 
     internal static FnvLocalLightAssociationObservation CreateKnownEmpty(
         FnvGeometryLightAssociationKey key,
-        string evidenceSource) =>
-        new(
+        string evidenceSource)
+    {
+        return new FnvLocalLightAssociationObservation(
             key,
             FnvLocalLightAssociationKnowledge.KnownEmpty,
             ImmutableArray<uint>.Empty,
             ValidateEvidenceSource(evidenceSource));
+    }
 
     internal static FnvLocalLightAssociationObservation CreateKnownOrdered(
         FnvGeometryLightAssociationKey key,

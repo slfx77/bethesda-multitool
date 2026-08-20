@@ -93,7 +93,7 @@ public sealed class GpuTonemapSettingsTests
             TintR = 0.2f,
             TintG = 0.4f,
             TintB = 0.6f,
-            TintAmount = 0.7f,
+            TintAmount = 0.7f
         };
 
         var operatorOverride = operatorOverrideValue < 0
@@ -101,7 +101,7 @@ public sealed class GpuTonemapSettingsTests
             : (GpuTonemapMode?)operatorOverrideValue;
         var result = GpuTonemapSettings.FinalizeViewerPostProcessing(
             authored, game, (GpuTonemapGuiMode)guiModeValue, tonemapAvailable, operatorOverride,
-            guiBloomEnabled: true, historyKey);
+            true, historyKey);
 
         Assert.Equal((GpuTonemapMode)expectedMode, result.Mode);
         Assert.Equal(historyKey, result.HistoryKey);
@@ -127,7 +127,7 @@ public sealed class GpuTonemapSettingsTests
 
         var result = GpuTonemapSettings.FinalizeViewerPostProcessing(
             authored, BethesdaGame.FalloutNewVegas, GpuTonemapGuiMode.SdrBloom,
-            tonemapAvailable: true, operatorOverride: null, guiBloom, historyKey: 0);
+            true, null, guiBloom, 0);
 
         Assert.Equal(GpuTonemapMode.ClassicSdrBloom, result.Mode);
         Assert.Equal(expectedBloom, result.BloomEnabled);
@@ -140,7 +140,7 @@ public sealed class GpuTonemapSettingsTests
         // SDR display (no HDR operator), but the classic reduction + adaptation still run: the
         // bright pass thresholds against the adapted average even though the mode-5 composite
         // never samples uAvgLum.
-        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.ClassicSdrBloom, enabled: true);
+        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.ClassicSdrBloom, true);
 
         Assert.False(traits.IsHdrDisplayOperator);
         Assert.True(traits.UsesClassicReduction);
@@ -148,13 +148,13 @@ public sealed class GpuTonemapSettingsTests
         Assert.True(traits.AllowsClassicBloom);
 
         Assert.True(GpuTonemapModeTraits.IsBloomActive(
-            GpuTonemapMode.ClassicSdrBloom, enabled: true, bloomEnabled: true, brightScale: 1.5f));
+            GpuTonemapMode.ClassicSdrBloom, true, true, 1.5f));
         Assert.False(GpuTonemapModeTraits.IsBloomActive(
-            GpuTonemapMode.ClassicSdrBloom, enabled: true, bloomEnabled: false, brightScale: 1.5f));
+            GpuTonemapMode.ClassicSdrBloom, true, false, 1.5f));
         Assert.False(GpuTonemapModeTraits.IsBloomActive(
-            GpuTonemapMode.ClassicSdrBloom, enabled: true, bloomEnabled: true, brightScale: 0f));
+            GpuTonemapMode.ClassicSdrBloom, true, true, 0f));
         Assert.False(GpuTonemapModeTraits.IsBloomActive(
-            GpuTonemapMode.ClassicSdrBloom, enabled: false, bloomEnabled: true, brightScale: 1.5f));
+            GpuTonemapMode.ClassicSdrBloom, false, true, 1.5f));
     }
 
     [Fact]
@@ -174,7 +174,7 @@ public sealed class GpuTonemapSettingsTests
             TintG = 0.7f,
             TintB = 0.8f,
             TintAmount = 0.9f,
-            CinematicFlags = ImageSpaceCinematicFlags.None,
+            CinematicFlags = ImageSpaceCinematicFlags.None
         };
 
         var neutral = GpuTonemapSettings.WithoutImagespaceModifiers(poisoned);
@@ -242,22 +242,22 @@ public sealed class GpuTonemapSettingsTests
     [Fact]
     public void CinematicOnlyTraits_AreGradeWithoutHdrOrBloomSemantics()
     {
-        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.CinematicFo3Fnv, enabled: true);
+        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.CinematicFo3Fnv, true);
 
         Assert.False(traits.IsHdrDisplayOperator);
         Assert.False(traits.UsesClassicReduction);
         Assert.False(traits.UsesAdaptation);
         Assert.False(traits.AllowsClassicBloom);
         Assert.False(GpuTonemapModeTraits.IsBloomActive(
-            GpuTonemapMode.CinematicFo3Fnv, enabled: true, bloomEnabled: true, brightScale: 999f));
+            GpuTonemapMode.CinematicFo3Fnv, true, true, 999f));
     }
 
     [Fact]
     public void ModeTraits_ProfilerEffectiveStateDistinguishesHdrFromStandaloneGrade()
     {
-        var cinematic = GpuTonemapModeTraits.For(GpuTonemapMode.CinematicFo3Fnv, enabled: true);
-        var engine = GpuTonemapModeTraits.For(GpuTonemapMode.EngineFo3Fnv, enabled: true);
-        var killed = GpuTonemapModeTraits.For(GpuTonemapMode.EngineFo3Fnv, enabled: false);
+        var cinematic = GpuTonemapModeTraits.For(GpuTonemapMode.CinematicFo3Fnv, true);
+        var engine = GpuTonemapModeTraits.For(GpuTonemapMode.EngineFo3Fnv, true);
+        var killed = GpuTonemapModeTraits.For(GpuTonemapMode.EngineFo3Fnv, false);
 
         Assert.False(cinematic.IsHdrDisplayOperator);
         Assert.True(engine.IsHdrDisplayOperator);

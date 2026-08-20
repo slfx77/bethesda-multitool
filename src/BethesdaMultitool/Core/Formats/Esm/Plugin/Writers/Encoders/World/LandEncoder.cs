@@ -75,6 +75,7 @@ public static class LandEncoder
                 }
             }
         }
+
         subs.Add(new EncodedSubrecord("DATA", new byte[] { dataFlags, 0, 0, 0 }));
 
         // VNML — prefer the runtime mesh's captured normals when surfaced on visualData,

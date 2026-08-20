@@ -57,7 +57,7 @@ internal static class CellCaptureUnioner
             }
 
             var primary = MergeCellMetadata(captures);
-            var seen = new HashSet<uint>(capacity: primary.PlacedObjects.Count);
+            var seen = new HashSet<uint>(primary.PlacedObjects.Count);
             var unionList = new List<PlacedReference>(primary.PlacedObjects.Count);
             foreach (var capture in captures)
             {
@@ -105,7 +105,8 @@ internal static class CellCaptureUnioner
             GridX = primary.GridX ?? gridSource?.GridX,
             GridY = primary.GridY ?? gridSource?.GridY,
             WorldspaceFormId = primary.WorldspaceFormId ?? worldspaceSource?.WorldspaceFormId,
-            WorldspaceAssignmentSource = primary.WorldspaceAssignmentSource ?? worldspaceSource?.WorldspaceAssignmentSource,
+            WorldspaceAssignmentSource =
+            primary.WorldspaceAssignmentSource ?? worldspaceSource?.WorldspaceAssignmentSource,
             CandidateWorldspaceFormIds = MergeDistinct(captures.SelectMany(c => c.CandidateWorldspaceFormIds)),
             Flags = primary.Flags != 0 ? primary.Flags : captures.Select(c => c.Flags).FirstOrDefault(f => f != 0),
             WaterHeight = primary.WaterHeight ?? captures.Select(c => c.WaterHeight).FirstOrDefault(v => v.HasValue),

@@ -123,4 +123,3 @@ internal static class CellReplacementPreservationPolicy
         list.Add(placed);
     }
 }
-

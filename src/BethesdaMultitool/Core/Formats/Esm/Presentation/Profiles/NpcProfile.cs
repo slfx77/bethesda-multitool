@@ -22,10 +22,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 /// </summary>
 internal sealed class NpcProfile : IRecordProfile
 {
-    public string RecordType => "NPC_";
-
     private static readonly string[] SpecialNames =
         ["Strength", "Perception", "Endurance", "Charisma", "Intelligence", "Agility", "Luck"];
+
+    public string RecordType => "NPC_";
 
     public RecordDetailModel Build(
         uint formId, string? editorId, string? displayName,
@@ -50,8 +50,10 @@ internal sealed class NpcProfile : IRecordProfile
                 RecordDetailHelpers.Link("Hair", RefValue(TopBySignature(tree, "HNAM")), resolver),
                 RecordDetailHelpers.Scalar("Hair Color", NpcRecord.FormatHairColor(HairColor(tree))),
                 RecordDetailHelpers.Link("Eyes", RefValue(TopBySignature(tree, "ENAM")), resolver),
-                RecordDetailHelpers.Scalar("Height", NpcFloat(TopBySignature(tree, "NAM6"), 0.1f, 10.0f)?.ToString("F2")),
-                RecordDetailHelpers.Scalar("Weight", NpcFloat(TopBySignature(tree, "NAM7"), 0.0f, 1000.0f)?.ToString("F1")),
+                RecordDetailHelpers.Scalar("Height",
+                    NpcFloat(TopBySignature(tree, "NAM6"), 0.1f, 10.0f)?.ToString("F2")),
+                RecordDetailHelpers.Scalar("Weight",
+                    NpcFloat(TopBySignature(tree, "NAM7"), 0.0f, 1000.0f)?.ToString("F1")),
                 // Original Race / Face NPC / Race Preset are runtime/PDB-only (no subrecord) — null from an ESM.
                 RecordDetailHelpers.Link("Original Race", null, resolver),
                 RecordDetailHelpers.Link("Face NPC", null, resolver),
@@ -66,7 +68,8 @@ internal sealed class NpcProfile : IRecordProfile
                 RecordDetailHelpers.Link("Combat Style", RefValue(TopBySignature(tree, "ZNAM")), resolver)
             ]),
             RecordDetailHelpers.ListSection("Head Parts",
-                RefList(TopByLabel(tree, "Head Parts")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList()),
+                RefList(TopByLabel(tree, "Head Parts")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver))
+                    .ToList()),
             RecordDetailHelpers.ListSection("SPECIAL", RecordDetailHelpers.BuildStatItems(
                 SpecialNames, isFalloutSpecial ? Special(tree) : null)),
             RecordDetailHelpers.ListSection("Skills",
@@ -74,7 +77,8 @@ internal sealed class NpcProfile : IRecordProfile
             RecordDetailHelpers.ListSection("Factions", Factions(tree, resolver)),
             RecordDetailHelpers.ListSection("Inventory", Inventory(tree, resolver)),
             RecordDetailHelpers.ListSection("AI Packages",
-                RefList(TopByLabel(tree, "Packages")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
+                RefList(TopByLabel(tree, "Packages")).Select(id => RecordDetailHelpers.ListLinkItem(id, resolver))
+                    .ToList())
         };
 
         return RecordDetailHelpers.Model("NPC_", formId, editorId, displayName, sections);
@@ -82,21 +86,31 @@ internal sealed class NpcProfile : IRecordProfile
 
     // A reference entry: a FormID Link when the node carries a FormID, else a string Scalar (Morrowind's
     // RNAM/CNAM are editor-id strings, not FormIDs).
-    private static RecordDetailEntry RefEntry(string label, DecodedNode? node, FormIdResolver resolver) =>
-        RefValue(node) is { } formId
+    private static RecordDetailEntry RefEntry(string label, DecodedNode? node, FormIdResolver resolver)
+    {
+        return RefValue(node) is { } formId
             ? RecordDetailHelpers.Link(label, formId, resolver)
             : RecordDetailHelpers.Scalar(label, Str(node));
+    }
 
     // The FormID value of a present reference node (including 0), or null when the node is absent — so an
     // absent subrecord stays null (filtered) exactly like the typed model's uint? fields.
-    private static uint? RefValue(DecodedNode? node) => node?.RawValue as uint?;
+    private static uint? RefValue(DecodedNode? node)
+    {
+        return node?.RawValue as uint?;
+    }
 
-    private static IEnumerable<uint> RefList(DecodedNode? arrayNode) =>
-        arrayNode?.Children.Select(c => c.RawValue as uint?).Where(v => v.HasValue).Select(v => v!.Value) ?? [];
+    private static IEnumerable<uint> RefList(DecodedNode? arrayNode)
+    {
+        return arrayNode?.Children.Select(c => c.RawValue as uint?).Where(v => v.HasValue).Select(v => v!.Value) ?? [];
+    }
 
     // The typed model only populates Stats when the full ACBS parsed — its last field, Template Flags
     // (offset 22), is present exactly when the subrecord is the full 24 bytes that yield a non-null Stats.
-    private static bool HasStats(DecodedNode? acbs) => Int(ChildByLabel(acbs, "Template Flags")) is not null;
+    private static bool HasStats(DecodedNode? acbs)
+    {
+        return Int(ChildByLabel(acbs, "Template Flags")) is not null;
+    }
 
     // ACBS Flags bit 0; "No" unless Stats is populated, mirroring (npc.Stats?.Flags ?? 0) & 1.
     private static string Female(IReadOnlyList<DecodedNode> tree)

@@ -16,7 +16,10 @@ internal sealed class HourSchedule
 
     private readonly bool[] _enabled;
 
-    private HourSchedule(bool[] enabled) => _enabled = enabled;
+    private HourSchedule(bool[] enabled)
+    {
+        _enabled = enabled;
+    }
 
     internal bool IsEnabledAt(float hour)
     {

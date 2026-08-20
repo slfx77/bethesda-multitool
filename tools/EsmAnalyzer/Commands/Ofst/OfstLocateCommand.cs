@@ -1,6 +1,6 @@
-using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Ofst.OfstDataLoader;
 using static EsmAnalyzer.Commands.Ofst.OfstMathUtils;
 
@@ -18,12 +18,12 @@ public static class OfstLocateCommand
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-        { Description = "Maximum number of results to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum number of results to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
         var nonZeroOption = new Option<bool>("--nonzero") { Description = "Only show non-zero offsets" };
         var startOption = new Option<int>("--start")
-        { Description = "Start index in the OFST table", DefaultValueFactory = _ => 0 };
+            { Description = "Start index in the OFST table", DefaultValueFactory = _ => 0 };
         var baseOption = new Option<string>("--base")
-        { Description = "Base offset mode: file|wrld|grup|world", DefaultValueFactory = _ => "wrld" };
+            { Description = "Base offset mode: file|wrld|grup|world", DefaultValueFactory = _ => "wrld" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -210,7 +210,8 @@ public static class OfstLocateCommand
             $"X[{context.MinX},{context.MaxX}] Y[{context.MinY},{context.MaxY}] cols={context.Columns} rows={context.Rows}"));
         _ = table.AddRow("OFST Index", Markup.Escape(result.Index.ToString()));
         _ = table.AddRow("OFST Entry", Markup.Escape($"0x{result.Entry:X8}"));
-        _ = table.AddRow("Resolved Offset", Markup.Escape(result.Entry == 0 ? "(zero)" : $"0x{result.ResolvedOffset:X8}"));
+        _ = table.AddRow("Resolved Offset",
+            Markup.Escape(result.Entry == 0 ? "(zero)" : $"0x{result.ResolvedOffset:X8}"));
         _ = table.AddRow("Resolved Record",
             Markup.Escape(result.Match != null
                 ? $"{result.Match.Signature} 0x{result.Match.FormId:X8}"

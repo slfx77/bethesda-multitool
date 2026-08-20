@@ -61,13 +61,11 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMessageReader _messages;
     private readonly RuntimeMsttReader _movableStatics;
     private readonly RuntimeMusicTypeReader _musicTypes;
-    private readonly RuntimeStaticCollectionReader _staticCollections;
-    private readonly RuntimePlaceableWaterReader _placeableWaters;
-    private readonly RuntimeTreeReader _trees;
+    private readonly RuntimeNavMeshDiscovery _navMeshDiscovery;
     private readonly RuntimeNavMeshReader _navMeshes;
     private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
-    private readonly RuntimeNavMeshDiscovery _navMeshDiscovery;
     private readonly RuntimePackageReader _packages;
+    private readonly RuntimePlaceableWaterReader _placeableWaters;
     private readonly RuntimeRaceReader _races;
     private readonly RuntimeRecipeCategoryReader _recipeCategories;
     private readonly RuntimeRecipeReader _recipes;
@@ -77,7 +75,9 @@ public sealed class RuntimeStructReader
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeSkyWeatherReader _skyWeather;
     private readonly RuntimeSoundReader _sounds;
+    private readonly RuntimeStaticCollectionReader _staticCollections;
     private readonly RuntimeSurvivalStageReader _survivalStages;
+    private readonly RuntimeTreeReader _trees;
     private readonly RuntimeVoiceTypeReader _voiceTypes;
     private readonly RuntimeWaterReader _water;
     private readonly RuntimeWeaponModReader _weaponMods;
@@ -178,7 +178,10 @@ public sealed class RuntimeStructReader
     internal RuntimeWorldCellLayoutProbeResult? WorldCellLayoutProbe { get; }
 
     /// <summary>
-    ///     Aggregated probe results captured by <see cref="CreateWithAutoDetect(IMemoryAccessor,long,MinidumpInfo,IReadOnlyList{RuntimeEditorIdEntry},IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?)" />.
+    ///     Aggregated probe results captured by
+    ///     <see
+    ///         cref="CreateWithAutoDetect(IMemoryAccessor,long,MinidumpInfo,IReadOnlyList{RuntimeEditorIdEntry},IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?,IReadOnlyList{RuntimeEditorIdEntry}?)" />
+    ///     .
     ///     Surfaced so research/diagnostic commands (e.g. <c>dmp probe-shifts</c>) can
     ///     inspect probe-discovered layout drift across builds without re-running the probes.
     ///     Null when constructed without an entry set (e.g. test fixtures).
@@ -337,45 +340,6 @@ public sealed class RuntimeStructReader
 
     #endregion
 
-    #region Generic (PDB-derived)
-
-    /// <summary>
-    ///     Reads a record with no specialized reader as a generic, PDB-layout-driven record
-    ///     (identity and schema fields only) for the given DMP entry.
-    ///     <para>
-    ///     ASPC is intercepted here rather than being added to
-    ///     <c>PdbStructLayouts.SpecializedFormTypes</c>: that set <i>suppresses</i> the generic
-    ///     path, and since acoustic spaces have no record model of their own this is the only route
-    ///     by which they reach the writer at all. Excluding it would strand them entirely.
-    ///     </para>
-    /// </summary>
-    public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
-    {
-        return entry.FormType == AspcFormType
-            ? _acousticSpaces.ReadRuntimeAcousticSpace(entry)
-            : _generic.ReadGenericRecord(entry);
-    }
-
-    /// <summary>
-    ///     Read a runtime MSTT (BGSMovableStatic) base form. Its retained TESForm
-    ///     subobject pointer is rebased to the complete object by the PDB field accessor.
-    /// </summary>
-    public GenericEsmRecord? ReadRuntimeMstt(RuntimeEditorIdEntry entry)
-    {
-        return _movableStatics.ReadRuntimeMstt(entry);
-    }
-
-    /// <summary>
-    ///     Read a runtime FLOR (TESFlora) base form. Its retained TESForm
-    ///     subobject pointer is rebased to the complete object by the PDB field accessor.
-    /// </summary>
-    public GenericEsmRecord? ReadRuntimeFlor(RuntimeEditorIdEntry entry)
-    {
-        return _flora.ReadRuntimeFlor(entry);
-    }
-
-    #endregion
-
     #region Globals
 
     /// <summary>Reads the runtime global-variable record for the given DMP entry, or null if it can't be read.</summary>
@@ -475,6 +439,45 @@ public sealed class RuntimeStructReader
     public ImageSpaceModifierRecord? ReadRuntimeImageSpaceModifier(RuntimeEditorIdEntry entry)
     {
         return _imageSpaceModifiers.ReadRuntimeImageSpaceModifier(entry);
+    }
+
+    #endregion
+
+    #region Generic (PDB-derived)
+
+    /// <summary>
+    ///     Reads a record with no specialized reader as a generic, PDB-layout-driven record
+    ///     (identity and schema fields only) for the given DMP entry.
+    ///     <para>
+    ///         ASPC is intercepted here rather than being added to
+    ///         <c>PdbStructLayouts.SpecializedFormTypes</c>: that set <i>suppresses</i> the generic
+    ///         path, and since acoustic spaces have no record model of their own this is the only route
+    ///         by which they reach the writer at all. Excluding it would strand them entirely.
+    ///     </para>
+    /// </summary>
+    public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
+    {
+        return entry.FormType == AspcFormType
+            ? _acousticSpaces.ReadRuntimeAcousticSpace(entry)
+            : _generic.ReadGenericRecord(entry);
+    }
+
+    /// <summary>
+    ///     Read a runtime MSTT (BGSMovableStatic) base form. Its retained TESForm
+    ///     subobject pointer is rebased to the complete object by the PDB field accessor.
+    /// </summary>
+    public GenericEsmRecord? ReadRuntimeMstt(RuntimeEditorIdEntry entry)
+    {
+        return _movableStatics.ReadRuntimeMstt(entry);
+    }
+
+    /// <summary>
+    ///     Read a runtime FLOR (TESFlora) base form. Its retained TESForm
+    ///     subobject pointer is rebased to the complete object by the PDB field accessor.
+    /// </summary>
+    public GenericEsmRecord? ReadRuntimeFlor(RuntimeEditorIdEntry entry)
+    {
+        return _flora.ReadRuntimeFlor(entry);
     }
 
     #endregion

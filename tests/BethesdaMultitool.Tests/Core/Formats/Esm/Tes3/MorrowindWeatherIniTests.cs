@@ -2,7 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Tes3;
 using Xunit;
 
-namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
+namespace BethesdaMultitool.Tests.Core.Formats.Esm.Tes3;
 
 /// <summary>
 ///     Locks the Morrowind.ini → synthetic WTHR/CLMT translation (Morrowind authors its whole

@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
@@ -57,7 +56,7 @@ internal static class DialogueInfoOverlayWriter
         byte currentResponseNumber = 0;
 
         using var body = new MemoryStream();
-        using (var writer = new BinaryWriter(body, Encoding.Latin1, leaveOpen: true))
+        using (var writer = new BinaryWriter(body, Encoding.Latin1, true))
         {
             foreach (var subrecord in masterInfo.Subrecords)
             {
@@ -179,9 +178,11 @@ internal static class DialogueInfoOverlayWriter
         return result;
     }
 
-    internal static bool IsMeaningfulText(string? text) =>
-        !string.IsNullOrWhiteSpace(text)
-        && !string.Equals(text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal);
+    internal static bool IsMeaningfulText(string? text)
+    {
+        return !string.IsNullOrWhiteSpace(text)
+               && !string.Equals(text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal);
+    }
 
     private static byte GetResponseNumber(byte[] trdt, int ordinal)
     {

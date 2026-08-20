@@ -48,5 +48,5 @@ public enum ObScriptParamType : ushort
     Weather = 34,
     Npc = 35,
     Owner = 36,
-    EffectShader = 37,
+    EffectShader = 37
 }

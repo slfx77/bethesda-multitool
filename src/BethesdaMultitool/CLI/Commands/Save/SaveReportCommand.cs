@@ -4,11 +4,8 @@ using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.SaveGame.Decoding;
-using BethesdaMultitool.Core.Formats.SaveGame.Models;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.SaveGame.Export;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -357,4 +354,3 @@ internal static class SaveReportCommand
         }
     }
 }
-

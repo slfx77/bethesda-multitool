@@ -3,7 +3,6 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -25,7 +24,7 @@ public sealed class RuntimeGenericReaderTests
         var data = new byte[1 + sizeof(float)];
         BinaryPrimitives.WriteSingleBigEndian(data.AsSpan(1), -123.5f);
 
-        var value = reader.ReadFieldValue(data, field, tesFormFileOffset: 0);
+        var value = reader.ReadFieldValue(data, field, 0);
 
         Assert.Equal(-123.5f, Assert.IsType<float>(value));
     }
@@ -41,7 +40,7 @@ public sealed class RuntimeGenericReaderTests
         var data = new byte[sizeof(float)];
         BinaryPrimitives.WriteUInt32BigEndian(data, bits);
 
-        Assert.Null(reader.ReadFieldValue(data, field, tesFormFileOffset: 0));
+        Assert.Null(reader.ReadFieldValue(data, field, 0));
     }
 
     [Fact]
@@ -52,7 +51,7 @@ public sealed class RuntimeGenericReaderTests
         var data = new byte[sizeof(float)];
         BinaryPrimitives.WriteUInt32BigEndian(data, 1u);
 
-        Assert.Null(reader.ReadFieldValue(data, field, tesFormFileOffset: 0));
+        Assert.Null(reader.ReadFieldValue(data, field, 0));
     }
 
     [Fact]

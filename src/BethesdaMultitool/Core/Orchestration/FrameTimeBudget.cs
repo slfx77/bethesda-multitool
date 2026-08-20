@@ -38,7 +38,10 @@ internal readonly struct FrameTimeBudget
     }
 
     /// <summary>True once <paramref name="timestamp" /> has reached the deadline.</summary>
-    internal bool IsExpiredAt(long timestamp) => timestamp >= _deadlineTimestamp;
+    internal bool IsExpiredAt(long timestamp)
+    {
+        return timestamp >= _deadlineTimestamp;
+    }
 
     /// <summary>True once the wall clock has reached the deadline.</summary>
     public bool IsExpired => IsExpiredAt(Stopwatch.GetTimestamp());

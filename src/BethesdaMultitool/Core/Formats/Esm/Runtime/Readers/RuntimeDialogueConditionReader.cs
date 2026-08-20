@@ -15,6 +15,7 @@ internal sealed class RuntimeDialogueConditionReader
 {
     private const byte CtdaTypeUseGlobalBit = 0x04;
     private const byte GlobalFormType = 0x06;
+
     private static readonly ScriptFunctionSet FalloutFunctions =
         ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas);
 

@@ -452,4 +452,3 @@ internal static class GeckWeaponWriter
         return sb.ToString();
     }
 }
-

@@ -3,11 +3,18 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    private float? _topDownInteriorCeilingZ;
+
+    // Interior top-down overlay state: the interior currently loaded for the overlay + its converged
+    // ceiling-clip world Z (the height below which the floor plan shows; null until the scene's mesh
+    // bounds have streamed in enough to compute it). Reset when the interior changes / on exterior.
+    private uint? _topDownInteriorFormId;
     // Explicit interface implementation: the interface + TopDownRender are internal, so these can't
     // be public members on this public control (CS0050). The 2D map only ever calls them via the
     // ITopDownSceneRenderer reference it's handed, so explicit implementation is exactly right.
@@ -20,12 +27,6 @@ public sealed partial class WorldView3DControl
 
     /// <inheritdoc />
     bool ITopDownSceneRenderer.CanRenderTopDown => CanRenderTopDownCore;
-
-    // Interior top-down overlay state: the interior currently loaded for the overlay + its converged
-    // ceiling-clip world Z (the height below which the floor plan shows; null until the scene's mesh
-    // bounds have streamed in enough to compute it). Reset when the interior changes / on exterior.
-    private uint? _topDownInteriorFormId;
-    private float? _topDownInteriorCeilingZ;
 
     /// <inheritdoc />
     async Task<TopDownRender?> ITopDownSceneRenderer.RenderTopDownAsync(
@@ -96,6 +97,7 @@ public sealed partial class WorldView3DControl
                 _topDownTargetW = ssWidth;
                 _topDownTargetH = ssHeight;
             }
+
             target = _topDownTarget;
         }
         catch (Exception ex)
@@ -181,6 +183,7 @@ public sealed partial class WorldView3DControl
                 {
                     _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
                 }
+
                 // SpeedTree leaf cards re-face the billboard basis; the live frame sets it from the
                 // perspective camera, but this ortho capture looks straight down (east→+X right,
                 // north→+Y up per TopDownViewProjBuilder). Lay the leaf cards flat in the ground plane
@@ -240,6 +243,7 @@ public sealed partial class WorldView3DControl
                     // renders through the null-time overloads, which fall back to the live clock.
                     _water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);
                 }
+
                 target.RecordReadback(cmd);
             }
             finally
@@ -275,14 +279,14 @@ public sealed partial class WorldView3DControl
             // it would pin the overlay incomplete on a stale non-zero NewUploads forever.
             var terrainStatsForQuiescence = terrainDepthEnabled ? _terrain.LastStats : null;
             isComplete = StreamingQuiescence.IsQuiesced(
-                    _references!.LastStats, terrainStatsForQuiescence, strict: false)
-                && !ceilingNeedsAnotherPass;
+                             _references!.LastStats, terrainStatsForQuiescence, strict: false)
+                         && !ceilingNeedsAnotherPass;
             // Strict variant for one-shot consumers (2D map EXPORT tiles): also waits out the
             // texture-withheld window. The live overlay keeps keying on the loose IsComplete —
             // a pinned ReferenceTexturePending would make it re-render forever.
             isFullySettled = StreamingQuiescence.IsQuiesced(
-                    _references.LastStats, terrainStatsForQuiescence, strict: true)
-                && !ceilingNeedsAnotherPass;
+                                 _references.LastStats, terrainStatsForQuiescence, strict: true)
+                             && !ceilingNeedsAnotherPass;
             _gpu12.PumpDebugMessages();
         }
         catch (Exception ex)
@@ -291,14 +295,28 @@ public sealed partial class WorldView3DControl
             // inconsistent. EndFrame already submitted whatever was recorded; drain the GPU before
             // dropping the shared target so the next request rebuilds it cleanly (and we never
             // release a resource the GPU still references).
-            try { _commandRecorder12?.WaitForGpuIdle(); }
-            catch (Exception waitEx) { Log.Warn("WaitForGpuIdle after top-down failure threw: {0}", waitEx.Message); }
+            try
+            {
+                _commandRecorder12?.WaitForGpuIdle();
+            }
+            catch (Exception waitEx)
+            {
+                Log.Warn("WaitForGpuIdle after top-down failure threw: {0}", waitEx.Message);
+            }
+
             _topDownTarget?.Dispose();
             _topDownTarget = null;
             _topDownTargetW = _topDownTargetH = 0;
             Log.Warn("WorldView3DControl: top-down render failed: {0}", ex.Message);
-            try { _gpu12?.PumpDebugMessages(); }
-            catch (Exception pumpEx) { Log.Warn("PumpDebugMessages threw: {0}", pumpEx.Message); }
+            try
+            {
+                _gpu12?.PumpDebugMessages();
+            }
+            catch (Exception pumpEx)
+            {
+                Log.Warn("PumpDebugMessages threw: {0}", pumpEx.Message);
+            }
+
             return null;
         }
         finally
@@ -409,11 +427,13 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Blocks until <paramref name="fence" /> reaches <paramref name="value" />. Safe to
-    /// call off the UI thread (fence read + event are thread-safe). The fence is a parameter, not
-    /// read from <c>_gpu12</c>, because callers run on worker threads after teardown may have
-    /// nulled the field. Always completes (the offscreen frame is a single submission), so callers
-    /// can dispose GPU resources afterwards safely.</summary>
+    /// <summary>
+    ///     Blocks until <paramref name="fence" /> reaches <paramref name="value" />. Safe to
+    ///     call off the UI thread (fence read + event are thread-safe). The fence is a parameter, not
+    ///     read from <c>_gpu12</c>, because callers run on worker threads after teardown may have
+    ///     nulled the field. Always completes (the offscreen frame is a single submission), so callers
+    ///     can dispose GPU resources afterwards safely.
+    /// </summary>
     private static void WaitForFrameFence(Vortice.Direct3D12.ID3D12Fence fence, ulong value)
     {
         if (fence.CompletedValue >= value) return;
@@ -422,4 +442,3 @@ public sealed partial class WorldView3DControl
             fence, value, ev);
     }
 }
-

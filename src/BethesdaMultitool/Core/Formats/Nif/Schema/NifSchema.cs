@@ -1,6 +1,7 @@
 // Schema-driven NIF block conversion using nif.xml definitions
 // This reduces errors by reading structure definitions directly from the authoritative source
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Xml.Linq;
 
@@ -16,14 +17,15 @@ public sealed class NifSchema
 
     private readonly Dictionary<string, NifBasicType> _basicTypes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NifEnumDef> _enums = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, NifObjectDef> _objects = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, NifStructDef> _structs = new(StringComparer.OrdinalIgnoreCase);
 
     // Memoizes Inherits() — a pure function of the (immutable) object graph. The schema is a shared
     // cached singleton read concurrently by parallel conversions, so the cache is concurrent. The
     // value factory is idempotent, so a benign concurrent double-compute on a cold key is harmless.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string BlockType, string AncestorType), bool>
+    private readonly ConcurrentDictionary<(string BlockType, string AncestorType), bool>
         _inheritsCache = new();
+
+    private readonly Dictionary<string, NifObjectDef> _objects = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, NifStructDef> _structs = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyDictionary<string, NifBasicType> BasicTypes => _basicTypes;
     public IReadOnlyDictionary<string, NifStructDef> Structs => _structs;

@@ -15,12 +15,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 public sealed class AssetPathRewriteFixedPointTests : IDisposable
 {
+    private const string Sep = "\\";
+
     private readonly string _scratchRoot = Path.Combine(
         Path.GetTempPath(), $"assetfixedpoint-{Guid.NewGuid():N}");
 
     private bool _disposed;
 
-    public AssetPathRewriteFixedPointTests() => Directory.CreateDirectory(_scratchRoot);
+    public AssetPathRewriteFixedPointTests()
+    {
+        Directory.CreateDirectory(_scratchRoot);
+    }
 
     public void Dispose()
     {
@@ -45,9 +50,10 @@ public sealed class AssetPathRewriteFixedPointTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private const string Sep = "\\";
-
-    private string MakeDataFolder(string label) => Path.Combine(_scratchRoot, label);
+    private string MakeDataFolder(string label)
+    {
+        return Path.Combine(_scratchRoot, label);
+    }
 
     private static void WriteLooseFile(string dataFolder, string relativePath)
     {

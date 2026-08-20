@@ -13,18 +13,20 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class CellRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
+    private const string AssignmentSourceCellGrup = "CellGrup";
+    private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
+    private const string AssignmentSourceProximity = "Proximity";
+
     /// <summary>
     ///     Side length of an exterior cell in world units, or 0 for an interior (which has no grid, and
     ///     whose 0 makes consumers fall back to the engine default). Only games that deviate from the
     ///     4096-unit Fallout/TES cell carry a profile value — Starfield's Creation Engine 2 is metric at
     ///     100 units per cell. Mirrors what <c>Tes3RecordParser</c> does for Morrowind's 8192.
     /// </summary>
-    private float ExteriorCellWorldSize(uint flags) =>
-        (flags & 0x01) != 0 ? 0f : GameProfiles.For(Context.Game).ExteriorCellWorldSize;
-
-    private const string AssignmentSourceCellGrup = "CellGrup";
-    private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
-    private const string AssignmentSourceProximity = "Proximity";
+    private float ExteriorCellWorldSize(uint flags)
+    {
+        return (flags & 0x01) != 0 ? 0f : GameProfiles.For(Context.Game).ExteriorCellWorldSize;
+    }
 
     #region Cells
 
@@ -51,6 +53,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         {
             refrByFormId.TryAdd(refr.Header.FormId, refr);
         }
+
         var hasGrupMapping = cellToRefrMap.Count > 0;
 
         // Pre-sort REFR records by offset for O(log N) binary search in DMP fallback
@@ -439,9 +442,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     imageSpaceFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "XCCM" when sub.DataLength == 4
-                                      && Context.Game is BethesdaGame.Oblivion
-                                          or BethesdaGame.Fallout3
-                                          or BethesdaGame.FalloutNewVegas:
+                                 && Context.Game is BethesdaGame.Oblivion
+                                     or BethesdaGame.Fallout3
+                                     or BethesdaGame.FalloutNewVegas:
                     // XCCM is a CLMT FormID only in the classic families. Skyrim/FO4/FO76 reuse
                     // this signature for a REGN sky/weather source and must not populate this field.
                     climateFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -569,16 +572,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
             refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
-        int? gridX = cellGrid?.GridX;
-        int? gridY = cellGrid?.GridY;
+        var gridX = cellGrid?.GridX;
+        var gridY = cellGrid?.GridY;
         var isPersistentCell = ApplyStructuralCellClassification(
-            record.FormId, cellWorldspace, ref gridX, ref gridY, flags: 0);
+            record.FormId, cellWorldspace, ref gridX, ref gridY, 0);
 
         return new CellRecord
         {
             FormId = record.FormId,
             EditorId = Context.GetEditorId(record.FormId),
-            CellWorldSize = ExteriorCellWorldSize(flags: 0),
+            CellWorldSize = ExteriorCellWorldSize(0),
             GridX = gridX,
             GridY = gridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,

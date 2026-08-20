@@ -317,4 +317,3 @@ public static class HeightmapUtils
         public uint Offset { get; init; }
     }
 }
-

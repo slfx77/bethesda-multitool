@@ -1,10 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -181,7 +177,7 @@ public static class FaceGenCommands
         }
 
         Console.WriteLine($"  {new string('-', 45)} {new string('-', 8)} {new string('-', 8)}" +
-                           (geckRef != null ? $" {new string('-', 8)} {new string('-', 8)}" : ""));
+                          (geckRef != null ? $" {new string('-', 8)} {new string('-', 8)}" : ""));
 
         for (var i = 0; i < merged.Length; i++)
         {
@@ -198,7 +194,8 @@ public static class FaceGenCommands
             {
                 var error = Math.Abs(mergedVal - geckVal);
                 var marker = error < 0.02f ? " " : error < 0.1f ? "~" : "!";
-                Console.WriteLine($"  {name,-45} {mergedVal,8:F4} {npcOnlyVal,8:F4} {geckVal,8:F4} {error,7:F4}{marker}");
+                Console.WriteLine(
+                    $"  {name,-45} {mergedVal,8:F4} {npcOnlyVal,8:F4} {geckVal,8:F4} {error,7:F4}{marker}");
             }
             else
             {
@@ -296,4 +293,3 @@ public static class FaceGenCommands
         return result;
     }
 }
-

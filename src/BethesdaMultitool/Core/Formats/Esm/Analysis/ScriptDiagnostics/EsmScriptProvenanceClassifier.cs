@@ -2,7 +2,8 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Script;
-using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
+using ScriptReferenceSlot =
+    BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
@@ -94,8 +95,8 @@ internal static class EsmScriptProvenanceClassifier
 
         return (littleEndian.Diagnostics + " " + bigEndian.Diagnostics)
             .Contains("Unknown opcode", StringComparison.Ordinal)
-            ? "WalkerGap"
-            : "CorruptOrTruncated";
+                ? "WalkerGap"
+                : "CorruptOrTruncated";
     }
 
     public static string ResolveReferenceLabel(

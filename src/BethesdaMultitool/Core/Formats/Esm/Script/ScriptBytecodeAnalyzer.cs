@@ -54,7 +54,7 @@ public static class ScriptBytecodeAnalyzer
         var refs = new List<uint>(referencedObjects ?? []);
         var decompiler = new ScriptDecompiler(vars, refs, _ => null, isBigEndian, scriptName);
 
-        var decompiledText = decompiler.Decompile(bytecode, externalReader: reader);
+        var decompiledText = decompiler.Decompile(bytecode, reader);
         var regions = reader.StopTrackingMultiByteReads();
         var externalVariableReads = reader.StopTrackingExternalVariableReads();
         var localVariableReads = reader.StopTrackingLocalVariableReads();
@@ -109,8 +109,8 @@ public static class ScriptBytecodeAnalyzer
                 continue;
             }
 
-            if (read.Marker == ScriptOpcodes.MarkerIntLocal && matchingVariable.Type == 0
-                || read.Marker == ScriptOpcodes.MarkerFloatLocal && matchingVariable.Type != 0)
+            if ((read.Marker == ScriptOpcodes.MarkerIntLocal && matchingVariable.Type == 0)
+                || (read.Marker == ScriptOpcodes.MarkerFloatLocal && matchingVariable.Type != 0))
             {
                 storageMismatches.Add(
                     $"{read.VariableIndex}:marker=0x{read.Marker:X2}:slsd={matchingVariable.Type}");
@@ -219,11 +219,14 @@ public static class ScriptBytecodeAnalyzer
         var prefix = availableLength == 0
             ? "none"
             : Convert.ToHexString(bytecode.AsSpan(opaqueOffset, availableLength));
-        return $"bytecode-{issue.Kind}:opcode=0x{issue.Opcode:X4}:offset=0x{issue.OpcodeOffset:X}:declared={issue.DeclaredLength}:consumed={issue.ConsumedLength}:remaining={opaqueLength}:prefix={prefix}";
+        return
+            $"bytecode-{issue.Kind}:opcode=0x{issue.Opcode:X4}:offset=0x{issue.OpcodeOffset:X}:declared={issue.DeclaredLength}:consumed={issue.ConsumedLength}:remaining={opaqueLength}:prefix={prefix}";
     }
 
-    private static string TruncateDiagnostic(string value) =>
-        value.Length <= 160 ? value : value[..160];
+    private static string TruncateDiagnostic(string value)
+    {
+        return value.Length <= 160 ? value : value[..160];
+    }
 
     private static List<string> ExtractDiagnostics(string decompiledText)
     {

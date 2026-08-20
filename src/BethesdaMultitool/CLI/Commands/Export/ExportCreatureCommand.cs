@@ -2,12 +2,11 @@ using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Gltf;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Export;
@@ -36,7 +35,8 @@ internal static class ExportCreatureCommand
         };
         var texturesBsaOption = new Option<string[]?>("--textures-archive", "--textures-bsa")
         {
-            Description = "Path to textures archive(s) — BSA or BA2 (auto-detected from the meshes archive directory if omitted)",
+            Description =
+                "Path to textures archive(s) — BSA or BA2 (auto-detected from the meshes archive directory if omitted)",
             AllowMultipleArgumentsPerToken = true
         };
         var outputOption = new Option<string>("-o", "--output")
@@ -238,4 +238,3 @@ internal static class ExportCreatureCommand
         return result;
     }
 }
-

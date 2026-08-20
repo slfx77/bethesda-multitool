@@ -405,4 +405,3 @@ internal static class ComparisonBlobReader
         internal Dictionary<uint, Dictionary<int, RecordReport>> Records { get; init; } = [];
     }
 }
-

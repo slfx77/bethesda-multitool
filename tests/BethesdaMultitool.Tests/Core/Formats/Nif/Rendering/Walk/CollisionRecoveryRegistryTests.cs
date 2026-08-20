@@ -28,7 +28,7 @@ public sealed class CollisionRecoveryRegistryTests
         registry.MarkTerminalUnavailable(
             @"meshes\architecture\missing.nif",
             @"meshes\architecture\missing.nif",
-            hasPublishedCollisionEntry: false);
+            false);
 
         var result = registry.ResolveCacheMiss(@"meshes\architecture\missing.nif");
 
@@ -103,7 +103,7 @@ public sealed class CollisionRecoveryRegistryTests
         var registry = new CollisionRecoveryRegistry();
         registry.Publish(path, goodVariant, PositiveEntry(50f));
 
-        registry.MarkTerminalUnavailable(path, failedVariant, hasPublishedCollisionEntry: true);
+        registry.MarkTerminalUnavailable(path, failedVariant, true);
 
         Assert.True(registry.TryGetOwner(path, out var owner));
         Assert.Equal(goodVariant, owner);
@@ -119,7 +119,7 @@ public sealed class CollisionRecoveryRegistryTests
         var registry = new CollisionRecoveryRegistry();
         registry.Publish(path, goodVariant, PositiveEntry(55f));
 
-        registry.MarkTerminalUnavailable(path, failedVariant, hasPublishedCollisionEntry: false);
+        registry.MarkTerminalUnavailable(path, failedVariant, false);
 
         Assert.True(registry.TryGetOwner(path, out var owner));
         Assert.Equal(goodVariant, owner);
@@ -148,32 +148,40 @@ public sealed class CollisionRecoveryRegistryTests
         Assert.False(registry.TryGetOwner(path, out _));
     }
 
-    private static LruCache<string, CollisionCacheEntry> NewOneEntryCollisionLru() =>
-        new(
+    private static LruCache<string, CollisionCacheEntry> NewOneEntryCollisionLru()
+    {
+        return new LruCache<string, CollisionCacheEntry>(
             "CollisionRecoveryRegistryTests",
             ResourceCategory.CpuCache,
-            maxEntries: 1,
+            1,
             sizeOf: static (_, entry) => entry.ByteSize,
             comparer: StringComparer.OrdinalIgnoreCase);
+    }
 
-    private static CollisionCacheEntry PositiveEntry(float z) =>
-        CollisionCacheEntry.Create(
+    private static CollisionCacheEntry PositiveEntry(float z)
+    {
+        return CollisionCacheEntry.Create(
             @"meshes\architecture\ordinary.nif",
             HavokCollisionProvenance.AbsentOrUnsupported,
             null,
             null,
             () => TriangleMesh(z));
+    }
 
-    private static CollisionCacheEntry AuthoredEntry(float z) =>
-        CollisionCacheEntry.Create(
+    private static CollisionCacheEntry AuthoredEntry(float z)
+    {
+        return CollisionCacheEntry.Create(
             @"meshes\architecture\collision-only.nif",
             HavokCollisionProvenance.AuthoredMesh,
             [new Vector3(0f, 0f, z), new Vector3(1f, 0f, z), new Vector3(0f, 1f, z)],
             [0, 1, 2],
             static () => throw new InvalidOperationException("Authored collision must win."));
+    }
 
-    private static CollisionMesh TriangleMesh(float z) =>
-        new(
+    private static CollisionMesh TriangleMesh(float z)
+    {
+        return new CollisionMesh(
             [new Vector3(0f, 0f, z), new Vector3(1f, 0f, z), new Vector3(0f, 1f, z)],
             [0, 1, 2]);
+    }
 }

@@ -1,12 +1,10 @@
+using System.Buffers.Binary;
 using System.CommandLine;
+using System.Text;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Conversion;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
-using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Records;
@@ -99,14 +97,14 @@ internal static class CellTexturesCommand
             {
                 grupsSeen++;
                 var size = bigEndian
-                    ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 4))
-                    : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 4));
+                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 4))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 4));
                 var label = bigEndian
-                    ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 8))
-                    : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 8));
+                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 8))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 8));
                 var groupType = bigEndian
-                    ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 12))
-                    : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 12));
+                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 12))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 12));
 
                 if (label == targetCell)
                 {
@@ -134,8 +132,8 @@ internal static class CellTexturesCommand
 
             // Otherwise this must be a record. Skip the whole record (24-byte header + DataSize).
             var dataSize = bigEndian
-                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 4))
-                : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 4));
+                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 4));
             off += 24 + dataSize;
         }
 
@@ -151,18 +149,18 @@ internal static class CellTexturesCommand
         {
             var sig = bigEndian
                 ? new string([(char)data[off + 3], (char)data[off + 2], (char)data[off + 1], (char)data[off]])
-                : System.Text.Encoding.ASCII.GetString(data, (int)off, 4);
+                : Encoding.ASCII.GetString(data, (int)off, 4);
             var dataSize = bigEndian
-                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 4))
-                : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 4));
+                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 4));
             if (sig == "LAND")
             {
                 var flags = bigEndian
-                    ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 8))
-                    : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 8));
+                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 8))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 8));
                 var formId = bigEndian
-                    ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 12))
-                    : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 12));
+                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)off + 12))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + 12));
                 AnsiConsole.MarkupLine(
                     $"[grey]  LAND in GRUP: FormID=0x{formId:X8} at 0x{off:X} payload={dataSize}[/]");
                 var info = new AnalyzerRecordInfo
@@ -176,8 +174,10 @@ internal static class CellTexturesCommand
                 };
                 first ??= info;
             }
+
             off += 24 + dataSize;
         }
+
         return first;
     }
 
@@ -204,19 +204,20 @@ internal static class CellTexturesCommand
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(recordData, recordData.Length, bigEndian))
         {
             if (sub.Signature != "BTXT" && sub.Signature != "ATXT") continue;
-            if (sub.Signature == "BTXT") btxtCount++; else atxtCount++;
+            if (sub.Signature == "BTXT") btxtCount++;
+            else atxtCount++;
 
             var span = recordData.AsSpan(sub.DataOffset, Math.Min(sub.DataLength, 8));
             var hex = string.Join(' ', span.ToArray().Select(b => b.ToString("X2")));
 
             var formId = bigEndian
-                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(span)
-                : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(span);
+                ? BinaryPrimitives.ReadUInt32BigEndian(span)
+                : BinaryPrimitives.ReadUInt32LittleEndian(span);
             var quad = span[4];
             var pflag = span[5];
             var layer = bigEndian
-                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(span[6..])
-                : System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(span[6..]);
+                ? BinaryPrimitives.ReadUInt16BigEndian(span[6..])
+                : BinaryPrimitives.ReadUInt16LittleEndian(span[6..]);
 
             _ = table.AddRow(
                 sub.Signature,
@@ -247,7 +248,7 @@ internal static class CellTexturesCommand
             else parsedAtxtByQuad[l.Quadrant]++;
         }
 
-        AnsiConsole.MarkupLine($"[cyan]LandSubrecordParser.Parse result:[/]");
+        AnsiConsole.MarkupLine("[cyan]LandSubrecordParser.Parse result:[/]");
         AnsiConsole.MarkupLine($"  Parsed BTXT total: {parsedLayers.Count(l => l.Kind == LandTextureLayerKind.Base)}");
         AnsiConsole.MarkupLine($"  Parsed ATXT total: {parsedLayers.Count(l => l.Kind == LandTextureLayerKind.Alpha)}");
         for (var q = 0; q < 4; q++)
@@ -263,7 +264,7 @@ internal static class CellTexturesCommand
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[cyan]Reloading via UnifiedAnalyzer (full app pipeline)...[/]");
-        using var result = await UnifiedAnalyzer.AnalyzeAsync(filePath, null, default);
+        using var result = await UnifiedAnalyzer.AnalyzeAsync(filePath);
         var cell = result.Records.Cells.FirstOrDefault(c => c.FormId == cellFormId);
         if (cell is null)
         {
@@ -325,9 +326,9 @@ internal static class CellTexturesCommand
             {
                 for (var v = 0; v < 3; v++)
                 {
-                    var x = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(v * 12, 4));
-                    var y = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(v * 12 + 4, 4));
-                    var z = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(v * 12 + 8, 4));
+                    var x = BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(v * 12, 4));
+                    var y = BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(v * 12 + 4, 4));
+                    var z = BinaryPrimitives.ReadSingleLittleEndian(nvvx.AsSpan(v * 12 + 8, 4));
                     AnsiConsole.WriteLine($"    Vert {v} = ({x:F1}, {y:F1}, {z:F1})");
                 }
             }
@@ -343,6 +344,7 @@ internal static class CellTexturesCommand
             if (l.Kind == LandTextureLayerKind.Base) btxtByQuad[l.Quadrant]++;
             else atxtByQuad[l.Quadrant]++;
         }
+
         for (var q = 0; q < 4; q++)
         {
             var name = q switch { 0 => "SW", 1 => "SE", 2 => "NW", 3 => "NE", _ => "?" };
@@ -351,10 +353,10 @@ internal static class CellTexturesCommand
 
         // Texture resolution chain: LTEX → TXST → DiffuseTexture path.
         // Also try loading from BSAs adjacent to the ESM.
-        var bsaPaths = BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.BsaDiscovery.Discover(filePath).TexturesBsaPaths;
+        var bsaPaths = BsaDiscovery.Discover(filePath).TexturesBsaPaths;
         var sources = bsaPaths.Length > 0
-            ? BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTextureArchiveSourceFactory.Create(bsaPaths)
-            : new List<BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.INifTextureSource>();
+            ? NifTextureArchiveSourceFactory.Create(bsaPaths)
+            : new List<INifTextureSource>();
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[cyan]Texture BSAs discovered:[/] {bsaPaths.Length}");
@@ -373,12 +375,14 @@ internal static class CellTexturesCommand
                 AnsiConsole.WriteLine($"  LTEX 0x{ltexId:X8}: NOT FOUND in collection");
                 continue;
             }
+
             var txstId = ltex.TextureSetFormId;
             if (!txstId.HasValue)
             {
                 AnsiConsole.WriteLine($"  LTEX 0x{ltexId:X8} (EditorID={ltex.EditorId ?? "?"}): TXST FormID is null");
                 continue;
             }
+
             var txst = result.Records.TextureSets.FirstOrDefault(t => t.FormId == txstId.Value);
             if (txst is null)
             {
@@ -386,15 +390,17 @@ internal static class CellTexturesCommand
                     $"  LTEX 0x{ltexId:X8} (EditorID={ltex.EditorId ?? "?"}) -> TXST 0x{txstId.Value:X8}: TXST NOT FOUND");
                 continue;
             }
+
             // Try loading the texture via the same pipeline the rendered layer uses.
             var rawPath = txst.DiffuseTexture ?? "";
-            var normPath = BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTexturePathUtility.Normalize(rawPath);
-            var tex = BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTextureLoader.TryLoadFromSources(normPath, sources);
+            var normPath = NifTexturePathUtility.Normalize(rawPath);
+            var tex = NifTextureLoader.TryLoadFromSources(normPath, sources);
             if (tex is null && normPath.EndsWith(".dds", StringComparison.Ordinal))
             {
                 var ddxPath = string.Concat(normPath.AsSpan(0, normPath.Length - 4), ".ddx");
-                tex = BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTextureLoader.TryLoadFromSources(ddxPath, sources);
+                tex = NifTextureLoader.TryLoadFromSources(ddxPath, sources);
             }
+
             var loadStatus = tex is null
                 ? "LOAD FAILED"
                 : $"loaded ({tex.MipLevels.Count} mips, base={tex.MipLevels[0].Width}x{tex.MipLevels[0].Height})";

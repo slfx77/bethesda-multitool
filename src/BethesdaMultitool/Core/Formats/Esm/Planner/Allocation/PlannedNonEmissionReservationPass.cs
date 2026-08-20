@@ -14,13 +14,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Allocation;
 /// </summary>
 internal static class PlannedNonEmissionReservationPass
 {
-    internal sealed record Result(
-        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
-        ImmutableDictionary<uint, uint> SourceToEmitted,
-        ImmutableHashSet<uint> EmittedFormIds,
-        ImmutableArray<FormIdReservation> Reservations,
-        ImmutableArray<PlanDiagnostic> Diagnostics);
-
     internal static Result Apply(
         IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> decisions,
         IReadOnlyDictionary<uint, uint> topLevelAllocations,
@@ -57,9 +50,9 @@ internal static class PlannedNonEmissionReservationPass
                 liveFormIds,
                 reservations,
                 diagnostics,
-                policyId: "PlannedNonEmissionReservationPass.NewAvif",
-                diagnosticCode: "allocation.reserve.avif-engine-owned",
-                reason: "FNV actor values are engine-owned; a plugin-new AVIF crashes during load.");
+                "PlannedNonEmissionReservationPass.NewAvif",
+                "allocation.reserve.avif-engine-owned",
+                "FNV actor values are engine-owned; a plugin-new AVIF crashes during load.");
         }
 
         // ScolEncoder intentionally declines a new SCOL when it has neither a baked model
@@ -92,9 +85,9 @@ internal static class PlannedNonEmissionReservationPass
                 liveFormIds,
                 reservations,
                 diagnostics,
-                policyId: "PlannedNonEmissionReservationPass.UnemittableScol",
-                diagnosticCode: "allocation.reserve.scol-no-renderable-content",
-                reason: "SCOL has no baked model and no ONAM part whose target is live.");
+                "PlannedNonEmissionReservationPass.UnemittableScol",
+                "allocation.reserve.scol-no-renderable-content",
+                "SCOL has no baked model and no ONAM part whose target is live.");
         }
 
         return new Result(
@@ -172,15 +165,15 @@ internal static class PlannedNonEmissionReservationPass
             Provenance = new PlanProvenance
             {
                 PolicyId = policyId,
-                Reason = reason,
-            },
+                Reason = reason
+            }
         });
         reservations.Add(new FormIdReservation
         {
             FormId = reservedFormId,
             SourceFormId = sourceFormId,
             RecordType = entry.Type,
-            PolicyId = policyId,
+            PolicyId = policyId
         });
         diagnostics.Add(new PlanDiagnostic
         {
@@ -195,8 +188,15 @@ internal static class PlannedNonEmissionReservationPass
             {
                 ["source-form-id"] = $"0x{sourceFormId:X8}",
                 ["reserved-form-id"] = $"0x{reservedFormId:X8}",
-                ["policy-id"] = policyId,
-            },
+                ["policy-id"] = policyId
+            }
         });
     }
+
+    internal sealed record Result(
+        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
+        ImmutableDictionary<uint, uint> SourceToEmitted,
+        ImmutableHashSet<uint> EmittedFormIds,
+        ImmutableArray<FormIdReservation> Reservations,
+        ImmutableArray<PlanDiagnostic> Diagnostics);
 }

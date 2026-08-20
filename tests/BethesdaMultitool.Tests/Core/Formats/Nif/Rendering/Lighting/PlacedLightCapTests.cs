@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -16,8 +17,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Lighting;
 /// </summary>
 public sealed class PlacedLightCapTests
 {
-    private static string ReadPointLightsSource() =>
-        SourceContract.ReadAppSource("WorldView3DControl.PointLights.cs");
+    private static string ReadPointLightsSource()
+    {
+        return SourceContract.ReadAppSource("WorldView3DControl.PointLights.cs");
+    }
 
     [Fact]
     public void CapConstantsKeepTheirValues()
@@ -67,6 +70,6 @@ public sealed class PlacedLightCapTests
     {
         var match = Regex.Match(source, $@"private const int {Regex.Escape(name)} = (\d+);");
         Assert.True(match.Success, $"Constant {name} not found.");
-        return int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        return int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
     }
 }

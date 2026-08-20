@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 internal enum TerrainTriangleTopology
 {
     FixedSouthEastNorthWest,
-    AlternatingCheckerboard,
+    AlternatingCheckerboard
 }
 
 /// <summary>
@@ -21,24 +21,29 @@ internal enum TerrainTriangleTopology
 /// </summary>
 internal static class TerrainSurfaceTopology
 {
-    internal static TerrainTriangleTopology ForGame(BethesdaGame game) => game switch
+    internal static TerrainTriangleTopology ForGame(BethesdaGame game)
     {
-        // TESObjectLAND::GetCoordData in the recovered FNV executable alternates the diagonal by
-        // (quadX + quadY) parity. The 16-quad LAND quadrants have even width, so quadrant-local and
-        // cell-local parity are identical. FO3 parity 2026-08-10: FO3 retail x86 (0x007220D0)
-        // implements the SAME checkerboard — identical parity test, index sets, and 1/2048, 1/128,
-        // 17-stride constants (TestOutput/fo3-parity-2026-08/census/fo3-decompile-spotchecks.md).
-        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 =>
-            TerrainTriangleTopology.AlternatingCheckerboard,
-        _ => TerrainTriangleTopology.FixedSouthEastNorthWest,
-    };
+        return game switch
+        {
+            // TESObjectLAND::GetCoordData in the recovered FNV executable alternates the diagonal by
+            // (quadX + quadY) parity. The 16-quad LAND quadrants have even width, so quadrant-local and
+            // cell-local parity are identical. FO3 parity 2026-08-10: FO3 retail x86 (0x007220D0)
+            // implements the SAME checkerboard — identical parity test, index sets, and 1/2048, 1/128,
+            // 17-stride constants (TestOutput/fo3-parity-2026-08/census/fo3-decompile-spotchecks.md).
+            BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 =>
+                TerrainTriangleTopology.AlternatingCheckerboard,
+            _ => TerrainTriangleTopology.FixedSouthEastNorthWest
+        };
+    }
 
     internal static bool UsesSouthwestNortheastDiagonal(
         TerrainTriangleTopology topology,
         int quadX,
         int quadY)
-        => topology == TerrainTriangleTopology.AlternatingCheckerboard &&
-           ((quadX + quadY) & 1) == 0;
+    {
+        return topology == TerrainTriangleTopology.AlternatingCheckerboard &&
+               ((quadX + quadY) & 1) == 0;
+    }
 
     /// <summary>
     ///     Samples the exact plane of the selected heightfield triangle at a cell-local XY point.

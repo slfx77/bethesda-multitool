@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 
 internal sealed record CrossDumpRecordTypePageContext(
@@ -64,4 +65,3 @@ internal sealed record CrossDumpRecordTypePageContext(
             gridCoords);
     }
 }
-

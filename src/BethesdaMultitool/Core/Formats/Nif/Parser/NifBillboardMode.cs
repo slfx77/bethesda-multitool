@@ -12,5 +12,5 @@ public enum NifBillboardMode : ushort
     AlwaysFaceCenter = 3,
     RigidFaceCenter = 4,
     BsRotateAboutUp = 5,
-    RotateAboutUp2 = 9,
+    RotateAboutUp2 = 9
 }

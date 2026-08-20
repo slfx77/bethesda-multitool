@@ -8,6 +8,10 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    // Auto-dismiss timer for transient notifications (e.g. "not a teleport door"). Persistent status
+    // (load progress, fatal-init errors) passes autoDismiss=false and stays until HideStatus().
+    private DispatcherTimer? _statusDismissTimer;
+
     private void UpdateHud(int visible, int total, int visibleWater, int visibleReferences, int visibleNavMesh)
     {
         if (!_hudHidden && StatusOverlay.Visibility != Visibility.Visible && HudPanel.Visibility != Visibility.Visible)
@@ -21,6 +25,7 @@ public sealed partial class WorldView3DControl
         {
             return;
         }
+
         _lastHudUpdateTimestamp = now;
 
         var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
@@ -76,6 +81,7 @@ public sealed partial class WorldView3DControl
             text += $"\n⚠ DRAW-CAP: {truncatedDraws} draws skipped this frame " +
                     $"(ring {ringTotalMib:0}MiB full — raise FALLOUT_VIEWER_RING_BUFFER_MB)";
         }
+
         // A dead reference pipeline means terrain still draws while every placed object silently
         // vanishes — indistinguishable from an empty cell. Keep the reason on screen rather than
         // only in the log (a transient ShowStatus would be overwritten by the worldspace load).
@@ -83,6 +89,7 @@ public sealed partial class WorldView3DControl
         {
             text += $"\n⚠ PLACED OBJECTS UNAVAILABLE: {referenceError}";
         }
+
         if (_showFrameStats && _showTerrain && _terrain is not null)
         {
             var stats = _terrain.LastStats;
@@ -115,6 +122,7 @@ public sealed partial class WorldView3DControl
             _lastHudText = text;
             HudText.Text = text;
         }
+
         if (!_hudHidden && StatusOverlay.Visibility != Visibility.Visible)
         {
             HudPanel.Visibility = Visibility.Visible;
@@ -229,10 +237,6 @@ public sealed partial class WorldView3DControl
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
-
-    // Auto-dismiss timer for transient notifications (e.g. "not a teleport door"). Persistent status
-    // (load progress, fatal-init errors) passes autoDismiss=false and stays until HideStatus().
-    private DispatcherTimer? _statusDismissTimer;
 
     private void ShowStatus(string message, bool autoDismiss = false)
     {

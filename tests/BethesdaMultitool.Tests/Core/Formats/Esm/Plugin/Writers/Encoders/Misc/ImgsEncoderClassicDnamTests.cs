@@ -4,9 +4,9 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
-using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Parity;
@@ -60,7 +60,7 @@ public sealed class ImgsEncoderClassicDnamTests
             BinaryPrimitives.ReadSingleLittleEndian(encoded.AsSpan(96, sizeof(float))));
         Assert.Equal(source.Tint.Amount,
             BinaryPrimitives.ReadSingleLittleEndian(encoded.AsSpan(128, sizeof(float))));
-        byte[] expectedCanonicalTail = sourceLength == 132
+        var expectedCanonicalTail = sourceLength == 132
             ? [.. ExpectedPostBodyTail(sourceLength, false), .. new byte[16]]
             : ExpectedPostBodyTail(sourceLength, false);
         Assert.Equal(expectedCanonicalTail, encoded.AsSpan(132, 20).ToArray());
@@ -75,11 +75,11 @@ public sealed class ImgsEncoderClassicDnamTests
             source.Cinematic with
             {
                 HasExplicitFlags = true,
-                Flags = sourceLength == 132 ? ImageSpaceCinematicFlags.None : source.Cinematic.Flags,
+                Flags = sourceLength == 132 ? ImageSpaceCinematicFlags.None : source.Cinematic.Flags
             },
             roundTrip.Cinematic);
         Assert.Equal(source.Tint, roundTrip.Tint);
-        uint[] expectedCanonicalWords = sourceLength == 132
+        var expectedCanonicalWords = sourceLength == 132
             ? [.. ExpectedPostBodyWords(sourceLength), 0, 0, 0, 0]
             : ExpectedPostBodyWords(sourceLength);
         Assert.Equal(expectedCanonicalWords, roundTrip.PostBodyWords);
@@ -98,7 +98,7 @@ public sealed class ImgsEncoderClassicDnamTests
         var changedFlags = ImageSpaceCinematicFlags.Saturation | ImageSpaceCinematicFlags.Tint;
         var changed = MakeClassicRecord(source) with
         {
-            Cinematic = source.Cinematic with { Flags = changedFlags },
+            Cinematic = source.Cinematic with { Flags = changedFlags }
         };
         var expectedWords = ExpectedPostBodyWords(sourceLength);
         var originalFlagsLane = expectedWords[4];
@@ -178,14 +178,14 @@ public sealed class ImgsEncoderClassicDnamTests
         var editedCinematic = classic.Cinematic with
         {
             Saturation = 902f,
-            Flags = ImageSpaceCinematicFlags.Saturation,
+            Flags = ImageSpaceCinematicFlags.Saturation
         };
         var editedTint = classic.Tint with { Amount = 903f };
         var record = MakeClassicRecord(classic) with
         {
             Hdr = editedHdr,
             Cinematic = editedCinematic,
-            Tint = editedTint,
+            Tint = editedTint
         };
 
         var encoded = ImgsEncoder.EncodeClassicDnam(record);
@@ -228,7 +228,7 @@ public sealed class ImgsEncoderClassicDnamTests
         {
             // A classic record must not append a second, modern-style DNAM even if compatibility
             // properties were populated by a synthetic caller.
-            DepthOfField = [900f, 901f],
+            DepthOfField = [900f, 901f]
         };
 
         var encoded = ImgsEncoder.EncodeNew(record);
@@ -252,7 +252,7 @@ public sealed class ImgsEncoderClassicDnamTests
             Hdr = ExpectedHdr(false),
             Cinematic = ExpectedCinematic(true),
             Tint = ExpectedTint(),
-            DepthOfField = [301f, 302f],
+            DepthOfField = [301f, 302f]
         };
 
         var encoded = ImgsEncoder.EncodeNew(record);
@@ -300,7 +300,7 @@ public sealed class ImgsEncoderClassicDnamTests
             ClassicDnam = classic,
             Hdr = classic.Hdr,
             Cinematic = classic.Cinematic,
-            Tint = classic.Tint,
+            Tint = classic.Tint
         };
     }
 
@@ -316,7 +316,7 @@ public sealed class ImgsEncoderClassicDnamTests
             132 => (ushort)9,
             148 => (ushort)13,
             152 => (ushort)15,
-            _ => throw new ArgumentOutOfRangeException(nameof(dnamLength)),
+            _ => throw new ArgumentOutOfRangeException(nameof(dnamLength))
         };
         if (bigEndian)
             BinaryPrimitives.WriteUInt16BigEndian(file.AsSpan(20, sizeof(ushort)), formVersion);
@@ -327,12 +327,12 @@ public sealed class ImgsEncoderClassicDnamTests
         var detected = new DetectedMainRecord(
             "IMGS", (uint)subrecords.Length, 0, 0x0100_1234, 0, bigEndian)
         {
-            HeaderSize = headerSize,
+            HeaderSize = headerSize
         };
         var scan = new EsmRecordScanResult
         {
             Game = game,
-            MainRecords = [detected],
+            MainRecords = [detected]
         };
         var context = new RecordParserContext(
             scan,
@@ -373,17 +373,19 @@ public sealed class ImgsEncoderClassicDnamTests
         return length == 132
             ? [0xEFBE_ADE2]
             :
-        [
-            0xEFBE_ADE2, // Immediate lane low nibble deliberately differs from flags.
-            0x4433_2211,
-            0x8877_6655,
-            0xCCBB_AA99,
-            0xF3E2_D1BC, // Terminal flags lane low nibble C; upper 28 bits remain opaque.
-        ];
+            [
+                0xEFBE_ADE2, // Immediate lane low nibble deliberately differs from flags.
+                0x4433_2211,
+                0x8877_6655,
+                0xCCBB_AA99,
+                0xF3E2_D1BC // Terminal flags lane low nibble C; upper 28 bits remain opaque.
+            ];
     }
 
-    private static byte[] ExpectedPostBodyTail(int length, bool bigEndian) =>
-        EncodePostBodyWords(ExpectedPostBodyWords(length), bigEndian);
+    private static byte[] ExpectedPostBodyTail(int length, bool bigEndian)
+    {
+        return EncodePostBodyWords(ExpectedPostBodyWords(length), bigEndian);
+    }
 
     private static byte[] EncodePostBodyWords(uint[] words, bool bigEndian)
     {
@@ -416,13 +418,16 @@ public sealed class ImgsEncoderClassicDnamTests
         return [.. result];
     }
 
-    private static ImageSpaceClassicDnamLayout LayoutFor(int length) => length switch
+    private static ImageSpaceClassicDnamLayout LayoutFor(int length)
     {
-        132 => ImageSpaceClassicDnamLayout.Dnam132,
-        148 => ImageSpaceClassicDnamLayout.Dnam148,
-        152 => ImageSpaceClassicDnamLayout.Dnam152,
-        _ => throw new ArgumentOutOfRangeException(nameof(length)),
-    };
+        return length switch
+        {
+            132 => ImageSpaceClassicDnamLayout.Dnam132,
+            148 => ImageSpaceClassicDnamLayout.Dnam148,
+            152 => ImageSpaceClassicDnamLayout.Dnam152,
+            _ => throw new ArgumentOutOfRangeException(nameof(length))
+        };
+    }
 
     private static ImageSpaceHdr ExpectedHdr(bool hasSkinDimmer)
     {
@@ -442,7 +447,7 @@ public sealed class ImgsEncoderClassicDnamTests
             SunlightDimmer = 12f,
             GrassDimmer = 13f,
             TreeDimmer = 14f,
-            SkinDimmer = hasSkinDimmer ? 15f : 1f,
+            SkinDimmer = hasSkinDimmer ? 15f : 1f
         };
     }
 
@@ -457,7 +462,7 @@ public sealed class ImgsEncoderClassicDnamTests
             Saturation = 201f,
             ContrastAvgLum = 202f,
             Contrast = 203f,
-            Brightness = 204f,
+            Brightness = 204f
         };
     }
 
@@ -468,7 +473,7 @@ public sealed class ImgsEncoderClassicDnamTests
             Red = 205f,
             Green = 206f,
             Blue = 207f,
-            Amount = 208f,
+            Amount = 208f
         };
     }
 
@@ -487,5 +492,4 @@ public sealed class ImgsEncoderClassicDnamTests
         else
             BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, sizeof(uint)), value);
     }
-
 }

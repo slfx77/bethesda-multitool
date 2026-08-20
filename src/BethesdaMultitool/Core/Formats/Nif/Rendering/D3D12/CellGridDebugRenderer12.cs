@@ -13,6 +13,7 @@ using Vortice.Direct3D12;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 using D12 = Vortice.Direct3D12;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -52,10 +53,10 @@ internal sealed class CellGridDebugRenderer12
 
     private readonly List<(int gx, int gy)> _cells = [];
     private readonly List<(int gx, int gy)> _visibleKeyScratch = [];
-    private readonly List<global::BethesdaMultitool.WorldSpatialCell> _visibleCellScratch = [];
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _visibleCellScratch = [];
     private Vector3[] _vertexScratch = [];
     private int _cellCount;
-    private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
+    private global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? _spatialIndex;
     // Active worldspace's cell-edge size (4096 Fallout-family, 8192 Morrowind), taken from the spatial
     // index on load so the wireframe sits on the real cell boundaries (and the wall squares stay square).
     private float _cellSize = WorldGridConstants.CellSize;
@@ -164,7 +165,8 @@ internal sealed class CellGridDebugRenderer12
         };
         // rootSignature: null because the signature contains no root-arg changes — only the
         // Draw arg itself. That allows reuse across any PSO bound at execute time.
-        _drawIndirectSignature = gpu.Device.CreateCommandSignature<ID3D12CommandSignature>(sigDesc, rootSignature: null);
+        _drawIndirectSignature =
+ gpu.Device.CreateCommandSignature<ID3D12CommandSignature>(sigDesc, rootSignature: null);
     }
 
     public void Dispose()
@@ -176,7 +178,7 @@ internal sealed class CellGridDebugRenderer12
     }
 
     public int CellCount => _cellCount;
-    public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
+    public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
 
     public void LoadData(IEnumerable<CellRecord> exteriorCells)
@@ -184,7 +186,7 @@ internal sealed class CellGridDebugRenderer12
 
     public void LoadData(
         IEnumerable<CellRecord> exteriorCells,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex)
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex)
     {
         _cellCount = 0;
         _spatialIndex = spatialIndex;

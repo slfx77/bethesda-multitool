@@ -23,15 +23,21 @@ internal static class FormIdHeatmapRangeScale
     public static double SliderMinimum => Math.Log2(MinCells);
     public static double SliderMaximum => Math.Log2(MaxFiniteCells) + UnlimitedStopWidth;
 
-    /// <summary>Slider position for a range in cells; PositiveInfinity pins the unlimited top stop.
-    /// Finite inputs clamp into [<see cref="MinCells" />, <see cref="MaxFiniteCells" />].</summary>
-    public static double SliderFromCells(float cells) =>
-        float.IsPositiveInfinity(cells)
+    /// <summary>
+    ///     Slider position for a range in cells; PositiveInfinity pins the unlimited top stop.
+    ///     Finite inputs clamp into [<see cref="MinCells" />, <see cref="MaxFiniteCells" />].
+    /// </summary>
+    public static double SliderFromCells(float cells)
+    {
+        return float.IsPositiveInfinity(cells)
             ? SliderMaximum
             : Math.Log2(Math.Clamp(cells, MinCells, MaxFiniteCells));
+    }
 
-    /// <summary>Range in WHOLE cells for a slider position (nearest integer — the selection is
-    /// full cells on the cell grid); anything past the finite ceiling is unlimited.</summary>
+    /// <summary>
+    ///     Range in WHOLE cells for a slider position (nearest integer — the selection is
+    ///     full cells on the cell grid); anything past the finite ceiling is unlimited.
+    /// </summary>
     public static float CellsFromSlider(double sliderValue)
     {
         if (sliderValue > Math.Log2(MaxFiniteCells))

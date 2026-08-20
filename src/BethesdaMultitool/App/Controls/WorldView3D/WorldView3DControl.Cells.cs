@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WaterRenderer12 = BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.WaterRenderer12;
@@ -12,6 +13,14 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    /// <summary>
+    ///     Z extent of the loaded grid (from <see cref="ComputeGridZExtent" />), captured at grid build
+    ///     (exterior AND interior paths, so it can't go stale switching between them) for the ortho cull
+    ///     radius's terrain-relief parallax term (<see cref="BuildProjectionViewProj" />). Null when the
+    ///     grid has no finite placed-object Z — the relief term then drops to zero.
+    /// </summary>
+    private (float zMin, float zMax)? _worldZExtent;
+
     private async void WorldspaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressWorldspaceSelectionEvent || _data is null) return;
@@ -48,6 +57,7 @@ public sealed partial class WorldView3DControl
             {
                 ResetCameraToDataCentroid();
             }
+
             ApplyStressSceneBookmarkIfRequested();
             RefreshAtmosphereForCurrentWorldspace();
             RefreshExportBounds(); // the export tab's bounds/output-size follow the active worldspace
@@ -61,6 +71,7 @@ public sealed partial class WorldView3DControl
                 {
                     MarkSceneSelectionReady(selectionGeneration);
                 }
+
                 HideStatus();
             }
         }
@@ -123,7 +134,7 @@ public sealed partial class WorldView3DControl
         var appearance = WaterAppearance.FromWaterRecord(initialWaterSelection.Water);
         var normalIndices = ResolveWaterNormalIndices(appearance);
         var oblivionDetailIndex = WaterProfile.ForGame(_data.Game).UsesWatrDetailTexture &&
-                                   appearance?.SurfaceTexture is { Length: > 0 } detailPath
+                                  appearance?.SurfaceTexture is { Length: > 0 } detailPath
             ? _textureResolver12?.ResolveDiffuseBindlessIndex(detailPath)
             : null;
         _cellGrid?.LoadData(cellList, _spatialIndex);
@@ -145,6 +156,7 @@ public sealed partial class WorldView3DControl
                 _water.FlatNormalBindlessIndex = _textureResolver12.FlatNormalFallback.BindlessIndex;
             }
         }
+
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
         _water?.SetFnvWater001WaterTypeContext(
             initialWaterSelection.WaterFormId,
@@ -461,14 +473,6 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Z extent of the loaded grid (from <see cref="ComputeGridZExtent" />), captured at grid build
-    ///     (exterior AND interior paths, so it can't go stale switching between them) for the ortho cull
-    ///     radius's terrain-relief parallax term (<see cref="BuildProjectionViewProj" />). Null when the
-    ///     grid has no finite placed-object Z — the relief term then drops to zero.
-    /// </summary>
-    private (float zMin, float zMax)? _worldZExtent;
-
-    /// <summary>
     ///     Computes the vertical (Z) extent the cell-grid line cage should span for the loaded cells,
     ///     from the placed-object Z range (objects rest on the terrain, so this brackets the relief
     ///     and tall structures) plus a one-cell margin, with a minimum span so flat worldspaces still
@@ -487,6 +491,7 @@ public sealed partial class WorldView3DControl
                 if (o.Z > maxZ) maxZ = o.Z;
             }
         }
+
         if (minZ > maxZ) return null;
 
         var margin = _cellSize;
@@ -499,6 +504,7 @@ public sealed partial class WorldView3DControl
             zMin = mid - minSpan * 0.5f;
             zMax = mid + minSpan * 0.5f;
         }
+
         return (zMin, zMax);
     }
 
@@ -555,7 +561,11 @@ public sealed partial class WorldView3DControl
         {
             for (var i = 0; i < _data.Worldspaces.Count; i++)
             {
-                if (_data.Worldspaces[i].FormId == ws) { targetIndex = i; break; }
+                if (_data.Worldspaces[i].FormId == ws)
+                {
+                    targetIndex = i;
+                    break;
+                }
             }
         }
         else if (_data.UnlinkedExteriorCells.Count > 0)
@@ -593,7 +603,11 @@ public sealed partial class WorldView3DControl
         CellRecord? interior = null;
         foreach (var c in _data.InteriorCells)
         {
-            if (c.FormId == interiorFormId) { interior = c; break; }
+            if (c.FormId == interiorFormId)
+            {
+                interior = c;
+                break;
+            }
         }
 
         if (interior is null) return false;

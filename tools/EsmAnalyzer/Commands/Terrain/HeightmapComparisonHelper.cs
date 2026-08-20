@@ -1,5 +1,5 @@
-using Spectre.Console;
 using System.Text;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Terrain;
 

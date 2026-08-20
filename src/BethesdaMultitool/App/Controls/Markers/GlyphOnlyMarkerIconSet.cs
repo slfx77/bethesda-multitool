@@ -16,5 +16,7 @@ internal sealed class GlyphOnlyMarkerIconSet(BethesdaGame game) : IMapMarkerIcon
     public bool RequiresTinting => false;
     public IReadOnlyDictionary<int, CanvasBitmap> Icons => NoIcons;
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }

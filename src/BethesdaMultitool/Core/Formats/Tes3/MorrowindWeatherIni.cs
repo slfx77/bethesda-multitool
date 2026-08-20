@@ -21,30 +21,72 @@ namespace BethesdaMultitool.Core.Formats.Tes3;
 /// </summary>
 internal static class MorrowindWeatherIni
 {
-    /// <summary>Synthetic FormID base for the INI weathers, in the cross-plugin SHARED range
-    /// (<see cref="Tes3FormIdScheme.SharedNamespaceByte" /> high byte — the INI is install-level data,
-    /// not per-plugin). Disjoint from the shared exterior worldspace (0xFF000000).</summary>
+    /// <summary>
+    ///     Synthetic FormID base for the INI weathers, in the cross-plugin SHARED range
+    ///     (<see cref="Tes3FormIdScheme.SharedNamespaceByte" /> high byte — the INI is install-level data,
+    ///     not per-plugin). Disjoint from the shared exterior worldspace (0xFF000000).
+    /// </summary>
     public const uint WeatherFormIdBase = 0xFF00D000u;
 
     /// <summary>Synthetic FormID of the one INI-derived climate.</summary>
     public const uint ClimateFormId = 0xFF00DFFFu;
 
-    /// <summary>Fog horizon (world units) used to translate the INI's per-weather
-    /// <c>Land Fog … Depth</c> densities into the viewer's linear near/far fog: near =
-    /// (1 − depth) × far, far = this. The densities are authored against Morrowind's vanilla
-    /// 7168-unit draw distance; using that literally white-washes a viewer that renders 16+ cells,
-    /// so the horizon is scaled to the viewer's scene scale (= its default fog far) while each
-    /// weather's DENSITY RATIO — the authored look — is preserved (Clear fogs the far 69% of the
-    /// horizon; Ashstorm ≥1 fogs from the camera). The near = (1 − depth) × far reading of the
-    /// depth semantics is TO-CONFIRM against an OpenMW render oracle (see the derivation doc).</summary>
+    /// <summary>
+    ///     Fog horizon (world units) used to translate the INI's per-weather
+    ///     <c>Land Fog … Depth</c> densities into the viewer's linear near/far fog: near =
+    ///     (1 − depth) × far, far = this. The densities are authored against Morrowind's vanilla
+    ///     7168-unit draw distance; using that literally white-washes a viewer that renders 16+ cells,
+    ///     so the horizon is scaled to the viewer's scene scale (= its default fog far) while each
+    ///     weather's DENSITY RATIO — the authored look — is preserved (Clear fogs the far 69% of the
+    ///     horizon; Ashstorm ≥1 fogs from the camera). The near = (1 − depth) × far reading of the
+    ///     depth semantics is TO-CONFIRM against an OpenMW render oracle (see the derivation doc).
+    /// </summary>
     private const float FogViewDistance = 98304f;
 
-    /// <summary>The ten vanilla weather section names, in a fixed order so synthetic FormIDs are
-    /// stable across runs (Snow/Blizzard are Bloodmoon's and may be absent from a base install).</summary>
+    /// <summary>
+    ///     Vanilla <c>[Weather]</c> schedule + <c>[Weather Clear]</c> (identical in every
+    ///     unmodded install; dumped from the Steam Morrowind.ini) — the fallback when no INI is found.
+    /// </summary>
+    private const string VanillaClearFallback = """
+                                                [Weather]
+                                                Sunrise Time=6
+                                                Sunset Time=18
+                                                Sunrise Duration=2
+                                                Sunset Duration=2
+                                                [Weather Clear]
+                                                Sky Sunrise Color=117,141,164
+                                                Sky Day Color=095,135,203
+                                                Sky Sunset Color=056,089,129
+                                                Sky Night Color=009,010,011
+                                                Fog Sunrise Color=255,189,157
+                                                Fog Day Color=206,227,255
+                                                Fog Sunset Color=255,189,157
+                                                Fog Night Color=009,010,011
+                                                Ambient Sunrise Color=047,066,096
+                                                Ambient Day Color=137,140,160
+                                                Ambient Sunset Color=068,075,096
+                                                Ambient Night Color=032,035,042
+                                                Sun Sunrise Color=242,159,119
+                                                Sun Day Color=255,252,238
+                                                Sun Sunset Color=255,114,079
+                                                Sun Night Color=059,097,176
+                                                Sun Disc Sunset Color=255,189,157
+                                                Land Fog Day Depth=.69
+                                                Land Fog Night Depth=.69
+                                                Wind Speed=.1
+                                                Cloud Speed=1.25
+                                                Glare View=1
+                                                Cloud Texture=Tx_Sky_Clear.tga
+                                                """;
+
+    /// <summary>
+    ///     The ten vanilla weather section names, in a fixed order so synthetic FormIDs are
+    ///     stable across runs (Snow/Blizzard are Bloodmoon's and may be absent from a base install).
+    /// </summary>
     private static readonly string[] WeatherNames =
     [
         "Clear", "Cloudy", "Foggy", "Overcast", "Rain",
-        "Thunderstorm", "Ashstorm", "Blight", "Snow", "Blizzard",
+        "Thunderstorm", "Ashstorm", "Blight", "Snow", "Blizzard"
     ];
 
     /// <summary>
@@ -150,7 +192,7 @@ internal static class MorrowindWeatherIni
             [
                 Math.Max(0f, (1f - dayDepth) * FogViewDistance), FogViewDistance,
                 Math.Max(0f, (1f - nightDepth) * FogViewDistance), FogViewDistance,
-                1f, 1f,
+                1f, 1f
             ],
             CloudLayerTextures = cloudTexture is null ? [] : [cloudTexture],
             Data = new WeatherData
@@ -158,8 +200,8 @@ internal static class MorrowindWeatherIni
                 // Engine wind scale: weather wind-speed byte / 255 (the SpeedTree wind profile's
                 // input). Glare View gates the sun-glare fader per weather.
                 WindSpeed = (byte)Math.Clamp((ReadFloat(s, "Wind Speed") ?? 0f) * 255f, 0f, 255f),
-                SunGlare = (byte)Math.Clamp((ReadFloat(s, "Glare View") ?? 0f) * 255f, 0f, 255f),
-            },
+                SunGlare = (byte)Math.Clamp((ReadFloat(s, "Glare View") ?? 0f) * 255f, 0f, 255f)
+            }
         };
     }
 
@@ -171,7 +213,10 @@ internal static class MorrowindWeatherIni
         var sunsetDuration = ReadFloat(schedule, "Sunset Duration") ?? 2f;
 
         // CLMT TNAM stores hours × 6 (10-minute units — the decompiled Sky::GetSunriseBegin scale).
-        static byte Hours(float h) => (byte)Math.Clamp(MathF.Round(h * 6f), 0f, 255f);
+        static byte Hours(float h)
+        {
+            return (byte)Math.Clamp(MathF.Round(h * 6f), 0f, 255f);
+        }
 
         return new ClimateRecord
         {
@@ -184,19 +229,21 @@ internal static class MorrowindWeatherIni
             Timing = new ClimateTimingData(
                 Hours(sunriseTime), Hours(sunriseTime + sunriseDuration),
                 Hours(sunsetTime), Hours(sunsetTime + sunsetDuration),
-                Volatility: 0,
-                MoonPhaseLength: 0), // 0 → the per-game moon profile drives phase length
+                0,
+                0), // 0 → the per-game moon profile drives phase length
             // Clear first + ungated so ResolveClimateDefaultWeather picks it as the default; the
             // rest populate the weather picker.
             WeatherTypes = weathers
-                .Select(w => new ClimateWeatherEntry(w.FormId, Chance: 100 / Math.Max(weathers.Count, 1), GlobalFormId: 0))
-                .ToList(),
+                .Select(w => new ClimateWeatherEntry(w.FormId, 100 / Math.Max(weathers.Count, 1), 0))
+                .ToList()
         };
     }
 
-    /// <summary>Reads a channel's four keyframes (<c>{channel} Sunrise/Day/Sunset/Night Color</c>).
-    /// HighNoon/Midnight are authored = Day/Night so the 6-band blend stays on authored values
-    /// (a zero peak would read as unauthored, which is FNV-specific semantics).</summary>
+    /// <summary>
+    ///     Reads a channel's four keyframes (<c>{channel} Sunrise/Day/Sunset/Night Color</c>).
+    ///     HighNoon/Midnight are authored = Day/Night so the 6-band blend stays on authored values
+    ///     (a zero peak would read as unauthored, which is FNV-specific semantics).
+    /// </summary>
     private static WeatherColor ReadKeyframes(Dictionary<string, string> s, string channel)
     {
         var sunrise = ReadColor(s, $"{channel} Sunrise Color") ?? default;
@@ -206,7 +253,10 @@ internal static class MorrowindWeatherIni
         return new WeatherColor(sunrise, day, sunset, night, day, night);
     }
 
-    private static WeatherColor Solid(WeatherRgba c) => new(c, c, c, c, c, c);
+    private static WeatherColor Solid(WeatherRgba c)
+    {
+        return new WeatherColor(c, c, c, c, c, c);
+    }
 
     private static WeatherRgba? ReadColor(Dictionary<string, string> s, string key)
     {
@@ -220,11 +270,13 @@ internal static class MorrowindWeatherIni
             : null;
     }
 
-    private static float? ReadFloat(Dictionary<string, string> s, string key) =>
-        s.TryGetValue(key, out var value) &&
-        float.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var f)
+    private static float? ReadFloat(Dictionary<string, string> s, string key)
+    {
+        return s.TryGetValue(key, out var value) &&
+               float.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var f)
             ? f
             : null;
+    }
 
     /// <summary>Case-insensitive section → (key → value) parse; `;` comments stripped.</summary>
     private static Dictionary<string, Dictionary<string, string>> ParseSections(string iniText)
@@ -241,44 +293,12 @@ internal static class MorrowindWeatherIni
                 sections[line[1..^1]] = current;
                 continue;
             }
+
             var eq = line.IndexOf('=');
             if (current is null || eq <= 0) continue;
             current[line[..eq].Trim()] = line[(eq + 1)..].Trim();
         }
+
         return sections;
     }
-
-    /// <summary>Vanilla <c>[Weather]</c> schedule + <c>[Weather Clear]</c> (identical in every
-    /// unmodded install; dumped from the Steam Morrowind.ini) — the fallback when no INI is found.</summary>
-    private const string VanillaClearFallback = """
-        [Weather]
-        Sunrise Time=6
-        Sunset Time=18
-        Sunrise Duration=2
-        Sunset Duration=2
-        [Weather Clear]
-        Sky Sunrise Color=117,141,164
-        Sky Day Color=095,135,203
-        Sky Sunset Color=056,089,129
-        Sky Night Color=009,010,011
-        Fog Sunrise Color=255,189,157
-        Fog Day Color=206,227,255
-        Fog Sunset Color=255,189,157
-        Fog Night Color=009,010,011
-        Ambient Sunrise Color=047,066,096
-        Ambient Day Color=137,140,160
-        Ambient Sunset Color=068,075,096
-        Ambient Night Color=032,035,042
-        Sun Sunrise Color=242,159,119
-        Sun Day Color=255,252,238
-        Sun Sunset Color=255,114,079
-        Sun Night Color=059,097,176
-        Sun Disc Sunset Color=255,189,157
-        Land Fog Day Depth=.69
-        Land Fog Night Depth=.69
-        Wind Speed=.1
-        Cloud Speed=1.25
-        Glare View=1
-        Cloud Texture=Tx_Sky_Clear.tga
-        """;
 }

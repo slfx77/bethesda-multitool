@@ -2,7 +2,6 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
@@ -48,7 +47,8 @@ internal sealed class RuntimeActorReader
     ///     <c>view.FormIdPointer / view.Offset</c> rather than hardcoded constants.
     ///     Returns null if the PDB layout for the FormType isn't loaded.
     /// </summary>
-    private PdbStructView? WrapActorBufferInView(byte[] buffer, long fileOffset, RuntimeEditorIdEntry entry, byte pdbFormType)
+    private PdbStructView? WrapActorBufferInView(byte[] buffer, long fileOffset, RuntimeEditorIdEntry entry,
+        byte pdbFormType)
     {
         var layout = PdbStructLayouts.Get(pdbFormType);
         return layout is null ? null : new PdbStructView(_pdbFields, layout, buffer, fileOffset, entry);
@@ -86,7 +86,7 @@ internal sealed class RuntimeActorReader
         // shift on top only when the probe discovered a distinct LateAppearanceShift
         // (rare — defaults to AppearanceShift). pdb_layouts.json is an embedded
         // resource so view==null means the resource is broken — treat as hard fail.
-        var view = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2A);
+        var view = WrapActorBufferInView(buffer, offset, entry, 0x2A);
         if (view is null)
         {
             return null;
@@ -117,7 +117,7 @@ internal sealed class RuntimeActorReader
         var scriptFormId = view.FormIdPointer("pFormScript", "TESScriptableForm", 0x11);
 
         // Read ACBS stats block (PDB TESActorBaseData::actorData)
-        var acbsOffset = view.Offset("actorData", "TESActorBaseData") ?? (52 + _s);
+        var acbsOffset = view.Offset("actorData", "TESActorBaseData") ?? 52 + _s;
         var stats = ReadActorBaseStats(buffer, acbsOffset, offset);
         if (stats == null)
         {
@@ -285,7 +285,7 @@ internal sealed class RuntimeActorReader
         // Open a PdbStructView over the CREA buffer. TESCreature is fully PDB-aligned
         // (no FR2MatrixVTC padding drift like TESNPC has), so every field below comes
         // from view.* lookups instead of hardcoded offset constants.
-        var creaView = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2B);
+        var creaView = WrapActorBufferInView(buffer, offset, entry, 0x2B);
         if (creaView is null)
         {
             return null;
@@ -293,7 +293,7 @@ internal sealed class RuntimeActorReader
 
         // CREATURE_DATA struct (TESCreature::Data, PDB +316, 4 bytes): { Type, CombatSkill,
         // MagicSkill, StealthSkill } as 4 consecutive bytes.
-        var dataOffset = creaView.Offset("Data", "TESCreature") ?? (300 + _s);
+        var dataOffset = creaView.Offset("Data", "TESCreature") ?? 300 + _s;
         byte creatureType = 0, combatSkill = 0, magicSkill = 0, stealthSkill = 0;
         if (dataOffset + 4 <= buffer.Length)
         {
@@ -302,6 +302,7 @@ internal sealed class RuntimeActorReader
             magicSkill = buffer[dataOffset + 2];
             stealthSkill = buffer[dataOffset + 3];
         }
+
         if (creatureType > 7)
         {
             creatureType = 0; // Validate creature type (0-7)
@@ -312,7 +313,7 @@ internal sealed class RuntimeActorReader
         var scriptFormId = creaView.FormIdPointer("pFormScript", "TESScriptableForm", 0x11);
 
         // Read ACBS (actor base stats); structure shared with TESNPC.
-        var acbsOffset = creaView.Offset("actorData", "TESActorBaseData") ?? (52 + _s);
+        var acbsOffset = creaView.Offset("actorData", "TESActorBaseData") ?? 52 + _s;
         var stats = ReadCreatureActorBaseStats(buffer, acbsOffset, offset);
 
         // Read AI data (TESAIForm AIData struct, shared base class with NPC).

@@ -339,4 +339,3 @@ internal static class EsmRecordParser
         return subrecords.Where(s => s.Signature == signature).ToList();
     }
 }
-

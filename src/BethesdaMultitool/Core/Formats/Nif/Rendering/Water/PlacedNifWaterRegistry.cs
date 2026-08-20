@@ -10,12 +10,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 internal sealed class PlacedNifWaterRegistry
 {
     private readonly List<Entry> _entries = [];
-    private readonly HashSet<uint> _registeredOwners = [];
     private readonly List<NifWaterGeometry> _published = [];
-    private ReferenceVisibilityKey _publishedVisibility;
+    private readonly HashSet<uint> _registeredOwners = [];
     private bool _publishedValid;
+    private ReferenceVisibilityKey _publishedVisibility;
 
-    internal bool ContainsOwner(uint formId) => _registeredOwners.Contains(formId);
+    internal bool ContainsOwner(uint formId)
+    {
+        return _registeredOwners.Contains(formId);
+    }
 
     /// <summary>
     ///     Registers one reference exactly once. Empty geometry is retained as a completed registration

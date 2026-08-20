@@ -22,10 +22,10 @@ internal static class NifRefractionShapePolicy
         }
 
         if (metadata.PropertyType is not (
-                "BSLightingShaderProperty" or
-                "BSShaderPPLightingProperty" or
-                "Lighting30ShaderProperty" or
-                "BSShaderNoLightingProperty"))
+            "BSLightingShaderProperty" or
+            "BSShaderPPLightingProperty" or
+            "Lighting30ShaderProperty" or
+            "BSShaderNoLightingProperty"))
         {
             return false;
         }

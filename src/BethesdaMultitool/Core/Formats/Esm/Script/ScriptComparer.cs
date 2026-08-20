@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Script;
@@ -510,7 +511,7 @@ public static class ScriptComparer
         const char quotedStart = '\u0002';
         const char quotedEnd = '\u0003';
 
-        var marked = new System.Text.StringBuilder(line.Length + 4);
+        var marked = new StringBuilder(line.Length + 4);
         var quoted = false;
         var charIndex = 0;
         while (charIndex < line.Length)
@@ -635,12 +636,14 @@ public static class ScriptComparer
         return false;
     }
 
-    private static bool IsBlockTypeToken(string token) =>
-        token.StartsWith("On", StringComparison.OrdinalIgnoreCase)
-        || token.Equals("GameMode", StringComparison.OrdinalIgnoreCase)
-        || token.Equals("MenuMode", StringComparison.OrdinalIgnoreCase)
-        || token.Equals("Function", StringComparison.OrdinalIgnoreCase)
-        || token.Equals("ScriptEffectStart", StringComparison.OrdinalIgnoreCase)
-        || token.Equals("ScriptEffectUpdate", StringComparison.OrdinalIgnoreCase)
-        || token.Equals("ScriptEffectFinish", StringComparison.OrdinalIgnoreCase);
+    private static bool IsBlockTypeToken(string token)
+    {
+        return token.StartsWith("On", StringComparison.OrdinalIgnoreCase)
+               || token.Equals("GameMode", StringComparison.OrdinalIgnoreCase)
+               || token.Equals("MenuMode", StringComparison.OrdinalIgnoreCase)
+               || token.Equals("Function", StringComparison.OrdinalIgnoreCase)
+               || token.Equals("ScriptEffectStart", StringComparison.OrdinalIgnoreCase)
+               || token.Equals("ScriptEffectUpdate", StringComparison.OrdinalIgnoreCase)
+               || token.Equals("ScriptEffectFinish", StringComparison.OrdinalIgnoreCase);
+    }
 }

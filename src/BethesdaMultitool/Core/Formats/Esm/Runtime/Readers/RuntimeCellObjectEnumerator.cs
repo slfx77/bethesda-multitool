@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
@@ -32,7 +31,7 @@ internal sealed class RuntimeCellObjectEnumerator
 
     private PdbStructView OpenCellView(byte[] buffer, long fileOffset, PdbTypeLayout layout)
     {
-        return new PdbStructView(_fields, layout, buffer, fileOffset, entry: null)
+        return new PdbStructView(_fields, layout, buffer, fileOffset, null)
             .WithShift(CellShiftStartOffset, int.MaxValue, _cellShift);
     }
 

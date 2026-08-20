@@ -9,18 +9,24 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapHillshadeRenderer
 {
-    /// <summary>Default sun: north-west, slightly elevated. The image-space light vector convention is
-    /// X = east (+dx), Y = south (image rows grow southward), Z = elevation up. Used when no time-of-day
-    /// light direction is supplied (lighting off / no lighting control).</summary>
-    internal static readonly Vector3 DefaultLightDir = Vector3.Normalize(new Vector3(-1f, 1f, 1.5f));
-
-    /// <summary>Slope-emphasis scale tuned for the 4096-unit / 33-vert-per-cell Fallout-family grid.
-    /// Larger cells (Morrowind's 8192) sample heights over a wider horizontal step, so the same height
-    /// delta reads as a steeper slope — <see cref="ZScaleForCellSize" /> scales this down for them.</summary>
+    /// <summary>
+    ///     Slope-emphasis scale tuned for the 4096-unit / 33-vert-per-cell Fallout-family grid.
+    ///     Larger cells (Morrowind's 8192) sample heights over a wider horizontal step, so the same height
+    ///     delta reads as a steeper slope — <see cref="ZScaleForCellSize" /> scales this down for them.
+    /// </summary>
     internal const float DefaultZScale = 0.02f;
 
-    /// <summary>Per-game zScale: inversely proportional to cell world size so the hillshade contrast is
-    /// consistent across games (Fallout 4096 → 0.02; Morrowind 8192 → 0.01, which tames the harsh relief).</summary>
+    /// <summary>
+    ///     Default sun: north-west, slightly elevated. The image-space light vector convention is
+    ///     X = east (+dx), Y = south (image rows grow southward), Z = elevation up. Used when no time-of-day
+    ///     light direction is supplied (lighting off / no lighting control).
+    /// </summary>
+    internal static readonly Vector3 DefaultLightDir = Vector3.Normalize(new Vector3(-1f, 1f, 1.5f));
+
+    /// <summary>
+    ///     Per-game zScale: inversely proportional to cell world size so the hillshade contrast is
+    ///     consistent across games (Fallout 4096 → 0.02; Morrowind 8192 → 0.01, which tames the harsh relief).
+    /// </summary>
     internal static float ZScaleForCellSize(float cellSize) =>
         DefaultZScale * (4096f / MathF.Max(cellSize, 1f));
 

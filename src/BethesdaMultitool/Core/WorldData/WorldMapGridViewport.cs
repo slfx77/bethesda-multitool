@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     A normalized world-space viewport for pure exterior-grid visibility tests. It lives in the

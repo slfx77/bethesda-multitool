@@ -25,7 +25,10 @@ internal static class RuntimeEffectProbe
 
     private static readonly int[] ShiftOptions = [-8, -4, 0, 4, 8, 12, 16, 20];
 
-    /// <summary>Auto-detects the BGSProjectile (PROJ) struct field-offset shift from sampled runtime entries, or null if it can't be determined.</summary>
+    /// <summary>
+    ///     Auto-detects the BGSProjectile (PROJ) struct field-offset shift from sampled runtime entries, or null if it
+    ///     can't be determined.
+    /// </summary>
     public static RuntimeLayoutProbeResult<int[]>? Probe(
         RuntimeMemoryContext context,
         IReadOnlyList<RuntimeEditorIdEntry> entries,

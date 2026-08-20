@@ -1,13 +1,16 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
 
 namespace BethesdaMultitool;
 
-/// <summary>TerrainTextures live overview: viewport-throttled per-cell streaming, the throttle timer that
-/// drains GPU uploads, and the zoomed-out aggregate-LOD build.</summary>
+/// <summary>
+///     TerrainTextures live overview: viewport-throttled per-cell streaming, the throttle timer that
+///     drains GPU uploads, and the zoomed-out aggregate-LOD build.
+/// </summary>
 public sealed partial class WorldMapControl
 {
     /// <summary>
@@ -23,7 +26,7 @@ public sealed partial class WorldMapControl
         if (_data is null) return;
 
         var isTerrainTexturesViewport = _state.Mode == ViewMode.WorldOverview &&
-            _currentLayer == WorldMapLayer.TerrainTextures;
+                                        _currentLayer == WorldMapLayer.TerrainTextures;
 
         if (isTerrainTexturesViewport)
         {
@@ -40,6 +43,7 @@ public sealed partial class WorldMapControl
                 {
                     EnsureTerrainAggregateBuild(wsId);
                 }
+
                 return;
             }
 
@@ -153,7 +157,8 @@ public sealed partial class WorldMapControl
         var tileBytes = (long)texturePixelsPerCell * texturePixelsPerCell * 4;
         if (tileBytes > 0)
         {
-            var byteCap = (int)Math.Min(int.MaxValue, Math.Max(MinLayerCellBitmapCap, MaxLayerCellResidentBytes / tileBytes));
+            var byteCap = (int)Math.Min(int.MaxValue,
+                Math.Max(MinLayerCellBitmapCap, MaxLayerCellResidentBytes / tileBytes));
             _layerCellBitmapCap = Math.Min(_layerCellBitmapCap, byteCap);
         }
 
@@ -163,7 +168,7 @@ public sealed partial class WorldMapControl
         // multi-resolution cache, old-resolution bitmaps remain as visual stand-ins
         // while target-resolution ones build — no blank during zoom transitions.
         var canReuseCache = _layerCellBitmaps is not null
-            && _layerCellBitmapsLayer == _currentLayer;
+                            && _layerCellBitmapsLayer == _currentLayer;
 
         if (canReuseCache)
         {
@@ -316,8 +321,8 @@ public sealed partial class WorldMapControl
                 _zoomSettleTicks--;
             }
             else if (_viewportRebuildPending
-                && _state.Mode == ViewMode.WorldOverview
-                && _currentLayer == WorldMapLayer.TerrainTextures)
+                     && _state.Mode == ViewMode.WorldOverview
+                     && _currentLayer == WorldMapLayer.TerrainTextures)
             {
                 _viewportRebuildPending = false;
                 RebuildTerrainTextureViewport((float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight);
@@ -444,14 +449,14 @@ public sealed partial class WorldMapControl
         try
         {
             await foreach (var cell in WorldMapLayerRenderer.StreamTerrainTexturesPerCell(
-                    requestCells,
-                    palette,
-                    _currentDefaultWaterHeight,
-                    _data?.RenderCache,
-                    pixelsPerCell,
-                    _currentWaterPalette,
-                    shading,
-                    ct).WithCancellation(ct).ConfigureAwait(false))
+                               requestCells,
+                               palette,
+                               _currentDefaultWaterHeight,
+                               _data?.RenderCache,
+                               pixelsPerCell,
+                               _currentWaterPalette,
+                               shading,
+                               ct).WithCancellation(ct).ConfigureAwait(false))
             {
                 producedCount++;
                 // Buffer for the throttle timer to drain on the UI thread (bounded per tick).
@@ -557,6 +562,7 @@ public sealed partial class WorldMapControl
             // dict head, where it would be evicted first instead of last.
             _layerCellBitmaps.Remove(key);
         }
+
         _layerCellBitmaps.Add(key, CanvasBitmap.CreateFromBytes(
             MapCanvas,
             cell.Pixels,
@@ -573,6 +579,7 @@ public sealed partial class WorldMapControl
             staleWater.Dispose();
             _layerWaterCellBitmaps.Remove(key);
         }
+
         if (cell.Water is { } waterBytes)
         {
             _layerWaterCellBitmaps ??= new OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>();
@@ -600,11 +607,13 @@ public sealed partial class WorldMapControl
             _layerCellBitmaps.RemoveAt(0);
             // Evict the water tile for the same key (if any) so the water cache can never outgrow the
             // terrain cache — it's a subset keyed identically.
-            if (_layerWaterCellBitmaps is not null && _layerWaterCellBitmaps.TryGetValue(oldest.Key, out var evictWater))
+            if (_layerWaterCellBitmaps is not null &&
+                _layerWaterCellBitmaps.TryGetValue(oldest.Key, out var evictWater))
             {
                 evictWater.Dispose();
                 _layerWaterCellBitmaps.Remove(oldest.Key);
             }
+
             Map2DProfilerTrace.Event("cache-evict",
                 $"cell=({oldest.Key.gx},{oldest.Key.gy},{oldest.Key.pixelsPerCell}) reason=cap dictSize={_layerCellBitmaps.Count} cap={_layerCellBitmapCap}");
         }
@@ -807,7 +816,8 @@ public sealed partial class WorldMapControl
         }
         catch (Exception ex)
         {
-            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("Terrain aggregate build failed: {0}", ex.ToString());
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("Terrain aggregate build failed: {0}",
+                ex.ToString());
             _ = DispatcherQueue.TryEnqueue(() =>
             {
                 _terrainAggregateBuilding = false;

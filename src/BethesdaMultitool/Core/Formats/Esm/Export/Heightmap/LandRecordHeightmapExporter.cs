@@ -1,8 +1,7 @@
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+
 internal static class LandRecordHeightmapExporter
 {
     internal static async Task ExportLandRecordsAsync(
@@ -23,7 +22,8 @@ internal static class LandRecordHeightmapExporter
                 .GroupBy(land => land.WorldspaceFormId ?? 0u)
                 .Select(group => (
                     WorldspaceFormId: group.Key,
-                    Scale: HeightmapExportScaleCalculator.CalculateVhgtGrayscaleScale(group.Select(land => land.Heightmap!.CalculateHeights()))))
+                    Scale: HeightmapExportScaleCalculator.CalculateVhgtGrayscaleScale(group.Select(land =>
+                        land.Heightmap!.CalculateHeights()))))
                 .Where(row => row.Scale.HasValue)
                 .ToDictionary(row => row.WorldspaceFormId, row => row.Scale!.Value);
 

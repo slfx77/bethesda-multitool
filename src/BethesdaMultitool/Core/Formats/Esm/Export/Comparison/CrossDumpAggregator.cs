@@ -1,10 +1,10 @@
-using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Projections;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Semantic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 
@@ -43,20 +43,20 @@ internal static class CrossDumpAggregator
 
         // Project each input tuple. Construct a synthetic SemanticSource so the existing
         // CrossDumpSourceProjector path can run unchanged.
-        var projections = new List<Projections.CrossDumpSourceProjection>(dumps.Count);
+        var projections = new List<CrossDumpSourceProjection>(dumps.Count);
         foreach (var (filePath, records, resolver, info) in dumps)
         {
-            var source = new Semantic.SemanticSource
+            var source = new SemanticSource
             {
                 FilePath = filePath,
                 FileType = filePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase)
-                    ? Core.Analysis.AnalysisFileType.Minidump
-                    : Core.Analysis.AnalysisFileType.EsmFile,
+                    ? AnalysisFileType.Minidump
+                    : AnalysisFileType.EsmFile,
                 Records = records,
                 Resolver = resolver,
                 MinidumpInfo = info
             };
-            projections.Add(Projections.CrossDumpSourceProjector.Project(source));
+            projections.Add(CrossDumpSourceProjector.Project(source));
         }
 
         // Build cross-source indexes from skeletons if the caller didn't pre-build them.
@@ -71,12 +71,12 @@ internal static class CrossDumpAggregator
         containerPlacementIndexes ??=
             CrossDumpPlacementIndexBuilder.BuildContainerPlacementIndexes(projections, virtualCanon);
 
-        Projections.CrossDumpProjectionAggregator.BuildLatePassReports(
+        CrossDumpProjectionAggregator.BuildLatePassReports(
             projections, npcPlacementIndexes, npcScriptReferenceIndexes,
             keyLockedDoorIndexes, containerPlacementIndexes);
-        Projections.CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
+        CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
 
-        return Projections.CrossDumpProjectionAggregator.AggregateFromProjections(
+        return CrossDumpProjectionAggregator.AggregateFromProjections(
             projections, virtualCanon, allowedTypes);
     }
 
@@ -272,12 +272,6 @@ internal static class CrossDumpAggregator
         return IsRealName(editorId) ? editorId : null;
     }
 
-    internal sealed class WorldspaceLabelHistory
-    {
-        public List<string> DisplayNames { get; } = [];
-        public string? EditorId { get; set; }
-    }
-
     internal static void RecordWorldspaceObservation(
         uint wsFid,
         string? displayName,
@@ -402,5 +396,9 @@ internal static class CrossDumpAggregator
             : $"NPC 0x{speakerFormId:X8}";
     }
 
+    internal sealed class WorldspaceLabelHistory
+    {
+        public List<string> DisplayNames { get; } = [];
+        public string? EditorId { get; set; }
+    }
 }
-

@@ -10,35 +10,39 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 ///     Builds the per-file <c>OFST</c> cell-offset table that every WRLD record in a plugin
 ///     must carry.
 ///     <para>
-///     OFST is a <c>columns × rows</c> array of uint32, indexed <c>row * columns + col</c>,
-///     where each entry is the byte offset of that grid cell's CELL record <b>relative to the
-///     start of the WRLD record</b>, or 0 when the file contributes no cell at that coordinate.
-///     Because the offsets are WRLD-relative they can be computed entirely inside the cell
-///     section stream — no post-assembly fixup is needed.
+///         OFST is a <c>columns × rows</c> array of uint32, indexed <c>row * columns + col</c>,
+///         where each entry is the byte offset of that grid cell's CELL record
+///         <b>
+///             relative to the
+///             start of the WRLD record
+///         </b>
+///         , or 0 when the file contributes no cell at that coordinate.
+///         Because the offsets are WRLD-relative they can be computed entirely inside the cell
+///         section stream — no post-assembly fixup is needed.
 ///     </para>
 ///     <para>
-///     Emitting the table is not optional. Every one of the 63 WRLD records across the shipped
-///     FNV and FO3 DLC plugins carries an OFST — 23 master-worldspace overrides and 40 of the
-///     plugins' own new worldspaces, with no exceptions. A file that is ESM-flagged but has no
-///     OFST is a combination that occurs in no shipped plugin, and it pushes the engine off the
-///     fast cell-seek path onto a GRUP scan of the file's world-children group. Where that group
-///     holds only a persistent-container CELL override (flag 0x400) the scan can serve the
-///     container into an exterior grid slot, and <c>TESObjectCELL::GetLandRecord</c> returns NULL
-///     for persistent cells — which <c>GridCellArray::LoadCell</c> passes to
-///     <c>TESObjectLAND::Load</c> unchecked. That is the Freeside "Wilderness cell Attaching"
-///     access violation. <c>DeadMoney.esm</c> is the control: it makes byte-for-byte the same
-///     WastelandNV emission we do — ESM-flagged, master WRLD override, world-children group
-///     holding just the persistent container at XCLC (0,0) colliding with a real master grid
-///     cell — and ships an all-zero 44,278-entry OFST, and does not crash.
+///         Emitting the table is not optional. Every one of the 63 WRLD records across the shipped
+///         FNV and FO3 DLC plugins carries an OFST — 23 master-worldspace overrides and 40 of the
+///         plugins' own new worldspaces, with no exceptions. A file that is ESM-flagged but has no
+///         OFST is a combination that occurs in no shipped plugin, and it pushes the engine off the
+///         fast cell-seek path onto a GRUP scan of the file's world-children group. Where that group
+///         holds only a persistent-container CELL override (flag 0x400) the scan can serve the
+///         container into an exterior grid slot, and <c>TESObjectCELL::GetLandRecord</c> returns NULL
+///         for persistent cells — which <c>GridCellArray::LoadCell</c> passes to
+///         <c>TESObjectLAND::Load</c> unchecked. That is the Freeside "Wilderness cell Attaching"
+///         access violation. <c>DeadMoney.esm</c> is the control: it makes byte-for-byte the same
+///         WastelandNV emission we do — ESM-flagged, master WRLD override, world-children group
+///         holding just the persistent container at XCLC (0,0) colliding with a real master grid
+///         cell — and ships an all-zero 44,278-entry OFST, and does not crash.
 ///     </para>
 ///     <para>
-///     Copying the master's OFST payload verbatim is equally wrong and was tried first: the
-///     offsets address the file the record was READ from, so the engine seeks THIS plugin at the
-///     master's offsets and every exterior cell fails with "CELLS: Failed to load temporary
-///     data". The three states are distinct — absent (crashes), master's bytes (fails to load),
-///     and rebuilt for this file (correct). The DLCs confirm the third: their OFST subrecords
-///     are the same LENGTH as the master's for the same worldspace but differ in content, and
-///     hold a non-zero entry only where that plugin actually contributes a cell.
+///         Copying the master's OFST payload verbatim is equally wrong and was tried first: the
+///         offsets address the file the record was READ from, so the engine seeks THIS plugin at the
+///         master's offsets and every exterior cell fails with "CELLS: Failed to load temporary
+///         data". The three states are distinct — absent (crashes), master's bytes (fails to load),
+///         and rebuilt for this file (correct). The DLCs confirm the third: their OFST subrecords
+///         are the same LENGTH as the master's for the same worldspace but differ in content, and
+///         hold a non-zero entry only where that plugin actually contributes a cell.
 ///     </para>
 /// </summary>
 internal static class WorldOfstTableBuilder
@@ -57,27 +61,6 @@ internal static class WorldOfstTableBuilder
     private const int MaxEntries = 1_000_000;
 
     /// <summary>
-    ///     The exterior cell grid of one worldspace, derived from its NAM0 (min corner) and
-    ///     NAM9 (max corner) object bounds. Verified against all 14 FalloutNV.esm worldspaces:
-    ///     <c>(maxX - minX + 1) * (maxY - minY + 1)</c> reproduces the shipped OFST entry count
-    ///     exactly, 14 of 14.
-    /// </summary>
-    internal sealed record WorldGrid(int MinX, int MinY, int Columns, int Rows)
-    {
-        internal int Count => Columns * Rows;
-
-        /// <summary>Table index for a cell coordinate, or -1 when it falls outside the grid.</summary>
-        internal int IndexOf(int gridX, int gridY)
-        {
-            var column = gridX - MinX;
-            var row = gridY - MinY;
-            return column < 0 || column >= Columns || row < 0 || row >= Rows
-                ? -1
-                : (row * Columns) + column;
-        }
-    }
-
-    /// <summary>
     ///     Reads the worldspace grid from an encoded WRLD record's NAM0/NAM9 bounds.
     ///     Returns null when the bounds are missing or degenerate, or when the record already
     ///     carries an OFST — in every one of those cases the caller must leave the record alone.
@@ -93,7 +76,7 @@ internal static class WorldOfstTableBuilder
         (float X, float Y)? min = null;
         (float X, float Y)? max = null;
 
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, data.Length, bigEndian: false))
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, data.Length, false))
         {
             switch (sub.Signature)
             {
@@ -104,8 +87,6 @@ internal static class WorldOfstTableBuilder
                     break;
                 case "NAM9" when sub.DataLength >= 8:
                     max = ReadPair(data, sub.DataOffset);
-                    break;
-                default:
                     break;
             }
         }
@@ -134,7 +115,7 @@ internal static class WorldOfstTableBuilder
     internal static byte[] AppendEmptyOfst(byte[] wrldRecordBytes, int entryCount, out int payloadOffset)
     {
         using var subrecordStream = new MemoryStream();
-        using (var writer = new BinaryWriter(subrecordStream, Encoding.Latin1, leaveOpen: true))
+        using (var writer = new BinaryWriter(subrecordStream, Encoding.Latin1, true))
         {
             // Handles the XXXX extended-size escape on its own — WastelandNV's table is
             // 177,112 bytes, far past the uint16 subrecord length field.
@@ -151,7 +132,7 @@ internal static class WorldOfstTableBuilder
 
         // The payload is the tail of whatever the encoder emitted, so this stays correct
         // whether or not an XXXX prefix was needed.
-        payloadOffset = wrldRecordBytes.Length + ofstBytes.Length - (entryCount * 4);
+        payloadOffset = wrldRecordBytes.Length + ofstBytes.Length - entryCount * 4;
         return result;
     }
 
@@ -217,7 +198,7 @@ internal static class WorldOfstTableBuilder
         }
 
         var data = cellRecordBytes[EsmParser.MainRecordHeaderSize..];
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, data.Length, bigEndian: false))
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, data.Length, false))
         {
             if (sub.Signature != "XCLC" || sub.DataLength < 8)
             {
@@ -232,12 +213,37 @@ internal static class WorldOfstTableBuilder
         return false;
     }
 
-    private static (float X, float Y) ReadPair(byte[] data, int offset) =>
-        (BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset, 4)),
+    private static (float X, float Y) ReadPair(byte[] data, int offset)
+    {
+        return (BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset, 4)),
             BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset + 4, 4)));
+    }
 
-    private static int ToCellCoordinate(float worldUnits) =>
-        float.IsNaN(worldUnits) || Math.Abs(worldUnits) >= UnsetFloatThreshold
+    private static int ToCellCoordinate(float worldUnits)
+    {
+        return float.IsNaN(worldUnits) || Math.Abs(worldUnits) >= UnsetFloatThreshold
             ? 0
             : (int)Math.Round(worldUnits / CellSize);
+    }
+
+    /// <summary>
+    ///     The exterior cell grid of one worldspace, derived from its NAM0 (min corner) and
+    ///     NAM9 (max corner) object bounds. Verified against all 14 FalloutNV.esm worldspaces:
+    ///     <c>(maxX - minX + 1) * (maxY - minY + 1)</c> reproduces the shipped OFST entry count
+    ///     exactly, 14 of 14.
+    /// </summary>
+    internal sealed record WorldGrid(int MinX, int MinY, int Columns, int Rows)
+    {
+        internal int Count => Columns * Rows;
+
+        /// <summary>Table index for a cell coordinate, or -1 when it falls outside the grid.</summary>
+        internal int IndexOf(int gridX, int gridY)
+        {
+            var column = gridX - MinX;
+            var row = gridY - MinY;
+            return column < 0 || column >= Columns || row < 0 || row >= Rows
+                ? -1
+                : row * Columns + column;
+        }
+    }
 }

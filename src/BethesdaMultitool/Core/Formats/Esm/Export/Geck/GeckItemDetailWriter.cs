@@ -402,4 +402,3 @@ internal static class GeckItemDetailWriter
         return sb.ToString();
     }
 }
-

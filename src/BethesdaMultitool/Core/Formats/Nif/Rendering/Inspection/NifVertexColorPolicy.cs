@@ -18,7 +18,7 @@ internal static class NifVertexColorPolicy
         }
 
         return shaderMetadata is not
-            { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } flags1 } ||
+                   { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } flags1 } ||
                (flags1 & 0x8u) != 0;
     }
 

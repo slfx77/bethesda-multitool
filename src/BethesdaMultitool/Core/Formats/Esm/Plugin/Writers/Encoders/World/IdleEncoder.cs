@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
@@ -19,14 +20,12 @@ public sealed class IdleEncoder : IRecordEncoder
     // ANAM extractors operate on the sanitized parent/previous FormIDs the encoder
     // computes per call. Mutate the record via `with { }` before serialization so the
     // static map sees the resolved values.
-    private static readonly Dictionary<string, Func<IdleAnimationRecord, object?>> AnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["Parent"] = m => m.ParentIdleFormId,
-        ["Previous"] = m => m.PreviousIdleFormId,
-    };
-
-    public string RecordType => "IDLE";
-    public Type ModelType => typeof(IdleAnimationRecord);
+    private static readonly Dictionary<string, Func<IdleAnimationRecord, object?>> AnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Parent"] = m => m.ParentIdleFormId,
+            ["Previous"] = m => m.PreviousIdleFormId
+        };
 
     /// <summary>
     ///     A CTDA whose runtime evaluation is always <c>false</c>:
@@ -49,14 +48,17 @@ public sealed class IdleEncoder : IRecordEncoder
     /// </summary>
     private static readonly byte[] NeverFireCtdaBytes =
     {
-        0x00, 0x00, 0x00, 0x00,             // Type + padding
-        0x00, 0x00, 0x00, 0x40,             // ComparisonValue 2.0f LE
-        0x48, 0x00, 0x00, 0x00,             // FunctionIndex 0x0048 + padding
-        0x07, 0x00, 0x00, 0x00,             // Parameter1 (Player base actor)
-        0x00, 0x00, 0x00, 0x00,             // Parameter2
-        0x00, 0x00, 0x00, 0x00,             // RunOn (Subject)
-        0x00, 0x00, 0x00, 0x00              // Reference (FormID 0)
+        0x00, 0x00, 0x00, 0x00, // Type + padding
+        0x00, 0x00, 0x00, 0x40, // ComparisonValue 2.0f LE
+        0x48, 0x00, 0x00, 0x00, // FunctionIndex 0x0048 + padding
+        0x07, 0x00, 0x00, 0x00, // Parameter1 (Player base actor)
+        0x00, 0x00, 0x00, 0x00, // Parameter2
+        0x00, 0x00, 0x00, 0x00, // RunOn (Subject)
+        0x00, 0x00, 0x00, 0x00 // Reference (FormID 0)
     };
+
+    public string RecordType => "IDLE";
+    public Type ModelType => typeof(IdleAnimationRecord);
 
     /// <summary>
     ///     Encode a new IDLE record from scratch. ANAM holds
@@ -109,7 +111,7 @@ public sealed class IdleEncoder : IRecordEncoder
             // When validFormIds isn't supplied (legacy call sites + tests), skip sanitization
             // and emit conditions verbatim. The PluginConversionPipeline dispatcher always passes it for
             // the real new-record path so production output is always validated.
-            IReadOnlyList<Models.Records.Quest.DialogueCondition> emitConds;
+            IReadOnlyList<DialogueCondition> emitConds;
             if (validFormIds is null)
             {
                 emitConds = idle.Conditions;
@@ -175,17 +177,21 @@ public sealed class IdleEncoder : IRecordEncoder
     ///     Validate an IDLE ANAM reference (parent or previous). Zero is legal ("no link"),
     ///     leave it alone. Non-zero refs are checked in this order:
     ///     <list type="number">
-    ///         <item><b>Remap table first.</b> The remap table maps DMP-source FormIDs to their
-    ///         allocated PC FormIDs. ANAM bytes are written from the source FormID (the model
-    ///         field is the DMP-captured value) and IDLE is NOT registered in
-    ///         <see cref="Reference.EncodedSubrecordFormIdRemapper" />, so without a remap step
-    ///         here, ANAM bytes would land in the ESP as the source ID — which the engine then
-    ///         can't resolve. <c>_emittedNewFormIds</c> contains source FormIDs (so a remapped
-    ///         source ID looks "valid"), which is why the validity check is second.</item>
+    ///         <item>
+    ///             <b>Remap table first.</b> The remap table maps DMP-source FormIDs to their
+    ///             allocated PC FormIDs. ANAM bytes are written from the source FormID (the model
+    ///             field is the DMP-captured value) and IDLE is NOT registered in
+    ///             <see cref="Reference.EncodedSubrecordFormIdRemapper" />, so without a remap step
+    ///             here, ANAM bytes would land in the ESP as the source ID — which the engine then
+    ///             can't resolve. <c>_emittedNewFormIds</c> contains source FormIDs (so a remapped
+    ///             source ID looks "valid"), which is why the validity check is second.
+    ///         </item>
     ///         <item><b>Validity check.</b> If the FormID is in master ∪ emitted, keep it.</item>
-    ///         <item><b>Zero.</b> Dangling — engine would log "Could not find parent idle" and
-    ///         break the idle-tree resolver, falling back to a default idle (the crucified pose
-    ///         in vanilla content). ANAM=0 means "no link" which the engine accepts cleanly.</item>
+    ///         <item>
+    ///             <b>Zero.</b> Dangling — engine would log "Could not find parent idle" and
+    ///             break the idle-tree resolver, falling back to a default idle (the crucified pose
+    ///             in vanilla content). ANAM=0 means "no link" which the engine accepts cleanly.
+    ///         </item>
     ///     </list>
     /// </summary>
     /// <summary>

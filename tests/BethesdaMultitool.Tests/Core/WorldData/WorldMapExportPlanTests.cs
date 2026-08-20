@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.WorldData;
@@ -36,10 +37,10 @@ public sealed class WorldMapExportPlanTests
 
         Assert.True(WorldMapExportPlan.TryCreate(
             bounds,
-            pixelsPerCell: 100,
-            cellsPerTile: 3,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            100,
+            3,
+            16_384,
+            4_096f,
             out var plan,
             out var error));
 
@@ -59,10 +60,10 @@ public sealed class WorldMapExportPlanTests
             0, 49_999, 0, 49_999, out var manyCells, out _));
         Assert.False(WorldMapExportPlan.TryCreate(
             manyCells,
-            pixelsPerCell: 1,
-            cellsPerTile: 1,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            1,
+            1,
+            16_384,
+            4_096f,
             out _,
             out var countError));
         Assert.Contains("tile grid", countError, StringComparison.Ordinal);
@@ -71,10 +72,10 @@ public sealed class WorldMapExportPlanTests
             0, 19_999, 0, 0, out var wide, out _));
         Assert.False(WorldMapExportPlan.TryCreate(
             wide,
-            pixelsPerCell: 1,
-            cellsPerTile: 20_000,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            1,
+            20_000,
+            16_384,
+            4_096f,
             out _,
             out var dimensionError));
         Assert.Contains("GPU texture", dimensionError, StringComparison.Ordinal);
@@ -95,10 +96,10 @@ public sealed class WorldMapExportPlanTests
 
         Assert.False(WorldMapExportPlan.TryCreate(
             bounds,
-            pixelsPerCell: 1,
-            cellsPerTile: 1,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            1,
+            1,
+            16_384,
+            4_096f,
             out _,
             out var error));
         Assert.Contains("float render transform", error, StringComparison.Ordinal);
@@ -118,10 +119,10 @@ public sealed class WorldMapExportPlanTests
 
         Assert.False(WorldMapExportPlan.TryCreate(
             bounds,
-            pixelsPerCell: 100,
-            cellsPerTile: 1,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            100,
+            1,
+            16_384,
+            4_096f,
             out _,
             out var error));
         Assert.Contains("float render transform", error, StringComparison.Ordinal);
@@ -140,10 +141,10 @@ public sealed class WorldMapExportPlanTests
 
         Assert.False(WorldMapExportPlan.TryCreate(
             bounds,
-            pixelsPerCell: 1,
-            cellsPerTile: 3,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            1,
+            3,
+            16_384,
+            4_096f,
             out _,
             out var error));
         Assert.Contains("float render transform", error, StringComparison.Ordinal);
@@ -157,10 +158,10 @@ public sealed class WorldMapExportPlanTests
 
         Assert.False(WorldMapExportPlan.TryCreate(
             bounds,
-            pixelsPerCell: 1,
-            cellsPerTile: 1,
-            maxTileDimension: 16_384,
-            cellWorldSize: float.Epsilon,
+            1,
+            1,
+            16_384,
+            float.Epsilon,
             out _,
             out var error));
         Assert.Contains("pixel-to-world scale", error, StringComparison.Ordinal);
@@ -179,10 +180,10 @@ public sealed class WorldMapExportPlanTests
             out _));
         Assert.True(WorldMapExportPlan.TryCreate(
             bounds,
-            pixelsPerCell: 1,
-            cellsPerTile: 1,
-            maxTileDimension: 16_384,
-            cellWorldSize: 4_096f,
+            1,
+            1,
+            16_384,
+            4_096f,
             out var plan,
             out _));
 
@@ -192,10 +193,10 @@ public sealed class WorldMapExportPlanTests
             -gridCoordinate,
             -gridCoordinate);
 
-        Assert.Equal((float)((double)gridCoordinate * 4_096d), world.MinX);
-        Assert.Equal((float)(((double)gridCoordinate + 1d) * 4_096d), world.MaxX);
-        Assert.Equal((float)((double)-gridCoordinate * 4_096d), world.MinY);
-        Assert.Equal((float)(((double)-gridCoordinate + 1d) * 4_096d), world.MaxY);
+        Assert.Equal((float)(gridCoordinate * 4_096d), world.MinX);
+        Assert.Equal((float)((gridCoordinate + 1d) * 4_096d), world.MaxX);
+        Assert.Equal((float)(-gridCoordinate * 4_096d), world.MinY);
+        Assert.Equal((float)((-gridCoordinate + 1d) * 4_096d), world.MaxY);
         Assert.True(world.MaxX > world.MinX);
         Assert.True(world.MaxY > world.MinY);
     }

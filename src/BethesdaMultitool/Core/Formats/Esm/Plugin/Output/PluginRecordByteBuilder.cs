@@ -101,4 +101,3 @@ internal static class PluginRecordByteBuilder
         return stream.ToArray();
     }
 }
-

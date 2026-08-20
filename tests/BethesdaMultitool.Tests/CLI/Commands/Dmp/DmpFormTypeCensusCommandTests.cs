@@ -12,10 +12,10 @@ public sealed class DmpFormTypeCensusCommandTests
     {
         var status = DmpFormTypeCensusCommand.ClassifyEmissionStatus(
             signature,
-            directEncoders: new HashSet<string>([signature], StringComparer.Ordinal),
-            plannedEncoders: new HashSet<string>(StringComparer.Ordinal),
-            reachableTopLevelTypes: new HashSet<string>([signature], StringComparer.Ordinal),
-            nonTopLevelEmission: new Dictionary<string, string>(StringComparer.Ordinal));
+            new HashSet<string>([signature], StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>([signature], StringComparer.Ordinal),
+            new Dictionary<string, string>(StringComparer.Ordinal));
 
         Assert.Equal("yielded but NOT PLANNED", status);
     }
@@ -26,10 +26,10 @@ public sealed class DmpFormTypeCensusCommandTests
         const string signature = "STAT";
         var status = DmpFormTypeCensusCommand.ClassifyEmissionStatus(
             signature,
-            directEncoders: new HashSet<string>(StringComparer.Ordinal),
-            plannedEncoders: new HashSet<string>([signature], StringComparer.Ordinal),
-            reachableTopLevelTypes: new HashSet<string>([signature], StringComparer.Ordinal),
-            nonTopLevelEmission: new Dictionary<string, string>(StringComparer.Ordinal));
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>([signature], StringComparer.Ordinal),
+            new HashSet<string>([signature], StringComparer.Ordinal),
+            new Dictionary<string, string>(StringComparer.Ordinal));
 
         Assert.Equal("emitted", status);
     }

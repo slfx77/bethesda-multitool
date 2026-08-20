@@ -18,8 +18,8 @@ namespace BethesdaMultitool.Core.Orchestration;
 internal sealed class PrioritizedKeyQueue<TKey>
     where TKey : notnull
 {
-    private readonly PriorityQueue<TKey, (float Priority, long Sequence)> _queue = new();
     private readonly Dictionary<TKey, float> _bestPriority;
+    private readonly PriorityQueue<TKey, (float Priority, long Sequence)> _queue = new();
     private long _sequence;
 
     public PrioritizedKeyQueue(IEqualityComparer<TKey>? comparer = null)
@@ -76,7 +76,10 @@ internal sealed class PrioritizedKeyQueue<TKey>
         return false;
     }
 
-    public bool Contains(TKey key) => _bestPriority.ContainsKey(key);
+    public bool Contains(TKey key)
+    {
+        return _bestPriority.ContainsKey(key);
+    }
 
     public void Clear()
     {

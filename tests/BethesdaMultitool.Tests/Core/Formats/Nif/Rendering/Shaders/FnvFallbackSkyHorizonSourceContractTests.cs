@@ -19,9 +19,12 @@ public sealed class FnvFallbackSkyHorizonSourceContractTests
 {
     private const string ShaderFile = "sky_geo.frag.hlsl";
 
-    private static string ReadRendererSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "SkyGeometryRenderer12.cs");
+    private static string ReadRendererSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "SkyGeometryRenderer12.cs");
+    }
 
     [Fact]
     public void FallbackDome_Fo3Fnv_UsesThreeRowRampOverTheAtmosphereUpdateRows()

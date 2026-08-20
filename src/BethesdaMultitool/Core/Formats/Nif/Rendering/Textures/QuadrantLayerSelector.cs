@@ -6,7 +6,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 ///     Pure filter: given a cell's flat <c>LandTextureLayer</c> list, extract the BTXT base
 ///     plus the ATXT alpha layers for one quadrant, with alphas sorted by their
 ///     <see cref="LandTextureLayer.Layer" /> index. No D3D dependencies.
-///
 ///     Returns <c>null</c> for the base when the quadrant has no BTXT — callers should bind
 ///     the engine-default landscape texture in that case (see
 ///     <see cref="EngineDefaultLandscapeTexture" />). Earlier the 3D renderer promoted the
@@ -56,6 +55,7 @@ internal static class QuadrantLayerSelector
                 alphasOutput[j + 1] = alphasOutput[j];
                 j--;
             }
+
             alphasOutput[j + 1] = current;
         }
 

@@ -69,8 +69,10 @@ public sealed class LvliEncoder : IRecordEncoder
                 droppedEntries++;
                 continue;
             }
+
             subs.Add(new EncodedSubrecord("LVLO", BuildLvloSubrecord(entry, resolvedEntry.Value)));
         }
+
         if (droppedEntries > 0)
         {
             warnings.Add(

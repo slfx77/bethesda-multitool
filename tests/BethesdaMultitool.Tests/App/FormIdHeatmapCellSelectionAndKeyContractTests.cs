@@ -13,9 +13,12 @@ namespace BethesdaMultitool.Tests.App;
 /// </summary>
 public sealed class FormIdHeatmapCellSelectionAndKeyContractTests
 {
-    private static string RendererSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "ReferenceRenderer12.cs");
+    private static string RendererSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+    }
 
     [Fact]
     public void RendererSelectsWholeCellsAroundTheCameraCell()

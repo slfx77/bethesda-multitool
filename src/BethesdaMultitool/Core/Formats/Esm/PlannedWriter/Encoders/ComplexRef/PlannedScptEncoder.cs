@@ -28,7 +28,7 @@ public sealed class PlannedScptEncoder : IPlannedRecordEncoder<ScriptRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedScptEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedScptEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

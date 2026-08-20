@@ -18,7 +18,7 @@ public record WeatherRecord
     /// <summary>
     ///     Authored time-of-day image-space references. FO3/FNV store these as the four/six
     ///     <c>\0IAD</c>..<c>\5IAD</c> subrecords; Skyrim+ stores four or eight FormIDs in IMSP.
-    ///     <see cref="ImageSpaceModifier"/> remains as the Day-band compatibility projection.
+    ///     <see cref="ImageSpaceModifier" /> remains as the Day-band compatibility projection.
     /// </summary>
     public WeatherTimeBands<uint>? ImageSpaceModifiers { get; init; }
 
@@ -68,9 +68,90 @@ public record WeatherRecord
     /// </summary>
     public IReadOnlyList<WeatherCloudLayer> CloudLayers { get; init; } = [];
 
+    /// <summary>
+    ///     PNAM "Cloud Colors" (xEdit wbWeatherCloudColors): one <see cref="WeatherColor" /> PER CLOUD
+    ///     LAYER (same 6-band Time-of-Day RGBA struct as <see cref="Colors" />). The engine uploads this
+    ///     per layer as the cloud shader's per-draw color uniform (RGB tint + A opacity) — verified in
+    ///     <c>SkyShader::SetupGeometryConstants</c>. Indexed by authored source layer; use
+    ///     <see cref="GetCloudLayerSourceIndex" /> while walking the dense texture list.
+    ///     Empty when the record carries no PNAM.
+    /// </summary>
+    public IReadOnlyList<WeatherColor> CloudColors { get; init; } = [];
+
+    /// <summary>
+    ///     JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1; xEdit wbWeatherCloudAlphas): one <see cref="WeatherCloudAlpha" />
+    ///     PER CLOUD LAYER — the per-layer, per-time-of-day OPACITY (float, default 1.0) the engine applies to
+    ///     each cloud sheet. This is the layer-opacity channel the modern weather authors SEPARATELY from the
+    ///     PNAM cloud color (whose alpha byte is unused, hence the 0s). A weather hides a layer by authoring 0
+    ///     and thins others with fractional values — so a CLEAR weather (e.g. CommonwealthClear: layers at
+    ///     0.0/0.2/0.4/0.75/…) shows mostly sky, while a CLOUDY one (SkyrimCloudy: all 1.0) fully overcasts.
+    ///     Indexed by authored source layer (which can be sparse relative to <see cref="CloudLayerTextures" />).
+    ///     Empty for FO3/FNV (which carry no JNAM —
+    ///     they use a single cloud sheet, so the renderer's flat opacity is correct there).
+    /// </summary>
+    public IReadOnlyList<WeatherCloudAlpha> CloudLayerAlphas { get; init; } = [];
+
+    /// <summary>
+    ///     ONAM/QNAM cloud speeds: per-layer scroll rate the engine accumulates in
+    ///     <c>Clouds::Update</c>. FO3/FNV scalar ONAM values are unsigned fractions; Skyrim+ QNAM axes
+    ///     are normalized around the byte midpoint (127 = still). The handler normalizes the authored
+    ///     bytes so the renderer never re-interprets their storage. Empty when absent.
+    /// </summary>
+    public IReadOnlyList<float> CloudSpeedsX { get; init; } = [];
+
+    /// <summary>RNAM "Y Cloud Speeds": per-layer V-axis scroll rate, normalized like <see cref="CloudSpeedsX" />.</summary>
+    public IReadOnlyList<float> CloudSpeedsY { get; init; } = [];
+
+    /// <summary>
+    ///     DALC "Directional Ambient Lighting Colors" reduced to the per-time-band MEAN of the
+    ///     six-direction ambient cube (X±/Y±/Z±). Skyrim+ engines light exteriors from this cube,
+    ///     NOT the NAM0 Ambient row — FO4 authors that row near-black (CommonwealthClear Night =
+    ///     (2,2,2) vs its DALC night mean ≈ (18,26,34)), so sourcing ambient from NAM0 rendered
+    ///     FO4 nights pitch black. This mean remains a compatibility projection for consumers that
+    ///     cannot shade by direction; the 3D GPU path uses <see cref="DirectionalAmbientCubes" />.
+    ///     One DALC subrecord per time band (Skyrim 4; FO4/FO76 8 at form
+    ///     version 111+ — the 4 base bands + interpolation aids, same order as NAM0). Null when
+    ///     the record carries no DALC (FO3/FNV always). Directional (full-cube) shading is a
+    ///     full-cube shading is retained separately below.
+    /// </summary>
+    public WeatherColor? DirectionalAmbient { get; init; }
+
+    /// <summary>
+    ///     Lossless DALC ambient cubes by authored time band. The 3D renderer samples these without
+    ///     averaging; <see cref="DirectionalAmbient" /> is retained as a compatibility mean.
+    /// </summary>
+    public WeatherTimeBands<WeatherAmbientCube>? DirectionalAmbientCubes { get; init; }
+
+    /// <summary>Oblivion WTHR HNAM HDR parameters (14 endian-aware floats).</summary>
+    public WeatherHdr? Hdr { get; init; }
+
+    /// <summary>
+    ///     Skyrim WTHR NAM2 authored Sun Glare RGB row. Later games may instead carry the same
+    ///     semantic channel in their widened NAM0 color table; consumers prefer this explicit row
+    ///     when present and retain the color-table form as a compatibility fallback.
+    /// </summary>
+    public WeatherColor? SunGlareColor { get; init; }
+
+    /// <summary>
+    ///     Skyrim WTHR NAM3 authored Moon Glare RGB row. See <see cref="SunGlareColor" /> for the
+    ///     modern color-table compatibility path.
+    /// </summary>
+    public WeatherColor? MoonGlareColor { get; init; }
+
+    /// <summary>DATA block (wind speed, sun glare, precipitation timing, flags, lightning color).</summary>
+    public WeatherData? Data { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+
     /// <summary>Maps a dense rendered cloud ordinal back to its authored WTHR array index.</summary>
-    public int GetCloudLayerSourceIndex(int ordinal) =>
-        ordinal >= 0 && ordinal < CloudLayerSourceIndices.Count ? CloudLayerSourceIndices[ordinal] : ordinal;
+    public int GetCloudLayerSourceIndex(int ordinal)
+    {
+        return ordinal >= 0 && ordinal < CloudLayerSourceIndices.Count ? CloudLayerSourceIndices[ordinal] : ordinal;
+    }
 
     /// <summary>
     ///     Resolves the authored cloud slot attached to a clouds-NIF source shape. Modern WTHR texture
@@ -113,88 +194,9 @@ public record WeatherRecord
             SpeedU = sourceIndex < CloudSpeedsX.Count ? CloudSpeedsX[sourceIndex] : 0f,
             SpeedV = sourceIndex < CloudSpeedsY.Count ? CloudSpeedsY[sourceIndex] : 0f,
             Color = sourceIndex < CloudColors.Count ? CloudColors[sourceIndex] : null,
-            Opacity = sourceIndex < CloudLayerAlphas.Count ? CloudLayerAlphas[sourceIndex] : null,
+            Opacity = sourceIndex < CloudLayerAlphas.Count ? CloudLayerAlphas[sourceIndex] : null
         };
     }
-
-    /// <summary>
-    ///     PNAM "Cloud Colors" (xEdit wbWeatherCloudColors): one <see cref="WeatherColor" /> PER CLOUD
-    ///     LAYER (same 6-band Time-of-Day RGBA struct as <see cref="Colors" />). The engine uploads this
-    ///     per layer as the cloud shader's per-draw color uniform (RGB tint + A opacity) — verified in
-    ///     <c>SkyShader::SetupGeometryConstants</c>. Indexed by authored source layer; use
-    ///     <see cref="GetCloudLayerSourceIndex" /> while walking the dense texture list.
-    ///     Empty when the record carries no PNAM.
-    /// </summary>
-    public IReadOnlyList<WeatherColor> CloudColors { get; init; } = [];
-
-    /// <summary>
-    ///     JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1; xEdit wbWeatherCloudAlphas): one <see cref="WeatherCloudAlpha" />
-    ///     PER CLOUD LAYER — the per-layer, per-time-of-day OPACITY (float, default 1.0) the engine applies to
-    ///     each cloud sheet. This is the layer-opacity channel the modern weather authors SEPARATELY from the
-    ///     PNAM cloud color (whose alpha byte is unused, hence the 0s). A weather hides a layer by authoring 0
-    ///     and thins others with fractional values — so a CLEAR weather (e.g. CommonwealthClear: layers at
-    ///     0.0/0.2/0.4/0.75/…) shows mostly sky, while a CLOUDY one (SkyrimCloudy: all 1.0) fully overcasts.
-    ///     Indexed by authored source layer (which can be sparse relative to <see cref="CloudLayerTextures" />).
-    ///     Empty for FO3/FNV (which carry no JNAM —
-    ///     they use a single cloud sheet, so the renderer's flat opacity is correct there).
-    /// </summary>
-    public IReadOnlyList<WeatherCloudAlpha> CloudLayerAlphas { get; init; } = [];
-
-    /// <summary>
-    ///     ONAM/QNAM cloud speeds: per-layer scroll rate the engine accumulates in
-    ///     <c>Clouds::Update</c>. FO3/FNV scalar ONAM values are unsigned fractions; Skyrim+ QNAM axes
-    ///     are normalized around the byte midpoint (127 = still). The handler normalizes the authored
-    ///     bytes so the renderer never re-interprets their storage. Empty when absent.
-    /// </summary>
-    public IReadOnlyList<float> CloudSpeedsX { get; init; } = [];
-
-    /// <summary>RNAM "Y Cloud Speeds": per-layer V-axis scroll rate, normalized like <see cref="CloudSpeedsX" />.</summary>
-    public IReadOnlyList<float> CloudSpeedsY { get; init; } = [];
-
-    /// <summary>
-    ///     DALC "Directional Ambient Lighting Colors" reduced to the per-time-band MEAN of the
-    ///     six-direction ambient cube (X±/Y±/Z±). Skyrim+ engines light exteriors from this cube,
-    ///     NOT the NAM0 Ambient row — FO4 authors that row near-black (CommonwealthClear Night =
-    ///     (2,2,2) vs its DALC night mean ≈ (18,26,34)), so sourcing ambient from NAM0 rendered
-    ///     FO4 nights pitch black. This mean remains a compatibility projection for consumers that
-    ///     cannot shade by direction; the 3D GPU path uses <see cref="DirectionalAmbientCubes"/>.
-    ///     One DALC subrecord per time band (Skyrim 4; FO4/FO76 8 at form
-    ///     version 111+ — the 4 base bands + interpolation aids, same order as NAM0). Null when
-    ///     the record carries no DALC (FO3/FNV always). Directional (full-cube) shading is a
-    ///     full-cube shading is retained separately below.
-    /// </summary>
-    public WeatherColor? DirectionalAmbient { get; init; }
-
-    /// <summary>
-    ///     Lossless DALC ambient cubes by authored time band. The 3D renderer samples these without
-    ///     averaging; <see cref="DirectionalAmbient"/> is retained as a compatibility mean.
-    /// </summary>
-    public WeatherTimeBands<WeatherAmbientCube>? DirectionalAmbientCubes { get; init; }
-
-    /// <summary>Oblivion WTHR HNAM HDR parameters (14 endian-aware floats).</summary>
-    public WeatherHdr? Hdr { get; init; }
-
-    /// <summary>
-    ///     Skyrim WTHR NAM2 authored Sun Glare RGB row. Later games may instead carry the same
-    ///     semantic channel in their widened NAM0 color table; consumers prefer this explicit row
-    ///     when present and retain the color-table form as a compatibility fallback.
-    /// </summary>
-    public WeatherColor? SunGlareColor { get; init; }
-
-    /// <summary>
-    ///     Skyrim WTHR NAM3 authored Moon Glare RGB row. See <see cref="SunGlareColor"/> for the
-    ///     modern color-table compatibility path.
-    /// </summary>
-    public WeatherColor? MoonGlareColor { get; init; }
-
-    /// <summary>DATA block (wind speed, sun glare, precipitation timing, flags, lightning color).</summary>
-    public WeatherData? Data { get; init; }
-
-    /// <summary>Offset in the dump where this record was found.</summary>
-    public long Offset { get; init; }
-
-    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
-    public bool IsBigEndian { get; init; }
 }
 
 /// <summary>An 8-bit RGBA color as stored in a WTHR NAM0 entry.</summary>
@@ -242,7 +244,10 @@ public sealed record WeatherCloudAlpha
     {
     }
 
-    public WeatherCloudAlpha(WeatherTimeBands<float> bands) => Bands = bands;
+    public WeatherCloudAlpha(WeatherTimeBands<float> bands)
+    {
+        Bands = bands;
+    }
 
     public WeatherTimeBands<float> Bands { get; }
     public float Sunrise => Bands.Sunrise;
@@ -273,12 +278,15 @@ public sealed record WeatherColor
         : this(new WeatherTimeBands<WeatherRgba>(sunrise, day, sunset, night)
         {
             HighNoon = highNoon,
-            Midnight = midnight,
+            Midnight = midnight
         })
     {
     }
 
-    public WeatherColor(WeatherTimeBands<WeatherRgba> bands) => Bands = bands;
+    public WeatherColor(WeatherTimeBands<WeatherRgba> bands)
+    {
+        Bands = bands;
+    }
 
     public WeatherTimeBands<WeatherRgba> Bands { get; }
     public WeatherRgba Sunrise => Bands.Sunrise;
@@ -314,12 +322,15 @@ public enum WeatherColorType
     SkyLower = 7,
     Horizon = 8,
     Unused9 = 9,
+
     /// <summary>Skyrim+ NAM0 far-fog color; Sky::GetFogColorFar resolves category 12.</summary>
     FogFar = 12,
+
     /// <summary>FO4-family widened NAM0 sun-glare color row; Skyrim uses explicit NAM2 instead.</summary>
     SunGlare = 15,
+
     /// <summary>FO4-family widened NAM0 moon-glare color row; Skyrim uses explicit NAM3 instead.</summary>
-    MoonGlare = 16,
+    MoonGlare = 16
 }
 
 /// <summary>One lossless DALC directional ambient cube.</summary>
@@ -364,10 +375,13 @@ public sealed record WeatherHdr
 public sealed record WeatherData
 {
     public byte WindSpeed { get; init; }
+
     /// <summary>Oblivion DATA byte 1; null for later formats where the byte is unused.</summary>
     public byte? CloudSpeedLower { get; init; }
+
     /// <summary>Oblivion DATA byte 2; null for later formats where the byte is unused.</summary>
     public byte? CloudSpeedUpper { get; init; }
+
     public byte TransDelta { get; init; }
     public byte SunGlare { get; init; }
     public byte SunDamage { get; init; }

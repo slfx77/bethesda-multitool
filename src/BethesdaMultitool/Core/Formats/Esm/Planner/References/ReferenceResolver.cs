@@ -12,9 +12,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 /// </summary>
 public sealed class ReferenceResolver
 {
+    private readonly DegradationPolicy _policy;
+
     private readonly Dictionary<string, IRecordReferenceWalker> _walkers =
         new(StringComparer.Ordinal);
-    private readonly DegradationPolicy _policy;
 
     public ReferenceResolver(
         IEnumerable<IRecordReferenceWalker> walkers,
@@ -101,7 +102,7 @@ public sealed class ReferenceResolver
                 FieldPath = raw.FieldPath,
                 OriginalFormId = raw.FormId,
                 Action = ResolvedRefAction.Resolved,
-                FinalFormId = raw.FormId,
+                FinalFormId = raw.FormId
             };
         }
 
@@ -115,7 +116,7 @@ public sealed class ReferenceResolver
                 FieldPath = raw.FieldPath,
                 OriginalFormId = source,
                 Action = ResolvedRefAction.Resolved,
-                FinalFormId = target,
+                FinalFormId = target
             };
         }
 
@@ -127,7 +128,7 @@ public sealed class ReferenceResolver
                 FieldPath = raw.FieldPath,
                 OriginalFormId = source,
                 Action = ResolvedRefAction.DropSubrecord,
-                Reason = $"Target 0x{target:X8} not in emit set; per-policy drop.",
+                Reason = $"Target 0x{target:X8} not in emit set; per-policy drop."
             },
             DanglingActionKind.NullRef => new ResolvedRef
             {
@@ -135,7 +136,7 @@ public sealed class ReferenceResolver
                 OriginalFormId = source,
                 Action = ResolvedRefAction.NullRef,
                 FinalFormId = 0u,
-                Reason = $"Target 0x{target:X8} not in emit set; per-policy null-out.",
+                Reason = $"Target 0x{target:X8} not in emit set; per-policy null-out."
             },
             DanglingActionKind.DowngradeContainer => new ResolvedRef
             {
@@ -143,9 +144,9 @@ public sealed class ReferenceResolver
                 OriginalFormId = source,
                 Action = ResolvedRefAction.DowngradeContainer,
                 Downgrade = action.Downgrade,
-                Reason = $"Target 0x{target:X8} not in emit set; downgrading container.",
+                Reason = $"Target 0x{target:X8} not in emit set; downgrading container."
             },
-            _ => throw new InvalidOperationException($"Unknown DanglingActionKind: {action.Kind}"),
+            _ => throw new InvalidOperationException($"Unknown DanglingActionKind: {action.Kind}")
         };
     }
 }

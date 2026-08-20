@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
@@ -14,20 +13,20 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     unconditional in our emitted plugin and the engine plays it for every standing
 ///     NPC (proto crucifix-idle bug).
 ///     <para>
-///     Build drift on TESIdleForm:
-///     <list type="bullet">
-///         <item>Fallout_Release_Beta (xex*.dmp): 92 bytes, Conditions @ +64.</item>
-///         <item>Fallout_Debug_Final (PC final debug): 92 bytes, Conditions @ +64.</item>
-///         <item>Fallout_Debug (early debug): 84 bytes, Conditions @ +48. Not currently supported.</item>
-///     </list>
+///         Build drift on TESIdleForm:
+///         <list type="bullet">
+///             <item>Fallout_Release_Beta (xex*.dmp): 92 bytes, Conditions @ +64.</item>
+///             <item>Fallout_Debug_Final (PC final debug): 92 bytes, Conditions @ +64.</item>
+///             <item>Fallout_Debug (early debug): 84 bytes, Conditions @ +48. Not currently supported.</item>
+///         </list>
 ///     </para>
 /// </summary>
 internal sealed class RuntimeIdleAnimationReader(RuntimeMemoryContext context)
 {
     private const byte IdleFormType = 0x48;
+    private readonly RuntimeMemoryContext _context = context;
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
-    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>Reads the runtime idle-animation record for the given DMP entry, or null if it can't be read.</summary>
     public IdleAnimationRecord? ReadRuntimeIdleAnimation(RuntimeEditorIdEntry entry)

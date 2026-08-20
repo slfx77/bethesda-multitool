@@ -52,4 +52,3 @@ internal sealed class CrossDumpRecordIndex
     /// </summary>
     internal Dictionary<string, Dictionary<uint, Dictionary<string, string>>> RecordMetadata { get; } = [];
 }
-

@@ -43,12 +43,6 @@ internal sealed record ProducerScanRejection(
 /// </summary>
 internal static class QuestVariableBytecodeRemapper
 {
-    internal enum ProducerOperandIdentity
-    {
-        Source,
-        Target,
-    }
-
     /// <summary>
     ///     Finds direct quest-local writes whose owning record is otherwise eligible for the
     ///     planner-owned emission pipeline. This is deliberately analysis-only: the caller
@@ -105,7 +99,10 @@ internal static class QuestVariableBytecodeRemapper
 
         // Every record type is planner-owned since the 2026-08-11 legacy retirement, so
         // eligibility reduces to "not explicitly skipped by --skip-record-type".
-        bool IsEligible(string recordType) => !skippedRecordTypes.Contains(recordType);
+        bool IsEligible(string recordType)
+        {
+            return !skippedRecordTypes.Contains(recordType);
+        }
 
         if (IsEligible("SCPT"))
         {
@@ -239,8 +236,8 @@ internal static class QuestVariableBytecodeRemapper
                 mappings,
                 formIdAliases,
                 operandIdentity,
-                validFormIds: null,
-                emissionRemapTable: null));
+                null,
+                null));
         }
 
         return result
@@ -313,7 +310,9 @@ internal static class QuestVariableBytecodeRemapper
 
     /// <summary>
     ///     Diagnostic-only mirror of the per-INFO producer scan. Unlike
-    ///     <see cref="FindInfoProducerWrites(DialogueRecord,uint,string?,IReadOnlyList{QuestVariableRecoveryMapping},IReadOnlyDictionary{uint,uint}?,ProducerOperandIdentity,IReadOnlySet{uint}?,IReadOnlyDictionary{uint,uint}?)" />,
+    ///     <see
+    ///         cref="FindInfoProducerWrites(DialogueRecord,uint,string?,IReadOnlyList{QuestVariableRecoveryMapping},IReadOnlyDictionary{uint,uint}?,ProducerOperandIdentity,IReadOnlySet{uint}?,IReadOnlyDictionary{uint,uint}?)" />
+    ///     ,
     ///     it keeps scanning past the atomic-INFO gate and inspects EVERY result-script slot,
     ///     recording one <see cref="ProducerScanRejection" /> per fail-closed condition. The
     ///     returned evidence is what a scan of this INFO's bytecode WOULD prove — callers use
@@ -440,7 +439,7 @@ internal static class QuestVariableBytecodeRemapper
                     records.Scripts[i] = script with
                     {
                         CompiledData = rewrite.CompiledData,
-                        SourceText = rewrite.DropSourceText ? null : script.SourceText,
+                        SourceText = rewrite.DropSourceText ? null : script.SourceText
                     };
                     diagnostics.Add(rewrite.Diagnostic!);
                 }
@@ -533,7 +532,7 @@ internal static class QuestVariableBytecodeRemapper
                     rewrittenItems[itemIndex] = item with
                     {
                         CompiledData = rewrite.CompiledData,
-                        SourceText = rewrite.DropSourceText ? null : item.SourceText,
+                        SourceText = rewrite.DropSourceText ? null : item.SourceText
                     };
                     diagnostics.Add(rewrite.Diagnostic!);
                 }
@@ -631,7 +630,7 @@ internal static class QuestVariableBytecodeRemapper
             rewritten[scriptIndex] = script with
             {
                 CompiledData = rewrite.CompiledData,
-                SourceText = rewrite.DropSourceText ? null : script.SourceText,
+                SourceText = rewrite.DropSourceText ? null : script.SourceText
             };
             diagnostics.Add(rewrite.Diagnostic!);
         }
@@ -762,15 +761,18 @@ internal static class QuestVariableBytecodeRemapper
         string rewriteReason;
         if (!omitStaleSource)
         {
-            rewriteReason = "Patched SCDA quest-local operands to the same exact target IDs used by emitted conditions.";
+            rewriteReason =
+                "Patched SCDA quest-local operands to the same exact target IDs used by emitted conditions.";
         }
         else if (output is null)
         {
-            rewriteReason = "Retained the numerically identical SCDA local operand and omitted stale SCTX because the emitted local required a collision-safe name.";
+            rewriteReason =
+                "Retained the numerically identical SCDA local operand and omitted stale SCTX because the emitted local required a collision-safe name.";
         }
         else
         {
-            rewriteReason = "Patched SCDA to the exact appended local and omitted stale SCTX because the emitted local required a collision-safe name.";
+            rewriteReason =
+                "Patched SCDA to the exact appended local and omitted stale SCTX because the emitted local required a collision-safe name.";
         }
 
         return new BundleRewrite(
@@ -799,8 +801,11 @@ internal static class QuestVariableBytecodeRemapper
         ProducerOperandIdentity operandIdentity,
         ICollection<ProducerScanRejection>? rejections = null)
     {
-        void Reject(string reason, string detail) => rejections?.Add(
-            new ProducerScanRejection(recordType, recordFormId, scriptPath, reason, detail));
+        void Reject(string reason, string detail)
+        {
+            rejections?.Add(
+                new ProducerScanRejection(recordType, recordFormId, scriptPath, reason, detail));
+        }
 
         if (compiledData is not { Length: > 0 })
         {
@@ -962,8 +967,10 @@ internal static class QuestVariableBytecodeRemapper
 
     private static MappingIndex BuildMappingIndex(
         IReadOnlyList<QuestVariableRecoveryMapping> mappings,
-        IReadOnlyDictionary<uint, uint>? aliases) =>
-        BuildMappingIndex(mappings, aliases, ProducerOperandIdentity.Source);
+        IReadOnlyDictionary<uint, uint>? aliases)
+    {
+        return BuildMappingIndex(mappings, aliases, ProducerOperandIdentity.Source);
+    }
 
     private static MappingIndex BuildMappingIndex(
         IReadOnlyList<QuestVariableRecoveryMapping> mappings,
@@ -1048,6 +1055,12 @@ internal static class QuestVariableBytecodeRemapper
         }
 
         return current;
+    }
+
+    internal enum ProducerOperandIdentity
+    {
+        Source,
+        Target
     }
 
     private readonly record struct MappingKey(uint QuestFormId, ushort SourceVariableIndex);

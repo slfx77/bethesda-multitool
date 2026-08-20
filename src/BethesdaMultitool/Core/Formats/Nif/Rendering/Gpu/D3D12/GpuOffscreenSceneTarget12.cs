@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Diagnostics;
+using Vortice;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using Vortice.Mathematics;
@@ -27,30 +28,130 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 {
+    internal const Format LdrFormat = GpuSceneFormats.LdrOutput;
+    internal const Format DepthFormat = Format.D32_Float;
     private static readonly Logger Log = Logger.Instance;
 
     // HDR scene color the renderers draw into (shared with the live swap-chain PSOs), and the 8-bit
     // format the tonemap writes + the readback consumes.
     internal static readonly Format ColorFormat = GpuSceneFormats.SceneColor;
-    internal const Format LdrFormat = GpuSceneFormats.LdrOutput;
-    internal const Format DepthFormat = Format.D32_Float;
 
     private static readonly bool HdrActive = GpuSceneFormats.SceneColor == Format.R16G16B16A16_Float;
+    private readonly ID3D12Resource _colorTex; // scene color (HDR, MSAA or 1-sample) — render target
+    private readonly CpuDescriptorHandle _dsvHandle;
+    private readonly ID3D12DescriptorHeap _dsvHeap;
 
     private readonly GpuDevice12 _gpu;
-    private readonly ID3D12Resource _colorTex;   // scene color (HDR, MSAA or 1-sample) — render target
-    private readonly ID3D12Resource _depthTex;
+
     // 1-sample HDR resolve target (null when not MSAA): the MSAA scene color resolves into this, which
     // the tonemap then samples as an SRV.
     private readonly ID3D12Resource? _hdrResolveTex;
+
+    // 1-sample 8-bit tonemap output = the readback copy source.
+    private readonly ID3D12Resource _ldrOutputTex;
+    private readonly CpuDescriptorHandle _ldrRtvHandle; // tonemap output RTV
+    private readonly CpuDescriptorHandle _readOnlyDsvHandle;
+    private readonly CpuDescriptorHandle _rtvHandle; // scene color RTV
+    private readonly ID3D12DescriptorHeap _rtvHeap;
+    private readonly GpuTonemapPass12 _tonemap;
+    private readonly bool _tonemapEnabled;
+    private bool _disposed;
+    private ID3D12Resource? _readback;
+    private PlacedSubresourceFootPrint _readbackFootprint;
+    private uint _readbackRowPitch;
+    private bool _resolvedDepthPrepared;
+
+    private ID3D12Resource? _resolvedDepthTex;
+
+    private bool _resolvedDepthUnavailable;
+
     // Dedicated 1-sample opaque-scene snapshot when MSAA is disabled. The MSAA path reuses
     // _hdrResolveTex, whose size/format/sample layout already matches WATER001's sampling contract.
     private ID3D12Resource? _waterOpaqueCopy;
-    private bool _waterOpaqueSnapshotPrepared;
-    // 1-sample 8-bit tonemap output = the readback copy source.
-    private readonly ID3D12Resource _ldrOutputTex;
-    private readonly GpuTonemapPass12 _tonemap;
-    private readonly bool _tonemapEnabled;
+
+    public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
+    {
+        _gpu = gpu;
+        var sampleCount = gpu.SceneSampleCount;
+        Width = width;
+        Height = height;
+        var device = gpu.Device;
+        var msaa = sampleCount > 1;
+        IsMsaa = msaa;
+        SampleCount = sampleCount;
+        _tonemap = new GpuTonemapPass12(gpu);
+        TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
+        _tonemapEnabled = HdrActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+
+        _colorTex = device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties, HeapFlags.None,
+            ResourceDescription.Texture2D(ColorFormat, (uint)width, (uint)height,
+                1, 1, (uint)sampleCount, 0,
+                ResourceFlags.AllowRenderTarget),
+            ResourceStates.RenderTarget,
+            new ClearValue(ColorFormat, new Color4(0f, 0f, 0f, 0f)));
+
+        DepthResource = device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties, HeapFlags.None,
+            ResourceDescription.Texture2D(Format.R32_Typeless, (uint)width, (uint)height,
+                1, 1, (uint)sampleCount, 0,
+                ResourceFlags.AllowDepthStencil),
+            ResourceStates.DepthWrite,
+            new ClearValue(DepthFormat, new DepthStencilValue(0.0f))); // reversed-Z: far value = 0
+
+        if (msaa)
+        {
+            // 1-sample HDR resolve destination + tonemap SRV source. Starts (and is restored to)
+            // ResolveDest each cycle.
+            _hdrResolveTex = device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties, HeapFlags.None,
+                ResourceDescription.Texture2D(ColorFormat, (uint)width, (uint)height,
+                    1, 1),
+                ResourceStates.ResolveDest);
+        }
+
+        // 8-bit tonemap output = readback source. Starts (and is restored to) RenderTarget.
+        _ldrOutputTex = device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties, HeapFlags.None,
+            ResourceDescription.Texture2D(LdrFormat, (uint)width, (uint)height,
+                1, 1, 1, 0,
+                ResourceFlags.AllowRenderTarget),
+            ResourceStates.RenderTarget,
+            new ClearValue(LdrFormat, new Color4(0f, 0f, 0f, 0f)));
+
+        _rtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+        {
+            Type = DescriptorHeapType.RenderTargetView,
+            DescriptorCount = 2, // [0] scene color, [1] LDR tonemap output
+            Flags = DescriptorHeapFlags.None
+        });
+        _dsvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+        {
+            Type = DescriptorHeapType.DepthStencilView,
+            DescriptorCount = 2, // writable + read-only views of the same depth resource
+            Flags = DescriptorHeapFlags.None
+        });
+        var rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
+        _rtvHandle = _rtvHeap.GetCPUDescriptorHandleForHeapStart();
+        _ldrRtvHandle = _rtvHandle;
+        _ldrRtvHandle.Ptr += rtvDescriptorSize;
+        _dsvHandle = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
+        var dsvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
+        _readOnlyDsvHandle = new CpuDescriptorHandle(_dsvHandle, 1, dsvDescriptorSize);
+        device.CreateRenderTargetView(_colorTex, null, _rtvHandle);
+        device.CreateRenderTargetView(_ldrOutputTex, null, _ldrRtvHandle);
+        var dsvDesc = new DepthStencilViewDescription
+        {
+            Format = DepthFormat,
+            ViewDimension = msaa
+                ? DepthStencilViewDimension.Texture2DMultisampled
+                : DepthStencilViewDimension.Texture2D,
+            Flags = DepthStencilViewFlags.None
+        };
+        device.CreateDepthStencilView(DepthResource, dsvDesc, _dsvHandle);
+        dsvDesc.Flags = DepthStencilViewFlags.ReadOnlyDepth;
+        device.CreateDepthStencilView(DepthResource, dsvDesc, _readOnlyDsvHandle);
+    }
 
     /// <summary>
     ///     Tonemap operator + parameters for this target. Defaults to gamma-corrected ACES; world-aware
@@ -59,16 +160,6 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     ///     setter value should already have <see cref="GpuTonemapSettings.ApplyOverrides" /> applied.
     /// </summary>
     public GpuTonemapSettings TonemapSettings { get; set; }
-    private readonly ID3D12DescriptorHeap _rtvHeap;
-    private readonly ID3D12DescriptorHeap _dsvHeap;
-    private readonly CpuDescriptorHandle _rtvHandle;    // scene color RTV
-    private readonly CpuDescriptorHandle _ldrRtvHandle; // tonemap output RTV
-    private readonly CpuDescriptorHandle _dsvHandle;
-    private readonly CpuDescriptorHandle _readOnlyDsvHandle;
-    private ID3D12Resource? _readback;
-    private PlacedSubresourceFootPrint _readbackFootprint;
-    private uint _readbackRowPitch;
-    private bool _disposed;
 
     /// <summary>Pixel width of the target.</summary>
     public int Width { get; }
@@ -92,6 +183,49 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _disposed ? null : _hdrResolveTex ?? _waterOpaqueCopy;
 
     /// <summary>
+    ///     True while <see cref="WaterOpaqueSnapshotResource" /> is in
+    ///     PIXEL_SHADER_RESOURCE state between prepare and restore.
+    /// </summary>
+    public bool IsWaterOpaqueSnapshotPrepared { get; private set; }
+
+    /// <summary>Whether the most recent readback tonemap invalidated eye-adaptation history.</summary>
+    public bool TonemapHistoryReset => _tonemap.LastHistoryReset;
+
+    /// <summary>Inputs that caused the most recent eye-adaptation history invalidation.</summary>
+    public string? TonemapHistoryResetReason => _tonemap.LastHistoryResetReason;
+
+    /// <summary>
+    ///     The R32_Typeless depth texture, exposed so the capture path can bind it as an R32_Float
+    ///     Texture2D or Texture2DMS SRV. The caller owns transitions around sampled draws.
+    /// </summary>
+    public ID3D12Resource DepthResource { get; }
+
+    /// <summary>
+    ///     Single-sample post-opaque depth copy: a MAX resolve of the MSAA depth (reversed-Z:
+    ///     max = nearest covered sample — the exact semantics of the shader-side per-sample loop it
+    ///     replaces), or a plain copy on 1x targets.
+    ///     Null until <see cref="TryEnsureResolvedDepthResource" /> succeeds.
+    /// </summary>
+    public ID3D12Resource? ResolvedDepthResource => _disposed ? null : _resolvedDepthTex;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        IsWaterOpaqueSnapshotPrepared = false;
+        _readback?.Dispose();
+        _tonemap.Dispose();
+        _dsvHeap.Dispose();
+        _rtvHeap.Dispose();
+        _ldrOutputTex.Dispose();
+        _waterOpaqueCopy?.Dispose();
+        _hdrResolveTex?.Dispose();
+        _resolvedDepthTex?.Dispose();
+        DepthResource.Dispose();
+        _colorTex.Dispose();
+    }
+
+    /// <summary>
     ///     Ensures the single-sample snapshot exists. MSAA reuses its existing resolve resource; a
     ///     1x target allocates the full-resolution copy only after WATER001 eligibility succeeds.
     ///     Allocation failure simply keeps the established WATER003 fallback active.
@@ -106,9 +240,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             _waterOpaqueCopy = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties, HeapFlags.None,
                 ResourceDescription.Texture2D(ColorFormat, (uint)Width, (uint)Height,
-                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
-                    ResourceFlags.None),
-                ResourceStates.CopyDest, optimizedClearValue: null);
+                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0),
+                ResourceStates.CopyDest);
             return true;
         }
         catch (Exception ex)
@@ -120,17 +253,15 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         }
     }
 
-    /// <summary>True while <see cref="WaterOpaqueSnapshotResource" /> is in
-    /// PIXEL_SHADER_RESOURCE state between prepare and restore.</summary>
-    public bool IsWaterOpaqueSnapshotPrepared => _waterOpaqueSnapshotPrepared;
-
     /// <summary>
     ///     Clears CPU preparation state for a command list that is being discarded without submission.
     ///     The GPU resource remains in its prior ResolveDest/CopyDest baseline because the barriers were
     ///     never executed.
     /// </summary>
-    public void DiscardWaterOpaqueSnapshotPreparation() =>
-        _waterOpaqueSnapshotPrepared = false;
+    public void DiscardWaterOpaqueSnapshotPreparation()
+    {
+        IsWaterOpaqueSnapshotPrepared = false;
+    }
 
     /// <summary>
     ///     Releases a dedicated lazy 1x copy after host descriptor creation fails. The borrowed MSAA
@@ -138,34 +269,12 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     /// </summary>
     public bool ReleaseDedicatedWaterOpaqueSnapshotResource()
     {
-        if (_disposed || _waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null) return false;
+        if (_disposed || IsWaterOpaqueSnapshotPrepared || _waterOpaqueCopy is null) return false;
 
         _waterOpaqueCopy.Dispose();
         _waterOpaqueCopy = null;
         return true;
     }
-
-    /// <summary>Whether the most recent readback tonemap invalidated eye-adaptation history.</summary>
-    public bool TonemapHistoryReset => _tonemap.LastHistoryReset;
-
-    /// <summary>Inputs that caused the most recent eye-adaptation history invalidation.</summary>
-    public string? TonemapHistoryResetReason => _tonemap.LastHistoryResetReason;
-
-    /// <summary>
-    ///     The R32_Typeless depth texture, exposed so the capture path can bind it as an R32_Float
-    ///     Texture2D or Texture2DMS SRV. The caller owns transitions around sampled draws.
-    /// </summary>
-    public ID3D12Resource DepthResource => _depthTex;
-
-    /// <summary>Single-sample post-opaque depth copy: a MAX resolve of the MSAA depth (reversed-Z:
-    /// max = nearest covered sample — the exact semantics of the shader-side per-sample loop it
-    /// replaces), or a plain copy on 1x targets.
-    /// Null until <see cref="TryEnsureResolvedDepthResource" /> succeeds.</summary>
-    public ID3D12Resource? ResolvedDepthResource => _disposed ? null : _resolvedDepthTex;
-
-    private ID3D12Resource? _resolvedDepthTex;
-    private bool _resolvedDepthPrepared;
-    private bool _resolvedDepthUnavailable;
 
     /// <summary>
     ///     Lazily creates the 1-sample R32 destination for the post-opaque depth copy: a MAX
@@ -191,10 +300,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             _resolvedDepthTex = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties, HeapFlags.None,
                 ResourceDescription.Texture2D(Format.R32_Typeless, (uint)Width, (uint)Height,
-                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
-                    ResourceFlags.None),
-                IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest,
-                optimizedClearValue: null);
+                    1, 1),
+                IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest);
             _resolvedDepthTex.Name = "Capture Depth MAX Resolve";
             return true;
         }
@@ -225,10 +332,10 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         {
             // 1x arm: a straight copy carries the identical per-texel depth; there is nothing to
             // resolve. Same DepthWrite round-trip so later passes see the documented baseline.
-            cmd.ResourceBarrierTransition(_depthTex,
+            cmd.ResourceBarrierTransition(DepthResource,
                 ResourceStates.DepthWrite, ResourceStates.CopySource);
-            cmd.CopyResource(_resolvedDepthTex, _depthTex);
-            cmd.ResourceBarrierTransition(_depthTex,
+            cmd.CopyResource(_resolvedDepthTex, DepthResource);
+            cmd.ResourceBarrierTransition(DepthResource,
                 ResourceStates.CopySource, ResourceStates.DepthWrite);
             cmd.ResourceBarrierTransition(_resolvedDepthTex,
                 ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
@@ -245,12 +352,12 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             return false;
         }
 
-        cmd.ResourceBarrierTransition(_depthTex,
+        cmd.ResourceBarrierTransition(DepthResource,
             ResourceStates.DepthWrite, ResourceStates.ResolveSource);
         cmd1.ResolveSubresourceRegion(
-            _resolvedDepthTex, 0, 0, 0, _depthTex, 0,
-            new Vortice.RawRect(0, 0, Width, Height), Format.D32_Float, ResolveMode.Max);
-        cmd.ResourceBarrierTransition(_depthTex,
+            _resolvedDepthTex, 0, 0, 0, DepthResource, 0,
+            new RawRect(0, 0, Width, Height), Format.D32_Float, ResolveMode.Max);
+        cmd.ResourceBarrierTransition(DepthResource,
             ResourceStates.ResolveSource, ResourceStates.DepthWrite);
         cmd.ResourceBarrierTransition(_resolvedDepthTex,
             ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
@@ -258,8 +365,10 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         return true;
     }
 
-    /// <summary>Returns the resolved depth to its baseline (ResolveDest on MSAA targets, CopyDest
-    /// on 1x — records the barrier).</summary>
+    /// <summary>
+    ///     Returns the resolved depth to its baseline (ResolveDest on MSAA targets, CopyDest
+    ///     on 1x — records the barrier).
+    /// </summary>
     public void RestoreResolvedDepth(ID3D12GraphicsCommandList cmd)
     {
         if (!_resolvedDepthPrepared || _resolvedDepthTex is null) return;
@@ -269,93 +378,13 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _resolvedDepthPrepared = false;
     }
 
-    /// <summary>Clears resolve preparation state for a command list discarded without submission
-    /// (the barriers never executed, so the GPU resource keeps its ResolveDest baseline).</summary>
-    public void DiscardResolvedDepthPreparation() => _resolvedDepthPrepared = false;
-
-    public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
+    /// <summary>
+    ///     Clears resolve preparation state for a command list discarded without submission
+    ///     (the barriers never executed, so the GPU resource keeps its ResolveDest baseline).
+    /// </summary>
+    public void DiscardResolvedDepthPreparation()
     {
-        _gpu = gpu;
-        var sampleCount = gpu.SceneSampleCount;
-        Width = width;
-        Height = height;
-        var device = gpu.Device;
-        var msaa = sampleCount > 1;
-        IsMsaa = msaa;
-        SampleCount = sampleCount;
-        _tonemap = new GpuTonemapPass12(gpu);
-        TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
-        _tonemapEnabled = HdrActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
-
-        _colorTex = device.CreateCommittedResource<ID3D12Resource>(
-            HeapProperties.DefaultHeapProperties, HeapFlags.None,
-            ResourceDescription.Texture2D(ColorFormat, (uint)width, (uint)height,
-                arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
-                ResourceFlags.AllowRenderTarget),
-            ResourceStates.RenderTarget,
-            new ClearValue(ColorFormat, new Color4(0f, 0f, 0f, 0f)));
-
-        _depthTex = device.CreateCommittedResource<ID3D12Resource>(
-            HeapProperties.DefaultHeapProperties, HeapFlags.None,
-            ResourceDescription.Texture2D(Format.R32_Typeless, (uint)width, (uint)height,
-                arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
-                ResourceFlags.AllowDepthStencil),
-            ResourceStates.DepthWrite,
-            new ClearValue(DepthFormat, new DepthStencilValue(0.0f, 0))); // reversed-Z: far value = 0
-
-        if (msaa)
-        {
-            // 1-sample HDR resolve destination + tonemap SRV source. Starts (and is restored to)
-            // ResolveDest each cycle.
-            _hdrResolveTex = device.CreateCommittedResource<ID3D12Resource>(
-                HeapProperties.DefaultHeapProperties, HeapFlags.None,
-                ResourceDescription.Texture2D(ColorFormat, (uint)width, (uint)height,
-                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
-                    ResourceFlags.None),
-                ResourceStates.ResolveDest, optimizedClearValue: null);
-        }
-
-        // 8-bit tonemap output = readback source. Starts (and is restored to) RenderTarget.
-        _ldrOutputTex = device.CreateCommittedResource<ID3D12Resource>(
-            HeapProperties.DefaultHeapProperties, HeapFlags.None,
-            ResourceDescription.Texture2D(LdrFormat, (uint)width, (uint)height,
-                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
-                ResourceFlags.AllowRenderTarget),
-            ResourceStates.RenderTarget,
-            new ClearValue(LdrFormat, new Color4(0f, 0f, 0f, 0f)));
-
-        _rtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
-        {
-            Type = DescriptorHeapType.RenderTargetView,
-            DescriptorCount = 2, // [0] scene color, [1] LDR tonemap output
-            Flags = DescriptorHeapFlags.None,
-        });
-        _dsvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
-        {
-            Type = DescriptorHeapType.DepthStencilView,
-            DescriptorCount = 2, // writable + read-only views of the same depth resource
-            Flags = DescriptorHeapFlags.None,
-        });
-        var rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
-        _rtvHandle = _rtvHeap.GetCPUDescriptorHandleForHeapStart();
-        _ldrRtvHandle = _rtvHandle;
-        _ldrRtvHandle.Ptr += (nuint)rtvDescriptorSize;
-        _dsvHandle = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
-        var dsvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
-        _readOnlyDsvHandle = new CpuDescriptorHandle(_dsvHandle, 1, dsvDescriptorSize);
-        device.CreateRenderTargetView(_colorTex, null, _rtvHandle);
-        device.CreateRenderTargetView(_ldrOutputTex, null, _ldrRtvHandle);
-        var dsvDesc = new DepthStencilViewDescription
-        {
-            Format = DepthFormat,
-            ViewDimension = msaa
-                ? DepthStencilViewDimension.Texture2DMultisampled
-                : DepthStencilViewDimension.Texture2D,
-            Flags = DepthStencilViewFlags.None,
-        };
-        device.CreateDepthStencilView(_depthTex, dsvDesc, _dsvHandle);
-        dsvDesc.Flags = DepthStencilViewFlags.ReadOnlyDepth;
-        device.CreateDepthStencilView(_depthTex, dsvDesc, _readOnlyDsvHandle);
+        _resolvedDepthPrepared = false;
     }
 
     /// <summary>
@@ -375,16 +404,26 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         cmd.RSSetScissorRect(Width, Height);
     }
 
-    /// <summary>Re-binds the color target WITHOUT the depth target and without clearing — used while
-    /// the depth texture is transitioned to a shader resource for the water depth-fade pass.</summary>
-    public void BindColorOnly(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle);
+    /// <summary>
+    ///     Re-binds the color target WITHOUT the depth target and without clearing — used while
+    ///     the depth texture is transitioned to a shader resource for the water depth-fade pass.
+    /// </summary>
+    public void BindColorOnly(ID3D12GraphicsCommandList cmd)
+    {
+        cmd.OMSetRenderTargets(_rtvHandle);
+    }
 
     /// <summary>Re-binds color with a read-only depth view while depth is also an SRV.</summary>
-    public void BindColorReadOnlyDepth(ID3D12GraphicsCommandList cmd) =>
+    public void BindColorReadOnlyDepth(ID3D12GraphicsCommandList cmd)
+    {
         cmd.OMSetRenderTargets(_rtvHandle, _readOnlyDsvHandle);
+    }
 
     /// <summary>Re-binds color + depth without clearing (restores the targets after the water pass).</summary>
-    public void Rebind(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle, _dsvHandle);
+    public void Rebind(ID3D12GraphicsCommandList cmd)
+    {
+        cmd.OMSetRenderTargets(_rtvHandle, _dsvHandle);
+    }
 
     /// <summary>
     ///     Captures the opaque HDR scene and leaves <see cref="WaterOpaqueSnapshotResource" /> in
@@ -397,7 +436,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     public bool TryPrepareWaterOpaqueSnapshot(ID3D12GraphicsCommandList cmd)
     {
         var snapshot = WaterOpaqueSnapshotResource;
-        if (_disposed || snapshot is null || _waterOpaqueSnapshotPrepared)
+        if (_disposed || snapshot is null || IsWaterOpaqueSnapshotPrepared)
         {
             return false;
         }
@@ -419,7 +458,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             cmd.ResourceBarrierTransition(_colorTex, ResourceStates.CopySource, ResourceStates.RenderTarget);
         }
 
-        _waterOpaqueSnapshotPrepared = true;
+        IsWaterOpaqueSnapshotPrepared = true;
         return true;
     }
 
@@ -428,7 +467,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     public bool RestoreWaterOpaqueSnapshot(ID3D12GraphicsCommandList cmd)
     {
         var snapshot = WaterOpaqueSnapshotResource;
-        if (snapshot is null || !_waterOpaqueSnapshotPrepared)
+        if (snapshot is null || !IsWaterOpaqueSnapshotPrepared)
         {
             return false;
         }
@@ -437,7 +476,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             ? ResourceStates.ResolveDest
             : ResourceStates.CopyDest;
         cmd.ResourceBarrierTransition(snapshot, ResourceStates.PixelShaderResource, idleState);
-        _waterOpaqueSnapshotPrepared = false;
+        IsWaterOpaqueSnapshotPrepared = false;
         return true;
     }
 
@@ -462,7 +501,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         {
             cmd.ResourceBarrierTransition(_colorTex, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
             cmd.ResolveSubresource(_hdrResolveTex, 0, _colorTex, 0, ColorFormat);
-            cmd.ResourceBarrierTransition(_hdrResolveTex, ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
+            cmd.ResourceBarrierTransition(_hdrResolveTex, ResourceStates.ResolveDest,
+                ResourceStates.PixelShaderResource);
             hdrSource = _hdrResolveTex;
         }
         else
@@ -478,12 +518,13 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         cmd.ResourceBarrierTransition(_ldrOutputTex, ResourceStates.RenderTarget, ResourceStates.CopySource);
         cmd.CopyTextureRegion(
             new TextureCopyLocation(_readback!, _readbackFootprint), 0, 0, 0,
-            new TextureCopyLocation(_ldrOutputTex, 0));
+            new TextureCopyLocation(_ldrOutputTex));
         cmd.ResourceBarrierTransition(_ldrOutputTex, ResourceStates.CopySource, ResourceStates.RenderTarget);
 
         if (_hdrResolveTex is not null)
         {
-            cmd.ResourceBarrierTransition(_hdrResolveTex, ResourceStates.PixelShaderResource, ResourceStates.ResolveDest);
+            cmd.ResourceBarrierTransition(_hdrResolveTex, ResourceStates.PixelShaderResource,
+                ResourceStates.ResolveDest);
             cmd.ResourceBarrierTransition(_colorTex, ResourceStates.ResolveSource, ResourceStates.RenderTarget);
         }
         else
@@ -511,7 +552,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 
         // Footprint of the 1-sample 8-bit LDR output (the tonemap result the readback copies).
         var copyDesc = ResourceDescription.Texture2D(LdrFormat, (uint)Width, (uint)Height,
-            arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None);
+            1, 1);
         var footprints = new PlacedSubresourceFootPrint[1];
         var numRows = new uint[1];
         var rowSize = new ulong[1];
@@ -520,7 +561,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _readback = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.ReadbackHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(readbackBytes),
-            ResourceStates.CopyDest, optimizedClearValue: null);
+            ResourceStates.CopyDest);
         _readbackFootprint = footprints[0];
         _readbackRowPitch = footprints[0].Footprint.RowPitch;
     }
@@ -549,28 +590,12 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
                 var dstOffset = y * rowSize;
                 Marshal.Copy((nint)cpuPtr + srcOffset, pixels, dstOffset, rowSize);
             }
+
             return pixels;
         }
         finally
         {
-            _readback.Unmap(0, null);
+            _readback.Unmap(0);
         }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _waterOpaqueSnapshotPrepared = false;
-        _readback?.Dispose();
-        _tonemap.Dispose();
-        _dsvHeap.Dispose();
-        _rtvHeap.Dispose();
-        _ldrOutputTex.Dispose();
-        _waterOpaqueCopy?.Dispose();
-        _hdrResolveTex?.Dispose();
-        _resolvedDepthTex?.Dispose();
-        _depthTex.Dispose();
-        _colorTex.Dispose();
     }
 }

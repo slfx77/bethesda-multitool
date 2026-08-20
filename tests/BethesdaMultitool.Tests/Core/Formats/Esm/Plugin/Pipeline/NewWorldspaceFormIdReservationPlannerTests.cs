@@ -32,7 +32,7 @@ public sealed class NewWorldspaceFormIdReservationPlannerTests
             NewWorldspace(candidateIds[1]),
             NewWorldspace(aliasedWorldspace),
             NewWorldspace(candidateIds[2]),
-            NewWorldspace(noChildWorldspace),
+            NewWorldspace(noChildWorldspace)
         };
         worldspaces.AddRange(candidateIds.Skip(3).Select(NewWorldspace));
         var cells = candidateIds
@@ -72,7 +72,7 @@ public sealed class NewWorldspaceFormIdReservationPlannerTests
         var records = new RecordCollection
         {
             Worldspaces = [NewWorldspace(worldspaceSource)],
-            Cells = [NewCell(cellSource, worldspaceSource)],
+            Cells = [NewCell(cellSource, worldspaceSource)]
         };
         var allocator = new FormIdAllocator();
         var reservations = NewWorldspaceFormIdReservationPlanner.Reserve(
@@ -92,14 +92,14 @@ public sealed class NewWorldspaceFormIdReservationPlannerTests
             new HashSet<string> { "CELL" },
             new HashSet<uint>(),
             null,
-            masterCellContexts: new Dictionary<uint, PcEsmCellContext>(),
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord>(),
-            cellChildAllocator: allocator,
+            new Dictionary<uint, PcEsmCellContext>(),
+            new Dictionary<uint, ParsedMainRecord>(),
+            allocator,
             masterRefFormIds: new HashSet<uint>(),
             cellVerdictInputs: new CellVerdictInputs { MasterIndex = masterIndex });
         plan = plan with
         {
-            FormIdReservations = reservations.AddRange(plan.FormIdReservations),
+            FormIdReservations = reservations.AddRange(plan.FormIdReservations)
         };
 
         var reservation = Assert.Single(plan.FormIdReservations);
@@ -115,16 +115,20 @@ public sealed class NewWorldspaceFormIdReservationPlannerTests
             .Select(pair => pair.Key));
     }
 
-    private static WorldspaceRecord NewWorldspace(uint formId) =>
-        new() { FormId = formId, EditorId = $"World{formId:X8}" };
+    private static WorldspaceRecord NewWorldspace(uint formId)
+    {
+        return new WorldspaceRecord { FormId = formId, EditorId = $"World{formId:X8}" };
+    }
 
-    private static CellRecord NewCell(uint formId, uint worldspaceFormId) =>
-        new()
+    private static CellRecord NewCell(uint formId, uint worldspaceFormId)
+    {
+        return new CellRecord
         {
             FormId = formId,
             EditorId = $"Cell{formId:X8}",
             GridX = 0,
             GridY = 0,
-            WorldspaceFormId = worldspaceFormId,
+            WorldspaceFormId = worldspaceFormId
         };
+    }
 }

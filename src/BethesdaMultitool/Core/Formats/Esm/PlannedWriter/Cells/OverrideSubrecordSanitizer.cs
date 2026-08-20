@@ -9,16 +9,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 ///     Applies the plan's per-link decisions to an override ref's encoded subrecords: writes
 ///     each resolved FormID into its slot and omits any subrecord the plan condemned.
 ///     <para>
-///     No decision is made here. <c>PlacedRefLinkPlanner</c> settled remapping, dangling
-///     targets, XTEL door validity and the NAME-vs-master-type rule at plan time; this walk
-///     only has to line its occurrence indices up with the planner's — which it does because
-///     both traverse NAME-then-structural in emission order, and both skip sub-4-byte
-///     subrecords without consuming an index.
+///         No decision is made here. <c>PlacedRefLinkPlanner</c> settled remapping, dangling
+///         targets, XTEL door validity and the NAME-vs-master-type rule at plan time; this walk
+///         only has to line its occurrence indices up with the planner's — which it does because
+///         both traverse NAME-then-structural in emission order, and both skip sub-4-byte
+///         subrecords without consuming an index.
 ///     </para>
 ///     <para>
-///     Dropping the individual subrecord (rather than the whole override, as the retired
-///     legacy path did) is what lets the merge fall back to master's own value — the point of
-///     the NAME rule, whose stat code is named for that outcome.
+///         Dropping the individual subrecord (rather than the whole override, as the retired
+///         legacy path did) is what lets the merge fall back to master's own value — the point of
+///         the NAME rule, whose stat code is named for that outcome.
 ///     </para>
 /// </summary>
 internal static class OverrideSubrecordSanitizer

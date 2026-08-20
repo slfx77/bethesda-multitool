@@ -1,3 +1,4 @@
+using System.Collections;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Utils;
@@ -22,12 +23,16 @@ public sealed record SpeedTreeRecordEntry(
 ///     Collects every <c>TREE</c> record out of a parsed <see cref="RecordCollection" />, regardless of which
 ///     of the two collections the parser landed it in. This distinction is NOT cosmetic:
 ///     <list type="bullet">
-///         <item>Typed-primary games (FNV/FO3) parse TREE into <see cref="RecordCollection.Trees" /> and
-///               DELIBERATELY exclude it from <see cref="RecordCollection.GenericRecords" /> (its SNAM
-///               <c>NiTPrimitiveArray</c> and CNAM <c>OBJ_TREE</c> are embedded structs the generic reader
-///               cannot walk).</item>
-///         <item>Schema-primary games (Oblivion/Skyrim/FO4/FO76) keep TREE as a generic record and leave
-///               <see cref="RecordCollection.Trees" /> empty — the schema→typed bridge does not overlay it.</item>
+///         <item>
+///             Typed-primary games (FNV/FO3) parse TREE into <see cref="RecordCollection.Trees" /> and
+///             DELIBERATELY exclude it from <see cref="RecordCollection.GenericRecords" /> (its SNAM
+///             <c>NiTPrimitiveArray</c> and CNAM <c>OBJ_TREE</c> are embedded structs the generic reader
+///             cannot walk).
+///         </item>
+///         <item>
+///             Schema-primary games (Oblivion/Skyrim/FO4/FO76) keep TREE as a generic record and leave
+///             <see cref="RecordCollection.Trees" /> empty — the schema→typed bridge does not overlay it.
+///         </item>
 ///     </list>
 ///     A consumer that walks only one collection therefore silently loses every tree on the other family of
 ///     games: that is how FNV's WhiteOak01 lost its TREE.ICON leaf atlas and fell back to the <c>.spt</c>'s
@@ -35,8 +40,10 @@ public sealed record SpeedTreeRecordEntry(
 /// </summary>
 public static class SpeedTreeRecordSource
 {
-    /// <summary>Every TREE record that drives a <c>.spt</c>, from BOTH the typed and generic collections.
-    /// Typed entries win on duplicate archive paths (they carry the walked SNAM/CNAM structs).</summary>
+    /// <summary>
+    ///     Every TREE record that drives a <c>.spt</c>, from BOTH the typed and generic collections.
+    ///     Typed entries win on duplicate archive paths (they carry the walked SNAM/CNAM structs).
+    /// </summary>
     public static IReadOnlyList<SpeedTreeRecordEntry> Enumerate(RecordCollection records)
     {
         var entries = new List<SpeedTreeRecordEntry>();
@@ -73,8 +80,10 @@ public static class SpeedTreeRecordSource
         return entries;
     }
 
-    /// <summary>Archive path → the engine-authoritative leaf atlas (TREE.ICON). Entries with no ICON are omitted
-    /// so the caller's <c>TryGetValue</c> miss keeps the <c>.spt</c>-material fallback.</summary>
+    /// <summary>
+    ///     Archive path → the engine-authoritative leaf atlas (TREE.ICON). Entries with no ICON are omitted
+    ///     so the caller's <c>TryGetValue</c> miss keeps the <c>.spt</c>-material fallback.
+    /// </summary>
     public static Dictionary<string, string> BuildLeafTextureMap(RecordCollection records)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -130,7 +139,7 @@ public static class SpeedTreeRecordSource
             SpeedTreeTreeRecordReader.ResolveLeafIcon(record.Fields, record.DecodedTree),
             SpeedTreeTreeRecordReader.ResolveDimming(record.Fields, record.DecodedTree),
             ExtractSeed(record.Fields, record.IsBigEndian)
-                ?? SpeedTreeTreeRecordReader.ResolveFirstSeed(record.DecodedTree),
+            ?? SpeedTreeTreeRecordReader.ResolveFirstSeed(record.DecodedTree),
             record.Bounds,
             width,
             height);
@@ -190,7 +199,7 @@ public static class SpeedTreeRecordSource
         {
             case Dictionary<string, object?> dict when dict.TryGetValue(name, out var raw):
                 return TryGetFloat(raw, out value);
-            case System.Collections.IDictionary idict when idict.Contains(name):
+            case IDictionary idict when idict.Contains(name):
                 return TryGetFloat(idict[name], out value);
             default:
                 value = 0f;

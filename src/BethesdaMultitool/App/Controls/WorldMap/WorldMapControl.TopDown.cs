@@ -5,15 +5,17 @@ using Microsoft.UI.Xaml;
 
 namespace BethesdaMultitool;
 
-/// <summary>"Rendered models" top-down overlay: requests a 3D top-down render of the visible world rect
-/// and composites the readback over the terrain layer in place of the dot/box markers.</summary>
+/// <summary>
+///     "Rendered models" top-down overlay: requests a 3D top-down render of the visible world rect
+///     and composites the readback over the terrain layer in place of the dot/box markers.
+/// </summary>
 public sealed partial class WorldMapControl
 {
     private void RenderedObjectsCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;
         _showRenderedObjects = RenderedObjectsCheckBox?.IsChecked == true
-            && _topDownProvider?.CanRenderTopDown == true;
+                               && _topDownProvider?.CanRenderTopDown == true;
         if (_showRenderedObjects)
         {
             // Re-evaluate the viewport + kick a request on the next settle.
@@ -28,11 +30,14 @@ public sealed partial class WorldMapControl
             // Off: drop the overlay so its VRAM is reclaimed and the dot/box markers return.
             CancelTopDownOverlay();
         }
+
         MapCanvas?.Invalidate();
     }
 
-    /// <summary>Enables the "Rendered models" toggle only when the 3D top-down provider is ready
-    /// (D3D12 backend + terrain + reference pipeline up). Disables + unchecks it otherwise.</summary>
+    /// <summary>
+    ///     Enables the "Rendered models" toggle only when the 3D top-down provider is ready
+    ///     (D3D12 backend + terrain + reference pipeline up). Disables + unchecks it otherwise.
+    /// </summary>
     private void UpdateRenderedObjectsAvailability()
     {
         if (RenderedObjectsCheckBox is null) return;
@@ -46,9 +51,11 @@ public sealed partial class WorldMapControl
         }
     }
 
-    /// <summary>Top-down sprites apply to World Overview or any CellDetail view (exterior OR interior).
-    /// Interiors render through the provider's ceiling-clip path (the roof is removed so the floor plan
-    /// shows) — see <see cref="ITopDownSceneRenderer.RenderTopDownAsync" /> interiorCellFormId.</summary>
+    /// <summary>
+    ///     Top-down sprites apply to World Overview or any CellDetail view (exterior OR interior).
+    ///     Interiors render through the provider's ceiling-clip path (the roof is removed so the floor plan
+    ///     shows) — see <see cref="ITopDownSceneRenderer.RenderTopDownAsync" /> interiorCellFormId.
+    /// </summary>
     private bool IsTopDownEligible() =>
         _state.Mode == ViewMode.WorldOverview || _state.SelectedCell is not null;
 
@@ -59,8 +66,10 @@ public sealed partial class WorldMapControl
         _topDownIncomplete = false;
     }
 
-    /// <summary>Cancels any in-flight top-down request, drops the overlay, and resets request state.
-    /// Idempotent; safe to call on teardown / toggle-off / worldspace switch.</summary>
+    /// <summary>
+    ///     Cancels any in-flight top-down request, drops the overlay, and resets request state.
+    ///     Idempotent; safe to call on teardown / toggle-off / worldspace switch.
+    /// </summary>
     private void CancelTopDownOverlay()
     {
         _topDownGen++;
@@ -70,11 +79,19 @@ public sealed partial class WorldMapControl
         _topDownLastRequestTick = 0; // next enable/request fires immediately rather than waiting out the gate
         if (_topDownCts is not null)
         {
-            try { _topDownCts.Cancel(); }
-            catch (ObjectDisposedException) { /* already disposed by a concurrent reset — nothing to cancel */ }
+            try
+            {
+                _topDownCts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                /* already disposed by a concurrent reset — nothing to cancel */
+            }
+
             _topDownCts.Dispose();
             _topDownCts = null;
         }
+
         DisposeTopDownOverlay();
     }
 
@@ -103,6 +120,7 @@ public sealed partial class WorldMapControl
                 _topDownRequestPending = true;
                 EnsureViewportTimerRunning();
             }
+
             return;
         }
 
@@ -193,8 +211,10 @@ public sealed partial class WorldMapControl
             var mapMaxY = MathF.Max(tl.Y, br.Y);
             var marginX = (mapMaxX - mapMinX) * TopDownMarginFraction;
             var marginY = (mapMaxY - mapMinY) * TopDownMarginFraction;
-            mapMinX -= marginX; mapMaxX += marginX;
-            mapMinY -= marginY; mapMaxY += marginY;
+            mapMinX -= marginX;
+            mapMaxX += marginX;
+            mapMinY -= marginY;
+            mapMaxY += marginY;
 
             var worldMinX = mapMinX;
             var worldMaxX = mapMaxX;
@@ -248,6 +268,7 @@ public sealed partial class WorldMapControl
                 outcome = "superseded";
                 return; // teardown / toggle off
             }
+
             if (render is null)
             {
                 outcome = "null";
@@ -290,6 +311,7 @@ public sealed partial class WorldMapControl
                 _topDownLastSpeedTreeLeafInstances = render.SpeedTreeLeafInstances;
                 _topDownLastSpeedTreeBillboardInstances = render.SpeedTreeBillboardInstances;
             }
+
             outcome = "applied";
 
             if (_dumpTopDown && !_topDownDumpWritten)
@@ -301,7 +323,10 @@ public sealed partial class WorldMapControl
                     await bmp.SaveAsync(path, Microsoft.Graphics.Canvas.CanvasBitmapFileFormat.Png);
                     Map2DProfilerTrace.Event("topdown-dump", path);
                 }
-                catch (Exception ex) { Map2DProfilerTrace.Event("topdown-dump-error", ex.Message); }
+                catch (Exception ex)
+                {
+                    Map2DProfilerTrace.Event("topdown-dump-error", ex.Message);
+                }
             }
 
             MapCanvas.Invalidate();
@@ -387,9 +412,9 @@ public sealed partial class WorldMapControl
         var visibleWorldMinY = -MathF.Max(tl.Y, br.Y);
         var visibleWorldMaxY = -MathF.Min(tl.Y, br.Y);
         return _topDownWorldMinX <= visibleMinX
-            && _topDownWorldMaxX >= visibleMaxX
-            && _topDownWorldMinY <= visibleWorldMinY
-            && _topDownWorldMaxY >= visibleWorldMaxY;
+               && _topDownWorldMaxX >= visibleMaxX
+               && _topDownWorldMinY <= visibleWorldMinY
+               && _topDownWorldMaxY >= visibleWorldMaxY;
     }
 
     /// <summary>

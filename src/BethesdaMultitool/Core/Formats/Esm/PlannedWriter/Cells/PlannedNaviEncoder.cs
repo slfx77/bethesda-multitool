@@ -48,4 +48,3 @@ public static class PlannedNaviEncoder
         return NavInfoMapBuilder.BuildNaviOverride(masterNavi, builderEntries, options);
     }
 }
-

@@ -1,18 +1,17 @@
 using System.Numerics;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.WorldData.DayNight;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Pre-computed data for the World tab, built once from RecordCollection.
@@ -80,7 +79,7 @@ internal sealed class WorldViewData
     ///     (LeafDimmingValue / BranchDimmingValue), the engine's canopy-depth darkening inputs applied
     ///     per tree via <c>CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar</c>. Case-insensitive keys.
     /// </summary>
-    public Dictionary<string, BethesdaMultitool.Core.Formats.SpeedTree.SpeedTreeDimming> SpeedTreeDimming { get; init; } = [];
+    public Dictionary<string, SpeedTreeDimming> SpeedTreeDimming { get; init; } = [];
 
     public required Dictionary<uint, PlacedObjectCategory> CategoryIndex { get; init; }
     public required FormIdResolver Resolver { get; init; }
@@ -165,8 +164,10 @@ internal sealed class WorldViewData
     /// </summary>
     public float? MoonPrimaryHalfSizeFraction { get; init; }
 
-    /// <summary>Engine-exact Secunda size (see <see cref="MoonPrimaryHalfSizeFraction" />); only used by
-    /// two-moon games.</summary>
+    /// <summary>
+    ///     Engine-exact Secunda size (see <see cref="MoonPrimaryHalfSizeFraction" />); only used by
+    ///     two-moon games.
+    /// </summary>
     public float? MoonSecondaryHalfSizeFraction { get; init; }
 
     /// <summary>Spawn resolution index for leveled list and AI package lookups.</summary>
@@ -239,8 +240,10 @@ internal sealed class WorldViewData
     /// </summary>
     public WeatherTransitionSnapshot? RuntimeWeatherTransition { get; init; }
 
-    /// <summary>Climate (CLMT) records keyed by FormID. A worldspace's <c>ClimateFormId</c> (CNAM)
-    /// resolves through here to its sunrise/sunset timing and default weather list.</summary>
+    /// <summary>
+    ///     Climate (CLMT) records keyed by FormID. A worldspace's <c>ClimateFormId</c> (CNAM)
+    ///     resolves through here to its sunrise/sunset timing and default weather list.
+    /// </summary>
     public IReadOnlyDictionary<uint, ClimateRecord> ClimatesByFormId { get; init; } =
         new Dictionary<uint, ClimateRecord>();
 
@@ -300,8 +303,10 @@ internal sealed class WorldViewData
     /// </summary>
     internal DayNightRefSchedule? DayNightSchedule { get; init; }
 
-    /// <summary>All weather records, sorted by EditorId — populates the 3D viewer's weather dropdown
-    /// (the user can preview any weather, not just the current climate's candidates).</summary>
+    /// <summary>
+    ///     All weather records, sorted by EditorId — populates the 3D viewer's weather dropdown
+    ///     (the user can preview any weather, not just the current climate's candidates).
+    /// </summary>
     public IReadOnlyList<WeatherRecord> AllWeathers { get; init; } = [];
 
     /// <summary>
@@ -321,4 +326,3 @@ internal sealed class WorldViewData
     /// </summary>
     public bool IsMemoryDump { get; set; }
 }
-

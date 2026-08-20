@@ -20,6 +20,12 @@ internal static class NifParticleSystemParser
     // NiPSysModifier base (FO3/FNV string-table): Name(int32 index) + Order(uint) + Target(int32) + Active(bool).
     private const int ModifierBaseSize = 4 + 4 + 4 + 1;
 
+    // NiControllerSequence's verified Bethesda 20.2.0.7 controlled-block form: interpolator ref,
+    // controller ref, priority byte, then five string-table indices. The fixed sequence tail follows it.
+    private const int ControlledBlockStride = 29;
+    private const int SequenceTailSize = 32;
+    private const int MaxControlledBlocks = 512;
+
     /// <summary>
     ///     "1" restores the pre-rest-state behavior: bind the first activation-triggered sequence
     ///     as if it were playing. Default OFF = the load-time rest-state resolve (see
@@ -28,19 +34,15 @@ internal static class NifParticleSystemParser
     private static readonly bool TriggeredFxForced =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.TriggeredFx) == "1";
 
-    // NiControllerSequence's verified Bethesda 20.2.0.7 controlled-block form: interpolator ref,
-    // controller ref, priority byte, then five string-table indices. The fixed sequence tail follows it.
-    private const int ControlledBlockStride = 29;
-    private const int SequenceTailSize = 32;
-    private const int MaxControlledBlocks = 512;
-
     /// <summary>
     ///     True for the schema-backed NiPSys particle-system family. <c>BSStripParticleSystem</c> is a
     ///     field-identical Bethesda subclass in nif.xml. The unrelated 20.5+ <c>NiPSParticleSystem</c>
     ///     simulator family is deliberately excluded until an installed binary fixture proves its full base.
     /// </summary>
-    internal static bool IsParticleSystem(string typeName) =>
-        typeName is "NiParticleSystem" or "NiMeshParticleSystem" or "BSStripParticleSystem";
+    internal static bool IsParticleSystem(string typeName)
+    {
+        return typeName is "NiParticleSystem" or "NiMeshParticleSystem" or "BSStripParticleSystem";
+    }
 
     /// <summary>
     ///     Collect every shape block referenced as an emitter VOLUME mesh by any NiPSysMeshEmitter in the
@@ -122,8 +124,8 @@ internal static class NifParticleSystemParser
             {
                 <= 34 => ParticleSystemSourceLayout.LegacyNiGeometry,
                 < 100 => ParticleSystemSourceLayout.SkyrimNiGeometry,
-                _ => ParticleSystemSourceLayout.BsGeometry,
-            },
+                _ => ParticleSystemSourceLayout.BsGeometry
+            }
         };
         ReadParticlePresentation(data, nif, dataRef, def);
 
@@ -169,6 +171,7 @@ internal static class NifParticleSystemParser
                 }
             }
         }
+
         return def;
     }
 
@@ -385,7 +388,7 @@ internal static class NifParticleSystemParser
                     {
                         IsActive = true,
                         ConstantValue = 0f,
-                        DormantTriggeredFx = true,
+                        DormantTriggeredFx = true
                     };
             }
 
@@ -409,7 +412,7 @@ internal static class NifParticleSystemParser
 
                 if (ReadRateInterpolator(
                         data, nif, directInterpolator, controllerHeader.IsActive,
-                        controllerTiming, sequenceTiming: null, directEmitterActive) is { } direct)
+                        controllerTiming, null, directEmitterActive) is { } direct)
                 {
                     return direct;
                 }
@@ -455,7 +458,7 @@ internal static class NifParticleSystemParser
 
         var controlledCount = (int)count;
         var controlledStart = sequence.DataOffset + 12; // Name + count + Array Grow By
-        var tailLong = (long)controlledStart + (long)controlledCount * ControlledBlockStride;
+        var tailLong = controlledStart + (long)controlledCount * ControlledBlockStride;
         if (tailLong > int.MaxValue)
         {
             return false;
@@ -500,8 +503,6 @@ internal static class NifParticleSystemParser
                     break;
                 case "NiBoolInterpolator" or "NiBoolTimelineInterpolator" when emitterActiveRef < 0:
                     emitterActiveRef = candidate;
-                    break;
-                default:
                     break;
             }
 
@@ -548,7 +549,7 @@ internal static class NifParticleSystemParser
                 Interpolation = interpolation,
                 Keys = keys,
                 EmitterActiveConstant = emitterActiveConstant,
-                EmitterActiveKeys = emitterActiveKeys,
+                EmitterActiveKeys = emitterActiveKeys
             };
         }
 
@@ -568,7 +569,7 @@ internal static class NifParticleSystemParser
                 SequenceTiming = sequenceTiming,
                 ControllerTiming = controllerTiming,
                 EmitterActiveConstant = emitterActiveConstant,
-                EmitterActiveKeys = emitterActiveKeys,
+                EmitterActiveKeys = emitterActiveKeys
             };
         }
 
@@ -587,7 +588,7 @@ internal static class NifParticleSystemParser
             ControllerTiming = controllerTiming,
             ConstantValue = poseValue,
             EmitterActiveConstant = emitterActiveConstant,
-            EmitterActiveKeys = emitterActiveKeys,
+            EmitterActiveKeys = emitterActiveKeys
         };
     }
 
@@ -732,10 +733,10 @@ internal static class NifParticleSystemParser
         {
             ParticleRateInterpolation.Quadratic => 16,
             ParticleRateInterpolation.Tbc => 20,
-            _ => 8,
+            _ => 8
         };
         pos += 8;
-        if ((long)pos + (long)count * stride > end)
+        if (pos + count * stride > end)
         {
             return false;
         }
@@ -756,14 +757,14 @@ internal static class NifParticleSystemParser
             {
                 ParticleRateInterpolation.Quadratic => new ParticleRateKey(
                     time, value,
-                    Forward: BinaryUtils.ReadFloat(data, pos + 8, be),
-                    Backward: BinaryUtils.ReadFloat(data, pos + 12, be)),
+                    BinaryUtils.ReadFloat(data, pos + 8, be),
+                    BinaryUtils.ReadFloat(data, pos + 12, be)),
                 ParticleRateInterpolation.Tbc => new ParticleRateKey(
                     time, value,
                     Tension: BinaryUtils.ReadFloat(data, pos + 8, be),
                     Bias: BinaryUtils.ReadFloat(data, pos + 12, be),
                     Continuity: BinaryUtils.ReadFloat(data, pos + 16, be)),
-                _ => new ParticleRateKey(time, value),
+                _ => new ParticleRateKey(time, value)
             };
         }
 
@@ -771,19 +772,25 @@ internal static class NifParticleSystemParser
         return true;
     }
 
-    private static ParticleControllerTiming ReadControllerTiming(NifTimeControllerHeader header) =>
-        new(header.Frequency, header.Phase, header.StartTime, header.StopTime,
-            ReadCycle((int)header.CycleType));
-
-    private static ParticleControllerCycle ReadCycle(int cycle) => cycle switch
+    private static ParticleControllerTiming ReadControllerTiming(NifTimeControllerHeader header)
     {
-        0 => ParticleControllerCycle.Loop,
-        1 => ParticleControllerCycle.Reverse,
-        _ => ParticleControllerCycle.Clamp, // unknown values hold safely rather than wrapping unpredictably
-    };
+        return new ParticleControllerTiming(header.Frequency, header.Phase, header.StartTime, header.StopTime,
+            ReadCycle((int)header.CycleType));
+    }
+
+    private static ParticleControllerCycle ReadCycle(int cycle)
+    {
+        return cycle switch
+        {
+            0 => ParticleControllerCycle.Loop,
+            1 => ParticleControllerCycle.Reverse,
+            _ => ParticleControllerCycle.Clamp // unknown values hold safely rather than wrapping unpredictably
+        };
+    }
 
     /// <summary>Resolve the particle sprite texture + blend mode from the system's property refs.</summary>
-    private static void ResolveAppearance(byte[] data, NifInfo nif, List<int> propertyRefs, ParticleSystemDefinition def)
+    private static void ResolveAppearance(byte[] data, NifInfo nif, List<int> propertyRefs,
+        ParticleSystemDefinition def)
     {
         // Particle sprites carry their texture on a shader property (BSShaderNoLighting/Effect/PP) OR a
         // legacy NiTexturingProperty (FO3/FNV particles commonly use the latter). Try the shader reader
@@ -842,7 +849,7 @@ internal static class NifParticleSystemParser
 
         // Bethesda 20.2 NiPSysData retains the presence booleans and BS Max Vertices, but none of the
         // NiGeometryData per-particle arrays are serialized. Their storage is allocated at runtime.
-        if (!SkipOptionalArray(ref pos, 12, includePayload: !bethesda202)) return; // vertices
+        if (!SkipOptionalArray(ref pos, 12, !bethesda202)) return; // vertices
 
         ushort dataFlags = 0;
         if (modernGeom)
@@ -860,9 +867,10 @@ internal static class NifParticleSystemParser
             pos += numVertices * 12;
             if (modernGeom && (dataFlags & 0x1000) != 0) pos += numVertices * 24;
         }
+
         if (modernGeom) pos += 16; // bounding sphere is present whether normals are present or not
 
-        if (!SkipOptionalArray(ref pos, 16, includePayload: !bethesda202)) return; // vertex colors
+        if (!SkipOptionalArray(ref pos, 16, !bethesda202)) return; // vertex colors
         if (modernGeom)
         {
             if (!bethesda202 && (dataFlags & 0x0001) != 0) pos += numVertices * 8;
@@ -912,6 +920,7 @@ internal static class NifParticleSystemParser
                 // treating the raw Vector4 as RGBA is what produced zero/negative frame widths.
                 offsets[i] = ReadAtlasRectangle(data, pos + i * 16, be);
             }
+
             definition.SubtextureOffsets = offsets;
             pos += checked((int)count * 16);
         }
@@ -968,7 +977,7 @@ internal static class NifParticleSystemParser
                     GrowGeneration = BinaryUtils.ReadUInt16(data, p + 4, be),
                     FadeTime = BinaryUtils.ReadFloat(data, p + 6, be),
                     FadeGeneration = BinaryUtils.ReadUInt16(data, p + 10, be),
-                    BaseScale = BinaryUtils.ReadFloat(data, p + 12, be),
+                    BaseScale = BinaryUtils.ReadFloat(data, p + 12, be)
                 };
 
             case "NiPSysBombModifier":
@@ -985,7 +994,7 @@ internal static class NifParticleSystemParser
                     Range = BinaryUtils.ReadFloat(data, p + 16, be),
                     DeltaV = BinaryUtils.ReadFloat(data, p + 20, be),
                     DecayType = (int)BinaryUtils.ReadUInt32(data, p + 24, be),
-                    SymmetryType = (int)BinaryUtils.ReadUInt32(data, p + 28, be),
+                    SymmetryType = (int)BinaryUtils.ReadUInt32(data, p + 28, be)
                 };
             }
 
@@ -1006,14 +1015,16 @@ internal static class NifParticleSystemParser
                     ForceType = (int)BinaryUtils.ReadUInt32(data, p + 24, be),
                     Turbulence = p + 32 <= end ? BinaryUtils.ReadFloat(data, p + 28, be) : 0f,
                     TurbulenceScale = p + 36 <= end ? BinaryUtils.ReadFloat(data, p + 32, be) : 1f,
-                    WorldAligned = p + 37 <= end && data[p + 36] != 0,
+                    WorldAligned = p + 37 <= end && data[p + 36] != 0
                 };
             }
 
             case "BSPSysSimpleColorModifier":
             {
                 // Fade In/Out Percent + Color1 End/Start + Color2 End/Start (note End-before-Start) + Colors[3].
-                if (p + 24 + 48 > end) return new ColorModifierDefinition { Kind = ParticleModifierKind.Color, Active = active, BlockIndex = modRef };
+                if (p + 24 + 48 > end)
+                    return new ColorModifierDefinition
+                        { Kind = ParticleModifierKind.Color, Active = active, BlockIndex = modRef };
                 return new ColorModifierDefinition
                 {
                     Kind = ParticleModifierKind.Color, Active = active, BlockIndex = modRef, IsSimpleColor = true,
@@ -1025,7 +1036,7 @@ internal static class NifParticleSystemParser
                     Color2StartPercent = BinaryUtils.ReadFloat(data, p + 20, be),
                     Color0 = ReadColor4(data, p + 24, be),
                     Color1 = ReadColor4(data, p + 40, be),
-                    Color2 = ReadColor4(data, p + 56, be),
+                    Color2 = ReadColor4(data, p + 56, be)
                 };
             }
 
@@ -1034,7 +1045,7 @@ internal static class NifParticleSystemParser
                 return new ColorModifierDefinition
                 {
                     Kind = ParticleModifierKind.Color, Active = active, BlockIndex = modRef,
-                    Keys = p + 4 <= end ? ReadColorDataKeys(data, nif, BinaryUtils.ReadInt32(data, p, be)) : [],
+                    Keys = p + 4 <= end ? ReadColorDataKeys(data, nif, BinaryUtils.ReadInt32(data, p, be)) : []
                 };
 
             case "NiPSysDragModifier":
@@ -1042,7 +1053,8 @@ internal static class NifParticleSystemParser
                 // Drag Object(Ptr 4) + Drag Axis(12) + Percentage(4) + Range(4) + Range Falloff(4).
                 if (p + 4 + 12 + 12 > end)
                 {
-                    return new ParticleModifierDefinition { Kind = ParticleModifierKind.Drag, Active = active, BlockIndex = modRef };
+                    return new ParticleModifierDefinition
+                        { Kind = ParticleModifierKind.Drag, Active = active, BlockIndex = modRef };
                 }
 
                 var dragObj = BinaryUtils.ReadInt32(data, p, be);
@@ -1054,14 +1066,16 @@ internal static class NifParticleSystemParser
                     DragAxis = ReadVector3(data, p + 4, be),
                     Percentage = BinaryUtils.ReadFloat(data, p + 16, be),
                     Range = BinaryUtils.ReadFloat(data, p + 20, be),
-                    RangeFalloff = BinaryUtils.ReadFloat(data, p + 24, be),
+                    RangeFalloff = BinaryUtils.ReadFloat(data, p + 24, be)
                 };
             }
 
             case "NiPSysAgeDeathModifier":
-                return new ParticleModifierDefinition { Kind = ParticleModifierKind.AgeDeath, Active = active, BlockIndex = modRef };
+                return new ParticleModifierDefinition
+                    { Kind = ParticleModifierKind.AgeDeath, Active = active, BlockIndex = modRef };
             case "NiPSysPositionModifier":
-                return new ParticleModifierDefinition { Kind = ParticleModifierKind.Position, Active = active, BlockIndex = modRef };
+                return new ParticleModifierDefinition
+                    { Kind = ParticleModifierKind.Position, Active = active, BlockIndex = modRef };
             case "NiPSysRotationModifier":
             {
                 // FO3/FNV 20.2.0.7: speed, variation, angle, variation, random-sign, random-axis, axis.
@@ -1080,7 +1094,7 @@ internal static class NifParticleSystemParser
                     RotationSpeedVariation = p + 8 <= end ? BinaryUtils.ReadFloat(data, p + 4, be) : 0f,
                     RotationAngle = p + 12 <= end ? BinaryUtils.ReadFloat(data, p + 8, be) : 0f,
                     RotationAngleVariation = p + 16 <= end ? BinaryUtils.ReadFloat(data, p + 12, be) : 0f,
-                    RandomSpeedSign = p + 17 <= end && data[p + 16] != 0,
+                    RandomSpeedSign = p + 17 <= end && data[p + 16] != 0
                 };
             }
 
@@ -1090,6 +1104,7 @@ internal static class NifParticleSystemParser
                     return new ParticleModifierDefinition
                         { Kind = ParticleModifierKind.Subtexture, Active = active, BlockIndex = modRef };
                 }
+
                 return new SubtextureModifierDefinition
                 {
                     Kind = ParticleModifierKind.Subtexture,
@@ -1101,7 +1116,7 @@ internal static class NifParticleSystemParser
                     LoopStartFrame = BinaryUtils.ReadFloat(data, p + 12, be),
                     LoopStartFrameFudge = BinaryUtils.ReadFloat(data, p + 16, be),
                     FrameCount = BinaryUtils.ReadFloat(data, p + 20, be),
-                    FrameCountFudge = BinaryUtils.ReadFloat(data, p + 24, be),
+                    FrameCountFudge = BinaryUtils.ReadFloat(data, p + 24, be)
                 };
 
             case "NiPSysSpawnModifier":
@@ -1111,7 +1126,8 @@ internal static class NifParticleSystemParser
                 // LifeSpanVar(float 4). Packed (NIF has no field alignment padding).
                 if (p + 26 > end)
                 {
-                    return new ParticleModifierDefinition { Kind = ParticleModifierKind.Spawn, Active = active, BlockIndex = modRef };
+                    return new ParticleModifierDefinition
+                        { Kind = ParticleModifierKind.Spawn, Active = active, BlockIndex = modRef };
                 }
 
                 return new SpawnModifierDefinition
@@ -1124,18 +1140,21 @@ internal static class NifParticleSystemParser
                     SpawnSpeedVariation = BinaryUtils.ReadFloat(data, p + 10, be),
                     SpawnDirVariation = BinaryUtils.ReadFloat(data, p + 14, be),
                     LifeSpan = BinaryUtils.ReadFloat(data, p + 18, be),
-                    LifeSpanVariation = BinaryUtils.ReadFloat(data, p + 22, be),
+                    LifeSpanVariation = BinaryUtils.ReadFloat(data, p + 22, be)
                 };
             }
             case "NiPSysBoundUpdateModifier":
-                return new ParticleModifierDefinition { Kind = ParticleModifierKind.BoundUpdate, Active = active, BlockIndex = modRef };
+                return new ParticleModifierDefinition
+                    { Kind = ParticleModifierKind.BoundUpdate, Active = active, BlockIndex = modRef };
 
             default:
-                return new ParticleModifierDefinition { Kind = ParticleModifierKind.Other, Active = active, BlockIndex = modRef };
+                return new ParticleModifierDefinition
+                    { Kind = ParticleModifierKind.Other, Active = active, BlockIndex = modRef };
         }
     }
 
-    private static ParticleEmitterDefinition ParseEmitter(byte[] data, NifInfo nif, BlockInfo block, int modRef, bool active)
+    private static ParticleEmitterDefinition ParseEmitter(byte[] data, NifInfo nif, BlockInfo block, int modRef,
+        bool active)
     {
         var be = nif.IsBigEndian;
         var end = block.DataOffset + block.Size;
@@ -1143,17 +1162,17 @@ internal static class NifParticleSystemParser
 
         // NiPSysEmitter base: Speed, SpeedVar, Decl, DeclVar, Planar, PlanarVar, InitialColor(16),
         // InitialRadius, RadiusVar, LifeSpan, LifeSpanVar  = 56 bytes (FO3/FNV; RadiusVar present).
-        float speed = Read(p);
-        float speedVar = Read(p + 4);
-        float decl = Read(p + 8);
-        float declVar = Read(p + 12);
-        float planar = Read(p + 16);
-        float planarVar = Read(p + 20);
+        var speed = Read(p);
+        var speedVar = Read(p + 4);
+        var decl = Read(p + 8);
+        var declVar = Read(p + 12);
+        var planar = Read(p + 16);
+        var planarVar = Read(p + 20);
         var initialColor = new Vector4(Read(p + 24), Read(p + 28), Read(p + 32), Read(p + 36));
-        float initialRadius = Read(p + 40);
-        float radiusVar = Read(p + 44);
-        float lifeSpan = Read(p + 48);
-        float lifeSpanVar = Read(p + 52);
+        var initialRadius = Read(p + 40);
+        var radiusVar = Read(p + 44);
+        var lifeSpan = Read(p + 48);
+        var lifeSpanVar = Read(p + 52);
         var afterBase = p + 56;
 
         var shape = ParticleEmitterShape.Point;
@@ -1177,8 +1196,11 @@ internal static class NifParticleSystemParser
                 if (v + 12 <= end)
                 {
                     shape = ParticleEmitterShape.Box;
-                    width = Read(v); height = Read(v + 4); depth = Read(v + 8);
+                    width = Read(v);
+                    height = Read(v + 4);
+                    depth = Read(v + 8);
                 }
+
                 break;
             }
             case "NiPSysSphereEmitter":
@@ -1192,6 +1214,7 @@ internal static class NifParticleSystemParser
                     shape = ParticleEmitterShape.Sphere;
                     radius = Read(v);
                 }
+
                 break;
             }
             case "NiPSysCylinderEmitter":
@@ -1203,8 +1226,10 @@ internal static class NifParticleSystemParser
                 if (v + 8 <= end)
                 {
                     shape = ParticleEmitterShape.Cylinder;
-                    radius = Read(v); height = Read(v + 4);
+                    radius = Read(v);
+                    height = Read(v + 4);
                 }
+
                 break;
             }
             case "NiPSysMeshEmitter":
@@ -1232,6 +1257,7 @@ internal static class NifParticleSystemParser
                         : ParticleEmitFrom.Vertices;
                     emissionAxis = ReadVector3(data, refsEnd + 8, be);
                 }
+
                 break;
             }
         }
@@ -1262,10 +1288,13 @@ internal static class NifParticleSystemParser
             Radius = radius,
             EmitterObjectTransform = emitterObjectTransform,
             EmitterObjectIndex = emitterObjectIndex,
-            EmitterMeshIndices = meshIndices,
+            EmitterMeshIndices = meshIndices
         };
 
-        float Read(int offset) => offset + 4 <= end ? BinaryUtils.ReadFloat(data, offset, be) : 0f;
+        float Read(int offset)
+        {
+            return offset + 4 <= end ? BinaryUtils.ReadFloat(data, offset, be) : 0f;
+        }
     }
 
     /// <summary>Read a NiPSysMeshEmitter's Emitter Meshes refs (Num Emitter Meshes uint + N Ptr int32).</summary>
@@ -1327,16 +1356,20 @@ internal static class NifParticleSystemParser
         return pos <= end;
     }
 
-    private static Vector3 ReadVector3(byte[] data, int offset, bool be) =>
-        new(BinaryUtils.ReadFloat(data, offset, be),
+    private static Vector3 ReadVector3(byte[] data, int offset, bool be)
+    {
+        return new Vector3(BinaryUtils.ReadFloat(data, offset, be),
             BinaryUtils.ReadFloat(data, offset + 4, be),
             BinaryUtils.ReadFloat(data, offset + 8, be));
+    }
 
-    private static Vector4 ReadColor4(byte[] data, int offset, bool be) =>
-        new(BinaryUtils.ReadFloat(data, offset, be),
+    private static Vector4 ReadColor4(byte[] data, int offset, bool be)
+    {
+        return new Vector4(BinaryUtils.ReadFloat(data, offset, be),
             BinaryUtils.ReadFloat(data, offset + 4, be),
             BinaryUtils.ReadFloat(data, offset + 8, be),
             BinaryUtils.ReadFloat(data, offset + 12, be));
+    }
 
     /// <summary>
     ///     Read one NiPSysData Subtexture Offset. NIF serializes
@@ -1382,7 +1415,7 @@ internal static class NifParticleSystemParser
         var interpolation = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
         var keyStride = 4 + 16 + (interpolation == 2 ? 32 : 0); // QUADRATIC: + forward/backward tangents
-        if (pos + (long)numKeys * keyStride > end)
+        if (pos + numKeys * keyStride > end)
         {
             return [];
         }

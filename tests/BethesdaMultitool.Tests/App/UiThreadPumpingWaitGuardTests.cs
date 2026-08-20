@@ -26,7 +26,7 @@ public sealed class UiThreadPumpingWaitGuardTests
     [
         ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "ReferenceMeshCache12.cs"],
         ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "TerrainRenderer12.cs"],
-        ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "ReferenceRenderer12.cs"],
+        ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "ReferenceRenderer12.cs"]
     ];
 
     // `.Wait(` / `.WaitAll(` / `GetAwaiter().GetResult()` — but NOT when the receiver is the

@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.WorldData;
@@ -48,9 +49,12 @@ public sealed class ReferencePlacementBroadphaseRingTests
     }
 
     /// <summary>Looks down +Y from the origin, so anything at large -Y is behind the camera.</summary>
-    private static Frustum ForwardFrustum() => Frustum.FromViewProjection(
-        Matrix4x4.CreateLookAt(Vector3.Zero, Vector3.UnitY, Vector3.UnitZ) *
-        Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 16f, 400_000f));
+    private static Frustum ForwardFrustum()
+    {
+        return Frustum.FromViewProjection(
+            Matrix4x4.CreateLookAt(Vector3.Zero, Vector3.UnitY, Vector3.UnitZ) *
+            Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 16f, 400_000f));
+    }
 
     [Fact]
     public void Query_WithoutARing_RejectsBucketsBehindTheCamera()
@@ -62,7 +66,8 @@ public sealed class ReferencePlacementBroadphaseRingTests
         cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, results);
 
         Assert.NotEmpty(results);
-        Assert.All(results, r => Assert.True(r.BoundsCenter.Y > 0f, "a reference behind the camera survived a ring-free broadphase"));
+        Assert.All(results,
+            r => Assert.True(r.BoundsCenter.Y > 0f, "a reference behind the camera survived a ring-free broadphase"));
     }
 
     [Fact]
@@ -76,7 +81,7 @@ public sealed class ReferencePlacementBroadphaseRingTests
         var withRing = new List<RenderableReference>();
 
         cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, withoutRing);
-        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, withRing, ringRadius: 8_192f);
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, withRing, 8_192f);
 
         Assert.Contains(withRing, r => r.BoundsCenter.Y < 0f);
         Assert.True(withRing.Count > withoutRing.Count);
@@ -90,7 +95,7 @@ public sealed class ReferencePlacementBroadphaseRingTests
         var results = new List<RenderableReference>();
 
         // Behind the camera and far outside the ring — the frustum rejection must still stand.
-        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, results, ringRadius: 8_192f);
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, results, 8_192f);
 
         Assert.Empty(results);
     }
@@ -104,7 +109,7 @@ public sealed class ReferencePlacementBroadphaseRingTests
         var explicitZero = new List<RenderableReference>();
 
         cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, legacy);
-        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, explicitZero, ringRadius: 0f);
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, explicitZero, 0f);
 
         Assert.Equal(legacy.Count, explicitZero.Count);
     }

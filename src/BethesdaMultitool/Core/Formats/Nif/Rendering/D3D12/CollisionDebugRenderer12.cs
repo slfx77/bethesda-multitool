@@ -13,6 +13,7 @@ using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using D12 = Vortice.Direct3D12;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -61,7 +62,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private readonly CollisionReferencePriorityResolver _priorityResolver = new();
     private readonly ReferenceEnabledOverrideStore _enabledOverrides;
 
-    private readonly List<global::BethesdaMultitool.WorldSpatialCell> _visibleCellScratch = [];
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _visibleCellScratch = [];
     private readonly List<CollisionReferenceCandidate> _candidateScratch = [];
     private readonly List<CollisionWireframeInstance> _instanceScratch = [];
     private Func<string, PlacedObjectCategory, CollisionMeshResolution>? _collisionResolver;
@@ -73,7 +74,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private bool _disposed;
 
     /// <summary>Spatial index for the loaded worldspace; set via <see cref="LoadData" />.</summary>
-    public global::BethesdaMultitool.WorldSpatialIndex? SpatialIndex { get; private set; }
+    public global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? SpatialIndex { get; private set; }
 
     /// <summary>
     ///     Resolves a model/category pair to collision authority plus independent warmup eligibility.
@@ -238,7 +239,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
 
     /// <summary>Binds the loaded worldspace's spatial index (placed-ref source for the overlay).</summary>
     public void LoadData(
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex,
         IReadOnlyDictionary<uint, PlacedObjectCategory>? categoryIndex,
         BethesdaGame game = BethesdaGame.Unknown)
     {

@@ -1,8 +1,8 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
-using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
@@ -26,45 +26,68 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 public sealed class RefrEncoder : IRecordEncoder
 {
     // XLOC schema field names: Level, Key, Flags, NumTries, TimesUnlocked.
-    private static readonly Dictionary<string, Func<PlacedReference, object?>> XlocExtractors = new(StringComparer.Ordinal)
-    {
-        ["Level"] = m => m.LockLevel ?? (byte)0,
-        ["Key"] = m => m.LockKeyFormId ?? 0u,
-        ["Flags"] = m => m.LockFlags ?? (byte)0,
-        ["NumTries"] = m => m.LockNumTries ?? 0u,
-        ["TimesUnlocked"] = m => m.LockTimesUnlocked ?? 0u,
-    };
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XlocExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Level"] = m => m.LockLevel ?? 0,
+            ["Key"] = m => m.LockKeyFormId ?? 0u,
+            ["Flags"] = m => m.LockFlags ?? 0,
+            ["NumTries"] = m => m.LockNumTries ?? 0u,
+            ["TimesUnlocked"] = m => m.LockTimesUnlocked ?? 0u
+        };
 
     // XRDO schema: Range + Type + StaticPercentage + PositionRef (16 bytes). A validated
     // PositionRef is patched onto the record via `with { }` before serialization.
-    private static readonly Dictionary<string, Func<PlacedReference, object?>> XrdoExtractors = new(StringComparer.Ordinal)
-    {
-        ["Range"] = m => m.RadioData?.Radius ?? 0f,
-        ["Type"] = m => m.RadioData?.RangeType ?? 0u,
-        ["StaticPercentage"] = m => m.RadioData?.StaticPercentage ?? 0f,
-        ["PositionRef"] = m => m.RadioData?.PositionRefFormId ?? 0u,
-    };
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XrdoExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Range"] = m => m.RadioData?.Radius ?? 0f,
+            ["Type"] = m => m.RadioData?.RangeType ?? 0u,
+            ["StaticPercentage"] = m => m.RadioData?.StaticPercentage ?? 0f,
+            ["PositionRef"] = m => m.RadioData?.PositionRefFormId ?? 0u
+        };
 
     // XESP schema: ParentRef + Flags. The resolved FormID is patched onto the record via
     // `with { EnableParentFormId = resolved }` before serialization.
-    private static readonly Dictionary<string, Func<PlacedReference, object?>> XespExtractors = new(StringComparer.Ordinal)
-    {
-        ["ParentRef"] = m => m.EnableParentFormId ?? 0u,
-        ["Flags"] = m => m.EnableParentFlags ?? (byte)0,
-    };
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XespExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["ParentRef"] = m => m.EnableParentFormId ?? 0u,
+            ["Flags"] = m => m.EnableParentFlags ?? 0
+        };
 
     // XTEL schema: DestinationDoor + PosX/Y/Z + RotX/Y/Z + Flags. Resolved door + PosRot
     // values are patched onto the record via `with { }` before serialization.
-    private static readonly Dictionary<string, Func<PlacedReference, object?>> XtelExtractors = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XtelExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["DestinationDoor"] = m => m.DestinationDoorFormId ?? 0u,
+            ["PosX"] = m => m.TeleportPosRot?.X ?? 0f,
+            ["PosY"] = m => m.TeleportPosRot?.Y ?? 0f,
+            ["PosZ"] = m => m.TeleportPosRot?.Z ?? 0f,
+            ["RotX"] = m => m.TeleportPosRot?.RotX ?? 0f,
+            ["RotY"] = m => m.TeleportPosRot?.RotY ?? 0f,
+            ["RotZ"] = m => m.TeleportPosRot?.RotZ ?? 0f,
+            ["Flags"] = m => m.TeleportFlags ?? 0
+        };
+
+    /// <summary>
+    ///     XCNT — 4 bytes per parser's Simple4Byte schema: int16 Count @0, padding @2-3.
+    ///     Anything shorter is silently rejected by the parser's <c>DataLength &gt;= 4</c> guard.
+    /// </summary>
+    /// <summary>
+    ///     Carriable inventory-item base types whose placed refs may legitimately carry an
+    ///     XCNT stack count (a loose pile of caps/ammo, a stack of chips). Every other base —
+    ///     containers, furniture, activators, doors, statics, actors — never has a real stack
+    ///     count; a captured count there is the runtime session counter (hover "(N)" bug).
+    ///     A null/unknown base type is treated as non-item: the reported bug hit master
+    ///     containers (base resolves), and suppressing a rare unresolved proto item-pile
+    ///     count is strictly safer than re-introducing the counter.
+    /// </summary>
+    private static readonly HashSet<string> StackCountableBaseTypes = new(StringComparer.Ordinal)
     {
-        ["DestinationDoor"] = m => m.DestinationDoorFormId ?? 0u,
-        ["PosX"] = m => m.TeleportPosRot?.X ?? 0f,
-        ["PosY"] = m => m.TeleportPosRot?.Y ?? 0f,
-        ["PosZ"] = m => m.TeleportPosRot?.Z ?? 0f,
-        ["RotX"] = m => m.TeleportPosRot?.RotX ?? 0f,
-        ["RotY"] = m => m.TeleportPosRot?.RotY ?? 0f,
-        ["RotZ"] = m => m.TeleportPosRot?.RotZ ?? 0f,
-        ["Flags"] = m => m.TeleportFlags ?? (byte)0,
+        "WEAP", "ARMO", "ARMA", "AMMO", "MISC", "ALCH", "BOOK",
+        "KEYM", "NOTE", "IMOD", "CMNY", "CCRD", "CHIP"
     };
 
     public string RecordType => "REFR";
@@ -98,7 +121,7 @@ public sealed class RefrEncoder : IRecordEncoder
         // survive Pass 1 of RecordMergeEngine unchanged. XMRK signals "this is a map marker"
         // so the engine keeps the master record classified correctly; FULL/TNAM are emitted
         // only when the runtime captured a value, in which case they overlay master's bytes.
-        AppendMapMarkerSubrecords(subs, placed, isNewRecord: false);
+        AppendMapMarkerSubrecords(subs, placed, false);
 
         subs.Add(new EncodedSubrecord("XSCL", BuildXsclSubrecord(placed.Scale)));
         subs.Add(new EncodedSubrecord("DATA", BuildDataSubrecord(placed)));
@@ -116,17 +139,21 @@ public sealed class RefrEncoder : IRecordEncoder
     ///     XTEL, XCNT, XSCL, DATA.
     /// </summary>
     /// <remarks>
-    ///     <para>Emits XLOC (lock state), XESP (enable parent), XLKR (linked ref), and XTEL
-    ///     (door teleport — emitted with FormID + zero PosRot/Flags because the model only
-    ///     carries the destination FormID). XCNT is 4 bytes per the parser's
-    ///     <c>Simple4Byte</c> schema.</para>
-    ///     <para>Optional FormID-bearing subrecords (XEZN, XLKR keyword + ref, XOWN,
-    ///     XESP, XTEL door) are validated against master ∪ emitted. If a dangling FormID can't
-    ///     be remapped through the alias table the subrecord is SKIPPED (not emitted with a
-    ///     dangling value — engine logs "Unable to find linked reference / enable state
-    ///     parent" warnings when it sees one, and removes the data anyway). Skipping at emit
-    ///     time avoids the cosmetic noise + keeps the record's data-size header consistent
-    ///     with what the engine actually keeps after load.</para>
+    ///     <para>
+    ///         Emits XLOC (lock state), XESP (enable parent), XLKR (linked ref), and XTEL
+    ///         (door teleport — emitted with FormID + zero PosRot/Flags because the model only
+    ///         carries the destination FormID). XCNT is 4 bytes per the parser's
+    ///         <c>Simple4Byte</c> schema.
+    ///     </para>
+    ///     <para>
+    ///         Optional FormID-bearing subrecords (XEZN, XLKR keyword + ref, XOWN,
+    ///         XESP, XTEL door) are validated against master ∪ emitted. If a dangling FormID can't
+    ///         be remapped through the alias table the subrecord is SKIPPED (not emitted with a
+    ///         dangling value — engine logs "Unable to find linked reference / enable state
+    ///         parent" warnings when it sees one, and removes the data anyway). Skipping at emit
+    ///         time avoids the cosmetic noise + keeps the record's data-size header consistent
+    ///         with what the engine actually keeps after load.
+    ///     </para>
     /// </remarks>
     internal static EncodedRecord EncodeNewPlacedReference(
         PlacedReference placed,
@@ -156,7 +183,7 @@ public sealed class RefrEncoder : IRecordEncoder
             else
             {
                 warnings.Add($"REFR 0x{placed.FormId:X8} XEZN encounter zone " +
-                    $"0x{placed.EncounterZoneFormId.Value:X8} dangles — subrecord skipped.");
+                             $"0x{placed.EncounterZoneFormId.Value:X8} dangles — subrecord skipped.");
             }
         }
 
@@ -184,7 +211,7 @@ public sealed class RefrEncoder : IRecordEncoder
             else
             {
                 warnings.Add($"REFR 0x{placed.FormId:X8} XOWN owner " +
-                    $"0x{placed.OwnerFormId.Value:X8} dangles — subrecord skipped.");
+                             $"0x{placed.OwnerFormId.Value:X8} dangles — subrecord skipped.");
             }
         }
 
@@ -198,7 +225,7 @@ public sealed class RefrEncoder : IRecordEncoder
             else
             {
                 warnings.Add($"REFR 0x{placed.FormId:X8} XESP enable parent " +
-                    $"0x{placed.EnableParentFormId.Value:X8} dangles — subrecord skipped.");
+                             $"0x{placed.EnableParentFormId.Value:X8} dangles — subrecord skipped.");
             }
         }
 
@@ -219,7 +246,7 @@ public sealed class RefrEncoder : IRecordEncoder
             else
             {
                 warnings.Add($"REFR 0x{placed.FormId:X8} XTEL destination door " +
-                    $"0x{placed.DestinationDoorFormId.Value:X8} is not a live door — subrecord skipped.");
+                             $"0x{placed.DestinationDoorFormId.Value:X8} is not a live door — subrecord skipped.");
             }
         }
 
@@ -234,7 +261,7 @@ public sealed class RefrEncoder : IRecordEncoder
         // FURN, ACTI, DOOR, STAT, …) or an unknown/proto base drops it, and the engine
         // restores its own counter at load.
         if (placed.Count.HasValue && placed.RecordType == "REFR"
-            && BaseTypeAllowsStackCount(baseRecordType))
+                                  && BaseTypeAllowsStackCount(baseRecordType))
         {
             subs.Add(BuildXcntSubrecord(placed.Count.Value));
         }
@@ -244,7 +271,7 @@ public sealed class RefrEncoder : IRecordEncoder
         // status. Emits FNAM with a sensible default (0x03 = Visible | CanTravel per
         // docs/PDB_Runtime_Structures.md:715) so brand-new markers actually appear on the
         // Pip-Boy map.
-        AppendMapMarkerSubrecords(subs, placed, isNewRecord: true);
+        AppendMapMarkerSubrecords(subs, placed, true);
         AppendStructuralSubrecords(subs, placed);
 
         if (Math.Abs(placed.Scale - 1.0f) > float.Epsilon)
@@ -296,12 +323,12 @@ public sealed class RefrEncoder : IRecordEncoder
     /// <summary>
     ///     XRDO — 16 bytes: Range, Type, StaticPercentage, PositionRef.
     ///     <para>
-    ///     Unlike the other FormID-bearing subrecords the whole subrecord is never dropped: XRDO
-    ///     is what tells the engine how a radio broadcasts, and a radio reference without one gets
-    ///     defaulted to Type 0 (Radius) with a NULL anchor — the exact state that makes the engine
-    ///     log "Radio station exterior position ref … is not placed in an exterior". A dangling
-    ///     Position Reference is zeroed instead, which is the retail-normal value (17 of 19 retail
-    ///     radios have no anchor at all).
+    ///         Unlike the other FormID-bearing subrecords the whole subrecord is never dropped: XRDO
+    ///         is what tells the engine how a radio broadcasts, and a radio reference without one gets
+    ///         defaulted to Type 0 (Radius) with a NULL anchor — the exact state that makes the engine
+    ///         log "Radio station exterior position ref … is not placed in an exterior". A dangling
+    ///         Position Reference is zeroed instead, which is the retail-normal value (17 of 19 retail
+    ///         radios have no anchor at all).
     ///     </para>
     /// </summary>
     private static EncodedSubrecord BuildXrdoSubrecord(
@@ -317,7 +344,7 @@ public sealed class RefrEncoder : IRecordEncoder
         if (radio.PositionRefFormId is { } original && original != 0 && positionRef is null)
         {
             warnings.Add($"REFR 0x{placed.FormId:X8} XRDO position reference " +
-                $"0x{original:X8} dangles — emitting NULL.");
+                         $"0x{original:X8} dangles — emitting NULL.");
         }
 
         // Only Radius broadcasts need an exterior anchor at all. Whether this reference's own cell
@@ -326,8 +353,8 @@ public sealed class RefrEncoder : IRecordEncoder
         if (radio.RequiresExteriorAnchor && positionRef is null)
         {
             warnings.Add($"REFR 0x{placed.FormId:X8} broadcasts by radius (XRDO type 0) with no " +
-                "position reference — the engine anchors it to the reference itself and will log " +
-                "if that lands in an interior.");
+                         "position reference — the engine anchors it to the reference itself and will log " +
+                         "if that lands in an interior.");
         }
 
         var mutated = placed with { RadioData = radio with { PositionRefFormId = positionRef ?? 0u } };
@@ -360,7 +387,7 @@ public sealed class RefrEncoder : IRecordEncoder
         if (!resolvedRef.HasValue)
         {
             warnings.Add($"REFR 0x{placed.FormId:X8} XLKR linked ref " +
-                $"0x{placed.LinkedRefFormId.Value:X8} dangles — subrecord skipped.");
+                         $"0x{placed.LinkedRefFormId.Value:X8} dangles — subrecord skipped.");
             return null;
         }
 
@@ -377,8 +404,8 @@ public sealed class RefrEncoder : IRecordEncoder
             }
 
             warnings.Add($"REFR 0x{placed.FormId:X8} XLKR keyword " +
-                $"0x{placed.LinkedRefKeywordFormId.Value:X8} dangles — degraded to 4-byte XLKR " +
-                "(linked ref only).");
+                         $"0x{placed.LinkedRefKeywordFormId.Value:X8} dangles — degraded to 4-byte XLKR " +
+                         "(linked ref only).");
         }
 
         var xlkr4 = new byte[4];
@@ -390,10 +417,10 @@ public sealed class RefrEncoder : IRecordEncoder
     ///     Reads the plan's decision for one optional placed-ref link. Returns the FormID to
     ///     emit, or null when the plan condemned the subrecord.
     ///     <para>
-    ///     A null <paramref name="links" /> means no plan was supplied — the captured value is
-    ///     emitted verbatim. Only shape-level callers (encoder unit tests) do that; every
-    ///     production path routes through <c>PlacedRefLinkPlanner</c>, which owns the
-    ///     remap-then-validate policy this method used to implement inline.
+    ///         A null <paramref name="links" /> means no plan was supplied — the captured value is
+    ///         emitted verbatim. Only shape-level callers (encoder unit tests) do that; every
+    ///         production path routes through <c>PlacedRefLinkPlanner</c>, which owns the
+    ///         remap-then-validate policy this method used to implement inline.
     ///     </para>
     /// </summary>
     private static uint? Resolve(PlanReferenceLookup? links, string fieldPath, uint captured)
@@ -428,27 +455,10 @@ public sealed class RefrEncoder : IRecordEncoder
         return SchemaModelSerializer.SerializeSubrecord("XTEL", "", 32, mutated, XtelExtractors);
     }
 
-    /// <summary>
-    ///     XCNT — 4 bytes per parser's Simple4Byte schema: int16 Count @0, padding @2-3.
-    ///     Anything shorter is silently rejected by the parser's <c>DataLength &gt;= 4</c> guard.
-    /// </summary>
-    /// <summary>
-    ///     Carriable inventory-item base types whose placed refs may legitimately carry an
-    ///     XCNT stack count (a loose pile of caps/ammo, a stack of chips). Every other base —
-    ///     containers, furniture, activators, doors, statics, actors — never has a real stack
-    ///     count; a captured count there is the runtime session counter (hover "(N)" bug).
-    ///     A null/unknown base type is treated as non-item: the reported bug hit master
-    ///     containers (base resolves), and suppressing a rare unresolved proto item-pile
-    ///     count is strictly safer than re-introducing the counter.
-    /// </summary>
-    private static readonly HashSet<string> StackCountableBaseTypes = new(StringComparer.Ordinal)
+    private static bool BaseTypeAllowsStackCount(string? baseRecordType)
     {
-        "WEAP", "ARMO", "ARMA", "AMMO", "MISC", "ALCH", "BOOK",
-        "KEYM", "NOTE", "IMOD", "CMNY", "CCRD", "CHIP",
-    };
-
-    private static bool BaseTypeAllowsStackCount(string? baseRecordType) =>
-        baseRecordType is not null && StackCountableBaseTypes.Contains(baseRecordType);
+        return baseRecordType is not null && StackCountableBaseTypes.Contains(baseRecordType);
+    }
 
     private static EncodedSubrecord BuildXcntSubrecord(short count)
     {
@@ -461,16 +471,22 @@ public sealed class RefrEncoder : IRecordEncoder
     /// <summary>
     ///     Emits the XMRK / FNAM? / FULL? / TNAM? subrecord cluster for a map-marker REFR.
     ///     <para>XMRK is the 0-byte presence flag; the engine ignores TNAM/FULL/FNAM without it.</para>
-    ///     <para>FNAM is the 1-byte visibility flag set (bit 0=Visible, bit 1=CanTravel,
-    ///     bit 2=Hidden per the runtime BGSPrimitiveMarker layout). Emitted only on the
-    ///     new-record path with a 0x03 default (Visible + CanTravel) so brand-new markers
-    ///     appear on the Pip-Boy map. On overrides we leave FNAM alone so the master's
-    ///     authored value passes through RecordMergeEngine Pass 1 unchanged.</para>
-    ///     <para>FULL is the latin1 display label ("Goodsprings"). When emitted on an
-    ///     override path it overlays master's FULL byte-for-byte at master's position —
-    ///     that's the rename path.</para>
-    ///     <para>TNAM is 2 bytes: byte 0 = marker type (cast from MapMarkerType, 0=None
-    ///     through 14=Vault), byte 1 = 0 padding.</para>
+    ///     <para>
+    ///         FNAM is the 1-byte visibility flag set (bit 0=Visible, bit 1=CanTravel,
+    ///         bit 2=Hidden per the runtime BGSPrimitiveMarker layout). Emitted only on the
+    ///         new-record path with a 0x03 default (Visible + CanTravel) so brand-new markers
+    ///         appear on the Pip-Boy map. On overrides we leave FNAM alone so the master's
+    ///         authored value passes through RecordMergeEngine Pass 1 unchanged.
+    ///     </para>
+    ///     <para>
+    ///         FULL is the latin1 display label ("Goodsprings"). When emitted on an
+    ///         override path it overlays master's FULL byte-for-byte at master's position —
+    ///         that's the rename path.
+    ///     </para>
+    ///     <para>
+    ///         TNAM is 2 bytes: byte 0 = marker type (cast from MapMarkerType, 0=None
+    ///         through 14=Vault), byte 1 = 0 padding.
+    ///     </para>
     /// </summary>
     private static void AppendMapMarkerSubrecords(
         List<EncodedSubrecord> subs,

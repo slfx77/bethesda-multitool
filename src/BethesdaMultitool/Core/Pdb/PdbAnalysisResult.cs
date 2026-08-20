@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.Pdb;
 
-/// <summary>Result of resolving PDB global symbols against a memory dump: per-classification counts plus the resolved globals.</summary>
+/// <summary>
+///     Result of resolving PDB global symbols against a memory dump: per-classification counts plus the resolved
+///     globals.
+/// </summary>
 public sealed class PdbAnalysisResult
 {
     public int TotalParsed { get; set; }

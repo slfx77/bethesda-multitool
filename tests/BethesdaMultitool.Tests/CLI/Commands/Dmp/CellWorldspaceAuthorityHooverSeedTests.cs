@@ -40,7 +40,7 @@ public sealed class CellWorldspaceAuthorityHooverSeedTests
     private static readonly uint[] BandGaps =
     [
         0x00135320, 0x0013536C, 0x0013536D, 0x00135389, 0x001353CB,
-        0x001353CC, 0x001353CE, 0x001353CF, 0x00135402, 0x0013545D,
+        0x001353CC, 0x001353CE, 0x001353CF, 0x00135402, 0x0013545D
     ];
 
     private static JsonElement LoadReferences()

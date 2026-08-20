@@ -37,14 +37,6 @@ public sealed record CellVerdictInputs
 public static class CellChildVerdictPlanner
 {
     /// <summary>
-    ///     A captured master ref parented to a master-anchored cell that is NOT its master
-    ///     parent — the DMP moved it there (Goodsprings cemetery class). Deferred to phase 2
-    ///     so home-cell captures win the FormID before any cross-cell move claims it.
-    /// </summary>
-    private sealed record CrossCellMoveCandidate(
-        uint CellFormId, uint ChildFormId, int TargetGroupType, bool? OverrideInitiallyDisabled);
-
-    /// <summary>
     ///     Rewrite each planned cell with its children's verdicts. A missing
     ///     <see cref="CellPlan.Mode" /> is an incomplete plan and fails immediately;
     ///     the writer has no fallback decision path.
@@ -105,7 +97,7 @@ public static class CellChildVerdictPlanner
                 TargetGroupType = candidate.TargetGroupType,
                 MarksMasterCovered = true,
                 AuxStatCode = "refr.cross-cell-move",
-                OverrideInitiallyDisabled = candidate.OverrideInitiallyDisabled,
+                OverrideInitiallyDisabled = candidate.OverrideInitiallyDisabled
             };
         }
 
@@ -149,8 +141,8 @@ public static class CellChildVerdictPlanner
         // Planned LAND is genuine content for the ITM gate (legacy hasCapturedTerrain
         // parity: a master cell whose only change is terrain still emits), but it never
         // enters the genuine/navm counts — those gates reason about placed children only.
-        var hasPlannedLand = cellPlan.TemporaryChildren.Any(
-            static c => c.Type == "LAND" && c.Model is CellLandDecision);
+        var hasPlannedLand =
+            cellPlan.TemporaryChildren.Any(static c => c.Type == "LAND" && c.Model is CellLandDecision);
 
         var (emits, suppressReason) = (true, (string?)null);
         if (isMasterAnchored && genuine == 0 && !hasPlannedLand)
@@ -166,7 +158,7 @@ public static class CellChildVerdictPlanner
         {
             Emits = emits,
             SuppressReason = suppressReason,
-            NavmOnlySuppressed = navmOnly,
+            NavmOnlySuppressed = navmOnly
         };
     }
 
@@ -221,7 +213,7 @@ public static class CellChildVerdictPlanner
                 || child.Model is not PlacedReference placed)
             {
                 continue; // NAVM etc. are not placed refs; models other than PlacedReference
-                          // never encode — the writer handles both without a verdict.
+                // never encode — the writer handles both without a verdict.
             }
 
             var verdict = Decide(
@@ -271,7 +263,7 @@ public static class CellChildVerdictPlanner
                 child, placed, plannedGroupType, cellPlan, masterByFormId, inputs, moveCandidates),
             // Other dispositions never encode (legacy returned null silently): drop with
             // no reason so the writer skips the stats counters.
-            _ => new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop },
+            _ => new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop }
         };
     }
 
@@ -353,7 +345,7 @@ public static class CellChildVerdictPlanner
                         is ReferenceBaseRemapper.StemRescueOutcome.Ambiguous
                         or ReferenceBaseRemapper.StemRescueOutcome.CrossTypeAmbiguous;
                     return Drop("refr.dangling-base",
-                        aux: ambiguous ? "refr.editorid-remap-ambiguous" : null);
+                        ambiguous ? "refr.editorid-remap-ambiguous" : null);
                 }
             }
             else
@@ -371,7 +363,7 @@ public static class CellChildVerdictPlanner
             TargetGroupType = plannedGroupType,
             AuxStatCode = auxStatCode,
             NewInitiallyDisabled = StripStreetLightPolicy.SelectNewInitiallyDisabled(child, placed, cellPlan),
-            NewEnableParentFormId = StripStreetLightPolicy.SelectNewEnableParent(placed, cellPlan),
+            NewEnableParentFormId = StripStreetLightPolicy.SelectNewEnableParent(placed, cellPlan)
         };
     }
 
@@ -435,10 +427,10 @@ public static class CellChildVerdictPlanner
         }
 
         var isForeignParent = inputs.MasterIndex.RefToCell.TryGetValue(child.FormId, out var masterParentCell)
-            && masterParentCell != 0
-            && masterParentCell != cellPlan.CellFormId
-            && !placed.IsMapMarker
-            && !child.Reparented;
+                              && masterParentCell != 0
+                              && masterParentCell != cellPlan.CellFormId
+                              && !placed.IsMapMarker
+                              && !child.Reparented;
 
         // A cross-cell-MOVED ref applies the proto's authored enable-state (EthelPhebus: retail
         // parks the cut NPC disabled in another worldspace, the proto shipped her live).
@@ -484,7 +476,7 @@ public static class CellChildVerdictPlanner
             Verdict = PlacedRefEmitVerdict.Emit,
             TargetGroupType = routeGroupType,
             MarksMasterCovered = true,
-            OverrideInitiallyDisabled = overrideInitiallyDisabled,
+            OverrideInitiallyDisabled = overrideInitiallyDisabled
         };
     }
 
@@ -494,6 +486,14 @@ public static class CellChildVerdictPlanner
             Verdict = PlacedRefEmitVerdict.Drop,
             DropReason = reason,
             AuxStatCode = aux,
-            MarksMasterCovered = marksMasterCovered,
+            MarksMasterCovered = marksMasterCovered
         };
+
+    /// <summary>
+    ///     A captured master ref parented to a master-anchored cell that is NOT its master
+    ///     parent — the DMP moved it there (Goodsprings cemetery class). Deferred to phase 2
+    ///     so home-cell captures win the FormID before any cross-cell move claims it.
+    /// </summary>
+    private sealed record CrossCellMoveCandidate(
+        uint CellFormId, uint ChildFormId, int TargetGroupType, bool? OverrideInitiallyDisabled);
 }

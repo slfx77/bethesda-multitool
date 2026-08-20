@@ -10,7 +10,6 @@ namespace EsmAnalyzer.Commands.Dmp;
 ///     for each (gridX, gridY) carrying dangling REFRs, find candidate cells (any
 ///     worldspace), rank by (has editor_id desc, owning-worldspace cell count desc),
 ///     and pick the winner.
-///
 ///     Emits a new `dangling_refs` section into the authority JSON (schema_version
 ///     bumps 2 -&gt; 3). All other top-level sections are preserved verbatim.
 /// </summary>
@@ -111,7 +110,7 @@ internal static class DmpAttributeDanglingCommand
         var sweepRows = DmpDanglingReaders.LoadSweep(sweepCsv, minRefs, nearOriginCutoff);
         AnsiConsole.MarkupLine($"  (dump, cell) buckets after filter: [cyan]{sweepRows.Count:N0}[/]");
 
-        AnsiConsole.MarkupLine($"[blue]Applying heuristic...[/]");
+        AnsiConsole.MarkupLine("[blue]Applying heuristic...[/]");
         var attributions = DmpDanglingAttributor.Attribute(auth, sweepRows);
 
         if (!string.IsNullOrEmpty(positionsCsv) && File.Exists(positionsCsv))
@@ -161,25 +160,29 @@ internal static class DmpAttributeDanglingCommand
         AnsiConsole.MarkupLine($"  total attributed REFRs: [green]{total:N0}[/]  cut: [yellow]{totalCut:N0}[/]");
 
         AnsiConsole.WriteLine();
-        var conf = new Table().Border(TableBorder.Rounded).AddColumn("Confidence").AddColumn("REFRs", c => c.RightAligned());
+        var conf = new Table().Border(TableBorder.Rounded).AddColumn("Confidence")
+            .AddColumn("REFRs", c => c.RightAligned());
         foreach (var k in new[] { "HIGH", "STRONG", "MEDIUM", "LOW" })
         {
             conf.AddRow(k, byConfidence.GetValueOrDefault(k, 0).ToString("N0", CultureInfo.InvariantCulture));
         }
+
         AnsiConsole.Write(conf);
 
         AnsiConsole.WriteLine();
-        var ws = new Table().Border(TableBorder.Rounded).AddColumn("Worldspace").AddColumn("REFRs", c => c.RightAligned());
+        var ws = new Table().Border(TableBorder.Rounded).AddColumn("Worldspace")
+            .AddColumn("REFRs", c => c.RightAligned());
         foreach (var (id, n) in byWs.OrderByDescending(kv => kv.Value).Take(10))
         {
             var name = auth.WorldspaceNames.GetValueOrDefault(id, "?");
             ws.AddRow($"0x{id:X8} {Markup.Escape(name)}", n.ToString("N0", CultureInfo.InvariantCulture));
         }
+
         AnsiConsole.Write(ws);
 
         AnsiConsole.MarkupLine($"\n[blue]Writing:[/] {Markup.Escape(authorityOut)}");
         DmpDanglingWriter.RewriteAuthority(authorityIn, authorityOut, attributions);
-        AnsiConsole.MarkupLine($"[green]Done.[/] schema_version bumped to 3.");
+        AnsiConsole.MarkupLine("[green]Done.[/] schema_version bumped to 3.");
         return 0;
     }
 }

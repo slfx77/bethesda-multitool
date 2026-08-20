@@ -325,7 +325,7 @@ internal static class EditorIdLookupTables
                     tesFormBytes is not null &&
                     keyFormId != 0 &&
                     TesFormHeaderProbe.TryProbe(
-                        tesFormBytes, out var formType, out _, expectedFormId: keyFormId))
+                        tesFormBytes, out var formType, out _, keyFormId))
                 {
                     // The map value is TESForm*, so identity is always TESForm-relative
                     // (+4/+12), even when this is an interior subobject of MSTT or FLOR.

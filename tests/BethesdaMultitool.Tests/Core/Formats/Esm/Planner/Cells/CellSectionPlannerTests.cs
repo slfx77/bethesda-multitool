@@ -218,7 +218,7 @@ public sealed class CellSectionPlannerTests
             new HashSet<uint> { 0x000ABCDE },
             new FormIdAllocator(),
             true,
-            masterRefFormIds: new HashSet<uint>());
+            new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
@@ -249,7 +249,7 @@ public sealed class CellSectionPlannerTests
             new HashSet<uint> { 0x000ABCDE },
             new FormIdAllocator(),
             false,
-            masterRefFormIds: new HashSet<uint>());
+            new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Empty(cellPlan.TemporaryChildren);
@@ -279,7 +279,7 @@ public sealed class CellSectionPlannerTests
             new HashSet<uint>(),
             new FormIdAllocator(),
             false,
-            masterRefFormIds: new HashSet<uint>());
+            new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);

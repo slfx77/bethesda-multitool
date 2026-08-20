@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Report;
 
 /// <summary>
@@ -165,4 +166,3 @@ internal abstract record ReportValue
         public override string Display => _display ?? "(composite)";
     }
 }
-

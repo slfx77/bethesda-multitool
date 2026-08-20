@@ -69,7 +69,7 @@ public static class DropPropagator
                 {
                     Action = ResolvedRefAction.DropSubrecord,
                     FinalFormId = null,
-                    Reason = $"Cascade: original target 0x{final:X8} was Skip-dispositioned upstream.",
+                    Reason = $"Cascade: original target 0x{final:X8} was Skip-dispositioned upstream."
                 });
                 continue;
             }

@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.Graphics.Canvas;
 
 namespace BethesdaMultitool;
@@ -57,6 +58,7 @@ public sealed partial class WorldMapControl
         {
             throw new ArgumentException("Map export requires a named file in a concrete directory.", nameof(basePath));
         }
+
         var ext = Path.GetExtension(fullBasePath);
         if (string.IsNullOrEmpty(ext)) ext = ".png";
         var manifestPath = Path.Combine(dir, $"{name}_manifest.json");
@@ -78,7 +80,6 @@ public sealed partial class WorldMapControl
         var exportOutcome = "faulted";
         try
         {
-
             // Rendered-meshes overlay: a per-tile top-down 3D render composited over the terrain. When on,
             // the overlay bakes its own height-correct water, so the 2D terrain background renders water-FREE
             // (else water would draw twice). The overlay's showWater still honors req.IncludeWater.
@@ -113,6 +114,7 @@ public sealed partial class WorldMapControl
                     req.Layer, _data?.RenderCache,
                     CurrentHillshadeLightDir(), CurrentHillshadeZScale());
             }
+
             exportTrace?.RecordSharedDataPrep(
                 sharedDataPrepStarted,
                 palette is null ? "heightmap-build" : "terrain-palette",
@@ -220,6 +222,7 @@ public sealed partial class WorldMapControl
                                     terrainSourceBytes,
                                     terrainDataPrepOutcome);
                             }
+
                             if (perCell is not null)
                             {
                                 tileBitmaps = new Dictionary<(int, int, int), CanvasBitmap>(perCell.Count);
@@ -232,6 +235,7 @@ public sealed partial class WorldMapControl
                                             MapCanvas, bytes, ppc, ppc,
                                             Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
                                     }
+
                                     tileTrace?.RecordTerrainBitmapCreateSubmission(
                                         bitmapCreateStarted,
                                         tileBitmaps.Count,
@@ -327,6 +331,7 @@ public sealed partial class WorldMapControl
                                 foreach (var bmp in tileBitmaps.Values) bmp.Dispose();
                             }
                         }
+
                         tileTrace?.Complete("success");
                     }
                     catch (OperationCanceledException)
@@ -409,6 +414,7 @@ public sealed partial class WorldMapControl
             {
                 single?.Bitmap.Dispose();
             }
+
             exportOutcome = "completed";
         }
         catch (OperationCanceledException)
@@ -421,10 +427,6 @@ public sealed partial class WorldMapControl
             exportTrace?.Complete(exportOutcome);
         }
     }
-
-    /// <summary>A rendered-meshes overlay tile: the BGRA bitmap plus the world rect (north-Y) it covers.</summary>
-    private sealed record MapExportMeshOverlay(
-        CanvasBitmap Bitmap, float WorldMinX, float WorldMaxX, float WorldMinY, float WorldMaxY);
 
     /// <summary>
     ///     Renders one export tile's rendered-meshes overlay: a top-down 3D render of the tile's world
@@ -445,7 +447,7 @@ public sealed partial class WorldMapControl
         // 3D overlay tile aligns with the exported terrain at the same scale.
         var worldMinX = worldBounds.MinX;
         var worldMaxX = worldBounds.MaxX;
-        var worldMinY = worldBounds.MinY;       // world north-Y
+        var worldMinY = worldBounds.MinY; // world north-Y
         var worldMaxY = worldBounds.MaxY;
 
         // Re-request until streaming FULLY settles (strict gate: no submesh withheld on pending
@@ -497,6 +499,7 @@ public sealed partial class WorldMapControl
                         tileIndex, totalTiles);
                     break;
                 }
+
                 progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
                 var delayStarted = tileTrace?.StartTiming() ?? 0;
                 try
@@ -558,9 +561,18 @@ public sealed partial class WorldMapControl
                 succeeded: false);
             throw;
         }
+
         return new MapExportMeshOverlay(
             bmp, render.WorldMinX, render.WorldMaxX, render.WorldMinY, render.WorldMaxY);
     }
+
+    /// <summary>A rendered-meshes overlay tile: the BGRA bitmap plus the world rect (north-Y) it covers.</summary>
+    private sealed record MapExportMeshOverlay(
+        CanvasBitmap Bitmap,
+        float WorldMinX,
+        float WorldMaxX,
+        float WorldMinY,
+        float WorldMaxY);
 
     /// <summary>
     ///     Trace-only export accumulator. It is never constructed unless the existing
@@ -570,57 +582,57 @@ public sealed partial class WorldMapControl
     private sealed class PngExportTraceSession
     {
         private const int SchemaVersion = 1;
-        private readonly object _gate = new();
-        private readonly string _runId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        private readonly WorldMapLayer _layer;
-        private readonly bool _tiled;
-        private readonly int _plannedTiles;
         private readonly int _columns;
-        private readonly int _rows;
+        private readonly object _gate = new();
+        private readonly WorldMapLayer _layer;
         private readonly int _pixelsPerCell;
+        private readonly int _plannedTiles;
+        private readonly int _rows;
+        private readonly string _runId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         private readonly long _started = Stopwatch.GetTimestamp();
-        private bool _completed;
-        private int _observedTiles;
-        private int _successfulTiles;
-        private int _canceledTiles;
-        private int _faultedTiles;
-        private int _marginCellCount;
-        private int _renderedCellCount;
-        private int _terrainBitmapCount;
-        private int _overlayAttempts;
-        private int _companionStageMoves;
-        private int _publishAttempts;
-        private int _successfulPublishes;
-        private int _publishedPngLengthKnownCount;
-        private int _publishedPngLengthUnknownCount;
-        private long _terrainSourceBytes;
-        private long _overlaySourceBytes;
-        private long _publishedPngBytes;
-        private double _tileTotalWallMs;
-        private double _tileUnattributedWallMs;
-        private double _tilePrepWallMs;
-        private double _terrainWorkerWallMs;
-        private double _terrainAwaitWallMs;
-        private double _terrainBitmapCreateWallMs;
-        private double _overlaySettleWallMs;
-        private double _overlayRenderCallsWallMs;
-        private double _overlayDelayWallMs;
-        private double _overlayBitmapCreateWallMs;
-        private double _renderTargetCreateWallMs;
-        private double _composeDrawWallMs;
-        private double _win2DSaveWallMs;
-        private double _companionStageMoveWallMs;
+        private readonly bool _tiled;
         private double _atomicPublishMoveWallMs;
-        private string _sharedDataPrepKind = "not-recorded";
-        private double? _sharedDataPrepWallMs;
-        private long? _sharedBitmapPixelBytes;
-        private double? _manifestSerializeWallMs;
-        private long? _manifestUtf8Bytes;
-        private double? _manifestTemporaryWriteWallMs;
-        private bool? _manifestTemporaryWriteSucceeded;
+        private int _canceledTiles;
+        private int _companionStageMoves;
+        private double _companionStageMoveWallMs;
+        private bool _completed;
+        private double _composeDrawWallMs;
+        private int _faultedTiles;
         private long? _manifestFileBytes;
         private double? _manifestPublishMoveWallMs;
         private bool? _manifestPublishSucceeded;
+        private double? _manifestSerializeWallMs;
+        private bool? _manifestTemporaryWriteSucceeded;
+        private double? _manifestTemporaryWriteWallMs;
+        private long? _manifestUtf8Bytes;
+        private int _marginCellCount;
+        private int _observedTiles;
+        private int _overlayAttempts;
+        private double _overlayBitmapCreateWallMs;
+        private double _overlayDelayWallMs;
+        private double _overlayRenderCallsWallMs;
+        private double _overlaySettleWallMs;
+        private long _overlaySourceBytes;
+        private int _publishAttempts;
+        private long _publishedPngBytes;
+        private int _publishedPngLengthKnownCount;
+        private int _publishedPngLengthUnknownCount;
+        private int _renderedCellCount;
+        private double _renderTargetCreateWallMs;
+        private long? _sharedBitmapPixelBytes;
+        private string _sharedDataPrepKind = "not-recorded";
+        private double? _sharedDataPrepWallMs;
+        private int _successfulPublishes;
+        private int _successfulTiles;
+        private double _terrainAwaitWallMs;
+        private int _terrainBitmapCount;
+        private double _terrainBitmapCreateWallMs;
+        private long _terrainSourceBytes;
+        private double _terrainWorkerWallMs;
+        private double _tilePrepWallMs;
+        private double _tileTotalWallMs;
+        private double _tileUnattributedWallMs;
+        private double _win2DSaveWallMs;
 
         private PngExportTraceSession(
             WorldMapLayer layer,
@@ -809,10 +821,12 @@ public sealed partial class WorldMapControl
                 {
                     _companionStageMoves++;
                 }
+
                 if (sample.PublishAttempted)
                 {
                     _publishAttempts++;
                 }
+
                 if (sample.PublishSucceeded)
                 {
                     _successfulPublishes++;
@@ -838,6 +852,7 @@ public sealed partial class WorldMapControl
                 {
                     return;
                 }
+
                 _completed = true;
 
                 var exportTotalWallMs = ElapsedMilliseconds(_started);
@@ -971,57 +986,57 @@ public sealed partial class WorldMapControl
 
     private sealed class PngExportTileTrace
     {
-        private readonly object _gate = new();
-        private readonly PngExportTraceSession _session;
-        private readonly long _started = Stopwatch.GetTimestamp();
-        private readonly int _visitOrdinal;
-        private readonly int _tileIndex;
-        private readonly int _row;
+        private readonly string _artifactKind;
         private readonly int _column;
-        private readonly int _imageWidth;
-        private readonly int _imageHeight;
+        private readonly object _gate = new();
         private readonly int _gridX0;
         private readonly int _gridX1;
         private readonly int _gridY0;
         private readonly int _gridY1;
-        private readonly string _artifactKind;
+        private readonly int _imageHeight;
+        private readonly int _imageWidth;
+        private readonly int _row;
+        private readonly PngExportTraceSession _session;
+        private readonly long _started = Stopwatch.GetTimestamp();
+        private readonly int _tileIndex;
+        private readonly int _visitOrdinal;
+        private double? _atomicPublishMoveWallMs;
+        private bool _companionStageAttempted;
+        private double? _companionStageMoveWallMs;
+        private bool _companionStageSucceeded;
         private bool _completed;
-        private bool _terrainApplicable;
-        private string _terrainDataPrepOutcome;
+        private bool? _composeDrawSucceeded;
+        private double? _composeDrawWallMs;
+        private long? _encodedPngBytes;
         private int _marginCellCount;
-        private int _renderedCellCount;
-        private int _terrainBitmapCount;
-        private long _terrainSourceBytes;
-        private double? _tilePrepWallMs;
-        private double? _terrainWorkerWallMs;
-        private double? _terrainAwaitWallMs;
-        private double? _terrainBitmapCreateWallMs;
-        private bool? _terrainBitmapCreateSucceeded;
-        private bool _overlayRequested;
         private int _overlayAttempts;
-        private string _overlayOutcome = "not-recorded";
-        private bool _overlayTimedOut;
+        private bool? _overlayBitmapCreateSucceeded;
+        private double? _overlayBitmapCreateWallMs;
+        private double? _overlayDelayWallMs;
         private bool? _overlayFinalComplete;
         private bool? _overlayFinalFullySettled;
-        private long? _overlaySourceBytes;
-        private double? _overlaySettleWallMs;
+        private string _overlayOutcome = "not-recorded";
         private double? _overlayRenderCallsWallMs;
-        private double? _overlayDelayWallMs;
-        private double? _overlayBitmapCreateWallMs;
-        private bool? _overlayBitmapCreateSucceeded;
-        private double? _renderTargetCreateWallMs;
-        private bool? _renderTargetCreateSucceeded;
-        private double? _composeDrawWallMs;
-        private bool? _composeDrawSucceeded;
-        private double? _win2DSaveWallMs;
-        private bool? _win2DSaveSucceeded;
-        private long? _encodedPngBytes;
-        private bool _companionStageAttempted;
-        private bool _companionStageSucceeded;
-        private double? _companionStageMoveWallMs;
+        private bool _overlayRequested;
+        private double? _overlaySettleWallMs;
+        private long? _overlaySourceBytes;
+        private bool _overlayTimedOut;
         private bool _publishAttempted;
         private bool _publishSucceeded;
-        private double? _atomicPublishMoveWallMs;
+        private int _renderedCellCount;
+        private bool? _renderTargetCreateSucceeded;
+        private double? _renderTargetCreateWallMs;
+        private bool _terrainApplicable;
+        private double? _terrainAwaitWallMs;
+        private int _terrainBitmapCount;
+        private bool? _terrainBitmapCreateSucceeded;
+        private double? _terrainBitmapCreateWallMs;
+        private string _terrainDataPrepOutcome;
+        private long _terrainSourceBytes;
+        private double? _terrainWorkerWallMs;
+        private double? _tilePrepWallMs;
+        private bool? _win2DSaveSucceeded;
+        private double? _win2DSaveWallMs;
 
         internal PngExportTileTrace(
             PngExportTraceSession session,
@@ -1218,6 +1233,7 @@ public sealed partial class WorldMapControl
                 {
                     return;
                 }
+
                 _completed = true;
 
                 var tileTotalWallMs = ElapsedMilliseconds(_started);

@@ -23,7 +23,7 @@ public sealed class PlanWriterNewEmissionInvariantTests
             Model = new object(),
             References = [],
             ContainedBy = [],
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "tripwire" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "tripwire" }
         };
         var plan = new EmitPlan
         {
@@ -37,8 +37,8 @@ public sealed class PlanWriterNewEmissionInvariantTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x801,
-                PlannerCoverage = ImmutableHashSet.Create("TST0"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("TST0")
+            }
         };
         var writer = new PlanWriter(new PlannedEncoderRegistry([new EmptyEncoder()]));
 
@@ -54,7 +54,9 @@ public sealed class PlanWriterNewEmissionInvariantTests
     {
         public string RecordType => "TST0";
 
-        public EncodedRecord Encode(object model, RecordPlan plan, PlanReferenceLookup refs) =>
-            new() { Subrecords = [], Warnings = [] };
+        public EncodedRecord Encode(object model, RecordPlan plan, PlanReferenceLookup refs)
+        {
+            return new EncodedRecord { Subrecords = [], Warnings = [] };
+        }
     }
 }

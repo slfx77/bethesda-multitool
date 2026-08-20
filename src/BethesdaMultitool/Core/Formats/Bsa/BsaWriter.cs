@@ -79,7 +79,7 @@ public sealed class BsaWriter : IDisposable
     ///     - FileFlags auto-detected from folder paths and extensions
     ///     - Texture-only archives are compressed and use embedded filenames
     ///     - Mixed archives containing textures follow vanilla DLC Main BSAs:
-    ///       uncompressed, no embedded filenames, RetainStringsDuringStartup
+    ///     uncompressed, no embedded filenames, RetainStringsDuringStartup
     ///     - Audio-only archives are uncompressed like vanilla Sound/Voices BSAs
     ///     - Fonts file flags stripped (Oblivion-only)
     /// </summary>

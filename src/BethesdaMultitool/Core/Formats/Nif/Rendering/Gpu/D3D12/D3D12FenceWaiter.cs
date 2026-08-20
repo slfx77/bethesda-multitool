@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using SharpGen.Runtime;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;

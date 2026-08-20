@@ -4,7 +4,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
-/// <summary>Prepares a submesh's diffuse texture and alpha settings for GLB export, picking the glTF alpha mode and cutoff.</summary>
+/// <summary>
+///     Prepares a submesh's diffuse texture and alpha settings for GLB export, picking the glTF alpha mode and
+///     cutoff.
+/// </summary>
 internal static class NpcGlbAlphaTexturePacker
 {
     internal static PreparedAlphaTexture Prepare(
@@ -169,11 +172,13 @@ internal static class NpcGlbAlphaTexturePacker
             false);
     }
 
-    /// <summary>A diffuse texture prepared for GLB export plus its resolved alpha mode, cutoff, and whether a UV transform applies.</summary>
+    /// <summary>
+    ///     A diffuse texture prepared for GLB export plus its resolved alpha mode, cutoff, and whether a UV transform
+    ///     applies.
+    /// </summary>
     internal readonly record struct PreparedAlphaTexture(
         DecodedTexture? Texture,
         NifAlphaRenderMode RenderMode,
         byte AlphaThreshold,
         bool HasTextureTransform);
 }
-

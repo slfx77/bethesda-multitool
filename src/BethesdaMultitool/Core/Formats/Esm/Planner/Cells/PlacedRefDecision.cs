@@ -7,12 +7,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 /// </summary>
 public enum PlacedRefEmitVerdict
 {
-    /// <summary>Emit this ref. <see cref="PlacedRefDecision.FinalBaseFormId" /> and
-    /// <see cref="PlacedRefDecision.TargetGroupType" /> carry the resolved base + bucket.</summary>
+    /// <summary>
+    ///     Emit this ref. <see cref="PlacedRefDecision.FinalBaseFormId" /> and
+    ///     <see cref="PlacedRefDecision.TargetGroupType" /> carry the resolved base + bucket.
+    /// </summary>
     Emit,
 
     /// <summary>Do not emit this ref. <see cref="PlacedRefDecision.DropReason" /> records why.</summary>
-    Drop,
+    Drop
 }
 
 /// <summary>

@@ -13,8 +13,8 @@ namespace BethesdaMultitool.Core.WorldData.DayNight;
 /// </summary>
 internal sealed class DayNightRefSchedule
 {
-    private readonly Dictionary<uint, HourSchedule> _rootSchedules;
     private readonly Dictionary<uint, (uint Root, bool Invert)> _gatedRefs;
+    private readonly Dictionary<uint, HourSchedule> _rootSchedules;
 
     private DayNightRefSchedule(
         Dictionary<uint, HourSchedule> rootSchedules,
@@ -51,8 +51,10 @@ internal sealed class DayNightRefSchedule
         IReadOnlyList<ScriptRecord> scripts,
         IReadOnlyList<CellRecord> cells,
         IReadOnlyList<ActivatorRecord> activators,
-        IReadOnlyList<LightRecord> lights) =>
-        Build(scripts, cells, activators, lights, PlacedRefIndex.Build(cells));
+        IReadOnlyList<LightRecord> lights)
+    {
+        return Build(scripts, cells, activators, lights, PlacedRefIndex.Build(cells));
+    }
 
     /// <summary>
     ///     Builds the schedule from parsed scripts plus the world's placements. Pure computation —
@@ -152,9 +154,6 @@ internal sealed class DayNightRefSchedule
                         }
 
                         break;
-
-                    default:
-                        break;
                 }
             }
         }
@@ -179,7 +178,7 @@ internal sealed class DayNightRefSchedule
             foreach (var placement in cell.PlacedObjects)
             {
                 if (gatedRefs.ContainsKey(placement.FormId) ||
-                    placement.EnableParentFormId is not (> 0)) continue;
+                    placement.EnableParentFormId is not > 0) continue;
 
                 var visited = new HashSet<uint>();
                 var invert = false;
@@ -247,11 +246,15 @@ internal sealed class DayNightRefSchedule
 
         public bool Equals(
             (HourScheduleTargetKind TargetKind, string Name) x,
-            (HourScheduleTargetKind TargetKind, string Name) y) =>
-            x.TargetKind == y.TargetKind &&
-            string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+            (HourScheduleTargetKind TargetKind, string Name) y)
+        {
+            return x.TargetKind == y.TargetKind &&
+                   string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+        }
 
-        public int GetHashCode((HourScheduleTargetKind TargetKind, string Name) obj) =>
-            HashCode.Combine(obj.TargetKind, StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
+        public int GetHashCode((HourScheduleTargetKind TargetKind, string Name) obj)
+        {
+            return HashCode.Combine(obj.TargetKind, StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
+        }
     }
 }

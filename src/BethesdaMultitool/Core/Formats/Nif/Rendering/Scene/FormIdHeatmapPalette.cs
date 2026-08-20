@@ -22,8 +22,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 /// </summary>
 internal static class FormIdHeatmapPalette
 {
-    /// <summary>The ramp colour for normalized position <paramref name="t" /> (clamped into [0, 1];
-    /// NaN falls back to the neutral middle).</summary>
+    /// <summary>
+    ///     The ramp colour for normalized position <paramref name="t" /> (clamped into [0, 1];
+    ///     NaN falls back to the neutral middle).
+    /// </summary>
     public static (byte R, byte G, byte B) ToRgb(float t)
     {
         var clamped = float.IsNaN(t) ? 0.5f : Math.Clamp(t, 0f, 1f);

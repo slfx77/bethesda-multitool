@@ -114,18 +114,22 @@ internal sealed class WorldspaceVerticalBand
     }
 
     /// <summary>The measured band for one worldspace, or null when it has no captured placements.</summary>
-    internal (float Min, float Max)? BandFor(uint worldspaceFormId) =>
-        _bandsByWorldspace.TryGetValue(worldspaceFormId, out var band) ? band : null;
+    internal (float Min, float Max)? BandFor(uint worldspaceFormId)
+    {
+        return _bandsByWorldspace.TryGetValue(worldspaceFormId, out var band) ? band : null;
+    }
 
     /// <summary>
     ///     Whether a cell's worldspace assignment came from CAPTURE (a GRUP hierarchy, the runtime
     ///     pCellMap, the authority JSON, bounds/fragment resolution of a real captured cell) rather than
     ///     from one of the position-inference passes whose output this band is meant to police.
     /// </summary>
-    private static bool IsCapturedEvidence(string? assignmentSource) =>
-        assignmentSource is not ("WorldspaceBoundsInference"
+    private static bool IsCapturedEvidence(string? assignmentSource)
+    {
+        return assignmentSource is not ("WorldspaceBoundsInference"
             or "AuthorityOffsetCluster"
             or "OffsetCluster"
             or "InteriorOffsetCluster"
             or "Virtual");
+    }
 }

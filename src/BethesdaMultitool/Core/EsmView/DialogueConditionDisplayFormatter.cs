@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
 /// <summary>
 ///     Formats parsed INFO conditions and result-script metadata for the dialogue viewer.

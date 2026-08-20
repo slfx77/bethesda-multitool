@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
 
@@ -68,7 +67,7 @@ public sealed class TerminalReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = $"MenuItems[{menuIndex}].SCRO[{referenceIndex}]",
-                    FormId = formId,
+                    FormId = formId
                 };
             }
 
@@ -83,7 +82,7 @@ public sealed class TerminalReferenceWalker : IRecordReferenceWalker
                     yield return new RawReference
                     {
                         FieldPath = $"MenuItems[{menuIndex}].CTDA[{conditionIndex}].Reference",
-                        FormId = reference,
+                        FormId = reference
                     };
                 }
 
@@ -91,12 +90,12 @@ public sealed class TerminalReferenceWalker : IRecordReferenceWalker
                     && condition.Parameter1 != 0
                     && PerkConditionParameterResolver.IsFormParameter(
                         condition.FunctionIndex,
-                        parameterIndex: 0))
+                        0))
                 {
                     yield return new RawReference
                     {
                         FieldPath = $"MenuItems[{menuIndex}].CTDA[{conditionIndex}].Parameter1",
-                        FormId = condition.Parameter1,
+                        FormId = condition.Parameter1
                     };
                 }
 
@@ -104,12 +103,12 @@ public sealed class TerminalReferenceWalker : IRecordReferenceWalker
                     && condition.Parameter2 != 0
                     && PerkConditionParameterResolver.IsFormParameter(
                         condition.FunctionIndex,
-                        parameterIndex: 1))
+                        1))
                 {
                     yield return new RawReference
                     {
                         FieldPath = $"MenuItems[{menuIndex}].CTDA[{conditionIndex}].Parameter2",
-                        FormId = condition.Parameter2,
+                        FormId = condition.Parameter2
                     };
                 }
             }
@@ -123,7 +122,7 @@ public sealed class TerminalReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = fieldPath,
-                FormId = id,
+                FormId = id
             };
         }
     }

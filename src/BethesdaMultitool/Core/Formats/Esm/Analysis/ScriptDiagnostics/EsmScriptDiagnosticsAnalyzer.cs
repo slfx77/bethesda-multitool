@@ -1,8 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -37,10 +37,11 @@ public static class EsmScriptDiagnosticsAnalyzer
     }
 
     /// <summary>Runs script diagnostics for the requested targets against an already-parsed record set.</summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+    [SuppressMessage(
         "Major Code Smell",
         "S1133:Deprecated code should be removed",
-        Justification = "This overload remains as a source-compatibility bridge for callers that cannot yet provide game context.")]
+        Justification =
+            "This overload remains as a source-compatibility bridge for callers that cannot yet provide game context.")]
     [Obsolete("Pass an explicit BethesdaGame so CTDA layouts and parameter semantics can be decoded safely.")]
     public static EsmScriptDiagnosticsResult AnalyzeRecords(
         string sourcePath,
@@ -896,6 +897,7 @@ public static class EsmScriptDiagnosticsAnalyzer
                 {
                     referenceSummary = "reference_storage=absent";
                 }
+
                 var runOnSummary = physical.RunOn is { } runOn ? runOn.ToString() : "absent";
                 var parameter3Summary = physical.Parameter3 is { } parameter3
                     ? parameter3.ToString()
@@ -939,4 +941,3 @@ public static class EsmScriptDiagnosticsAnalyzer
 
     private sealed record TargetRecordMatch(EsmScriptFormIdInfo Info, string Reason);
 }
-

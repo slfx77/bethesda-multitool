@@ -7,7 +7,10 @@ namespace BethesdaMultitool.Core.RuntimeBuffer;
 /// <summary>Convenience entry point that runs runtime-buffer string-pool + ownership analysis for an analyzed dump.</summary>
 internal static class RuntimeStringReportHelper
 {
-    /// <summary>Builds the string-pool summary and ownership analysis for <paramref name="result" />, computing coverage if not supplied; returns null when the file is not a minidump.</summary>
+    /// <summary>
+    ///     Builds the string-pool summary and ownership analysis for <paramref name="result" />, computing coverage if
+    ///     not supplied; returns null when the file is not a minidump.
+    /// </summary>
     internal static RuntimeStringReportData? Extract(
         AnalysisResult result,
         MemoryMappedViewAccessor accessor,

@@ -141,7 +141,8 @@ public sealed class Export2DTileTraversalSourceContractTests
             "FileMode.CreateNew",
             "await renderTarget.SaveAsync(");
         Assert.DoesNotContain("new FileStream(filePath", exporter, StringComparison.Ordinal);
-        Assert.Contains("using (var randomAccessStream = stream.AsRandomAccessStream())", exporter, StringComparison.Ordinal);
+        Assert.Contains("using (var randomAccessStream = stream.AsRandomAccessStream())", exporter,
+            StringComparison.Ordinal);
         Assert.Contains("float cellWorldSize,", exporter, StringComparison.Ordinal);
         Assert.DoesNotContain("data?.CellWorldSize", exporter, StringComparison.Ordinal);
     }

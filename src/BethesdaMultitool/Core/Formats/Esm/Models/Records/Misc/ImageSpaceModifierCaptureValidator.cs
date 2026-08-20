@@ -10,8 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 /// </summary>
 internal static class ImageSpaceModifierCaptureValidator
 {
-    internal sealed record FrameTableLayout(string Signature, int CountIndex, int ElementSize);
-
     /// <summary>
     ///     Canonical on-disk table order. CountIndex addresses DNAM's 59 DWORD payload
     ///     after Animatable/Duration. Zero counts legitimately omit their subrecord.
@@ -35,8 +33,8 @@ internal static class ImageSpaceModifierCaptureValidator
             .SelectMany(static ordinal => new[]
             {
                 new FrameTableLayout($"{(char)ordinal}IAD", ordinal * 2, 8),
-                new FrameTableLayout($"{(char)(0x40 + ordinal)}IAD", ordinal * 2 + 1, 8),
-            }),
+                new FrameTableLayout($"{(char)(0x40 + ordinal)}IAD", ordinal * 2 + 1, 8)
+            })
     ];
 
     internal static bool IsCompleteNewCapture(
@@ -296,4 +294,6 @@ internal static class ImageSpaceModifierCaptureValidator
             ? $"0x{(int)signature[0]:X2}IAD"
             : signature;
     }
+
+    internal sealed record FrameTableLayout(string Signature, int CountIndex, int ElementSize);
 }

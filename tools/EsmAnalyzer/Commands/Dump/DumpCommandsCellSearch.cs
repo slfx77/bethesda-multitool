@@ -1,9 +1,6 @@
-using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dump;
 
@@ -194,8 +191,8 @@ internal static class DumpCommandsCellSearch
         return offset + 4 > data.Length
             ? 0
             : bigEndian
-            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4))
-            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4));
+                ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4))
+                : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4));
     }
 
     private static bool ContainsIgnoreCase(string? value, string term)

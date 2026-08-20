@@ -42,8 +42,10 @@ internal sealed record NifMaterialAlphaController(
     ///     at alpha zero and are made visible solely by their controller keys. Turning animation off
     ///     parks the sequence at its authored time-zero frame, matching the renderer's other clocks.
     /// </summary>
-    internal float ResolveTargetAlpha(float rendererTimeSeconds, bool animationsEnabled) =>
-        Sample(animationsEnabled ? rendererTimeSeconds : 0f);
+    internal float ResolveTargetAlpha(float rendererTimeSeconds, bool animationsEnabled)
+    {
+        return Sample(animationsEnabled ? rendererTimeSeconds : 0f);
+    }
 
     private float SampleKeys(float time)
     {
@@ -107,7 +109,7 @@ internal readonly record struct NifAlphaControllerClock(
         {
             NifCycleType.Loop => StartTime + PositiveModulo(localTime - StartTime, length),
             NifCycleType.Reverse => MapReverse(localTime, length),
-            _ => Math.Clamp(localTime, StartTime, StopTime),
+            _ => Math.Clamp(localTime, StartTime, StopTime)
         };
     }
 
@@ -144,7 +146,7 @@ internal static class NifMaterialAlphaControllerCollector
     internal static IReadOnlyList<NifMaterialAlphaController> Collect(byte[] data, NifInfo nif)
     {
         if (nif.BinaryVersion != NifVersions.Gamebryo202007 || nif.BsVersion == 0 ||
-            ReadBsxFlags(data, nif) is { } bsxFlags && (bsxFlags & 0x1) == 0)
+            (ReadBsxFlags(data, nif) is { } bsxFlags && (bsxFlags & 0x1) == 0))
         {
             return [];
         }
@@ -164,7 +166,7 @@ internal static class NifMaterialAlphaControllerCollector
         }
 
         var controlledStart = sequence.DataOffset + 12;
-        var tailLong = (long)controlledStart + (long)count * ControlledBlockStride;
+        var tailLong = controlledStart + (long)count * ControlledBlockStride;
         if (tailLong > int.MaxValue)
         {
             return [];
@@ -351,10 +353,13 @@ internal static class NifMaterialAlphaControllerCollector
         return null;
     }
 
-    private static NifCycleType ReadCycle(int value) => value switch
+    private static NifCycleType ReadCycle(int value)
     {
-        0 => NifCycleType.Loop,
-        1 => NifCycleType.Reverse,
-        _ => NifCycleType.Clamp,
-    };
+        return value switch
+        {
+            0 => NifCycleType.Loop,
+            1 => NifCycleType.Reverse,
+            _ => NifCycleType.Clamp
+        };
+    }
 }

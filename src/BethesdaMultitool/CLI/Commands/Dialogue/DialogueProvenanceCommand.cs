@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -14,7 +13,8 @@ internal static class DialogueProvenanceCommand
 {
     internal static Command CreateProvenanceCommand()
     {
-        var command = new Command("provenance", "Trace where a dialogue INFO/DIAL record came from in a memory dump (runtime struct, original ESM bytes, recovered result scripts)");
+        var command = new Command("provenance",
+            "Trace where a dialogue INFO/DIAL record came from in a memory dump (runtime struct, original ESM bytes, recovered result scripts)");
 
         var inputArg = new Argument<string>("input") { Description = "Path to memory dump (.dmp) file" };
         var formIdArg = new Argument<string>("formid") { Description = "INFO or DIAL FormID (hex, e.g. 0x00146E1C)" };

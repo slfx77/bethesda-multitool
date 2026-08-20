@@ -23,7 +23,7 @@ public sealed class WalkRecoveryTests
         // A 2-unit-thick wall across x = 0. A single frame at scroll-boosted sprint speed asks for a
         // 1000-unit step — far longer than the wall is thick — so a discrete end-point test would land
         // cleanly on the far side.
-        var wall = BuildThinWallMesh(thickness: 2f, halfSpan: 400f, height: 400f);
+        var wall = BuildThinWallMesh(2f, 400f, 400f);
         var instance = WalkCollisionInstance.FromMesh(wall, Matrix4x4.Identity);
 
         var allowed = WalkHorizontalCollision.Resolve(
@@ -43,8 +43,8 @@ public sealed class WalkRecoveryTests
         var positions = new List<Vector3>();
         var triangles = new List<int>();
         // ~87° face rising from z = 0 at x = -10 to z = 400 at x = +10, over a floor at z = 0.
-        AppendSteepQuad(positions, triangles, xLow: -10f, xHigh: 10f, zLow: 0f, zHigh: 400f, halfSpan: 200f);
-        AppendHorizontalQuad(positions, triangles, z: 0f, halfSize: 200f);
+        AppendSteepQuad(positions, triangles, -10f, 10f, 0f, 400f, 200f);
+        AppendHorizontalQuad(positions, triangles, 0f, 200f);
         var mesh = new CollisionMesh(positions.ToArray(), triangles.ToArray());
 
         // Straight down: the nearest hit is the wall face at z = 200; the nearest WALKABLE hit is the
@@ -63,7 +63,7 @@ public sealed class WalkRecoveryTests
         // 30° ramp (the ray stays in mesh-local space; the placement only tips the face normal):
         // comfortably inside the ground threshold, so the slope filter must not turn ordinary authored
         // ramps into holes the camera falls through.
-        var quad = BuildHorizontalQuadMesh(z: 0f, halfSize: 200f);
+        var quad = BuildHorizontalQuadMesh(0f, 200f);
         var world = Matrix4x4.CreateRotationX(MathF.PI / 6f);
 
         Assert.True(quad.RaycastNearestWalkable(new Vector3(0f, 0f, 300f), -Vector3.UnitZ, world, out var t));
@@ -75,7 +75,7 @@ public sealed class WalkRecoveryTests
     {
         // The slope test has to run on the WORLD normal: the same local quad is ground unplaced and a
         // wall once the placement tips it past vertical-ish.
-        var quad = BuildHorizontalQuadMesh(z: 0f, halfSize: 200f);
+        var quad = BuildHorizontalQuadMesh(0f, 200f);
         var tipped = Matrix4x4.CreateRotationX(MathF.PI / 2.2f);
 
         Assert.True(quad.RaycastNearest(new Vector3(0f, 0f, 300f), -Vector3.UnitZ, out _));
@@ -141,7 +141,7 @@ public sealed class WalkRecoveryTests
 
         for (var step = 0; step < WalkVoidRecovery.MaxGroundlessFallSteps * 4; step++)
         {
-            Assert.False(recovery.TryObserveFallStep(true, true, 5000f - (10f * step), out _, out _));
+            Assert.False(recovery.TryObserveFallStep(true, true, 5000f - 10f * step, out _, out _));
         }
     }
 
@@ -172,7 +172,7 @@ public sealed class WalkRecoveryTests
         Assert.False(WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
             CollisionMeshSource.VisualFallback, spt, PlacedObjectCategory.Unknown));
         // … and the speculative OBND box (which spans the whole canopy) is refused too.
-        Assert.False(WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(spt, PlacedObjectCategory.Unknown));
+        Assert.False(WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(spt));
 
         // A .spt never synthesizes a collision soup in the first place.
         var entry = CollisionCacheEntry.Create(

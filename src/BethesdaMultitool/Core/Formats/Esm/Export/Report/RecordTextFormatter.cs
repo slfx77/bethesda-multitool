@@ -335,4 +335,3 @@ internal static class RecordTextFormatter
             yield return ("Dialogue", d.FormId, d.EditorId, null, d);
     }
 }
-

@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -178,4 +177,3 @@ public static class Xbox360FolderDetector
         return false;
     }
 }
-

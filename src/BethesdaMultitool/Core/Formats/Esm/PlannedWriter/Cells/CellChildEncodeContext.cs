@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -64,15 +63,17 @@ internal sealed record CellChildEncodeContext(
     ///     base is a DOOR. FormID existence alone is insufficient for XTEL: prototype and
     ///     retail data can reuse the same REFR identity with different base types.
     ///     <para>
-    ///     Pure plan lookup since 2026-08-12 (retirement Stage H3). <see cref="NavmDoorLinkPlanner" />
-    ///     already walks master door placements AND every planned door-based child to build
-    ///     <c>ValidDoorRefFormIds</c>; the writer used to re-derive the same answer with an
-    ///     O(cells × children) scan per XTEL, which was both the last cross-cell search in
-    ///     the writer and a second opinion on a settled decision.
+    ///         Pure plan lookup since 2026-08-12 (retirement Stage H3). <see cref="NavmDoorLinkPlanner" />
+    ///         already walks master door placements AND every planned door-based child to build
+    ///         <c>ValidDoorRefFormIds</c>; the writer used to re-derive the same answer with an
+    ///         O(cells × children) scan per XTEL, which was both the last cross-cell search in
+    ///         the writer and a second opinion on a settled decision.
     ///     </para>
     /// </summary>
-    public bool IsLiveDoorReference(uint refFormId) =>
-        Plan.NavmDoorLinks.ValidDoorRefFormIds.Contains(refFormId);
+    public bool IsLiveDoorReference(uint refFormId)
+    {
+        return Plan.NavmDoorLinks.ValidDoorRefFormIds.Contains(refFormId);
+    }
 }
 
 /// <summary>

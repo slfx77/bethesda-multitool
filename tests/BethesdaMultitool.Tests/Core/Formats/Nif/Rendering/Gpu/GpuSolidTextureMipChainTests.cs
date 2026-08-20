@@ -34,8 +34,8 @@ public sealed class GpuSolidTextureMipChainTests
         // 2×2 source with distinct texels: the single mip texel must be their rounded average.
         var source = new byte[]
         {
-            10, 20, 30, 255,   20, 40, 60, 255,
-            30, 60, 90, 255,   40, 80, 120, 255,
+            10, 20, 30, 255, 20, 40, 60, 255,
+            30, 60, 90, 255, 40, 80, 120, 255
         };
         var mips = GpuSolidTextureFactory12.BuildMipChain(2, 2, source);
 
@@ -49,7 +49,7 @@ public sealed class GpuSolidTextureMipChainTests
         // 4×1: the chain must walk 4×1 → 2×1 → 1×1 without indexing past the single row.
         var source = new byte[]
         {
-            0, 0, 0, 255,   40, 40, 40, 255,   80, 80, 80, 255,   120, 120, 120, 255,
+            0, 0, 0, 255, 40, 40, 40, 255, 80, 80, 80, 255, 120, 120, 120, 255
         };
         var mips = GpuSolidTextureFactory12.BuildMipChain(4, 1, source);
 

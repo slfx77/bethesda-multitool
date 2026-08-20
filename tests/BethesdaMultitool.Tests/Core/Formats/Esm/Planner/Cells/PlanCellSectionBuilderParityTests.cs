@@ -26,7 +26,8 @@ public sealed class PlanCellSectionBuilderParityTests
     {
         var plan = MakeEmptyPlan();
         var bytes = PlanCellSectionBuilder.BuildCellSection(
-            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()),
+            new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Null(bytes);
     }
@@ -190,7 +191,8 @@ public sealed class PlanCellSectionBuilderParityTests
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
-            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions { CompressRecords = false });
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()),
+            new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions { CompressRecords = false });
 
         // Build the equivalent legacy bytes by encoding the CELL through the same primitives.
         var encoded = new CellEncoder().Encode(cellModel);

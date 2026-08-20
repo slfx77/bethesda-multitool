@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.CLI.Commands.Dmp;
 
 public sealed record CellReferenceParentWindow
 {

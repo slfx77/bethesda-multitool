@@ -12,7 +12,7 @@ public sealed class ImageSpaceModifierDispositionPolicy : IDispositionPolicy
 {
     public IReadOnlySet<string> RecordTypes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        "IMAD",
+        "IMAD"
     };
 
     public DispositionDecision? Decide(CatalogEntry entry)
@@ -37,8 +37,8 @@ public sealed class ImageSpaceModifierDispositionPolicy : IDispositionPolicy
             Provenance = new PlanProvenance
             {
                 PolicyId = "ImageSpaceModifierDispositionPolicy.IncompleteCapture",
-                Reason = $"New IMAD capture is incomplete: {reason}; keep it out of the emit set.",
-            },
+                Reason = $"New IMAD capture is incomplete: {reason}; keep it out of the emit set."
+            }
         };
     }
 }

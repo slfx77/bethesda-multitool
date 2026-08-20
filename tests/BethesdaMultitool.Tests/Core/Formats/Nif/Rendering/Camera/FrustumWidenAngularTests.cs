@@ -12,7 +12,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Camera;
 /// </summary>
 public sealed class FrustumWidenAngularTests
 {
-    private const float FovY = MathF.PI / 3f;   // 60°, the CameraState default
+    private const float FovY = MathF.PI / 3f; // 60°, the CameraState default
     private const float Aspect = 16f / 9f;
     private const float Near = 16f;
     private const float Far = 400_000f;
@@ -30,13 +30,17 @@ public sealed class FrustumWidenAngularTests
         0f, 0f, -1f, 0f,
         0f, 0f, 1f, 1f);
 
-    private static Matrix4x4 PerspectiveViewProj(Vector3 eye, Vector3 forward) =>
-        Matrix4x4.CreateLookAt(eye, eye + forward, Vector3.UnitZ) *
-        Matrix4x4.CreatePerspectiveFieldOfView(FovY, Aspect, Near, Far) * ReverseZ;
+    private static Matrix4x4 PerspectiveViewProj(Vector3 eye, Vector3 forward)
+    {
+        return Matrix4x4.CreateLookAt(eye, eye + forward, Vector3.UnitZ) *
+               Matrix4x4.CreatePerspectiveFieldOfView(FovY, Aspect, Near, Far) * ReverseZ;
+    }
 
-    private static Matrix4x4 StandardDepthViewProj(Vector3 eye, Vector3 forward) =>
-        Matrix4x4.CreateLookAt(eye, eye + forward, Vector3.UnitZ) *
-        Matrix4x4.CreatePerspectiveFieldOfView(FovY, Aspect, Near, Far);
+    private static Matrix4x4 StandardDepthViewProj(Vector3 eye, Vector3 forward)
+    {
+        return Matrix4x4.CreateLookAt(eye, eye + forward, Vector3.UnitZ) *
+               Matrix4x4.CreatePerspectiveFieldOfView(FovY, Aspect, Near, Far);
+    }
 
     private static Vector3 ForwardFromYawPitch(float yaw, float pitch)
     {
@@ -48,7 +52,7 @@ public sealed class FrustumWidenAngularTests
     public void WidenAngular_ContainsEveryRotationWithinTheSlack()
     {
         const float slack = 4f * MathF.PI / 180f;
-        const float reach = 99_202f;   // the cull's max broadphase reach at 16 cells
+        const float reach = 99_202f; // the cull's max broadphase reach at 16 cells
         var eye = new Vector3(12_345f, -6_789f, 2_048f);
 
         var baseForward = ForwardFromYawPitch(0.7f, -0.15f);
@@ -97,8 +101,8 @@ public sealed class FrustumWidenAngularTests
     }
 
     [Theory]
-    [InlineData(true)]   // reversed-Z, the live camera convention
-    [InlineData(false)]  // standard depth
+    [InlineData(true)] // reversed-Z, the live camera convention
+    [InlineData(false)] // standard depth
     public void WidenAngular_OpensEachSideHalfAngleByTheSlack_UnderEitherDepthConvention(bool reverseZ)
     {
         const float slack = 6f * MathF.PI / 180f;
@@ -111,8 +115,10 @@ public sealed class FrustumWidenAngularTests
         Assert.True(applied);
 
         // Half-angle between the view direction and a side plane is 90° minus the angle to its normal.
-        static float HalfAngle(Vector3 forward, Plane plane) =>
-            (MathF.PI / 2f) - MathF.Acos(Math.Clamp(Vector3.Dot(forward, plane.Normal), -1f, 1f));
+        static float HalfAngle(Vector3 forward, Plane plane)
+        {
+            return MathF.PI / 2f - MathF.Acos(Math.Clamp(Vector3.Dot(forward, plane.Normal), -1f, 1f));
+        }
 
         // Each half-angle must GROW by exactly the slack. A sign error in the axis derivation shows up
         // here as a shrink of the same magnitude, which is what culled geometry at the viewport edges.

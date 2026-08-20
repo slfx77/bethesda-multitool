@@ -6,7 +6,7 @@ internal enum NifD3D12BlendOperation
 {
     Standard = 0,
     Additive = 1,
-    Multiplicative = 2,
+    Multiplicative = 2
 }
 
 /// <summary>Maps NiAlphaProperty (OpenGL-order) blend-mode bytes to their Direct3D 12 <c>Blend</c> equivalents.</summary>

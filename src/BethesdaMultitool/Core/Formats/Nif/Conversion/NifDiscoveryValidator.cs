@@ -192,7 +192,9 @@ internal static class NifDiscoveryValidator
                 continue;
             }
 
-            var triangles = NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, info.IsBigEndian, info.BinaryVersion);
+            var triangles =
+                NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, info.IsBigEndian,
+                    info.BinaryVersion);
             if (triangles is { Length: > 0 })
             {
                 state.GeometryStripTriangles[block.Index] = triangles;

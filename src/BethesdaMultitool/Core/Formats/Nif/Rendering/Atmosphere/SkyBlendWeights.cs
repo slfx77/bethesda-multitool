@@ -12,14 +12,18 @@ internal static class SkyBlendWeights
         Vector3 vertexWeights,
         Vector3 blendColor0,
         Vector3 blendColor1,
-        Vector3 blendColor2) =>
-        (blendColor0 * vertexWeights.X) +
-        (blendColor1 * vertexWeights.Y) +
-        (blendColor2 * vertexWeights.Z);
+        Vector3 blendColor2)
+    {
+        return blendColor0 * vertexWeights.X +
+               blendColor1 * vertexWeights.Y +
+               blendColor2 * vertexWeights.Z;
+    }
 
     /// <summary>
     ///     Opaque equivalent of retail alpha blending the authored atmosphere over its horizon color.
     /// </summary>
-    public static Vector3 CompositeAtmosphere(Vector3 weightedColor, Vector3 horizonColor, float vertexAlpha) =>
-        Vector3.Lerp(horizonColor, weightedColor, Math.Clamp(vertexAlpha, 0f, 1f));
+    public static Vector3 CompositeAtmosphere(Vector3 weightedColor, Vector3 horizonColor, float vertexAlpha)
+    {
+        return Vector3.Lerp(horizonColor, weightedColor, Math.Clamp(vertexAlpha, 0f, 1f));
+    }
 }

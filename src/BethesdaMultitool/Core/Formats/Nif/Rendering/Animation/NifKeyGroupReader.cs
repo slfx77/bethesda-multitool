@@ -87,9 +87,9 @@ internal static class NifKeyGroupReader
         var stride = interpolation switch
         {
             NifKeyInterpolation.Tbc => 32,
-            _ => 20, // Linear / Quadratic / Constant: time + quaternion, no tangents
+            _ => 20 // Linear / Quadratic / Constant: time + quaternion, no tangents
         };
-        if (pos + (long)numKeys * stride > end)
+        if (pos + numKeys * stride > end)
         {
             return false;
         }
@@ -139,10 +139,10 @@ internal static class NifKeyGroupReader
         var stride = interpolation switch
         {
             NifKeyInterpolation.Quadratic => 40, // time + value + forward + backward
-            NifKeyInterpolation.Tbc => 28,       // time + value + tension/bias/continuity
-            _ => 16,
+            NifKeyInterpolation.Tbc => 28, // time + value + tension/bias/continuity
+            _ => 16
         };
-        if (pos + (long)numKeys * stride > end)
+        if (pos + numKeys * stride > end)
         {
             return false;
         }
@@ -192,10 +192,10 @@ internal static class NifKeyGroupReader
         var stride = interpolation switch
         {
             NifKeyInterpolation.Quadratic => 16, // time + value + forward + backward
-            NifKeyInterpolation.Tbc => 20,       // time + value + tension/bias/continuity
-            _ => 8,
+            NifKeyInterpolation.Tbc => 20, // time + value + tension/bias/continuity
+            _ => 8
         };
-        if (pos + (long)numKeys * stride > end)
+        if (pos + numKeys * stride > end)
         {
             return false;
         }

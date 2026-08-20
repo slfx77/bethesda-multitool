@@ -28,7 +28,6 @@ internal enum BsNavMeshValidationMode
 ///     <c>iReservedSize</c>, optional parent-cell cross-reference). Does NOT project the
 ///     struct into a <c>NavMeshRecord</c> — that's the caller's responsibility once the
 ///     candidate passes validation.
-///
 ///     Used to gate the direct pAllForms NAVM walk. When the
 ///     <see cref="RuntimeCellEnumerator" />'s NAVM-byte calibration falls back to canonical
 ///     (no anchor + no drift remap), it emits a speculative candidate list at raw bytes
@@ -88,7 +87,7 @@ internal sealed class BsNavMeshStructuralValidator
 
         // 1. vfptr at +0 must point into the module image (BSNavMesh has a vtable). Non-vtable
         //    structs (most TESForm leaves) fail this cheaply.
-        var vfptr = BinaryUtils.ReadUInt32BE(navmBytes, 0);
+        var vfptr = BinaryUtils.ReadUInt32BE(navmBytes);
         if (!Xbox360MemoryUtils.IsModulePointer(vfptr))
         {
             return false;

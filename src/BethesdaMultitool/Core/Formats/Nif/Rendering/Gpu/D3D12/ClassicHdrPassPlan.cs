@@ -7,7 +7,7 @@ internal enum ClassicHdrPassKind
     Adapt,
     BrightPassBlurVertical,
     BlurHorizontal,
-    Composite,
+    Composite
 }
 
 /// <summary>One source-to-target step in the recursive four-to-one reduction chain.</summary>
@@ -49,6 +49,7 @@ internal readonly record struct ClassicHdrPassPlan
     public int BrightPassBlurDrawCount => BloomEnabled ? 1 : 0;
     public int BlurDrawCount => BloomEnabled ? 1 : 0;
     public static int CompositeDrawCount => 1;
+
     public int TotalDrawCount =>
         DownsampleDrawCount + AdaptDrawCount + BrightPassBlurDrawCount + BlurDrawCount + CompositeDrawCount;
 

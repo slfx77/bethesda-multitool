@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
@@ -66,12 +65,12 @@ public sealed class RecordEncoderRegistry
     ///     and are routed through the cell-children pipeline rather than top-level emission.
     ///     Still deferred:
     ///     - NAVI — global pathfinding lookup table; master FNV.esm's NAVI covers every vanilla
-    ///       navmesh, and the DMP→ESM pipeline emits NAVM records as overrides of master,
-    ///       never as new. Omitting NAVI is therefore safe under current scope. Full NAVI
-    ///       support would require reverse-engineering NVMI/NVCI binary layout (undocumented)
-    ///       and recovering potentially-uninitialized engine state from the DMP. Revisit only
-    ///       if the converter ever adds new NAVM records that need to appear in the navmesh
-    ///       info map.
+    ///     navmesh, and the DMP→ESM pipeline emits NAVM records as overrides of master,
+    ///     never as new. Omitting NAVI is therefore safe under current scope. Full NAVI
+    ///     support would require reverse-engineering NVMI/NVCI binary layout (undocumented)
+    ///     and recovering potentially-uninitialized engine state from the DMP. Revisit only
+    ///     if the converter ever adds new NAVM records that need to appear in the navmesh
+    ///     info map.
     /// </summary>
     public static RecordEncoderRegistry CreateDefault()
     {

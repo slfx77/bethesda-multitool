@@ -13,7 +13,7 @@ internal enum NifKeyInterpolation : byte
     Quadratic = 2,
     Tbc = 3,
     XyzEuler = 4,
-    Constant = 5,
+    Constant = 5
 }
 
 internal readonly record struct NifQuatKey(float Time, Quaternion Value);

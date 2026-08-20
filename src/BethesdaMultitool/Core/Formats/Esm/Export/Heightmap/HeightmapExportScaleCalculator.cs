@@ -1,6 +1,7 @@
 using System.Globalization;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+
 internal static class HeightmapExportScaleCalculator
 {
     internal static HeightmapGrayscaleScale? CalculateVhgtGrayscaleScale(IEnumerable<float[,]> heightmaps)
@@ -31,11 +32,13 @@ internal static class HeightmapExportScaleCalculator
         var max = values[^1];
         var robustMin = Percentile(values, 0.02f);
         var robustMax = Percentile(values, 0.98f);
-        var baseHeight = MathF.Floor(robustMin / HeightmapExportConstants.GrayscaleBucketUnits) * HeightmapExportConstants.GrayscaleBucketUnits;
+        var baseHeight = MathF.Floor(robustMin / HeightmapExportConstants.GrayscaleBucketUnits) *
+                         HeightmapExportConstants.GrayscaleBucketUnits;
         var requiredUnitsPerGray = Math.Max(
             HeightmapExportConstants.VhgtQuantizationUnits,
             (robustMax - baseHeight) / 255f);
-        var unitsPerGray = MathF.Ceiling(requiredUnitsPerGray / HeightmapExportConstants.VhgtQuantizationUnits) * HeightmapExportConstants.VhgtQuantizationUnits;
+        var unitsPerGray = MathF.Ceiling(requiredUnitsPerGray / HeightmapExportConstants.VhgtQuantizationUnits) *
+                           HeightmapExportConstants.VhgtQuantizationUnits;
         if (unitsPerGray < HeightmapExportConstants.VhgtQuantizationUnits)
         {
             unitsPerGray = HeightmapExportConstants.VhgtQuantizationUnits;

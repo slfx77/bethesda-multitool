@@ -2,9 +2,21 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
-/// <summary>Resolves the base record type/FormID a placed reference (REFR/ACHR/ACRE) points at, and re-pairs prototype bases to master records.</summary>
+/// <summary>
+///     Resolves the base record type/FormID a placed reference (REFR/ACHR/ACRE) points at, and re-pairs prototype
+///     bases to master records.
+/// </summary>
 internal static class ReferenceBaseRemapper
 {
+    /// <summary>Outcome of the EditorID-stem base rescue.</summary>
+    public enum StemRescueOutcome
+    {
+        NoMatch,
+        Ambiguous,
+        CrossTypeAmbiguous,
+        Rescued
+    }
+
     public static readonly HashSet<string> RefrBaseEligibleTypes = new(StringComparer.Ordinal)
     {
         "STAT", "SCOL", "CONT", "ACTI", "DOOR", "LIGH", "FURN",
@@ -28,24 +40,6 @@ internal static class ReferenceBaseRemapper
             _ => false
         };
     }
-
-    /// <summary>Outcome of the EditorID-stem base rescue.</summary>
-    public enum StemRescueOutcome
-    {
-        NoMatch,
-        Ambiguous,
-        CrossTypeAmbiguous,
-        Rescued
-    }
-
-    /// <summary>Result of <see cref="TryRescueBaseByEditorIdStem" />.</summary>
-    public sealed record StemRescueResult(
-        StemRescueOutcome Outcome,
-        string? WinningType = null,
-        uint WinningFormId = 0,
-        string? AmbiguousType = null,
-        int AmbiguousCount = 0,
-        IReadOnlyList<string>? CrossTypes = null);
 
     /// <summary>
     ///     Last-chance re-pairing of a NEW placed ref whose proto base FormID is neither in
@@ -188,4 +182,13 @@ internal static class ReferenceBaseRemapper
 
         return hits[0];
     }
+
+    /// <summary>Result of <see cref="TryRescueBaseByEditorIdStem" />.</summary>
+    public sealed record StemRescueResult(
+        StemRescueOutcome Outcome,
+        string? WinningType = null,
+        uint WinningFormId = 0,
+        string? AmbiguousType = null,
+        int AmbiguousCount = 0,
+        IReadOnlyList<string>? CrossTypes = null);
 }

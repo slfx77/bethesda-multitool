@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -111,11 +112,11 @@ public sealed partial class WorldView3DControl
         var syntheticCell = sourceCell with
         {
             WaterHeight = planeHeight,
-            WaterFormId = waterFormId,
+            WaterFormId = waterFormId
         };
         var syntheticWaterCells = new Dictionary<(int gx, int gy), CellRecord>
         {
-            [(gridX, gridY)] = syntheticCell,
+            [(gridX, gridY)] = syntheticCell
         };
         _water.LoadData(
             syntheticWaterCells,

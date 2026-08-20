@@ -21,7 +21,7 @@ public sealed class ImageSpaceModifierReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = "RDSD",
-                FormId = intro,
+                FormId = intro
             };
         }
 
@@ -30,7 +30,7 @@ public sealed class ImageSpaceModifierReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = "RDSI",
-                FormId = outro,
+                FormId = outro
             };
         }
     }

@@ -19,12 +19,12 @@ namespace BethesdaMultitool.Core.Vfs;
 public sealed class ArchiveFileSystem : IGameFileSystem
 {
     private readonly string _archivePath;
-    private readonly ArchiveHandleRegistry? _registry;
     private readonly object _openLock = new();
-    private ArchiveReader? _reader;
+    private readonly ArchiveHandleRegistry? _registry;
+    private bool _disposed;
     private IDisposable? _handle;
     private volatile bool _openAttempted;
-    private bool _disposed;
+    private ArchiveReader? _reader;
 
     /// <summary>Opens <paramref name="archivePath" /> (BSA or BA2 by magic) and owns the reader.</summary>
     public ArchiveFileSystem(string archivePath)
@@ -58,16 +58,6 @@ public sealed class ArchiveFileSystem : IGameFileSystem
     }
 
     /// <summary>
-    ///     Creates a filesystem whose archive open (parse + memory map) is deferred to the first
-    ///     member access — via <paramref name="registry" /> when given, else a private open. A
-    ///     failed deferred open is logged once and the filesystem behaves as empty.
-    /// </summary>
-    public static ArchiveFileSystem CreateLazy(string archivePath, ArchiveHandleRegistry? registry = null) =>
-        new(archivePath, registry);
-
-    public string Label { get; }
-
-    /// <summary>
     ///     The wrapped reader, for consumers needing format-specific surfaces. Forces the open in
     ///     lazy mode and throws if it failed. When the reader came from a registry lease it is
     ///     shared state — never dispose it or enable conversion toggles on it.
@@ -77,10 +67,17 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         TryGetReader() ?? throw new InvalidOperationException($"Archive failed to open: {Label}");
 #pragma warning restore S4275
 
-    public bool Exists(string path) => TryGetReader()?.FindEntry(path) is not null;
+    public string Label { get; }
 
-    public GameFileEntry? TryStat(string path) =>
-        TryGetReader()?.FindEntry(path) is { } entry ? ToEntry(entry) : null;
+    public bool Exists(string path)
+    {
+        return TryGetReader()?.FindEntry(path) is not null;
+    }
+
+    public GameFileEntry? TryStat(string path)
+    {
+        return TryGetReader()?.FindEntry(path) is { } entry ? ToEntry(entry) : null;
+    }
 
     public byte[]? TryReadAllBytes(string path)
     {
@@ -137,6 +134,16 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         }
     }
 
+    /// <summary>
+    ///     Creates a filesystem whose archive open (parse + memory map) is deferred to the first
+    ///     member access — via <paramref name="registry" /> when given, else a private open. A
+    ///     failed deferred open is logged once and the filesystem behaves as empty.
+    /// </summary>
+    public static ArchiveFileSystem CreateLazy(string archivePath, ArchiveHandleRegistry? registry = null)
+    {
+        return new ArchiveFileSystem(archivePath, registry);
+    }
+
     private ArchiveReader? TryGetReader()
     {
         if (_openAttempted)
@@ -178,10 +185,14 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         }
     }
 
-    private static bool IsExtractionFailure(Exception ex) =>
-        ex is IOException or InvalidDataException or NotSupportedException or EndOfStreamException
+    private static bool IsExtractionFailure(Exception ex)
+    {
+        return ex is IOException or InvalidDataException or NotSupportedException or EndOfStreamException
             or ArgumentException or OverflowException;
+    }
 
-    private GameFileEntry ToEntry(ArchiveReader.ArchiveEntry entry) =>
-        new(VfsPath.Normalize(entry.FullPath), entry.Size, Label);
+    private GameFileEntry ToEntry(ArchiveReader.ArchiveEntry entry)
+    {
+        return new GameFileEntry(VfsPath.Normalize(entry.FullPath), entry.Size, Label);
+    }
 }

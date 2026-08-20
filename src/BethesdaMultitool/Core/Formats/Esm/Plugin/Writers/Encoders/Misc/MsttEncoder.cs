@@ -9,14 +9,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///     encoder strips every proto-only moveable static, so any REFR placed on one loses its base
 ///     object.
 ///     <para>
-///     MSTT has no dedicated typed model; like FLOR it arrives as a
-///     <see cref="GenericEsmRecord" /> produced by <c>RuntimeGenericReader</c>, which keys
-///     <see cref="GenericEsmRecord.Fields" /> by PDB identifier — hence the
-///     <see cref="GenericRecordFields" /> lookups.
+///         MSTT has no dedicated typed model; like FLOR it arrives as a
+///         <see cref="GenericEsmRecord" /> produced by <c>RuntimeGenericReader</c>, which keys
+///         <see cref="GenericEsmRecord.Fields" /> by PDB identifier — hence the
+///         <see cref="GenericRecordFields" /> lookups.
 ///     </para>
 ///     <para>
-///     Canonical order from xEdit <c>wbRecord(MSTT)</c> (wbDefinitionsFNV.pas):
-///     EDID(req), OBND(req), FULL?, MODL(req), DEST?, DATA(req, u8), SNAM?.
+///         Canonical order from xEdit <c>wbRecord(MSTT)</c> (wbDefinitionsFNV.pas):
+///         EDID(req), OBND(req), FULL?, MODL(req), DEST?, DATA(req, u8), SNAM?.
 ///     </para>
 /// </summary>
 public sealed class MsttEncoder : IRecordEncoder

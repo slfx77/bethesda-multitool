@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -11,11 +11,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime;
 public sealed class RuntimeMemoryContextTests
 {
     [Theory]
-    [InlineData(0x00000000u, true)]  // +0
-    [InlineData(0x80000000u, true)]  // -0
-    [InlineData(0x3F800000u, true)]  // 1
-    [InlineData(0x00000001u, true)]  // smallest positive subnormal remains a finite runtime value
-    [InlineData(0x80000001u, true)]  // smallest negative subnormal remains a finite runtime value
+    [InlineData(0x00000000u, true)] // +0
+    [InlineData(0x80000000u, true)] // -0
+    [InlineData(0x3F800000u, true)] // 1
+    [InlineData(0x00000001u, true)] // smallest positive subnormal remains a finite runtime value
+    [InlineData(0x80000001u, true)] // smallest negative subnormal remains a finite runtime value
     [InlineData(0x7F800000u, false)] // +Infinity
     [InlineData(0x7FC00000u, false)] // NaN
     public void IsNormalFloat_AcceptsEveryFiniteValue(uint bits, bool expected)
@@ -142,8 +142,8 @@ public sealed class RuntimeMemoryContextTests
         var pointerField = new byte[4];
         WriteUInt32BigEndian(pointerField, 0, targetVa);
 
-        Assert.Equal<uint?>(formId, context.FollowPointerToFormId(pointerField, 0));
-        Assert.Equal<uint?>(formId, context.FollowPointerVaToFormId(targetVa));
+        Assert.Equal(formId, context.FollowPointerToFormId(pointerField, 0));
+        Assert.Equal(formId, context.FollowPointerVaToFormId(targetVa));
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class RuntimeMemoryContextTests
         const uint stringVa = 0x6000;
         const string expected = "CrossRegionText";
         const int splitOffset = 5;
-        var stringBytes = System.Text.Encoding.ASCII.GetBytes(expected);
+        var stringBytes = Encoding.ASCII.GetBytes(expected);
         var data = new byte[160];
         Array.Copy(stringBytes, 0, data, 10, splitOffset);
         Array.Copy(stringBytes, splitOffset, data, 100, stringBytes.Length - splitOffset);
@@ -202,7 +202,7 @@ public sealed class RuntimeMemoryContextTests
         const uint stringVa = 0x7000;
         const string expected = "GappedText";
         const int splitOffset = 5;
-        var stringBytes = System.Text.Encoding.ASCII.GetBytes(expected);
+        var stringBytes = Encoding.ASCII.GetBytes(expected);
         var data = new byte[64];
         Array.Copy(stringBytes, 0, data, 10, stringBytes.Length);
         var context = CreateContext(
@@ -242,7 +242,7 @@ public sealed class RuntimeMemoryContextTests
         WriteUInt32BigEndian(objectData, 40, stringVa);
         BinaryPrimitives.WriteUInt16BigEndian(
             objectData.AsSpan(44), checked((ushort)probeText.Length));
-        var probeTextBytes = System.Text.Encoding.ASCII.GetBytes(probeText);
+        var probeTextBytes = Encoding.ASCII.GetBytes(probeText);
         var data = new byte[220];
         Array.Copy(objectData, 0, data, firstFileOffset, splitOffset);
         Array.Copy(objectData, splitOffset, data, secondFileOffset, objectData.Length - splitOffset);

@@ -10,7 +10,7 @@ internal enum ReferenceEnabledOverride
 {
     Authored = 0,
     On = 1,
-    Off = 2,
+    Off = 2
 }
 
 /// <summary>
@@ -24,12 +24,15 @@ internal static class ReferenceEnabledStatePolicy
     internal static bool IsVisible(
         bool isAuthoredDisabled,
         bool showInitiallyDisabled,
-        ReferenceEnabledOverride enabledOverride) => enabledOverride switch
+        ReferenceEnabledOverride enabledOverride)
     {
-        ReferenceEnabledOverride.On => true,
-        ReferenceEnabledOverride.Off => false,
-        _ => !isAuthoredDisabled || showInitiallyDisabled,
-    };
+        return enabledOverride switch
+        {
+            ReferenceEnabledOverride.On => true,
+            ReferenceEnabledOverride.Off => false,
+            _ => !isAuthoredDisabled || showInitiallyDisabled
+        };
+    }
 }
 
 /// <summary>
@@ -45,8 +48,10 @@ internal sealed class ReferenceEnabledOverrideStore
     internal int Version { get; private set; }
     internal int Count => _overrides.Count;
 
-    internal ReferenceEnabledOverride Get(uint formId) =>
-        _overrides.TryGetValue(formId, out var value) ? value : ReferenceEnabledOverride.Authored;
+    internal ReferenceEnabledOverride Get(uint formId)
+    {
+        return _overrides.TryGetValue(formId, out var value) ? value : ReferenceEnabledOverride.Authored;
+    }
 
     internal void Set(uint formId, ReferenceEnabledOverride value)
     {
@@ -61,8 +66,10 @@ internal sealed class ReferenceEnabledOverrideStore
         Version++;
     }
 
-    internal bool IsVisible(uint formId, bool isAuthoredDisabled, bool showInitiallyDisabled) =>
-        ReferenceEnabledStatePolicy.IsVisible(isAuthoredDisabled, showInitiallyDisabled, Get(formId));
+    internal bool IsVisible(uint formId, bool isAuthoredDisabled, bool showInitiallyDisabled)
+    {
+        return ReferenceEnabledStatePolicy.IsVisible(isAuthoredDisabled, showInitiallyDisabled, Get(formId));
+    }
 
     internal void Clear()
     {

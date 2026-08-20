@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.Ui;
 
 /// <summary>Grid-length unit of a collapsible side panel's column, mirrored without a WinUI dependency.</summary>
 internal enum PanelColumnUnit
@@ -80,6 +80,8 @@ internal sealed class PanelCollapseState
     ///     Drives the panel to <paramref name="collapsed" />. <paramref name="current" /> is only
     ///     read on the expanded-to-collapsed edge.
     /// </summary>
-    public PanelColumnWidth? SetCollapsed(bool collapsed, PanelColumnWidth current) =>
-        collapsed ? Collapse(current) : Expand();
+    public PanelColumnWidth? SetCollapsed(bool collapsed, PanelColumnWidth current)
+    {
+        return collapsed ? Collapse(current) : Expand();
+    }
 }

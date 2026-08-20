@@ -268,6 +268,7 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
         {
             perkDataScope = insidePerkEntry ? PerkDataScope.Entry : PerkDataScope.TopLevel;
         }
+
         var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, data, recordType, perkDataScope);
 
         if (recordType == "PERK")

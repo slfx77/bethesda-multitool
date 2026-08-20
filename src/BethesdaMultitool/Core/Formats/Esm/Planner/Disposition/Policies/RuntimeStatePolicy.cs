@@ -28,8 +28,8 @@ public sealed class RuntimeStatePolicy : IDispositionPolicy
             Provenance = new PlanProvenance
             {
                 PolicyId = "RuntimeStatePolicy",
-                Reason = $"FormID 0x{id:X8} is engine-owned runtime state; never emit as a plugin record.",
-            },
+                Reason = $"FormID 0x{id:X8} is engine-owned runtime state; never emit as a plugin record."
+            }
         };
     }
 }

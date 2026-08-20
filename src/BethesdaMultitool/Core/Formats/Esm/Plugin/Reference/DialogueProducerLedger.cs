@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Plugin;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
@@ -39,9 +38,9 @@ internal sealed record DialogueProducerLedger(
 /// </summary>
 internal sealed class DialogueProducerLedgerBuilder
 {
-    private readonly IReadOnlyList<QuestVariableRecoveryMapping> _mappings;
-    private readonly IReadOnlyDictionary<uint, uint>? _formIdAliases;
     private readonly List<QuestVariableProducerEvidence> _evidence = [];
+    private readonly IReadOnlyDictionary<uint, uint>? _formIdAliases;
+    private readonly IReadOnlyList<QuestVariableRecoveryMapping> _mappings;
 
     public DialogueProducerLedgerBuilder(
         IReadOnlyList<QuestVariableRecoveryMapping>? mappings,
@@ -77,12 +76,15 @@ internal sealed class DialogueProducerLedgerBuilder
             emissionRemapTable));
     }
 
-    public DialogueProducerLedger Build() => new(
-        _evidence
-            .Distinct()
-            .OrderBy(static item => item.Mapping.TargetScriptFormId)
-            .ThenBy(static item => item.Mapping.TargetVariable.Index)
-            .ThenBy(static item => item.Owner.SourceFormId)
-            .ThenBy(static item => item.Owner.ScriptPath, StringComparer.Ordinal)
-            .ToImmutableArray());
+    public DialogueProducerLedger Build()
+    {
+        return new DialogueProducerLedger(
+            _evidence
+                .Distinct()
+                .OrderBy(static item => item.Mapping.TargetScriptFormId)
+                .ThenBy(static item => item.Mapping.TargetVariable.Index)
+                .ThenBy(static item => item.Owner.SourceFormId)
+                .ThenBy(static item => item.Owner.ScriptPath, StringComparer.Ordinal)
+                .ToImmutableArray());
+    }
 }

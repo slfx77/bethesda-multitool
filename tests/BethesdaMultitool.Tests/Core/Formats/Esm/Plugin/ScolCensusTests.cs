@@ -1,9 +1,4 @@
-using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
@@ -47,5 +42,4 @@ public class ScolCensusTests
     // legacy Phase-3 encode loop, and the SCOL census it fed (stats.Scols) had already been
     // inert on every planner-routed build — the CLI census block prints nothing when
     // TotalParsed is 0. SCOL emission itself is unaffected: PlannedScolEncoder owns it.
-
 }

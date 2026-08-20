@@ -79,12 +79,18 @@ public static class GenFaceGenCommands
     private static CtlData ParseCtl(byte[] data)
     {
         var offset = 8;
-        var geoVer = BitConverter.ToUInt32(data, offset); offset += 4;
-        var texVer = BitConverter.ToUInt32(data, offset); offset += 4;
-        var gsSize = BitConverter.ToUInt32(data, offset); offset += 4;
-        var gaSize = BitConverter.ToUInt32(data, offset); offset += 4;
-        var tsSize = BitConverter.ToUInt32(data, offset); offset += 4;
-        _ = BitConverter.ToUInt32(data, offset); offset += 4; // taSize
+        var geoVer = BitConverter.ToUInt32(data, offset);
+        offset += 4;
+        var texVer = BitConverter.ToUInt32(data, offset);
+        offset += 4;
+        var gsSize = BitConverter.ToUInt32(data, offset);
+        offset += 4;
+        var gaSize = BitConverter.ToUInt32(data, offset);
+        offset += 4;
+        var tsSize = BitConverter.ToUInt32(data, offset);
+        offset += 4;
+        _ = BitConverter.ToUInt32(data, offset);
+        offset += 4; // taSize
 
         var (newOffset, gsControls) = ReadSection(data, offset, (int)gsSize);
         offset = newOffset;

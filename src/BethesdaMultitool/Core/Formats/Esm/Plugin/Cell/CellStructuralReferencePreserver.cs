@@ -359,4 +359,3 @@ internal static class CellStructuralReferencePreserver
         return record.Subrecords.Any(sub => sub.Signature == "SCRI");
     }
 }
-

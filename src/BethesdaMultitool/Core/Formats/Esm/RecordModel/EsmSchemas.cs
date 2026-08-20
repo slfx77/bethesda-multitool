@@ -21,30 +21,36 @@ public static class EsmSchemas
     private static readonly Dictionary<string, RecordDef> Fallout76ByType = Index(Fallout76Schema.Records);
 
     /// <summary>The schema record set for the game, or null when no generated schema exists yet.</summary>
-    public static IReadOnlyList<RecordDef>? ForGame(BethesdaGame game) => game switch
+    public static IReadOnlyList<RecordDef>? ForGame(BethesdaGame game)
     {
-        BethesdaGame.Morrowind => Tes3Schema.Records,
-        BethesdaGame.Oblivion => OblivionSchema.Records,
-        BethesdaGame.Skyrim => SkyrimSchema.Records,
-        BethesdaGame.Fallout3 => Fallout3Schema.Records,
-        BethesdaGame.FalloutNewVegas => FalloutNvSchema.Records,
-        BethesdaGame.Fallout4 => Fallout4Schema.Records,
-        BethesdaGame.Fallout76 => Fallout76Schema.Records,
-        _ => null
-    };
+        return game switch
+        {
+            BethesdaGame.Morrowind => Tes3Schema.Records,
+            BethesdaGame.Oblivion => OblivionSchema.Records,
+            BethesdaGame.Skyrim => SkyrimSchema.Records,
+            BethesdaGame.Fallout3 => Fallout3Schema.Records,
+            BethesdaGame.FalloutNewVegas => FalloutNvSchema.Records,
+            BethesdaGame.Fallout4 => Fallout4Schema.Records,
+            BethesdaGame.Fallout76 => Fallout76Schema.Records,
+            _ => null
+        };
+    }
 
     /// <summary>A signature -&gt; <see cref="RecordDef" /> lookup for the game, or null when unschema'd.</summary>
-    public static IReadOnlyDictionary<string, RecordDef>? IndexForGame(BethesdaGame game) => game switch
+    public static IReadOnlyDictionary<string, RecordDef>? IndexForGame(BethesdaGame game)
     {
-        BethesdaGame.Morrowind => Tes3ByType,
-        BethesdaGame.Oblivion => OblivionByType,
-        BethesdaGame.Skyrim => SkyrimByType,
-        BethesdaGame.Fallout3 => Fallout3ByType,
-        BethesdaGame.FalloutNewVegas => FalloutNvByType,
-        BethesdaGame.Fallout4 => Fallout4ByType,
-        BethesdaGame.Fallout76 => Fallout76ByType,
-        _ => null
-    };
+        return game switch
+        {
+            BethesdaGame.Morrowind => Tes3ByType,
+            BethesdaGame.Oblivion => OblivionByType,
+            BethesdaGame.Skyrim => SkyrimByType,
+            BethesdaGame.Fallout3 => Fallout3ByType,
+            BethesdaGame.FalloutNewVegas => FalloutNvByType,
+            BethesdaGame.Fallout4 => Fallout4ByType,
+            BethesdaGame.Fallout76 => Fallout76ByType,
+            _ => null
+        };
+    }
 
     /// <summary>
     ///     Whether the schema decode is the <em>primary</em> Records-tab source for a game (it has no
@@ -55,8 +61,11 @@ public static class EsmSchemas
     ///     <see cref="Models.RecordCollection.DecodedTreesByFormId" />) without disturbing the typed lists. Morrowind
     ///     never reaches this gate (its own <c>Tes3RecordParser</c> returns early) but is typed-primary too.
     /// </summary>
-    public static bool IsSchemaPrimary(BethesdaGame game) => game is
-        BethesdaGame.Oblivion or BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76;
+    public static bool IsSchemaPrimary(BethesdaGame game)
+    {
+        return game is
+            BethesdaGame.Oblivion or BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76;
+    }
 
     private static Dictionary<string, RecordDef> Index(IReadOnlyList<RecordDef> records)
     {

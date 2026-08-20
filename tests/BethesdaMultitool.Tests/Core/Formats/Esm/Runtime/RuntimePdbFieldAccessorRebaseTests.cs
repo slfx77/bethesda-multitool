@@ -1,8 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 using BethesdaMultitool.Core.Minidump;
 using Xunit;
 

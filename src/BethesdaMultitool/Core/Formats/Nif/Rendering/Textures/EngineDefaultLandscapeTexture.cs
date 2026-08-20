@@ -20,8 +20,14 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 internal static class EngineDefaultLandscapeTexture
 {
     /// <summary>Engine-default landscape DIFFUSE for <paramref name="game" /> (from its <see cref="GameProfile" />).</summary>
-    internal static string DiffuseFor(BethesdaGame game) => GameProfiles.For(game).DefaultLandscapeDiffuse;
+    internal static string DiffuseFor(BethesdaGame game)
+    {
+        return GameProfiles.For(game).DefaultLandscapeDiffuse;
+    }
 
     /// <inheritdoc cref="DiffuseFor" />
-    internal static string NormalFor(BethesdaGame game) => GameProfiles.For(game).DefaultLandscapeNormal;
+    internal static string NormalFor(BethesdaGame game)
+    {
+        return GameProfiles.For(game).DefaultLandscapeNormal;
+    }
 }

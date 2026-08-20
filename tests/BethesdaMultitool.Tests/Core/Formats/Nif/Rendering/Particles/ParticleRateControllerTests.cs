@@ -67,7 +67,7 @@ public sealed class ParticleRateControllerTests
         var controller = new ParticleRateControllerDefinition
         {
             ConstantValue = 2250f,
-            EmitterActiveConstant = false,
+            EmitterActiveConstant = false
         };
 
         Assert.Equal(0f, controller.Sample(0f));
@@ -89,8 +89,8 @@ public sealed class ParticleRateControllerTests
             [
                 new ParticleBoolKey(0f, false),
                 new ParticleBoolKey(0.0333f, true),
-                new ParticleBoolKey(0.1333f, false),
-            ],
+                new ParticleBoolKey(0.1333f, false)
+            ]
         };
 
         Assert.Equal(0f, controller.Sample(0f)); // before the pulse
@@ -105,7 +105,7 @@ public sealed class ParticleRateControllerTests
         {
             ConstantValue = 90f,
             EmitterActiveConstant = false,
-            EmitterActiveKeys = [new ParticleBoolKey(0f, true)],
+            EmitterActiveKeys = [new ParticleBoolKey(0f, true)]
         };
 
         Assert.Equal(90f, controller.Sample(1f));
@@ -119,8 +119,10 @@ public sealed class ParticleRateControllerTests
         Assert.Equal(42f, controller.Sample(0f));
     }
 
-    /// <summary>The gate evaluates on the MAPPED clock: a looping controller window must wrap the
-    /// sample time before stepping the bool track, exactly like the rate keys.</summary>
+    /// <summary>
+    ///     The gate evaluates on the MAPPED clock: a looping controller window must wrap the
+    ///     sample time before stepping the bool track, exactly like the rate keys.
+    /// </summary>
     [Fact]
     public void Sample_EmitterActiveEvaluatesOnTheMappedControllerClock()
     {
@@ -133,8 +135,8 @@ public sealed class ParticleRateControllerTests
             EmitterActiveKeys =
             [
                 new ParticleBoolKey(0f, true),
-                new ParticleBoolKey(0.5f, false),
-            ],
+                new ParticleBoolKey(0.5f, false)
+            ]
         };
 
         Assert.Equal(10f, controller.Sample(2.25f)); // wraps into the active half

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core;

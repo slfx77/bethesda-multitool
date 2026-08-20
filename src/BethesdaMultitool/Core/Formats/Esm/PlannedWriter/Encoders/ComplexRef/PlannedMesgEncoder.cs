@@ -20,7 +20,7 @@ public sealed class PlannedMesgEncoder : IPlannedRecordEncoder<MessageRecord>
             RecordDisposition.New => MesgEncoder.EncodeNew(model),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedMesgEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedMesgEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

@@ -1,10 +1,10 @@
-using BethesdaMultitool.Core.Formats.Esm.Planner.References;
-using BethesdaMultitool.Core.Formats.Esm.Planner;
-using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
-using System.Collections.Immutable;
 using System.Buffers.Binary;
+using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
+using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
@@ -242,12 +242,11 @@ public class PlacedRefEncoderTests
                     FieldPath = FieldPath.Member("XRDO", "PositionRef"),
                     OriginalFormId = 0x0BADF00D,
                     Action = ResolvedRefAction.NullRef,
-                    Reason = "refr.xrdo-anchor-dangling",
+                    Reason = "refr.xrdo-anchor-dangling"
                 }
             ],
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         });
     }
-
 }

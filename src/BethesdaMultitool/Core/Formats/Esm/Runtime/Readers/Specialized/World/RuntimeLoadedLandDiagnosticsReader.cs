@@ -312,7 +312,9 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
     private const int LoadedDataGrassMapOffset = 84; // NiTPointerMap<unsigned int,TESGrassAreaParam**> pmGrassMap[4]
     private const int LoadedDataGrassMapSize = 64;
     private const int LoadedDataLandRigidBodyPtrOffset = 148; // NiPointer<bhkRigidBody> spLandRB
+
     private const int LoadedDataQuadCount = 4;
+
     // Slot 0 is pDefQuadTexture; these arrays contain engine slots 1..5 only.
     private const int MaxAlphaTextureSlots = 5;
     private const int TextureWeightSlotCount = 6;

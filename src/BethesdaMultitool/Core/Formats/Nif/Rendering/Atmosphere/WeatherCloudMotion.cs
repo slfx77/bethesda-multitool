@@ -13,6 +13,7 @@ internal static class WeatherCloudMotion
     ///     Legacy TES4/FO3/FNV scalar speeds use the authored weather wind instead.
     /// </summary>
     internal const float UvPerSecondScale = 0.010f;
+
     internal const float LegacyCloudSpeedMax = 0.1f;
     internal const float FnvEmptyOnamSpeed = 0x33 / 255f;
 
@@ -42,11 +43,15 @@ internal static class WeatherCloudMotion
         WeatherRecord? weather,
         WeatherCloudLayer? semanticLayer,
         int sourceLayerIndex,
-        BethesdaGame game) =>
-        ResolveAuthoredSpeed(weather, semanticLayer, sourceLayerIndex, game) * LegacyCloudSpeedMax;
+        BethesdaGame game)
+    {
+        return ResolveAuthoredSpeed(weather, semanticLayer, sourceLayerIndex, game) * LegacyCloudSpeedMax;
+    }
 
-    internal static float ResolveLegacyWind(WeatherRecord? weather) =>
-        (weather?.Data?.WindSpeed ?? 0) / 255f;
+    internal static float ResolveLegacyWind(WeatherRecord? weather)
+    {
+        return (weather?.Data?.WindSpeed ?? 0) / 255f;
+    }
 
     private static Vector2 ResolveAuthoredSpeed(
         WeatherRecord? weather,
@@ -54,7 +59,7 @@ internal static class WeatherCloudMotion
         int sourceLayerIndex,
         BethesdaGame game)
     {
-        if (game is (BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3) &&
+        if (game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 &&
             weather is not null && sourceLayerIndex >= 0)
         {
             // Retail PC TESWeather::GetCloudSpeed starts with byte 0x33. A non-empty ONAM uses

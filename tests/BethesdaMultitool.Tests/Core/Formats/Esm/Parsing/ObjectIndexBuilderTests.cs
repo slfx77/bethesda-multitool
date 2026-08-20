@@ -1,8 +1,10 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
@@ -35,7 +37,7 @@ public sealed class ObjectIndexBuilderTests
         var originalCell = cells[0];
 
         var modelIndex = new Dictionary<uint, string>();
-        var boundsIndex = BuildIndexes(modelIndex, staticCollections: [scol]);
+        var boundsIndex = BuildIndexes(modelIndex, [scol]);
         ObjectIndexBuilder.EnrichAllCellViews(cells, [], boundsIndex, modelIndex);
 
         Assert.Equal("SCOL\\SSHQExterior03.NIF", cells[0].PlacedObjects[0].ModelPath);
@@ -76,7 +78,7 @@ public sealed class ObjectIndexBuilderTests
         // parsing, so ToPlacedReference enriches at birth and no post-pass clone is needed on a
         // plain ESM load.
         const uint scolFormId = 0x174D17;
-        var scan = new BethesdaMultitool.Core.Formats.Esm.Records.EsmRecordScanResult();
+        var scan = new EsmRecordScanResult();
         var context = new RecordParserContext(scan)
         {
             PlacedObjectModelIndex = new Dictionary<uint, string>
@@ -87,8 +89,8 @@ public sealed class ObjectIndexBuilderTests
 
         var extracted = new ExtractedRefrRecord
         {
-            Header = new BethesdaMultitool.Core.Formats.Esm.Models.DetectedMainRecord(
-                "REFR", DataSize: 0, Flags: 0, FormId: 0x200, Offset: 0, IsBigEndian: false),
+            Header = new DetectedMainRecord(
+                "REFR", 0, 0, 0x200, 0, false),
             BaseFormId = scolFormId
         };
 
@@ -117,7 +119,7 @@ public sealed class ObjectIndexBuilderTests
         ];
     }
 
-    private static Dictionary<uint, BethesdaMultitool.Core.Formats.Esm.Models.ObjectBounds> BuildIndexes(
+    private static Dictionary<uint, ObjectBounds> BuildIndexes(
         Dictionary<uint, string> modelIndex,
         List<StaticCollectionRecord>? staticCollections = null,
         List<PlaceableWaterRecord>? placeableWaters = null,

@@ -45,7 +45,7 @@ internal static class AtomicFileWriter
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        string? temporaryPath = Path.Combine(
+        var temporaryPath = Path.Combine(
             directory,
             $".{fileName}.{Guid.NewGuid():N}.tmp");
         string? companionBackupPath = null;
@@ -73,6 +73,7 @@ internal static class AtomicFileWriter
                         "An atomically invalidated companion must share the target directory.",
                         nameof(companionPathToInvalidate));
                 }
+
                 if (string.Equals(fullCompanionPath, fullTargetPath, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new ArgumentException(
@@ -96,26 +97,27 @@ internal static class AtomicFileWriter
                             phaseObserver,
                             AtomicFileWritePhase.CompanionStagingMove,
                             stagingStarted,
-                            succeeded: false);
+                            false);
                         throw;
                     }
+
                     ObserveMove(
                         phaseObserver,
                         AtomicFileWritePhase.CompanionStagingMove,
                         stagingStarted,
-                        succeeded: true);
+                        true);
                 }
             }
 
             var publicationStarted = StartMoveTiming(phaseObserver);
             try
             {
-                File.Move(temporaryPath, fullTargetPath, overwrite: true);
+                File.Move(temporaryPath, fullTargetPath, true);
                 ObserveMove(
                     phaseObserver,
                     AtomicFileWritePhase.TargetPublishMove,
                     publicationStarted,
-                    succeeded: true);
+                    true);
             }
             catch
             {
@@ -123,13 +125,15 @@ internal static class AtomicFileWriter
                     phaseObserver,
                     AtomicFileWritePhase.TargetPublishMove,
                     publicationStarted,
-                    succeeded: false);
+                    false);
                 if (companionBackupPath is not null && fullCompanionPath is not null)
                 {
-                    File.Move(companionBackupPath, fullCompanionPath, overwrite: false);
+                    File.Move(companionBackupPath, fullCompanionPath, false);
                 }
+
                 throw;
             }
+
             temporaryPath = null;
             if (companionBackupPath is not null)
             {
@@ -147,8 +151,10 @@ internal static class AtomicFileWriter
         }
     }
 
-    private static long StartMoveTiming(Action<AtomicFileWritePhaseTiming>? phaseObserver) =>
-        phaseObserver is null ? 0 : Stopwatch.GetTimestamp();
+    private static long StartMoveTiming(Action<AtomicFileWritePhaseTiming>? phaseObserver)
+    {
+        return phaseObserver is null ? 0 : Stopwatch.GetTimestamp();
+    }
 
     private static void ObserveMove(
         Action<AtomicFileWritePhaseTiming>? phaseObserver,

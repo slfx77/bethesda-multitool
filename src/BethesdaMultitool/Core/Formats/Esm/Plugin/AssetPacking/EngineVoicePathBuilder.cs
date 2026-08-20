@@ -9,18 +9,23 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 /// <remarks>
 ///     <para>
-///     Filename shape: <c>sound\voice\&lt;esp&gt;\&lt;voicetype&gt;\&lt;quest&gt;_&lt;topic&gt;_&lt;fid24:8x&gt;_&lt;resp&gt;.&lt;ext&gt;</c>.
+///         Filename shape:
+///         <c>
+///             sound\voice\&lt;esp&gt;\&lt;voicetype&gt;\&lt;quest&gt;_&lt;topic&gt;_&lt;fid24:8x&gt;_&lt;resp&gt;.&lt;ext
+///             &gt;
+///         </c>
+///         .
 ///     </para>
 ///     <para>
-///     Truncation rule (derived empirically from FNV PC final's runtime errors): the combined
-///     <c>quest + "_" + topic</c> stem is capped at <see cref="MaxStemTotal"/> characters
-///     (26). Topic is capped first at <see cref="MaxTopicStem"/> (15); quest takes whatever
-///     remains. Vanilla examples fit naturally (e.g. <c>radionewvegas_rnvnewsintro</c> = 26).
-///     The Ulysses error log confirms the policy: <c>VDialogueU_VDialogueUlysse</c> (10+15 = 26)
-///     for a quest+topic that would otherwise be 16+31 = 48. Older builds (e.g. July 2010 disk
-///     dump) used a more generous 30-char policy (14+15 stems), which is why CSV paths from
-///     those builds don't match what the runtime now constructs — the rewrite recomputes the
-///     filename from scratch using the current 26-char rule rather than copying the CSV path.
+///         Truncation rule (derived empirically from FNV PC final's runtime errors): the combined
+///         <c>quest + "_" + topic</c> stem is capped at <see cref="MaxStemTotal" /> characters
+///         (26). Topic is capped first at <see cref="MaxTopicStem" /> (15); quest takes whatever
+///         remains. Vanilla examples fit naturally (e.g. <c>radionewvegas_rnvnewsintro</c> = 26).
+///         The Ulysses error log confirms the policy: <c>VDialogueU_VDialogueUlysse</c> (10+15 = 26)
+///         for a quest+topic that would otherwise be 16+31 = 48. Older builds (e.g. July 2010 disk
+///         dump) used a more generous 30-char policy (14+15 stems), which is why CSV paths from
+///         those builds don't match what the runtime now constructs — the rewrite recomputes the
+///         filename from scratch using the current 26-char rule rather than copying the CSV path.
 ///     </para>
 /// </remarks>
 internal static class EngineVoicePathBuilder

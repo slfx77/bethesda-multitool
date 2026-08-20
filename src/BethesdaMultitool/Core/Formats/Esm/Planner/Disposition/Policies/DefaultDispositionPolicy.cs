@@ -22,8 +22,8 @@ public sealed class DefaultDispositionPolicy : IDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultDispositionPolicy.MasterOnly",
-                    Reason = "Master record had no DMP override; copy verbatim.",
-                },
+                    Reason = "Master record had no DMP override; copy verbatim."
+                }
             },
             SourceKind.DmpOverride => new DispositionDecision
             {
@@ -31,8 +31,8 @@ public sealed class DefaultDispositionPolicy : IDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultDispositionPolicy.DmpOverride",
-                    Reason = "DMP captured a record sharing FormID with master; emit override.",
-                },
+                    Reason = "DMP captured a record sharing FormID with master; emit override."
+                }
             },
             SourceKind.DmpNew => new DispositionDecision
             {
@@ -40,8 +40,8 @@ public sealed class DefaultDispositionPolicy : IDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultDispositionPolicy.DmpNew",
-                    Reason = "DMP captured a record without a master counterpart; allocate plugin FormID.",
-                },
+                    Reason = "DMP captured a record without a master counterpart; allocate plugin FormID."
+                }
             },
             SourceKind.Fo3Source => new DispositionDecision
             {
@@ -49,10 +49,10 @@ public sealed class DefaultDispositionPolicy : IDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultDispositionPolicy.Fo3NotSupported",
-                    Reason = "FO3 source records are not yet wired into the planner; deferred to Plan C.",
-                },
+                    Reason = "FO3 source records are not yet wired into the planner; deferred to Plan C."
+                }
             },
-            _ => throw new InvalidOperationException($"Unknown SourceKind: {entry.Source}"),
+            _ => throw new InvalidOperationException($"Unknown SourceKind: {entry.Source}")
         };
     }
 }

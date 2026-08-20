@@ -42,20 +42,20 @@ internal sealed class WalkVoidRecovery
     /// </summary>
     public const float MaxGroundlessFallDrop = 8192f;
 
-    private Vector3? _lastGroundedPosition;
-    private Vector3? _jumpAnchor;
-    private bool _launchBlockedUntilRelease;
     private int _groundlessFallSteps;
+    private Vector3? _jumpAnchor;
+
+    private Vector3? _lastGroundedPosition;
 
     /// <summary>For tests/diagnostics: true only after a void recovery while jump remains held.</summary>
-    internal bool LaunchBlockedUntilRelease => _launchBlockedUntilRelease;
+    internal bool LaunchBlockedUntilRelease { get; private set; }
 
     /// <summary>Clears all world-relative state on mode changes or when ground sampling disappears.</summary>
     public void Reset()
     {
         _lastGroundedPosition = null;
         _jumpAnchor = null;
-        _launchBlockedUntilRelease = false;
+        LaunchBlockedUntilRelease = false;
         _groundlessFallSteps = 0;
     }
 
@@ -120,7 +120,7 @@ internal sealed class WalkVoidRecovery
     /// </summary>
     public bool TryArmJump(Vector3? currentGroundedPosition)
     {
-        if (_launchBlockedUntilRelease) return false;
+        if (LaunchBlockedUntilRelease) return false;
         var anchor = currentGroundedPosition ?? _lastGroundedPosition;
         if (anchor is null) return false;
 
@@ -143,7 +143,7 @@ internal sealed class WalkVoidRecovery
         position = anchor;
         _lastGroundedPosition = anchor;
         _jumpAnchor = null;
-        _launchBlockedUntilRelease = true;
+        LaunchBlockedUntilRelease = true;
         _groundlessFallSteps = 0;
         return true;
     }
@@ -159,6 +159,6 @@ internal sealed class WalkVoidRecovery
     /// <summary>Re-enables jumping only after the key that caused a recovery is released.</summary>
     public void ObserveJumpKey(bool isDown)
     {
-        if (!isDown) _launchBlockedUntilRelease = false;
+        if (!isDown) LaunchBlockedUntilRelease = false;
     }
 }

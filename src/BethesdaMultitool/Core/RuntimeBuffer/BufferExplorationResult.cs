@@ -2,7 +2,10 @@ using BethesdaMultitool.Core.Strings;
 
 namespace BethesdaMultitool.Core.RuntimeBuffer;
 
-/// <summary>Aggregate output of a runtime-buffer exploration: manager walks, string hits/pools/ownership, discovered buffers, and the pointer graph.</summary>
+/// <summary>
+///     Aggregate output of a runtime-buffer exploration: manager walks, string hits/pools/ownership, discovered
+///     buffers, and the pointer graph.
+/// </summary>
 public sealed class BufferExplorationResult
 {
     public List<ManagerWalkResult> ManagerResults { get; } = [];

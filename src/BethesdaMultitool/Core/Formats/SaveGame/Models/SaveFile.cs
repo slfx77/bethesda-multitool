@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.SaveGame.Stfs;
 namespace BethesdaMultitool.Core.Formats.SaveGame.Models;
 
 /// <summary>

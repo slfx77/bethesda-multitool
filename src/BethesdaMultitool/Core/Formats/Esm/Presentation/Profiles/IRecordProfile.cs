@@ -22,8 +22,10 @@ internal interface IRecordProfile
     /// <summary>The 4-char record type this profile renders (e.g. "NPC_").</summary>
     string RecordType { get; }
 
-    /// <summary>Builds the curated sectioned <see cref="RecordDetailModel" /> for one record from its
-    /// schema-decoded tree.</summary>
+    /// <summary>
+    ///     Builds the curated sectioned <see cref="RecordDetailModel" /> for one record from its
+    ///     schema-decoded tree.
+    /// </summary>
     /// <param name="records">
     ///     The full record set, when available, for profiles that surface cross-record data the record's own
     ///     subrecords don't carry (e.g. DIAL's child INFO list). Null when the caller has no collection;

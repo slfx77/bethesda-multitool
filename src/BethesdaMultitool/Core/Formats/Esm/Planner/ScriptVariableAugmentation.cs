@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
@@ -98,8 +99,8 @@ internal static class ScriptVariableAugmentationPlanner
                 {
                     PolicyId = "ScriptVariableAugmentationPlanner.AppendOnlyMasterLocal",
                     Reason = $"Retained master SCPT receives {combined.Length} fresh local variable(s) "
-                             + "needed by recovered INFO/PACK conditions; SCDA and existing indices stay unchanged.",
-                },
+                             + "needed by recovered INFO/PACK conditions; SCDA and existing indices stay unchanged."
+                }
             };
             diagnostics.Add(new PlanDiagnostic
             {
@@ -118,15 +119,15 @@ internal static class ScriptVariableAugmentationPlanner
                     ["sctxPolicy"] = record.Master.Subrecords.All(static subrecord =>
                         subrecord.Signature != "SCTX")
                         ? "absent-no-master-source"
-                        : "master-plus-fresh-local-declarations",
-                },
+                        : "master-plus-fresh-local-declarations"
+                }
             });
         }
 
         return plan with
         {
             Records = records.ToImmutable(),
-            Diagnostics = plan.Diagnostics.AddRange(diagnostics),
+            Diagnostics = plan.Diagnostics.AddRange(diagnostics)
         };
     }
 
@@ -135,7 +136,7 @@ internal static class ScriptVariableAugmentationPlanner
     ///     byte-level directive. Kept internal for a defensive re-check in the encoder.
     /// </summary>
     internal static void Validate(
-        Parsing.ParsedMainRecord master,
+        ParsedMainRecord master,
         uint targetFormId,
         IReadOnlyList<ScriptVariableAugmentation> augmentations)
     {

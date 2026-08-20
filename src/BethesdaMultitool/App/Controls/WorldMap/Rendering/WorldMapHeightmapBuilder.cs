@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 
@@ -144,6 +145,7 @@ internal static class WorldMapHeightmapBuilder
                 Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
             result[(gx, gy, pixelsPerCell)] = bmp;
         }
+
         return result;
     }
 

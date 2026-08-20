@@ -1,8 +1,6 @@
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Bsa.Ba2;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 
@@ -96,7 +94,7 @@ internal static class BsaDiscovery
             return BsaDiscoveryResult.Empty;
         }
 
-        return new BsaDiscoveryResult(meshes.ToArray(), textures.ToArray(), AutoDetected: true);
+        return new BsaDiscoveryResult(meshes.ToArray(), textures.ToArray(), true);
     }
 
     /// <summary>

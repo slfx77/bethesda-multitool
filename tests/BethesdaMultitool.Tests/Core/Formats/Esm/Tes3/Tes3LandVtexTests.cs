@@ -3,7 +3,7 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.Tes3;
 using Xunit;
 
-namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
+namespace BethesdaMultitool.Tests.Core.Formats.Esm.Tes3;
 
 /// <summary>
 ///     Morrowind LAND VTEX is stored as 16 sub-blocks of 4×4 (OpenMW's transposeTextureData), NOT

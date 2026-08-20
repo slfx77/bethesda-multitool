@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Scanning;
 using DDXConv;
 using Xunit;
 
@@ -44,7 +43,7 @@ public sealed class RuntimeGpuTextureScannerTransformTests
         // chain in one 32x32-block surface with level 0 at block (4,0), not the origin — the
         // layout empirically verified on chalk.ddx. The old plain untile read from (0,0).
         var src = StampedSurface(32 * 32, 8);
-        var result = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 8, 8, Dxt1, isTiled: true);
+        var result = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 8, 8, Dxt1, true);
 
         Assert.True(result.Length >= 2 * 2 * 8);
         for (var by = 0; by < 2; by++)
@@ -65,7 +64,7 @@ public sealed class RuntimeGpuTextureScannerTransformTests
         // differs-from-plain assert is the guard against reverting the one-line call swap.
         var src = StampedSurface(128 * 32, 8);
 
-        var viaScanner = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 512, 8, Dxt1, isTiled: true);
+        var viaScanner = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 512, 8, Dxt1, true);
         var aligned = TextureUtilities.UnswizzleMortonDxtAligned(src, 512, 8, Dxt1);
         var plain = TextureUtilities.UnswizzleMortonDxt(src, 512, 8, Dxt1);
 
@@ -80,7 +79,7 @@ public sealed class RuntimeGpuTextureScannerTransformTests
         // pure pass-through — no behavior change for the common aligned case.
         var src = StampedSurface(32 * 32, 8);
 
-        var viaScanner = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 128, 128, Dxt1, isTiled: true);
+        var viaScanner = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 128, 128, Dxt1, true);
         var plain = TextureUtilities.UnswizzleMortonDxt(src, 128, 128, Dxt1);
 
         Assert.Equal(plain, viaScanner);
@@ -90,7 +89,7 @@ public sealed class RuntimeGpuTextureScannerTransformTests
     public void NotTiled_IsEndianSwapOnly()
     {
         byte[] src = [1, 2, 3, 4, 5, 6, 7, 8];
-        var result = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 4, 4, Dxt1, isTiled: false);
+        var result = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 4, 4, Dxt1, false);
         Assert.Equal([2, 1, 4, 3, 6, 5, 8, 7], result);
     }
 
@@ -98,7 +97,7 @@ public sealed class RuntimeGpuTextureScannerTransformTests
     public void NonBlockFormat_IsEndianSwapOnly()
     {
         byte[] src = [1, 2, 3, 4];
-        var result = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 1, 1, 0x06, isTiled: true);
+        var result = RuntimeGpuTextureScanner.ReverseGpuTransform(src, 1, 1, 0x06, true);
         Assert.Equal([2, 1, 4, 3], result);
     }
 
@@ -110,13 +109,13 @@ public sealed class RuntimeGpuTextureScannerTransformTests
     private static int ExpectedTiledElement(int x, int y, int pitch, int elementBytes)
     {
         var k = 31 - int.LeadingZeroCount(elementBytes);
-        var micro = (((y & 6) * 4) + (x & 7)) << k;
+        var micro = ((y & 6) * 4 + (x & 7)) << k;
         var off = ((((pitch + 0x1F) >> 5) * (y >> 5) + (x >> 5)) << (k + 7))
-                  + (((y & 1) * 8 + (micro & 0xFFFFFF0)) * 2)
+                  + ((y & 1) * 8 + (micro & 0xFFFFFF0)) * 2
                   + ((y & 8) << (k + 3))
                   + (micro & 0xF);
-        var res = ((((y & 0x10) * 0x10 + (off & 0x7FFFE00)) * 2 + (off & 0x1C0)) * 4)
-                  + ((((y & 0x7FFFFF8) * 2 + x) & 0x18) * 8)
+        var res = (((y & 0x10) * 0x10 + (off & 0x7FFFE00)) * 2 + (off & 0x1C0)) * 4
+                  + (((y & 0x7FFFFF8) * 2 + x) & 0x18) * 8
                   + (off & 0x3F);
         return res >> k;
     }

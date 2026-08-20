@@ -22,4 +22,3 @@ public record ReportDataSources(
     /// <summary>Lazily-built unified resolver from the Records dictionaries.</summary>
     public FormIdResolver Resolver => _resolver ??= Records.CreateResolver(FormIdMap);
 }
-

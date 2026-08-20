@@ -97,17 +97,6 @@ internal static class LeveledSpawnCensusCommand
         census.Print();
     }
 
-    /// <summary>Per-actor classification of the two captured leveled pointers, mirroring the encoder rule.</summary>
-    internal enum CandidateClass
-    {
-        Missing,             // null / 0
-        Dynamic,             // still >= 0xFF000000 (unresolvable)
-        CompatibleMaster,    // master NPC_ (ACHR) / CREA (ACRE) — recovers, tier (a)
-        CompatibleProto,     // DMP-captured NPC_/CREA — recovers, tier (b)
-        IncompatibleLeveled, // resolves to a LVLN/LVLC (correctly skipped: xEdit-invalid actor base)
-        IncompatibleOther    // present somewhere but wrong/unknown type
-    }
-
     internal static CandidateClass ClassifyCandidate(
         uint? candidate,
         bool isCreature,
@@ -130,19 +119,30 @@ internal static class LeveledSpawnCensusCommand
         return CandidateClass.IncompatibleOther;
     }
 
+    /// <summary>Per-actor classification of the two captured leveled pointers, mirroring the encoder rule.</summary>
+    internal enum CandidateClass
+    {
+        Missing, // null / 0
+        Dynamic, // still >= 0xFF000000 (unresolvable)
+        CompatibleMaster, // master NPC_ (ACHR) / CREA (ACRE) — recovers, tier (a)
+        CompatibleProto, // DMP-captured NPC_/CREA — recovers, tier (b)
+        IncompatibleLeveled, // resolves to a LVLN/LVLC (correctly skipped: xEdit-invalid actor base)
+        IncompatibleOther // present somewhere but wrong/unknown type
+    }
+
     internal sealed class CensusTotals
     {
         private int _achr;
         private int _acre;
+        private int _bothDynamic;
+        private int _bothMissing;
+        private int _leveledOnly;
+        private int _otherUnresolved;
+        private int _viaOriginal;
+        private int _viaTemplate;
         private int _yield;
         private int _yieldMaster;
         private int _yieldProto;
-        private int _viaOriginal;
-        private int _viaTemplate;
-        private int _bothMissing;
-        private int _bothDynamic;
-        private int _leveledOnly;
-        private int _otherUnresolved;
 
         public void Classify(
             PlacedReference placed,
@@ -176,6 +176,7 @@ internal static class LeveledSpawnCensusCommand
             {
                 winner = null;
             }
+
             if (winner is { } w)
             {
                 _yield++;
@@ -188,19 +189,24 @@ internal static class LeveledSpawnCensusCommand
 
             // Unrecoverable — bucket by why.
             if (original == CandidateClass.Missing && template == CandidateClass.Missing) _bothMissing++;
-            else if (original == CandidateClass.Dynamic && template is CandidateClass.Dynamic or CandidateClass.Missing) _bothDynamic++;
-            else if (original == CandidateClass.IncompatibleLeveled || template == CandidateClass.IncompatibleLeveled) _leveledOnly++;
+            else if (original == CandidateClass.Dynamic &&
+                     template is CandidateClass.Dynamic or CandidateClass.Missing) _bothDynamic++;
+            else if (original == CandidateClass.IncompatibleLeveled ||
+                     template == CandidateClass.IncompatibleLeveled) _leveledOnly++;
             else _otherUnresolved++;
         }
 
-        private static bool IsCompatible(CandidateClass c) =>
-            c is CandidateClass.CompatibleMaster or CandidateClass.CompatibleProto;
+        private static bool IsCompatible(CandidateClass c)
+        {
+            return c is CandidateClass.CompatibleMaster or CandidateClass.CompatibleProto;
+        }
 
         public void Print()
         {
             var total = _achr + _acre;
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[bold]Dropped 0xFF actors:[/] ACHR={_achr:N0}  ACRE={_acre:N0}  (total {total:N0})");
+            AnsiConsole.MarkupLine(
+                $"[bold]Dropped 0xFF actors:[/] ACHR={_achr:N0}  ACRE={_acre:N0}  (total {total:N0})");
             AnsiConsole.WriteLine();
 
             var pct = total > 0 ? 100.0 * _yield / total : 0;

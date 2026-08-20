@@ -573,4 +573,3 @@ internal static class CsvSupplementalWriter
         }
     }
 }
-

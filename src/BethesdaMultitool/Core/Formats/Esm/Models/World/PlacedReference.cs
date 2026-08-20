@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
@@ -71,9 +69,11 @@ public record PlacedReference
     /// <summary>Encounter zone FormID (XEZN subrecord / ExtraEncounterZone).</summary>
     public uint? EncounterZoneFormId { get; init; }
 
-    /// <summary>Material swap (MSWP) FormID from the XMSP subrecord. FO4/FO76 only: the 3D viewer
-    /// resolves it to BNAM→SNAM material substitutions and bakes this placement's mesh as its own
-    /// re-skinned variant, so alpha/two-sided/specular flow from the replacement materials.</summary>
+    /// <summary>
+    ///     Material swap (MSWP) FormID from the XMSP subrecord. FO4/FO76 only: the 3D viewer
+    ///     resolves it to BNAM→SNAM material substitutions and bakes this placement's mesh as its own
+    ///     re-skinned variant, so alpha/two-sided/specular flow from the replacement materials.
+    /// </summary>
     public uint? MaterialSwapFormId { get; init; }
 
     /// <summary>
@@ -171,10 +171,12 @@ public record PlacedReference
     /// </summary>
     public uint? SpecialRenderingFlags { get; init; }
 
-    /// <summary>True when <see cref="SpecialRenderingFlags" /> marks this reference an imposter —
-    /// authored invisible outside its scripted vantage, so viewers treat it like a disabled ref.
-    /// Null coalesces to 0 first: the lifted <c>null &amp; 0x2 != 0</c> comparison is TRUE in C#,
-    /// which would have flagged every ordinary ref.</summary>
+    /// <summary>
+    ///     True when <see cref="SpecialRenderingFlags" /> marks this reference an imposter —
+    ///     authored invisible outside its scripted vantage, so viewers treat it like a disabled ref.
+    ///     Null coalesces to 0 first: the lifted <c>null &amp; 0x2 != 0</c> comparison is TRUE in C#,
+    ///     which would have flagged every ordinary ref.
+    /// </summary>
     public bool IsImposter => ((SpecialRenderingFlags ?? 0) & 0x2) != 0;
 
     /// <summary>Enable parent flags byte from XESP subrecord (bit 0 = opposite state).</summary>
@@ -206,4 +208,3 @@ public record PlacedReference
     /// <summary>How this ref was assigned to its cell during DMP linkage (ParentCell, GridMap, or Virtual).</summary>
     public string? AssignmentSource { get; init; }
 }
-

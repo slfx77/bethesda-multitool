@@ -26,7 +26,7 @@ public sealed class PlannedInfoEncoder : IPlannedRecordEncoder<DialogueRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedInfoEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedInfoEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

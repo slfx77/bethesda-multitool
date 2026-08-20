@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
 /// <summary>
@@ -26,7 +27,7 @@ public enum SourceKind
     ///     Reserved for future FO3 ESM full-body conversion (Plan C from the prior plan).
     ///     Not produced by the Tier 0 catalog; here so policies don't have to bend later.
     /// </summary>
-    Fo3Source,
+    Fo3Source
 }
 
 /// <summary>
@@ -63,4 +64,3 @@ public sealed record CatalogEntry
     /// </summary>
     public ParsedMainRecord? Master { get; init; }
 }
-

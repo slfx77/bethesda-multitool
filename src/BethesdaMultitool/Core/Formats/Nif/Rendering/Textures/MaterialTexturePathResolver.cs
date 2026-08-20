@@ -33,8 +33,10 @@ internal static class MaterialTexturePathResolver
     internal static string? ResolveStarfieldTexturePath(
         string materialPath,
         IReadOnlyList<INifTextureSource> sources,
-        bool normalMap = false) =>
-        ResolveStarfieldSlot(materialPath, sources, normalMap).TexturePath;
+        bool normalMap = false)
+    {
+        return ResolveStarfieldSlot(materialPath, sources, normalMap).TexturePath;
+    }
 
     /// <summary>
     ///     Resolves a Starfield <c>.mat</c> slot to EITHER a texture path or a flat colour. Callers that
@@ -63,8 +65,10 @@ internal static class MaterialTexturePathResolver
     }
 
     /// <summary>True when <paramref name="path" /> is a Starfield material reference.</summary>
-    internal static bool IsStarfieldMaterialPath(string path) =>
-        path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase);
+    internal static bool IsStarfieldMaterialPath(string path)
+    {
+        return path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     ///     True when <paramref name="materialPath" /> exists in the database but resolves NO diffuse

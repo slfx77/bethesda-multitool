@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 
-/// <summary>Per-shape skinning diagnostics: bone/vertex counts, influence statistics, and which weight source the shape uses.</summary>
+/// <summary>
+///     Per-shape skinning diagnostics: bone/vertex counts, influence statistics, and which weight source the shape
+///     uses.
+/// </summary>
 internal sealed class NifSkinnedShapeDiagnostic
 {
     public required string ShapeName { get; init; }

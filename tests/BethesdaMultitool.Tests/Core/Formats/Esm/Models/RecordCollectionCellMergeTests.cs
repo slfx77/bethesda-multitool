@@ -73,7 +73,7 @@ public class RecordCollectionCellMergeTests
     [Fact]
     public void MergeWith_CellOverrideWithLand_OverrideLandWins()
     {
-        var baseCell = Cell(0x10, Land(1000f));
+        var baseCell = Cell(0x10, Land());
         var overrideCell = Cell(0x10, Land(2000f));
 
         var merged = new RecordCollection { Cells = [baseCell] }
@@ -516,7 +516,7 @@ public class Tes4LoadOrderFormIdMapperTests
         }
         finally
         {
-            Directory.Delete(tempDir, recursive: true);
+            Directory.Delete(tempDir, true);
         }
     }
 

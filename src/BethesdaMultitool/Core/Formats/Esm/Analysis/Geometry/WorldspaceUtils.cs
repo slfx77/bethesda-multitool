@@ -156,4 +156,3 @@ public static class WorldspaceUtils
             : Encoding.ASCII.GetString(data, offset, 4);
     }
 }
-

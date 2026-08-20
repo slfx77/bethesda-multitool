@@ -417,10 +417,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
     ///     the MemDebug PDB: <c>pLinkedDoor</c> @0, <c>position</c> NiPoint3 @4, <c>rotation</c>
     ///     NiPoint3 @16, <c>cFlags</c> @28 — a 1:1 match for the on-disk XTEL subrecord.
     ///     <para>
-    ///     Before v143 only the first 4 bytes (the door pointer) were read, so every
-    ///     runtime-recovered XTEL shipped with a zeroed arrival transform and the player landed at
-    ///     the destination cell's origin instead of in front of the return door. The transform was
-    ///     in the dump all along.
+    ///         Before v143 only the first 4 bytes (the door pointer) were read, so every
+    ///         runtime-recovered XTEL shipped with a zeroed arrival transform and the player landed at
+    ///         the destination cell's origin instead of in front of the return door. The transform was
+    ///         in the dump all along.
     ///     </para>
     /// </summary>
     private (uint? DestinationDoorFormId, PositionSubrecord? PosRot, byte? Flags) ReadTeleportData(
@@ -722,6 +722,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
 
     /// <summary>RADIO_RANGE_COUNT from the PDB's RADIO_RANGE_TYPE enum — the first invalid value.</summary>
     private const uint RadioRangeTypeCount = 5;
+
     private const int ExtraLinkedRefChildrenNodeSize = 20;
     private const int ExtraStartingPositionNodeSize = 36;
     private const int ExtraPackageStartLocationNodeSize = 32;

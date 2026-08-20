@@ -109,7 +109,12 @@ public static class HeightmapPngExporter
             useColorGradient);
     }
 
-    /// <summary>Like <see cref="ExportCompositeWorldmapAsync(List{DetectedVhgtHeightmap}, List{CellGridSubrecord}, List{ExtractedLandRecord}, string, bool)" />, but overlays a cell-grid coordinate grid.</summary>
+    /// <summary>
+    ///     Like
+    ///     <see
+    ///         cref="ExportCompositeWorldmapAsync(List{DetectedVhgtHeightmap}, List{CellGridSubrecord}, List{ExtractedLandRecord}, string, bool)" />
+    ///     , but overlays a cell-grid coordinate grid.
+    /// </summary>
     public static Task ExportCompositeWorldmapWithGridAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,
@@ -143,4 +148,3 @@ public static class HeightmapPngExporter
             worldspaceNames);
     }
 }
-

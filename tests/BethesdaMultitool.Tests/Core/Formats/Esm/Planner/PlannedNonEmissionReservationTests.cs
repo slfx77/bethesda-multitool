@@ -25,13 +25,13 @@ public sealed class PlannedNonEmissionReservationTests
             .Select(index => new ActorValueInfoRecord
             {
                 FormId = 0x00F00001u + (uint)index,
-                EditorId = $"ProtoActorValue{index}",
+                EditorId = $"ProtoActorValue{index}"
             })
             .ToList();
         var records = new RecordCollection
         {
             ActorValueInfos = avifs,
-            Containers = [new ContainerRecord { FormId = containerSource, EditorId = "AfterAvif" }],
+            Containers = [new ContainerRecord { FormId = containerSource, EditorId = "AfterAvif" }]
         };
 
         var plan = BuildPlanner().Build(
@@ -64,7 +64,7 @@ public sealed class PlannedNonEmissionReservationTests
         {
             ActorValueInfos =
             [
-                new ActorValueInfoRecord { FormId = avifSource, EditorId = "ProtoActorValue" },
+                new ActorValueInfoRecord { FormId = avifSource, EditorId = "ProtoActorValue" }
             ],
             Scripts =
             [
@@ -72,12 +72,12 @@ public sealed class PlannedNonEmissionReservationTests
                 {
                     FormId = scriptSource,
                     EditorId = "ReferencesProtoActorValue",
-                    ReferencedObjects = [avifSource],
-                },
-            ],
+                    ReferencedObjects = [avifSource]
+                }
+            ]
         };
 
-        var plan = BuildPlanner(includeScriptWalker: true).Build(
+        var plan = BuildPlanner(true).Build(
             [], records, new HashSet<string> { "AVIF", "SCPT" }, new HashSet<uint>(), null);
 
         var reservation = Assert.Single(plan.FormIdReservations);
@@ -99,12 +99,12 @@ public sealed class PlannedNonEmissionReservationTests
         {
             ActorValueInfos =
             [
-                new ActorValueInfoRecord { FormId = sharedSource, EditorId = "ProtoActorValue" },
+                new ActorValueInfoRecord { FormId = sharedSource, EditorId = "ProtoActorValue" }
             ],
             Containers =
             [
-                new ContainerRecord { FormId = sharedSource, EditorId = "CollidingContainer" },
-            ],
+                new ContainerRecord { FormId = sharedSource, EditorId = "CollidingContainer" }
+            ]
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -126,7 +126,7 @@ public sealed class PlannedNonEmissionReservationTests
         {
             ActorValueInfos =
             [
-                new ActorValueInfoRecord { FormId = avifSource, EditorId = "ProtoActorValue" },
+                new ActorValueInfoRecord { FormId = avifSource, EditorId = "ProtoActorValue" }
             ],
             Scripts =
             [
@@ -134,13 +134,13 @@ public sealed class PlannedNonEmissionReservationTests
                 {
                     FormId = scriptSource,
                     EditorId = "WouldBindToRawSourceFallback",
-                    ReferencedObjects = [avifSource],
-                },
-            ],
+                    ReferencedObjects = [avifSource]
+                }
+            ]
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            BuildPlanner(includeScriptWalker: true).Build(
+            BuildPlanner(true).Build(
                 [],
                 records,
                 new HashSet<string> { "AVIF", "SCPT" },
@@ -167,10 +167,10 @@ public sealed class PlannedNonEmissionReservationTests
                     EditorId = "UnrenderableCollection",
                     Parts =
                     [
-                        new StaticCollectionPart { OnamFormId = 0x00DEAD00 },
-                    ],
-                },
-            ],
+                        new StaticCollectionPart { OnamFormId = 0x00DEAD00 }
+                    ]
+                }
+            ]
         };
 
         var plan = BuildPlanner().Build(
@@ -202,10 +202,10 @@ public sealed class PlannedNonEmissionReservationTests
                     EditorId = "RenderableCollection",
                     Parts =
                     [
-                        new StaticCollectionPart { OnamFormId = masterStat },
-                    ],
-                },
-            ],
+                        new StaticCollectionPart { OnamFormId = masterStat }
+                    ]
+                }
+            ]
         };
 
         var plan = BuildPlanner().Build(
@@ -234,10 +234,10 @@ public sealed class PlannedNonEmissionReservationTests
                     EditorId = "CollectionOfProtoPart",
                     Parts =
                     [
-                        new StaticCollectionPart { OnamFormId = statSource },
-                    ],
-                },
-            ],
+                        new StaticCollectionPart { OnamFormId = statSource }
+                    ]
+                }
+            ]
         };
 
         var plan = BuildPlanner().Build(
@@ -256,7 +256,7 @@ public sealed class PlannedNonEmissionReservationTests
         var disposition = new DispositionEngine(
         [
             new ScriptDispositionPolicy(),
-            new DefaultDispositionPolicy(),
+            new DefaultDispositionPolicy()
         ]);
         var degradation = new DegradationPolicy();
         degradation.SetDefaultForType("SCPT", DanglingAction.DropSubrecord);

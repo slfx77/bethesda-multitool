@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
 /// <summary>
 ///     Visibility threshold for the dangling-REFR overlay. Each level expands the
@@ -215,6 +215,7 @@ public sealed class DanglingRefAttributions
                 {
                     span = span[2..];
                 }
+
                 byte.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out baseFormType);
             }
         }
@@ -279,6 +280,7 @@ public sealed class DanglingRefAttributions
         {
             return null;
         }
+
         var s = v.GetString();
         return string.IsNullOrEmpty(s) ? null : s;
     }
@@ -340,7 +342,8 @@ public sealed class DanglingRefAttributions
             ? rcEl.GetInt32()
             : 0;
 
-        var evidenceDumpCount = el.TryGetProperty("evidence_dump_count", out var edEl) && edEl.ValueKind == JsonValueKind.Number
+        var evidenceDumpCount = el.TryGetProperty("evidence_dump_count", out var edEl) &&
+                                edEl.ValueKind == JsonValueKind.Number
             ? edEl.GetInt32()
             : 0;
 
@@ -414,7 +417,10 @@ public sealed class DanglingRefAttributions
     }
 }
 
-/// <summary>Heuristic attribution of a worldspace grid cell to its owning worldspace/cell, with confidence and evidence counts.</summary>
+/// <summary>
+///     Heuristic attribution of a worldspace grid cell to its owning worldspace/cell, with confidence and evidence
+///     counts.
+/// </summary>
 public sealed class GridAttribution
 {
     public required int GridX { get; init; }

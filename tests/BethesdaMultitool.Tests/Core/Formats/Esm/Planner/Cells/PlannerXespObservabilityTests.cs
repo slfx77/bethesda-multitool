@@ -292,22 +292,27 @@ public sealed class PlannerXespObservabilityTests
         return cells[cellFormId].TemporaryChildren.Single();
     }
 
-    private static ResolvedRef Dangling(string signature, uint original) => new()
+    private static ResolvedRef Dangling(string signature, uint original)
     {
-        FieldPath = FieldPath.IndexedMember(signature, 0, "Slot0"),
-        OriginalFormId = original,
-        Action = ResolvedRefAction.DropSubrecord,
-        Reason = "refr.override-subrecord-dangling",
-    };
+        return new ResolvedRef
+        {
+            FieldPath = FieldPath.IndexedMember(signature, 0, "Slot0"),
+            OriginalFormId = original,
+            Action = ResolvedRefAction.DropSubrecord,
+            Reason = "refr.override-subrecord-dangling"
+        };
+    }
 
-    private static RecordPlan PlannedChild(string type, params ResolvedRef[] references) => new()
+    private static RecordPlan PlannedChild(string type, params ResolvedRef[] references)
     {
-        Type = type,
-        Disposition = RecordDisposition.Override,
-        FormId = 0x0010F076,
-        References = [.. references],
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-    };
-
+        return new RecordPlan
+        {
+            Type = type,
+            Disposition = RecordDisposition.Override,
+            FormId = 0x0010F076,
+            References = [.. references],
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 }

@@ -23,6 +23,8 @@ public sealed class NifParticleSystemParserTests
 
     private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";
 
+    private const string HowitzerPath = @"meshes\vehicles\nvnellisartillery\nvnellisartillery.nif";
+
     public NifParticleSystemParserTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
@@ -34,7 +36,7 @@ public sealed class NifParticleSystemParserTests
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
 
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false);
         Assert.True(archives.TryExtractFile(FxDustPath, out var data, out _), "FXDust NIF not found in BSA");
 
         var nif = NifParser.Parse(data);
@@ -107,8 +109,6 @@ public sealed class NifParticleSystemParserTests
         }
     }
 
-    private const string HowitzerPath = @"meshes\vehicles\nvnellisartillery\nvnellisartillery.nif";
-
     /// <summary>
     ///     User report 2026-08-10: FortHowitzer (ACTI 0x00125C2A, this NIF) showed firing smoke at
     ///     rest. Its auto-playing Idle sequence binds each emitter's BirthRate as a NONZERO constant
@@ -123,7 +123,7 @@ public sealed class NifParticleSystemParserTests
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
 
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false);
         Assert.True(
             archives.TryExtractFile(HowitzerPath, out var data, out _),
             "NVNellisArtillery NIF not found in BSA");

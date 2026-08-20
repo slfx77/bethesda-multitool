@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -22,11 +23,34 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldView3DControl
 {
+    /// <summary>
+    ///     Sample count the capture's depth SRV reports to the water/reference shaders. 1 whenever
+    ///     the SRV views the target's single-sample MAX-resolved depth copy (the preferred MSAA
+    ///     path); the raw target sample count only on the legacy multisampled-binding fallback.
+    /// </summary>
+    private int _captureDepthSampleCount = 1;
+
     // Bindless SRV slot for the CAPTURE target's depth (distinct from _depthSrv, which views the live
     // swap-chain depth). Allocated once, SRV rewritten per capture — captures are sequential (each
     // waits its frame fence), so rewriting in place never races an in-flight read.
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _captureDepthSrv;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _captureWaterOpaqueSnapshotSrv;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation?
+        _captureDepthSrv;
+
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation?
+        _captureWaterOpaqueSnapshotSrv;
+
+    /// <summary>
+    ///     True when THIS capture rendered and bound its own planar sky-reflection target
+    ///     (rather than falling back to the shader's 2-row gradient stand-in). Surfaced in the parity
+    ///     line so a capture can never silently be a different renderer from the live view.
+    /// </summary>
+    private bool _captureWaterReflectionBound;
+
+    /// <summary>
+    ///     True when the capture's reflection target carried mirrored SCENE content (the
+    ///     Oblivion WATER007 arm) rather than the sky-only mirror — surfaced in the parity line.
+    /// </summary>
+    private bool _captureWaterReflectionScene;
 
     /// <summary>
     ///     Strongly-typed subset of the most recent offscreen capture state. Acceptance scenarios
@@ -35,12 +59,49 @@ public sealed partial class WorldView3DControl
     /// </summary>
     internal RendererProfilerScenarioSnapshot? Profiler_LastCaptureScenarioSnapshot { get; private set; }
 
+    internal string? Profiler_ActiveWeatherEditorId =>
+        ResolveSelectedWeatherTransition().CurrentWeather?.EditorId;
+
+    internal string? Profiler_SelectedWorldspaceEditorId
+    {
+        get
+        {
+            if (_data is null || _selectedInterior is not null) return null;
+            var index = WorldspaceComboBox.SelectedIndex;
+            if (index >= 0 && index < _data.Worldspaces.Count)
+            {
+                return _data.Worldspaces[index].EditorId;
+            }
+
+            return index == _data.Worldspaces.Count ? "(unlinked exterior)" : null;
+        }
+    }
+
     /// <summary>
-    ///     Sample count the capture's depth SRV reports to the water/reference shaders. 1 whenever
-    ///     the SRV views the target's single-sample MAX-resolved depth copy (the preferred MSAA
-    ///     path); the raw target sample count only on the legacy multisampled-binding fallback.
+    ///     Profiler hook: true once reference streaming has quiesced — no queued/active mesh decodes, no
+    ///     pending texture resolves/uploads, and no submesh withheld waiting on its textures. Captures that
+    ///     fire on a fixed delay instead race cold texture resolution (e.g. the first-touch alpha-weighted
+    ///     leaf-atlas mip rebuilds) and bake placeholder-white leaf cards into the frame.
     /// </summary>
-    private int _captureDepthSampleCount = 1;
+    internal bool Profiler_IsReferenceStreamingQuiesced =>
+        // Disabled layers MUST contribute null: their renderers retain LastStats from the last frame
+        // they drew, and waiting on those stale counters can deadlock a capture of the remaining
+        // layers. Terrain was previously omitted entirely; references were previously passed even
+        // while the Meshes parent was off.
+        StreamingQuiescence.IsQuiesced(
+            _showReferences ? _references?.LastStats : null,
+            terrain: _showTerrain ? _terrain?.LastStats : null,
+            strict: true);
+
+    /// <summary>
+    ///     This frame's demand-set census for the capture completion gate (see
+    ///     <see cref="CaptureSceneCensus" /> — completion is a FIXPOINT over consecutive censuses,
+    ///     not a single quiescence sample). Disabled layers contribute nothing.
+    /// </summary>
+    internal CaptureSceneCensus Profiler_CaptureSceneCensus =>
+        CaptureSceneCensus.From(
+            _showReferences ? _references?.LastStats : null,
+            _showTerrain ? _terrain?.LastStats : null);
 
     /// <summary>
     ///     Allocates (once) and rewrites the R32_Float depth SRV for the capture. MSAA targets
@@ -81,29 +142,21 @@ public sealed partial class WorldView3DControl
             ViewDimension = msaaView
                 ? Vortice.Direct3D12.ShaderResourceViewDimension.Texture2DMultisampled
                 : Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
-            Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+            Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default
         };
         if (!msaaView)
         {
             srvDesc.Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
             {
                 MipLevels = 1,
-                MostDetailedMip = 0,
+                MostDetailedMip = 0
             };
         }
+
         _gpu12.Device.CreateShaderResourceView(depthResource, srvDesc, _captureDepthSrv.Value.Cpu);
         _captureDepthSampleCount = msaaView ? target.SampleCount : 1;
         return true;
     }
-
-    /// <summary>True when THIS capture rendered and bound its own planar sky-reflection target
-    /// (rather than falling back to the shader's 2-row gradient stand-in). Surfaced in the parity
-    /// line so a capture can never silently be a different renderer from the live view.</summary>
-    private bool _captureWaterReflectionBound;
-
-    /// <summary>True when the capture's reflection target carried mirrored SCENE content (the
-    /// Oblivion WATER007 arm) rather than the sky-only mirror — surfaced in the parity line.</summary>
-    private bool _captureWaterReflectionScene;
 
     /// <summary>
     ///     Renders the capture's own planar sky reflection — the same pass, in the same place in the
@@ -171,9 +224,11 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Allocates once and rewrites the capture target's single-sample HDR opaque snapshot
-    /// SRV. Captures execute serially and wait their frame fence, so the shared persistent slot can
-    /// safely be repointed when the offscreen target changes size or identity.</summary>
+    /// <summary>
+    ///     Allocates once and rewrites the capture target's single-sample HDR opaque snapshot
+    ///     SRV. Captures execute serially and wait their frame fence, so the shared persistent slot can
+    ///     safely be repointed when the offscreen target changes size or identity.
+    /// </summary>
     private bool TryEnsureCaptureWaterOpaqueSnapshotSrv(GpuOffscreenSceneTarget12 target)
     {
         if (_gpu12 is null || _cbvSrvUavHeap12 is null ||
@@ -200,8 +255,8 @@ public sealed partial class WorldView3DControl
                 Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
                 {
                     MipLevels = 1,
-                    MostDetailedMip = 0,
-                },
+                    MostDetailedMip = 0
+                }
             };
             _gpu12.Device.CreateShaderResourceView(
                 snapshot,
@@ -224,9 +279,11 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Profiler hook: select the exterior worldspace whose EditorID matches <paramref name="name" />
-    /// (case-insensitive). Returns false when no worldspace matches. Setting the combo index drives the
-    /// normal selection path (cell load + camera framing).</summary>
+    /// <summary>
+    ///     Profiler hook: select the exterior worldspace whose EditorID matches <paramref name="name" />
+    ///     (case-insensitive). Returns false when no worldspace matches. Setting the combo index drives the
+    ///     normal selection path (cell load + camera framing).
+    /// </summary>
     internal bool Profiler_TrySelectWorldspaceByName(string name)
     {
         if (_data is null || string.IsNullOrWhiteSpace(name)) return false;
@@ -246,9 +303,11 @@ public sealed partial class WorldView3DControl
         return false;
     }
 
-    /// <summary>Profiler hook: force the active weather to the one whose EditorID matches
-    /// <paramref name="name" /> (case-insensitive), so the captured sky uses that weather's clouds/colors.
-    /// Returns false when no weather matches. Invalidates the sky-texture cache so the next frame re-resolves.</summary>
+    /// <summary>
+    ///     Profiler hook: force the active weather to the one whose EditorID matches
+    ///     <paramref name="name" /> (case-insensitive), so the captured sky uses that weather's clouds/colors.
+    ///     Returns false when no weather matches. Invalidates the sky-texture cache so the next frame re-resolves.
+    /// </summary>
     internal bool Profiler_TrySelectWeatherByName(string name)
     {
         if (_data is null || string.IsNullOrWhiteSpace(name)) return false;
@@ -266,55 +325,13 @@ public sealed partial class WorldView3DControl
         return false;
     }
 
-    internal string? Profiler_ActiveWeatherEditorId =>
-        ResolveSelectedWeatherTransition().CurrentWeather?.EditorId;
-
-    internal string? Profiler_SelectedWorldspaceEditorId
-    {
-        get
-        {
-            if (_data is null || _selectedInterior is not null) return null;
-            var index = WorldspaceComboBox.SelectedIndex;
-            if (index >= 0 && index < _data.Worldspaces.Count)
-            {
-                return _data.Worldspaces[index].EditorId;
-            }
-
-            return index == _data.Worldspaces.Count ? "(unlinked exterior)" : null;
-        }
-    }
-
     /// <summary>Profiler hook: set the time-of-day (0..24) that drives the sun arc, daylight, and sky colors.</summary>
     internal void Profiler_SetGameHour(float hour) => _gameHour = hour;
 
     /// <summary>
-    ///     Profiler hook: true once reference streaming has quiesced — no queued/active mesh decodes, no
-    ///     pending texture resolves/uploads, and no submesh withheld waiting on its textures. Captures that
-    ///     fire on a fixed delay instead race cold texture resolution (e.g. the first-touch alpha-weighted
-    ///     leaf-atlas mip rebuilds) and bake placeholder-white leaf cards into the frame.
+    ///     Profiler hook: set the day of the lunar cycle that drives the moon phase + orbit position
+    ///     (for headless night-sky captures used to calibrate the two-moon model against OpenMW).
     /// </summary>
-    internal bool Profiler_IsReferenceStreamingQuiesced =>
-        // Disabled layers MUST contribute null: their renderers retain LastStats from the last frame
-        // they drew, and waiting on those stale counters can deadlock a capture of the remaining
-        // layers. Terrain was previously omitted entirely; references were previously passed even
-        // while the Meshes parent was off.
-        StreamingQuiescence.IsQuiesced(
-            _showReferences ? _references?.LastStats : null,
-            terrain: _showTerrain ? _terrain?.LastStats : null,
-            strict: true);
-
-    /// <summary>
-    ///     This frame's demand-set census for the capture completion gate (see
-    ///     <see cref="CaptureSceneCensus" /> — completion is a FIXPOINT over consecutive censuses,
-    ///     not a single quiescence sample). Disabled layers contribute nothing.
-    /// </summary>
-    internal CaptureSceneCensus Profiler_CaptureSceneCensus =>
-        CaptureSceneCensus.From(
-            _showReferences ? _references?.LastStats : null,
-            _showTerrain ? _terrain?.LastStats : null);
-
-    /// <summary>Profiler hook: set the day of the lunar cycle that drives the moon phase + orbit position
-    /// (for headless night-sky captures used to calibrate the two-moon model against OpenMW).</summary>
     internal void Profiler_SetGameDay(float day) => _gameDay = day;
 
     /// <summary>
@@ -484,6 +501,7 @@ public sealed partial class WorldView3DControl
         {
             weatherWind = outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
         }
+
         var effectiveWind = _windStrength ?? weatherWind;
         _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
             _data?.Game ?? Core.Games.BethesdaGame.Unknown));
@@ -533,6 +551,7 @@ public sealed partial class WorldView3DControl
         {
             secundaFade = Math.Clamp(1f - (atmo.SunIntensity * 1.4f), 0f, 1f);
         }
+
         // NAM3 is RGBX; moon path/controller state supplies visibility, not the retained padding byte.
         var masserDrawAlpha = atmo.MoonDiscDrawAlpha(masserFade);
         var secundaDrawAlpha = atmo.MoonDiscDrawAlpha(secundaFade);
@@ -599,7 +618,7 @@ public sealed partial class WorldView3DControl
                 cylinder,
                 isPerspectiveProjection: true);
             captureWaterOpaqueSnapshotSrvReady = initialFnvWater001Preflight.Candidate &&
-                                                  TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
+                                                 TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
             _water.SetFnvWater001Snapshot(null, 0, 0);
             // Clear the LIVE window's planar-reflection binding: its bindless index and the scene
             // dimensions the shader divides by are set by the live frame path, so an in-app capture
@@ -610,6 +629,7 @@ public sealed partial class WorldView3DControl
             _water.SetWaterReflection(null, 0, 0);
             _captureWaterReflectionScene = false;
         }
+
         // Sun shadows in captures: the shadow map is rendered at the END of a frame and sampled by
         // the NEXT one (ShadowMapRenderer12's replay-this-frame/sample-next-frame contract), and the
         // profiler typically sets the hour right before capturing — so a single one-shot frame would
@@ -647,6 +667,7 @@ public sealed partial class WorldView3DControl
                             $"The capture ring cannot reserve {ShadowPassRingReservationBytes} bytes " +
                             "for the sun-shadow pass.");
                     }
+
                     captureShadowRingReserved = true;
                     _shadowMap ??= new Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12(
                         _gpu12!, _cbvSrvUavHeap12!);
@@ -719,13 +740,15 @@ public sealed partial class WorldView3DControl
                     // from the coordinates that reported it. Skipped when the scene mirror below
                     // will overwrite the target with mirrored scene content anyway.
                     _captureWaterReflectionBound = !captureSceneMirrorPlanned &&
-                        TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale, target);
+                                                   TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale,
+                                                       target);
                 }
 
                 if (captureTerrainEnabled)
                 {
                     _terrain!.Render(viewProj, cylinder);
                 }
+
                 // Defer blended reference submeshes until after water so water never paints over them
                 // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
                 if (captureReferencesEnabled)
@@ -752,7 +775,7 @@ public sealed partial class WorldView3DControl
 
                         captureMirrorTarget.RestoreWaterOpaqueSnapshot(cmd);
                         var mirrorClear = ResolveSceneAtmosphere(_gameHour, _showLighting)
-                                              .SkyHorizonColor * sceneSkyScale;
+                            .SkyHorizonColor * sceneSkyScale;
                         captureMirrorTarget.Bind(cmd, new Vortice.Mathematics.Color4(
                             mirrorClear.X, mirrorClear.Y, mirrorClear.Z, 1f));
                         var mirroredCameraAbs = new Vector3(
@@ -773,6 +796,7 @@ public sealed partial class WorldView3DControl
                         {
                             _terrain!.RenderMirror(captureMirrorViewProj, cylinder);
                         }
+
                         _references?.RenderMirrorColor(captureMirrorViewProj);
                         _captureWaterReflectionBound =
                             captureMirrorTarget.TryPrepareWaterOpaqueSnapshot(cmd);
@@ -910,117 +934,119 @@ public sealed partial class WorldView3DControl
                 }
                 else
                 {
-                if (captureWaterEnabled)
-                {
-                    // Mirrors the live route exactly (see WorldView3DControl.Frame.cs): the below-water
-                    // split is independent of the WATER001 snapshot decision, because water writes no
-                    // depth and ordering is the only thing keeping submerged decals under the surface.
-                    // A capture that partitioned differently from the live frame would misreport the
-                    // very bug it is used to verify.
-                    if (captureReferencesEnabled && _water!.HasVisibleWaterToPartition(cylinder))
+                    if (captureWaterEnabled)
                     {
-                        _references!.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);
-                        captureWaterTransparencyPartitioned = true;
+                        // Mirrors the live route exactly (see WorldView3DControl.Frame.cs): the below-water
+                        // split is independent of the WATER001 snapshot decision, because water writes no
+                        // depth and ordering is the only thing keeping submerged decals under the surface.
+                        // A capture that partitioned differently from the live frame would misreport the
+                        // very bug it is used to verify.
+                        if (captureReferencesEnabled && _water!.HasVisibleWaterToPartition(cylinder))
+                        {
+                            _references!.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);
+                            captureWaterTransparencyPartitioned = true;
+                        }
+
+                        // Re-arm each pass: Render consumes the preflight and one-shot descriptor. NIF
+                        // planes always remain on WATER003; the contract inspects generated CELL water.
+                        var fnvWater001Preflight = _water!.GetFnvWater001Preflight(
+                            cylinder,
+                            isPerspectiveProjection: true);
+                        if (fnvWater001Preflight.Candidate &&
+                            captureWaterOpaqueSnapshotSrvReady &&
+                            target.TryPrepareWaterOpaqueSnapshot(cmd))
+                        {
+                            captureFnvWater001SnapshotPrepared = true;
+                            _water.SetFnvWater001Snapshot(
+                                _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                                checked((uint)target.Width),
+                                checked((uint)target.Height));
+                        }
+                        else
+                        {
+                            _water.SetFnvWater001Snapshot(null, 0, 0);
+                        }
                     }
 
-                    // Re-arm each pass: Render consumes the preflight and one-shot descriptor. NIF
-                    // planes always remain on WATER003; the contract inspects generated CELL water.
-                    var fnvWater001Preflight = _water!.GetFnvWater001Preflight(
-                        cylinder,
-                        isPerspectiveProjection: true);
-                    if (fnvWater001Preflight.Candidate &&
-                        captureWaterOpaqueSnapshotSrvReady &&
-                        target.TryPrepareWaterOpaqueSnapshot(cmd))
+                    if (captureWaterUsesDepth)
                     {
-                        captureFnvWater001SnapshotPrepared = true;
-                        _water.SetFnvWater001Snapshot(
-                            _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
-                            checked((uint)target.Width),
-                            checked((uint)target.Height));
-                    }
-                    else
-                    {
-                        _water.SetFnvWater001Snapshot(null, 0, 0);
-                    }
-                }
-
-                if (captureWaterUsesDepth)
-                {
-                    // Read-only DSV + depth-as-SRV, mirroring the live path: the water
-                    // depth-sample PSOs keep the hardware GreaterEqual test for antialiased
-                    // silhouettes while the shader samples the same depth for the fade.
-                    target.BindColorReadOnlyDepth(cmd);
-                    cmd.ResourceBarrierTransition(target.DepthResource,
-                        Vortice.Direct3D12.ResourceStates.DepthWrite,
-                        sampledDepthState);
-                    captureDepthSampled = true;
-                }
-
-                // Hand water its protected ring budget now that terrain, references, and the below-water
-                // partition have finished allocating; the shadow reservation stays protected beneath it.
-                if (captureWaterRingReserved)
-                {
-                    _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
-#pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
-                    captureWaterRingReserved = false;
-#pragma warning restore S1854
-                }
-
-                if (captureWaterEnabled)
-                {
-                    if (animationTimeSeconds is { } pinnedWaterClock)
-                    {
-                        _water!.RenderAtTime(
-                            viewProj, cylinder, captureRenderOrigin, pinnedWaterClock);
-                    }
-                    else
-                    {
-                        // Live clock: the SAME overload the live frame calls, so the water's
-                        // scroll/noise phase advances exactly as it does on screen.
-                        _water!.Render(viewProj, cylinder, captureRenderOrigin);
-                    }
-                }
-
-                _water?.SetFnvWater001Snapshot(null, 0, 0);
-                if (captureFnvWater001SnapshotPrepared)
-                {
-                    target.RestoreWaterOpaqueSnapshot(cmd);
-                    captureFnvWater001SnapshotPrepared = false;
-                }
-
-                if (captureReferencesUseDepth)
-                {
-                    if (!captureWaterUsesDepth)
-                    {
-                        target.BindColorOnly(cmd);
+                        // Read-only DSV + depth-as-SRV, mirroring the live path: the water
+                        // depth-sample PSOs keep the hardware GreaterEqual test for antialiased
+                        // silhouettes while the shader samples the same depth for the fade.
+                        target.BindColorReadOnlyDepth(cmd);
                         cmd.ResourceBarrierTransition(target.DepthResource,
                             Vortice.Direct3D12.ResourceStates.DepthWrite,
                             sampledDepthState);
                         captureDepthSampled = true;
                     }
-                    target.BindColorReadOnlyDepth(cmd);
-                }
-                if (captureReferencesEnabled)
-                {
-                    if (captureWaterTransparencyPartitioned)
-                    {
-                        _references!.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);
-                    }
-                    else
-                    {
-                        _references!.RenderBlendedDeferred();
-                    }
-                }
 
-                if (captureWaterUsesDepth || captureReferencesUseDepth)
-                {
-                    target.BindColorOnly(cmd);
-                    cmd.ResourceBarrierTransition(target.DepthResource,
-                        sampledDepthState,
-                        Vortice.Direct3D12.ResourceStates.DepthWrite);
-                    captureDepthSampled = false;
-                    target.Rebind(cmd); // restore depth for shadow replay / subsequent depth users
-                }
+                    // Hand water its protected ring budget now that terrain, references, and the below-water
+                    // partition have finished allocating; the shadow reservation stays protected beneath it.
+                    if (captureWaterRingReserved)
+                    {
+                        _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
+#pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
+                        captureWaterRingReserved = false;
+#pragma warning restore S1854
+                    }
+
+                    if (captureWaterEnabled)
+                    {
+                        if (animationTimeSeconds is { } pinnedWaterClock)
+                        {
+                            _water!.RenderAtTime(
+                                viewProj, cylinder, captureRenderOrigin, pinnedWaterClock);
+                        }
+                        else
+                        {
+                            // Live clock: the SAME overload the live frame calls, so the water's
+                            // scroll/noise phase advances exactly as it does on screen.
+                            _water!.Render(viewProj, cylinder, captureRenderOrigin);
+                        }
+                    }
+
+                    _water?.SetFnvWater001Snapshot(null, 0, 0);
+                    if (captureFnvWater001SnapshotPrepared)
+                    {
+                        target.RestoreWaterOpaqueSnapshot(cmd);
+                        captureFnvWater001SnapshotPrepared = false;
+                    }
+
+                    if (captureReferencesUseDepth)
+                    {
+                        if (!captureWaterUsesDepth)
+                        {
+                            target.BindColorOnly(cmd);
+                            cmd.ResourceBarrierTransition(target.DepthResource,
+                                Vortice.Direct3D12.ResourceStates.DepthWrite,
+                                sampledDepthState);
+                            captureDepthSampled = true;
+                        }
+
+                        target.BindColorReadOnlyDepth(cmd);
+                    }
+
+                    if (captureReferencesEnabled)
+                    {
+                        if (captureWaterTransparencyPartitioned)
+                        {
+                            _references!.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);
+                        }
+                        else
+                        {
+                            _references!.RenderBlendedDeferred();
+                        }
+                    }
+
+                    if (captureWaterUsesDepth || captureReferencesUseDepth)
+                    {
+                        target.BindColorOnly(cmd);
+                        cmd.ResourceBarrierTransition(target.DepthResource,
+                            sampledDepthState,
+                            Vortice.Direct3D12.ResourceStates.DepthWrite);
+                        captureDepthSampled = false;
+                        target.Rebind(cmd); // restore depth for shadow replay / subsequent depth users
+                    }
                 }
 
                 // Frame-end shadow pass, same as the live loop (render origin 0 — this capture path
@@ -1029,7 +1055,8 @@ public sealed partial class WorldView3DControl
                 {
                     _ringBuffer12!.ReleaseTailReservation();
                     captureShadowRingReserved = false;
-                    Log.Info("[Capture] shadow state pass={0}: mapHasContent={1} capturedBatches={2} boundParams=({3},{4:0.00000},{5:0.00000},{6})",
+                    Log.Info(
+                        "[Capture] shadow state pass={0}: mapHasContent={1} capturedBatches={2} boundParams=({3},{4:0.00000},{5:0.00000},{6})",
                         isPrime ? "prime" : "real", _shadowMap!.HasContent, _references!.ShadowDrawCount,
                         _lastBoundShadowParams.X, _lastBoundShadowParams.Y,
                         _lastBoundShadowParams.Z, _lastBoundShadowParams.W);
@@ -1061,11 +1088,13 @@ public sealed partial class WorldView3DControl
                 {
                     _ringBuffer12!.ReleaseTailReservation();
                 }
+
                 _water?.SetFnvWater001Snapshot(null, 0, 0);
                 if (captureFnvWater001SnapshotPrepared)
                 {
                     target.RestoreWaterOpaqueSnapshot(cmd);
                 }
+
                 target.RestoreResolvedDepth(cmd);
                 if (captureDepthSampled)
                 {
@@ -1086,6 +1115,7 @@ public sealed partial class WorldView3DControl
                     {
                         _ringBuffer12!.ReleaseTailReservation();
                     }
+
                     // Any exception after snapshot preparation or the depth transition still submits
                     // a self-consistent partial pass. The next PRIME/real pass can therefore begin
                     // from the target's documented ResolveDest/CopyDest + DepthWrite baseline.
@@ -1097,6 +1127,7 @@ public sealed partial class WorldView3DControl
                     {
                         target.RestoreWaterOpaqueSnapshot(cmd);
                     }
+
                     target.RestoreResolvedDepth(cmd);
                     if (captureDepthSampled)
                     {
@@ -1115,8 +1146,14 @@ public sealed partial class WorldView3DControl
                     // Discarding the list means the GPU retains the previous pass's baseline states.
                     target.DiscardWaterOpaqueSnapshotPreparation();
                     target.DiscardResolvedDepthPreparation();
-                    try { recorder.AbortFrame(); }
-                    catch { /* Preserve the original capture exception. */ }
+                    try
+                    {
+                        recorder.AbortFrame();
+                    }
+                    catch
+                    {
+                        /* Preserve the original capture exception. */
+                    }
                 }
 
                 // Rethrow the ORIGINAL capture exception — a cleanup failure above must not mask it.
@@ -1302,29 +1339,29 @@ public sealed partial class WorldView3DControl
             FnvSls1013Instances: referenceStats?.ReferenceFnvSls1013Instances ?? 0,
             PlacedLightCount: referenceStats?.ReferencePlacedLightCount ?? 0,
             FnvClassicBasicLightingEnabled:
-                referenceStats?.ReferenceFnvClassicBasicLightingEnabled ?? false,
+            referenceStats?.ReferenceFnvClassicBasicLightingEnabled ?? false,
             FnvClassicBasicFallbackDraws:
-                referenceStats?.ReferenceFnvClassicBasicFallbackDraws ?? 0,
+            referenceStats?.ReferenceFnvClassicBasicFallbackDraws ?? 0,
             FnvClassicBasicFallbackInstances:
-                referenceStats?.ReferenceFnvClassicBasicFallbackInstances ?? 0,
+            referenceStats?.ReferenceFnvClassicBasicFallbackInstances ?? 0,
             FnvClassicBasicFallbackReason:
-                referenceStats?.ReferenceFnvClassicBasicFallbackReason,
+            referenceStats?.ReferenceFnvClassicBasicFallbackReason,
             FnvActiveAdtBaseDraws:
-                referenceStats?.ReferenceFnvActiveAdtBaseDraws ?? 0,
+            referenceStats?.ReferenceFnvActiveAdtBaseDraws ?? 0,
             FnvActiveAdtBaseInstances:
-                referenceStats?.ReferenceFnvActiveAdtBaseInstances ?? 0,
+            referenceStats?.ReferenceFnvActiveAdtBaseInstances ?? 0,
             FnvActiveAdtBaseVertexColorDraws:
-                referenceStats?.ReferenceFnvActiveAdtBaseVertexColorDraws ?? 0,
+            referenceStats?.ReferenceFnvActiveAdtBaseVertexColorDraws ?? 0,
             FnvActiveAdtBaseVertexColorInstances:
-                referenceStats?.ReferenceFnvActiveAdtBaseVertexColorInstances ?? 0,
+            referenceStats?.ReferenceFnvActiveAdtBaseVertexColorInstances ?? 0,
             FnvActiveAdtBaseEnabled:
-                referenceStats?.ReferenceFnvActiveAdtBaseEnabled ?? false,
+            referenceStats?.ReferenceFnvActiveAdtBaseEnabled ?? false,
             FnvActiveAdtBaseFallbackDraws:
-                referenceStats?.ReferenceFnvActiveAdtBaseFallbackDraws ?? 0,
+            referenceStats?.ReferenceFnvActiveAdtBaseFallbackDraws ?? 0,
             FnvActiveAdtBaseFallbackInstances:
-                referenceStats?.ReferenceFnvActiveAdtBaseFallbackInstances ?? 0,
+            referenceStats?.ReferenceFnvActiveAdtBaseFallbackInstances ?? 0,
             FnvActiveAdtBaseFallbackReason:
-                referenceStats?.ReferenceFnvActiveAdtBaseFallbackReason);
+            referenceStats?.ReferenceFnvActiveAdtBaseFallbackReason);
     }
 
     private string? ResolveWeatherImageSpaceModifierEditorId(uint modifierFormId, bool modern)
@@ -1393,7 +1430,8 @@ public sealed partial class WorldView3DControl
         var waterRecord = waterSelection.Water;
 
         var (cloudU, cloudV) = WorldViewCaptureTelemetry.CaptureCloudSpeeds(weather, cloudSourceIndices);
-        var outgoingCloudSourceIndices = WorldViewCaptureTelemetry.CaptureCloudSourceIndices(weatherTransition.OutgoingWeather);
+        var outgoingCloudSourceIndices =
+            WorldViewCaptureTelemetry.CaptureCloudSourceIndices(weatherTransition.OutgoingWeather);
         var (outgoingCloudU, outgoingCloudV) =
             WorldViewCaptureTelemetry.CaptureCloudSpeeds(weatherTransition.OutgoingWeather, outgoingCloudSourceIndices);
         var outgoingCloudBand = CaptureWeatherBand(weatherTransition.OutgoingWeather);
@@ -1432,6 +1470,7 @@ public sealed partial class WorldView3DControl
                     : "different-texture-weighted-draw-fallback";
             }
         }
+
         var cookedCloudSourceIndices = _skyGeometry?.GetCookedCloudSourceIndices() ?? [];
         var cookedCloudDrawCandidateCounts = cookedCloudSourceIndices
             .Select(sourceIndex => _skyGeometry?.GetCookedCloudDrawCandidateCount(sourceIndex) ?? 0)
@@ -1491,6 +1530,7 @@ public sealed partial class WorldView3DControl
         {
             sceneKind = behavesLikeExterior ? "interior-behaves-like-exterior" : "interior";
         }
+
         fields["sceneKind"] = sceneKind;
         fields["worldspaceFormId"] = worldspace?.FormId;
         fields["worldspaceFormIdHex"] = worldspace is null ? null : $"0x{worldspace.FormId:X8}";
@@ -1514,6 +1554,7 @@ public sealed partial class WorldView3DControl
                     "ordinary interiors do not resolve a sky-bearing parent WRLD";
             }
         }
+
         fields["worldspaceIdentityUnavailableReason"] = worldspaceIdentityUnavailableReason;
         fields["interiorFormId"] = interior?.FormId;
         fields["interiorFormIdHex"] = interior is null ? null : $"0x{interior.FormId:X8}";
@@ -1545,6 +1586,7 @@ public sealed partial class WorldView3DControl
                 ? "unresolved"
                 : "ordinary-interior-none";
         }
+
         fields["skyClimateSelectionSource"] = skyClimateSelectionSource;
         fields["climateFormId"] = climate?.FormId;
         fields["climateFormIdHex"] = climate is null ? null : $"0x{climate.FormId:X8}";
@@ -1566,11 +1608,13 @@ public sealed partial class WorldView3DControl
         fields["outgoingWeatherEditorId"] = weatherTransition.OutgoingWeather?.EditorId;
         fields["currentWeatherWeight"] = weatherTransition.CurrentWeatherWeight;
         fields["authoredCurrentWeatherFormId"] = weatherTransition.AuthoredCurrentWeatherFormId;
-        fields["authoredCurrentWeatherFormIdHex"] = weatherTransition.AuthoredCurrentWeatherFormId is { } authoredCurrentId
+        fields["authoredCurrentWeatherFormIdHex"] = weatherTransition.AuthoredCurrentWeatherFormId is
+            { } authoredCurrentId
             ? $"0x{authoredCurrentId:X8}"
             : null;
         fields["authoredOutgoingWeatherFormId"] = weatherTransition.AuthoredOutgoingWeatherFormId;
-        fields["authoredOutgoingWeatherFormIdHex"] = weatherTransition.AuthoredOutgoingWeatherFormId is { } authoredOutgoingId
+        fields["authoredOutgoingWeatherFormIdHex"] = weatherTransition.AuthoredOutgoingWeatherFormId is
+            { } authoredOutgoingId
             ? $"0x{authoredOutgoingId:X8}"
             : null;
         fields["authoredCurrentWeatherWeight"] = weatherTransition.AuthoredCurrentWeatherWeight;
@@ -1609,13 +1653,14 @@ public sealed partial class WorldView3DControl
                 ? "fnv-high-noon"
                 : "classic-four-band";
         }
+
         fields["colorBand"] = new Dictionary<string, object?>
         {
             ["from"] = band.From.ToString(),
             ["to"] = band.To.ToString(),
             ["fromWeight"] = 1f - band.ToWeight,
             ["toWeight"] = band.ToWeight,
-            ["schedule"] = colorBandSchedule,
+            ["schedule"] = colorBandSchedule
         };
         fields["weatherColorBands"] = WorldViewCaptureTelemetry.CaptureWeatherColorBands(weather, band);
         fields["weatherColorBandsUnavailableReason"] = weather?.Colors.Count > 0
@@ -1644,6 +1689,7 @@ public sealed partial class WorldView3DControl
                 ? "no active WTHR record resolved"
                 : "the active WTHR has no textured cloud layers";
         }
+
         fields["cloudLayersUnavailableReason"] = cloudLayersUnavailableReason;
         fields["outgoingCloudSpeedU"] = outgoingCloudU;
         fields["outgoingCloudSpeedV"] = outgoingCloudV;
@@ -1658,6 +1704,7 @@ public sealed partial class WorldView3DControl
                 ? "the applied weather transition has no outgoing WTHR"
                 : "the outgoing WTHR has no textured cloud layers";
         }
+
         fields["outgoingCloudLayersUnavailableReason"] = outgoingCloudLayersUnavailableReason;
         fields["cloudTransitionSourceIndices"] = transitionCloudSourceIndices;
         fields["cloudSharedScrollVelocityU"] = transitionCloudU;
@@ -1684,6 +1731,7 @@ public sealed partial class WorldView3DControl
         {
             cloudCookedTopologyUnavailableReason = null;
         }
+
         fields["cloudCookedTopologyUnavailableReason"] = cloudCookedTopologyUnavailableReason;
         string cloudScrollTopology;
         if (cookedCloudSourceIndices.Length == 0)
@@ -1702,6 +1750,7 @@ public sealed partial class WorldView3DControl
         {
             cloudScrollTopology = "one shared offset; cooked topology uses one texture candidate per source";
         }
+
         fields["cloudScrollTopology"] = cloudScrollTopology;
 
         var sunProfile = SkySunProfile.ForGame(game);
@@ -1743,8 +1792,8 @@ public sealed partial class WorldView3DControl
         fields["starsDrawAlpha"] = atmo.StarsDrawAlpha;
         fields["starVisibilitySource"] = game is Core.Games.BethesdaGame.Skyrim or
             Core.Games.BethesdaGame.Fallout4
-                ? "recovered Stars::Update color-window midpoints"
-                : "legacy daylight-derived fallback";
+            ? "recovered Stars::Update color-window midpoints"
+            : "legacy daylight-derived fallback";
         fields["moonGlareColor"] = Vec4(atmo.MoonGlareColor);
         fields["celestialFourthByteSemantics"] = "retained RGBX padding; ignored for draw visibility";
         fields["sunProjection"] = new Dictionary<string, object?>
@@ -1764,7 +1813,7 @@ public sealed partial class WorldView3DControl
             ["sunYExtreme"] = sunYExtreme ?? sunProfile.DefaultSunYExtreme,
             ["sunYExtremeSource"] = sunYExtreme is not null ? "GMST" : "game profile fallback",
             ["alphaTransitionHours"] = sunAlphaTransition ?? sunProfile.DefaultAlphaTransitionHours,
-            ["alphaTransitionSource"] = sunAlphaTransition is not null ? "GMST" : "game profile fallback",
+            ["alphaTransitionSource"] = sunAlphaTransition is not null ? "GMST" : "game profile fallback"
         };
         fields["masserDirection"] = Vec3(masserDirection);
         fields["masserPathFade"] = masserPathFade;
@@ -1805,7 +1854,7 @@ public sealed partial class WorldView3DControl
             ["primarySizeSource"] = primaryGmstFraction is not null ? "gmst" : "game-profile-fallback",
             ["secondarySizeSource"] = _data?.MoonSecondaryHalfSizeFraction is not null
                 ? "gmst"
-                : "game-profile-fallback",
+                : "game-profile-fallback"
         };
         fields["celestialTextures"] = new Dictionary<string, object?>
         {
@@ -1818,7 +1867,7 @@ public sealed partial class WorldView3DControl
             ["moon"] = _resolvedSkyTexturePaths?.Moon,
             ["moonResolved"] = _moonTexIndex != noSkyTexture,
             ["secunda"] = _resolvedSkyTexturePaths?.Secunda,
-            ["secundaResolved"] = _moonSecundaTexIndex != noSkyTexture,
+            ["secundaResolved"] = _moonSecundaTexIndex != noSkyTexture
         };
         string? celestialUnavailableReason;
         if (interior is not null && !behavesLikeExterior)
@@ -1833,6 +1882,7 @@ public sealed partial class WorldView3DControl
         {
             celestialUnavailableReason = null;
         }
+
         fields["celestialUnavailableReason"] = celestialUnavailableReason;
 
         fields["tonemapMode"] = tonemap.Mode.ToString();
@@ -1889,6 +1939,7 @@ public sealed partial class WorldView3DControl
         {
             weatherImageSpaceApplication = "scene-physical-only";
         }
+
         fields["weatherImageSpaceApplication"] = weatherImageSpaceApplication;
         fields["directionalAmbientUploaded"] =
             AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
@@ -1905,7 +1956,8 @@ public sealed partial class WorldView3DControl
                 : null,
             ["editorId"] = _tonemapBaseImageSpaceEditorId,
             ["contextWorldspaceFormId"] = _tonemapBaseImageSpaceSelection.ContextWorldspaceFormId,
-            ["contextWorldspaceFormIdHex"] = _tonemapBaseImageSpaceSelection.ContextWorldspaceFormId is { } contextWorldId
+            ["contextWorldspaceFormIdHex"] = _tonemapBaseImageSpaceSelection.ContextWorldspaceFormId is
+                { } contextWorldId
                 ? $"0x{contextWorldId:X8}"
                 : null,
             ["sourceWorldspaceFormId"] = _tonemapBaseImageSpaceSelection.SourceWorldspaceFormId,
@@ -1920,7 +1972,7 @@ public sealed partial class WorldView3DControl
             ["cellEditorId"] = _tonemapBaseImageSpaceSelection.CellContext.Cell?.EditorId,
             ["cellGridX"] = _tonemapBaseImageSpaceSelection.CellContext.GridX,
             ["cellGridY"] = _tonemapBaseImageSpaceSelection.CellContext.GridY,
-            ["unavailableReason"] = _tonemapBaseImageSpaceUnavailableReason,
+            ["unavailableReason"] = _tonemapBaseImageSpaceUnavailableReason
         };
         fields["weatherImageSpace"] = _weatherImageSpaceTelemetry;
         fields["weatherImageSpaceContributions"] = _weatherImageSpaceEvaluation?.Contributions
@@ -1961,7 +2013,7 @@ public sealed partial class WorldView3DControl
                     ["recordEditorId"] = editorId,
                     ["weight"] = contribution.Weight,
                     ["timelineTime"] = contribution.TimelineTime,
-                    ["recordResolved"] = recordResolved,
+                    ["recordResolved"] = recordResolved
                 };
             }).ToArray() ?? [];
         fields["weatherImageSpaceChannels"] = _weatherImageSpaceEvaluation?.Channels
@@ -1970,7 +2022,7 @@ public sealed partial class WorldView3DControl
                 static pair => (object?)new Dictionary<string, object?>
                 {
                     ["multiply"] = pair.Value.Multiply,
-                    ["add"] = pair.Value.Add,
+                    ["add"] = pair.Value.Add
                 },
                 StringComparer.Ordinal) ?? new Dictionary<string, object?>();
         string? weatherImageSpaceUnavailableReason;
@@ -2012,8 +2064,10 @@ public sealed partial class WorldView3DControl
         }
         else
         {
-            weatherImageSpaceUnavailableReason = "the active game family does not route WTHR bands through the implemented evaluator";
+            weatherImageSpaceUnavailableReason =
+                "the active game family does not route WTHR bands through the implemented evaluator";
         }
+
         fields["weatherImageSpaceUnavailableReason"] = weatherImageSpaceUnavailableReason;
 
         fields["fnvSls1009Draws"] = referenceStats?.ReferenceFnvSls1009Draws ?? 0;
@@ -2078,7 +2132,7 @@ public sealed partial class WorldView3DControl
                 ["velocityType"] = system.VelocityType,
                 ["orderedModifiers"] = system.OrderedModifiers,
                 ["liveFrame"] = system.LiveFrame,
-                ["fallbackReason"] = system.FallbackReason,
+                ["fallbackReason"] = system.FallbackReason
             }).ToArray() ?? [];
         string? particleTelemetryUnavailableReason;
         if (referenceStats is null)
@@ -2093,6 +2147,7 @@ public sealed partial class WorldView3DControl
         {
             particleTelemetryUnavailableReason = null;
         }
+
         fields["particleTelemetryUnavailableReason"] = particleTelemetryUnavailableReason;
 
         fields["waterProfile"] = WaterProfile.ForGame(game).ShaderVariant.ToString();
@@ -2136,6 +2191,7 @@ public sealed partial class WorldView3DControl
                 ? "the active CELL has no retained, resolvable XCWT WATR"
                 : "neither the camera CELL XCWT nor active WRLD NAM2 resolves in the retained water index";
         }
+
         fields["waterRecordUnavailableReason"] = waterRecordUnavailableReason;
         fields["waterTechnique"] = waterStats?.WaterTechnique;
         string? waterTechniqueUnavailableReason;
@@ -2153,6 +2209,7 @@ public sealed partial class WorldView3DControl
         {
             waterTechniqueUnavailableReason = null;
         }
+
         fields["waterTechniqueUnavailableReason"] = waterTechniqueUnavailableReason;
         fields["waterMaps"] = waterStats is null
             ? Array.Empty<Dictionary<string, object?>>()
@@ -2164,7 +2221,7 @@ public sealed partial class WorldView3DControl
                         : "unclassified",
                     ["path"] = waterStats.WaterMapPaths[i],
                     ["resolved"] = i < waterStats.WaterMapResolved.Count &&
-                                   waterStats.WaterMapResolved[i],
+                                   waterStats.WaterMapResolved[i]
                 }).ToArray();
         fields["waterAnimationFrame"] = waterStats?.WaterAnimationFrame;
         fields["waterAnimationFps"] = waterStats?.WaterAnimationFps;
@@ -2194,6 +2251,7 @@ public sealed partial class WorldView3DControl
         {
             waterAnimationUnavailableReason = "no resolved legacy water frame set was supplied to the renderer";
         }
+
         fields["waterAnimationUnavailableReason"] = waterAnimationUnavailableReason;
 
         fields["speedTreeWind"] = referenceStats is null
@@ -2205,7 +2263,7 @@ public sealed partial class WorldView3DControl
                 ["rockPhase"] = referenceStats.ReferenceSpeedTreeRockPhase,
                 ["rustleAmount"] = referenceStats.ReferenceSpeedTreeRustleAmount,
                 ["rustlePhase"] = referenceStats.ReferenceSpeedTreeRustlePhase,
-                ["animationSeconds"] = referenceStats.ReferenceSpeedTreeAnimationSeconds,
+                ["animationSeconds"] = referenceStats.ReferenceSpeedTreeAnimationSeconds
             };
         fields["tallGrassWindSupported"] =
             referenceStats?.ReferenceTallGrassWindSupported;
@@ -2223,7 +2281,7 @@ public sealed partial class WorldView3DControl
                 ["direction"] = new Dictionary<string, object?>
                 {
                     ["x"] = referenceStats.ReferenceTallGrassDirectionX,
-                    ["y"] = referenceStats.ReferenceTallGrassDirectionY,
+                    ["y"] = referenceStats.ReferenceTallGrassDirectionY
                 },
                 ["animationSeconds"] = referenceStats.ReferenceTallGrassAnimationSeconds,
                 ["instancedDraws"] = referenceStats.ReferenceTallGrassInstancedDraws,
@@ -2245,9 +2303,10 @@ public sealed partial class WorldView3DControl
                     : null,
                 ["temporalPhaseRadiansMax"] = referenceStats.ReferenceTallGrassWaveMultiplierDistinctCount > 0
                     ? referenceStats.ReferenceTallGrassTemporalPhaseRadiansMaximum
-                    : null,
+                    : null
             };
         }
+
         // Below-water transparency split: how many blended submeshes were reordered ahead of the
         // water surface, out of how many candidates, at what plane. A zero here with water on screen
         // is the signature of the split being gated off — how it went unnoticed outdoors before.
@@ -2268,9 +2327,10 @@ public sealed partial class WorldView3DControl
                 // Complement partition: draws issued after the final water drain because no queued
                 // surface can occlude them. Zero with visible water and smoke on screen means the
                 // above-all-water split did not run — the same signature that hid the below split.
-                ["aboveAllWaterDraws"] = _references.LastAboveWaterBlendedDraws,
+                ["aboveAllWaterDraws"] = _references.LastAboveWaterBlendedDraws
             };
         }
+
         fields["speedTreeRuntimeLodEnabled"] =
             referenceStats?.ReferenceSpeedTreeRuntimeLodEnabled;
         if (referenceStats is null)
@@ -2289,9 +2349,10 @@ public sealed partial class WorldView3DControl
                     : null,
                 ["maximumLevel"] = referenceStats.ReferenceSpeedTreeMaximumLod >= 0
                     ? (int?)referenceStats.ReferenceSpeedTreeMaximumLod
-                    : null,
+                    : null
             };
         }
+
         string? speedTreeTelemetryUnavailableReason;
         if (referenceStats is null)
         {
@@ -2307,6 +2368,7 @@ public sealed partial class WorldView3DControl
         {
             speedTreeTelemetryUnavailableReason = null;
         }
+
         fields["speedTreeTelemetryUnavailableReason"] = speedTreeTelemetryUnavailableReason;
 
         // Stream cost + loss, and the streaming-residency fields an A/B needs to REJECT a
@@ -2322,7 +2384,7 @@ public sealed partial class WorldView3DControl
                 ["runs"] = waterStats.WaterStreamRuns,
                 ["noisePrepasses"] = waterStats.WaterStreamNoisePrepasses,
                 ["droppedEntries"] = waterStats.WaterStreamDroppedEntries,
-                ["noiseSlotOverflows"] = waterStats.WaterNoiseSlotOverflows,
+                ["noiseSlotOverflows"] = waterStats.WaterNoiseSlotOverflows
             };
         fields["residency"] = new Dictionary<string, object?>
         {
@@ -2333,7 +2395,7 @@ public sealed partial class WorldView3DControl
             // where this differs is measuring streaming luck, not rendering.
             ["terrainDrawsTruncated"] = terrainStats?.TerrainDrawsTruncated,
             ["texturePendingResolves"] = referenceStats?.TexturePendingResolves,
-            ["referenceMeshMissing"] = referenceStats?.ReferenceMeshMissing,
+            ["referenceMeshMissing"] = referenceStats?.ReferenceMeshMissing
         };
 
         // Fog lane for the horizon-seam A/B: skyHorizon (the dome's row-0 color, logged by the
@@ -2352,7 +2414,7 @@ public sealed partial class WorldView3DControl
             ["near"] = atmo.FogNear,
             ["far"] = atmo.FogFar,
             ["power"] = atmo.FogPower,
-            ["amountAtFar"] = fogAtFar,
+            ["amountAtFar"] = fogAtFar
         };
 
         RendererProfilerTrace.Event("capture-state", fields);
@@ -2382,7 +2444,7 @@ public sealed partial class WorldView3DControl
             // NaN = nothing classified as submerged this frame; "none" reads better than "NaN" and
             // keeps zero meaning "not splitting" rather than "split ran and found nothing".
             referenceStats is not null && _references is not null &&
-                float.IsFinite(_references.LastBelowWaterPartitionPlane)
+            float.IsFinite(_references.LastBelowWaterPartitionPlane)
                 ? _references.LastBelowWaterPartitionPlane.ToString("0.#", CultureInfo.InvariantCulture)
                 : "none",
             waterStats?.WaterStreamEntries, waterStats?.WaterStreamRuns,

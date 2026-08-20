@@ -279,7 +279,7 @@ public sealed class PersistentCellReparentingTests
 
     private static ImmutableDictionary<uint, CellPlan> Apply(params CellPlan[] plans)
     {
-        return Apply(plans, null, null);
+        return Apply(plans, null);
     }
 
     private static ImmutableDictionary<uint, CellPlan> Apply(

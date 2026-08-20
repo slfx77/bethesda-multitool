@@ -82,7 +82,8 @@
                   AutomationProperties.Name="Activators" />
         <CheckBox x:Name="MarkersCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Editor markers"
                   AutomationProperties.Name="Editor markers" />
-        <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Initially-disabled objects"
+        <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" IsChecked="False"
+                  Content="Initially-disabled objects"
                   AutomationProperties.Name="Initially-disabled objects" />
         <CheckBox x:Name="NavMeshCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Nav mesh"
                   AutomationProperties.Name="Nav mesh" />

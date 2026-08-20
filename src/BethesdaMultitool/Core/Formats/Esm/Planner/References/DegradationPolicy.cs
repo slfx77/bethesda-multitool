@@ -7,9 +7,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 /// </summary>
 public sealed class DegradationPolicy
 {
+    private readonly DanglingAction _globalDefault;
     private readonly Dictionary<(string RecordType, string FieldPath), DanglingAction> _rules = [];
     private readonly Dictionary<string, DanglingAction> _typeDefaults = new(StringComparer.Ordinal);
-    private readonly DanglingAction _globalDefault;
 
     public DegradationPolicy(DanglingAction? globalDefault = null)
     {
@@ -78,12 +78,14 @@ public sealed record DanglingAction
     public static readonly DanglingAction NullRef =
         new() { Kind = DanglingActionKind.NullRef };
 
-    /// <summary>Reshape the containing subrecord to a safer variant.</summary>
-    public static DanglingAction DowngradeContainer(ContainerDowngrade downgrade) =>
-        new() { Kind = DanglingActionKind.DowngradeContainer, Downgrade = downgrade };
-
     public required DanglingActionKind Kind { get; init; }
     public ContainerDowngrade? Downgrade { get; init; }
+
+    /// <summary>Reshape the containing subrecord to a safer variant.</summary>
+    public static DanglingAction DowngradeContainer(ContainerDowngrade downgrade)
+    {
+        return new DanglingAction { Kind = DanglingActionKind.DowngradeContainer, Downgrade = downgrade };
+    }
 }
 
 /// <summary>Discriminator for <see cref="DanglingAction" />.</summary>
@@ -91,5 +93,5 @@ public enum DanglingActionKind
 {
     DropSubrecord,
     NullRef,
-    DowngradeContainer,
+    DowngradeContainer
 }

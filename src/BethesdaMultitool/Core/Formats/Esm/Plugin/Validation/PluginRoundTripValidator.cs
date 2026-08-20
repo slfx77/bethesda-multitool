@@ -55,4 +55,3 @@ public static class PluginRoundTripValidator
         return sb.ToString().TrimEnd();
     }
 }
-

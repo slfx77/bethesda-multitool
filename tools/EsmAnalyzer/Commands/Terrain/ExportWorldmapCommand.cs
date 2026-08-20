@@ -91,7 +91,8 @@ internal static class ExportWorldmapCommand
             .Start("Scanning for CELL and LAND records in target worldspace...", ctx =>
             {
                 _ = ctx.Status("Finding WRLD record and scanning child GRUPs...");
-                var (worldCells, worldLands) = WrldGrupScanner.ScanWorldspaceCellsAndLands(data, bigEndian, targetWorldspaceFormId);
+                var (worldCells, worldLands) =
+                    WrldGrupScanner.ScanWorldspaceCellsAndLands(data, bigEndian, targetWorldspaceFormId);
                 cellRecords = worldCells;
                 landRecords = worldLands;
             });
@@ -122,8 +123,15 @@ internal static class ExportWorldmapCommand
                                 ? (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4)
                                 : (int)BinaryUtils.ReadUInt32LE(xclc.Data.AsSpan(), 4);
 
-                            if (gridX > 0x7FFFFFFF) { gridX = (int)(gridX - 0x100000000); }
-                            if (gridY > 0x7FFFFFFF) { gridY = (int)(gridY - 0x100000000); }
+                            if (gridX > 0x7FFFFFFF)
+                            {
+                                gridX = (int)(gridX - 0x100000000);
+                            }
+
+                            if (gridY > 0x7FFFFFFF)
+                            {
+                                gridY = (int)(gridY - 0x100000000);
+                            }
 
                             cellMap[(gridX, gridY)] = new CellInfo
                             {
@@ -192,7 +200,11 @@ internal static class ExportWorldmapCommand
                     {
                         var landAfterCell = sortedLands
                             .FirstOrDefault(l => l.Offset > cell.CellRecord.Offset);
-                        if (landAfterCell == null) { noLandAfter++; break; }
+                        if (landAfterCell == null)
+                        {
+                            noLandAfter++;
+                            break;
+                        }
 
                         var nextCellOffset = allCellOffsets.FirstOrDefault(o => o > cell.CellRecord.Offset);
                         if (nextCellOffset != default && landAfterCell.Offset > nextCellOffset)
@@ -207,7 +219,7 @@ internal static class ExportWorldmapCommand
                             var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
 
                             var vhgt = subrecords.FirstOrDefault(s => s.Signature == "VHGT");
-                            if (vhgt != null && vhgt.Data.Length >= 4 + (CellGridSize * CellGridSize))
+                            if (vhgt != null && vhgt.Data.Length >= 4 + CellGridSize * CellGridSize)
                             {
                                 var (heights, _) = ExportLandCommand.ParseHeightmap(vhgt.Data, bigEndian);
                                 if (!heightmaps.ContainsKey((cell.GridX, cell.GridY)))
@@ -242,6 +254,7 @@ internal static class ExportWorldmapCommand
                                 AnsiConsole.MarkupLine(
                                     $"[red]Error parsing cell ({cell.GridX},{cell.GridY}): {ex.Message}[/]");
                             }
+
                             _ = sortedLands.Remove(landAfterCell);
                             break;
                         }
@@ -287,7 +300,8 @@ internal static class ExportWorldmapCommand
 
         if (analyzeOnly)
         {
-            WorldmapHeightmapGenerator.AnalyzeHeightDistribution(heightmaps, minX, maxX, minY, maxY, worldspaceName, outputDir);
+            WorldmapHeightmapGenerator.AnalyzeHeightDistribution(heightmaps, minX, maxX, minY, maxY, worldspaceName,
+                outputDir);
             return 0;
         }
 
@@ -319,7 +333,10 @@ internal static class ExportWorldmapCommand
                 }
 
                 var range = globalMax - globalMin;
-                if (range < 0.001f) { range = 1f; }
+                if (range < 0.001f)
+                {
+                    range = 1f;
+                }
 
                 savedGlobalMin = globalMin;
                 savedGlobalMax = globalMax;

@@ -1,7 +1,5 @@
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Minidump;
@@ -77,4 +75,3 @@ internal static class DmpCompareFileProcessor
         return (source.FilePath, source.Records, source.Resolver, source.MinidumpInfo);
     }
 }
-

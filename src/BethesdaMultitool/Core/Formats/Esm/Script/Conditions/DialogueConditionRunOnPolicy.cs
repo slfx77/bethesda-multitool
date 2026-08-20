@@ -16,8 +16,10 @@ internal static class DialogueConditionRunOnPolicy
         return ShouldDisplay(condition.Type, condition.FunctionIndex, condition.RunOn, game);
     }
 
-    public static bool ShouldDisplay(byte type, ushort functionIndex, uint runOn, BethesdaGame game) =>
-        runOn != 0 || IsLegacyRunOnTarget(type, game) || IsFnvAnimationBodySelector(functionIndex, game);
+    public static bool ShouldDisplay(byte type, ushort functionIndex, uint runOn, BethesdaGame game)
+    {
+        return runOn != 0 || IsLegacyRunOnTarget(type, game) || IsFnvAnimationBodySelector(functionIndex, game);
+    }
 
     public static string Format(DialogueCondition condition, BethesdaGame game)
     {
@@ -110,19 +112,27 @@ internal static class DialogueConditionRunOnPolicy
             : $"Unknown ({runOn})";
     }
 
-    private static bool IsLegacyRunOnTarget(byte type, BethesdaGame game) =>
-        (type & 0x02) != 0 && game is BethesdaGame.Oblivion or BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
-
-    private static bool IsFnvAnimationBodySelector(ushort functionIndex, BethesdaGame game) =>
-        game == BethesdaGame.FalloutNewVegas && functionIndex is 0x006A or 0x011D;
-
-    private static string FormatCommon(uint runOn) => runOn switch
+    private static bool IsLegacyRunOnTarget(byte type, BethesdaGame game)
     {
-        0 => "Subject",
-        1 => "Target",
-        2 => "Reference",
-        3 => "Combat Target",
-        4 => "Linked Reference",
-        _ => $"Unknown ({runOn})"
-    };
+        return (type & 0x02) != 0 &&
+               game is BethesdaGame.Oblivion or BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
+    }
+
+    private static bool IsFnvAnimationBodySelector(ushort functionIndex, BethesdaGame game)
+    {
+        return game == BethesdaGame.FalloutNewVegas && functionIndex is 0x006A or 0x011D;
+    }
+
+    private static string FormatCommon(uint runOn)
+    {
+        return runOn switch
+        {
+            0 => "Subject",
+            1 => "Target",
+            2 => "Reference",
+            3 => "Combat Target",
+            4 => "Linked Reference",
+            _ => $"Unknown ({runOn})"
+        };
+    }
 }

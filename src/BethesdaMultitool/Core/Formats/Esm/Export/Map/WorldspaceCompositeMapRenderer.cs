@@ -508,7 +508,8 @@ internal static class WorldspaceCompositeMapRenderer
 
         if (drawGrid)
         {
-            HeightmapExportPixelRenderer.DrawGridOverlay(compositePixels, imgWidth, imgHeight, useColorGradient, HeightmapExportConstants.LandCellStride);
+            HeightmapExportPixelRenderer.DrawGridOverlay(compositePixels, imgWidth, imgHeight, useColorGradient,
+                HeightmapExportConstants.LandCellStride);
         }
 
         await Task.Run(() =>
@@ -583,7 +584,8 @@ internal static class WorldspaceCompositeMapRenderer
 
         if (drawGrid)
         {
-            HeightmapExportPixelRenderer.DrawGridOverlay(pixels, imgWidth, imgHeight, true, HeightmapExportConstants.LandCellStride);
+            HeightmapExportPixelRenderer.DrawGridOverlay(pixels, imgWidth, imgHeight, true,
+                HeightmapExportConstants.LandCellStride);
         }
 
         await Task.Run(() =>
@@ -617,7 +619,8 @@ internal static class WorldspaceCompositeMapRenderer
         {
             var (cellX, cellY) = kvp.Key;
             var pixels = kvp.Value;
-            if (pixels.Length != HeightmapExportConstants.LandVertexCount * HeightmapExportConstants.LandVertexCount * 3)
+            if (pixels.Length !=
+                HeightmapExportConstants.LandVertexCount * HeightmapExportConstants.LandVertexCount * 3)
             {
                 continue;
             }
@@ -640,7 +643,8 @@ internal static class WorldspaceCompositeMapRenderer
 
         if (drawGrid)
         {
-            HeightmapExportPixelRenderer.DrawGridOverlay(compositePixels, imgWidth, imgHeight, true, HeightmapExportConstants.LandCellStride);
+            HeightmapExportPixelRenderer.DrawGridOverlay(compositePixels, imgWidth, imgHeight, true,
+                HeightmapExportConstants.LandCellStride);
         }
 
         await Task.Run(() =>
@@ -650,4 +654,3 @@ internal static class WorldspaceCompositeMapRenderer
         });
     }
 }
-

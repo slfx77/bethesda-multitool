@@ -49,20 +49,24 @@ public sealed class PwatEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     PWAT DNAM payload (8 bytes, little-endian): <b>uint32 Flags first, then the WATR
-    ///     FormID</b> — per xEdit <c>wbRecord(PWAT)</c>
+    ///     PWAT DNAM payload (8 bytes, little-endian):
+    ///     <b>
+    ///         uint32 Flags first, then the WATR
+    ///         FormID
+    ///     </b>
+    ///     — per xEdit <c>wbRecord(PWAT)</c>
     ///     (<c>wbStruct(DNAM, [wbInteger('Flags'), wbFormIDCk('Water', [WATR])])</c>) and
     ///     confirmed against all 29 retail FalloutNV.esm PWATs, where bytes 4..7 resolve to a
     ///     WATR in 29/29 and bytes 0..3 carry the reflect/refract flag word.
     ///     <para>
-    ///     This is the SAME order as the runtime <c>BGSPlaceableWaterData</c> struct
-    ///     (flags at +0, <c>TESWaterForm*</c> at +4), not the reverse of it. An earlier
-    ///     comment here claimed the opposite and the two halves were written transposed; the
-    ///     read side was inverted to match, so ESM→ESM round-trips stayed byte-neutral and hid
-    ///     it. Only runtime-sourced records reached disk swapped — the engine then read our
-    ///     WATR FormID as the flag word (clearing bit 28 "Depth", which drives the
-    ///     depth-graded alpha ramp) and the flag word as a FormID with mod index 0x10, which
-    ///     resolves to nothing.
+    ///         This is the SAME order as the runtime <c>BGSPlaceableWaterData</c> struct
+    ///         (flags at +0, <c>TESWaterForm*</c> at +4), not the reverse of it. An earlier
+    ///         comment here claimed the opposite and the two halves were written transposed; the
+    ///         read side was inverted to match, so ESM→ESM round-trips stayed byte-neutral and hid
+    ///         it. Only runtime-sourced records reached disk swapped — the engine then read our
+    ///         WATR FormID as the flag word (clearing bit 28 "Depth", which drives the
+    ///         depth-graded alpha ramp) and the flag word as a FormID with mod index 0x10, which
+    ///         resolves to nothing.
     ///     </para>
     /// </summary>
     internal static byte[] EncodePwatDnam(uint waterFormId, uint flags)

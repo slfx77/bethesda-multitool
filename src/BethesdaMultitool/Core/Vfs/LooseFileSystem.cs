@@ -18,7 +18,10 @@ public sealed class LooseFileSystem : IGameFileSystem
 
     public string Label { get; }
 
-    public bool Exists(string path) => Resolve(path) is { } full && File.Exists(full);
+    public bool Exists(string path)
+    {
+        return Resolve(path) is { } full && File.Exists(full);
+    }
 
     public GameFileEntry? TryStat(string path)
     {

@@ -23,7 +23,7 @@ public sealed class PlannedGmstEncoder : IPlannedRecordEncoder<GameSettingRecord
             RecordDisposition.New => GmstEncoder.EncodeNew(model),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedGmstEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedGmstEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

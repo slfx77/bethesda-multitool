@@ -1,5 +1,4 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;

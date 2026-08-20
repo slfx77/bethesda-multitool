@@ -86,7 +86,7 @@ internal sealed class EsmLoadProfile
     }
 }
 
-/// <summary>Disposable scope that records its lifetime as a stage on an <see cref="EsmLoadProfile"/>.</summary>
+/// <summary>Disposable scope that records its lifetime as a stage on an <see cref="EsmLoadProfile" />.</summary>
 internal readonly struct EsmLoadStageTimer(EsmLoadProfile profile, string stage) : IDisposable
 {
     private readonly Stopwatch _sw = Stopwatch.StartNew();

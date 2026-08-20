@@ -8,8 +8,6 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core.Formats.Esm.Export.ModelExport;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
@@ -385,4 +383,3 @@ internal static class AnalysisExtractionHelper
         File.WriteAllText(outputPath, sb.ToString());
     }
 }
-

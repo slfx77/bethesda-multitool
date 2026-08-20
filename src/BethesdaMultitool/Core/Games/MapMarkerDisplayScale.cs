@@ -67,7 +67,7 @@ internal readonly record struct MapMarkerMetrics(
             : 0f;
         var progress = Math.Clamp(
             zoom / profile.MarkerFullSizeZoom, 0f, 1f);
-        return minimum + ((1f - minimum) * progress);
+        return minimum + (1f - minimum) * progress;
     }
 }
 
@@ -77,6 +77,8 @@ internal readonly record struct MapMarkerMetrics(
 /// </summary>
 internal static class MapMarkerDisplayScale
 {
-    public static float Resolve(GameProfile profile, float zoom) =>
-        MapMarkerMetrics.Resolve(profile, zoom).ScreenScale;
+    public static float Resolve(GameProfile profile, float zoom)
+    {
+        return MapMarkerMetrics.Resolve(profile, zoom).ScreenScale;
+    }
 }

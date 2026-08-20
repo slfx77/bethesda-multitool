@@ -320,7 +320,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         ArgumentNullException.ThrowIfNull(script);
 
         var decision = CapturedScriptEmissionContract.EvaluateInline(
-            isDmpDerived: true,
+            true,
             script.SourceTextOrigin,
             script.CompiledData,
             script.SourceText,
@@ -357,7 +357,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             SourceTextOrigin = decision.SourceText is null
                 ? ScriptSourceTextOrigin.None
                 : script.SourceTextOrigin,
-            IsIncompleteExecutableBundle = !decision.ExecutableBundleSafe,
+            IsIncompleteExecutableBundle = !decision.ExecutableBundleSafe
         });
     }
 

@@ -238,8 +238,10 @@ public sealed class ModernDialogueExtractorEndiannessTests
         Assert.Equal(Parameter3, condition.Parameter3);
     }
 
-    private static RecordParserContext CreateContext(BethesdaGame game) =>
-        new(new EsmRecordScanResult { Game = game });
+    private static RecordParserContext CreateContext(BethesdaGame game)
+    {
+        return new RecordParserContext(new EsmRecordScanResult { Game = game });
+    }
 
     private static byte[] BuildCtda(bool bigEndian)
     {

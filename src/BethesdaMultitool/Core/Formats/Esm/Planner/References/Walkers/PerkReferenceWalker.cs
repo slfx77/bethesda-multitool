@@ -59,7 +59,7 @@ public sealed class PerkReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = pathPrefix + FieldPath.IndexedMember("CTDA", i, "Parameter1"),
-                    FormId = p1,
+                    FormId = p1
                 };
             }
 
@@ -68,7 +68,7 @@ public sealed class PerkReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = pathPrefix + FieldPath.IndexedMember("CTDA", i, "Parameter2"),
-                    FormId = p2,
+                    FormId = p2
                 };
             }
         }

@@ -53,6 +53,7 @@ public sealed class FormIdHeatmapNormalizationTests
         {
             ids[i] = (uint)(0x1000 + i);
         }
+
         ids[15] = 0x00FF0000;
 
         var ranking = Ranked(ids);
@@ -112,8 +113,8 @@ public sealed class FormIdHeatmapNormalizationTests
         // Cannot arise from the renderer (one predicate gates scan and tint) but must stay total.
         var ranking = Ranked(0x100, 0x200, 0x300, 0x400, 0x500);
         Assert.Equal(0.5f, ranking.Normalize(0x280), 6); // between ranks 2 and 3 → index 2 of 4
-        Assert.Equal(0f, ranking.Normalize(0x1));        // below everything
-        Assert.Equal(1f, ranking.Normalize(0xFFFF));     // above everything
+        Assert.Equal(0f, ranking.Normalize(0x1)); // below everything
+        Assert.Equal(1f, ranking.Normalize(0xFFFF)); // above everything
     }
 
     [Fact]
@@ -131,6 +132,7 @@ public sealed class FormIdHeatmapNormalizationTests
         {
             ranking.Add((uint)(0x5000 + i)); // past the initial 256 buffer — growth must not corrupt
         }
+
         ranking.Seal();
 
         Assert.Equal(400, ranking.DistinctCount);

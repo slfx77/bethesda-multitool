@@ -22,12 +22,12 @@ internal readonly record struct Frustum(
     /// </summary>
     public static Frustum FromViewProjection(Matrix4x4 m)
     {
-        var left   = NormalizePlane(new Plane(m.M14 + m.M11, m.M24 + m.M21, m.M34 + m.M31, m.M44 + m.M41));
-        var right  = NormalizePlane(new Plane(m.M14 - m.M11, m.M24 - m.M21, m.M34 - m.M31, m.M44 - m.M41));
+        var left = NormalizePlane(new Plane(m.M14 + m.M11, m.M24 + m.M21, m.M34 + m.M31, m.M44 + m.M41));
+        var right = NormalizePlane(new Plane(m.M14 - m.M11, m.M24 - m.M21, m.M34 - m.M31, m.M44 - m.M41));
         var bottom = NormalizePlane(new Plane(m.M14 + m.M12, m.M24 + m.M22, m.M34 + m.M32, m.M44 + m.M42));
-        var top    = NormalizePlane(new Plane(m.M14 - m.M12, m.M24 - m.M22, m.M34 - m.M32, m.M44 - m.M42));
-        var near   = NormalizePlane(new Plane(m.M13, m.M23, m.M33, m.M43));
-        var far    = NormalizePlane(new Plane(m.M14 - m.M13, m.M24 - m.M23, m.M34 - m.M33, m.M44 - m.M43));
+        var top = NormalizePlane(new Plane(m.M14 - m.M12, m.M24 - m.M22, m.M34 - m.M32, m.M44 - m.M42));
+        var near = NormalizePlane(new Plane(m.M13, m.M23, m.M33, m.M43));
+        var far = NormalizePlane(new Plane(m.M14 - m.M13, m.M24 - m.M23, m.M34 - m.M33, m.M44 - m.M43));
         return new Frustum(left, right, bottom, top, near, far);
     }
 
@@ -58,8 +58,10 @@ internal readonly record struct Frustum(
     ///     </para>
     /// </summary>
     /// <param name="radians">Angular slack to open each side plane by.</param>
-    /// <param name="maxReach">Furthest distance the cull can admit; the near/far planes are pushed out
-    /// by <c>maxReach·sin θ</c> so they cannot clip content the rotation sweeps into range.</param>
+    /// <param name="maxReach">
+    ///     Furthest distance the cull can admit; the near/far planes are pushed out
+    ///     by <c>maxReach·sin θ</c> so they cannot clip content the rotation sweeps into range.
+    /// </param>
     /// <param name="widened">True when the widening was applied.</param>
     public Frustum WidenAngular(float radians, float maxReach, out bool widened)
     {
@@ -100,14 +102,14 @@ internal readonly record struct Frustum(
         {
             // Component of the view direction perpendicular to this plane's normal, i.e. the boundary
             // ray. Degenerate only if the normal is parallel to forward, which no side plane is.
-            var perpendicular = forward - (Vector3.Dot(forward, p.Normal) * p.Normal);
+            var perpendicular = forward - Vector3.Dot(forward, p.Normal) * p.Normal;
             var length = perpendicular.Length();
             if (length < 1e-5f)
             {
                 return p;
             }
 
-            var rotated = Vector3.Normalize((cos * p.Normal) + (sin * (perpendicular / length)));
+            var rotated = Vector3.Normalize(cos * p.Normal + sin * (perpendicular / length));
             return new Plane(rotated, -Vector3.Dot(rotated, apex));
         }
 
@@ -141,7 +143,7 @@ internal readonly record struct Frustum(
 
         var ca = Vector3.Cross(c.Normal, a.Normal);
         var ab = Vector3.Cross(a.Normal, b.Normal);
-        apex = ((-a.D * bc) + (-b.D * ca) + (-c.D * ab)) / determinant;
+        apex = (-a.D * bc + -b.D * ca + -c.D * ab) / determinant;
         return float.IsFinite(apex.X) && float.IsFinite(apex.Y) && float.IsFinite(apex.Z);
     }
 
@@ -154,22 +156,22 @@ internal readonly record struct Frustum(
     public bool IntersectsAabb(Vector3 min, Vector3 max)
     {
         return TestPlane(Left, min, max)
-            && TestPlane(Right, min, max)
-            && TestPlane(Bottom, min, max)
-            && TestPlane(Top, min, max)
-            && TestPlane(Near, min, max)
-            && TestPlane(Far, min, max);
+               && TestPlane(Right, min, max)
+               && TestPlane(Bottom, min, max)
+               && TestPlane(Top, min, max)
+               && TestPlane(Near, min, max)
+               && TestPlane(Far, min, max);
     }
 
     /// <summary>Tests whether a sphere intersects (or lies inside) the frustum.</summary>
     public bool IntersectsSphere(Vector3 center, float radius)
     {
         return TestSpherePlane(Left, center, radius)
-            && TestSpherePlane(Right, center, radius)
-            && TestSpherePlane(Bottom, center, radius)
-            && TestSpherePlane(Top, center, radius)
-            && TestSpherePlane(Near, center, radius)
-            && TestSpherePlane(Far, center, radius);
+               && TestSpherePlane(Right, center, radius)
+               && TestSpherePlane(Bottom, center, radius)
+               && TestSpherePlane(Top, center, radius)
+               && TestSpherePlane(Near, center, radius)
+               && TestSpherePlane(Far, center, radius);
     }
 
     private static bool TestPlane(Plane plane, Vector3 min, Vector3 max)
@@ -183,8 +185,10 @@ internal readonly record struct Frustum(
         return Vector3.Dot(plane.Normal, positive) + plane.D >= 0f;
     }
 
-    private static bool TestSpherePlane(Plane plane, Vector3 center, float radius) =>
-        Vector3.Dot(plane.Normal, center) + plane.D >= -radius;
+    private static bool TestSpherePlane(Plane plane, Vector3 center, float radius)
+    {
+        return Vector3.Dot(plane.Normal, center) + plane.D >= -radius;
+    }
 
     private static Plane NormalizePlane(Plane p)
     {

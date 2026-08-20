@@ -6,7 +6,7 @@ using BethesdaMultitool.Core.Formats.Tes3;
 using BethesdaMultitool.Core.Semantic;
 using Xunit;
 
-namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
+namespace BethesdaMultitool.Tests.Core.Formats.Esm.Tes3;
 
 /// <summary>
 ///     Morrowind (TES3) plugins carry no real FormIDs, so each is parsed with file-local synthetic ones

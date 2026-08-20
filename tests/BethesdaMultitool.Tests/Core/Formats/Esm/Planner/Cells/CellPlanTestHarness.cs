@@ -14,11 +14,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 ///     guarantees before the writer ever sees it: every cell has a settled merge mode, and
 ///     every placed-ref child has a settled verdict.
 ///     <para>
-///     Retirement Stage H1 (2026-08-11) deleted the writer-side fallbacks that used to
-///     re-derive both — <c>CellDecisionFallback</c> and <c>PlannedPlacedRefEncoder</c>'s
-///     transitional decision chain. Those fallbacks were what let fixtures skip planning and
-///     still emit, so fixtures now run the real passes instead. That is strictly better
-///     coverage: the decisions under test are the ones production actually makes.
+///         Retirement Stage H1 (2026-08-11) deleted the writer-side fallbacks that used to
+///         re-derive both — <c>CellDecisionFallback</c> and <c>PlannedPlacedRefEncoder</c>'s
+///         transitional decision chain. Those fallbacks were what let fixtures skip planning and
+///         still emit, so fixtures now run the real passes instead. That is strictly better
+///         coverage: the decisions under test are the ones production actually makes.
 ///     </para>
 /// </summary>
 internal static class CellPlanTestHarness
@@ -74,7 +74,7 @@ internal static class CellPlanTestHarness
                 : cellPlan with
                 {
                     Mode = ResolveMode(cellPlan, masterRefFormIds),
-                    DropRenderCullingMarkers = DropMarkers(cellPlan, masterRefFormIds, options),
+                    DropRenderCullingMarkers = DropMarkers(cellPlan, masterRefFormIds, options)
                 };
         }
 
@@ -93,7 +93,7 @@ internal static class CellPlanTestHarness
                 RecoverLeveledSpawnActors = recoverLeveledSpawnActors,
                 DmpBaseTypes = dmpBaseTypes,
                 EnableRefrBaseEditorIdRemap = options.EnableRefrBaseEditorIdRemap,
-                DiagnosticSkipCellNewRefs = options.DiagnosticSkipCellNewRefs,
+                DiagnosticSkipCellNewRefs = options.DiagnosticSkipCellNewRefs
             });
 
         // A fixture that hand-authored verdicts is asserting on those exact decisions; keep
@@ -111,7 +111,7 @@ internal static class CellPlanTestHarness
             plan with
             {
                 CellsByFormId = settled,
-                EmittedNavmFormIds = PlanNavmEmission.Compute(settled, options.DiagnosticSkipCellNavm),
+                EmittedNavmFormIds = PlanNavmEmission.Compute(settled, options.DiagnosticSkipCellNavm)
             },
             masterByFormId);
     }

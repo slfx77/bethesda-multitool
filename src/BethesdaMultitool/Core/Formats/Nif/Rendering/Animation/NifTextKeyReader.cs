@@ -14,8 +14,10 @@ internal static class NifTextKeyReader
 {
     private const uint MaxTextKeys = 4096;
 
-    /// <summary>Finds the first NiTextKeyExtraData block and reads its markers, sorted by time.
-    /// Empty when the NIF has none (statics without animation clips).</summary>
+    /// <summary>
+    ///     Finds the first NiTextKeyExtraData block and reads its markers, sorted by time.
+    ///     Empty when the NIF has none (statics without animation clips).
+    /// </summary>
     internal static NifAnimTextKey[] ReadFirst(byte[] data, NifInfo nif)
     {
         for (var i = 0; i < nif.Blocks.Count; i++)

@@ -1,6 +1,6 @@
 using System.CommandLine;
+using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Analysis;
 using Spectre.Console;
@@ -130,7 +130,8 @@ internal static partial class VerifyOpenMwCommand
 
         if (!ranOk || dumpText.Length == 0)
         {
-            AnsiConsole.MarkupLine("[red]esmtool produced no output.[/] Showing our census only; check the saved file.");
+            AnsiConsole.MarkupLine(
+                "[red]esmtool produced no output.[/] Showing our census only; check the saved file.");
             PrintOurCensus(ours);
             return 1;
         }
@@ -151,7 +152,7 @@ internal static partial class VerifyOpenMwCommand
 
     private static Dictionary<string, int>? LoadOurCensus(string file)
     {
-        using var result = UnifiedAnalyzer.AnalyzeAsync(file, null, default).GetAwaiter().GetResult();
+        using var result = UnifiedAnalyzer.AnalyzeAsync(file).GetAwaiter().GetResult();
         var scan = result.RawResult.EsmRecords;
         if (scan?.MainRecordCounts is not { Count: > 0 } counts)
         {
@@ -233,7 +234,7 @@ internal static partial class VerifyOpenMwCommand
                     return (stdout, true);
                 }
             }
-            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
             {
                 return ($"<failed to launch esmtool: {ex.Message}>", false);
             }

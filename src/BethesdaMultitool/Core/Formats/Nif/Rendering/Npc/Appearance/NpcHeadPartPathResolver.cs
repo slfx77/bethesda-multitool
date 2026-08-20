@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 /// <summary>Resolves the mesh/texture paths for an NPC's head parts (HDPT records) by FormID.</summary>
@@ -36,4 +37,3 @@ internal sealed class NpcHeadPartPathResolver
         return paths.Count > 0 ? paths : null;
     }
 }
-

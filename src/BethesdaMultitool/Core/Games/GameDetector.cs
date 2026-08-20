@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Games;
 
@@ -64,4 +63,3 @@ public static class GameDetector
         }
     }
 }
-

@@ -1,7 +1,6 @@
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -226,7 +225,7 @@ internal sealed class DataFolderIndex : IDisposable
         bool includeLooseFromArchiveDirs = false,
         ArchiveHandleRegistry? registry = null)
     {
-        var index = new DataFolderIndex(string.Empty, xbox360FormatHint: false, registry);
+        var index = new DataFolderIndex(string.Empty, false, registry);
         index.BuildFromExplicitArchives(archivePaths, includeLooseFromArchiveDirs);
         return index;
     }

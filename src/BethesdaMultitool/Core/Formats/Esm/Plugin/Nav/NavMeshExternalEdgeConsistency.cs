@@ -9,15 +9,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     is a valid index into this navmesh's NVEX array. When the flag is set the engine reads
 ///     <c>NVEX[edgeValue]</c> (and the runtime <c>EdgeExtraInfo</c> it projects) to cross into the
 ///     linked navmesh; a flag standing over an invalid index deref's out of bounds.
-///
 ///     <para>
-///     This is the TheStripWorld AI-pathing access violation: <see cref="NavMeshAdjacencyRebuild" />
-///     historically clobbered external edges to the −1 boundary sentinel while leaving the flag set,
-///     and runtime-reconstructed navmeshes (<c>RuntimeNavMeshDiscovery</c>) carry NVTR external flags
-///     with no NVEX array at all. Either way the engine reads <c>NVEX[-1]</c>. This pass is the
-///     safety invariant run after the whole NVTR/NVEX repair chain: any external-flagged edge whose
-///     value isn't a live NVEX index gets its flag cleared and the edge reset to −1 (a plain,
-///     self-contained border). What survives is exactly the set of edges backed by a real NVEX link.
+///         This is the TheStripWorld AI-pathing access violation: <see cref="NavMeshAdjacencyRebuild" />
+///         historically clobbered external edges to the −1 boundary sentinel while leaving the flag set,
+///         and runtime-reconstructed navmeshes (<c>RuntimeNavMeshDiscovery</c>) carry NVTR external flags
+///         with no NVEX array at all. Either way the engine reads <c>NVEX[-1]</c>. This pass is the
+///         safety invariant run after the whole NVTR/NVEX repair chain: any external-flagged edge whose
+///         value isn't a live NVEX index gets its flag cleared and the edge reset to −1 (a plain,
+///         self-contained border). What survives is exactly the set of edges backed by a real NVEX link.
 ///     </para>
 /// </summary>
 internal static class NavMeshExternalEdgeConsistency
@@ -87,7 +86,7 @@ internal static class NavMeshExternalEdgeConsistency
                 }
 
                 newFlags = (ushort)(newFlags & ~(1 << e));
-                BinaryPrimitives.WriteInt16LittleEndian(nvtrBytes.AsSpan(baseOff + EdgeSlotOffset[e], 2), (short)-1);
+                BinaryPrimitives.WriteInt16LittleEndian(nvtrBytes.AsSpan(baseOff + EdgeSlotOffset[e], 2), -1);
                 cleared++;
             }
 

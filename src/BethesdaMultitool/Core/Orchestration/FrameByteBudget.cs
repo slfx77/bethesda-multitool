@@ -16,8 +16,6 @@ namespace BethesdaMultitool.Core.Orchestration;
 internal struct FrameByteBudget
 {
     private readonly long _budgetBytes;
-    private long _consumed;
-    private int _count;
 
     /// <summary>Captures a budget of <paramref name="budgetBytes" /> (clamped to at least 1).</summary>
     public FrameByteBudget(long budgetBytes)
@@ -26,22 +24,24 @@ internal struct FrameByteBudget
     }
 
     /// <summary>Bytes recorded this frame.</summary>
-    public readonly long Consumed => _consumed;
+    public long Consumed { get; private set; }
 
     /// <summary>Units recorded this frame.</summary>
-    public readonly int Count => _count;
+    public int Count { get; private set; }
 
     /// <summary>
     ///     True if a unit of <paramref name="bytes" /> may start now: always true for the first unit
     ///     of the frame; otherwise only while it still fits under the budget.
     /// </summary>
-    public readonly bool CanUpload(long bytes) =>
-        _count == 0 || _consumed + Math.Max(1L, bytes) <= _budgetBytes;
+    public readonly bool CanUpload(long bytes)
+    {
+        return Count == 0 || Consumed + Math.Max(1L, bytes) <= _budgetBytes;
+    }
 
     /// <summary>Records a unit of <paramref name="bytes" /> against the budget.</summary>
     public void Record(long bytes)
     {
-        _consumed += Math.Max(1L, bytes);
-        _count++;
+        Consumed += Math.Max(1L, bytes);
+        Count++;
     }
 }

@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -17,14 +18,15 @@ public sealed class PerkEncoder : IRecordEncoder
     // CTDA schema field names: Type, ComparisonValue, FunctionIndex, Parameter1,
     // Parameter2, RunOn, Reference. Type stores the comparison operator in bits 5–7;
     // the unmodeled low-bit flags, RunOn, and Reference currently zero-fill.
-    private static readonly Dictionary<string, Func<PerkCondition, object?>> CtdaExtractors = new(StringComparer.Ordinal)
-    {
-        ["Type"] = m => EncodeComparisonType(m.ComparisonOperator),
-        ["ComparisonValue"] = m => m.ComparisonValue,
-        ["FunctionIndex"] = m => m.FunctionIndex,
-        ["Parameter1"] = m => m.Parameter1,
-        ["Parameter2"] = m => m.Parameter2,
-    };
+    private static readonly Dictionary<string, Func<PerkCondition, object?>> CtdaExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Type"] = m => EncodeComparisonType(m.ComparisonOperator),
+            ["ComparisonValue"] = m => m.ComparisonValue,
+            ["FunctionIndex"] = m => m.FunctionIndex,
+            ["Parameter1"] = m => m.Parameter1,
+            ["Parameter2"] = m => m.Parameter2
+        };
 
     public string RecordType => "PERK";
     public Type ModelType => typeof(PerkRecord);
@@ -140,8 +142,10 @@ public sealed class PerkEncoder : IRecordEncoder
     ///     Emit one perk-entry chain in FNV canonical order:
     ///     <list type="bullet">
     ///         <item>PRKE (3B): type + rank + priority</item>
-    ///         <item>DATA (type-dependent): QuestFormId+QuestStage (type 0, 8B), AbilityFormId
-    ///         (type 1, 4B), EntryPoint+Function+PerkConditionTabCount (type 2, 3B)</item>
+    ///         <item>
+    ///             DATA (type-dependent): QuestFormId+QuestStage (type 0, 8B), AbilityFormId
+    ///             (type 1, 4B), EntryPoint+Function+PerkConditionTabCount (type 2, 3B)
+    ///         </item>
     ///         <item>Repeated PRKC (signed 1B selector) + CTDA* condition groups</item>
     ///         <item>EPFT (1B): function type (entry type 2 only)</item>
     ///         <item>EPFD (variable): function payload (entry type 2 only)</item>
@@ -322,7 +326,7 @@ public sealed class PerkEncoder : IRecordEncoder
 
                 // zstring; if the model only has EffectData (best-effort text), fall back to it.
                 var text = entry.EffectData ?? string.Empty;
-                var bytes = System.Text.Encoding.Latin1.GetBytes(text + "\0");
+                var bytes = Encoding.Latin1.GetBytes(text + "\0");
                 return bytes;
             }
             default:

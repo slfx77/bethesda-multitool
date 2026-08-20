@@ -9,7 +9,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders;
 ///     a routing bug. Register instances through <c>PlannedEncoders.Simple</c>.
 /// </summary>
 public sealed class DelegatingPlannedEncoder<TModel>(
-    string recordType, Func<TModel, EncodedRecord> encodeNew) : IPlannedRecordEncoder<TModel>
+    string recordType,
+    Func<TModel, EncodedRecord> encodeNew) : IPlannedRecordEncoder<TModel>
     where TModel : class
 {
     private readonly EncodedRecord _emptyEncoded = new() { Subrecords = [], Warnings = [] };
@@ -23,7 +24,7 @@ public sealed class DelegatingPlannedEncoder<TModel>(
             RecordDisposition.New => encodeNew(model),
             RecordDisposition.Override => _emptyEncoded,
             _ => throw new InvalidOperationException(
-                $"Planned {RecordType} encoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"Planned {RecordType} encoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

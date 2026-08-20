@@ -10,5 +10,5 @@ public enum ConditionParamKind
     Numeric,
 
     /// <summary>FormID — resolve to a record name/EditorID.</summary>
-    FormId,
+    FormId
 }

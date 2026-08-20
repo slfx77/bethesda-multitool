@@ -93,8 +93,7 @@ public class Tes4HeaderBuilderTests
         var bytes = Tes4HeaderBuilder.Build(
             new PluginBuildOptions { MasterFileName = "FalloutNV.esm", MasterFileSize = 100 },
             0,
-            0x800,
-            null);
+            0x800);
 
         // Header flags live at bytes 8–11 (little-endian uint32).
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));

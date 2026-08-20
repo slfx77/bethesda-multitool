@@ -2,7 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Groups worldspace map markers by their owning worldspace for the 2D world map. Pure computation over
@@ -156,8 +156,8 @@ internal static class WorldspaceMarkerGrouping
         {
             var centerX = ((child.BoundsMinX ?? 0.0f) + (child.BoundsMaxX ?? 0.0f)) * 0.5f;
             var centerY = ((child.BoundsMinY ?? 0.0f) + (child.BoundsMaxY ?? 0.0f)) * 0.5f;
-            x = centerX + ((x - centerX) * scale);
-            y = centerY + ((y - centerY) * scale);
+            x = centerX + (x - centerX) * scale;
+            y = centerY + (y - centerY) * scale;
             z *= scale;
         }
 

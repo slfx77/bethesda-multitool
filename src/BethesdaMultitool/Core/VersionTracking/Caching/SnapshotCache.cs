@@ -15,7 +15,7 @@ namespace BethesdaMultitool.Core.VersionTracking.Caching;
 ///         conformance so its hit rate is visible in <c>--resource-stats</c>.
 ///     </para>
 /// </summary>
-public class SnapshotCache : Diagnostics.ITrackableResource
+public class SnapshotCache : ITrackableResource
 {
     /// <summary>
     ///     Bump this when extraction or snapshot code changes.
@@ -33,21 +33,24 @@ public class SnapshotCache : Diagnostics.ITrackableResource
         _cacheDir = cacheDir;
         Directory.CreateDirectory(_cacheDir);
         // Process-lifetime registration (CLI version-tracking runs); intentionally never disposed.
-        _ = Diagnostics.ResourceRegistry.Instance.Register(this);
+        _ = ResourceRegistry.Instance.Register(this);
     }
 
     // Explicit implementation: the registry contracts are internal while this class is public.
-    string Diagnostics.ITrackableResource.ResourceName => nameof(SnapshotCache);
+    string ITrackableResource.ResourceName => nameof(SnapshotCache);
 
-    Diagnostics.ResourceCategory Diagnostics.ITrackableResource.Category =>
-        Diagnostics.ResourceCategory.DiskCache;
+    ResourceCategory ITrackableResource.Category =>
+        ResourceCategory.DiskCache;
 
-    Diagnostics.ResourceStats Diagnostics.ITrackableResource.GetStats() => new()
+    ResourceStats ITrackableResource.GetStats()
     {
-        Hits = Interlocked.Read(ref _hits),
-        Misses = Interlocked.Read(ref _misses),
-        Processed = Interlocked.Read(ref _stores),
-    };
+        return new ResourceStats
+        {
+            Hits = Interlocked.Read(ref _hits),
+            Misses = Interlocked.Read(ref _misses),
+            Processed = Interlocked.Read(ref _stores)
+        };
+    }
 
     /// <summary>
     ///     Tries to load a cached snapshot for the given source file.

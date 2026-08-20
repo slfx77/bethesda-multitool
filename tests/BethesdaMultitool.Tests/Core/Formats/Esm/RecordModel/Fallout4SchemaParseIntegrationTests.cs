@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -133,7 +134,8 @@ public class Fallout4SchemaParseIntegrationTests
         Assert.False(rawCell.IsBigEndian);
         var storedPayload = new byte[checked((int)rawCell.DataSize)];
         var accessor = result.Accessor
-            ?? throw new InvalidOperationException("Retail ESM load did not retain its memory-mapped accessor.");
+                       ?? throw new InvalidOperationException(
+                           "Retail ESM load did not retain its memory-mapped accessor.");
         Assert.Equal(storedPayload.Length, accessor.ReadArray(
             rawCell.Offset + rawCell.HeaderSize, storedPayload, 0, storedPayload.Length));
         var rawPayload = rawCell.IsCompressed

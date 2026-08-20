@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using BethesdaMultitool.Core.EsmView;
 
 namespace BethesdaMultitool;
 
@@ -8,6 +9,7 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed class EsmBrowserNode
 {
+    private List<EsmPropertyEntry>? _properties;
     public string DisplayName { get; init; } = "";
     public string? FormIdHex { get; init; }
     public string? EditorId { get; init; }
@@ -27,8 +29,6 @@ public sealed class EsmBrowserNode
     public ObservableCollection<EsmBrowserNode> Children { get; } = [];
     public bool HasUnrealizedChildren { get; set; }
     public string IconGlyph { get; init; } = "\uE7C3";
-
-    private List<EsmPropertyEntry>? _properties;
 
     /// <summary>
     ///     Optional deferred builder for <see cref="Properties" />. Record nodes set THIS instead of

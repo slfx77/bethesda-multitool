@@ -49,7 +49,7 @@ internal static class Tes3FormIdScheme
     /// </summary>
     public static uint Namespace(uint formId, int loadIndex)
     {
-        if (formId == 0 || (formId >> 24) == SharedNamespaceByte)
+        if (formId == 0 || formId >> 24 == SharedNamespaceByte)
         {
             return formId;
         }

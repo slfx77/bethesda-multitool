@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Terrain;
@@ -247,8 +246,10 @@ internal static class CompareLandCommand
         return allIdentical
             ? "[green]IDENTICAL[/]"
             : allLandTransformed
-            ? "[yellow]LAND-TRANSFORMED[/]"
-            : allEndianSwapped ? "[yellow]ENDIAN-SWAPPED (4-byte)[/]" : "[red]DIFFERS[/]";
+                ? "[yellow]LAND-TRANSFORMED[/]"
+                : allEndianSwapped
+                    ? "[yellow]ENDIAN-SWAPPED (4-byte)[/]"
+                    : "[red]DIFFERS[/]";
     }
 
     private static Table BuildSubrecordComparisonTable(List<AnalyzerSubrecordInfo> xboxSubs,

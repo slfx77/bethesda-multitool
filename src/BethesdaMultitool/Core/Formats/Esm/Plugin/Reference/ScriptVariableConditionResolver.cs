@@ -1,7 +1,5 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -25,18 +23,19 @@ internal sealed class ScriptVariableConditionResolver
     private static readonly HashSet<string> ActorBaseTypes =
         new(StringComparer.Ordinal) { "NPC_", "CREA" };
 
-    private readonly IReadOnlyDictionary<uint, ParsedMainRecord> _masterRecords;
-    private readonly IReadOnlyDictionary<uint, uint>? _remapTable;
-    private readonly Dictionary<uint, List<PlacedReference>> _dmpOwnersByFormId = [];
-    private readonly Dictionary<uint, List<PlacedReference>> _dmpOwnersByResolvedFormId = [];
     private readonly Dictionary<uint, List<BaseScriptBinding>> _dmpBasesByFormId = [];
     private readonly Dictionary<uint, List<BaseScriptBinding>> _dmpBasesByResolvedFormId = [];
+    private readonly Dictionary<uint, List<PlacedReference>> _dmpOwnersByFormId = [];
+    private readonly Dictionary<uint, List<PlacedReference>> _dmpOwnersByResolvedFormId = [];
     private readonly Dictionary<uint, List<ScriptRecord>> _dmpScriptsByFormId = [];
     private readonly Dictionary<uint, List<ScriptRecord>> _dmpScriptsByResolvedFormId = [];
+
+    private readonly IReadOnlyDictionary<uint, ParsedMainRecord> _masterRecords;
+    private readonly Dictionary<uint, string?> _masterSourceTextByScript;
+    private readonly Dictionary<uint, IReadOnlyList<ScriptVariableInfo>> _masterVariablesByScript;
+    private readonly IReadOnlyDictionary<uint, uint>? _remapTable;
     private readonly Dictionary<uint, List<RuntimeScriptData>> _runtimeScriptMetadataByFormId = [];
     private readonly Dictionary<uint, List<RuntimeScriptData>> _runtimeScriptMetadataByResolvedFormId = [];
-    private readonly Dictionary<uint, IReadOnlyList<ScriptVariableInfo>> _masterVariablesByScript;
-    private readonly Dictionary<uint, string?> _masterSourceTextByScript;
 
     public ScriptVariableConditionResolver(
         RecordCollection dmpRecords,
@@ -243,13 +242,13 @@ internal sealed class ScriptVariableConditionResolver
             (not null, not null) => "dmp+master",
             (not null, null) => "dmp",
             (null, not null) => "master",
-            _ => null,
+            _ => null
         };
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["script-variable-source-owner-form-id"] = FormatFormId(sourceOwnerFormId),
             ["script-variable-target-owner-form-id"] = FormatFormId(resolvedOwnerFormId),
-            ["script-variable-owner-source"] = ownerSource,
+            ["script-variable-owner-source"] = ownerSource
         };
 
         if (ownerAmbiguous)
@@ -452,7 +451,7 @@ internal sealed class ScriptVariableConditionResolver
         var mutableMetadata = new Dictionary<string, string?>(metadata, StringComparer.Ordinal)
         {
             [$"script-variable-{role}-script-form-id"] = FormatFormId(scriptFormId),
-            [$"script-variable-{role}-variable-table-form-id"] = FormatFormId(resolvedScriptFormId),
+            [$"script-variable-{role}-variable-table-form-id"] = FormatFormId(resolvedScriptFormId)
         };
 
         var hasRawDmpScript = _dmpScriptsByFormId.ContainsKey(scriptFormId);
@@ -469,8 +468,8 @@ internal sealed class ScriptVariableConditionResolver
         var runtimeMetadata = FindUniqueRuntimeScriptMetadata(
             scriptFormId,
             resolvedScriptFormId,
-            allowResolvedFallback: !hasRawDmpScript,
-            invalid: out var runtimeMetadataInvalid);
+            !hasRawDmpScript,
+            out var runtimeMetadataInvalid);
         if (role == "source" && runtimeMetadataInvalid)
         {
             return ScriptBindingResolution.Failed(
@@ -519,7 +518,7 @@ internal sealed class ScriptVariableConditionResolver
         {
             ScriptVariableDeclarationIdentity.TryGetAcceptedDeclarationSourceText(
                 dmpScript,
-                runtimeScript: null,
+                null,
                 out var acceptedDmpSourceText);
             return ScriptBindingResolution.Resolved(
                 resolvedScriptFormId,
@@ -606,7 +605,8 @@ internal sealed class ScriptVariableConditionResolver
         var candidates = _dmpBasesByFormId.GetValueOrDefault(sourceFormId)
                          ?? _dmpBasesByResolvedFormId.GetValueOrDefault(resolvedFormId);
         ambiguous = candidates is not null
-                    && candidates.Select(static binding => (binding.RecordType, binding.ScriptFormId)).Distinct().Count() > 1;
+                    && candidates.Select(static binding => (binding.RecordType, binding.ScriptFormId)).Distinct()
+                        .Count() > 1;
         return ambiguous ? null : candidates?.FirstOrDefault();
     }
 
@@ -639,6 +639,7 @@ internal sealed class ScriptVariableConditionResolver
         {
             candidates = _runtimeScriptMetadataByResolvedFormId.GetValueOrDefault(resolvedFormId);
         }
+
         invalid = candidates is not null
                   && (candidates.Any(static candidate => !candidate.VariablesComplete)
                       || candidates.Skip(1).Any(candidate =>
@@ -693,9 +694,15 @@ internal sealed class ScriptVariableConditionResolver
         return current;
     }
 
-    private static uint? ReadName(ParsedMainRecord? record) => ReadFormIdSubrecord(record, "NAME");
+    private static uint? ReadName(ParsedMainRecord? record)
+    {
+        return ReadFormIdSubrecord(record, "NAME");
+    }
 
-    private static uint? ReadScri(ParsedMainRecord? record) => ReadFormIdSubrecord(record, "SCRI");
+    private static uint? ReadScri(ParsedMainRecord? record)
+    {
+        return ReadFormIdSubrecord(record, "SCRI");
+    }
 
     private static uint? ReadFormIdSubrecord(ParsedMainRecord? record, string signature)
     {
@@ -708,18 +715,22 @@ internal sealed class ScriptVariableConditionResolver
         ScriptVariableInfo source,
         ScriptVariableDeclarationKind sourceKind,
         ScriptVariableInfo target,
-        string? targetSourceText) =>
-        source.Type == target.Type
-        && string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase)
-        && TryGetDeclarationKind(target, targetSourceText, out var targetKind)
-        && ScriptVariableDeclarationIdentity.KindsMatchExact(sourceKind, targetKind);
+        string? targetSourceText)
+    {
+        return source.Type == target.Type
+               && string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase)
+               && TryGetDeclarationKind(target, targetSourceText, out var targetKind)
+               && ScriptVariableDeclarationIdentity.KindsMatchExact(sourceKind, targetKind);
+    }
 
     private static bool SameSerializedIdentity(
         ScriptVariableInfo source,
-        ScriptVariableInfo target) =>
-        source.Index == target.Index
-        && source.Type == target.Type
-        && string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase);
+        ScriptVariableInfo target)
+    {
+        return source.Index == target.Index
+               && source.Type == target.Type
+               && string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool TryGetDeclarationKind(
         ScriptVariableInfo variable,
@@ -764,7 +775,7 @@ internal sealed class ScriptVariableConditionResolver
             [$"script-variable-{role}-base-form-id"] = FormatFormId(sourceBaseFormId),
             [$"script-variable-{role}-resolved-base-form-id"] = FormatFormId(resolvedBaseFormId),
             [$"script-variable-{role}-dmp-base-type"] = dmpBase?.RecordType,
-            [$"script-variable-{role}-master-base-type"] = masterBase?.Header.Signature,
+            [$"script-variable-{role}-master-base-type"] = masterBase?.Header.Signature
         };
     }
 
@@ -791,8 +802,9 @@ internal sealed class ScriptVariableConditionResolver
         ScriptVariableInfo targetVariable,
         uint sourceScriptFormId,
         uint targetScriptFormId,
-        IReadOnlyDictionary<string, string?> metadata) =>
-        new(
+        IReadOnlyDictionary<string, string?> metadata)
+    {
+        return new ScriptVariableConditionResolution(
             kind,
             ownerReferenceFormId,
             sourceVariableIndex,
@@ -809,6 +821,7 @@ internal sealed class ScriptVariableConditionResolver
                   "the unique exact variable name/declaration match on the effective owner script."
                 : "Retained GetScriptVariable after proving the owner/base/script chain and exact local identity.",
             metadata);
+    }
 
     private static ScriptVariableConditionResolution Failure(
         string code,
@@ -818,8 +831,9 @@ internal sealed class ScriptVariableConditionResolver
         IReadOnlyDictionary<string, string?> metadata,
         uint? sourceScriptFormId = null,
         uint? targetScriptFormId = null,
-        ScriptVariableInfo? sourceVariable = null) =>
-        new(
+        ScriptVariableInfo? sourceVariable = null)
+    {
+        return new ScriptVariableConditionResolution(
             ScriptVariableConditionResolutionKind.Invalid,
             ownerReferenceFormId,
             sourceVariableIndex,
@@ -831,6 +845,7 @@ internal sealed class ScriptVariableConditionResolver
             code,
             message,
             metadata);
+    }
 
     private static void Add<T>(Dictionary<uint, List<T>> index, uint formId, T value)
     {
@@ -843,7 +858,10 @@ internal sealed class ScriptVariableConditionResolver
         list.Add(value);
     }
 
-    private static string FormatFormId(uint formId) => $"0x{formId:X8}";
+    private static string FormatFormId(uint formId)
+    {
+        return $"0x{formId:X8}";
+    }
 
     private sealed record BaseScriptBinding(uint FormId, string RecordType, uint? ScriptFormId);
 
@@ -860,14 +878,18 @@ internal sealed class ScriptVariableConditionResolver
         public static OwnerResolution Resolved(
             uint sourceBaseFormId,
             uint targetBaseFormId,
-            IReadOnlyDictionary<string, string?> metadata) =>
-            new(true, string.Empty, string.Empty, sourceBaseFormId, targetBaseFormId, metadata);
+            IReadOnlyDictionary<string, string?> metadata)
+        {
+            return new OwnerResolution(true, string.Empty, string.Empty, sourceBaseFormId, targetBaseFormId, metadata);
+        }
 
         public static OwnerResolution Failed(
             string code,
             string message,
-            IReadOnlyDictionary<string, string?> metadata) =>
-            new(false, code, message, null, null, metadata);
+            IReadOnlyDictionary<string, string?> metadata)
+        {
+            return new OwnerResolution(false, code, message, null, null, metadata);
+        }
     }
 
     private sealed record ScriptBindingResolution(
@@ -883,15 +905,20 @@ internal sealed class ScriptVariableConditionResolver
             uint variableTableFormId,
             IReadOnlyList<ScriptVariableInfo> variables,
             string? sourceText,
-            IReadOnlyDictionary<string, string?> metadata) =>
-            new(true, string.Empty, string.Empty, variableTableFormId, variables, sourceText, metadata);
+            IReadOnlyDictionary<string, string?> metadata)
+        {
+            return new ScriptBindingResolution(true, string.Empty, string.Empty, variableTableFormId, variables,
+                sourceText, metadata);
+        }
 
         public static ScriptBindingResolution Failed(
             string code,
             string message,
             IReadOnlyDictionary<string, string?> metadata,
-            uint? variableTableFormId = null) =>
-            new(false, code, message, variableTableFormId, null, null, metadata);
+            uint? variableTableFormId = null)
+        {
+            return new ScriptBindingResolution(false, code, message, variableTableFormId, null, null, metadata);
+        }
     }
 }
 
@@ -899,7 +926,7 @@ internal enum ScriptVariableConditionResolutionKind
 {
     Valid,
     Remap,
-    Invalid,
+    Invalid
 }
 
 internal sealed record ScriptVariableConditionResolution(

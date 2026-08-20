@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -48,97 +49,97 @@ internal readonly record struct FrameProfileSample(
 /// </summary>
 internal sealed class FrameProfileAccumulator
 {
-    private long _intervalStarted = Stopwatch.GetTimestamp();
-    private int _frames;
-    private long _lastFrameNumber;
-    private double _frameTotal;
-    private double _frameMax;
     private readonly List<double> _frameSamples = new(256);
-    private double _allocatedBytes;
-    private double _controller;
-    private double _beginFrame;
-    private double _fenceWait;
     private double _acquire;
-    private double _clearSetup;
+    private double _allocatedBytes;
+    private double _beginFrame;
     private double _camera;
-    private double _terrainFrame;
-    private double _referencesFrame;
-    private double _waterFrame;
-    private double _wireframeFrame;
-    private double _endFrame;
-    private double _present;
-    private double _hud;
-    private double _terrainState;
-    private double _terrainGather;
-    private double _terrainSort;
-    private double _terrainDrawLoop;
-    private double _terrainQuadrants;
-    private double _terrainMeshUpload;
-    private double _terrainPreUpload;
-    private double _terrainCpu;
-    private double _waterState;
-    private double _waterGather;
-    private double _waterInstanceBuild;
-    private double _waterUpload;
-    private double _waterDrawCall;
-    private double _waterCpu;
-    private double _wireGather;
-    private double _wireVertexBuild;
-    private double _wireUpload;
-    private double _wireDrawCall;
-    private double _wireCpu;
-    private double _visibleTerrain;
-    private double _visibleReferences;
-    private double _visibleWater;
-    private double _visibleWireframe;
+    private double _clearSetup;
+    private double _controller;
     private double _descriptors;
-    private double _ringBytes;
-    private double _terrainCandidates;
-    private double _terrainDraws;
-    private double _terrainQuadrantDraws;
-    private double _terrainUploads;
-    private double _terrainPreUploads;
-    private double _textureMisses;
-    private double _textureCompressedUploads;
-    private double _textureRgbaUploads;
-    private double _refCellsVisited;
-    private double _refCandidates;
-    private double _refCulled;
-    private double _refMeshMissing;
-    private double _refTexturePending;
-    private double _refDrawn;
-    private double _refSubmeshDraws;
-    private double _refSrvBinds;
-    private double _refCullFlips;
-    private double _refMeshMisses;
-    private double _refDecodeRequests;
-    private double _refQueuedDecodes;
-    private double _refDecodeStarts;
+    private double _endFrame;
+    private double _fenceWait;
+    private double _frameMax;
+    private int _frames;
+    private double _frameTotal;
+    private double _hud;
+    private long _intervalStarted = Stopwatch.GetTimestamp();
+    private long _lastFrameNumber;
+    private float _lastRenderDistanceCells;
+    private int _lastTotalCells;
+    private uint _lastViewportHeight;
+    private uint _lastViewportWidth;
+    private double _present;
     private double _refActiveDecodes;
+    private double _refBatches;
+    private double _refBlendedDraws;
+    private double _refCandidates;
+    private double _refCb;
+    private double _refCellsVisited;
+    private double _refCompressedTextureUploads;
     private double _refCpuDecodedHits;
     private double _refCpuDecodedMisses;
     private double _refCpuDecodedNegativeHits;
-    private double _refCompressedTextureUploads;
-    private double _refRgbaTextureUploads;
-    private double _refBatches;
-    private double _refInstances;
+    private double _refCull;
+    private double _refCulled;
+    private double _refCullFlips;
+    private double _refDecodeRequests;
+    private double _refDecodeStarts;
+    private double _refDrawCall;
+    private double _refDrawn;
+    private double _referencesFrame;
     private double _refInstancedDraws;
-    private double _refBlendedDraws;
-    private double _refLiveParticleOwners;
-    private double _refLiveParticleParticles;
+    private double _refInstances;
     private double _refLiveParticleDraws;
     private double _refLiveParticleFallbacks;
+    private double _refLiveParticleOwners;
+    private double _refLiveParticleParticles;
     private double _refLiveParticleUploadBytes;
-    private double _refState;
-    private double _refCull;
+    private double _refMeshMisses;
+    private double _refMeshMissing;
     private double _refMeshUpload;
-    private double _refCb;
+    private double _refQueuedDecodes;
+    private double _refRgbaTextureUploads;
     private double _refSrvBind;
-    private double _refDrawCall;
-    private int _lastTotalCells;
-    private float _lastRenderDistanceCells;
-    private uint _lastViewportWidth;
-    private uint _lastViewportHeight;
+    private double _refSrvBinds;
+    private double _refState;
+    private double _refSubmeshDraws;
+    private double _refTexturePending;
+    private double _ringBytes;
+    private double _terrainCandidates;
+    private double _terrainCpu;
+    private double _terrainDrawLoop;
+    private double _terrainDraws;
+    private double _terrainFrame;
+    private double _terrainGather;
+    private double _terrainMeshUpload;
+    private double _terrainPreUpload;
+    private double _terrainPreUploads;
+    private double _terrainQuadrantDraws;
+    private double _terrainQuadrants;
+    private double _terrainSort;
+    private double _terrainState;
+    private double _terrainUploads;
+    private double _textureCompressedUploads;
+    private double _textureMisses;
+    private double _textureRgbaUploads;
+    private double _visibleReferences;
+    private double _visibleTerrain;
+    private double _visibleWater;
+    private double _visibleWireframe;
+    private double _waterCpu;
+    private double _waterDrawCall;
+    private double _waterFrame;
+    private double _waterGather;
+    private double _waterInstanceBuild;
+    private double _waterState;
+    private double _waterUpload;
+    private double _wireCpu;
+    private double _wireDrawCall;
+    private double _wireframeFrame;
+    private double _wireGather;
+    private double _wireUpload;
+    private double _wireVertexBuild;
 
     internal void Add(
         FrameProfileSample sample,
@@ -329,38 +330,67 @@ internal sealed class FrameProfileAccumulator
         };
         // Apply invariant formatting per piece because concatenating interpolated strings
         // first would format each segment with the current UI culture.
-            message =
-            string.Create(CultureInfo.InvariantCulture, $"3D profile {_frames}f/{elapsed / 1000.0:0.0}s {_lastViewportWidth}x{_lastViewportHeight} cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
+        message =
+            string.Create(CultureInfo.InvariantCulture,
+                $"3D profile {_frames}f/{elapsed / 1000.0:0.0}s {_lastViewportWidth}x{_lastViewportHeight} cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
             string.Create(CultureInfo.InvariantCulture, $"frame avg/max={Avg(_frameTotal):0.00}/{_frameMax:0.00}ms ") +
-            string.Create(CultureInfo.InvariantCulture, $"median={frameMedianMs:0.00}ms alloc={Avg(_allocatedBytes) / 1024.0:0.0}KB/f ") +
-            string.Create(CultureInfo.InvariantCulture, $"stages ctrl={Avg(_controller):0.00} begin={Avg(_beginFrame):0.00} fence={Avg(_fenceWait):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} refs={Avg(_referencesFrame):0.00} water={Avg(_waterFrame):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"wire={Avg(_wireframeFrame):0.00} end={Avg(_endFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"desc={Avg(_descriptors):0.0} ringKB={Avg(_ringBytes) / 1024.0:0.0} | ") +
-            string.Create(CultureInfo.InvariantCulture, $"visible terrain={Avg(_visibleTerrain):0.0} refs={Avg(_visibleReferences):0.0} water={Avg(_visibleWater):0.0} wire={Avg(_visibleWireframe):0.0} | ") +
-            string.Create(CultureInfo.InvariantCulture, $"terrain cpu={Avg(_terrainCpu):0.00} state={Avg(_terrainState):0.00} gather={Avg(_terrainGather):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"sort={Avg(_terrainSort):0.00} loop={Avg(_terrainDrawLoop):0.00} quadrants={Avg(_terrainQuadrants):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"meshUpload={Avg(_terrainMeshUpload):0.00} preUpload={Avg(_terrainPreUpload):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"cand={Avg(_terrainCandidates):0.0} visible={Avg(_visibleTerrain):0.0} cells={Avg(_terrainDraws):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"qdraw={Avg(_terrainQuadrantDraws):0.0} uploads={Avg(_terrainUploads):0.0}+{Avg(_terrainPreUploads):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"texMiss={Avg(_textureMisses):0.0} texBC={Avg(_textureCompressedUploads):0.0} texRGBA={Avg(_textureRgbaUploads):0.0} | ") +
-            string.Create(CultureInfo.InvariantCulture, $"water cpu={Avg(_waterCpu):0.00} state={Avg(_waterState):0.00} gather={Avg(_waterGather):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"build={Avg(_waterInstanceBuild):0.00} upload={Avg(_waterUpload):0.00} draw={Avg(_waterDrawCall):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"median={frameMedianMs:0.00}ms alloc={Avg(_allocatedBytes) / 1024.0:0.0}KB/f ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"stages ctrl={Avg(_controller):0.00} begin={Avg(_beginFrame):0.00} fence={Avg(_fenceWait):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} refs={Avg(_referencesFrame):0.00} water={Avg(_waterFrame):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"wire={Avg(_wireframeFrame):0.00} end={Avg(_endFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"desc={Avg(_descriptors):0.0} ringKB={Avg(_ringBytes) / 1024.0:0.0} | ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"visible terrain={Avg(_visibleTerrain):0.0} refs={Avg(_visibleReferences):0.0} water={Avg(_visibleWater):0.0} wire={Avg(_visibleWireframe):0.0} | ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"terrain cpu={Avg(_terrainCpu):0.00} state={Avg(_terrainState):0.00} gather={Avg(_terrainGather):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"sort={Avg(_terrainSort):0.00} loop={Avg(_terrainDrawLoop):0.00} quadrants={Avg(_terrainQuadrants):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"meshUpload={Avg(_terrainMeshUpload):0.00} preUpload={Avg(_terrainPreUpload):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"cand={Avg(_terrainCandidates):0.0} visible={Avg(_visibleTerrain):0.0} cells={Avg(_terrainDraws):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"qdraw={Avg(_terrainQuadrantDraws):0.0} uploads={Avg(_terrainUploads):0.0}+{Avg(_terrainPreUploads):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"texMiss={Avg(_textureMisses):0.0} texBC={Avg(_textureCompressedUploads):0.0} texRGBA={Avg(_textureRgbaUploads):0.0} | ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"water cpu={Avg(_waterCpu):0.00} state={Avg(_waterState):0.00} gather={Avg(_waterGather):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"build={Avg(_waterInstanceBuild):0.00} upload={Avg(_waterUpload):0.00} draw={Avg(_waterDrawCall):0.00} ") +
             string.Create(CultureInfo.InvariantCulture, $"cells={Avg(_visibleWater):0.0} | ") +
-            string.Create(CultureInfo.InvariantCulture, $"wire cpu={Avg(_wireCpu):0.00} gather={Avg(_wireGather):0.00} vertices={Avg(_wireVertexBuild):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"upload={Avg(_wireUpload):0.00} draw={Avg(_wireDrawCall):0.00} cells={Avg(_visibleWireframe):0.0} | ") +
-            string.Create(CultureInfo.InvariantCulture, $"refs state={Avg(_refState):0.00} cull={Avg(_refCull):0.00} meshUp={Avg(_refMeshUpload):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"cb={Avg(_refCb):0.00} srvBind={Avg(_refSrvBind):0.00} draw={Avg(_refDrawCall):0.00} ") +
-            string.Create(CultureInfo.InvariantCulture, $"cells={Avg(_refCellsVisited):0.0} cand={Avg(_refCandidates):0.0} culled={Avg(_refCulled):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"miss={Avg(_refMeshMissing):0.0} texPend={Avg(_refTexturePending):0.0} drawn={Avg(_refDrawn):0.0} submesh={Avg(_refSubmeshDraws):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"srvBinds={Avg(_refSrvBinds):0.0} cullFlips={Avg(_refCullFlips):0.0} meshMisses={Avg(_refMeshMisses):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"decodeReq={Avg(_refDecodeRequests):0.0} qDec={Avg(_refQueuedDecodes):0.0} startDec={Avg(_refDecodeStarts):0.0} activeDec={Avg(_refActiveDecodes):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"cpuMeshHit={Avg(_refCpuDecodedHits):0.0} cpuMeshMiss={Avg(_refCpuDecodedMisses):0.0} cpuMeshNeg={Avg(_refCpuDecodedNegativeHits):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"refTexBC={Avg(_refCompressedTextureUploads):0.0} refTexRGBA={Avg(_refRgbaTextureUploads):0.0} batches={Avg(_refBatches):0.0} inst={Avg(_refInstances):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"instDraw={Avg(_refInstancedDraws):0.0} blendDraw={Avg(_refBlendedDraws):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"liveOwners={Avg(_refLiveParticleOwners):0.0} liveParticles={Avg(_refLiveParticleParticles):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"liveDraw={Avg(_refLiveParticleDraws):0.0} liveFallback={Avg(_refLiveParticleFallbacks):0.0} ") +
-            string.Create(CultureInfo.InvariantCulture, $"liveUploadKB={Avg(_refLiveParticleUploadBytes) / 1024.0:0.0}");
+            string.Create(CultureInfo.InvariantCulture,
+                $"wire cpu={Avg(_wireCpu):0.00} gather={Avg(_wireGather):0.00} vertices={Avg(_wireVertexBuild):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"upload={Avg(_wireUpload):0.00} draw={Avg(_wireDrawCall):0.00} cells={Avg(_visibleWireframe):0.0} | ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"refs state={Avg(_refState):0.00} cull={Avg(_refCull):0.00} meshUp={Avg(_refMeshUpload):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"cb={Avg(_refCb):0.00} srvBind={Avg(_refSrvBind):0.00} draw={Avg(_refDrawCall):0.00} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"cells={Avg(_refCellsVisited):0.0} cand={Avg(_refCandidates):0.0} culled={Avg(_refCulled):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"miss={Avg(_refMeshMissing):0.0} texPend={Avg(_refTexturePending):0.0} drawn={Avg(_refDrawn):0.0} submesh={Avg(_refSubmeshDraws):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"srvBinds={Avg(_refSrvBinds):0.0} cullFlips={Avg(_refCullFlips):0.0} meshMisses={Avg(_refMeshMisses):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"decodeReq={Avg(_refDecodeRequests):0.0} qDec={Avg(_refQueuedDecodes):0.0} startDec={Avg(_refDecodeStarts):0.0} activeDec={Avg(_refActiveDecodes):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"cpuMeshHit={Avg(_refCpuDecodedHits):0.0} cpuMeshMiss={Avg(_refCpuDecodedMisses):0.0} cpuMeshNeg={Avg(_refCpuDecodedNegativeHits):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"refTexBC={Avg(_refCompressedTextureUploads):0.0} refTexRGBA={Avg(_refRgbaTextureUploads):0.0} batches={Avg(_refBatches):0.0} inst={Avg(_refInstances):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"instDraw={Avg(_refInstancedDraws):0.0} blendDraw={Avg(_refBlendedDraws):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"liveOwners={Avg(_refLiveParticleOwners):0.0} liveParticles={Avg(_refLiveParticleParticles):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"liveDraw={Avg(_refLiveParticleDraws):0.0} liveFallback={Avg(_refLiveParticleFallbacks):0.0} ") +
+            string.Create(CultureInfo.InvariantCulture,
+                $"liveUploadKB={Avg(_refLiveParticleUploadBytes) / 1024.0:0.0}");
 
         Reset();
         return true;

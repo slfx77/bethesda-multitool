@@ -1,7 +1,5 @@
-using Spectre.Console;
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dump;
 
@@ -18,7 +16,7 @@ public static class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var typeArg = new Argument<string>("type") { Description = "Record type to dump (e.g., LAND, NPC_, WEAP)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
 
         command.Arguments.Add(fileArg);
@@ -41,11 +39,11 @@ public static class DumpCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var offsetOption = new Option<string?>("-o", "--offset")
-        { Description = "Starting offset in hex (e.g., 0x1000)" };
+            { Description = "Starting offset in hex (e.g., 0x1000)" };
         var stopOption = new Option<string?>("-s", "--stop") { Description = "Stop offset in hex" };
         var depthOption = new Option<int?>("-d", "--depth") { Description = "Filter to specific nesting depth" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of records to trace (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of records to trace (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(offsetOption);
@@ -63,10 +61,16 @@ public static class DumpCommands
         return command;
     }
 
-    public static Command CreateSearchCommand() => CreateSearchCommandCore("search", "Search for ASCII string patterns in an ESM file");
+    public static Command CreateSearchCommand()
+    {
+        return CreateSearchCommandCore("search", "Search for ASCII string patterns in an ESM file");
+    }
 
     /// <summary>Creates a search command named "text" for use as a subcommand.</summary>
-    public static Command CreateTextSearchCommand() => CreateSearchCommandCore("text", "Search for ASCII string patterns in an ESM file");
+    public static Command CreateTextSearchCommand()
+    {
+        return CreateSearchCommandCore("text", "Search for ASCII string patterns in an ESM file");
+    }
 
     private static Command CreateSearchCommandCore(string name, string description)
     {
@@ -75,11 +79,11 @@ public static class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var patternArg = new Argument<string>("pattern") { Description = "ASCII string to search for" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var contextOption = new Option<int>("-c", "--context")
-        { Description = "Bytes of context to show around matches", DefaultValueFactory = _ => 32 };
+            { Description = "Bytes of context to show around matches", DefaultValueFactory = _ => 32 };
         var locateOption = new Option<bool>("--locate")
-        { Description = "Also locate the record/GRUP containing each match" };
+            { Description = "Also locate the record/GRUP containing each match" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(patternArg);
@@ -104,13 +108,16 @@ public static class DumpCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var patternArg = new Argument<string>("pattern")
-        { Description = "Hex pattern (e.g. \"07 07 05 01 03 07 06\" or \"07070501030706\")" };
+            { Description = "Hex pattern (e.g. \"07 07 05 01 03 07 06\" or \"07070501030706\")" };
         var typeOption = new Option<string?>("-t", "--type")
-        { Description = "Restrict to a single record type (e.g. NPC_)" };
+            { Description = "Restrict to a single record type (e.g. NPC_)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum hits to render (0 = unlimited). Total count is always reported.", DefaultValueFactory = _ => 0 };
+        {
+            Description = "Maximum hits to render (0 = unlimited). Total count is always reported.",
+            DefaultValueFactory = _ => 0
+        };
         var contextOption = new Option<int>("-c", "--context")
-        { Description = "Bytes of context around each hit", DefaultValueFactory = _ => 32 };
+            { Description = "Bytes of context around each hit", DefaultValueFactory = _ => 32 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(patternArg);
@@ -135,7 +142,7 @@ public static class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var offsetArg = new Argument<string>("offset") { Description = "Starting offset in hex (e.g., 0x1000)" };
         var lengthOption = new Option<int>("-l", "--length")
-        { Description = "Number of bytes to dump", DefaultValueFactory = _ => 256 };
+            { Description = "Number of bytes to dump", DefaultValueFactory = _ => 256 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(offsetArg);
@@ -173,8 +180,10 @@ public static class DumpCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var formidArg = new Argument<string>("formid") { Description = "FormID to locate (hex, e.g., 0x000A471E)" };
-        var typeOption = new Option<string?>("-t", "--type") { Description = "Filter by record type (e.g., REFR, CELL)" };
-        var compareOption = new Option<string?>("-c", "--compare") { Description = "Compare ancestry with a second ESM" };
+        var typeOption = new Option<string?>("-t", "--type")
+            { Description = "Filter by record type (e.g., REFR, CELL)" };
+        var compareOption = new Option<string?>("-c", "--compare")
+            { Description = "Compare ancestry with a second ESM" };
         var allOption = new Option<bool>("-a", "--all") { Description = "Show ancestry for all matches" };
 
         command.Arguments.Add(fileArg);
@@ -193,10 +202,18 @@ public static class DumpCommands
         return command;
     }
 
-    public static Command CreateValidateCommand() => CreateValidateCommandCore("validate", "Validate top-level record/GRUP structure and report first failure");
+    public static Command CreateValidateCommand()
+    {
+        return CreateValidateCommandCore("validate",
+            "Validate top-level record/GRUP structure and report first failure");
+    }
 
     /// <summary>Creates a validate command named "structure" for use as a subcommand.</summary>
-    public static Command CreateStructureValidateCommand() => CreateValidateCommandCore("structure", "Validate top-level record/GRUP structure and report first failure");
+    public static Command CreateStructureValidateCommand()
+    {
+        return CreateValidateCommandCore("structure",
+            "Validate top-level record/GRUP structure and report first failure");
+    }
 
     private static Command CreateValidateCommandCore(string name, string description)
     {
@@ -218,10 +235,17 @@ public static class DumpCommands
         return command;
     }
 
-    public static Command CreateValidateDeepCommand() => CreateValidateDeepCommandCore("validate-deep", "Deep-validate record/GRUP structure and subrecord layout (reports first failure)");
+    public static Command CreateValidateDeepCommand()
+    {
+        return CreateValidateDeepCommandCore("validate-deep",
+            "Deep-validate record/GRUP structure and subrecord layout (reports first failure)");
+    }
 
     /// <summary>Creates a validate-deep command named "deep" for use as a subcommand.</summary>
-    public static Command CreateDeepValidateCommand() => CreateValidateDeepCommandCore("deep", "Deep-validate record/GRUP structure and subrecord layout");
+    public static Command CreateDeepValidateCommand()
+    {
+        return CreateValidateDeepCommandCore("deep", "Deep-validate record/GRUP structure and subrecord layout");
+    }
 
     private static Command CreateValidateDeepCommandCore(string name, string description)
     {
@@ -231,7 +255,7 @@ public static class DumpCommands
         var startOption = new Option<string?>("-o", "--offset") { Description = "Start offset in hex (optional)" };
         var stopOption = new Option<string?>("-s", "--stop") { Description = "Stop offset in hex (optional)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of records to validate (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of records to validate (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(startOption);
@@ -256,7 +280,7 @@ public static class DumpCommands
         var typeOption = new Option<string?>("-t", "--type") { Description = "Filter by record type (e.g., INFO)" };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
         var compareOption = new Option<string?>("-c", "--compare")
-        { Description = "Compare with record from another ESM file" };
+            { Description = "Compare with record from another ESM file" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(formidArg);
@@ -281,7 +305,7 @@ public static class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var patternArg = new Argument<string>("pattern") { Description = "Search term (case-insensitive)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
+            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(patternArg);
@@ -303,7 +327,7 @@ public static class DumpCommands
         var xArg = new Argument<int>("x") { Description = "Grid X coordinate (e.g., -32)" };
         var yArg = new Argument<int>("y") { Description = "Grid Y coordinate (e.g., -32)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
+            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(xArg);

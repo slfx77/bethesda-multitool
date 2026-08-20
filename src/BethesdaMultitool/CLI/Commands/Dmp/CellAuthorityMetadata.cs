@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.CLI.Commands.Dmp;
 
 public sealed record CellAuthorityMetadata
 {

@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

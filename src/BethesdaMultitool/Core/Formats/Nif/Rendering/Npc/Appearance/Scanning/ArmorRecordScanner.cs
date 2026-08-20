@@ -80,4 +80,3 @@ internal static class ArmorRecordScanner
         };
     }
 }
-

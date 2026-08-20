@@ -294,7 +294,7 @@ internal static class DialogueTesFileScriptRecovery
             editorId,
             expectedFormId,
             context.ResolveFormName,
-            isDmpDerived: true);
+            true);
 
         return new DialogueTesFileScriptRecoveryResult
         {

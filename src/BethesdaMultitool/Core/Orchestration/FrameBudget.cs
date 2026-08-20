@@ -19,8 +19,6 @@ internal struct FrameBudget
     private readonly int _maxItems;
     private readonly long _maxBytes;
     private readonly long _deadlineTimestamp;
-    private long _bytesUsed;
-    private int _itemsUsed;
 
     /// <summary>A budget that never refuses work.</summary>
     public static FrameBudget Unlimited => new(int.MaxValue, long.MaxValue);
@@ -40,34 +38,37 @@ internal struct FrameBudget
             : startTimestamp + (long)(maxMilliseconds / 1000.0 * frequency);
     }
 
-    public readonly int ItemsUsed => _itemsUsed;
+    public int ItemsUsed { get; private set; }
 
-    public readonly long BytesUsed => _bytesUsed;
+    public long BytesUsed { get; private set; }
 
     /// <summary>
     ///     True if a unit of <paramref name="bytes" /> may start now: always true for the first unit
     ///     of the frame; otherwise only while item count, byte total, and wall clock all remain under
     ///     their ceilings.
     /// </summary>
-    public readonly bool CanStart(long bytes = 0) => CanStartAt(Stopwatch.GetTimestamp(), bytes);
+    public readonly bool CanStart(long bytes = 0)
+    {
+        return CanStartAt(Stopwatch.GetTimestamp(), bytes);
+    }
 
     /// <summary>Deterministic variant for tests.</summary>
     internal readonly bool CanStartAt(long timestamp, long bytes = 0)
     {
-        if (_itemsUsed == 0)
+        if (ItemsUsed == 0)
         {
             return true;
         }
 
-        return _itemsUsed < _maxItems &&
-               _bytesUsed + Math.Max(1L, bytes) <= _maxBytes &&
+        return ItemsUsed < _maxItems &&
+               BytesUsed + Math.Max(1L, bytes) <= _maxBytes &&
                timestamp < _deadlineTimestamp;
     }
 
     /// <summary>Records a completed unit of <paramref name="bytes" /> against the budget.</summary>
     public void Record(long bytes = 0)
     {
-        _bytesUsed += Math.Max(1L, bytes);
-        _itemsUsed++;
+        BytesUsed += Math.Max(1L, bytes);
+        ItemsUsed++;
     }
 }

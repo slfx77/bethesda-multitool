@@ -30,12 +30,12 @@ internal static unsafe class GpuMeshBufferFactory12
     /// </summary>
     public static readonly InputElementDescription[] InputElements =
     [
-        new("TEXCOORD", 0, Format.R32G32B32_Float,    0, 0), // aPosition    (vec3)
-        new("TEXCOORD", 1, Format.R32G32B32_Float,   12, 0), // aNormal      (vec3)
-        new("TEXCOORD", 2, Format.R32G32_Float,      24, 0), // aTexCoord    (vec2)
+        new("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0), // aPosition    (vec3)
+        new("TEXCOORD", 1, Format.R32G32B32_Float, 12, 0), // aNormal      (vec3)
+        new("TEXCOORD", 2, Format.R32G32_Float, 24, 0), // aTexCoord    (vec2)
         new("TEXCOORD", 3, Format.R32G32B32A32_Float, 32, 0), // aVertexColor (vec4)
-        new("TEXCOORD", 4, Format.R32G32B32_Float,   48, 0), // aTangent     (vec3)
-        new("TEXCOORD", 5, Format.R32G32B32_Float,   60, 0)  // aBitangent   (vec3)
+        new("TEXCOORD", 4, Format.R32G32B32_Float, 48, 0), // aTangent     (vec3)
+        new("TEXCOORD", 5, Format.R32G32B32_Float, 60, 0) // aBitangent   (vec3)
     ];
 
 
@@ -55,8 +55,7 @@ internal static unsafe class GpuMeshBufferFactory12
             HeapProperties.UploadHeapProperties,
             HeapFlags.None,
             ResourceDescription.Buffer(byteWidth),
-            ResourceStates.GenericRead,
-            optimizedClearValue: null);
+            ResourceStates.GenericRead);
 
         void* cpuPtr = null;
         resource.Map(0, &cpuPtr).CheckError();
@@ -67,8 +66,9 @@ internal static unsafe class GpuMeshBufferFactory12
         }
         finally
         {
-            resource.Unmap(0, null);
+            resource.Unmap(0);
         }
+
         return resource;
     }
 
@@ -95,15 +95,13 @@ internal static unsafe class GpuMeshBufferFactory12
             HeapProperties.DefaultHeapProperties,
             HeapFlags.None,
             ResourceDescription.Buffer(byteWidth),
-            ResourceStates.Common,
-            optimizedClearValue: null);
+            ResourceStates.Common);
 
         var staging = gpu.Device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.UploadHeapProperties,
             HeapFlags.None,
             ResourceDescription.Buffer(byteWidth),
-            ResourceStates.GenericRead,
-            optimizedClearValue: null);
+            ResourceStates.GenericRead);
 
         void* cpuPtr = null;
         staging.Map(0, &cpuPtr).CheckError();
@@ -114,7 +112,7 @@ internal static unsafe class GpuMeshBufferFactory12
         }
         finally
         {
-            staging.Unmap(0, null);
+            staging.Unmap(0);
         }
 
         cmd.CopyBufferRegion(resource, 0, staging, 0, byteWidth);
@@ -133,7 +131,8 @@ internal static unsafe class GpuMeshBufferFactory12
         return VertexBufferViewOf(buffer, 0, (uint)buffer.Description.Width, stride);
     }
 
-    public static VertexBufferView VertexBufferViewOf(ID3D12Resource buffer, uint byteOffset, uint sizeInBytes, uint stride)
+    public static VertexBufferView VertexBufferViewOf(ID3D12Resource buffer, uint byteOffset, uint sizeInBytes,
+        uint stride)
     {
         return new VertexBufferView
         {
@@ -158,7 +157,7 @@ internal static unsafe class GpuMeshBufferFactory12
         {
             BufferLocation = buffer.GPUVirtualAddress + byteOffset,
             SizeInBytes = sizeInBytes,
-            Format = Vortice.DXGI.Format.R16_UInt
+            Format = Format.R16_UInt
         };
     }
 }

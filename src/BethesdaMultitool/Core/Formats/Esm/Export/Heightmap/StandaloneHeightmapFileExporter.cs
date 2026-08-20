@@ -1,8 +1,8 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+
 internal static class StandaloneHeightmapFileExporter
 {
     internal static async Task ExportAsync(
@@ -15,7 +15,8 @@ internal static class StandaloneHeightmapFileExporter
 
         var scale = useColorGradient
             ? null
-            : HeightmapExportScaleCalculator.CalculateVhgtGrayscaleScale(heightmaps.Select(heightmap => heightmap.CalculateHeights()));
+            : HeightmapExportScaleCalculator.CalculateVhgtGrayscaleScale(heightmaps.Select(heightmap =>
+                heightmap.CalculateHeights()));
 
         var tasks = heightmaps.Select((heightmap, index) =>
             ExportSingleHeightmapAsync(heightmap, index, cellGrids, outputDir, useColorGradient, scale));

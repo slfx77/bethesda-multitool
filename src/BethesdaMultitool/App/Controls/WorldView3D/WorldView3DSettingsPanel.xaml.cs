@@ -39,7 +39,7 @@ public sealed partial class WorldView3DSettingsPanel : UserControl
             brush.GradientStops.Add(new GradientStop
             {
                 Offset = t,
-                Color = Windows.UI.Color.FromArgb(255, r, g, b),
+                Color = Windows.UI.Color.FromArgb(255, r, g, b)
             });
         }
 
@@ -107,15 +107,17 @@ public sealed partial class WorldView3DSettingsPanel : UserControl
         CanopyShadowsToggle.Visibility = Vis(profile.HasCanopyShadows);
     }
 
-    /// <summary>Reseats the Screen-effects radio without firing the owner's handler loop (the
-    /// owner guards with its syncing flag; index order = None(0)/Bloom(1)/HDR(2)).</summary>
+    /// <summary>
+    ///     Reseats the Screen-effects radio without firing the owner's handler loop (the
+    ///     owner guards with its syncing flag; index order = None(0)/Bloom(1)/HDR(2)).
+    /// </summary>
     internal void SelectTonemapRadio(int index)
     {
         var target = index switch
         {
             0 => TonemapNoneRadio,
             1 => TonemapBloomRadio,
-            _ => TonemapHdrRadio,
+            _ => TonemapHdrRadio
         };
         if (target.IsChecked != true)
         {

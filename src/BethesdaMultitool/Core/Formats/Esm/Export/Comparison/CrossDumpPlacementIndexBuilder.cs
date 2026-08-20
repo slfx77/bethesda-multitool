@@ -62,7 +62,8 @@ internal static class CrossDumpPlacementIndexBuilder
         BuildNpcPlacementIndexes(IEnumerable<(string FilePath, RecordCollection Records)> sources)
     {
         var sourceList = sources.ToList();
-        var virtualCellCanonicalFormIds = VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
+        var virtualCellCanonicalFormIds =
+            VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
         var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<NpcPlacementInfo>>>(
             StringComparer.OrdinalIgnoreCase);
 
@@ -203,7 +204,8 @@ internal static class CrossDumpPlacementIndexBuilder
             IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate>? virtualCellCanonicalFormIds = null)
     {
         var sourceList = sources.ToList();
-        virtualCellCanonicalFormIds ??= VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
+        virtualCellCanonicalFormIds ??=
+            VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
         var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<KeyLockedDoorInfo>>>(
             StringComparer.OrdinalIgnoreCase);
 
@@ -342,7 +344,8 @@ internal static class CrossDumpPlacementIndexBuilder
             IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate>? virtualCellCanonicalFormIds = null)
     {
         var sourceList = sources.ToList();
-        virtualCellCanonicalFormIds ??= VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
+        virtualCellCanonicalFormIds ??=
+            VirtualCellCanonicalizer.BuildVirtualCellCanonicalFormIds(sourceList.Select(source => source.Records));
         var result = new Dictionary<string, IReadOnlyDictionary<uint, IReadOnlyList<ContainerPlacementInfo>>>(
             StringComparer.OrdinalIgnoreCase);
 
@@ -651,7 +654,8 @@ internal static class CrossDumpPlacementIndexBuilder
         CellRecord cell,
         IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
     {
-        if (VirtualCellCanonicalizer.TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
+        if (VirtualCellCanonicalizer.TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds,
+                out var canonicalCell))
         {
             return new PlacementCellInfo(
                 canonicalCell.FormId,
@@ -675,7 +679,8 @@ internal static class CrossDumpPlacementIndexBuilder
         CellSkeleton cell,
         IReadOnlyDictionary<CellCoordinateKey, RealCellCandidate> virtualCellCanonicalFormIds)
     {
-        if (VirtualCellCanonicalizer.TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds, out var canonicalCell))
+        if (VirtualCellCanonicalizer.TryGetVirtualCellCanonicalFormId(cell, virtualCellCanonicalFormIds,
+                out var canonicalCell))
         {
             return new PlacementCellInfo(
                 canonicalCell.FormId,
@@ -703,4 +708,3 @@ internal static class CrossDumpPlacementIndexBuilder
         int? GridX,
         int? GridY);
 }
-

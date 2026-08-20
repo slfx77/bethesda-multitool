@@ -1,11 +1,13 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
-/// <summary>Bakes a submesh's tint color (hair/skin) into its diffuse texture for export, since glTF has no separate tint channel.</summary>
+/// <summary>
+///     Bakes a submesh's tint color (hair/skin) into its diffuse texture for export, since glTF has no separate tint
+///     channel.
+/// </summary>
 internal static class NpcGlbTintColorEncoder
 {
     internal static bool HasTintColor(RenderableSubmesh submesh)
@@ -115,4 +117,3 @@ internal static class NpcGlbTintColorEncoder
         return (byte)Math.Clamp(MathF.Round(channel * tint), 0f, 255f);
     }
 }
-

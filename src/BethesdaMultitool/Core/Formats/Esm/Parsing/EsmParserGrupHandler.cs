@@ -31,7 +31,7 @@ internal static class EsmParserGrupHandler
             return (records, grupHeaders);
         }
 
-        var offset = (long)format.RecordHeaderSize + tes4Header.DataSize;
+        var offset = format.RecordHeaderSize + tes4Header.DataSize;
 
         while (offset + format.RecordHeaderSize <= data.Length)
         {
@@ -40,7 +40,7 @@ internal static class EsmParserGrupHandler
 
             if (sig == "GRUP")
             {
-                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders, depth: 0);
+                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders, 0);
 
                 var groupHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
                 if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)

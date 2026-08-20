@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using Microsoft.UI.Xaml;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.WorldData;
 using WinRT.Interop;
 
 namespace BethesdaMultitool;
@@ -25,12 +26,11 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldView3DControl
 {
-    private static readonly System.Text.Json.JsonSerializerOptions Export3DJsonOptions = new() { WriteIndented = true };
-
     // Z span fallback when a worldspace has no finite placed-object Z (top-down ignores it anyway; the
     // tilted modes need some vertical extent to frame). Matches the cell-grid's default-ish relief band.
     private const float Export3DFallbackMinZ = -8192f;
     private const float Export3DFallbackMaxZ = 32768f;
+    private static readonly System.Text.Json.JsonSerializerOptions Export3DJsonOptions = new() { WriteIndented = true };
 
     // Extra strict-settle wait allowed AFTER a tile reports loose-complete (nothing actively loading).
     // Well beyond the "frame or two" the copy-queue upload window needs, but far below the 20s box the
@@ -85,7 +85,7 @@ public sealed partial class WorldView3DControl
                 col = result.Column,
                 file = result.FileName,
                 imageW = result.ImageWidth,
-                imageH = result.ImageHeight,
+                imageH = result.ImageHeight
             }));
         }
 
@@ -158,6 +158,7 @@ public sealed partial class WorldView3DControl
                         {
                             capturePolicy = ExportTileCapturePolicy.CompleteOrFullySettled;
                         }
+
                         if (settleTimedOut)
                         {
                             capturePolicy = ExportTileCapturePolicy.Always;
@@ -185,6 +186,7 @@ public sealed partial class WorldView3DControl
                                     $"Tile {tileIndex}/{totalTiles}: streaming timed out — exporting as-is",
                                     tileIndex, totalTiles);
                             }
+
                             break;
                         }
 
@@ -203,9 +205,11 @@ public sealed partial class WorldView3DControl
                         {
                             looseCompleteSince = null;
                         }
+
                         progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
                         await Task.Delay(50, ct);
                     }
+
                     if (tile is null) continue;
 
                     // Skip only the renderer's transparent-black clear. Uniformity by itself is not an
@@ -226,6 +230,7 @@ public sealed partial class WorldView3DControl
                             {
                                 return; // empty tile — the pre-cleared slot already matches
                             }
+
                             ExportTileStitcher.CopyTile(
                                 BgraToRgba(bgra), w, h, image, plan.ImageWidth, plan.ImageHeight, col, row);
                         }, ct);
@@ -294,7 +299,7 @@ public sealed partial class WorldView3DControl
                     tiles = manifestTiles
                         .OrderBy(static entry => entry.PhysicalIndex)
                         .Select(static entry => entry.Tile)
-                        .ToArray(),
+                        .ToArray()
                 };
                 var json = System.Text.Json.JsonSerializer.Serialize(manifest, Export3DJsonOptions);
                 await File.WriteAllTextAsync(Path.Combine(dir, $"{name}_manifest.json"), json, ct);
@@ -313,16 +318,10 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    private sealed record TiledPngSaveResult(
-        int PhysicalIndex,
-        int Row,
-        int Column,
-        string FileName,
-        int ImageWidth,
-        int ImageHeight);
-
-    /// <summary>Swaps B↔R in a tightly-packed BGRA buffer (the offscreen readback) to RGBA for
-    /// <see cref="PngWriter.SaveRgba" />.</summary>
+    /// <summary>
+    ///     Swaps B↔R in a tightly-packed BGRA buffer (the offscreen readback) to RGBA for
+    ///     <see cref="PngWriter.SaveRgba" />.
+    /// </summary>
     private static byte[] BgraToRgba(byte[] bgra)
     {
         var rgba = new byte[bgra.Length];
@@ -333,6 +332,15 @@ public sealed partial class WorldView3DControl
             rgba[i + 2] = bgra[i];
             rgba[i + 3] = bgra[i + 3];
         }
+
         return rgba;
     }
+
+    private sealed record TiledPngSaveResult(
+        int PhysicalIndex,
+        int Row,
+        int Column,
+        string FileName,
+        int ImageWidth,
+        int ImageHeight);
 }

@@ -1,12 +1,11 @@
 using System.Numerics;
-using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Resources;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
 
@@ -25,7 +24,7 @@ internal static class NpcHeadBuilder
         NpcAppearance npc,
         MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
-        BethesdaMultitool.Core.Resources.LruCache<string, NifRenderableModel?> headMeshCache,
+        LruCache<string, NifRenderableModel?> headMeshCache,
         Dictionary<string, EgmParser?> egmCache,
         Dictionary<string, EgtParser?> egtCache,
         NpcRenderSettings s,
@@ -301,4 +300,3 @@ internal static class NpcHeadBuilder
         return sum / coefficients.Length;
     }
 }
-

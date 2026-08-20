@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
@@ -39,10 +38,10 @@ namespace BethesdaMultitool.Core.Semantic;
 internal sealed class Tes4LoadOrderFormIdMapper
 {
     private const int HeaderReadBytes = 8192;
+    private readonly Func<string, IReadOnlyList<string>> _mastersReader;
+    private readonly Dictionary<string, int> _missingMasterSlots = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly Dictionary<string, int> _slotByFileName;
-    private readonly Dictionary<string, int> _missingMasterSlots = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Func<string, IReadOnlyList<string>> _mastersReader;
     private int _nextMissingSlot;
 
     private Tes4LoadOrderFormIdMapper(
@@ -212,7 +211,7 @@ internal sealed class Tes4LoadOrderFormIdMapper
             // Fill the buffer, never a single Read: Stream.Read may legally return short (network
             // paths, filter drivers), and the header parser treats a truncated prefix as a VALID
             // shorter MAST list — silently wrong anchors rather than an error.
-            var read = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+            var read = stream.ReadAtLeast(buffer, buffer.Length, false);
             return EsmParser.ParseFileHeader(buffer.AsSpan(0, read))?.Masters ?? [];
         }
         catch (IOException)

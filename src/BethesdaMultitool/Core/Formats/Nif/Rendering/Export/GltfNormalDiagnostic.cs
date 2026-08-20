@@ -242,4 +242,3 @@ internal static class GltfNormalDiagnostic
         int ZeroNormalCount,
         List<int> SampleFlippedIndices);
 }
-

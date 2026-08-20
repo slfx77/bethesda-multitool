@@ -26,17 +26,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 /// </summary>
 internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
 {
-    public static readonly Fallout4DialogueExtractor Instance = new();
-
-    private Fallout4DialogueExtractor()
-    {
-    }
-
     // FO4 condition function indices (wbDefinitionsFO4 — same as Skyrim/FNV).
     private const ushort GetIsRace = 69;
     private const ushort GetInFaction = 71;
     private const ushort GetIsId = 72;
     private const ushort GetIsVoiceType = 426;
+    public static readonly Fallout4DialogueExtractor Instance = new();
+
+    private Fallout4DialogueExtractor()
+    {
+    }
 
     public DialogTopicRecord BuildTopic(
         uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian,

@@ -25,14 +25,15 @@ public sealed class QustEncoder : IRecordEncoder
     {
         ["Flags"] = m => m.Flags,
         ["Priority"] = m => m.Priority,
-        ["QuestDelay"] = m => m.QuestDelay,
+        ["QuestDelay"] = m => m.QuestDelay
     };
 
-    private static readonly Dictionary<string, Func<QuestObjectiveTarget, object?>> QstaExtractors = new(StringComparer.Ordinal)
-    {
-        ["Target"] = m => m.TargetFormId,
-        ["Flags"] = m => m.Flags,
-    };
+    private static readonly Dictionary<string, Func<QuestObjectiveTarget, object?>> QstaExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Target"] = m => m.TargetFormId,
+            ["Flags"] = m => m.Flags
+        };
 
     public string RecordType => "QUST";
     public Type ModelType => typeof(QuestRecord);
@@ -96,11 +97,11 @@ public sealed class QustEncoder : IRecordEncoder
     ///     INDX + (QSDT + CNAM?)*, then per objective: QOBJ + NNAM? + QSTA*.
     ///     Quest stages are emitted in index order; objectives are emitted in index order.
     ///     <para>
-    ///     CTDAs across top-level + per-stage + per-objective-target are routed through
-    ///     <see cref="ConditionSanitizer.Filter" /> so dangling FormID parameters get remapped
-    ///     via the runtime→emitted alias table or dropped (same policy as INFO). When
-    ///     <paramref name="validFormIds" /> is null (legacy callers / tests) we skip sanitization
-    ///     and emit conditions verbatim.
+    ///         CTDAs across top-level + per-stage + per-objective-target are routed through
+    ///         <see cref="ConditionSanitizer.Filter" /> so dangling FormID parameters get remapped
+    ///         via the runtime→emitted alias table or dropped (same policy as INFO). When
+    ///         <paramref name="validFormIds" /> is null (legacy callers / tests) we skip sanitization
+    ///         and emit conditions verbatim.
     ///     </para>
     /// </summary>
     internal static EncodedRecord EncodeNew(

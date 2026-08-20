@@ -26,7 +26,7 @@ public sealed class PlannedDialEncoder : IPlannedRecordEncoder<DialogTopicRecord
             RecordDisposition.New => DialEncoder.EncodeNew(model),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedDialEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedDialEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

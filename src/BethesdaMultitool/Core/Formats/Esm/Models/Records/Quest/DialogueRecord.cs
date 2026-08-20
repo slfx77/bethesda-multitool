@@ -9,6 +9,17 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 /// </summary>
 public record DialogueRecord
 {
+    // Computed properties
+
+    internal const byte GoodbyeFlag = 0x01;
+    internal const byte RandomFlag = 0x02;
+    internal const byte SayOnceFlag = 0x04;
+    internal const byte RunImmediatelyFlag = 0x08;
+    internal const byte InfoRefusalFlag = 0x10;
+    internal const byte RandomEndFlag = 0x20;
+    internal const byte RunForRumorsFlag = 0x40;
+    internal const byte SpeechChallengeFlag = 0x80;
+
     /// <summary>FormID of the INFO record.</summary>
     public uint FormId { get; init; }
 
@@ -208,17 +219,6 @@ public record DialogueRecord
 
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
-
-    // Computed properties
-
-    internal const byte GoodbyeFlag = 0x01;
-    internal const byte RandomFlag = 0x02;
-    internal const byte SayOnceFlag = 0x04;
-    internal const byte RunImmediatelyFlag = 0x08;
-    internal const byte InfoRefusalFlag = 0x10;
-    internal const byte RandomEndFlag = 0x20;
-    internal const byte RunForRumorsFlag = 0x40;
-    internal const byte SpeechChallengeFlag = 0x80;
 
     /// <summary>Whether this INFO ends the conversation.</summary>
     public bool IsGoodbye => (InfoFlags & GoodbyeFlag) != 0;

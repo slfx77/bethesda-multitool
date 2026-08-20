@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

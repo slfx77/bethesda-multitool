@@ -221,4 +221,3 @@ internal sealed class EsmModelCrossReference
         return path.Replace('/', '\\').ToLowerInvariant();
     }
 }
-

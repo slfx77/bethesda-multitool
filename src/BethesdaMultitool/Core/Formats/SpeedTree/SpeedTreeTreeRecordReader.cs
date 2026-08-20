@@ -16,8 +16,10 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 /// </summary>
 public static class SpeedTreeTreeRecordReader
 {
-    /// <summary>The TREE record's leaf atlas (ICON) as a game-relative <c>textures\…</c> path, or null. Prefers
-    /// the typed <paramref name="fields" /> value, falling back to the schema-decoded ICON node.</summary>
+    /// <summary>
+    ///     The TREE record's leaf atlas (ICON) as a game-relative <c>textures\…</c> path, or null. Prefers
+    ///     the typed <paramref name="fields" /> value, falling back to the schema-decoded ICON node.
+    /// </summary>
     public static string? ResolveLeafIcon(
         IReadOnlyDictionary<string, object?>? fields, IReadOnlyList<DecodedNode>? decodedTree)
     {
@@ -66,11 +68,15 @@ public static class SpeedTreeTreeRecordReader
             : new SpeedTreeDimming(leaf ?? 0f, branch ?? 0f, rock ?? 1f, rustle ?? 1f);
     }
 
-    private static float ReadFloat(Dictionary<string, object?> fields, string name, float fallback = 0f) =>
-        fields.TryGetValue(name, out var v) && v is float f ? f : fallback;
+    private static float ReadFloat(Dictionary<string, object?> fields, string name, float fallback = 0f)
+    {
+        return fields.TryGetValue(name, out var v) && v is float f ? f : fallback;
+    }
 
-    /// <summary>The TREE record's first SpeedTree seed (SNAM array) from the schema-decoded tree, or null.
-    /// The typed <c>Fields["SNAM"]</c> path is handled by callers; this only covers the DecodedTree case.</summary>
+    /// <summary>
+    ///     The TREE record's first SpeedTree seed (SNAM array) from the schema-decoded tree, or null.
+    ///     The typed <c>Fields["SNAM"]</c> path is handled by callers; this only covers the DecodedTree case.
+    /// </summary>
     public static uint? ResolveFirstSeed(IReadOnlyList<DecodedNode>? decodedTree)
     {
         if (decodedTree is null)

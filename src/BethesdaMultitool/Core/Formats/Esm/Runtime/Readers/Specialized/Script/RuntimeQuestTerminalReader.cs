@@ -3,7 +3,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 using static BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Layouts.RuntimeDialogueLayouts;
@@ -20,11 +19,12 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     private readonly RuntimeMemoryContext _context = context;
     private readonly RuntimePdbFieldAccessor _pdbFields = new(context);
-    private readonly RuntimeScriptReader _scriptReader = new(context);
 
     // Build-specific offset shift for Note/Quest/Terminal structs.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+
+    private readonly RuntimeScriptReader _scriptReader = new(context);
 
     // RuntimeTerminalLayoutProbe was deleted in Phase 1B.6. Its menu-list signal only
     // checked whether one 32-bit word looked pointer-shaped; that cannot distinguish a
@@ -174,38 +174,38 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     Read extended terminal data from a runtime BGSTerminal struct.
     ///     Returns a TerminalRecord with difficulty, flags, and menu items.
     ///     <para>
-    ///     <b>Password is permanently null for the captured DMPs.</b> Root cause:
-    ///     3–9-month build drift between the captured DMP binaries (180-byte
-    ///     <c>BGSTerminal</c>, no <c>pPassword</c> field) and the available MemDebug
-    ///     PDB (184-byte <c>BGSTerminal</c> with <c>pPassword: BGSNote*</c> at +176
-    ///     followed by <c>Data</c> at +180). The runtime binary's <c>BGSTerminal</c>
-    ///     simply does not have the <c>pPassword</c> field at all — its <c>Data</c>
-    ///     block sits where the PDB labels <c>pPassword</c>. No offset shift can
-    ///     reconcile this; the field is structurally absent.
+    ///         <b>Password is permanently null for the captured DMPs.</b> Root cause:
+    ///         3–9-month build drift between the captured DMP binaries (180-byte
+    ///         <c>BGSTerminal</c>, no <c>pPassword</c> field) and the available MemDebug
+    ///         PDB (184-byte <c>BGSTerminal</c> with <c>pPassword: BGSNote*</c> at +176
+    ///         followed by <c>Data</c> at +180). The runtime binary's <c>BGSTerminal</c>
+    ///         simply does not have the <c>pPassword</c> field at all — its <c>Data</c>
+    ///         block sits where the PDB labels <c>pPassword</c>. No offset shift can
+    ///         reconcile this; the field is structurally absent.
     ///     </para>
     ///     <para>
-    ///     Tier 3.2 ground-truthed this via byte-level probing across 32 terminals
-    ///     in <c>memdebug_dump</c>, cross-referenced against the source ESM's DNAM
-    ///     payload. Example anchor: TERM 0x000EBA3A
-    ///     <c>HouseToolsTerminal</c> — ESM DNAM bytes <c>00 02 05 00</c> match
-    ///     runtime <c>+176</c> bytes <c>00 02 05 00</c> exactly. That puts Data
-    ///     (Difficulty / Flags / ServerType / Unused) at +176 in the runtime, with
-    ///     no <c>pPassword</c> slot before it.
+    ///         Tier 3.2 ground-truthed this via byte-level probing across 32 terminals
+    ///         in <c>memdebug_dump</c>, cross-referenced against the source ESM's DNAM
+    ///         payload. Example anchor: TERM 0x000EBA3A
+    ///         <c>HouseToolsTerminal</c> — ESM DNAM bytes <c>00 02 05 00</c> match
+    ///         runtime <c>+176</c> bytes <c>00 02 05 00</c> exactly. That puts Data
+    ///         (Difficulty / Flags / ServerType / Unused) at +176 in the runtime, with
+    ///         no <c>pPassword</c> slot before it.
     ///     </para>
     ///     <para>
-    ///     The decision to leave Password permanently null was canonicalized in
-    ///     Tier 5.3 of the planning file. The only paths forward would be (a)
-    ///     locating a PDB that matches the actual runtime build (none in this repo
-    ///     do, and no source has been identified) or (b) implementing a heap
-    ///     scanner that hunts BGSNote candidates referenced by terminals — much
-    ///     harder and not load-bearing for downstream consumers, since password
-    ///     text is rarely consumed in the output pipeline.
+    ///         The decision to leave Password permanently null was canonicalized in
+    ///         Tier 5.3 of the planning file. The only paths forward would be (a)
+    ///         locating a PDB that matches the actual runtime build (none in this repo
+    ///         do, and no source has been identified) or (b) implementing a heap
+    ///         scanner that hunts BGSNote candidates referenced by terminals — much
+    ///         harder and not load-bearing for downstream consumers, since password
+    ///         text is rarely consumed in the output pipeline.
     ///     </para>
     ///     <para>
-    ///     If a newer PDB is sourced in the future, revisit this method; until
-    ///     then any naive "read pPassword" attempts will reproduce the Tier 3.2
-    ///     wrong-offset behavior (reading <c>0x00</c> or <c>0xFF</c> garbage from
-    ///     +180 that downstream clamps mask as VeryEasy).
+    ///         If a newer PDB is sourced in the future, revisit this method; until
+    ///         then any naive "read pPassword" attempts will reproduce the Tier 3.2
+    ///         wrong-offset behavior (reading <c>0x00</c> or <c>0xFF</c> garbage from
+    ///         +180 that downstream clamps mask as VeryEasy).
     ///     </para>
     /// </summary>
     internal TerminalRecord? ReadRuntimeTerminal(RuntimeEditorIdEntry entry)
@@ -426,7 +426,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         // ResultScript is embedded inline at +16. Parse source and the executable fixed
         // tables from this exact object; RuntimeScriptReader keeps the bundle atomic.
         var inlineScript = _scriptReader.ReadInlineResultScript(
-            menuItemVA + (uint)MenuItemResultScriptOffset);
+            menuItemVA + MenuItemResultScriptOffset);
 
         var conditions = TesConditionListWalker.Walk(_context, buf, MenuItemConditionsOffset);
 
@@ -636,8 +636,6 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         return new QuestStageItemReadResult(buf[QuestStageItemFlagsOffset], conditions);
     }
 
-    private readonly record struct QuestStageItemReadResult(byte Flags, List<DialogueCondition> Conditions);
-
     /// <summary>
     ///     Walk the BSSimpleList of BGSQuestObjective pointers on TESQuest.
     ///     Each objective stores index, display text, owner quest, and runtime state.
@@ -749,6 +747,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         };
     }
 
+    private readonly record struct QuestStageItemReadResult(byte Flags, List<DialogueCondition> Conditions);
+
     #region Quest Struct Layout (Proto Debug PDB base + _s)
 
     // TESQuest: PDB size 108, Debug dump 112, Release dump 124
@@ -766,7 +766,9 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     private const int QuestStageItemListOffset = 4;
 
     private const int QuestStageItemStructSize = 132;
+
     private const int QuestStageItemFlagsOffset = 0;
+
     // objConditions (TESCondition, 8-byte embedded BSSimpleList head) — see
     // docs/PDB_Runtime_Structures.md "TESQuestStageItem" table.
     private const int QuestStageItemConditionsOffset = 4;
@@ -814,10 +816,10 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     //   - Tier 3.2: the difficulty and flags bytes moved again, from the PDB
     //     plus-180/plus-181 to the actual runtime plus-176/plus-177 (validated
     //     against ESM DNAM payloads).
-    private int TermStructSize => 168 + _s;          // 184 bytes (4 unused at end)
-    private int TermDifficultyOffset => 160 + _s;    // TERMINAL_DATA byte 0 (runtime +176)
-    private int TermFlagsOffset => 161 + _s;         // TERMINAL_DATA byte 1 (runtime +177)
-    private int TermMenuItemListOffset => 148 + _s;  // BSSimpleList<TERMINAL_MENU_ITEM*> head (runtime +164)
+    private int TermStructSize => 168 + _s; // 184 bytes (4 unused at end)
+    private int TermDifficultyOffset => 160 + _s; // TERMINAL_DATA byte 0 (runtime +176)
+    private int TermFlagsOffset => 161 + _s; // TERMINAL_DATA byte 1 (runtime +177)
+    private int TermMenuItemListOffset => 148 + _s; // BSSimpleList<TERMINAL_MENU_ITEM*> head (runtime +164)
 
     #endregion
 }

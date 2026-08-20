@@ -11,10 +11,12 @@ public static class GameFileSystem
     ///     Opens a single archive (BSA or BA2, dispatched by file magic) — via a shared
     ///     <paramref name="registry" /> handle when given, else a privately owned open.
     /// </summary>
-    public static IGameFileSystem OpenArchive(string archivePath, ArchiveHandleRegistry? registry = null) =>
-        registry is null
+    public static IGameFileSystem OpenArchive(string archivePath, ArchiveHandleRegistry? registry = null)
+    {
+        return registry is null
             ? new ArchiveFileSystem(archivePath)
             : new ArchiveFileSystem(registry.Acquire(archivePath));
+    }
 
     /// <summary>
     ///     Opens a game <c>Data</c> folder with engine-faithful precedence: loose files shadow
@@ -77,7 +79,7 @@ public static class GameFileSystem
 
         foreach (var pattern in filenamePatterns)
         {
-            AddArchives(layers, dataDirectory, pattern, registry, patchesFirst: true);
+            AddArchives(layers, dataDirectory, pattern, registry, true);
         }
 
         return new LayeredGameFileSystem(layers);

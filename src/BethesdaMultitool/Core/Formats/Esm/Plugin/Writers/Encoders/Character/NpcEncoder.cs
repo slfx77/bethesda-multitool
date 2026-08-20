@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -19,11 +18,22 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// </summary>
 public sealed class NpcEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["Faction"] = m => m.FactionFormId,
-        ["Rank"] = m => (byte)m.Rank,
-    };
+    /// <summary>
+    ///     ACBS TemplateFlags bit that enables inheriting traits (face / race / weight /
+    ///     height / hair / eyes / facegen) from the Template NPC. Without this bit the
+    ///     engine tries to load the new NPC's own FaceGen .NIF / .dds files, which we don't
+    ///     generate — the missing files leave a half-initialized scene graph that the
+    ///     renderer access-violates while walking. With this bit set, the engine inherits
+    ///     the template's renderable face/body and never tries to load our missing files.
+    /// </summary>
+    private const ushort TemplateFlagUseTraits = 0x0001;
+
+    private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Faction"] = m => m.FactionFormId,
+            ["Rank"] = m => (byte)m.Rank
+        };
 
     private static readonly Dictionary<string, Func<NpcAiData, object?>> AidtExtractors = new(StringComparer.Ordinal)
     {
@@ -33,7 +43,7 @@ public sealed class NpcEncoder : IRecordEncoder
         ["Responsibility"] = m => m.Responsibility,
         ["Mood"] = m => m.Mood,
         ["ServiceFlags"] = m => m.Flags,
-        ["Assistance"] = m => m.Assistance,
+        ["Assistance"] = m => m.Assistance
         // TrainingSkill / TrainingLevel / AggroRadiusBehavior / AggroRadius not modeled → zero-fill.
     };
 
@@ -46,7 +56,7 @@ public sealed class NpcEncoder : IRecordEncoder
         ["Charisma"] = m => m.SpecialStats![3],
         ["Intelligence"] = m => m.SpecialStats![4],
         ["Agility"] = m => m.SpecialStats![5],
-        ["Luck"] = m => m.SpecialStats![6],
+        ["Luck"] = m => m.SpecialStats![6]
     };
 
     public string RecordType => "NPC_";
@@ -219,6 +229,7 @@ public sealed class NpcEncoder : IRecordEncoder
                 subs.Add(new EncodedSubrecord("COED", ContEncoder.BuildCoedSubrecord(item)));
             }
         }
+
         if (droppedItems > 0)
         {
             warnings?.Add(
@@ -380,16 +391,6 @@ public sealed class NpcEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     ACBS TemplateFlags bit that enables inheriting traits (face / race / weight /
-    ///     height / hair / eyes / facegen) from the Template NPC. Without this bit the
-    ///     engine tries to load the new NPC's own FaceGen .NIF / .dds files, which we don't
-    ///     generate — the missing files leave a half-initialized scene graph that the
-    ///     renderer access-violates while walking. With this bit set, the engine inherits
-    ///     the template's renderable face/body and never tries to load our missing files.
-    /// </summary>
-    private const ushort TemplateFlagUseTraits = 0x0001;
-
-    /// <summary>
     ///     Encode a new NPC_ record from scratch. Includes EDID, FULL?, ACBS, RNAM (race),
     ///     plus optional FormID / faction / spell / inventory / package / AI subrecords.
     ///     NPCs without complete captured FaceGen get a renderable master template with
@@ -435,6 +436,7 @@ public sealed class NpcEncoder : IRecordEncoder
             templateIsMaster = true;
             templateRetargetReason = "face template";
         }
+
         if (!hasCompleteCapturedFaceGen
             && !templateIsMaster
             && masterNpcByRace is not null
@@ -504,10 +506,10 @@ public sealed class NpcEncoder : IRecordEncoder
         AppendActorGameplaySubrecords(npc, subs, resolvedTemplate,
             validPackageFormIds,
             remapTable,
-            onPkidDropped: _ => droppedPkids++,
-            onPkidRemapped: (_, _) => remappedPkids++,
-            validFormIds: validFormIds,
-            warnings: warnings);
+            _ => droppedPkids++,
+            (_, _) => remappedPkids++,
+            validFormIds,
+            warnings);
         if (droppedPkids > 0)
         {
             warnings.Add(
@@ -516,6 +518,7 @@ public sealed class NpcEncoder : IRecordEncoder
                 "these as 'Could not find Package' previously and the NPC fell through to a " +
                 "default idle.");
         }
+
         if (remappedPkids > 0)
         {
             warnings.Add(
@@ -630,4 +633,3 @@ public sealed class NpcEncoder : IRecordEncoder
         return baseName + suffix;
     }
 }
-

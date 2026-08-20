@@ -9,18 +9,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 /// </summary>
 internal sealed class CameraState
 {
-    /// <summary>World-space camera position (Fallout coords: X east, Y north, Z up).</summary>
-    public Vector3 Position { get; set; }
-
-    /// <summary>Rotation around world Z, radians. Zero = looking along +Y (north).</summary>
-    public float Yaw { get; set; }
-
-    /// <summary>Rotation around the camera's right vector, radians. Positive tilts up.</summary>
-    public float Pitch { get; set; }
-
-    /// <summary>Vertical field of view in radians. Default 60°.</summary>
-    public float FovYRadians { get; set; } = MathF.PI / 3f;
-
     /// <summary>
     ///     Default near clip plane in CLASSIC world units (~70 per metre) — 16 units is about 23 cm,
     ///     far enough to give D32_Float depth precision room across the wide near/far range and close
@@ -33,6 +21,33 @@ internal sealed class CameraState
     ///     </para>
     /// </summary>
     public const float DefaultNearPlane = 16f;
+
+    /// <summary>
+    ///     Reversed-Z remap: post-multiplies a standard [0,1] projection so depth maps near→1,
+    ///     far→0. Pairs with a depth clear of 0 and a <c>GreaterEqual</c> depth test in every scene
+    ///     PSO. With a float (D32) depth buffer this is the standard fix for precision across a wide
+    ///     near/far range — it cancels the 1/z nonlinearity, so a large <see cref="FarPlane" /> no
+    ///     longer z-fights. Only the Z row is touched (z' = w − z, w' = w), so X/Y clip mapping and
+    ///     the extracted frustum volume are unchanged. Shared with the 2D top-down overlay
+    ///     (TopDownViewProjBuilder) so the offscreen depth test matches.
+    /// </summary>
+    public static readonly Matrix4x4 ReverseZ = new(
+        1f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f,
+        0f, 0f, -1f, 0f,
+        0f, 0f, 1f, 1f);
+
+    /// <summary>World-space camera position (Fallout coords: X east, Y north, Z up).</summary>
+    public Vector3 Position { get; set; }
+
+    /// <summary>Rotation around world Z, radians. Zero = looking along +Y (north).</summary>
+    public float Yaw { get; set; }
+
+    /// <summary>Rotation around the camera's right vector, radians. Positive tilts up.</summary>
+    public float Pitch { get; set; }
+
+    /// <summary>Vertical field of view in radians. Default 60°.</summary>
+    public float FovYRadians { get; set; } = MathF.PI / 3f;
 
     /// <summary>Near clip plane (world units). See <see cref="DefaultNearPlane" />.</summary>
     public float NearPlane { get; set; } = DefaultNearPlane;
@@ -76,13 +91,15 @@ internal sealed class CameraState
     public Vector3 Up => Vector3.Cross(Right, Forward);
 
     /// <summary>Builds the world-to-view matrix looking from <see cref="Position" /> along <c>Forward</c>.</summary>
-    public Matrix4x4 GetViewMatrix() =>
+    public Matrix4x4 GetViewMatrix()
+    {
         // Use the camera's derived Up rather than world Z. Forward approaches ±UnitZ at vertical
         // pitch, which makes CreateLookAt's `cross(up, forward)` degenerate and the resulting
         // right axis swings around as the camera moves — visible as a "twist" while strafing
         // straight down. The derived Up is `cross(Right, Forward)` and stays orthogonal to
         // Forward at every pitch, so the view basis is stable everywhere.
-        Matrix4x4.CreateLookAt(Position, Position + Forward, Up);
+        return Matrix4x4.CreateLookAt(Position, Position + Forward, Up);
+    }
 
     /// <summary>
     ///     Translation-free view matrix — the camera sits at the world origin (only its rotation is
@@ -94,8 +111,10 @@ internal sealed class CameraState
     ///     <c>GetViewMatrix() × worldPos</c>, so the projected result is identical — only the float
     ///     precision improves, and layers rendered either way stay pixel-aligned in clip space.
     /// </summary>
-    public Matrix4x4 GetViewMatrixCameraRelative() =>
-        Matrix4x4.CreateLookAt(Vector3.Zero, Forward, Up);
+    public Matrix4x4 GetViewMatrixCameraRelative()
+    {
+        return Matrix4x4.CreateLookAt(Vector3.Zero, Forward, Up);
+    }
 
     /// <summary>
     ///     View matrix relative to an arbitrary origin: the eye sits at <c>Position − origin</c>.
@@ -112,21 +131,8 @@ internal sealed class CameraState
     }
 
     /// <summary>Builds the perspective projection for the given aspect ratio (reversed-Z applied).</summary>
-    public Matrix4x4 GetProjectionMatrix(float aspectRatio) =>
-        Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane) * ReverseZ;
-
-    /// <summary>
-    ///     Reversed-Z remap: post-multiplies a standard [0,1] projection so depth maps near→1,
-    ///     far→0. Pairs with a depth clear of 0 and a <c>GreaterEqual</c> depth test in every scene
-    ///     PSO. With a float (D32) depth buffer this is the standard fix for precision across a wide
-    ///     near/far range — it cancels the 1/z nonlinearity, so a large <see cref="FarPlane" /> no
-    ///     longer z-fights. Only the Z row is touched (z' = w − z, w' = w), so X/Y clip mapping and
-    ///     the extracted frustum volume are unchanged. Shared with the 2D top-down overlay
-    ///     (TopDownViewProjBuilder) so the offscreen depth test matches.
-    /// </summary>
-    public static readonly Matrix4x4 ReverseZ = new(
-        1f, 0f, 0f, 0f,
-        0f, 1f, 0f, 0f,
-        0f, 0f, -1f, 0f,
-        0f, 0f, 1f, 1f);
+    public Matrix4x4 GetProjectionMatrix(float aspectRatio)
+    {
+        return Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane) * ReverseZ;
+    }
 }

@@ -46,8 +46,10 @@ public static class PlannedEncoders
     ///     Used by the planner-state build and by the aggregate
     ///     parity harness to enumerate the encoder coverage.
     /// </summary>
-    public static IEnumerable<string> KnownRecordTypes() =>
-        BuildAll().Select(e => e.RecordType).Distinct(StringComparer.Ordinal);
+    public static IEnumerable<string> KnownRecordTypes()
+    {
+        return BuildAll().Select(e => e.RecordType).Distinct(StringComparer.Ordinal);
+    }
 
     /// <summary>
     ///     One-line registration for a simple-ref encoder: New delegates to the existing
@@ -55,8 +57,10 @@ public static class PlannedEncoders
     ///     reuses encoder code; it does not invoke the retired legacy emission path.
     /// </summary>
     private static DelegatingPlannedEncoder<TModel> Simple<TModel>(
-        string recordType, Func<TModel, EncodedRecord> encodeNew) where TModel : class =>
-        new(recordType, encodeNew);
+        string recordType, Func<TModel, EncodedRecord> encodeNew) where TModel : class
+    {
+        return new DelegatingPlannedEncoder<TModel>(recordType, encodeNew);
+    }
 
     /// <summary>
     ///     Enumerate every planned encoder. Tier 1+ extends this list.
@@ -136,7 +140,7 @@ public static class PlannedEncoders
         yield return new PlannedContEncoder();
         yield return new PlannedIdleEncoder();
         yield return new PlannedTermEncoder();
-        yield return new PlannedLvliEncoder("LVLI");
+        yield return new PlannedLvliEncoder();
         yield return new PlannedLvliEncoder("LVLN");
         yield return new PlannedLvliEncoder("LVLC");
         yield return new PlannedNpcEncoder();

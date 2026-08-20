@@ -19,14 +19,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 /// </summary>
 public static class EsmParsedRecordTypes
 {
-    /// <summary>
-    ///     A parsed record type: its 4-char signature and the <see cref="RecordCollection" /> property its
-    ///     records land in. <paramref name="Collection" /> is <c>null</c> for the file header and for records
-    ///     nested inside other structures (placed refs live inside cells, terrain inside cells) that have no
-    ///     dedicated top-level list.
-    /// </summary>
-    public readonly record struct Entry(string Code, string? Collection);
-
     /// <summary>The authoritative table of parsed record types.</summary>
     public static readonly IReadOnlyList<Entry> All =
     [
@@ -171,10 +163,18 @@ public static class EsmParsedRecordTypes
         new("IDLM", nameof(RecordCollection.GenericRecords)),
         new("PWAT", nameof(RecordCollection.PlaceableWaters)),
         // IMGS/IMAD moved to typed image-space lists (viewer tonemap stage) — see the entries above.
-        new("AMEF", nameof(RecordCollection.GenericRecords)),
+        new("AMEF", nameof(RecordCollection.GenericRecords))
     ];
 
     /// <summary>Set of parsed type codes (case-insensitive), derived from <see cref="All" />.</summary>
     public static readonly IReadOnlySet<string> Codes =
         All.Select(e => e.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     A parsed record type: its 4-char signature and the <see cref="RecordCollection" /> property its
+    ///     records land in. <paramref name="Collection" /> is <c>null</c> for the file header and for records
+    ///     nested inside other structures (placed refs live inside cells, terrain inside cells) that have no
+    ///     dedicated top-level list.
+    /// </summary>
+    public readonly record struct Entry(string Code, string? Collection);
 }

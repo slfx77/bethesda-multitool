@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Actor;
@@ -36,7 +35,7 @@ internal sealed class RuntimeClassReader(RuntimeMemoryContext context)
         // the tail from the adjacent CLASS_DATA (verified against dump bytes: the 7-byte read at +4
         // returned attr[4..6] followed by CLASS_DATA's TagSkill1).
         var attrOff = view.Offset("cAttribute", "TESAttributes");
-        byte[] attributeWeights = new byte[7];
+        var attributeWeights = new byte[7];
         if (attrOff is { } ao && ao + 7 <= view.Buffer.Length)
         {
             Array.Copy(view.Buffer, ao, attributeWeights, 0, 7);

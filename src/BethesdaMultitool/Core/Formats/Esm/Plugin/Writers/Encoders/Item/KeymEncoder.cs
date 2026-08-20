@@ -12,7 +12,7 @@ public sealed class KeymEncoder : IRecordEncoder
     private static readonly Dictionary<string, Func<KeyRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
     {
         ["Value"] = m => m.Value,
-        ["Weight"] = m => m.Weight,
+        ["Weight"] = m => m.Weight
     };
 
     public string RecordType => "KEYM";

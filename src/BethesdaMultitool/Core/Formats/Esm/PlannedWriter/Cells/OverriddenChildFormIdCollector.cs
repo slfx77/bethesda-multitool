@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
@@ -30,7 +32,7 @@ internal static class OverriddenChildFormIdCollector
                     continue;
                 }
 
-                var sig = System.Text.Encoding.ASCII.GetString(record, 0, 4);
+                var sig = Encoding.ASCII.GetString(record, 0, 4);
                 if (sig is not ("REFR" or "ACHR" or "ACRE" or "PGRE" or "PMIS" or "LAND" or "NAVM"))
                 {
                     continue;
@@ -40,14 +42,14 @@ internal static class OverriddenChildFormIdCollector
                 // only"): persistent-flagged records are excluded. Listing them sends the
                 // runtime's temporary-group loader after records that live in persistent
                 // groups — "Failed to load temporary data" for the whole cell.
-                var flags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                var flags = BinaryPrimitives.ReadUInt32LittleEndian(
                     record.AsSpan(8, 4));
                 if ((flags & 0x400u) != 0)
                 {
                     continue;
                 }
 
-                var formId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                var formId = BinaryPrimitives.ReadUInt32LittleEndian(
                     record.AsSpan(12, 4));
                 if (formId < 0x01000000u)
                 {

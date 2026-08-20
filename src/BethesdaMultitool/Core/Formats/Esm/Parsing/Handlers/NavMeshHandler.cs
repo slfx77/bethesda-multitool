@@ -274,8 +274,8 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
 
         var stats = cells.Stats;
         if (perSourceAdds.Sum() > 0 || addedFromSingleton > 0
-            || addedFromDirectNavm > 0 || addedFromSpeculative > 0
-            || stats.UniqueTotal > 0)
+                                    || addedFromDirectNavm > 0 || addedFromSpeculative > 0
+                                    || stats.UniqueTotal > 0)
         {
             Logger.Instance.Debug(
                 $"  [Semantic] Runtime NAVM discovery cells: editor-id={stats.FromEditorIdHash:N0}, " +
@@ -322,7 +322,7 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
                 continue;
             }
 
-            var navm = Context.RuntimeReader.DiscoverNavMeshAtVa(navMeshVa, fallbackParentCellFormId: 0);
+            var navm = Context.RuntimeReader.DiscoverNavMeshAtVa(navMeshVa, 0);
             if (navm is null)
             {
                 continue;
@@ -491,7 +491,8 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
     ///     formid; exterior is {int16 Grid Y, int16 Grid X} — then the u32 vertex count, the vertex array,
     ///     and the u32 triangle count. Returns null when the blob is too short.
     /// </summary>
-    private static (uint CellFormId, uint WorldspaceFormId, int? GridX, int? GridY, uint VertexCount, uint TriangleCount)?
+    private static (uint CellFormId, uint WorldspaceFormId, int? GridX, int? GridY, uint VertexCount, uint TriangleCount
+        )?
         ParseNvnmHeader(ReadOnlySpan<byte> nvnm, bool bigEndian)
     {
         if (nvnm.Length < 20)
@@ -515,19 +516,25 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
 
         var vertexCount = ReadU32(nvnm, 16, bigEndian);
         // The triangle count sits right after the vertex array (12 bytes per vertex).
-        var triOffset = 20L + ((long)vertexCount * 12);
+        var triOffset = 20L + (long)vertexCount * 12;
         var triangleCount = triOffset + 4 <= nvnm.Length ? ReadU32(nvnm, (int)triOffset, bigEndian) : 0u;
 
         return (cellFormId, worldspaceFormId, gridX, gridY, vertexCount, triangleCount);
     }
 
-    private static uint ReadU32(ReadOnlySpan<byte> s, int offset, bool bigEndian) => bigEndian
-        ? BinaryPrimitives.ReadUInt32BigEndian(s.Slice(offset, 4))
-        : BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(offset, 4));
+    private static uint ReadU32(ReadOnlySpan<byte> s, int offset, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(s.Slice(offset, 4))
+            : BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(offset, 4));
+    }
 
-    private static short ReadI16(ReadOnlySpan<byte> s, int offset, bool bigEndian) => bigEndian
-        ? BinaryPrimitives.ReadInt16BigEndian(s.Slice(offset, 2))
-        : BinaryPrimitives.ReadInt16LittleEndian(s.Slice(offset, 2));
+    private static short ReadI16(ReadOnlySpan<byte> s, int offset, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadInt16BigEndian(s.Slice(offset, 2))
+            : BinaryPrimitives.ReadInt16LittleEndian(s.Slice(offset, 2));
+    }
 
     /// <summary>
     ///     Capture one subrecord into the NavMeshSubrecord list, applying the existing

@@ -2,7 +2,6 @@ using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Vfs;
 
@@ -25,15 +24,6 @@ public sealed class BtdTerrainInjection : IDisposable
     /// <summary>True when at least one lazy height source is being kept open.</summary>
     public bool HasOpenSources => _heightSources.Count > 0;
 
-    internal void Add(int populated, IDisposable? source)
-    {
-        PopulatedCells += populated;
-        if (source is not null)
-        {
-            _heightSources.Add(source);
-        }
-    }
-
     public void Dispose()
     {
         foreach (var source in _heightSources)
@@ -42,6 +32,15 @@ public sealed class BtdTerrainInjection : IDisposable
         }
 
         _heightSources.Clear();
+    }
+
+    internal void Add(int populated, IDisposable? source)
+    {
+        PopulatedCells += populated;
+        if (source is not null)
+        {
+            _heightSources.Add(source);
+        }
     }
 }
 
@@ -82,6 +81,36 @@ public static class BtdTerrainInjector
     private const int SourceLod = 0;
     private const int CellSamples = 128 >> SourceLod; // 128
     internal const int HeightGridSize = CellSamples + 1; // 129: own 128 samples + the neighbor's shared edge
+
+    // FO76 land-texture grid size for VtexTextureFormIds (16×16, row-major south→north / west→east —
+    // the renderer's Morrowind VTEX path resamples it to the live terrain grid).
+    private const int VtexGridSize = 16;
+
+    /// <summary>Edge of the BTD's per-cell land-texture alpha map at LOD 0.</summary>
+    private const int LtexMapEdge = 128;
+
+    /// <summary>Vertices per quadrant edge, matching the VTXT 17×17 Position convention.</summary>
+    private const int QuadVertexEdge = 17;
+
+    /// <summary>
+    ///     Native blend-grid edge: one vertex per alpha-map pixel (64 per quadrant) plus the shared far
+    ///     edge. Emitting at this edge keeps the BTD's full 128×128 blend fidelity for the 129-grid
+    ///     renderer (<c>CellLayerWeightTable</c> resamples per its own grid); the classic 17 sampling
+    ///     costs 15/16 of the map. Starfield only for now — its worldspaces top out at a few hundred
+    ///     cells, while Appalachia's ~40k cells would multiply an already ~2.7 GB resident set, so FO76
+    ///     stays on 17 until that cost is measured.
+    /// </summary>
+    private const int NativeBlendGridEdge = LtexMapEdge / 2 + 1;
+
+    /// <summary>
+    ///     Weighted layers a BTD quadrant can carry on top of its base texture. The A16 map packs one
+    ///     3-bit weight per layer into each pixel (5 × 3 = 15 of the 16 bits), which is exactly the
+    ///     count of layer slots <c>GetCellTextureSet</c> reports at <c>q*16 + 1..5</c>.
+    /// </summary>
+    private const int QuadrantLayerSlots = 5;
+
+    /// <summary>Full opacity for a 3-bit packed weight.</summary>
+    private const float PackedWeightMax = 7f;
 
     // LandHeightmap requires HeightDeltas, but ExactHeights takes precedence in CalculateHeights(),
     // so the deltas are never read — share one empty array (matching the Morrowind importer).
@@ -166,7 +195,7 @@ public static class BtdTerrainInjector
                 // and later lazy height reads decompress each tile's LOD pyramid once instead of
                 // thrashing.
                 btd.SetTileCacheSize(16);
-                var (populated, source) = InjectWorldspace(candidates, btd, blendEdge: profile.Game == BethesdaGame.Starfield
+                var (populated, source) = InjectWorldspace(candidates, btd, profile.Game == BethesdaGame.Starfield
                     ? NativeBlendGridEdge
                     : QuadVertexEdge);
                 injection.Add(populated, source);
@@ -276,7 +305,7 @@ public static class BtdTerrainInjector
                     cell.LandVisualData = new LandVisualData
                     {
                         TextureLayers = layers,
-                        Source = Models.World.VisualDataSource.MasterEsm
+                        Source = VisualDataSource.MasterEsm
                     };
                 }
                 else if (BuildVtexFormIdGrid(btd, gx, gy) is { } vtex)
@@ -284,7 +313,7 @@ public static class BtdTerrainInjector
                     cell.LandVisualData = new LandVisualData
                     {
                         VtexTextureFormIds = vtex,
-                        Source = Models.World.VisualDataSource.MasterEsm
+                        Source = VisualDataSource.MasterEsm
                     };
                 }
             }
@@ -312,36 +341,6 @@ public static class BtdTerrainInjector
 
         return (targets.Count, source);
     }
-
-    // FO76 land-texture grid size for VtexTextureFormIds (16×16, row-major south→north / west→east —
-    // the renderer's Morrowind VTEX path resamples it to the live terrain grid).
-    private const int VtexGridSize = 16;
-
-    /// <summary>Edge of the BTD's per-cell land-texture alpha map at LOD 0.</summary>
-    private const int LtexMapEdge = 128;
-
-    /// <summary>Vertices per quadrant edge, matching the VTXT 17×17 Position convention.</summary>
-    private const int QuadVertexEdge = 17;
-
-    /// <summary>
-    ///     Native blend-grid edge: one vertex per alpha-map pixel (64 per quadrant) plus the shared far
-    ///     edge. Emitting at this edge keeps the BTD's full 128×128 blend fidelity for the 129-grid
-    ///     renderer (<c>CellLayerWeightTable</c> resamples per its own grid); the classic 17 sampling
-    ///     costs 15/16 of the map. Starfield only for now — its worldspaces top out at a few hundred
-    ///     cells, while Appalachia's ~40k cells would multiply an already ~2.7 GB resident set, so FO76
-    ///     stays on 17 until that cost is measured.
-    /// </summary>
-    private const int NativeBlendGridEdge = (LtexMapEdge / 2) + 1;
-
-    /// <summary>
-    ///     Weighted layers a BTD quadrant can carry on top of its base texture. The A16 map packs one
-    ///     3-bit weight per layer into each pixel (5 × 3 = 15 of the 16 bits), which is exactly the
-    ///     count of layer slots <c>GetCellTextureSet</c> reports at <c>q*16 + 1..5</c>.
-    /// </summary>
-    private const int QuadrantLayerSlots = 5;
-
-    /// <summary>Full opacity for a 3-bit packed weight.</summary>
-    private const float PackedWeightMax = 7f;
 
     /// <summary>
     ///     Rebuilds a cell's land textures from the BTD as BTXT/ATXT-shaped layers: each quadrant's
@@ -442,14 +441,14 @@ public static class BtdTerrainInjector
             for (var qx = 0; qx < blendEdge; qx++)
             {
                 var px = eastOffset + Math.Min(qx * step, quadPixelEdge - 1);
-                var weight = (alphaMap[(py * LtexMapEdge) + px] >> shift) & 0x7;
+                var weight = (alphaMap[py * LtexMapEdge + px] >> shift) & 0x7;
                 if (weight == 0)
                 {
                     continue;
                 }
 
                 entries.Add(new LandTextureBlendEntry(
-                    (ushort)((qy * blendEdge) + qx), 0, 0, weight / PackedWeightMax));
+                    (ushort)(qy * blendEdge + qx), 0, 0, weight / PackedWeightMax));
             }
         }
 
@@ -504,7 +503,7 @@ public static class BtdTerrainInjector
             for (var c = 0; c < VtexGridSize; c++)
             {
                 var east = c >= VtexGridSize / 2 ? 1 : 0;
-                grid[(r * VtexGridSize) + c] = quadrantFormIds[(north << 1) | east];
+                grid[r * VtexGridSize + c] = quadrantFormIds[(north << 1) | east];
             }
         }
 
@@ -530,7 +529,7 @@ public static class BtdTerrainInjector
     /// </summary>
     internal static float[,] BuildExactHeights(BtdFile btd, int cellX, int cellY)
     {
-        var self = btd.GetCellHeightGrid(cellX, cellY, SourceLod); // float[CellSamples²], south-to-north
+        var self = btd.GetCellHeightGrid(cellX, cellY); // float[CellSamples²], south-to-north
         var exact = new float[HeightGridSize, HeightGridSize];
 
         // Interior: this cell's own samples.
@@ -538,7 +537,7 @@ public static class BtdTerrainInjector
         {
             for (var i = 0; i < CellSamples; i++)
             {
-                exact[j, i] = self[(j * CellSamples) + i];
+                exact[j, i] = self[j * CellSamples + i];
             }
         }
 
@@ -560,21 +559,21 @@ public static class BtdTerrainInjector
         for (var j = 0; j < CellSamples; j++)
         {
             exact[j, CellSamples] = hasEast
-                ? btd.GetCellHeightSample(cellX + 1, cellY, 0, j, SourceLod)
-                : self[(j * CellSamples) + last];
+                ? btd.GetCellHeightSample(cellX + 1, cellY, 0, j)
+                : self[j * CellSamples + last];
         }
 
         for (var i = 0; i < CellSamples; i++)
         {
             exact[CellSamples, i] = hasNorth
-                ? btd.GetCellHeightSample(cellX, cellY + 1, i, 0, SourceLod)
-                : self[(last * CellSamples) + i];
+                ? btd.GetCellHeightSample(cellX, cellY + 1, i, 0)
+                : self[last * CellSamples + i];
         }
 
         // North-east corner: the NE neighbor's (0,0), else extend whichever edge exists inward.
         if (hasEast && hasNorth)
         {
-            exact[CellSamples, CellSamples] = btd.GetCellHeightSample(cellX + 1, cellY + 1, 0, 0, SourceLod);
+            exact[CellSamples, CellSamples] = btd.GetCellHeightSample(cellX + 1, cellY + 1, 0, 0);
         }
         else if (hasNorth)
         {
@@ -586,7 +585,7 @@ public static class BtdTerrainInjector
         }
         else
         {
-            exact[CellSamples, CellSamples] = self[(last * CellSamples) + last];
+            exact[CellSamples, CellSamples] = self[last * CellSamples + last];
         }
     }
 
@@ -615,10 +614,16 @@ public static class BtdTerrainInjector
     /// </summary>
     private sealed class BtdSourceResolver(string dataDirectory, GameProfile profile) : IDisposable
     {
-        private LayeredGameFileSystem? _terrainArchives;
         private LayeredGameFileSystem? _allArchives;
-        private bool _terrainArchivesBuilt;
         private bool _allArchivesBuilt;
+        private LayeredGameFileSystem? _terrainArchives;
+        private bool _terrainArchivesBuilt;
+
+        public void Dispose()
+        {
+            _terrainArchives?.Dispose();
+            _allArchives?.Dispose();
+        }
 
         public BtdFile? TryOpen(string editorId)
         {
@@ -634,12 +639,6 @@ public static class BtdTerrainInjector
             return bytes is null ? null : new BtdFile(bytes);
         }
 
-        public void Dispose()
-        {
-            _terrainArchives?.Dispose();
-            _allArchives?.Dispose();
-        }
-
         private LayeredGameFileSystem? TerrainArchives()
         {
             if (!_terrainArchivesBuilt)
@@ -648,7 +647,7 @@ public static class BtdTerrainInjector
                 if (profile.TerrainArchiveNamePatterns.Count > 0)
                 {
                     _terrainArchives = GameFileSystem.OpenArchiveSubset(
-                        dataDirectory, profile.TerrainArchiveNamePatterns, includeLooseFiles: false,
+                        dataDirectory, profile.TerrainArchiveNamePatterns, false,
                         ArchiveHandleRegistry.Shared);
                 }
             }
@@ -664,7 +663,7 @@ public static class BtdTerrainInjector
                 if (profile.TerrainSearchesAllDataArchives)
                 {
                     _allArchives = GameFileSystem.OpenDataFolder(
-                        dataDirectory, includeLooseFiles: false, includeBa2: true,
+                        dataDirectory, false, true,
                         ArchiveHandleRegistry.Shared);
                 }
             }

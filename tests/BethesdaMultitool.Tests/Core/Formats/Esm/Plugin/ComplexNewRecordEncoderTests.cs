@@ -1534,9 +1534,9 @@ public class ComplexNewRecordEncoderTests
                         {
                             ComparisonValue = 1.0f,
                             FunctionIndex = 0x0048,
-                            Parameter1 = 0x00000007,
-                        },
-                    ],
+                            Parameter1 = 0x00000007
+                        }
+                    ]
                 }
             ]
         };
@@ -1588,8 +1588,8 @@ public class ComplexNewRecordEncoderTests
                     Type = 0,
                     Conditions =
                     [
-                        new DialogueCondition { FunctionIndex = 0x000E, Parameter1 = 5 },
-                    ],
+                        new DialogueCondition { FunctionIndex = 0x000E, Parameter1 = 5 }
+                    ]
                 }
             ]
         };
@@ -1620,7 +1620,7 @@ public class ComplexNewRecordEncoderTests
             Trait = 1,
             MinLevel = 2,
             Ranks = 3,
-            Playable = 4,
+            Playable = 4
         });
 
         var data = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "DATA").Bytes;
@@ -1639,7 +1639,7 @@ public class ComplexNewRecordEncoderTests
             MinLevel = 2,
             Ranks = 3,
             Playable = 4,
-            Hidden = hidden.HasValue ? (byte?)hidden.Value : null,
+            Hidden = hidden.HasValue ? (byte?)hidden.Value : null
         });
 
         var data = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "DATA").Bytes;
@@ -1715,9 +1715,9 @@ public class ComplexNewRecordEncoderTests
                 new PerkCondition
                 {
                     FunctionIndex = 0x000E,
-                    ComparisonOperator = comparisonOperator,
-                },
-            ],
+                    ComparisonOperator = comparisonOperator
+                }
+            ]
         };
 
         var encoded = PerkEncoder.EncodeNew(perk);
@@ -1735,7 +1735,7 @@ public class ComplexNewRecordEncoderTests
     {
         var perk = new PerkRecord
         {
-            Conditions = [new PerkCondition { ComparisonOperator = comparisonOperator }],
+            Conditions = [new PerkCondition { ComparisonOperator = comparisonOperator }]
         };
 
         Assert.Throws<ArgumentOutOfRangeException>(() => PerkEncoder.EncodeNew(perk));
@@ -1779,10 +1779,10 @@ public class ComplexNewRecordEncoderTests
                     ConditionGroups =
                     [
                         new PerkConditionGroup { RunOn = 0 },
-                        new PerkConditionGroup { RunOn = 1 },
-                    ],
-                },
-            ],
+                        new PerkConditionGroup { RunOn = 1 }
+                    ]
+                }
+            ]
         };
 
         var encoded = PerkEncoder.EncodeNew(perk);
@@ -1804,9 +1804,9 @@ public class ComplexNewRecordEncoderTests
                     Type = 2,
                     ConditionGroups = Enumerable.Range(0, byte.MaxValue + 1)
                         .Select(_ => new PerkConditionGroup())
-                        .ToList(),
-                },
-            ],
+                        .ToList()
+                }
+            ]
         };
 
         Assert.Throws<InvalidOperationException>(() => PerkEncoder.EncodeNew(perk));

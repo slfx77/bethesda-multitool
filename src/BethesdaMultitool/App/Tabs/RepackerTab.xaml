@@ -27,9 +27,10 @@
                        Text="PC menu donor (Data folder)"
                        FontWeight="SemiBold" FontSize="13"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Text="Point this at a vanilla PC Data folder (or its Fallout - Misc.bsa). It supplies the menus the console build lacks (Book, Load, Save, Trait Select, Reputation, Surgery, …) plus the six console menus the retail PC executable cannot run (HUD, Stats, Inventory, Container, Barter, Recipe). Every other console menu is delivered as-is — prototype content wins wherever it works."
-                       TextWrapping="Wrap" FontSize="12"
-                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            <TextBlock
+              Text="Point this at a vanilla PC Data folder (or its Fallout - Misc.bsa). It supplies the menus the console build lacks (Book, Load, Save, Trait Select, Reputation, Surgery, …) plus the six console menus the retail PC executable cannot run (HUD, Stats, Inventory, Container, Barter, Recipe). Every other console menu is delivered as-is — prototype content wins wherever it works."
+              TextWrapping="Wrap" FontSize="12"
+              Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
             <TextBox x:Name="PcMenuDonorTextBox"
                      PlaceholderText="…\Fallout New Vegas\Data"
                      AutomationProperties.LabeledBy="{Binding ElementName=PcMenuDonorLabel}" />

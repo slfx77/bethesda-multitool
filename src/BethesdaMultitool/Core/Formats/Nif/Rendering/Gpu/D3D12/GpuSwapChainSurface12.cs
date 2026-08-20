@@ -654,7 +654,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         // 2. Tonemap HDR → back buffer (as an RTV). Recompute the current back buffer's RTV so the
         //    caller need not thread it through (index is stable until Present).
         var index = _swapChain.CurrentBackBufferIndex;
-        var backRtv = new CpuDescriptorHandle(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), (int)index, _rtvDescriptorSize);
+        var backRtv =
+ new CpuDescriptorHandle(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), (int)index, _rtvDescriptorSize);
         cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.RenderTarget);
         _tonemap.Record(cmd, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height, TonemapSettings, _tonemapEnabled);
 

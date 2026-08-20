@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
@@ -177,7 +176,9 @@ internal static class EncodedSubrecordFormIdRemapper
     }
 
     private static IReadOnlyList<int> Offset0WhenAtLeast4(EncodedSubrecord subrecord)
-        => subrecord.Bytes.Length >= 4 ? [0] : [];
+    {
+        return subrecord.Bytes.Length >= 4 ? [0] : [];
+    }
 
     /// <summary>CLMT WLST: per 12-byte entry, FormIDs sit at +0 (WTHR) and +8 (GLOB).</summary>
     private static List<int> WlstFormIdOffsets(EncodedSubrecord subrecord)

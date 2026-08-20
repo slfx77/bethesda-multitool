@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
@@ -14,11 +15,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// </summary>
 public sealed class CpthEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<CameraPathRecord, object?>> AnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["Parent"] = m => m.ParentPathFormId,
-        ["Previous"] = m => m.PreviousPathFormId,
-    };
+    private static readonly Dictionary<string, Func<CameraPathRecord, object?>> AnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Parent"] = m => m.ParentPathFormId,
+            ["Previous"] = m => m.PreviousPathFormId
+        };
 
     public string RecordType => "CPTH";
     public Type ModelType => typeof(CameraPathRecord);
@@ -44,7 +46,7 @@ public sealed class CpthEncoder : IRecordEncoder
         // an unconditional path when no conditions were captured is benign.
         if (cpth.Conditions.Count > 0)
         {
-            IReadOnlyList<Models.Records.Quest.DialogueCondition> emitConds;
+            IReadOnlyList<DialogueCondition> emitConds;
             if (validFormIds is null)
             {
                 emitConds = cpth.Conditions;
@@ -88,6 +90,7 @@ public sealed class CpthEncoder : IRecordEncoder
             {
                 continue;
             }
+
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SNAM", shotFormId));
         }
 

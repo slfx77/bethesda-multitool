@@ -311,4 +311,3 @@ internal sealed class EsmConverterGrupHandler
         grupStack.Push((grupHeaderPosition, grupEnd));
     }
 }
-

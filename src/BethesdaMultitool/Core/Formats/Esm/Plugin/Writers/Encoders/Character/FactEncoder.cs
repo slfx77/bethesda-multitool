@@ -12,24 +12,27 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// </summary>
 public sealed class FactEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<FactionRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        // Schema registers DATA(FACT, 4) as Simple4Byte("Faction Flags") — field name has a space.
-        ["Faction Flags"] = m => m.Flags,
-    };
+    private static readonly Dictionary<string, Func<FactionRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            // Schema registers DATA(FACT, 4) as Simple4Byte("Faction Flags") — field name has a space.
+            ["Faction Flags"] = m => m.Flags
+        };
 
-    private static readonly Dictionary<string, Func<FactionRelation, object?>> XnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["Faction"] = m => m.FactionFormId,
-        ["Modifier"] = m => m.Modifier,
-        ["CombatReaction"] = m => m.CombatFlags,
-    };
+    private static readonly Dictionary<string, Func<FactionRelation, object?>> XnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Faction"] = m => m.FactionFormId,
+            ["Modifier"] = m => m.Modifier,
+            ["CombatReaction"] = m => m.CombatFlags
+        };
 
-    private static readonly Dictionary<string, Func<FactionRecord, object?>> CrvaExtractors = new(StringComparer.Ordinal)
-    {
-        ["CrimeGoldMultiplier"] = m => m.CrimeGoldMultiplier,
-        // Remaining(16) bytes left unset → zero-fill.
-    };
+    private static readonly Dictionary<string, Func<FactionRecord, object?>> CrvaExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["CrimeGoldMultiplier"] = m => m.CrimeGoldMultiplier
+            // Remaining(16) bytes left unset → zero-fill.
+        };
 
     public string RecordType => "FACT";
     public Type ModelType => typeof(FactionRecord);

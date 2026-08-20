@@ -1,9 +1,9 @@
 using System.Numerics;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Spatial buckets for a selected exterior worldspace/unlinked-exterior set.
@@ -13,18 +13,18 @@ namespace BethesdaMultitool;
 internal sealed class WorldSpatialIndex
 {
     internal const int ChunkCellSize = 8;
+    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _actorsByBucket = new();
 
     private readonly Dictionary<(int gx, int gy), CellRecord> _cellsByGrid = new();
-    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _refsByBucket = new();
-    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _actorsByBucket = new();
-    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _markersByBucket = new();
-    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _saveRefsByBucket = new();
-    private readonly Dictionary<(int bx, int by), List<DanglingRefPosition>> _danglingByBucket = new();
-    private readonly Dictionary<(int gx, int gy), List<NavMeshRecord>> _navMeshesByGrid = new();
     private readonly Dictionary<(int cx, int cy), WorldGridChunk> _chunksByGrid = new();
+    private readonly Dictionary<(int bx, int by), List<DanglingRefPosition>> _danglingByBucket = new();
+    private readonly List<PlacedReference> _mapMarkers = [];
+    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _markersByBucket = new();
+    private readonly Dictionary<(int gx, int gy), List<NavMeshRecord>> _navMeshesByGrid = new();
     private readonly List<CellRecord> _persistentCells = [];
     private readonly List<PlacedReference> _persistentRefs = [];
-    private readonly List<PlacedReference> _mapMarkers = [];
+    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _refsByBucket = new();
+    private readonly Dictionary<(int bx, int by), List<PlacedReference>> _saveRefsByBucket = new();
     private readonly List<WorldWaterCell> _waterCells = [];
 
     private WorldSpatialIndex(float cellSize, bool includesMapOverlays)
@@ -33,9 +33,11 @@ internal sealed class WorldSpatialIndex
         IncludesMapOverlays = includesMapOverlays;
     }
 
-    /// <summary>World units per exterior-cell edge for this worldspace (4096 Fallout-family, 8192
-    /// Morrowind). All bucketing / canvas mapping keys off this so the index matches the geometry's
-    /// absolute coordinates.</summary>
+    /// <summary>
+    ///     World units per exterior-cell edge for this worldspace (4096 Fallout-family, 8192
+    ///     Morrowind). All bucketing / canvas mapping keys off this so the index matches the geometry's
+    ///     absolute coordinates.
+    /// </summary>
     internal float CellSize { get; }
 
     /// <summary>
@@ -61,14 +63,16 @@ internal sealed class WorldSpatialIndex
         uint? activeWorldspaceFormId,
         float? defaultWaterHeight,
         bool defaultWaterRequiresCellHasWater = false)
-        => BuildCore(
+    {
+        return BuildCore(
             data,
             activeCells,
             filteredMarkers,
             activeWorldspaceFormId,
             defaultWaterHeight,
             defaultWaterRequiresCellHasWater,
-            includeMapOverlays: true);
+            true);
+    }
 
     /// <summary>
     ///     Builds the cell/chunk/water index consumed by the 3D renderers without also duplicating
@@ -81,14 +85,16 @@ internal sealed class WorldSpatialIndex
         IReadOnlyList<CellRecord> activeCells,
         float? defaultWaterHeight,
         bool defaultWaterRequiresCellHasWater = false)
-        => BuildCore(
+    {
+        return BuildCore(
             data,
             activeCells,
-            filteredMarkers: Array.Empty<PlacedReference>(),
-            activeWorldspaceFormId: null,
+            Array.Empty<PlacedReference>(),
+            null,
             defaultWaterHeight,
             defaultWaterRequiresCellHasWater,
-            includeMapOverlays: false);
+            false);
+    }
 
     private static WorldSpatialIndex BuildCore(
         WorldViewData data,
@@ -121,6 +127,7 @@ internal sealed class WorldSpatialIndex
                         index._persistentRefs.Add(obj);
                     }
                 }
+
                 continue;
             }
 
@@ -190,7 +197,7 @@ internal sealed class WorldSpatialIndex
 
             var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(
                 cell, defaultWaterHeight, defaultWaterRequiresCellHasWater);
-            if (waterHeight is (> -1e6f and < 1e6f))
+            if (waterHeight is > -1e6f and < 1e6f)
             {
                 // Exterior water: one cell-sized quad at the grid origin. The OriginXY/FootprintSize
                 // fields carry that explicitly so the renderer is grid-agnostic (interiors supply
@@ -220,7 +227,8 @@ internal sealed class WorldSpatialIndex
     ///     <see cref="CellRecord.GridY" /> and the ref buckets — so the cylinder cell enumeration
     ///     (<see cref="QueryCellsInRadius" />) yields it once the camera is framed on the cell.
     /// </summary>
-    internal static (int gx, int gy) SyntheticInteriorKey(CellRecord interior, float cellSize = WorldGridConstants.CellSize)
+    internal static (int gx, int gy) SyntheticInteriorKey(CellRecord interior,
+        float cellSize = WorldGridConstants.CellSize)
     {
         double sumX = 0, sumY = 0;
         var count = 0;
@@ -231,6 +239,7 @@ internal sealed class WorldSpatialIndex
             sumY += obj.Y;
             count++;
         }
+
         if (count == 0) return (0, 0);
         var cx = (float)(sumX / count);
         var cy = (float)(sumY / count);
@@ -247,7 +256,7 @@ internal sealed class WorldSpatialIndex
     /// </summary>
     internal static WorldSpatialIndex BuildInterior(WorldViewData data, CellRecord interior)
     {
-        var index = new WorldSpatialIndex(data.CellWorldSize, includesMapOverlays: false);
+        var index = new WorldSpatialIndex(data.CellWorldSize, false);
         var key = SyntheticInteriorKey(interior, index.CellSize);
         index._cellsByGrid[key] = interior;
 
@@ -255,8 +264,8 @@ internal sealed class WorldSpatialIndex
         chunk.Cells.Add(new WorldSpatialCell(key, interior, index.CellCenterCanvas(key.gx, key.gy)));
 
         // Interior water height comes from XCLW directly (no worldspace DNAM fallback).
-        var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(interior, defaultWaterHeight: null);
-        if (waterHeight is (> -1e6f and < 1e6f))
+        var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(interior, null);
+        if (waterHeight is > -1e6f and < 1e6f)
         {
             var (originXY, footprint) = index.ComputeInteriorWaterFootprint(interior);
             var water = new WorldWaterCell(key, interior, waterHeight.Value, originXY, footprint);
@@ -293,6 +302,7 @@ internal sealed class WorldSpatialIndex
             maxY = MathF.Max(maxY, obj.Y);
             any = true;
         }
+
         if (!any) return (Vector2.Zero, CellSize);
 
         var side = MathF.Max(maxX - minX, maxY - minY) * 1.2f;
@@ -302,8 +312,10 @@ internal sealed class WorldSpatialIndex
         return (new Vector2(centerX - side * 0.5f, centerY - side * 0.5f), side);
     }
 
-    internal bool TryGetCell(int gx, int gy, out CellRecord cell) =>
-        _cellsByGrid.TryGetValue((gx, gy), out cell!);
+    internal bool TryGetCell(int gx, int gy, out CellRecord cell)
+    {
+        return _cellsByGrid.TryGetValue((gx, gy), out cell!);
+    }
 
     internal bool TryGetCellAtCanvasPoint(Vector2 canvasWorldPos, out CellRecord cell)
     {
@@ -314,7 +326,7 @@ internal sealed class WorldSpatialIndex
     internal void QueryCellsInViewport(Vector2 tlWorld, Vector2 brWorld, List<CellRecord> destination)
     {
         destination.Clear();
-        var (startX, endX, startY, endY) = BucketRangeForCanvasRect(tlWorld, brWorld, margin: 0f);
+        var (startX, endX, startY, endY) = BucketRangeForCanvasRect(tlWorld, brWorld, 0f);
         for (var gy = startY; gy <= endY; gy++)
         {
             for (var gx = startX; gx <= endX; gx++)
@@ -340,7 +352,7 @@ internal sealed class WorldSpatialIndex
         var (startX, endX, startY, endY) = BucketRangeForCanvasRect(
             new Vector2(canvasX - radius, canvasY - radius),
             new Vector2(canvasX + radius, canvasY + radius),
-            margin: 0f);
+            0f);
 
         for (var gy = startY; gy <= endY; gy++)
         {
@@ -402,18 +414,20 @@ internal sealed class WorldSpatialIndex
         }
     }
 
-    internal void QueryRefsInViewport(Vector2 tlWorld, Vector2 brWorld, List<PlacedReference> destination, float margin = 0f)
+    internal void QueryRefsInViewport(Vector2 tlWorld, Vector2 brWorld, List<PlacedReference> destination,
+        float margin = 0f)
     {
         destination.Clear();
         QueryPlacedBucket(_refsByBucket, tlWorld, brWorld, margin, destination);
         AddPersistentRefsInViewport(tlWorld, brWorld, destination, margin: margin);
     }
 
-    internal void QueryActorsInViewport(Vector2 tlWorld, Vector2 brWorld, List<PlacedReference> destination, float margin = 0f)
+    internal void QueryActorsInViewport(Vector2 tlWorld, Vector2 brWorld, List<PlacedReference> destination,
+        float margin = 0f)
     {
         destination.Clear();
         QueryPlacedBucket(_actorsByBucket, tlWorld, brWorld, margin, destination);
-        AddPersistentRefsInViewport(tlWorld, brWorld, destination, actorsOnly: true, margin: margin);
+        AddPersistentRefsInViewport(tlWorld, brWorld, destination, true, margin);
     }
 
     internal void QueryMarkersNear(Vector2 canvasWorldPos, float radius, List<PlacedReference> destination)
@@ -429,7 +443,8 @@ internal sealed class WorldSpatialIndex
         QueryPersistentRefsNear(canvasWorldPos, radius, destination);
     }
 
-    internal void QuerySaveRefsInViewport(Vector2 tlWorld, Vector2 brWorld, List<PlacedReference> destination, float margin = 0f)
+    internal void QuerySaveRefsInViewport(Vector2 tlWorld, Vector2 brWorld, List<PlacedReference> destination,
+        float margin = 0f)
     {
         destination.Clear();
         QueryPlacedBucket(_saveRefsByBucket, tlWorld, brWorld, margin, destination);
@@ -441,7 +456,7 @@ internal sealed class WorldSpatialIndex
         var (startX, endX, startY, endY) = BucketRangeForCanvasRect(
             new Vector2(canvasWorldPos.X - radius, canvasWorldPos.Y - radius),
             new Vector2(canvasWorldPos.X + radius, canvasWorldPos.Y + radius),
-            margin: 0f);
+            0f);
 
         for (var gy = startY; gy <= endY; gy++)
         {
@@ -457,7 +472,8 @@ internal sealed class WorldSpatialIndex
         }
     }
 
-    internal void QueryDanglingInViewport(Vector2 tlWorld, Vector2 brWorld, List<DanglingRefPosition> destination, float margin = 0f)
+    internal void QueryDanglingInViewport(Vector2 tlWorld, Vector2 brWorld, List<DanglingRefPosition> destination,
+        float margin = 0f)
     {
         destination.Clear();
         var (startX, endX, startY, endY) = BucketRangeForCanvasRect(tlWorld, brWorld, margin);
@@ -490,7 +506,7 @@ internal sealed class WorldSpatialIndex
     internal void QueryNavMeshCellsInViewport(Vector2 tlWorld, Vector2 brWorld, List<NavMeshCellEntry> destination)
     {
         destination.Clear();
-        var (startX, endX, startY, endY) = BucketRangeForCanvasRect(tlWorld, brWorld, margin: 0f);
+        var (startX, endX, startY, endY) = BucketRangeForCanvasRect(tlWorld, brWorld, 0f);
         for (var gy = startY; gy <= endY; gy++)
         {
             for (var gx = startX; gx <= endX; gx++)
@@ -561,7 +577,7 @@ internal sealed class WorldSpatialIndex
         var (startX, endX, startY, endY) = BucketRangeForCanvasRect(
             new Vector2(canvasWorldPos.X - radius, canvasWorldPos.Y - radius),
             new Vector2(canvasWorldPos.X + radius, canvasWorldPos.Y + radius),
-            margin: 0f);
+            0f);
 
         for (var gy = startY; gy <= endY; gy++)
         {
@@ -651,7 +667,7 @@ internal sealed class WorldSpatialIndex
         foreach (var obj in _persistentRefs)
         {
             var dx = canvasWorldPos.X - obj.X;
-            var dy = canvasWorldPos.Y - (-obj.Y);
+            var dy = canvasWorldPos.Y - -obj.Y;
             if (dx * dx + dy * dy <= radiusSq)
             {
                 destination.Add(obj);
@@ -672,8 +688,10 @@ internal sealed class WorldSpatialIndex
         return chunk;
     }
 
-    private Vector2 CellCenterCanvas(int gx, int gy) =>
-        new((gx + 0.5f) * CellSize, -(gy + 0.5f) * CellSize);
+    private Vector2 CellCenterCanvas(int gx, int gy)
+    {
+        return new Vector2((gx + 0.5f) * CellSize, -(gy + 0.5f) * CellSize);
+    }
 
     private (float minX, float minY, float maxX, float maxY) CellCanvasBounds(int gx, int gy)
     {
@@ -718,19 +736,24 @@ internal sealed class WorldSpatialIndex
         return candidate.FormId < existing.FormId;
     }
 
-    private static bool HasTerrain(CellRecord cell) =>
-        cell.Heightmap is not null ||
-        cell.LandVisualData?.HasAny == true ||
-        cell.RuntimeTerrainMesh is not null;
+    private static bool HasTerrain(CellRecord cell)
+    {
+        return cell.Heightmap is not null ||
+               cell.LandVisualData?.HasAny == true ||
+               cell.RuntimeTerrainMesh is not null;
+    }
 
-    private static bool WorldspaceMatches(uint? attributionWorldspace, uint? activeWorldspace) =>
-        activeWorldspace is null || (attributionWorldspace.HasValue && attributionWorldspace.Value == activeWorldspace.Value);
+    private static bool WorldspaceMatches(uint? attributionWorldspace, uint? activeWorldspace)
+    {
+        return activeWorldspace is null ||
+               (attributionWorldspace.HasValue && attributionWorldspace.Value == activeWorldspace.Value);
+    }
 
     private static int FloorDiv(int value, int divisor)
     {
         var quotient = value / divisor;
         var remainder = value % divisor;
-        return remainder != 0 && ((remainder < 0) != (divisor < 0)) ? quotient - 1 : quotient;
+        return remainder != 0 && remainder < 0 != divisor < 0 ? quotient - 1 : quotient;
     }
 }
 

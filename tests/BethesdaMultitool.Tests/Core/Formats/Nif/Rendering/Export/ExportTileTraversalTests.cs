@@ -26,7 +26,7 @@ public sealed class ExportTileTraversalTests
                 new ExportTileCoordinate(2, 0),
                 new ExportTileCoordinate(2, 1),
                 new ExportTileCoordinate(2, 2),
-                new ExportTileCoordinate(2, 3),
+                new ExportTileCoordinate(2, 3)
             },
             actual);
     }
@@ -62,6 +62,7 @@ public sealed class ExportTileTraversalTests
                             Math.Abs(coordinate.Column - prior.Column);
                         Assert.Equal(1, manhattanDistance);
                     }
+
                     previous = coordinate;
                 }
 
@@ -80,7 +81,7 @@ public sealed class ExportTileTraversalTests
     public void GetSerpentineCoordinate_MaximumDimensions_UsesLongTileCountWithoutOverflow()
     {
         const int dimension = int.MaxValue;
-        var finalOrdinal = ((long)dimension * dimension) - 1;
+        var finalOrdinal = (long)dimension * dimension - 1;
 
         Assert.Equal(
             new ExportTileCoordinate(dimension - 1, dimension - 1),
@@ -95,19 +96,19 @@ public sealed class ExportTileTraversalTests
     {
         Assert.Equal(
             "columns",
-            Assert.Throws<ArgumentOutOfRangeException>(
-                () => ExportTileTraversal.GetSerpentineCoordinate(0, 0, 1)).ParamName);
+            Assert.Throws<ArgumentOutOfRangeException>(() => ExportTileTraversal.GetSerpentineCoordinate(0, 0, 1))
+                .ParamName);
         Assert.Equal(
             "rows",
-            Assert.Throws<ArgumentOutOfRangeException>(
-                () => ExportTileTraversal.GetSerpentineCoordinate(0, 1, 0)).ParamName);
+            Assert.Throws<ArgumentOutOfRangeException>(() => ExportTileTraversal.GetSerpentineCoordinate(0, 1, 0))
+                .ParamName);
         Assert.Equal(
             "visitOrdinal",
-            Assert.Throws<ArgumentOutOfRangeException>(
-                () => ExportTileTraversal.GetSerpentineCoordinate(-1, 1, 1)).ParamName);
+            Assert.Throws<ArgumentOutOfRangeException>(() => ExportTileTraversal.GetSerpentineCoordinate(-1, 1, 1))
+                .ParamName);
         Assert.Equal(
             "visitOrdinal",
-            Assert.Throws<ArgumentOutOfRangeException>(
-                () => ExportTileTraversal.GetSerpentineCoordinate(6, 3, 2)).ParamName);
+            Assert.Throws<ArgumentOutOfRangeException>(() => ExportTileTraversal.GetSerpentineCoordinate(6, 3, 2))
+                .ParamName);
     }
 }

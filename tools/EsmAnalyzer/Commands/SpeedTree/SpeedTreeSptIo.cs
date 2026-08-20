@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
-using BethesdaMultitool.Core.Formats.Bsa;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
 

@@ -1,7 +1,4 @@
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
-
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 
 /// <summary>
 ///     Pure data/logic helpers for building dialogue metadata structures.

@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Minidump;
@@ -16,7 +15,8 @@ internal static class DialogueDebugCommand
 {
     internal static Command CreateDebugCommand()
     {
-        var command = new Command("debug", "Show raw dialogue topic-info (TESTopicInfo) bytes from a memory dump (developer offset debugging)");
+        var command = new Command("debug",
+            "Show raw dialogue topic-info (TESTopicInfo) bytes from a memory dump (developer offset debugging)");
 
         var inputArg = new Argument<string>("input") { Description = "Path to memory dump (.dmp) file" };
         var countOpt = new Option<int?>("--count") { Description = "Number of records to dump (default 20)" };

@@ -21,9 +21,31 @@ public sealed class LocalizedStringTables
 {
     private const uint LocalizedFlag = 0x80;
 
-    private readonly IReadOnlyDictionary<uint, string> _strings;
+    /// <summary>
+    ///     Maps a full language name to its 2-letter file-suffix code. Skyrim names its tables with the
+    ///     full word (<c>Skyrim_English.STRINGS</c>); Fallout 4 / Fallout 76 use the 2-letter code
+    ///     (<c>Fallout4_en.STRINGS</c>, <c>seventysix_en.strings</c>). The loader tries both.
+    /// </summary>
+    private static readonly Dictionary<string, string> TwoLetterLanguageCodes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["English"] = "en",
+            ["German"] = "de",
+            ["French"] = "fr",
+            ["Spanish"] = "es",
+            ["Italian"] = "it",
+            ["Polish"] = "pl",
+            ["Russian"] = "ru",
+            ["Portuguese"] = "pt",
+            ["Czech"] = "cs",
+            ["Japanese"] = "ja",
+            ["Chinese"] = "zh"
+        };
+
     private readonly IReadOnlyDictionary<uint, string> _dlStrings;
     private readonly IReadOnlyDictionary<uint, string> _ilStrings;
+
+    private readonly IReadOnlyDictionary<uint, string> _strings;
 
     private LocalizedStringTables(
         IReadOnlyDictionary<uint, string> strings,
@@ -65,9 +87,9 @@ public sealed class LocalizedStringTables
         // one mounted folder reuses each opened layer across its table lookups. Disposing this mount
         // releases its leases; cross-plugin reuse requires a deliberately bounded warm/cache scope.
         using var dataFolder = GameFileSystem.OpenDataFolder(dir, registry: ArchiveHandleRegistry.Shared);
-        var strings = LoadTable(dataFolder, baseName, language, "STRINGS", lengthPrefixed: false);
-        var dlStrings = LoadTable(dataFolder, baseName, language, "DLSTRINGS", lengthPrefixed: true);
-        var ilStrings = LoadTable(dataFolder, baseName, language, "ILSTRINGS", lengthPrefixed: true);
+        var strings = LoadTable(dataFolder, baseName, language, "STRINGS", false);
+        var dlStrings = LoadTable(dataFolder, baseName, language, "DLSTRINGS", true);
+        var ilStrings = LoadTable(dataFolder, baseName, language, "ILSTRINGS", true);
 
         if (strings.Count == 0 && dlStrings.Count == 0 && ilStrings.Count == 0)
         {
@@ -125,27 +147,6 @@ public sealed class LocalizedStringTables
             return false;
         }
     }
-
-    /// <summary>
-    ///     Maps a full language name to its 2-letter file-suffix code. Skyrim names its tables with the
-    ///     full word (<c>Skyrim_English.STRINGS</c>); Fallout 4 / Fallout 76 use the 2-letter code
-    ///     (<c>Fallout4_en.STRINGS</c>, <c>seventysix_en.strings</c>). The loader tries both.
-    /// </summary>
-    private static readonly Dictionary<string, string> TwoLetterLanguageCodes =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["English"] = "en",
-            ["German"] = "de",
-            ["French"] = "fr",
-            ["Spanish"] = "es",
-            ["Italian"] = "it",
-            ["Polish"] = "pl",
-            ["Russian"] = "ru",
-            ["Portuguese"] = "pt",
-            ["Czech"] = "cs",
-            ["Japanese"] = "ja",
-            ["Chinese"] = "zh"
-        };
 
     private static Dictionary<uint, string> LoadTable(
         LayeredGameFileSystem dataFolder, string baseName, string language, string extension, bool lengthPrefixed)

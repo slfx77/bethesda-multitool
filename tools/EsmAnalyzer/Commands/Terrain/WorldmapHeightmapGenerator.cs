@@ -1,6 +1,6 @@
+using System.Text.Json;
 using ImageMagick;
 using Spectre.Console;
-using System.Text.Json;
 
 namespace EsmAnalyzer.Commands.Terrain;
 
@@ -31,84 +31,84 @@ internal static class WorldmapHeightmapGenerator
             var t = normalizedHeight / 0.10f;
             h = 220f;
             s = 0.90f;
-            l = 0.25f + (t * 0.10f); // 0.25 -> 0.35
+            l = 0.25f + t * 0.10f; // 0.25 -> 0.35
         }
         else if (normalizedHeight < 0.21f)
         {
             // Low areas: Blue -> Cyan (bright)
             var t = (normalizedHeight - 0.10f) / 0.11f;
-            h = 220f - (t * 40f); // 220 -> 180
+            h = 220f - t * 40f; // 220 -> 180
             s = 0.90f;
-            l = 0.35f + (t * 0.13f); // 0.35 -> 0.48
+            l = 0.35f + t * 0.13f; // 0.35 -> 0.48
         }
         else if (normalizedHeight < 0.27f)
         {
             // Cyan -> Lime: DARKER lime (#28d211 -> #157009: L 44% -> 24%)
             var t = (normalizedHeight - 0.21f) / 0.06f;
-            h = 180f - (t * 67f); // 180 -> 113 (cyan -> lime-green)
+            h = 180f - t * 67f; // 180 -> 113 (cyan -> lime-green)
             s = 0.85f;
-            l = 0.48f - (t * 0.24f); // 0.48 -> 0.24 (dark lime)
+            l = 0.48f - t * 0.24f; // 0.48 -> 0.24 (dark lime)
         }
         else if (normalizedHeight < 0.34f)
         {
             // Lime -> Yellow: BRIGHTEN (#86840b -> #c4c110: L 28% -> 42%)
             var t = (normalizedHeight - 0.27f) / 0.07f;
-            h = 113f - (t * 54f); // 113 -> 59 (lime -> yellow)
+            h = 113f - t * 54f; // 113 -> 59 (lime -> yellow)
             s = 0.85f;
-            l = 0.24f + (t * 0.18f); // 0.24 -> 0.42 (brighten to yellow)
+            l = 0.24f + t * 0.18f; // 0.24 -> 0.42 (brighten to yellow)
         }
         else if (normalizedHeight < 0.45f)
         {
             // Yellow -> Orange: BRIGHTEN (#7d3f0e -> #d75d0e: L 27% -> 45%)
             var t = (normalizedHeight - 0.34f) / 0.11f;
-            h = 59f - (t * 35f); // 59 -> 24
-            s = 0.85f - (t * 0.03f); // 0.85 -> 0.82
-            l = 0.42f + (t * 0.03f); // 0.42 -> 0.45 (brighter orange)
+            h = 59f - t * 35f; // 59 -> 24
+            s = 0.85f - t * 0.03f; // 0.85 -> 0.82
+            l = 0.42f + t * 0.03f; // 0.42 -> 0.45 (brighter orange)
         }
         else if (normalizedHeight < 0.54f)
         {
             // Orange -> Brown-red: darken
             var t = (normalizedHeight - 0.45f) / 0.09f;
-            h = 24f - (t * 8f); // 24 -> 16
-            s = 0.82f - (t * 0.02f); // 0.82 -> 0.80
-            l = 0.45f - (t * 0.15f); // 0.45 -> 0.30
+            h = 24f - t * 8f; // 24 -> 16
+            s = 0.82f - t * 0.02f; // 0.82 -> 0.80
+            l = 0.45f - t * 0.15f; // 0.45 -> 0.30
         }
         else if (normalizedHeight < 0.65f)
         {
             // Brown-red -> Red: DARKEN (#c71415 -> #8a310f: L 43% -> 30%)
             var t = (normalizedHeight - 0.54f) / 0.11f;
-            h = 16f - (t * 11f); // 16 -> 5 (toward red)
-            s = 0.80f + (t * 0.05f); // 0.80 -> 0.85
-            l = 0.30f + (t * 0.14f); // 0.30 -> 0.44 (builds up to red zone)
+            h = 16f - t * 11f; // 16 -> 5 (toward red)
+            s = 0.80f + t * 0.05f; // 0.80 -> 0.85
+            l = 0.30f + t * 0.14f; // 0.30 -> 0.44 (builds up to red zone)
         }
         else if (normalizedHeight < 0.78f)
         {
             // Red -> Pink: stay more red (#e02258 -> #cf1f10: H 345 -> 5)
             var t = (normalizedHeight - 0.65f) / 0.13f;
-            h = 5f - (t * 1f); // 5 -> 4 (stay red, slight shift)
-            s = 0.85f - (t * 0.08f); // 0.85 -> 0.77
-            l = 0.44f + (t * 0.11f); // 0.44 -> 0.55
+            h = 5f - t * 1f; // 5 -> 4 (stay red, slight shift)
+            s = 0.85f - t * 0.08f; // 0.85 -> 0.77
+            l = 0.44f + t * 0.11f; // 0.44 -> 0.55
         }
         else if (normalizedHeight < 0.90f)
         {
             // Pink -> Light pink: go SHORT way (4 -> 324 via 360, subtract 40)
             var t = (normalizedHeight - 0.78f) / 0.12f;
-            h = 4f - (t * 40f); // 4 -> -36 (wraps to 324)
+            h = 4f - t * 40f; // 4 -> -36 (wraps to 324)
             if (h < 0f)
             {
                 h += 360f;
             }
 
-            s = 0.77f - (t * 0.17f); // 0.77 -> 0.60
-            l = 0.55f + (t * 0.10f); // 0.55 -> 0.65
+            s = 0.77f - t * 0.17f; // 0.77 -> 0.60
+            l = 0.55f + t * 0.10f; // 0.55 -> 0.65
         }
         else
         {
             // Peaks: Light pink -> White (continuous from previous zone)
             var t = (normalizedHeight - 0.90f) / 0.10f;
-            h = 324f - (t * 4f); // 324 -> 320 (continue pink hue)
-            s = 0.60f - (t * 0.55f); // 0.60 -> 0.05 (fade to white)
-            l = 0.65f + (t * 0.30f); // 0.65 -> 0.95 (brighten to white)
+            h = 324f - t * 4f; // 324 -> 320 (continue pink hue)
+            s = 0.60f - t * 0.55f; // 0.60 -> 0.05 (fade to white)
+            l = 0.65f + t * 0.30f; // 0.65 -> 0.95 (brighten to white)
         }
 
         return HslToRgb(h, s, l);
@@ -126,12 +126,12 @@ internal static class WorldmapHeightmapGenerator
 
         h /= 360f; // Normalize hue to 0-1
 
-        var q = l < 0.5f ? l * (1 + s) : l + s - (l * s);
-        var p = (2 * l) - q;
+        var q = l < 0.5f ? l * (1 + s) : l + s - l * s;
+        var p = 2 * l - q;
 
-        var r = HueToRgb(p, q, h + (1f / 3f));
+        var r = HueToRgb(p, q, h + 1f / 3f);
         var g = HueToRgb(p, q, h);
-        var b = HueToRgb(p, q, h - (1f / 3f));
+        var b = HueToRgb(p, q, h - 1f / 3f);
 
         return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
     }
@@ -148,7 +148,7 @@ internal static class WorldmapHeightmapGenerator
             t -= 1;
         }
 
-        return t < 1f / 6f ? p + ((q - p) * 6 * t) : t < 1f / 2f ? q : t < 2f / 3f ? p + ((q - p) * ((2f / 3f) - t) * 6) : p;
+        return t < 1f / 6f ? p + (q - p) * 6 * t : t < 1f / 2f ? q : t < 2f / 3f ? p + (q - p) * (2f / 3f - t) * 6 : p;
     }
 
     /// <summary>
@@ -247,12 +247,12 @@ internal static class WorldmapHeightmapGenerator
 
         var regions = new (string name, int x1, int y1, int x2, int y2)[]
         {
-            ("North Center (flat?)", centerX - (quarterW / 2), centerY + quarterH, centerX + (quarterW / 2), maxY),
-            ("South Center (mountains?)", centerX - (quarterW / 2), minY, centerX + (quarterW / 2), centerY - quarterH),
-            ("West (mountains?)", minX, centerY - (quarterH / 2), centerX - quarterW, centerY + (quarterH / 2)),
-            ("East (lake?)", centerX + quarterW, centerY - (quarterH / 2), maxX, centerY + (quarterH / 2)),
+            ("North Center (flat?)", centerX - quarterW / 2, centerY + quarterH, centerX + quarterW / 2, maxY),
+            ("South Center (mountains?)", centerX - quarterW / 2, minY, centerX + quarterW / 2, centerY - quarterH),
+            ("West (mountains?)", minX, centerY - quarterH / 2, centerX - quarterW, centerY + quarterH / 2),
+            ("East (lake?)", centerX + quarterW, centerY - quarterH / 2, maxX, centerY + quarterH / 2),
             ("Southeast (river?)", centerX, minY, maxX, centerY - quarterH),
-            ("Center", centerX - (quarterW / 2), centerY - (quarterH / 2), centerX + (quarterW / 2), centerY + (quarterH / 2))
+            ("Center", centerX - quarterW / 2, centerY - quarterH / 2, centerX + quarterW / 2, centerY + quarterH / 2)
         };
 
         var regionTable = new Table()
@@ -395,12 +395,12 @@ internal static class WorldmapHeightmapGenerator
                     {
                         for (var sx = 0; sx < scale; sx++)
                         {
-                            var px = basePixelX + (localX * scale) + sx;
-                            var py = basePixelY + (flippedLocalY * scale) + sy;
+                            var px = basePixelX + localX * scale + sx;
+                            var py = basePixelY + flippedLocalY * scale + sy;
 
                             if (px >= 0 && px < imageWidth && py >= 0 && py < imageHeight)
                             {
-                                gray16Pixels[(py * imageWidth) + px] = gray16;
+                                gray16Pixels[py * imageWidth + px] = gray16;
                             }
                         }
                     }
@@ -434,10 +434,10 @@ internal static class WorldmapHeightmapGenerator
 
         for (var i = 0; i < imageWidth * imageHeight; i++)
         {
-            rgbaPixels[(i * 4) + 0] = 128; // R
-            rgbaPixels[(i * 4) + 1] = 128; // G
-            rgbaPixels[(i * 4) + 2] = 128; // B
-            rgbaPixels[(i * 4) + 3] = 255; // A
+            rgbaPixels[i * 4 + 0] = 128; // R
+            rgbaPixels[i * 4 + 1] = 128; // G
+            rgbaPixels[i * 4 + 2] = 128; // B
+            rgbaPixels[i * 4 + 3] = 255; // A
         }
 
         foreach (var ((cellX, cellY), heights) in heightmaps)
@@ -457,12 +457,12 @@ internal static class WorldmapHeightmapGenerator
                     {
                         for (var sx = 0; sx < scale; sx++)
                         {
-                            var px = basePixelX + (localX * scale) + sx;
-                            var py = basePixelY + (flippedLocalY * scale) + sy;
+                            var px = basePixelX + localX * scale + sx;
+                            var py = basePixelY + flippedLocalY * scale + sy;
 
                             if (px >= 0 && px < imageWidth && py >= 0 && py < imageHeight)
                             {
-                                var idx = ((py * imageWidth) + px) * 4;
+                                var idx = (py * imageWidth + px) * 4;
                                 rgbaPixels[idx + 0] = r;
                                 rgbaPixels[idx + 1] = g;
                                 rgbaPixels[idx + 2] = b;

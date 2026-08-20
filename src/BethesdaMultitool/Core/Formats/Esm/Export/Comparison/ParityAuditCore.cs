@@ -232,4 +232,3 @@ internal static class ParityAuditCore
         public List<FieldExample> Examples { get; } = [];
     }
 }
-

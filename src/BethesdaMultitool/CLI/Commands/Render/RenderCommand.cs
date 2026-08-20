@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Spectre.Console;
 using BethesdaMultitool.CLI.Rendering.Nif;
+using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Render;
 
@@ -36,7 +36,8 @@ public static class RenderCommand
         };
         var texturesBsaOption = new Option<string[]>("--textures-archive", "--textures-bsa")
         {
-            Description = "Path to textures archive(s) — BSA or BA2 — for texture-mapped rendering (can specify multiple)",
+            Description =
+                "Path to textures archive(s) — BSA or BA2 — for texture-mapped rendering (can specify multiple)",
             AllowMultipleArgumentsPerToken = true
         };
         var esmOption = new Option<string?>("--esm")

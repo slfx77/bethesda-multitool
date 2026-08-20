@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.CLI.Rendering.Nif;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -20,7 +19,7 @@ internal enum ProjectionMode
     Isometric,
 
     /// <summary>Orthographic from a ~25.66° elevation (trimetric).</summary>
-    Trimetric,
+    Trimetric
 }
 
 /// <summary>
@@ -38,22 +37,39 @@ internal enum ProjectionMode
 /// </summary>
 internal static class OrthoViewProjBuilder
 {
-    /// <summary>Elevation (degrees above the horizon) for each non-perspective mode. Isometric and
-    /// trimetric reuse the NPC renderer's presets (see <c>CameraConfig</c>); orthographic is
-    /// straight down.</summary>
+    /// <summary>
+    ///     Elevation (degrees above the horizon) for each non-perspective mode. Isometric and
+    ///     trimetric reuse the NPC renderer's presets (see <c>CameraConfig</c>); orthographic is
+    ///     straight down.
+    /// </summary>
     public const float OrthographicElevationDeg = 90f;
+
     public const float IsometricElevationDeg = 30f;
     public const float TrimetricElevationDeg = 25.65891f;
 
-    /// <summary>Distance from the focus to the eye. Large so all geometry sits inside [near, far]
-    /// regardless of placement Z; reversed-Z keeps depth precision across the range. Public so the
-    /// viewer can place a shading "camera" along the eye direction (specular view vector) far enough
-    /// that the ortho view direction reads as parallel across the whole frame.</summary>
+    /// <summary>
+    ///     Distance from the focus to the eye. Large so all geometry sits inside [near, far]
+    ///     regardless of placement Z; reversed-Z keeps depth precision across the range. Public so the
+    ///     viewer can place a shading "camera" along the eye direction (specular view vector) far enough
+    ///     that the ortho view direction reads as parallel across the whole frame.
+    /// </summary>
     public const float EyeDistance = 1_000_000f;
 
-    /// <summary>Elevation at/above which the view looks straight down and world +Y (north) is "up" in
-    /// the image — matching <see cref="TopDownViewProjBuilder" />. Below it, world +Z is the up axis.</summary>
+    /// <summary>
+    ///     Elevation at/above which the view looks straight down and world +Y (north) is "up" in
+    ///     the image — matching <see cref="TopDownViewProjBuilder" />. Below it, world +Z is the up axis.
+    /// </summary>
     private const float TopDownElevationThresholdDeg = 89.5f;
+
+    /// <summary>Tolerance (in 90° quadrant units) for treating an azimuth as aligned to an increment.</summary>
+    private const float AzimuthAlignEpsilon = 1e-3f;
+
+    /// <summary>
+    ///     Cap (in cells) on the relief parallax reach of <see cref="CoverRadius" /> so extreme
+    ///     relief can't balloon the streamed set — a documented clip risk only past ~16·cellSize·tan(el)
+    ///     of relief above/below the focus (Skyrim's ~30k-unit range stays under it at iso/tri).
+    /// </summary>
+    private const float MaxReliefReachCells = 16f;
 
     /// <summary>
     ///     Unit direction from the focus toward the eye for a compass bearing (degrees CW from north,
@@ -75,8 +91,10 @@ internal static class OrthoViewProjBuilder
     ///     re-anchors depth), which the viewer uses to re-seat the focus onto the terrain without an
     ///     image jump. Same vector <see cref="EyePosition" /> scales by <see cref="EyeDistance" />.
     /// </summary>
-    public static Vector3 EyeDirection(float azimuthDeg, float elevationDeg) =>
-        ToEyeDirection(azimuthDeg, elevationDeg);
+    public static Vector3 EyeDirection(float azimuthDeg, float elevationDeg)
+    {
+        return ToEyeDirection(azimuthDeg, elevationDeg);
+    }
 
     /// <summary>
     ///     The look-at "up" vector. Below the top-down threshold the camera is tilted and world +Z is up
@@ -94,13 +112,16 @@ internal static class OrthoViewProjBuilder
     }
 
     /// <summary>Elevation in degrees for a projection mode (0 for the perspective <see cref="ProjectionMode.None" />).</summary>
-    public static float ElevationDegFor(ProjectionMode mode) => mode switch
+    public static float ElevationDegFor(ProjectionMode mode)
     {
-        ProjectionMode.Orthographic => OrthographicElevationDeg,
-        ProjectionMode.Isometric => IsometricElevationDeg,
-        ProjectionMode.Trimetric => TrimetricElevationDeg,
-        _ => 0f,
-    };
+        return mode switch
+        {
+            ProjectionMode.Orthographic => OrthographicElevationDeg,
+            ProjectionMode.Isometric => IsometricElevationDeg,
+            ProjectionMode.Trimetric => TrimetricElevationDeg,
+            _ => 0f
+        };
+    }
 
     /// <summary>
     ///     Azimuth (camera compass bearing relative to the focus, degrees CW from north) for a
@@ -109,13 +130,10 @@ internal static class OrthoViewProjBuilder
     /// </summary>
     public static float AzimuthDegFor(ProjectionMode mode, int quadrant)
     {
-        var q = (((quadrant % 4) + 4) % 4);
+        var q = (quadrant % 4 + 4) % 4;
         var baseDeg = mode == ProjectionMode.Orthographic ? 0f : 45f;
-        return baseDeg + (q * 90f);
+        return baseDeg + q * 90f;
     }
-
-    /// <summary>Tolerance (in 90° quadrant units) for treating an azimuth as aligned to an increment.</summary>
-    private const float AzimuthAlignEpsilon = 1e-3f;
 
     /// <summary>
     ///     Computes the ◄ ► snap target for a continuous azimuth. The aligned positions are the mode's
@@ -140,7 +158,8 @@ internal static class OrthoViewProjBuilder
             // Off-axis → snap to the next increment in the arrow's direction.
             k = direction > 0 ? (int)MathF.Floor(rel) + 1 : (int)MathF.Ceiling(rel) - 1;
         }
-        var result = (baseDeg + (k * 90f)) % 360f;
+
+        var result = (baseDeg + k * 90f) % 360f;
         return result < 0f ? result + 360f : result;
     }
 
@@ -154,7 +173,7 @@ internal static class OrthoViewProjBuilder
     {
         // Direction from the focus toward the eye: compass bearing CW from +Y (north), lifted by the
         // elevation. el = 90° → straight up (top-down); az = 0 → camera north of the focus.
-        var eye = focus + (ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance);
+        var eye = focus + ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance;
         var view = Matrix4x4.CreateLookAt(eye, focus, WorldUp(azimuthDeg, elevationDeg));
         var halfH = MathF.Max(orthoHalfHeight, 1f);
         var halfW = halfH * MathF.Max(aspect, 1e-4f);
@@ -176,7 +195,7 @@ internal static class OrthoViewProjBuilder
         Vector3 focus, float azimuthDeg, float elevationDeg, float orthoHalfHeight, float aspect,
         int tileCol, int tileRow, int cols, int rows)
     {
-        var eye = focus + (ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance);
+        var eye = focus + ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance;
         var view = Matrix4x4.CreateLookAt(eye, focus, WorldUp(azimuthDeg, elevationDeg));
 
         var halfH = MathF.Max(orthoHalfHeight, 1f);
@@ -187,10 +206,10 @@ internal static class OrthoViewProjBuilder
         // Image rows run top→bottom; view-space Y runs bottom→top, so flip the row index.
         var rjFromBottom = r - 1 - Math.Clamp(tileRow, 0, r - 1);
 
-        var left = -halfW + ((2f * halfW) * ci / c);
-        var right = -halfW + ((2f * halfW) * (ci + 1) / c);
-        var bottom = -halfH + ((2f * halfH) * rjFromBottom / r);
-        var top = -halfH + ((2f * halfH) * (rjFromBottom + 1) / r);
+        var left = -halfW + 2f * halfW * ci / c;
+        var right = -halfW + 2f * halfW * (ci + 1) / c;
+        var bottom = -halfH + 2f * halfH * rjFromBottom / r;
+        var top = -halfH + 2f * halfH * (rjFromBottom + 1) / r;
 
         var proj = Matrix4x4.CreateOrthographicOffCenter(left, right, bottom, top, 1f, 2f * EyeDistance);
         return view * proj * CameraState.ReverseZ;
@@ -202,8 +221,10 @@ internal static class OrthoViewProjBuilder
     ///     shading camera position so the specular view vector reads as (effectively) parallel across
     ///     the ortho frame, which is the correct ortho behavior.
     /// </summary>
-    public static Vector3 EyePosition(Vector3 focus, float azimuthDeg, float elevationDeg) =>
-        focus + (ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance);
+    public static Vector3 EyePosition(Vector3 focus, float azimuthDeg, float elevationDeg)
+    {
+        return focus + (ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance);
+    }
 
     /// <summary>
     ///     World-space right + up axes of the ortho camera (the view matrix's X and Y axes). Used to
@@ -221,11 +242,6 @@ internal static class OrthoViewProjBuilder
         var up = Vector3.Cross(zAxis, right);
         return (right, up);
     }
-
-    /// <summary>Cap (in cells) on the relief parallax reach of <see cref="CoverRadius" /> so extreme
-    /// relief can't balloon the streamed set — a documented clip risk only past ~16·cellSize·tan(el)
-    /// of relief above/below the focus (Skyrim's ~30k-unit range stays under it at iso/tri).</summary>
-    private const float MaxReliefReachCells = 16f;
 
     /// <summary>
     ///     Extra XY reach required for geometry <paramref name="verticalRelief" /> above or below an
@@ -279,12 +295,12 @@ internal static class OrthoViewProjBuilder
         }
 
         // Follow the ray through the tile's screen-space center until it reaches Z=focus.Z.
-        var centerOnViewPlane = focus + (right * centerViewX) + (up * centerViewY);
-        var center = centerOnViewPlane - (toEye * ((centerOnViewPlane.Z - focus.Z) / eyeZ));
+        var centerOnViewPlane = focus + right * centerViewX + up * centerViewY;
+        var center = centerOnViewPlane - toEye * ((centerOnViewPlane.Z - focus.Z) / eyeZ);
 
         // Project each screen basis vector and a unit Z displacement onto that same focus-Z plane.
-        var groundRight = right - (toEye * (right.Z / eyeZ));
-        var groundUp = up - (toEye * (up.Z / eyeZ));
+        var groundRight = right - toEye * (right.Z / eyeZ);
+        var groundUp = up - toEye * (up.Z / eyeZ);
         var groundRelief = toEye / eyeZ;
         var xReach = new Vector2(groundRight.X, groundRight.Y) * MathF.Max(tileHalfWidth, 0f);
         var yReach = new Vector2(groundUp.X, groundUp.Y) * MathF.Max(tileHalfHeight, 0f);
@@ -326,7 +342,7 @@ internal static class OrthoViewProjBuilder
         var el = elevationDeg * (MathF.PI / 180f);
         var sinEl = MathF.Max(MathF.Sin(el), 0.1f);
         var groundHalfH = orthoHalfHeight / sinEl;
-        var footprint = MathF.Sqrt((halfW * halfW) + (groundHalfH * groundHalfH)) + (2f * cellSize);
+        var footprint = MathF.Sqrt(halfW * halfW + groundHalfH * groundHalfH) + 2f * cellSize;
 
         var relief = MathF.Max(MathF.Max(reliefAboveFocus, reliefBelowFocus), 0f);
         var reliefReach = MathF.Min(
@@ -340,6 +356,8 @@ internal static class OrthoViewProjBuilder
     ///     <see cref="VisibilityCylinder" /> is an axis-aligned XY square (camera-orientation-independent),
     ///     so a radius derived from a circumscribed circle conservatively admits every covered cell.
     /// </summary>
-    public static VisibilityCylinder BuildCoverCylinder(Vector3 focus, float radius) =>
-        new(new Vector3(focus.X, focus.Y, EyeDistance), radius);
+    public static VisibilityCylinder BuildCoverCylinder(Vector3 focus, float radius)
+    {
+        return new VisibilityCylinder(new Vector3(focus.X, focus.Y, EyeDistance), radius);
+    }
 }

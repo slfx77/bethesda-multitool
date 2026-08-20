@@ -20,6 +20,7 @@ public sealed partial class WorldView3DControl
                 ShowStatus("3D view unavailable: D3D12 init failed (see logs).");
                 return;
             }
+
             Log.Info("WorldView3DControl: D3D12 backend active.");
         }
 
@@ -53,6 +54,7 @@ public sealed partial class WorldView3DControl
         {
             TryBuildCellGrid();
         }
+
         UpdateHudLayoutBounds();
         // _surface12 was released on unload, so on return this recreates the swapchain on the
         // re-attached panel + EnsureDepthSrv + AttachRenderLoop (its create branch).
@@ -158,6 +160,7 @@ public sealed partial class WorldView3DControl
                 ShowStatus("3D view: D3D12 swapchain bind failed (see logs).");
                 return;
             }
+
             HideStatus();
             EnsureDepthSrv();
             _lastFrameTime = DateTime.UtcNow;
@@ -193,6 +196,7 @@ public sealed partial class WorldView3DControl
                     // Disposing a surface on a removed device can itself fail; the resources die
                     // with the device either way.
                 }
+
                 _surface12 = null;
                 ShowStatus("3D view: GPU device removed during resize — the surface will be recreated (see logs).");
             }
@@ -227,16 +231,17 @@ public sealed partial class WorldView3DControl
             ViewDimension = _surface12!.IsMsaa
                 ? Vortice.Direct3D12.ShaderResourceViewDimension.Texture2DMultisampled
                 : Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
-            Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+            Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default
         };
         if (!_surface12.IsMsaa)
         {
             srvDesc.Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
             {
                 MipLevels = 1,
-                MostDetailedMip = 0,
+                MostDetailedMip = 0
             };
         }
+
         _gpu12.Device.CreateShaderResourceView(depth, srvDesc, _depthSrv.Value.Cpu);
     }
 
@@ -277,8 +282,8 @@ public sealed partial class WorldView3DControl
                 Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
                 {
                     MipLevels = 1,
-                    MostDetailedMip = 0,
-                },
+                    MostDetailedMip = 0
+                }
             };
             _gpu12.Device.CreateShaderResourceView(snapshot, srvDesc, _waterOpaqueSnapshotSrv.Value.Cpu);
             _waterOpaqueSnapshotSrvResource = snapshot;
@@ -338,8 +343,8 @@ public sealed partial class WorldView3DControl
                 Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
                 {
                     MipLevels = 1,
-                    MostDetailedMip = 0,
-                },
+                    MostDetailedMip = 0
+                }
             };
             _gpu12.Device.CreateShaderResourceView(snapshot, srvDesc, _opaqueDepthSnapshotSrv.Value.Cpu);
             _opaqueDepthSnapshotSrvResource = snapshot;
@@ -442,8 +447,8 @@ public sealed partial class WorldView3DControl
                 Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
                 {
                     MipLevels = 1,
-                    MostDetailedMip = 0,
-                },
+                    MostDetailedMip = 0
+                }
             };
             _gpu12.Device.CreateShaderResourceView(resolved, srvDesc, _waterReflectionSrv.Value.Cpu);
             _waterReflectionSrvResource = resolved;
@@ -499,6 +504,7 @@ public sealed partial class WorldView3DControl
             _cbvSrvUavHeap12?.FreePersistent(reflectionSrv.BindlessIndex);
             _waterReflectionSrv = null;
         }
+
         _waterReflectionSrvResource = null;
 
         // Reused 3D-export offscreen target (synchronous per tile, never in flight at teardown).

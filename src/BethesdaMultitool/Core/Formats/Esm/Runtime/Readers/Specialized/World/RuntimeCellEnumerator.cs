@@ -35,13 +35,32 @@ internal readonly record struct RuntimeCellEnumeration(
 ///     hand off cell VAs without caring which source produced them. Dedups by FormID with
 ///     first-source-wins ordering (EditorIdHash &gt; AllFormsHash &gt; HeapScan)
 ///     so each FormID's <see cref="RuntimeCellHit.Source" /> preserves its earliest provenance.
-///
 ///     PDB-derived layouts (verified on Aug_RB MemDebug PDB):
 ///     <list type="bullet">
-///         <item><description><c>NiTMapBase</c> (16B): vfptr(+0), m_uiHashSize(+4 uint32), m_ppkHashTable(+8 NiTMapItem**), m_kAllocator(+12).</description></item>
-///         <item><description><c>NiTMapItem&lt;uint, TESForm*&gt;</c> (12B): m_pkNext(+0), m_key(+4 FormID), m_val(+8 TESForm*).</description></item>
-///         <item><description><c>TESForm</c> subobject prefix: cFormType(byte @ +4), iFormID(uint32 @ +12). <c>NiTMapItem.m_val</c> points at this subobject even when it is interior to the complete object.</description></item>
-///         <item><description><c>TESObjectCELL</c>: pNavMeshes(+116 NavMeshArray*) — used to validate heap-scan candidates without dereferencing.</description></item>
+///         <item>
+///             <description>
+///                 <c>NiTMapBase</c> (16B): vfptr(+0), m_uiHashSize(+4 uint32), m_ppkHashTable(+8 NiTMapItem**),
+///                 m_kAllocator(+12).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>NiTMapItem&lt;uint, TESForm*&gt;</c> (12B): m_pkNext(+0), m_key(+4 FormID), m_val(+8
+///                 TESForm*).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>TESForm</c> subobject prefix: cFormType(byte @ +4), iFormID(uint32 @ +12).
+///                 <c>NiTMapItem.m_val</c> points at this subobject even when it is interior to the complete object.
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>TESObjectCELL</c>: pNavMeshes(+116 NavMeshArray*) — used to validate heap-scan candidates
+///                 without dereferencing.
+///             </description>
+///         </item>
 ///     </list>
 ///     The loaded exterior grid is owned by the separate <c>TES</c> singleton through its
 ///     <c>GridCellArray*</c>. It is deliberately not inferred from a <c>TESWorldSpace*</c>;
@@ -49,9 +68,39 @@ internal readonly record struct RuntimeCellEnumeration(
 /// </summary>
 internal sealed class RuntimeCellEnumerator
 {
+    private const byte CellFormType = 0x39;
+    private const byte WrldFormType = 0x41;
+    private const byte NavmFormType = 0x43;
+
+    // NiTMapBase layout
+    private const int NiTMapHashSizeOffset = 4;
+    private const int NiTMapBucketArrayOffset = 8;
+    private const int NiTMapHeaderSize = 16;
+
+    // NiTMapItem<uint, TESForm*> layout
+    private const int NiTMapItemNextOffset = 0;
+    private const int NiTMapItemKeyOffset = 4;
+    private const int NiTMapItemValueOffset = 8;
+    private const int NiTMapItemSize = 12;
+
+    // TESForm-subobject prefix: cFormType at +4, iFormID at +12. pAllForms stores TESForm*,
+    // so these offsets are canonical for every map value, including interior TESForm bases in
+    // multiply inherited complete objects. Complete-object PDB fields are rebased downstream.
+    private const int TesFormTypeByteOffset = 4;
+
+    private const int TesFormIdOffset = 12;
+
+    // TESObjectCELL: pNavMeshes is a 4-byte NavMeshArray pointer (PDB UDT 0x0002C7DB) at
+    // offset 116. NavMeshArray is a separate 16-byte allocation, NOT inline in TESObjectCELL.
+    // See RuntimeNavMeshDiscovery.DiscoverForCellVa for the full dereference chain.
+    private const int CellNavMeshPointerOffset = 116;
+    private const int CellHeapScanReadWindow = CellNavMeshPointerOffset + 4;
+
+    // Bucket walk guard
+    private const int MaxBucketsHardLimit = 262144;
+    private const int MaxChainHops = 1000;
     private readonly RuntimeMemoryContext _context;
-    private readonly MinidumpInfo _minidumpInfo;
-    private readonly uint _pAllFormsVa;
+
     /// <summary>
     ///     Raw-byte → canonical-byte FormType remap built from
     ///     <see cref="RuntimeEditorIdEntry.OriginalFormType" /> on drift-corrected entries.
@@ -64,12 +113,15 @@ internal sealed class RuntimeCellEnumerator
     /// </summary>
     private readonly IReadOnlyDictionary<byte, byte> _driftRemap;
 
+    private readonly MinidumpInfo _minidumpInfo;
+    private readonly uint _pAllFormsVa;
+
     /// <summary>Creates the enumerator over the runtime all-forms table at the given virtual address.</summary>
     public RuntimeCellEnumerator(
         RuntimeMemoryContext context,
         MinidumpInfo minidumpInfo,
         uint pAllFormsVa)
-        : this(context, minidumpInfo, pAllFormsVa, driftRemap: null)
+        : this(context, minidumpInfo, pAllFormsVa, null)
     {
     }
 
@@ -90,37 +142,9 @@ internal sealed class RuntimeCellEnumerator
     }
 
     private byte ToCanonical(byte rawFormType)
-        => _driftRemap.TryGetValue(rawFormType, out var canonical) ? canonical : rawFormType;
-
-    private const byte CellFormType = 0x39;
-    private const byte WrldFormType = 0x41;
-    private const byte NavmFormType = 0x43;
-
-    // NiTMapBase layout
-    private const int NiTMapHashSizeOffset = 4;
-    private const int NiTMapBucketArrayOffset = 8;
-    private const int NiTMapHeaderSize = 16;
-
-    // NiTMapItem<uint, TESForm*> layout
-    private const int NiTMapItemNextOffset = 0;
-    private const int NiTMapItemKeyOffset = 4;
-    private const int NiTMapItemValueOffset = 8;
-    private const int NiTMapItemSize = 12;
-
-    // TESForm-subobject prefix: cFormType at +4, iFormID at +12. pAllForms stores TESForm*,
-    // so these offsets are canonical for every map value, including interior TESForm bases in
-    // multiply inherited complete objects. Complete-object PDB fields are rebased downstream.
-    private const int TesFormTypeByteOffset = 4;
-    private const int TesFormIdOffset = 12;
-    // TESObjectCELL: pNavMeshes is a 4-byte NavMeshArray pointer (PDB UDT 0x0002C7DB) at
-    // offset 116. NavMeshArray is a separate 16-byte allocation, NOT inline in TESObjectCELL.
-    // See RuntimeNavMeshDiscovery.DiscoverForCellVa for the full dereference chain.
-    private const int CellNavMeshPointerOffset = 116;
-    private const int CellHeapScanReadWindow = CellNavMeshPointerOffset + 4;
-
-    // Bucket walk guard
-    private const int MaxBucketsHardLimit = 262144;
-    private const int MaxChainHops = 1000;
+    {
+        return _driftRemap.TryGetValue(rawFormType, out var canonical) ? canonical : rawFormType;
+    }
 
     /// <summary>
     ///     Enumerate every <c>TESObjectCELL</c> discoverable in the dump and return one
@@ -301,7 +325,7 @@ internal sealed class RuntimeCellEnumerator
 
                 var keyFormId = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemKeyOffset);
                 var formVa = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemValueOffset);
-                itemVa = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemNextOffset);
+                itemVa = BinaryUtils.ReadUInt32BE(itemBytes);
 
                 if (keyFormId == 0 || keyFormId == 0xFFFFFFFF || !_context.IsValidPointer(formVa))
                 {
@@ -318,7 +342,7 @@ internal sealed class RuntimeCellEnumerator
                 // The map value is already TESForm*, so its identity is always +4/+12.
                 // Requiring keyFormId prevents a damaged header from being accepted.
                 if (!TesFormHeaderProbe.TryProbe(formBytes, out var rawFormType, out var formId,
-                        expectedFormId: keyFormId))
+                        keyFormId))
                 {
                     continue;
                 }
@@ -411,7 +435,6 @@ internal sealed class RuntimeCellEnumerator
             {
                 // WRLD is a calibration/exclusion category only. The loaded exterior grid
                 // belongs to the TES singleton, not to TESWorldSpace at a fixed offset.
-                continue;
             }
             else if (navmRawBytes.Contains(rawByte) || navmSet.Contains(formId))
             {
@@ -430,7 +453,6 @@ internal sealed class RuntimeCellEnumerator
                 navMeshVaCandidates.Add(formVa);
             }
         }
-
     }
 
     /// <summary>
@@ -512,7 +534,7 @@ internal sealed class RuntimeCellEnumerator
                 continue;
             }
 
-            var matches = matcher.Search(regionBytes, 0);
+            var matches = matcher.Search(regionBytes);
             foreach (var (_, _, position) in matches)
             {
                 // position is the byte offset of the vtable match in this VA-based scan.
@@ -569,7 +591,7 @@ internal sealed class RuntimeCellEnumerator
                 continue;
             }
 
-            var vfptr = BinaryUtils.ReadUInt32BE(vfptrBuffer, 0);
+            var vfptr = BinaryUtils.ReadUInt32BE(vfptrBuffer);
             if (Xbox360MemoryUtils.IsModulePointer(vfptr))
             {
                 return vfptr;

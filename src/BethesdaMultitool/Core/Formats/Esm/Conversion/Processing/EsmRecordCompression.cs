@@ -142,6 +142,7 @@ public static class EsmRecordCompression
         {
             perkDataScope = insidePerkEntry ? PerkDataScope.Entry : PerkDataScope.TopLevel;
         }
+
         var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, subData, recordType, perkDataScope);
 
         if (recordType == "PERK")

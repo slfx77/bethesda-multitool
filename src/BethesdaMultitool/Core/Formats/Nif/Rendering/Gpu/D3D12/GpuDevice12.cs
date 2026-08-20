@@ -1,9 +1,11 @@
+using System.Globalization;
+using BethesdaMultitool.Core.Diagnostics;
 using SharpGen.Runtime;
+using Vortice;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.Direct3D12.Debug;
 using Vortice.DXGI;
-using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
@@ -19,14 +21,18 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class GpuDevice12 : IDisposable
 {
-    private static readonly Logger Log = Logger.Instance;
-
     /// <summary>
     ///     Process-scoped verification override. Set to <c>1</c> before device creation to exercise
     ///     the renderer's single-sample resource/state path on hardware that normally selects 4x.
     ///     Unset and unsupported values retain the normal 4x capability probe.
     /// </summary>
     internal const string SceneSampleCountEnvironmentVariable = "FALLOUT_VIEWER_SCENE_SAMPLES";
+
+    private static readonly Logger Log = Logger.Instance;
+
+    private readonly ID3D12InfoQueue? _infoQueue;
+    private IDXGIAdapter3? _videoMemoryAdapter;
+    private bool _videoMemoryAdapterResolved;
 
     private GpuDevice12(
         ID3D12Device device,
@@ -48,19 +54,19 @@ internal sealed class GpuDevice12 : IDisposable
         SceneSampleCount = sceneSampleCount;
     }
 
-    private readonly ID3D12InfoQueue? _infoQueue;
-    private IDXGIAdapter3? _videoMemoryAdapter;
-    private bool _videoMemoryAdapterResolved;
-
     /// <summary>The underlying D3D12 device (resource + descriptor factory).</summary>
     public ID3D12Device Device { get; }
 
-    /// <summary>The direct (graphics + compute + copy) command queue. Used by both the
-    /// swap-chain swap (presents from this queue) and the per-frame command recorder.</summary>
+    /// <summary>
+    ///     The direct (graphics + compute + copy) command queue. Used by both the
+    ///     swap-chain swap (presents from this queue) and the per-frame command recorder.
+    /// </summary>
     public ID3D12CommandQueue DirectQueue { get; }
 
-    /// <summary>Fence used for CPU↔GPU sync at frame boundaries. The command recorder
-    /// owns the per-frame fence values; this object is just the underlying fence handle.</summary>
+    /// <summary>
+    ///     Fence used for CPU↔GPU sync at frame boundaries. The command recorder
+    ///     owns the per-frame fence values; this object is just the underlying fence handle.
+    /// </summary>
     public ID3D12Fence FrameFence { get; }
 
     /// <summary>Adapter description string, for logging + HUD.</summary>
@@ -69,10 +75,12 @@ internal sealed class GpuDevice12 : IDisposable
     /// <summary>Highest feature level the device was created at (≥ 12_0).</summary>
     public FeatureLevel FeatureLevel { get; }
 
-    /// <summary>True when DRED (Device Removed Extended Data) was force-enabled at device
-    /// creation, so <see cref="LogDeviceRemovedDiagnostics" /> can dump GPU auto-breadcrumbs +
-    /// the page-fault VA after a device removal. Enabled by FALLOUT_VIEWER_DRED=1 (or the debug
-    /// layer). Off by default — breadcrumbs add per-command GPU overhead.</summary>
+    /// <summary>
+    ///     True when DRED (Device Removed Extended Data) was force-enabled at device
+    ///     creation, so <see cref="LogDeviceRemovedDiagnostics" /> can dump GPU auto-breadcrumbs +
+    ///     the page-fault VA after a device removal. Enabled by FALLOUT_VIEWER_DRED=1 (or the debug
+    ///     layer). Off by default — breadcrumbs add per-command GPU overhead.
+    /// </summary>
     public bool DredEnabled { get; }
 
     /// <summary>
@@ -92,6 +100,15 @@ internal sealed class GpuDevice12 : IDisposable
     /// <summary>Backend identifier for HUD + log lines. Mirrors the old <c>GpuDevice.Backend</c>.</summary>
     public static string Backend => "Direct3D12";
 
+    public void Dispose()
+    {
+        _videoMemoryAdapter?.Dispose();
+        _infoQueue?.Dispose();
+        FrameFence.Dispose();
+        DirectQueue.Dispose();
+        Device.Dispose();
+    }
+
     /// <summary>
     ///     Drains messages from the D3D12 info queue (debug layer) and logs each one.
     ///     No-op when the debug layer wasn't enabled at <see cref="Create" /> time. Call
@@ -106,14 +123,15 @@ internal sealed class GpuDevice12 : IDisposable
             var msg = _infoQueue.GetMessage(i);
             var severity = msg.Severity switch
             {
-                Vortice.Direct3D12.Debug.MessageSeverity.Corruption => "CORRUPTION",
-                Vortice.Direct3D12.Debug.MessageSeverity.Error => "ERROR",
-                Vortice.Direct3D12.Debug.MessageSeverity.Warning => "WARN",
-                Vortice.Direct3D12.Debug.MessageSeverity.Info => "INFO",
+                MessageSeverity.Corruption => "CORRUPTION",
+                MessageSeverity.Error => "ERROR",
+                MessageSeverity.Warning => "WARN",
+                MessageSeverity.Info => "INFO",
                 _ => "MSG"
             };
             Log.Warn("[D3D12 {0}] {1}: {2}", severity, msg.Id, msg.Description);
         }
+
         _infoQueue.ClearStoredMessages();
     }
 
@@ -164,7 +182,8 @@ internal sealed class GpuDevice12 : IDisposable
                 return;
             }
 
-            var foundPageFault = dred.GetPageFaultAllocationOutput(out var pageFault).Success && pageFault.PageFaultVA != 0;
+            var foundPageFault = dred.GetPageFaultAllocationOutput(out var pageFault).Success &&
+                                 pageFault.PageFaultVA != 0;
             if (foundPageFault)
             {
                 Log.Error("GpuDevice12: DRED page-fault GPU VA = 0x{0:X}", pageFault.PageFaultVA);
@@ -182,7 +201,7 @@ internal sealed class GpuDevice12 : IDisposable
                     Log.Error("GpuDevice12: DRED breadcrumb queue='{0}' list='{1}' completed={2}/{3} ops",
                         node.CommandQueueDebugName ?? "(unnamed)",
                         node.CommandListDebugName ?? "(unnamed)",
-                        lastCompleted.HasValue ? lastCompleted.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "?",
+                        lastCompleted.HasValue ? lastCompleted.Value.ToString(CultureInfo.InvariantCulture) : "?",
                         node.BreadcrumbCount);
 
                     // The GPU stopped at the last completed breadcrumb — log the op there + neighbors.
@@ -193,7 +212,8 @@ internal sealed class GpuDevice12 : IDisposable
                         var to = Math.Min(history.Length - 1, idx + 2);
                         for (var i = from; i <= to; i++)
                         {
-                            Log.Error("GpuDevice12:   op[{0}]{1} = {2}", i, i == idx ? " <-- GPU stopped here" : string.Empty, history[i]);
+                            Log.Error("GpuDevice12:   op[{0}]{1} = {2}", i,
+                                i == idx ? " <-- GPU stopped here" : string.Empty, history[i]);
                         }
                     }
 
@@ -223,22 +243,26 @@ internal sealed class GpuDevice12 : IDisposable
         var count = 0;
         while (node is not null && count < 16)
         {
-            Log.Error("GpuDevice12:   {0} allocation '{1}' ({2})", label, node.ObjectName ?? "(unnamed)", node.AllocationType);
+            Log.Error("GpuDevice12:   {0} allocation '{1}' ({2})", label, node.ObjectName ?? "(unnamed)",
+                node.AllocationType);
             node = node.Next;
             count++;
         }
     }
 
-    private static string DescribeDeviceRemovedReason(int code) => (uint)code switch
+    private static string DescribeDeviceRemovedReason(int code)
     {
-        0x887A0006 => "DXGI_ERROR_DEVICE_HUNG — the app's own GPU commands hung/faulted (TDR)",
-        0x887A0005 => "DXGI_ERROR_DEVICE_REMOVED",
-        0x887A0007 => "DXGI_ERROR_DEVICE_RESET — unexpected device reset",
-        0x887A0020 => "DXGI_ERROR_DRIVER_INTERNAL_ERROR",
-        0x887A0001 => "DXGI_ERROR_INVALID_CALL",
-        0x80070057 => "E_INVALIDARG",
-        _ => "see DXGI/D3D12 HRESULT reference"
-    };
+        return (uint)code switch
+        {
+            0x887A0006 => "DXGI_ERROR_DEVICE_HUNG — the app's own GPU commands hung/faulted (TDR)",
+            0x887A0005 => "DXGI_ERROR_DEVICE_REMOVED",
+            0x887A0007 => "DXGI_ERROR_DEVICE_RESET — unexpected device reset",
+            0x887A0020 => "DXGI_ERROR_DRIVER_INTERNAL_ERROR",
+            0x887A0001 => "DXGI_ERROR_INVALID_CALL",
+            0x80070057 => "E_INVALIDARG",
+            _ => "see DXGI/D3D12 HRESULT reference"
+        };
+    }
 
     /// <summary>
     ///     Queries the adapter's LOCAL (dedicated VRAM) memory usage + OS-assigned budget, in MB.
@@ -279,7 +303,7 @@ internal sealed class GpuDevice12 : IDisposable
         _videoMemoryAdapterResolved = true;
         try
         {
-            var luid = new Vortice.Luid((uint)(Device.AdapterLuid & 0xFFFFFFFF), (int)(Device.AdapterLuid >> 32));
+            var luid = new Luid((uint)(Device.AdapterLuid & 0xFFFFFFFF), (int)(Device.AdapterLuid >> 32));
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory4>();
             _videoMemoryAdapter = factory.EnumAdapterByLuid<IDXGIAdapter3>(luid);
         }
@@ -289,15 +313,6 @@ internal sealed class GpuDevice12 : IDisposable
         }
 
         return _videoMemoryAdapter;
-    }
-
-    public void Dispose()
-    {
-        _videoMemoryAdapter?.Dispose();
-        _infoQueue?.Dispose();
-        FrameFence.Dispose();
-        DirectQueue.Dispose();
-        Device.Dispose();
     }
 
     /// <summary>
@@ -395,7 +410,8 @@ internal sealed class GpuDevice12 : IDisposable
                 }
                 else
                 {
-                    Log.Warn("GpuDevice12: DRED requested but D3D12GetDebugInterface(DRED settings) failed ({0}).", dredResult);
+                    Log.Warn("GpuDevice12: DRED requested but D3D12GetDebugInterface(DRED settings) failed ({0}).",
+                        dredResult);
                     enableDred = false;
                 }
             }
@@ -418,7 +434,7 @@ internal sealed class GpuDevice12 : IDisposable
             try
             {
                 var result = Vortice.Direct3D12.D3D12.D3D12CreateDevice(
-                    adapter: null,
+                    null,
                     minLevel,
                     out ID3D12Device? device);
 
@@ -435,7 +451,7 @@ internal sealed class GpuDevice12 : IDisposable
                 {
                     var queueDesc = new CommandQueueDescription(CommandListType.Direct, CommandQueuePriority.Normal);
                     queue = device.CreateCommandQueue<ID3D12CommandQueue>(queueDesc);
-                    fence = device.CreateFence<ID3D12Fence>(0, FenceFlags.None);
+                    fence = device.CreateFence<ID3D12Fence>();
 
                     // If the debug layer is enabled, query ID3D12InfoQueue so PumpDebugMessages
                     // can route validation messages to the app logger. Without this, messages
@@ -448,7 +464,8 @@ internal sealed class GpuDevice12 : IDisposable
                             infoQueue = device.QueryInterfaceOrNull<ID3D12InfoQueue>();
                             if (infoQueue is not null)
                             {
-                                Log.Info("GpuDevice12: ID3D12InfoQueue attached — validation messages will surface via PumpDebugMessages()");
+                                Log.Info(
+                                    "GpuDevice12: ID3D12InfoQueue attached — validation messages will surface via PumpDebugMessages()");
                             }
                         }
                         catch (SharpGenException ex)
@@ -461,7 +478,8 @@ internal sealed class GpuDevice12 : IDisposable
                     var sceneSampleCount = ProbeSceneSampleCount(device);
                     Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1}); scene MSAA = {2}x",
                         minLevel, deviceName, sceneSampleCount);
-                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred, sceneSampleCount);
+                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred,
+                        sceneSampleCount);
                 }
                 catch
                 {
@@ -506,15 +524,15 @@ internal sealed class GpuDevice12 : IDisposable
             using var colorProbe = device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties, HeapFlags.None,
                 ResourceDescription.Texture2D(Format.B8G8R8A8_UNorm, 1, 1,
-                    arraySize: 1, mipLevels: 1, sampleCount: desired, sampleQuality: 0,
+                    1, 1, desired, 0,
                     ResourceFlags.AllowRenderTarget),
-                ResourceStates.RenderTarget, optimizedClearValue: null);
+                ResourceStates.RenderTarget);
             using var depthProbe = device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties, HeapFlags.None,
                 ResourceDescription.Texture2D(Format.D32_Float, 1, 1,
-                    arraySize: 1, mipLevels: 1, sampleCount: desired, sampleQuality: 0,
+                    1, 1, desired, 0,
                     ResourceFlags.AllowDepthStencil),
-                ResourceStates.DepthWrite, optimizedClearValue: null);
+                ResourceStates.DepthWrite);
             return desired;
         }
         catch (SharpGenException ex)
@@ -539,7 +557,7 @@ internal sealed class GpuDevice12 : IDisposable
     {
         try
         {
-            var luid = new Vortice.Luid((uint)(device.AdapterLuid & 0xFFFFFFFF), (int)(device.AdapterLuid >> 32));
+            var luid = new Luid((uint)(device.AdapterLuid & 0xFFFFFFFF), (int)(device.AdapterLuid >> 32));
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory4>();
             using var adapter = factory.EnumAdapterByLuid<IDXGIAdapter1>(luid);
             return adapter.Description1.Description;

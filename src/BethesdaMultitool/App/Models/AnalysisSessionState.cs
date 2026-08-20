@@ -12,6 +12,7 @@ using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.Subtitles;
 using BethesdaMultitool.Core.RuntimeBuffer;
 using BethesdaMultitool.Core.Strings;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -23,18 +24,16 @@ namespace BethesdaMultitool;
 internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
 {
     private MemoryMappedFile? _mmf;
-    private Core.Formats.Esm.Land.BtdTerrainInjection? _terrainInjection;
     private ResourceRegistration? _registration;
+    private Core.Formats.Esm.Land.BtdTerrainInjection? _terrainInjection;
+    private ResourceRegistration? _worldRenderCacheRegistration;
+
+    // ── World Map derived data ──
+    private WorldViewData? _worldViewData;
 
     public string ResourceName => "AnalysisSession";
 
     public ResourceCategory Category => ResourceCategory.SessionScope;
-
-    /// <summary>
-    ///     Session-scope row: bytes are the mapped file's length (file-backed, not committed RAM).
-    ///     The session is the document — it is never trimmed, only dropped wholesale on a new load.
-    /// </summary>
-    public ResourceStats GetStats() => new() { EstimatedBytes = FileSize };
 
     public string? FilePath { get; private set; }
     public long FileSize { get; private set; }
@@ -58,10 +57,6 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     public Dictionary<uint, List<TopicDialogueNode>>? TopicsBySpeaker { get; set; }
     public Dictionary<uint, TopicDialogueNode>? DialogueFormIdIndex { get; set; }
     public bool DialogueViewerPopulated { get; set; }
-
-    // ── World Map derived data ──
-    private WorldViewData? _worldViewData;
-    private ResourceRegistration? _worldRenderCacheRegistration;
 
     /// <summary>
     ///     The loaded world view. Setting it re-points the render cache's diagnostics
@@ -145,6 +140,12 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
 
     /// <summary>True if analyzing a Fallout save file (.fxs/.fos).</summary>
     public bool IsSaveFile => FileType == AnalysisFileType.SaveFile;
+
+    /// <summary>
+    ///     Session-scope row: bytes are the mapped file's length (file-backed, not committed RAM).
+    ///     The session is the document — it is never trimmed, only dropped wholesale on a new load.
+    /// </summary>
+    public ResourceStats GetStats() => new() { EstimatedBytes = FileSize };
 
     /// <summary>
     ///     Opens a new analysis session, disposing any previous one.
@@ -272,4 +273,3 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
         FileType = AnalysisFileType.Unknown;
     }
 }
-

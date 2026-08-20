@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Extraction;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Minidump;

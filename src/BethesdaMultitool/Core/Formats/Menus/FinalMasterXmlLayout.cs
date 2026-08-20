@@ -15,6 +15,12 @@ namespace BethesdaMultitool.Core.Formats.Menus;
 public static class FinalMasterXmlLayout
 {
     /// <summary>
+    ///     The console's own interface dictionary, which its <c>Fallout - Misc.bsa</c> does ship.
+    ///     Excluded from the PC backfill so the converted build keeps the console copy.
+    /// </summary>
+    public const string ConsoleSuppliedDictionary = "menus\\falloutdict.txt";
+
+    /// <summary>
     ///     Console document basename (no extension, lowercase) → subfolder beneath <c>menus\</c>.
     ///     Anything absent sits directly in <c>menus\</c>.
     /// </summary>
@@ -59,12 +65,6 @@ public static class FinalMasterXmlLayout
         "menus\\surgerymenu.xml",
         "menus\\trait_select_menu.xml"
     ];
-
-    /// <summary>
-    ///     The console's own interface dictionary, which its <c>Fallout - Misc.bsa</c> does ship.
-    ///     Excluded from the PC backfill so the converted build keeps the console copy.
-    /// </summary>
-    public const string ConsoleSuppliedDictionary = "menus\\falloutdict.txt";
 
     /// <summary>
     ///     True when a donor archive entry belongs to the interface tree and should be considered

@@ -4,6 +4,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Carving;
@@ -73,7 +74,10 @@ public sealed class MemoryCarver : IDisposable
         _disposed = true;
     }
 
-    /// <summary>Scans a memory dump for known file signatures, extracts and converts each match into the output directory, and returns the carve manifest.</summary>
+    /// <summary>
+    ///     Scans a memory dump for known file signatures, extracts and converts each match into the output directory, and
+    ///     returns the carve manifest.
+    /// </summary>
     public async Task<List<CarveEntry>> CarveDumpAsync(
         string dumpPath,
         IProgress<double>? progress = null,
@@ -239,8 +243,8 @@ public sealed class MemoryCarver : IDisposable
         var processedCount = 0;
         var totalMatches = matches.Count;
 
-        await Orchestration.ParallelWork.ForEachAsync(
-            "carve-extract", matches, Orchestration.ConcurrencyPolicy.FullCores,
+        await ParallelWork.ForEachAsync(
+            "carve-extract", matches, ConcurrencyPolicy.FullCores,
             async (match, _) =>
             {
                 if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType)

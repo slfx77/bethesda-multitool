@@ -11,6 +11,7 @@ internal sealed record ScriptSkeleton
 
     /// <summary>Mirror of <c>ScriptRecord.ScriptType</c> — the computed type label (non-null on the source).</summary>
     public required string ScriptType { get; init; }
+
     public uint? OwnerQuestFormId { get; init; }
 
     /// <summary>Distinct list of FormIDs referenced by this script (already deduped at projection time).</summary>

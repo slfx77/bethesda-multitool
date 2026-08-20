@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
@@ -294,14 +293,18 @@ internal static class HeightmapColorRenderer
     ///     Saves a grayscale image (8-bit) to PNG. Delegates to <see cref="PngWriter" /> — one encoder,
     ///     one set of encode settings.
     /// </summary>
-    internal static void SaveGrayscale(byte[] pixels, int width, int height, string path) =>
+    internal static void SaveGrayscale(byte[] pixels, int width, int height, string path)
+    {
         PngWriter.SaveGrayscale(pixels, width, height, path);
+    }
 
     /// <summary>
     ///     Saves an RGB image (24-bit) to PNG. Delegates to <see cref="PngWriter" />.
     /// </summary>
-    internal static void SaveRgb(byte[] pixels, int width, int height, string path) =>
+    internal static void SaveRgb(byte[] pixels, int width, int height, string path)
+    {
         PngWriter.SaveRgb(pixels, width, height, path);
+    }
 
     #endregion
 }

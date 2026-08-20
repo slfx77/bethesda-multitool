@@ -16,11 +16,13 @@ internal static class DmpDanglingParsing
         {
             return false;
         }
+
         var span = s.AsSpan();
         if (span.Length > 2 && span[0] == '0' && (span[1] == 'x' || span[1] == 'X'))
         {
             span = span[2..];
         }
+
         return uint.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
     }
 
@@ -46,6 +48,7 @@ internal static class DmpDanglingParsing
                 cur.Append(c);
             }
         }
+
         parts.Add(cur.ToString());
         return parts.ToArray();
     }

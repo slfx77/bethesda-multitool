@@ -9,7 +9,8 @@ public sealed class WorldViewSettingsOrganizationSourceContractTests
     public void OverlaysContainOnlyDebugOverlays()
     {
         var xaml = SourceContract.ReadAppSource("WorldView3DSettingsPanel.xaml");
-        var overlays = SourceContract.Extract(xaml, "<Expander x:Name=\"OverlaysExpander\"", "<!-- ============================== Visibility");
+        var overlays = SourceContract.Extract(xaml, "<Expander x:Name=\"OverlaysExpander\"",
+            "<!-- ============================== Visibility");
 
         Assert.Contains("x:Name=\"CellsCheckBox\"", overlays, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"NavMeshCheckBox\"", overlays, StringComparison.Ordinal);
@@ -22,7 +23,8 @@ public sealed class WorldViewSettingsOrganizationSourceContractTests
     public void VisibilityGroupsExistingControlsByPurpose()
     {
         var xaml = SourceContract.ReadAppSource("WorldView3DSettingsPanel.xaml");
-        var visibility = SourceContract.Extract(xaml, "<Expander x:Name=\"VisibilityExpander\"", "<!-- ============================== Camera");
+        var visibility = SourceContract.Extract(xaml, "<Expander x:Name=\"VisibilityExpander\"",
+            "<!-- ============================== Camera");
 
         SourceContract.AssertOrder(
             visibility,
@@ -89,7 +91,7 @@ public sealed class WorldViewSettingsOrganizationSourceContractTests
         foreach (var child in new[]
                  {
                      "GrassCheckBox", "TreesCheckBox", "EffectsCheckBox", "SkyMeshesCheckBox",
-                     "AnimationsCheckBox", "EditorMarkersCheckBox", "ActivatorsCheckBox", "DisabledCheckBox",
+                     "AnimationsCheckBox", "EditorMarkersCheckBox", "ActivatorsCheckBox", "DisabledCheckBox"
                  })
         {
             Assert.Contains($"{child}.IsEnabled = meshes;", apply, StringComparison.Ordinal);

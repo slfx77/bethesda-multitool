@@ -24,7 +24,9 @@ public static class GameProfiles
     private const string SkyrimDiffuse = @"textures\landscape\Dirt01.dds";
     private const string SkyrimNormal = @"textures\landscape\Dirt01_n.dds";
     private const string OblivionDiffuse = @"textures\landscape\TerrainHDDirt01.dds";
+
     private const string OblivionNormal = @"textures\landscape\TerrainHDDirt01_n.dds";
+
     // Morrowind hardcodes its default (no ini setting): "_land_default.tga" is embedded in
     // Morrowind.exe at 0x3A7750 beside the LandTexture error strings ("Land (%i, %i) unable to load
     // texture idx %i"), used for VTEX index 0 / unresolvable texture indices. The BSA ships the asset
@@ -32,6 +34,20 @@ public static class GameProfiles
     // Morrowind behavior the texture loaders already handle). No normal: the 2002 fixed-function
     // renderer predates normal mapping, so terrain has none.
     private const string MorrowindDiffuse = @"textures\_land_default.dds";
+
+    /// <summary>
+    ///     The Bethesda-standard exterior cell edge. Mirrors <c>WorldGridConstants.CellSize</c>, which
+    ///     this file deliberately does not reference — GameProfiles is pure data and depends on nothing
+    ///     outside itself (see the type doc).
+    /// </summary>
+    private const float StandardExteriorCellWorldSize = 4096f;
+
+    /// <summary>
+    ///     The Gamebryo/Creation world unit: 1 unit = 1.42875 cm, so ~70 units span a metre. Every
+    ///     human-scale camera constant in this codebase was authored against it (a 112-unit eye is a
+    ///     1.6 m human).
+    /// </summary>
+    private const float ClassicWorldUnitsPerMetre = 70f;
 
     private static readonly GameProfile UnknownProfile = new()
     {
@@ -43,52 +59,6 @@ public static class GameProfiles
         DefaultLandscapeDiffuse = FalloutDiffuse,
         DefaultLandscapeNormal = FalloutNormal
     };
-
-    /// <summary>
-    ///     The Bethesda-standard exterior cell edge. Mirrors <c>WorldGridConstants.CellSize</c>, which
-    ///     this file deliberately does not reference — GameProfiles is pure data and depends on nothing
-    ///     outside itself (see the type doc).
-    /// </summary>
-    private const float StandardExteriorCellWorldSize = 4096f;
-
-    /// <summary>
-    ///     The exterior cell edge in world units for <paramref name="game" />, resolving the profile's
-    ///     "unset" 0 to the Bethesda-standard 4096.
-    ///     <para>
-    ///         ⚠ <see cref="GameProfile.ExteriorCellWorldSize" /> is populated ONLY where it differs
-    ///         from that standard (today just Starfield's metric 100), so reading the raw property and
-    ///         multiplying by it yields ZERO for every other game. Anything scaling a distance by the
-    ///         cell size must go through here — reading the property directly is the bug this method
-    ///         exists to prevent.
-    ///     </para>
-    /// </summary>
-    public static float CellWorldSizeOrDefault(BethesdaGame game)
-    {
-        var size = For(game).ExteriorCellWorldSize;
-        return size > 0f ? size : StandardExteriorCellWorldSize;
-    }
-
-    /// <summary>
-    ///     The Gamebryo/Creation world unit: 1 unit = 1.42875 cm, so ~70 units span a metre. Every
-    ///     human-scale camera constant in this codebase was authored against it (a 112-unit eye is a
-    ///     1.6 m human).
-    /// </summary>
-    private const float ClassicWorldUnitsPerMetre = 70f;
-
-    /// <summary>World units per metre for <paramref name="game" />, resolving "unset" to the classic ~70.</summary>
-    public static float UnitsPerMetreOrDefault(BethesdaGame game)
-    {
-        var units = For(game).WorldUnitsPerMetre;
-        return units > 0f ? units : ClassicWorldUnitsPerMetre;
-    }
-
-    /// <summary>
-    ///     Multiplier converting a classic-units human-scale constant into <paramref name="game" />'s
-    ///     units. Exactly <c>1.0</c> for every game that uses the classic unit (the constant divides by
-    ///     itself), so scaling by this is a bit-exact no-op outside Starfield, where it is 1/70.
-    /// </summary>
-    public static float HumanScaleFactor(BethesdaGame game) =>
-        UnitsPerMetreOrDefault(game) / ClassicWorldUnitsPerMetre;
 
     private static readonly IReadOnlyDictionary<BethesdaGame, GameProfile> Registry =
         new Dictionary<BethesdaGame, GameProfile>
@@ -113,7 +83,8 @@ public static class GameProfiles
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Oblivion"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.EmbeddedColored, // parchment-tile icons from menus\map\world (oblivion_marker_NN.png)
+                MarkerArt = MarkerArtStrategy
+                    .EmbeddedColored, // parchment-tile icons from menus\map\world (oblivion_marker_NN.png)
                 MarkerIconScale = 1.5f, // 32×32 parchment tiles render small at 1.0; match Skyrim's detailed-icon scale
                 // At zoom-to-fit the parchment tiles otherwise cover a disproportionate share of
                 // Cyrodiil. Grow them back to the existing 1.5× size by the ordinary detail zoom.
@@ -194,7 +165,8 @@ public static class GameProfiles
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout4"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.EmbeddedTinted, // white silhouettes from MapMarkers.swf (fo4_marker_NN.png)
+                MarkerArt = MarkerArtStrategy
+                    .EmbeddedTinted, // white silhouettes from MapMarkers.swf (fo4_marker_NN.png)
                 HasWorldspaceDefaultWaterHeight = true,
                 HasModernWeatherLayout = true,
                 ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
@@ -278,9 +250,45 @@ public static class GameProfiles
     /// <summary>Every known game profile (excludes <see cref="BethesdaGame.Unknown" />).</summary>
     public static IReadOnlyCollection<GameProfile> All => (IReadOnlyCollection<GameProfile>)Registry.Values;
 
+    /// <summary>
+    ///     The exterior cell edge in world units for <paramref name="game" />, resolving the profile's
+    ///     "unset" 0 to the Bethesda-standard 4096.
+    ///     <para>
+    ///         ⚠ <see cref="GameProfile.ExteriorCellWorldSize" /> is populated ONLY where it differs
+    ///         from that standard (today just Starfield's metric 100), so reading the raw property and
+    ///         multiplying by it yields ZERO for every other game. Anything scaling a distance by the
+    ///         cell size must go through here — reading the property directly is the bug this method
+    ///         exists to prevent.
+    ///     </para>
+    /// </summary>
+    public static float CellWorldSizeOrDefault(BethesdaGame game)
+    {
+        var size = For(game).ExteriorCellWorldSize;
+        return size > 0f ? size : StandardExteriorCellWorldSize;
+    }
+
+    /// <summary>World units per metre for <paramref name="game" />, resolving "unset" to the classic ~70.</summary>
+    public static float UnitsPerMetreOrDefault(BethesdaGame game)
+    {
+        var units = For(game).WorldUnitsPerMetre;
+        return units > 0f ? units : ClassicWorldUnitsPerMetre;
+    }
+
+    /// <summary>
+    ///     Multiplier converting a classic-units human-scale constant into <paramref name="game" />'s
+    ///     units. Exactly <c>1.0</c> for every game that uses the classic unit (the constant divides by
+    ///     itself), so scaling by this is a bit-exact no-op outside Starfield, where it is 1/70.
+    /// </summary>
+    public static float HumanScaleFactor(BethesdaGame game)
+    {
+        return UnitsPerMetreOrDefault(game) / ClassicWorldUnitsPerMetre;
+    }
+
     /// <summary>The profile for <paramref name="game" />; a neutral 24-byte default for <c>Unknown</c>.</summary>
-    public static GameProfile For(BethesdaGame game) =>
-        Registry.TryGetValue(game, out var profile) ? profile : UnknownProfile;
+    public static GameProfile For(BethesdaGame game)
+    {
+        return Registry.TryGetValue(game, out var profile) ? profile : UnknownProfile;
+    }
 
     /// <summary>
     ///     Best-effort game subtype for a 24-byte TES4 file from its HEDR version float. The ranges
@@ -288,15 +296,18 @@ public static class GameProfiles
     ///     master-name refinement (<see cref="ResolveByNames" />) is preferred when masters are available.
     ///     FO76 is the only unambiguous case (its version is an order of magnitude higher, e.g. 263.0).
     /// </summary>
-    public static BethesdaGame ResolveByHedrVersion(float version) => version switch
+    public static BethesdaGame ResolveByHedrVersion(float version)
     {
-        >= 2.0f => BethesdaGame.Fallout76,
-        >= 1.30f => BethesdaGame.FalloutNewVegas,
-        >= 0.955f => BethesdaGame.Starfield,
-        >= 0.945f => BethesdaGame.Fallout4,
-        >= 0.93f => BethesdaGame.Fallout3,
-        _ => BethesdaGame.FalloutNewVegas
-    };
+        return version switch
+        {
+            >= 2.0f => BethesdaGame.Fallout76,
+            >= 1.30f => BethesdaGame.FalloutNewVegas,
+            >= 0.955f => BethesdaGame.Starfield,
+            >= 0.945f => BethesdaGame.Fallout4,
+            >= 0.93f => BethesdaGame.Fallout3,
+            _ => BethesdaGame.FalloutNewVegas
+        };
+    }
 
     /// <summary>
     ///     Disambiguate by matching <paramref name="candidateNames" /> (a plugin's master list plus its

@@ -479,6 +479,7 @@ internal static class ObjectBoundsIndex
             {
                 return false;
             }
+
             var s = start + idx;
             var e = s + segment.Length;
             var boundedLeft = s == 0 || path[s - 1] == '\\' || path[s - 1] == '/';
@@ -487,8 +488,10 @@ internal static class ObjectBoundsIndex
             {
                 return true;
             }
+
             start = s + 1;
         }
+
         return false;
     }
 

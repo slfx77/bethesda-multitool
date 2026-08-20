@@ -549,4 +549,3 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 
     #endregion
 }
-

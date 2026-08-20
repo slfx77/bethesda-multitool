@@ -11,10 +11,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 /// </summary>
 internal sealed class ConditionStringSiblingBinder
 {
-    private List<DialogueCondition>? _conditions;
-    private int _conditionIndex = -1;
     private bool _acceptsCis1;
     private bool _acceptsCis2;
+    private int _conditionIndex = -1;
+    private List<DialogueCondition>? _conditions;
 
     /// <summary>Starts a new sibling sequence for the last condition in <paramref name="conditions" />.</summary>
     public void Begin(List<DialogueCondition> conditions)

@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     The ONE streaming-quiescence predicate for capture/export gates. Four hand-rolled copies of
@@ -28,8 +28,10 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class StreamingQuiescence
 {
-    /// <summary>Time box for strict settle loops — the profiler's evidence-derived bound for heavy
-    /// scenes (cold camera moves needed up to ~20s before reference streaming quiesced).</summary>
+    /// <summary>
+    ///     Time box for strict settle loops — the profiler's evidence-derived bound for heavy
+    ///     scenes (cold camera moves needed up to ~20s before reference streaming quiesced).
+    /// </summary>
     public static readonly TimeSpan DefaultSettleTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>Single-frame quiescence over the stats of the layers that rendered this frame.</summary>
@@ -45,8 +47,10 @@ internal static class StreamingQuiescence
             {
                 return false;
             }
+
             if (strict && references.ReferenceTexturePending != 0) return false;
         }
+
         return terrain is null || terrain.NewUploads == 0;
     }
 

@@ -29,25 +29,27 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 /// </summary>
 public sealed class InfoEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<DialogueResponse, object?>> TrdtExtractors = new(StringComparer.Ordinal)
-    {
-        ["EmotionType"] = m => m.EmotionType,
-        ["EmotionValue"] = m => m.EmotionValue,
-        // ConversationTopic + UseEmotionAnim not in model → zero-fill.
-        ["ResponseNumber"] = m => m.ResponseNumber,
-        ["Sound"] = m => m.SoundFormId ?? 0u,
-    };
+    private static readonly Dictionary<string, Func<DialogueResponse, object?>> TrdtExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["EmotionType"] = m => m.EmotionType,
+            ["EmotionValue"] = m => m.EmotionValue,
+            // ConversationTopic + UseEmotionAnim not in model → zero-fill.
+            ["ResponseNumber"] = m => m.ResponseNumber,
+            ["Sound"] = m => m.SoundFormId ?? 0u
+        };
 
-    private static readonly Dictionary<string, Func<DialogueCondition, object?>> CtdaExtractors = new(StringComparer.Ordinal)
-    {
-        ["Type"] = m => m.Type,
-        ["ComparisonValue"] = m => m.ComparisonValue,
-        ["FunctionIndex"] = m => m.FunctionIndex,
-        ["Parameter1"] = m => m.Parameter1,
-        ["Parameter2"] = m => m.Parameter2,
-        ["RunOn"] = m => m.RunOn,
-        ["Reference"] = m => m.Reference,
-    };
+    private static readonly Dictionary<string, Func<DialogueCondition, object?>> CtdaExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Type"] = m => m.Type,
+            ["ComparisonValue"] = m => m.ComparisonValue,
+            ["FunctionIndex"] = m => m.FunctionIndex,
+            ["Parameter1"] = m => m.Parameter1,
+            ["Parameter2"] = m => m.Parameter2,
+            ["RunOn"] = m => m.RunOn,
+            ["Reference"] = m => m.Reference
+        };
 
     public string RecordType => "INFO";
     public Type ModelType => typeof(DialogueRecord);
@@ -390,14 +392,14 @@ public sealed class InfoEncoder : IRecordEncoder
         // local-variable operands into dangling IDs and also deprives endian conversion of
         // the metadata it needs to walk the bytecode safely.
         var schrSchema = SubrecordSchemaRegistry.GetSchema("SCHR", "", 20)
-            ?? throw new InvalidOperationException("SCHR schema missing.");
+                         ?? throw new InvalidOperationException("SCHR schema missing.");
         var schrValues = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["RefCount"] = refCount,
             ["CompiledSize"] = (uint)compiledSize,
             ["VariableCount"] = variableCount,
             ["Type"] = (ushort)0, // 0 = Object script
-            ["Flags"] = (ushort)0x0001, // 0x0001 = Enabled
+            ["Flags"] = (ushort)0x0001 // 0x0001 = Enabled
         };
         subs.Add(new EncodedSubrecord("SCHR", SchemaDictionarySerializer.Serialize(schrSchema, schrValues)));
 

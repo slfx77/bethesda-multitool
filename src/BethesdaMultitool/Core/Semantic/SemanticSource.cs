@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Land;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Minidump;
 
@@ -25,8 +25,7 @@ internal sealed record SemanticSource
     ///     the sources, so the memory maps are reclaimed by GC together with the record graph
     ///     (matching how the detached-source world already manages every other resource).
     /// </summary>
-    public Formats.Esm.Land.BtdTerrainInjection? TerrainInjection { get; init; }
+    public BtdTerrainInjection? TerrainInjection { get; init; }
 
     public string DisplayName => Path.GetFileName(FilePath);
 }
-

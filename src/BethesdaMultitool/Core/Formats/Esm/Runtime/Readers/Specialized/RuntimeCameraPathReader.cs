@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -14,9 +13,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 internal sealed class RuntimeCameraPathReader(RuntimeMemoryContext context)
 {
     private const byte CpthFormType = 0x5C;
+    private readonly RuntimeMemoryContext _context = context;
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
-    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>Reads the runtime camera-path record for the given DMP entry, or null if it can't be read.</summary>
     public CameraPathRecord? ReadRuntimeCameraPath(RuntimeEditorIdEntry entry)

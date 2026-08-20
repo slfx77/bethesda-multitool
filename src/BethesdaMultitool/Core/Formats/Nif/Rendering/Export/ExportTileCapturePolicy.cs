@@ -9,7 +9,7 @@ internal enum ExportTileCapturePolicy
 {
     FullySettledOnly,
     CompleteOrFullySettled,
-    Always,
+    Always
 }
 
 /// <summary>Pure capture decision shared by the UI render path and its non-Windows tests.</summary>
@@ -28,7 +28,7 @@ internal static class ExportTileCaptureDecision
             ExportTileCapturePolicy.FullySettledOnly => isFullySettled,
             ExportTileCapturePolicy.CompleteOrFullySettled => isFullySettled || isComplete,
             ExportTileCapturePolicy.Always => true,
-            _ => throw new ArgumentOutOfRangeException(nameof(policy), policy, "Unknown export capture policy."),
+            _ => throw new ArgumentOutOfRangeException(nameof(policy), policy, "Unknown export capture policy.")
         };
     }
 }

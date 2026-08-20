@@ -127,7 +127,7 @@ public sealed class GameFileSystemTests : IDisposable
         WriteBsa("Game - Meshes01.bsa", [("meshes\\thing.nif", unrelatedPayload)]);
 
         using var subset = GameFileSystem.OpenArchiveSubset(
-            _root, ["*Terrain*.bsa"], includeLooseFiles: false);
+            _root, ["*Terrain*.bsa"], false);
 
         // "Terrain01" sorts before "TerrainPatch" alphabetically, which would shadow the patch — the
         // subset mount deliberately promotes *Patch* archives so the patched copy wins instead.
@@ -144,7 +144,7 @@ public sealed class GameFileSystemTests : IDisposable
     {
         WriteBsa("Game - Terrain01.bsa", [("terrain\\only.btd", PayloadFor(900))]);
 
-        using var subset = GameFileSystem.OpenArchiveSubset(_root, [], includeLooseFiles: false);
+        using var subset = GameFileSystem.OpenArchiveSubset(_root, [], false);
 
         Assert.Null(subset.TryReadAllBytes("terrain\\only.btd"));
     }

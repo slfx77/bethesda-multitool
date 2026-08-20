@@ -2,15 +2,19 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
 ///     One emitted dialogue voice line, keyed by the triple the FNV engine uses at runtime
-///     to construct voice-file lookup paths: <c>(VoiceTypeEditorId, ParentDialEditorId,
-///     ResponseNumber)</c>. The same triple appears in the Bethesda Audio Transcriber CSV
+///     to construct voice-file lookup paths:
+///     <c>
+///         (VoiceTypeEditorId, ParentDialEditorId,
+///         ResponseNumber)
+///     </c>
+///     . The same triple appears in the Bethesda Audio Transcriber CSV
 ///     file paths, which lets the asset packer rewrite voice-file pack paths even when CSV
 ///     FormIDs come from a different build-era than the converter's source DMP.
 ///     <para>
-///     Quest EDID and response text are recorded too so the collector can (1) construct the
-///     engine-expected filename from scratch when source-CSV truncation differs from what
-///     the runtime engine produces, and (2) disambiguate between multiple candidates that
-///     share a topic-EDID prefix bucket.
+///         Quest EDID and response text are recorded too so the collector can (1) construct the
+///         engine-expected filename from scratch when source-CSV truncation differs from what
+///         the runtime engine produces, and (2) disambiguate between multiple candidates that
+///         share a topic-EDID prefix bucket.
 ///     </para>
 /// </summary>
 public sealed record EmittedDialogueAudioBinding

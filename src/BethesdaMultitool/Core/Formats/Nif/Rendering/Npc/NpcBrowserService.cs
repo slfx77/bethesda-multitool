@@ -1,9 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.CLI.Rendering.Nif;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -61,7 +59,10 @@ internal sealed class NpcBrowserService : IDisposable
         _textureResolver.Dispose();
     }
 
-    /// <summary>Creates a browser service for an ESM and its discovered mesh/texture archives, or <c>null</c> if assets can't be opened.</summary>
+    /// <summary>
+    ///     Creates a browser service for an ESM and its discovered mesh/texture archives, or <c>null</c> if assets can't
+    ///     be opened.
+    /// </summary>
     public static NpcBrowserService? TryCreate(
         byte[] esmData,
         bool bigEndian,
@@ -558,4 +559,3 @@ internal sealed class NpcBrowserService : IDisposable
         return appearances.Where(npc => idSet.Contains(npc.NpcFormId)).ToList();
     }
 }
-

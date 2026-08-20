@@ -101,6 +101,7 @@ internal static class DmpDanglingAttributor
         {
             yield break;
         }
+
         foreach (var part in field.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (DmpDanglingParsing.TryParseHexUInt(part, out var f) && f != 0)
@@ -114,10 +115,10 @@ internal static class DmpDanglingAttributor
     ///     For each REFR position, attribute to (worldspace, cell) with priority:
     ///     1. ESM-derived ref→cell (authoritative — FormID exists as child of CELL in a Sample ESM)
     ///     2. Grid attribution (per (gx, gy) heuristic match from earlier pass) —
-    ///        SKIPPED for ACHR/ACRE base types, because actor positions in memory dumps reflect
-    ///        last-known runtime state (player-visited, AI-driven, or stale-cache), not their
-    ///        canonical cell. Putting Mr. House at the player's last-loaded Novac grid would
-    ///        be misleading. Without an ESM match, actors fall through to CUT.
+    ///     SKIPPED for ACHR/ACRE base types, because actor positions in memory dumps reflect
+    ///     last-known runtime state (player-visited, AI-driven, or stale-cache), not their
+    ///     canonical cell. Putting Mr. House at the player's last-loaded Novac grid would
+    ///     be misleading. Without an ESM match, actors fall through to CUT.
     ///     3. CUT (no cell record at this grid, OR an actor with no ESM authority)
     /// </summary>
     public static void AttributePositions(
@@ -159,7 +160,10 @@ internal static class DmpDanglingAttributor
         }
     }
 
-    private static bool IsActorBaseType(byte baseFormType) => baseFormType is 0x2A or 0x2B;
+    private static bool IsActorBaseType(byte baseFormType)
+    {
+        return baseFormType is 0x2A or 0x2B;
+    }
 
     private static PositionAttribution MakePositionAttribution(
         PositionRow p, ReferenceEnrichment? er,

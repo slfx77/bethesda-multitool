@@ -34,6 +34,17 @@ public sealed partial class WorldView3DControl
     // path deliberately small. Nearest-first + unique-path selection makes this two useful models per
     // frame instead of an unbounded sweep through every reference in the surrounding nine cells.
     private const int MaxWalkCollisionWarmupRequestsPerFrame = 2;
+    private readonly List<GroundCandidate> _ceilingCandidates = new(32);
+    private readonly List<ColdGroundCandidate> _coldGroundCandidates = new(64);
+
+    // Scratch candidate lists (walk-mode is single-threaded on the UI/frame path).
+    private readonly List<GroundCandidate> _groundCandidates = new(64);
+    private readonly List<GroundCandidate> _horizontalCandidates = new(64);
+    private readonly List<WalkCollisionInstance> _horizontalCollisionInstances = new(64);
+    private readonly List<CollisionReferenceCandidate> _walkCollisionWarmupCandidates = new(64);
+    private readonly CollisionReferencePriorityResolver _walkCollisionWarmupResolver = new();
+    private long _walkCollisionWarmupFrameIndex = -1;
+    private int _walkCollisionWarmupRequestsThisFrame;
 
     // The three constants above are human-scale lengths in CLASSIC world units (~70 per metre), so a
     // world with a different unit needs them converted — in Starfield's metres an unscaled 48-unit step
@@ -42,33 +53,6 @@ public sealed partial class WorldView3DControl
     private float WalkStepHeightScaled => WalkStepHeight * _unitScale;
     private float WalkCapsuleRadiusScaled => WalkCapsuleRadius * _unitScale;
     private float GroundRaycastEpsUpScaled => GroundRaycastEpsUp * _unitScale;
-
-    /// <summary>
-    ///     One walk-capsule candidate: a placed reference whose XY footprint can overlap the capsule,
-    ///     with the placement matrix + inverse hoisted out of the per-sample loop (they are per-REF
-    ///     constants). <see cref="Collision" /> null = cold mesh → per-sample OBND box fallback.
-    /// </summary>
-    private readonly record struct GroundCandidate(
-        PlacedReference Placement,
-        CollisionMesh? Collision,
-        Matrix4x4 World,
-        Matrix4x4 InverseWorld);
-
-    private readonly record struct ColdGroundCandidate(
-        PlacedReference Placement,
-        PlacedObjectCategory Category,
-        bool AllowsBoundsFallback);
-
-    // Scratch candidate lists (walk-mode is single-threaded on the UI/frame path).
-    private readonly List<GroundCandidate> _groundCandidates = new(64);
-    private readonly List<GroundCandidate> _ceilingCandidates = new(32);
-    private readonly List<GroundCandidate> _horizontalCandidates = new(64);
-    private readonly List<WalkCollisionInstance> _horizontalCollisionInstances = new(64);
-    private readonly List<ColdGroundCandidate> _coldGroundCandidates = new(64);
-    private readonly List<CollisionReferenceCandidate> _walkCollisionWarmupCandidates = new(64);
-    private readonly CollisionReferencePriorityResolver _walkCollisionWarmupResolver = new();
-    private long _walkCollisionWarmupFrameIndex = -1;
-    private int _walkCollisionWarmupRequestsThisFrame;
 
     /// <summary>
     ///     Sweeps the walk camera's circular footprint through the requested XY move. Warm candidates
@@ -314,7 +298,8 @@ public sealed partial class WorldView3DControl
                     // collider every frame. (WhiteHorseNettle never hit this only because its ACTI
                     // OBND is all zeros.)
                     var allowsBoundsFallback = !resolution.IsResolved &&
-                        WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category);
+                                               WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath,
+                                                   category);
                     var allowsWarmup = _referenceMeshCache12 is not null && resolution.ShouldOfferWarmup;
                     if (!allowsBoundsFallback && !allowsWarmup)
                     {
@@ -333,6 +318,7 @@ public sealed partial class WorldView3DControl
                     {
                         coldRadius = RenderableReference.NoBoundsFallbackRadiusFor(_cellSize) + reach;
                     }
+
                     if (distanceSquared > coldRadius * coldRadius) continue;
 
                     _coldGroundCandidates.Add(new ColdGroundCandidate(
@@ -394,6 +380,7 @@ public sealed partial class WorldView3DControl
             {
                 continue;
             }
+
             // Cold candidates carry the real placement transform so the OBND fallback (ground
             // slab probe + horizontal footprint quad) honors rotation and scale.
             var coldWorld = PlacedReferenceTransform.ComposeWorldMatrix(
@@ -490,4 +477,20 @@ public sealed partial class WorldView3DControl
 
         return best;
     }
+
+    /// <summary>
+    ///     One walk-capsule candidate: a placed reference whose XY footprint can overlap the capsule,
+    ///     with the placement matrix + inverse hoisted out of the per-sample loop (they are per-REF
+    ///     constants). <see cref="Collision" /> null = cold mesh → per-sample OBND box fallback.
+    /// </summary>
+    private readonly record struct GroundCandidate(
+        PlacedReference Placement,
+        CollisionMesh? Collision,
+        Matrix4x4 World,
+        Matrix4x4 InverseWorld);
+
+    private readonly record struct ColdGroundCandidate(
+        PlacedReference Placement,
+        PlacedObjectCategory Category,
+        bool AllowsBoundsFallback);
 }

@@ -184,12 +184,12 @@ public class QustPerkCtdaSanitizerTests
                 Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
                 ConditionGroups =
                 {
-                    new()
+                    new PerkConditionGroup
                     {
                         RunOn = 0,
                         Conditions =
                         {
-                            new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
+                            new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
                         }
                     }
                 }
@@ -215,13 +215,13 @@ public class QustPerkCtdaSanitizerTests
                 Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
                 ConditionGroups =
                 {
-                    new()
+                    new PerkConditionGroup
                     {
                         RunOn = 0,
                         Conditions =
                         {
-                            new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u },
-                            new() { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
+                            new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u },
+                            new PerkCondition { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -20,6 +21,25 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 /// </remarks>
 public sealed class CellChildAllocator
 {
+    /// <summary>
+    ///     Engine-fixed REFR FormIDs that the FNV runtime hard-codes (the player ref and
+    ///     a small handful of "default" objects). Master ESM does NOT define these — they
+    ///     live in the engine — so the master-set check passes them through to this guard.
+    ///     Allocating a new FormID for any of these would break engine state restoration
+    ///     and combat targeting.
+    ///     The previous implementation used a blanket <c>(formId &amp; 0xFF000000) == 0</c>
+    ///     check, which skipped ALL master-prefix FormIDs — including proto-allocated REFRs
+    ///     in the <c>0x0010BXXX</c> range that aren't actually in master. Those then emitted
+    ///     verbatim as phantom-master overrides, same crash class as the cell-FormID bug
+    ///     fixed in v60. The narrow allowlist preserves engine-fixed identity without
+    ///     trapping legitimately-new placed refs.
+    /// </summary>
+    private static readonly HashSet<uint> EngineFixedPlacedRefs = new()
+    {
+        0x00000014u, // Player REFR
+        0x00000018u // Default weapon (fists / unarmed)
+    };
+
     private readonly FormIdAllocator _allocator;
 
     public CellChildAllocator(FormIdAllocator allocator)
@@ -56,7 +76,7 @@ public sealed class CellChildAllocator
         // sees them as new content owned by our ESP.
         foreach (var entry in cellEntries)
         {
-            if (entry.Source != Catalog.SourceKind.DmpNew || entry.DmpModel is null)
+            if (entry.Source != SourceKind.DmpNew || entry.DmpModel is null)
             {
                 continue;
             }
@@ -138,19 +158,8 @@ public sealed class CellChildAllocator
             CellSourceToEmitted = cellMap.ToImmutable(),
             PlacedRefSourceToEmitted = placedRefMap.ToImmutable(),
             NavmSourceToEmitted = navmMap.ToImmutable(),
-            LandByCellSourceToEmitted = landByCellMap.ToImmutable(),
+            LandByCellSourceToEmitted = landByCellMap.ToImmutable()
         };
-    }
-
-    /// <summary>Combined per-pass output.</summary>
-    public sealed record AllocationResult
-    {
-        public ImmutableDictionary<uint, uint> CellSourceToEmitted { get; init; } =
-            ImmutableDictionary<uint, uint>.Empty;
-        public required ImmutableDictionary<uint, uint> PlacedRefSourceToEmitted { get; init; }
-        public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
-        public ImmutableDictionary<uint, uint> LandByCellSourceToEmitted { get; init; } =
-            ImmutableDictionary<uint, uint>.Empty;
     }
 
     /// <summary>
@@ -174,26 +183,6 @@ public sealed class CellChildAllocator
         return true;
     }
 
-    /// <summary>
-    ///     Engine-fixed REFR FormIDs that the FNV runtime hard-codes (the player ref and
-    ///     a small handful of "default" objects). Master ESM does NOT define these — they
-    ///     live in the engine — so the master-set check passes them through to this guard.
-    ///     Allocating a new FormID for any of these would break engine state restoration
-    ///     and combat targeting.
-    ///
-    ///     The previous implementation used a blanket <c>(formId &amp; 0xFF000000) == 0</c>
-    ///     check, which skipped ALL master-prefix FormIDs — including proto-allocated REFRs
-    ///     in the <c>0x0010BXXX</c> range that aren't actually in master. Those then emitted
-    ///     verbatim as phantom-master overrides, same crash class as the cell-FormID bug
-    ///     fixed in v60. The narrow allowlist preserves engine-fixed identity without
-    ///     trapping legitimately-new placed refs.
-    /// </summary>
-    private static readonly HashSet<uint> EngineFixedPlacedRefs = new()
-    {
-        0x00000014u, // Player REFR
-        0x00000018u, // Default weapon (fists / unarmed)
-    };
-
     private static bool IsAllocatablePlacedRef(PlacedReference placed, IReadOnlySet<uint> masterFormIds)
     {
         // Subtype whitelist. REFR/ACHR/ACRE are the active set today; PGRE/PMIS/PARW/PBEA/
@@ -205,8 +194,8 @@ public sealed class CellChildAllocator
         // FormID verbatim. For DmpNew records that emit through the planner with a
         // master-prefix proto FormID, that's the phantom-master crash class.
         if (placed.RecordType is not ("REFR" or "ACHR" or "ACRE"
-                                      or "PGRE" or "PMIS" or "PARW" or "PBEA"
-                                      or "PCON" or "PHZD" or "PBAR"))
+            or "PGRE" or "PMIS" or "PARW" or "PBEA"
+            or "PCON" or "PHZD" or "PBAR"))
         {
             return false;
         }
@@ -253,5 +242,18 @@ public sealed class CellChildAllocator
         }
 
         return true;
+    }
+
+    /// <summary>Combined per-pass output.</summary>
+    public sealed record AllocationResult
+    {
+        public ImmutableDictionary<uint, uint> CellSourceToEmitted { get; init; } =
+            ImmutableDictionary<uint, uint>.Empty;
+
+        public required ImmutableDictionary<uint, uint> PlacedRefSourceToEmitted { get; init; }
+        public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
+
+        public ImmutableDictionary<uint, uint> LandByCellSourceToEmitted { get; init; } =
+            ImmutableDictionary<uint, uint>.Empty;
     }
 }

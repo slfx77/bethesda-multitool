@@ -20,30 +20,31 @@ public sealed class ProjEncoder : IRecordEncoder
     // Schema collapses Flags (ushort) + ProjectileType (ushort) into one UInt32 "FlagsAndType"
     // field at offset 0. Combine via shift; the LE encoding matches the prior two-WriteUInt16
     // pattern byte-for-byte.
-    private static readonly Dictionary<string, Func<ProjectileRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["FlagsAndType"] = m => (uint)m.Flags | ((uint)m.ProjectileType << 16),
-        ["Gravity"] = m => m.Gravity,
-        ["Speed"] = m => m.Speed,
-        ["Range"] = m => m.Range,
-        ["Light"] = m => m.Light,
-        ["MuzzleFlashLight"] = m => m.MuzzleFlashLight,
-        ["TracerChance"] = m => m.TracerChance,
-        ["ExplosionAltTriggerProximity"] = m => m.ExplosionProximity,
-        ["ExplosionAltTriggerTimer"] = m => m.ExplosionTimer,
-        ["Explosion"] = m => m.Explosion,
-        ["Sound"] = m => m.Sound,
-        ["MuzzleFlashDuration"] = m => m.MuzzleFlashDuration,
-        ["FadeDuration"] = m => m.FadeDuration,
-        ["ImpactForce"] = m => m.ImpactForce,
-        ["SoundCountdown"] = m => m.CountdownSound,
-        ["SoundDisable"] = m => m.DeactivateSound,
-        ["DefaultWeaponSource"] = m => m.DefaultWeaponSource,
-        ["RotationX"] = m => m.RotationX,
-        ["RotationY"] = m => m.RotationY,
-        ["RotationZ"] = m => m.RotationZ,
-        ["BouncyMult"] = m => m.BounceMultiplier,
-    };
+    private static readonly Dictionary<string, Func<ProjectileRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["FlagsAndType"] = m => m.Flags | ((uint)m.ProjectileType << 16),
+            ["Gravity"] = m => m.Gravity,
+            ["Speed"] = m => m.Speed,
+            ["Range"] = m => m.Range,
+            ["Light"] = m => m.Light,
+            ["MuzzleFlashLight"] = m => m.MuzzleFlashLight,
+            ["TracerChance"] = m => m.TracerChance,
+            ["ExplosionAltTriggerProximity"] = m => m.ExplosionProximity,
+            ["ExplosionAltTriggerTimer"] = m => m.ExplosionTimer,
+            ["Explosion"] = m => m.Explosion,
+            ["Sound"] = m => m.Sound,
+            ["MuzzleFlashDuration"] = m => m.MuzzleFlashDuration,
+            ["FadeDuration"] = m => m.FadeDuration,
+            ["ImpactForce"] = m => m.ImpactForce,
+            ["SoundCountdown"] = m => m.CountdownSound,
+            ["SoundDisable"] = m => m.DeactivateSound,
+            ["DefaultWeaponSource"] = m => m.DefaultWeaponSource,
+            ["RotationX"] = m => m.RotationX,
+            ["RotationY"] = m => m.RotationY,
+            ["RotationZ"] = m => m.RotationZ,
+            ["BouncyMult"] = m => m.BounceMultiplier
+        };
 
     public string RecordType => "PROJ";
     public Type ModelType => typeof(ProjectileRecord);

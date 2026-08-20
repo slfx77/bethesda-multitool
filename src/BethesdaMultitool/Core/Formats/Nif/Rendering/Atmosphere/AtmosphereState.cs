@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -13,19 +12,27 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 ///         GROUNDED (Phase 2b) against the decompiled Xbox 360 "MemDebug" XEX
 ///         (<c>tools/GhidraProject/atmosphere_decompiled.txt</c>). The structure here mirrors the engine:
 ///         <list type="bullet">
-///             <item>climate timing bytes → hours via ×1/6 (<c>Sky::GetSunriseBegin</c> reads
-///             <c>climate+0x60</c> and multiplies by <c>0.16666667</c>; <c>TESClimate::Load</c> reads the
-///             6-byte TNAM into <c>climate+0x60</c>);</item>
-///             <item>NAM0 time-band order is Sunrise(0) / Day(1) / Sunset(2) / Night(3)
-///             (<c>TESWeather::GetCloudColor</c> defaults);</item>
-///             <item>the bands cross-fade within the sunrise / sunset windows (pivoting at each window
-///             midpoint) and Night is solid outside the daylight span (<c>Sky::FillColorBlend</c>).
-///             FNV's additional HighNoon color slot peaks at the engine's fixed 12:00 member, while
-///             four-band records hold Day through midday. Skyrim's and Fallout 4's exact ±0.5h
-///             <c>fDaytimeColorExtension</c> is applied by <see cref="Resolve" />; see
-///             <see cref="SampleBand" />;</item>
-///             <item>directional sun intensity is the daylight fraction, 0 below the horizon
-///             (<c>Sun::Update</c>) — see <see cref="DaylightFraction" />.</item>
+///             <item>
+///                 climate timing bytes → hours via ×1/6 (<c>Sky::GetSunriseBegin</c> reads
+///                 <c>climate+0x60</c> and multiplies by <c>0.16666667</c>; <c>TESClimate::Load</c> reads the
+///                 6-byte TNAM into <c>climate+0x60</c>);
+///             </item>
+///             <item>
+///                 NAM0 time-band order is Sunrise(0) / Day(1) / Sunset(2) / Night(3)
+///                 (<c>TESWeather::GetCloudColor</c> defaults);
+///             </item>
+///             <item>
+///                 the bands cross-fade within the sunrise / sunset windows (pivoting at each window
+///                 midpoint) and Night is solid outside the daylight span (<c>Sky::FillColorBlend</c>).
+///                 FNV's additional HighNoon color slot peaks at the engine's fixed 12:00 member, while
+///                 four-band records hold Day through midday. Skyrim's and Fallout 4's exact ±0.5h
+///                 <c>fDaytimeColorExtension</c> is applied by <see cref="Resolve" />; see
+///                 <see cref="SampleBand" />;
+///             </item>
+///             <item>
+///                 directional sun intensity is the daylight fraction, 0 below the horizon
+///                 (<c>Sun::Update</c>) — see <see cref="DaylightFraction" />.
+///             </item>
 ///         </list>
 ///         The sun world-direction is an analytic east→west great-arc (Z up, peak at solar noon): the
 ///         engine builds it from climate-specific azimuth/elevation via NiMatrix3 rotations, which the
@@ -35,124 +42,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 /// </summary>
 public static class AtmosphereState
 {
-    // Sky::Sky copies the 12.0f static at 0x8200D910 into this+0x12c (0x8246EED4), and
-    // Sky::FillColorBlend reads that member as the HighNoon color pivot. It is independent of CLMT.
-    private const float ClassicColorNoonHour = 12f;
-
-    /// <summary>
-    ///     Climate sunrise / sunset window in game hours (0..24), adapted from a CLMT TNAM block.
-    ///     Callers without a climate pass <see cref="Default" />.
-    /// </summary>
-    public readonly record struct ClimateTiming(
-        float SunriseBeginHour,
-        float SunriseEndHour,
-        float SunsetBeginHour,
-        float SunsetEndHour,
-        int MoonPhaseDays = 0)
-    {
-        /// <summary>Fallout's default day: sunrise ~06:00, sunset ~18:00 (no climate moon phase length).</summary>
-        public static ClimateTiming Default => new(5.5f, 6.5f, 18.0f, 19.0f);
-
-        /// <summary>Build timing from a CLMT TNAM block. Byte→hours = value × 1/6 (10-minute units) —
-        /// CONFIRMED by the decompile: <c>Sky::GetSunriseBegin</c> reads <c>climate+0x60</c> and scales by
-        /// <c>0.16666667</c>. The phase-length byte masks its low 6 bits (TESClimate::GetMoonPhaseDays —
-        /// the top 2 bits are the Masser/Secunda enable flags); 0 = climate carries no phase length and
-        /// the moon profile's fallback applies. Returns <see cref="Default" /> for a null block.</summary>
-        public static ClimateTiming FromClimateData(ClimateTimingData? d) =>
-            d is null
-                ? Default
-                : new(d.SunriseBegin / 6f, d.SunriseEnd / 6f, d.SunsetBegin / 6f, d.SunsetEnd / 6f,
-                    d.MoonPhaseLength & 0x3F);
-    }
-
-    /// <summary>The resolved per-frame atmosphere the GPU constant buffer mirrors.</summary>
-    public readonly record struct Resolved(
-        Vector3 SunWorldDirection,  // unit vector FROM the surface TOWARD the sun (+Z up)
-        Vector3 SunBillboardDirection, // recovered raw SunPos direction; FO4's light-only floor is excluded
-        Vector3 SunColor,           // 0..1 RGB; zero when lighting is disabled or the sun is down
-        float SunIntensity,         // 0 at/below the horizon → 1 across the day (engine daylight fraction)
-        Vector3 AmbientColor,
-        Vector3 SkyTopColor,
-        Vector3 SkyHorizonColor,
-        Vector3 FogColor,           // near-fog color (legacy name retained for callers)
-        Vector3 FogFarColor,
-        float FogNear,
-        float FogFar,
-        float FogPower,             // distance-fog exponent (1 = linear), from WTHR FNAM day/night power
-        float FogMaxOpacity,        // max powered fog amount; Skyrim FNAM day/night max, else 1
-        Vector4 SunDiscColor,       // authored WTHR Sun row (RGBA)
-        Vector4 StarsColor,         // authored WTHR Stars row (RGBA)
-        Vector4 SunGlareColor,      // modern WTHR Sun Glare row (RGBA)
-        Vector4 MoonGlareColor,     // modern WTHR Moon Glare row (RGBA)
-        float SunGlareIntensity,    // DATA.SunGlare normalized 0..1
-        float StarVisibility,       // Stars::Update controller alpha; independent of RGBX padding
-        ResolvedAmbientCube? DirectionalAmbient, // lossless DALC cube, null for legacy/single ambient
-        Vector3 SkyLowerColor,      // authored NAM0 SkyLower, retained for Atmosphere.nif vertex weights
-        Vector3 AuthoredHorizonColor) // authored NAM0 Horizon, before fallback-dome low-sun shaping
-    {
-        // WTHR celestial rows are RGBX. Their fourth byte is retained losslessly in the Vector4 values
-        // above, but it is padding rather than authored opacity. Visibility comes from Sun::Update and
-        // DATA.SunGlare; rendering must never let an RGBX padding byte gate a billboard.
-        public float SunDiscDrawAlpha => Math.Clamp(SunIntensity, 0f, 1f);
-        public float SunGlareDrawAlpha =>
-            Math.Clamp(SunIntensity, 0f, 1f) * Math.Clamp(SunGlareIntensity, 0f, 1f);
-        public float StarsDrawAlpha => Math.Clamp(StarVisibility, 0f, 1f);
-#pragma warning disable CA1822, S2325 // instance member by design — completes the Resolved DrawAlpha family; callers use instance syntax
-        public float MoonDiscDrawAlpha(float pathVisibility) => Math.Clamp(pathVisibility, 0f, 1f);
-#pragma warning restore CA1822, S2325
-    }
-
-    /// <summary>
-    ///     Applies one resolved scene multiplier to every color consumed by the procedural or authored
-    ///     atmosphere geometry. Keeping this projection centralized prevents the shared b3 reflection
-    ///     colors and the sky renderer's private b0 colors from drifting apart.
-    /// </summary>
-    internal static Resolved ApplySkyColorScale(Resolved value, float multiplier) => value with
-    {
-        SkyTopColor = value.SkyTopColor * multiplier,
-        SkyLowerColor = value.SkyLowerColor * multiplier,
-        AuthoredHorizonColor = value.AuthoredHorizonColor * multiplier,
-        SkyHorizonColor = value.SkyHorizonColor * multiplier,
-    };
-
-    /// <summary>
-    ///     Runtime directional-ambient cube sampled from WTHR DALC. The retail lighting convention
-    ///     weights the signed X/Y/Z face by the squared corresponding normal component, so the three
-    ///     selected weights sum to one for a unit normal.
-    /// </summary>
-    public readonly record struct ResolvedAmbientCube(
-        Vector3 PositiveX,
-        Vector3 NegativeX,
-        Vector3 PositiveY,
-        Vector3 NegativeY,
-        Vector3 PositiveZ,
-        Vector3 NegativeZ)
-    {
-        public Vector3 Mean =>
-            (PositiveX + NegativeX + PositiveY + NegativeY + PositiveZ + NegativeZ) / 6f;
-
-        public Vector3 Evaluate(Vector3 normal)
-        {
-            if (!float.IsFinite(normal.X) || !float.IsFinite(normal.Y) || !float.IsFinite(normal.Z) ||
-                normal.LengthSquared() < 1e-12f)
-            {
-                return Mean;
-            }
-
-            var n = Vector3.Normalize(normal);
-            var squared = n * n;
-            return (n.X >= 0f ? PositiveX : NegativeX) * squared.X +
-                   (n.Y >= 0f ? PositiveY : NegativeY) * squared.Y +
-                   (n.Z >= 0f ? PositiveZ : NegativeZ) * squared.Z;
-        }
-    }
-
-    /// <summary>Semantic endpoints and destination weight selected by the weather color clock.</summary>
-    public readonly record struct WeatherBandBlend(
-        WeatherBandKind From,
-        WeatherBandKind To,
-        float ToWeight);
-
     public enum WeatherBandKind
     {
         Night,
@@ -163,7 +52,82 @@ public static class AtmosphereState
         HighNoon,
         EarlySunset,
         Sunset,
-        LateSunset,
+        LateSunset
+    }
+
+    // Sky::Sky copies the 12.0f static at 0x8200D910 into this+0x12c (0x8246EED4), and
+    // Sky::FillColorBlend reads that member as the HighNoon color pivot. It is independent of CLMT.
+    private const float ClassicColorNoonHour = 12f;
+
+    /// <summary>
+    ///     Apex of the analytic sun arc at solar noon, in radians (50°). The engine's sun path is a
+    ///     triangle wave with a constant lateral offset — Sun::Update: X sweeps ±cb68 linearly across the day,
+    ///     Z = |cb68| − |X|, Y = cb74 constant (atmosphere_decompiled.txt:1859-1895) — so its noon elevation is
+    ///     atan(cb68/|cb74|), NOT the zenith; the .data constants aren't in the decompile artifacts, so the
+    ///     exact engine apex is open. 50° matches the game's real-world setting (October, ~36°N ⇒ solar noon
+    ///     ~45-50°) and restores vertical-surface N·L at midday: at the old 72° apex a wall facing the sun got
+    ///     N·L ≤ cos72° = 0.31 and noon walls read darker than 6 PM ones (the reported "too dark at midday");
+    ///     at 50° the same wall gets up to cos50° = 0.64.
+    /// </summary>
+    private const float PeakSunElevation = 50f * (MathF.PI / 180f);
+
+    // Max fraction of the dome horizon replaced by the warm NAM0 "Horizon" band when the sun is at the
+    // horizon (scaled down by sun elevation, so noon is untouched). Tuned for a visible-but-not-garish glow.
+    private const float HorizonGlowStrength = 0.7f;
+
+    // How far below the horizon the sun keeps feeding the horizon glow (civil twilight ends at ~6° solar
+    // depression). Converted to a time window via the arc's horizon-crossing descent rate, this gives a
+    // ~half-hour afterglow for a 14-hour day instead of the glow vanishing the instant the clock passes
+    // sunset-end.
+    private const float CivilTwilightDepthRadians = 6f * (MathF.PI / 180f);
+
+    // Scene-scale fog fallback (world units) when the weather carries no FNAM distances.
+    private const float DefaultFogNear = 4096f;
+    private const float DefaultFogFar = 98304f;
+
+    // --- Engine triangle-wave directional-light path (Sun::Update) --------------------------------------
+    // FO4 (fo4_lighting_decompiled.txt) and FNV (atmosphere_decompiled.txt:1855-1896) share the same
+    // sun-path shape: position = (x·fSunXExtreme, fSunYExtreme, |fSunXExtreme| − |x·fSunXExtreme|), with
+    // x sweeping +1→−1 across the padded day leg and wrapping overnight.
+    // FO4 engine defaults read from the Fallout4.exe image (SettingT statics; see the audit notes):
+    // fSunXExtreme=400, fSunYExtreme=25, fSunAlphaTransTime=2h, fSunShadowMinAngle=30(°),
+    // fSunShadowScale=0. The FO4 unit z is floored at fSunShadowMinAngle·DEG_TO_RAD — the engine compares
+    // the unit-vector component against radians verbatim (≈ sin θ for small angles), reproduced exactly.
+    private const float Fo4SunShadowMinAngleDegrees = 30f;
+
+    // Default clear-day palette — placeholder for worldspaces with no WTHR NAM0 to drive the colors.
+    private static readonly Vector3 DaySun = new(1.00f, 0.96f, 0.88f);
+    private static readonly Vector3 DayAmbient = new(0.40f, 0.43f, 0.50f);
+    private static readonly Vector3 NightAmbient = new(0.05f, 0.06f, 0.10f);
+    private static readonly Vector3 DaySkyTop = new(0.25f, 0.45f, 0.75f);
+    private static readonly Vector3 DaySkyHorizon = new(0.66f, 0.74f, 0.84f);
+    private static readonly Vector3 DayFog = new(0.62f, 0.70f, 0.80f);
+    private static readonly Vector3 NightTint = new(0.03f, 0.04f, 0.09f);
+
+    // Twilight (sunrise/sunset) placeholder tints — used by the no-NAM0 palette so a worldspace without
+    // authored weather still warms to orange at dawn/dusk instead of fading straight blue→night. Sunrise
+    // and sunset share these (the look is symmetric). Warm low-sun light: orange horizon, muted purple
+    // upper sky, warm fog + ambient. (When a weather DOES carry NAM0, its authored bands win.)
+    private static readonly Vector3 TwilightSun = new(1.00f, 0.60f, 0.33f);
+    private static readonly Vector3 TwilightAmbient = new(0.34f, 0.27f, 0.30f);
+    private static readonly Vector3 TwilightSkyTop = new(0.38f, 0.36f, 0.52f);
+    private static readonly Vector3 TwilightSkyHorizon = new(0.96f, 0.52f, 0.32f);
+    private static readonly Vector3 TwilightFog = new(0.74f, 0.54f, 0.50f);
+
+    /// <summary>
+    ///     Applies one resolved scene multiplier to every color consumed by the procedural or authored
+    ///     atmosphere geometry. Keeping this projection centralized prevents the shared b3 reflection
+    ///     colors and the sky renderer's private b0 colors from drifting apart.
+    /// </summary>
+    internal static Resolved ApplySkyColorScale(Resolved value, float multiplier)
+    {
+        return value with
+        {
+            SkyTopColor = value.SkyTopColor * multiplier,
+            SkyLowerColor = value.SkyLowerColor * multiplier,
+            AuthoredHorizonColor = value.AuthoredHorizonColor * multiplier,
+            SkyHorizonColor = value.SkyHorizonColor * multiplier
+        };
     }
 
     /// <summary>
@@ -205,21 +169,28 @@ public static class AtmosphereState
             return null;
         }
 
-        static Vector3? AsColor(object? v) => v switch
+        static Vector3? AsColor(object? v)
         {
-            uint packed => new Vector3(packed & 0xFF, (packed >> 8) & 0xFF, (packed >> 16) & 0xFF) / 255f,
-            int packed => new Vector3((uint)packed & 0xFF, ((uint)packed >> 8) & 0xFF, ((uint)packed >> 16) & 0xFF) / 255f,
-            _ => null,
-        };
+            return v switch
+            {
+                uint packed => new Vector3(packed & 0xFF, (packed >> 8) & 0xFF, (packed >> 16) & 0xFF) / 255f,
+                int packed => new Vector3((uint)packed & 0xFF, ((uint)packed >> 8) & 0xFF,
+                    ((uint)packed >> 16) & 0xFF) / 255f,
+                _ => null
+            };
+        }
 
-        static float? AsFloat(object? v) => v switch
+        static float? AsFloat(object? v)
         {
-            float f => f,
-            double d => (float)d,
-            int i => i,
-            uint u => u,
-            _ => null,
-        };
+            return v switch
+            {
+                float f => f,
+                double d => (float)d,
+                int i => i,
+                uint u => u,
+                _ => null
+            };
+        }
 
         // Neutral defaults for a cell with neither XCLL nor a template (rare): readable gray ambient,
         // soft white top-down directional, fog effectively off.
@@ -266,7 +237,7 @@ public static class AtmosphereState
             sunColor,
             lightingEnabled ? 1f : 0f,
             ambient,
-            fogColor,   // interiors have no sky: the fog color doubles as the void/background tint
+            fogColor, // interiors have no sky: the fog color doubles as the void/background tint
             fogColor,
             fogColor,
             fogColor,
@@ -287,49 +258,6 @@ public static class AtmosphereState
             fogColor,
             fogColor);
     }
-
-    // Default clear-day palette — placeholder for worldspaces with no WTHR NAM0 to drive the colors.
-    private static readonly Vector3 DaySun = new(1.00f, 0.96f, 0.88f);
-    private static readonly Vector3 DayAmbient = new(0.40f, 0.43f, 0.50f);
-    private static readonly Vector3 NightAmbient = new(0.05f, 0.06f, 0.10f);
-    private static readonly Vector3 DaySkyTop = new(0.25f, 0.45f, 0.75f);
-    private static readonly Vector3 DaySkyHorizon = new(0.66f, 0.74f, 0.84f);
-    private static readonly Vector3 DayFog = new(0.62f, 0.70f, 0.80f);
-    private static readonly Vector3 NightTint = new(0.03f, 0.04f, 0.09f);
-
-    /// <summary>Apex of the analytic sun arc at solar noon, in radians (50°). The engine's sun path is a
-    /// triangle wave with a constant lateral offset — Sun::Update: X sweeps ±cb68 linearly across the day,
-    /// Z = |cb68| − |X|, Y = cb74 constant (atmosphere_decompiled.txt:1859-1895) — so its noon elevation is
-    /// atan(cb68/|cb74|), NOT the zenith; the .data constants aren't in the decompile artifacts, so the
-    /// exact engine apex is open. 50° matches the game's real-world setting (October, ~36°N ⇒ solar noon
-    /// ~45-50°) and restores vertical-surface N·L at midday: at the old 72° apex a wall facing the sun got
-    /// N·L ≤ cos72° = 0.31 and noon walls read darker than 6 PM ones (the reported "too dark at midday");
-    /// at 50° the same wall gets up to cos50° = 0.64.</summary>
-    private const float PeakSunElevation = 50f * (MathF.PI / 180f);
-
-    // Twilight (sunrise/sunset) placeholder tints — used by the no-NAM0 palette so a worldspace without
-    // authored weather still warms to orange at dawn/dusk instead of fading straight blue→night. Sunrise
-    // and sunset share these (the look is symmetric). Warm low-sun light: orange horizon, muted purple
-    // upper sky, warm fog + ambient. (When a weather DOES carry NAM0, its authored bands win.)
-    private static readonly Vector3 TwilightSun = new(1.00f, 0.60f, 0.33f);
-    private static readonly Vector3 TwilightAmbient = new(0.34f, 0.27f, 0.30f);
-    private static readonly Vector3 TwilightSkyTop = new(0.38f, 0.36f, 0.52f);
-    private static readonly Vector3 TwilightSkyHorizon = new(0.96f, 0.52f, 0.32f);
-    private static readonly Vector3 TwilightFog = new(0.74f, 0.54f, 0.50f);
-
-    // Max fraction of the dome horizon replaced by the warm NAM0 "Horizon" band when the sun is at the
-    // horizon (scaled down by sun elevation, so noon is untouched). Tuned for a visible-but-not-garish glow.
-    private const float HorizonGlowStrength = 0.7f;
-
-    // How far below the horizon the sun keeps feeding the horizon glow (civil twilight ends at ~6° solar
-    // depression). Converted to a time window via the arc's horizon-crossing descent rate, this gives a
-    // ~half-hour afterglow for a 14-hour day instead of the glow vanishing the instant the clock passes
-    // sunset-end.
-    private const float CivilTwilightDepthRadians = 6f * (MathF.PI / 180f);
-
-    // Scene-scale fog fallback (world units) when the weather carries no FNAM distances.
-    private const float DefaultFogNear = 4096f;
-    private const float DefaultFogFar = 98304f;
 
     /// <summary>
     ///     Resolves the atmosphere for <paramref name="gameHour" /> (0..24, wrapped). When
@@ -390,9 +318,12 @@ public static class AtmosphereState
         if (weather is { Colors.Count: > 0 } wc)
         {
             sunColorBase = BandOr(wc, WeatherColorType.Sunlight, hour, weatherSrB, srE, ssB, weatherSsE, DaySun);
-            ambient = BandOr(wc, WeatherColorType.Ambient, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightAmbient, DayAmbient, day));
-            skyTop = BandOr(wc, WeatherColorType.SkyUpper, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyTop, day));
-            skyLower = BandOr(wc, WeatherColorType.SkyLower, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
+            ambient = BandOr(wc, WeatherColorType.Ambient, hour, weatherSrB, srE, ssB, weatherSsE,
+                Vector3.Lerp(NightAmbient, DayAmbient, day));
+            skyTop = BandOr(wc, WeatherColorType.SkyUpper, hour, weatherSrB, srE, ssB, weatherSsE,
+                Vector3.Lerp(NightTint, DaySkyTop, day));
+            skyLower = BandOr(wc, WeatherColorType.SkyLower, hour, weatherSrB, srE, ssB, weatherSsE,
+                Vector3.Lerp(NightTint, DaySkyHorizon, day));
             // Horizon glow: FNV authors the warm sunrise/sunset horizon in the SEPARATE NAM0 "Horizon"
             // band (index 8) — e.g. NVWastelandClear Sunset Horizon=(219,192,174) warm vs its blue
             // SkyUpper/SkyLower — which the dome gradient (SkyUpper↔SkyLower) otherwise drops, leaving the
@@ -409,7 +340,8 @@ public static class AtmosphereState
             // horizon glow around the low sun.
             var horizonGlow = HorizonGlow(hour, srB, ssE, sunDir.Z);
             skyHorizon = Vector3.Lerp(skyLower, authoredHorizon, horizonGlow * HorizonGlowStrength);
-            fogColor = BandOr(wc, WeatherColorType.Fog, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DayFog, day));
+            fogColor = BandOr(wc, WeatherColorType.Fog, hour, weatherSrB, srE, ssB, weatherSsE,
+                Vector3.Lerp(NightTint, DayFog, day));
             // Skyrim's NiFogProperty receives two distinct authored colors. Category 12 is far fog;
             // category 2 is unrelated (and all-zero in SkyrimClear). Older ten-category weather falls
             // back to near=far, preserving its single-color fog path.
@@ -425,7 +357,8 @@ public static class AtmosphereState
             sunColorBase = SampleBandV(DaySun, TwilightSun, DaySun, TwilightSun, hour, srB, srE, ssB, ssE);
             ambient = SampleBandV(NightAmbient, TwilightAmbient, DayAmbient, TwilightAmbient, hour, srB, srE, ssB, ssE);
             skyTop = SampleBandV(NightTint, TwilightSkyTop, DaySkyTop, TwilightSkyTop, hour, srB, srE, ssB, ssE);
-            skyHorizon = SampleBandV(NightTint, TwilightSkyHorizon, DaySkyHorizon, TwilightSkyHorizon, hour, srB, srE, ssB, ssE);
+            skyHorizon = SampleBandV(NightTint, TwilightSkyHorizon, DaySkyHorizon, TwilightSkyHorizon, hour, srB, srE,
+                ssB, ssE);
             skyLower = skyHorizon;
             authoredHorizon = skyHorizon;
             fogColor = SampleBandV(NightTint, TwilightFog, DayFog, TwilightFog, hour, srB, srE, ssB, ssE);
@@ -593,26 +526,32 @@ public static class AtmosphereState
             sunXExtreme, sunYExtreme, sunAlphaTransitionTime);
         var t = Math.Clamp(currentWeatherWeight, 0f, 1f);
 
-        static ResolvedAmbientCube Uniform(Vector3 value) => new(
-            value, value, value, value, value, value);
+        static ResolvedAmbientCube Uniform(Vector3 value)
+        {
+            return new ResolvedAmbientCube(
+                value, value, value, value, value, value);
+        }
 
         static ResolvedAmbientCube BlendCube(
             ResolvedAmbientCube outgoing,
             ResolvedAmbientCube current,
-            float weight) => new(
-            Vector3.Lerp(outgoing.PositiveX, current.PositiveX, weight),
-            Vector3.Lerp(outgoing.NegativeX, current.NegativeX, weight),
-            Vector3.Lerp(outgoing.PositiveY, current.PositiveY, weight),
-            Vector3.Lerp(outgoing.NegativeY, current.NegativeY, weight),
-            Vector3.Lerp(outgoing.PositiveZ, current.PositiveZ, weight),
-            Vector3.Lerp(outgoing.NegativeZ, current.NegativeZ, weight));
+            float weight)
+        {
+            return new ResolvedAmbientCube(
+                Vector3.Lerp(outgoing.PositiveX, current.PositiveX, weight),
+                Vector3.Lerp(outgoing.NegativeX, current.NegativeX, weight),
+                Vector3.Lerp(outgoing.PositiveY, current.PositiveY, weight),
+                Vector3.Lerp(outgoing.NegativeY, current.NegativeY, weight),
+                Vector3.Lerp(outgoing.PositiveZ, current.PositiveZ, weight),
+                Vector3.Lerp(outgoing.NegativeZ, current.NegativeZ, weight));
+        }
 
         ResolvedAmbientCube? ambientCube = (outgoing.DirectionalAmbient, current.DirectionalAmbient) switch
         {
             (null, null) => null,
             ({ } from, { } to) => BlendCube(from, to, t),
             ({ } from, null) => BlendCube(from, Uniform(current.AmbientColor), t),
-            (null, { } to) => BlendCube(Uniform(outgoing.AmbientColor), to, t),
+            (null, { } to) => BlendCube(Uniform(outgoing.AmbientColor), to, t)
         };
 
         return new Resolved(
@@ -649,10 +588,13 @@ public static class AtmosphereState
         float ssB,
         float ssE)
     {
-        static ResolvedAmbientCube Convert(WeatherAmbientCube cube) => new(
-            ToVec(cube.PositiveX), ToVec(cube.NegativeX),
-            ToVec(cube.PositiveY), ToVec(cube.NegativeY),
-            ToVec(cube.PositiveZ), ToVec(cube.NegativeZ));
+        static ResolvedAmbientCube Convert(WeatherAmbientCube cube)
+        {
+            return new ResolvedAmbientCube(
+                ToVec(cube.PositiveX), ToVec(cube.NegativeX),
+                ToVec(cube.PositiveY), ToVec(cube.NegativeY),
+                ToVec(cube.PositiveZ), ToVec(cube.NegativeZ));
+        }
 
         var night = Convert(bands.Night);
         var sunrise = Convert(bands.Sunrise);
@@ -689,9 +631,11 @@ public static class AtmosphereState
         float ssE,
         ResolvedAmbientCube? highNoon)
     {
-        Vector3 Face(Func<ResolvedAmbientCube, Vector3> select) =>
-            SampleBandV(select(night), select(sunrise), select(day), select(sunset),
+        Vector3 Face(Func<ResolvedAmbientCube, Vector3> select)
+        {
+            return SampleBandV(select(night), select(sunrise), select(day), select(sunset),
                 hour, srB, srE, ssB, ssE, highNoon is { } high ? select(high) : null);
+        }
 
         return new ResolvedAmbientCube(
             Face(static c => c.PositiveX), Face(static c => c.NegativeX),
@@ -714,9 +658,12 @@ public static class AtmosphereState
         float ssB,
         float ssE)
     {
-        Vector3 Face(Func<ResolvedAmbientCube, Vector3> select) => SampleModernBandV(
-            select(night), select(earlySunrise), select(sunrise), select(lateSunrise), select(day),
-            select(earlySunset), select(sunset), select(lateSunset), hour, srB, srE, ssB, ssE);
+        Vector3 Face(Func<ResolvedAmbientCube, Vector3> select)
+        {
+            return SampleModernBandV(
+                select(night), select(earlySunrise), select(sunrise), select(lateSunrise), select(day),
+                select(earlySunset), select(sunset), select(lateSunset), hour, srB, srE, ssB, ssE);
+        }
 
         return new ResolvedAmbientCube(
             Face(static c => c.PositiveX), Face(static c => c.NegativeX),
@@ -774,7 +721,7 @@ public static class AtmosphereState
                 hour, beginSunriseColors, srE, ssB, endSunsetColors);
         }
 
-        return Math.Clamp(1f - (DaylightFraction(hour, srB, srE, ssB, ssE) * 1.5f), 0f, 1f);
+        return Math.Clamp(1f - DaylightFraction(hour, srB, srE, ssB, ssE) * 1.5f, 0f, 1f);
     }
 
     /// <summary>Pure FO4 <c>Stars::Update</c> alpha curve for independent reference vectors.</summary>
@@ -803,7 +750,7 @@ public static class AtmosphereState
         if (hour < sunriseFadeEnd)
         {
             return Math.Clamp(
-                1f - ((hour - beginSunriseColors) / (sunriseFadeEnd - beginSunriseColors)),
+                1f - (hour - beginSunriseColors) / (sunriseFadeEnd - beginSunriseColors),
                 0f, 1f);
         }
 
@@ -874,7 +821,7 @@ public static class AtmosphereState
     {
         if (hour > srB && hour < ssE)
         {
-            return Math.Clamp(1f - (MathF.Abs(sunDirZ) * 1.5f), 0f, 1f);
+            return Math.Clamp(1f - MathF.Abs(sunDirZ) * 1.5f, 0f, 1f);
         }
 
         // Hours past the nearest daylight edge, wrap-aware (past sunset going forward, before
@@ -887,7 +834,7 @@ public static class AtmosphereState
         // π·Peak per unit t01, over a daylight span of (ssE − srB) hours.
         var descentRadiansPerHour = MathF.PI * PeakSunElevation / MathF.Max(ssE - srB, 0.1f);
         var twilightHours = CivilTwilightDepthRadians / descentRadiansPerHour;
-        return Math.Clamp(1f - (hoursBelowHorizon / twilightHours), 0f, 1f);
+        return Math.Clamp(1f - hoursBelowHorizon / twilightHours, 0f, 1f);
     }
 
     private static Vector3 SunDirection(float hour, float srB, float ssE)
@@ -897,7 +844,7 @@ public static class AtmosphereState
             return new Vector3(0f, 0f, -1f); // night: below the horizon (moot — the directional colour is faded to 0)
         }
 
-        var t01 = (hour - srB) / (ssE - srB);        // 0 at sunriseBegin → 1 at sunsetEnd
+        var t01 = (hour - srB) / (ssE - srB); // 0 at sunriseBegin → 1 at sunsetEnd
         // Peak the arc BELOW the zenith. A sun that reaches an exact 90° at noon (sunDir.Z = 1) leaves every
         // VERTICAL surface — tree trunks, walls, side-facing leaf cards — at N·L ≈ 0 under the shader's
         // saturate(N·L) term, so they collapse to dim ambient and read as too dark, while every up-facing
@@ -906,7 +853,7 @@ public static class AtmosphereState
         // so cap the arc's apex so a directional component survives at noon: trunks stay lit and the canopy
         // keeps directional shading. (Future refinement: read the true per-climate sun-path elevation.)
         var elevation = MathF.Sin(t01 * MathF.PI) * PeakSunElevation; // 0 → peak (solar noon) → 0
-        var azimuth = MathF.PI * t01;                // 0 (east) → π (west)
+        var azimuth = MathF.PI * t01; // 0 (east) → π (west)
         var cosEl = MathF.Cos(elevation);
         var dir = new Vector3(
             MathF.Cos(azimuth) * cosEl,
@@ -914,16 +861,6 @@ public static class AtmosphereState
             MathF.Sin(elevation));
         return Vector3.Normalize(dir);
     }
-
-    // --- Engine triangle-wave directional-light path (Sun::Update) --------------------------------------
-    // FO4 (fo4_lighting_decompiled.txt) and FNV (atmosphere_decompiled.txt:1855-1896) share the same
-    // sun-path shape: position = (x·fSunXExtreme, fSunYExtreme, |fSunXExtreme| − |x·fSunXExtreme|), with
-    // x sweeping +1→−1 across the padded day leg and wrapping overnight.
-    // FO4 engine defaults read from the Fallout4.exe image (SettingT statics; see the audit notes):
-    // fSunXExtreme=400, fSunYExtreme=25, fSunAlphaTransTime=2h, fSunShadowMinAngle=30(°),
-    // fSunShadowScale=0. The FO4 unit z is floored at fSunShadowMinAngle·DEG_TO_RAD — the engine compares
-    // the unit-vector component against radians verbatim (≈ sin θ for small angles), reproduced exactly.
-    private const float Fo4SunShadowMinAngleDegrees = 30f;
 
     // FNV GMSTs verified from FalloutNV.esm: fSunXExtreme=800, fSunYExtreme=−100 → noon
     // apex atan(800/100) ≈ 83° with the sun slightly on the −Y (south) side. FO3 shares the engine
@@ -1030,9 +967,15 @@ public static class AtmosphereState
         (srB, ssE) = ExtendWeatherColorWindow(game, srB, ssE);
         var hour = WrapHour(gameHour);
 
-        static WeatherBandBlend Solid(WeatherBandKind band) => new(band, band, 0f);
-        static WeatherBandBlend Segment(WeatherBandKind from, WeatherBandKind to, float weight) =>
-            new(from, to, Math.Clamp(weight, 0f, 1f));
+        static WeatherBandBlend Solid(WeatherBandKind band)
+        {
+            return new WeatherBandBlend(band, band, 0f);
+        }
+
+        static WeatherBandBlend Segment(WeatherBandKind from, WeatherBandKind to, float weight)
+        {
+            return new WeatherBandBlend(from, to, Math.Clamp(weight, 0f, 1f));
+        }
 
         if (hasModernTransitions)
         {
@@ -1066,11 +1009,13 @@ public static class AtmosphereState
             return Segment(WeatherBandKind.Night, WeatherBandKind.Sunrise,
                 (hour - srB) / (srMid - srB));
         }
+
         if (hour < srE)
         {
             return Segment(WeatherBandKind.Sunrise, WeatherBandKind.Day,
                 (hour - srMid) / (srE - srMid));
         }
+
         if (hour < ssB)
         {
             if (!hasAuthoredHighNoon || ssB - srE < 0.2f) return Solid(WeatherBandKind.Day);
@@ -1081,11 +1026,13 @@ public static class AtmosphereState
                 : Segment(WeatherBandKind.HighNoon, WeatherBandKind.Day,
                     (hour - noon) / (ssB - noon));
         }
+
         if (hour < ssMid)
         {
             return Segment(WeatherBandKind.Day, WeatherBandKind.Sunset,
                 (hour - ssB) / (ssMid - ssB));
         }
+
         return Segment(WeatherBandKind.Sunset, WeatherBandKind.Night,
             (hour - ssMid) / (ssE - ssMid));
 
@@ -1233,7 +1180,10 @@ public static class AtmosphereState
         return SampleFive(day, earlySunset, sunset, lateSunset, night, sunsetT);
     }
 
-    private static Vector3 ToVec(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f);
+    private static Vector3 ToVec(WeatherRgba c)
+    {
+        return new Vector3(c.R / 255f, c.G / 255f, c.B / 255f);
+    }
 
     /// <summary>
     ///     Samples a cloud-layer's PNAM Time-of-Day color — RGB tint + <b>A = layer opacity</b> — for the
@@ -1332,7 +1282,10 @@ public static class AtmosphereState
         return Lerp1(d, e, x - 3f);
     }
 
-    private static Vector4 ToVec4(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
+    private static Vector4 ToVec4(WeatherRgba c)
+    {
+        return new Vector4(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
+    }
 
     /// <summary>
     ///     Samples a cloud layer's JNAM per-layer OPACITY for the given game hour, using the SAME windowed
@@ -1381,7 +1334,10 @@ public static class AtmosphereState
         return Lerp1(a.Sunset, a.Night, (hour - ssMid) / (ssE - ssMid));
     }
 
-    private static float Lerp1(float a, float b, float t) => a + ((b - a) * t);
+    private static float Lerp1(float a, float b, float t)
+    {
+        return a + ((b - a) * t);
+    }
 
     private static float WrapHour(float hour)
     {
@@ -1393,4 +1349,114 @@ public static class AtmosphereState
 
         return hour;
     }
+
+    /// <summary>
+    ///     Climate sunrise / sunset window in game hours (0..24), adapted from a CLMT TNAM block.
+    ///     Callers without a climate pass <see cref="Default" />.
+    /// </summary>
+    public readonly record struct ClimateTiming(
+        float SunriseBeginHour,
+        float SunriseEndHour,
+        float SunsetBeginHour,
+        float SunsetEndHour,
+        int MoonPhaseDays = 0)
+    {
+        /// <summary>Fallout's default day: sunrise ~06:00, sunset ~18:00 (no climate moon phase length).</summary>
+        public static ClimateTiming Default => new(5.5f, 6.5f, 18.0f, 19.0f);
+
+        /// <summary>
+        ///     Build timing from a CLMT TNAM block. Byte→hours = value × 1/6 (10-minute units) —
+        ///     CONFIRMED by the decompile: <c>Sky::GetSunriseBegin</c> reads <c>climate+0x60</c> and scales by
+        ///     <c>0.16666667</c>. The phase-length byte masks its low 6 bits (TESClimate::GetMoonPhaseDays —
+        ///     the top 2 bits are the Masser/Secunda enable flags); 0 = climate carries no phase length and
+        ///     the moon profile's fallback applies. Returns <see cref="Default" /> for a null block.
+        /// </summary>
+        public static ClimateTiming FromClimateData(ClimateTimingData? d)
+        {
+            return d is null
+                ? Default
+                : new ClimateTiming(d.SunriseBegin / 6f, d.SunriseEnd / 6f, d.SunsetBegin / 6f, d.SunsetEnd / 6f,
+                    d.MoonPhaseLength & 0x3F);
+        }
+    }
+
+    /// <summary>The resolved per-frame atmosphere the GPU constant buffer mirrors.</summary>
+    public readonly record struct Resolved(
+        Vector3 SunWorldDirection, // unit vector FROM the surface TOWARD the sun (+Z up)
+        Vector3 SunBillboardDirection, // recovered raw SunPos direction; FO4's light-only floor is excluded
+        Vector3 SunColor, // 0..1 RGB; zero when lighting is disabled or the sun is down
+        float SunIntensity, // 0 at/below the horizon → 1 across the day (engine daylight fraction)
+        Vector3 AmbientColor,
+        Vector3 SkyTopColor,
+        Vector3 SkyHorizonColor,
+        Vector3 FogColor, // near-fog color (legacy name retained for callers)
+        Vector3 FogFarColor,
+        float FogNear,
+        float FogFar,
+        float FogPower, // distance-fog exponent (1 = linear), from WTHR FNAM day/night power
+        float FogMaxOpacity, // max powered fog amount; Skyrim FNAM day/night max, else 1
+        Vector4 SunDiscColor, // authored WTHR Sun row (RGBA)
+        Vector4 StarsColor, // authored WTHR Stars row (RGBA)
+        Vector4 SunGlareColor, // modern WTHR Sun Glare row (RGBA)
+        Vector4 MoonGlareColor, // modern WTHR Moon Glare row (RGBA)
+        float SunGlareIntensity, // DATA.SunGlare normalized 0..1
+        float StarVisibility, // Stars::Update controller alpha; independent of RGBX padding
+        ResolvedAmbientCube? DirectionalAmbient, // lossless DALC cube, null for legacy/single ambient
+        Vector3 SkyLowerColor, // authored NAM0 SkyLower, retained for Atmosphere.nif vertex weights
+        Vector3 AuthoredHorizonColor) // authored NAM0 Horizon, before fallback-dome low-sun shaping
+    {
+        // WTHR celestial rows are RGBX. Their fourth byte is retained losslessly in the Vector4 values
+        // above, but it is padding rather than authored opacity. Visibility comes from Sun::Update and
+        // DATA.SunGlare; rendering must never let an RGBX padding byte gate a billboard.
+        public float SunDiscDrawAlpha => Math.Clamp(SunIntensity, 0f, 1f);
+
+        public float SunGlareDrawAlpha =>
+            Math.Clamp(SunIntensity, 0f, 1f) * Math.Clamp(SunGlareIntensity, 0f, 1f);
+
+        public float StarsDrawAlpha => Math.Clamp(StarVisibility, 0f, 1f);
+#pragma warning disable CA1822, S2325 // instance member by design — completes the Resolved DrawAlpha family; callers use instance syntax
+        public float MoonDiscDrawAlpha(float pathVisibility)
+        {
+            return Math.Clamp(pathVisibility, 0f, 1f);
+        }
+#pragma warning restore CA1822, S2325
+    }
+
+    /// <summary>
+    ///     Runtime directional-ambient cube sampled from WTHR DALC. The retail lighting convention
+    ///     weights the signed X/Y/Z face by the squared corresponding normal component, so the three
+    ///     selected weights sum to one for a unit normal.
+    /// </summary>
+    public readonly record struct ResolvedAmbientCube(
+        Vector3 PositiveX,
+        Vector3 NegativeX,
+        Vector3 PositiveY,
+        Vector3 NegativeY,
+        Vector3 PositiveZ,
+        Vector3 NegativeZ)
+    {
+        public Vector3 Mean =>
+            (PositiveX + NegativeX + PositiveY + NegativeY + PositiveZ + NegativeZ) / 6f;
+
+        public Vector3 Evaluate(Vector3 normal)
+        {
+            if (!float.IsFinite(normal.X) || !float.IsFinite(normal.Y) || !float.IsFinite(normal.Z) ||
+                normal.LengthSquared() < 1e-12f)
+            {
+                return Mean;
+            }
+
+            var n = Vector3.Normalize(normal);
+            var squared = n * n;
+            return (n.X >= 0f ? PositiveX : NegativeX) * squared.X +
+                   (n.Y >= 0f ? PositiveY : NegativeY) * squared.Y +
+                   (n.Z >= 0f ? PositiveZ : NegativeZ) * squared.Z;
+        }
+    }
+
+    /// <summary>Semantic endpoints and destination weight selected by the weather color clock.</summary>
+    public readonly record struct WeatherBandBlend(
+        WeatherBandKind From,
+        WeatherBandKind To,
+        float ToWeight);
 }

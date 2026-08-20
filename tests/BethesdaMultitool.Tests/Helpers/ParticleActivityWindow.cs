@@ -20,11 +20,15 @@ internal enum ParticleSweepMode
     ///     <c>ParticleControllerTiming.Map</c> passes raw time through. The domain is taken from the
     ///     authored key span instead.
     /// </summary>
-    Identity,
+    Identity
 }
 
 internal readonly record struct ParticleSweepPlan(
-    ParticleSweepMode Mode, float DomainStart, float DomainEnd, float Step, int SampleCount);
+    ParticleSweepMode Mode,
+    float DomainStart,
+    float DomainEnd,
+    float Step,
+    int SampleCount);
 
 internal readonly record struct ParticleActivityProfile(
     ParticleSweepPlan Plan,
@@ -72,10 +76,10 @@ internal static class ParticleActivityWindow
     /// <summary>The exact midpoint sample times the baker evaluates for a given snapshot.</summary>
     internal static IEnumerable<float> WindowSampleTimes(float snapshot, float dt, int totalSteps)
     {
-        var simulationStart = snapshot - (totalSteps * dt);
+        var simulationStart = snapshot - totalSteps * dt;
         for (var step = 0; step < totalSteps; step++)
         {
-            yield return simulationStart + ((step + 0.5f) * dt);
+            yield return simulationStart + (step + 0.5f) * dt;
         }
     }
 
@@ -197,7 +201,7 @@ internal static class ParticleActivityWindow
 
         for (var i = 0; i < plan.SampleCount; i++)
         {
-            var t = plan.DomainStart + (i * plan.Step);
+            var t = plan.DomainStart + i * plan.Step;
             if (t > plan.DomainEnd) break;
             var value = rate.Sample(t);
             samples++;

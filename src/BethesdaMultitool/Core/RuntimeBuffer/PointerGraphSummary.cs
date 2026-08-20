@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.RuntimeBuffer;
 
-/// <summary>Aggregate statistics about pointer-dense coverage gaps: structure-shape counts and the most common vtable addresses.</summary>
+/// <summary>
+///     Aggregate statistics about pointer-dense coverage gaps: structure-shape counts and the most common vtable
+///     addresses.
+/// </summary>
 public sealed class PointerGraphSummary
 {
     public int TotalPointerDenseGaps { get; set; }

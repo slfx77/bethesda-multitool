@@ -9,7 +9,7 @@ namespace EsmAnalyzer.Commands.DialogueVoice;
 /// </summary>
 internal static class DialogueQcCsvIo
 {
-    private static readonly SearchValues<char> CharsRequiringQuotes = SearchValues.Create([',', '"', '\r', '\n']);
+    private static readonly SearchValues<char> CharsRequiringQuotes = SearchValues.Create(',', '"', '\r', '\n');
 
     public static List<string[]> Parse(string text)
     {
@@ -40,6 +40,7 @@ internal static class DialogueQcCsvIo
                 {
                     field.Append(c);
                 }
+
                 continue;
             }
 
@@ -48,24 +49,28 @@ internal static class DialogueQcCsvIo
                 inQuotes = true;
                 continue;
             }
+
             if (c == ',')
             {
                 row.Add(field.ToString());
                 field.Clear();
                 continue;
             }
+
             if (c == '\r')
             {
                 if (i + 1 < text.Length && text[i + 1] == '\n')
                 {
                     i++;
                 }
+
                 row.Add(field.ToString());
                 field.Clear();
                 rows.Add(row.ToArray());
                 row.Clear();
                 continue;
             }
+
             if (c == '\n')
             {
                 row.Add(field.ToString());
@@ -96,8 +101,10 @@ internal static class DialogueQcCsvIo
             {
                 sb.Append(',');
             }
+
             sb.Append(Escape(fields[i]));
         }
+
         return sb.ToString();
     }
 
@@ -107,10 +114,12 @@ internal static class DialogueQcCsvIo
         {
             return "";
         }
+
         if (value.AsSpan().IndexOfAny(CharsRequiringQuotes) < 0)
         {
             return value;
         }
+
         return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }

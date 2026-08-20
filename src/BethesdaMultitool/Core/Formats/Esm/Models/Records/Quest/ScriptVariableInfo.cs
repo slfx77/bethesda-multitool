@@ -19,6 +19,8 @@ internal static class ScriptLocalVariableLayout
     internal const int SerializedSize = 24;
     internal const int IsIntegerOffset = 16;
 
-    internal static byte ReadType(ReadOnlySpan<byte> data) =>
-        data.Length > IsIntegerOffset && data[IsIntegerOffset] != 0 ? (byte)1 : (byte)0;
+    internal static byte ReadType(ReadOnlySpan<byte> data)
+    {
+        return data.Length > IsIntegerOffset && data[IsIntegerOffset] != 0 ? (byte)1 : (byte)0;
+    }
 }

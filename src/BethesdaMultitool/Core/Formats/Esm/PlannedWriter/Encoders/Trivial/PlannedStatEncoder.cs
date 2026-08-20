@@ -13,6 +13,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.Trivial;
 /// </summary>
 public sealed class PlannedStatEncoder : IPlannedRecordEncoder<StaticRecord>
 {
+    private static readonly EncodedRecord EmptyEncoded =
+        new() { Subrecords = [], Warnings = [] };
+
     public string RecordType => "STAT";
 
     public EncodedRecord Encode(StaticRecord model, RecordPlan plan, PlanReferenceLookup refs)
@@ -22,10 +25,7 @@ public sealed class PlannedStatEncoder : IPlannedRecordEncoder<StaticRecord>
             RecordDisposition.New => StatEncoder.EncodeNew(model),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedStatEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedStatEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
-
-    private static readonly EncodedRecord EmptyEncoded =
-        new() { Subrecords = [], Warnings = [] };
 }

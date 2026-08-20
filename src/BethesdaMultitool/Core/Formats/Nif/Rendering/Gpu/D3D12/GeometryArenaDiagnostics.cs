@@ -22,8 +22,10 @@ internal static class GeometryArenaDiagnostics
     public static readonly bool AuditEnabled =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.GeometryAudit);
 
-    /// <summary>FNV-1a 64-bit over <paramref name="bytes" /> — dependency-free content stamp used to
-    /// compare the bytes a draw will read against the bytes uploaded for its submesh.</summary>
+    /// <summary>
+    ///     FNV-1a 64-bit over <paramref name="bytes" /> — dependency-free content stamp used to
+    ///     compare the bytes a draw will read against the bytes uploaded for its submesh.
+    /// </summary>
     public static ulong Fnv1a64(ReadOnlySpan<byte> bytes)
     {
         var hash = 14695981039346656037UL;

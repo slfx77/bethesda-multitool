@@ -1,5 +1,4 @@
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using ImageMagick;
 using Xunit;

@@ -16,6 +16,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -126,6 +127,7 @@ internal static class WorldMapExporter
                             bestPerCell[cellKey] = (key.pixelsPerCell, bmp);
                         }
                     }
+
                     // Outset by ~1 export pixel in world units so adjacent opaque tiles overlap and no
                     // seam shows when the grid is off — mirrors WorldMapOverviewRenderer.DrawTextureCellBitmaps.
                     var outset = Math.Min(1f / pixelsPerWorldUnit, cellWorldSize * 0.01f);
@@ -188,6 +190,7 @@ internal static class WorldMapExporter
                     filteredMarkers, hiddenCategories, markerIconBitmaps, colorScheme,
                     data?.Game ?? BethesdaGame.Unknown);
             }
+
             ObservePhase(
                 phaseObserver,
                 WorldMapPngWriterPhase.ComposeDrawSubmission,
@@ -262,6 +265,7 @@ internal static class WorldMapExporter
                             saveStarted,
                             succeeded: false);
                     }
+
                     throw;
                 }
             },
@@ -507,4 +511,3 @@ internal static class WorldMapExporter
         }
     }
 }
-

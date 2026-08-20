@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
@@ -10,19 +11,30 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     to newly-allocated NAVMs in the same emission batch).
 ///     Specifically:
 ///     <list type="bullet">
-///         <item><description><b>DATA</b> subrecord (bytes 0..3): replace with the target cell FormID.</description></item>
-///         <item><description><b>NVEX</b> subrecord (per 10-byte entry, bytes 4..7): replace navmesh FormID via
-///             the navmFormIdRewrites map when the original is a DMP FormID we've allocated a new ID for.
-///             Entries whose target isn't in the rewrites dict are left intact (master FormIDs round-trip as-is).</description></item>
-///         <item><description><b>NVTR</b> subrecord: run <see cref="NavMeshReciprocityRepair" /> to clear
-///             out-of-bounds, self-pointing, or non-reciprocal neighbor-triangle indices. Required for
-///             both proto-ESM-byte-stream NAVMs (engine may have mutated the underlying pages after load)
-///             and runtime-synth NAVMs (mid-flight obstacle / FlipTriangle state).</description></item>
+///         <item>
+///             <description><b>DATA</b> subrecord (bytes 0..3): replace with the target cell FormID.</description>
+///         </item>
+///         <item>
+///             <description>
+///                 <b>NVEX</b> subrecord (per 10-byte entry, bytes 4..7): replace navmesh FormID via
+///                 the navmFormIdRewrites map when the original is a DMP FormID we've allocated a new ID for.
+///                 Entries whose target isn't in the rewrites dict are left intact (master FormIDs round-trip as-is).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <b>NVTR</b> subrecord: run <see cref="NavMeshReciprocityRepair" /> to clear
+///                 out-of-bounds, self-pointing, or non-reciprocal neighbor-triangle indices. Required for
+///                 both proto-ESM-byte-stream NAVMs (engine may have mutated the underlying pages after load)
+///                 and runtime-synth NAVMs (mid-flight obstacle / FlipTriangle state).
+///             </description>
+///         </item>
 ///     </list>
 ///     NVDP rows are remapped and sanitized against live DOOR placements when the caller
 ///     supplies the door maps. Other subrecords (EDID, NVVX, NVCA) pass through verbatim. The caller is
 ///     responsible for allocating the new record-level FormID and assembling the final
-///     record via <see cref="BethesdaMultitool.Core.Formats.Esm.Plugin.Output.PluginRecordByteBuilder.BuildNewRecordBytes" />.
+///     record via
+///     <see cref="BethesdaMultitool.Core.Formats.Esm.Plugin.Output.PluginRecordByteBuilder.BuildNewRecordBytes" />.
 /// </summary>
 internal static class NavMeshByteRewriter
 {
@@ -68,6 +80,7 @@ internal static class NavMeshByteRewriter
                     {
                         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), newCellFormId);
                     }
+
                     break;
                 case "NVEX":
                     // NVEX entries are 10 bytes each: uint32 Type + uint32 NavmeshFormID + uint16 Triangle.
@@ -86,6 +99,7 @@ internal static class NavMeshByteRewriter
                     {
                         continue;
                     }
+
                     break;
                 case "NVTR":
                     // 1) Normalize triangle winding against NVVX vertices so every triangle's
@@ -109,6 +123,7 @@ internal static class NavMeshByteRewriter
                     NavMeshReciprocityRepair.Repair(bytes);
                     break;
             }
+
             result.Add(new EncodedSubrecord(sub.Signature, bytes));
         }
 
@@ -187,7 +202,6 @@ internal static class NavMeshByteRewriter
     ///     whose target NAVM FormID isn't in <paramref name="validNavmTargets" />, and rebuilds
     ///     the record. Returns the original array unchanged when nothing was dropped, or when the
     ///     bytes don't parse as a NAVM record.
-    ///
     ///     Why this exists: <see cref="Rewrite" /> rewrites NVEX target FormIDs at allocation time,
     ///     but Phase A allocates FormIDs for every DMP NAVM with a valid CellFormId — including
     ///     NAVMs whose parent cell ends up skipped by the cell loop's dedup/grid-collision logic.
@@ -196,7 +210,6 @@ internal static class NavMeshByteRewriter
     ///     value was already a master-range FormID — but master may not actually have that NAVM.
     ///     Either dangling shape crashes the engine in NavMeshInfoMap setup. Counts the entries
     ///     dropped via the out parameter so callers can log.
-    ///
     ///     Also patches the DATA subrecord's EdgeLinkCount field (offset 12, uint32) to match
     ///     the actual NVEX entry count after filtering. The engine reads EdgeLinkCount from DATA
     ///     and iterates that many NVEX entries; without this patch, dropped entries leave the
@@ -211,16 +224,17 @@ internal static class NavMeshByteRewriter
         const int RecordHeaderSize = 24;
         if (navmRecordBytes.Length < RecordHeaderSize) return navmRecordBytes;
         if (navmRecordBytes[0] != (byte)'N' || navmRecordBytes[1] != (byte)'A'
-            || navmRecordBytes[2] != (byte)'V' || navmRecordBytes[3] != (byte)'M')
+                                            || navmRecordBytes[2] != (byte)'V' || navmRecordBytes[3] != (byte)'M')
         {
             return navmRecordBytes;
         }
+
         var bodySize = BinaryPrimitives.ReadUInt32LittleEndian(navmRecordBytes.AsSpan(4, 4));
         if ((long)RecordHeaderSize + bodySize > navmRecordBytes.Length) return navmRecordBytes;
 
         const int NvexEntrySize = 10;
         const int NvexFormIdOffset = 4;
-        var newBody = new System.IO.MemoryStream();
+        var newBody = new MemoryStream();
         var changed = false;
         var keptNvexEntries = 0;
         var existingDataEdgeCnt = -1;
@@ -229,13 +243,13 @@ internal static class NavMeshByteRewriter
         var j = 0;
         while (j + 6 <= body.Length)
         {
-            var sig = System.Text.Encoding.ASCII.GetString(body.Slice(j, 4));
+            var sig = Encoding.ASCII.GetString(body.Slice(j, 4));
             var subSize = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(j + 4, 2));
             if (j + 6 + subSize > body.Length) break;
 
             if (sig == "NVEX")
             {
-                var kept = new System.IO.MemoryStream();
+                var kept = new MemoryStream();
                 for (var k = 0; k + NvexEntrySize <= subSize; k += NvexEntrySize)
                 {
                     var entryStart = j + 6 + k;
@@ -252,6 +266,7 @@ internal static class NavMeshByteRewriter
                         changed = true;
                     }
                 }
+
                 if (kept.Length > 0)
                 {
                     newBody.Write("NVEX"u8);
@@ -270,8 +285,10 @@ internal static class NavMeshByteRewriter
                 {
                     existingDataEdgeCnt = (int)BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(j + 6 + 12, 4));
                 }
+
                 newBody.Write(body.Slice(j, 6 + subSize));
             }
+
             j += 6 + subSize;
         }
 
@@ -321,7 +338,7 @@ internal static class NavMeshByteRewriter
         var j = 0;
         while (j + 6 <= body.Length)
         {
-            var sig = System.Text.Encoding.ASCII.GetString(body.Slice(j, 4));
+            var sig = Encoding.ASCII.GetString(body.Slice(j, 4));
             var subSize = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(j + 4, 2));
             if (j + 6 + subSize > body.Length) break;
             if (sig == "DATA" && subSize >= 16)
@@ -329,6 +346,7 @@ internal static class NavMeshByteRewriter
                 BinaryPrimitives.WriteUInt32LittleEndian(body.Slice(j + 6 + 12, 4), (uint)edgeCount);
                 return;
             }
+
             j += 6 + subSize;
         }
     }
@@ -343,7 +361,7 @@ internal static class NavMeshByteRewriter
         var j = 0;
         while (j + 6 <= body.Length)
         {
-            var sig = System.Text.Encoding.ASCII.GetString(body.Slice(j, 4));
+            var sig = Encoding.ASCII.GetString(body.Slice(j, 4));
             var subSize = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(j + 4, 2));
             if (j + 6 + subSize > body.Length) break;
             if (sig == "NVTR")
@@ -353,8 +371,10 @@ internal static class NavMeshByteRewriter
                 {
                     nvtr.CopyTo(body.Slice(j + 6, subSize));
                 }
+
                 return;
             }
+
             j += 6 + subSize;
         }
     }

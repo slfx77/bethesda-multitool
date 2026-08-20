@@ -18,12 +18,12 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
     // 44 + 5*16 = 0x7C = BipedWeaponOffset above. The worn-armor read deliberately scans
     // the whole struct instead of indexing slots — see ReadRuntimeActorWornArmor.
     private const byte ArmoFormType = 0x18;
-    private readonly RuntimeMemoryContext _context = context;
 
     // Proto builds shift Character.pBiped away from the PDB's +452; the shift is
     // discovered per dump by RuntimeBipedOffsetProbe and applied to both readers.
     private readonly int _bipedPtrOffset = BipedPtrOffset + bipedPtrShift;
     private readonly int _characterReadSize = Math.Max(CharacterStructSize, BipedPtrOffset + bipedPtrShift + 4);
+    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>Reads an actor's runtime weapon state (equipped/drawn weapon) for the given DMP entry.</summary>
     public RuntimeActorWeaponState? ReadRuntimeActorWeaponState(RuntimeEditorIdEntry entry)

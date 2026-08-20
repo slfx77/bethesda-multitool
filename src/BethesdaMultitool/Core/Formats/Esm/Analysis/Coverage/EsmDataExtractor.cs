@@ -390,4 +390,3 @@ internal static class EsmDataExtractor
         return ConditionSubrecordDecoder.Decode(data, offset, bigEndian);
     }
 }
-

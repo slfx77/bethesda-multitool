@@ -29,9 +29,10 @@ internal readonly record struct CollisionReferencePriorityResult(
 /// </summary>
 internal sealed class CollisionReferencePriorityResolver
 {
-    private readonly HashSet<string> _warmupPathScratch = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CollisionReferenceCandidate> _warmupBestCandidateScratch =
         new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly HashSet<string> _warmupPathScratch = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CollisionReferenceCandidate> _warmupSelectionScratch = [];
 
     /// <summary>
@@ -126,6 +127,7 @@ internal sealed class CollisionReferencePriorityResolver
                     candidate.Category,
                     candidate.DistanceSquared);
             }
+
             var mesh = resolution.Mesh;
             if (mesh is null) continue;
 

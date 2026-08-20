@@ -505,4 +505,3 @@ internal static class GeckWeaponReportWriter
         ]));
     }
 }
-

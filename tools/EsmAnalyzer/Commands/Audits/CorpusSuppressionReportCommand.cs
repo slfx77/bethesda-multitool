@@ -4,11 +4,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using EsmAnalyzer.Commands.Dmp;
@@ -33,22 +29,23 @@ internal static partial class CorpusSuppressionReportCommand
     private static readonly string[] ScriptSuppressionCodes =
     [
         "script.suppress-unsafe-reference-table",
-        "script.suppress-post-verdict-reference-table",
+        "script.suppress-post-verdict-reference-table"
     ];
 
     public static Command Create()
     {
         var artifactArg = new Argument<string>("artifact-directory")
         {
-            Description = "Certified corpus artifact directory containing corpus-build-inputs.json and *.events.jsonl",
+            Description = "Certified corpus artifact directory containing corpus-build-inputs.json and *.events.jsonl"
         };
         var outputOpt = new Option<string?>("--output-directory")
         {
-            Description = "Report output directory (default: <artifact-directory>/suppression-report)",
+            Description = "Report output directory (default: <artifact-directory>/suppression-report)"
         };
         var skipDmpScanOpt = new Option<bool>("--skip-dmp-scan")
         {
-            Description = "Use event metadata and CSVs only; faster, but legacy event logs may lack prompt/topic identity",
+            Description =
+                "Use event metadata and CSVs only; faster, but legacy event logs may lack prompt/topic identity"
         };
 
         var command = new Command(
@@ -168,6 +165,7 @@ internal static partial class CorpusSuppressionReportCommand
             throw new InvalidDataException(
                 $"Report did not reconcile to the structured suppression gate; missing: {string.Join(", ", missing)}.");
         }
+
         outputDirectory = Path.GetFullPath(outputDirectory
                                            ?? Path.Combine(artifactDirectory, "suppression-report"));
         Directory.CreateDirectory(outputDirectory);
@@ -309,6 +307,7 @@ internal static partial class CorpusSuppressionReportCommand
                             aggregate.MissingVariableIds.Add(detail.VariableIndex.Value.ToString(
                                 CultureInfo.InvariantCulture));
                         }
+
                         aggregate.MissingVariableNames.AddIfPresent(detail.VariableName);
                         aggregate.ReasonCodes.Add(detail.Code);
                         aggregate.Reasons.Add(detail.Reason);
@@ -416,7 +415,7 @@ internal static partial class CorpusSuppressionReportCommand
         }
 
         var responses = new List<CapturedResponse>();
-        for (var index = 0; ; index++)
+        for (var index = 0;; index++)
         {
             var prefix = $"info-response-{index:D3}";
             if (!metadata.TryGetValue($"{prefix}-number", out var numberText))
@@ -625,7 +624,7 @@ internal static partial class CorpusSuppressionReportCommand
         var csvPaths = new[]
             {
                 root.GetProperty("JulyDialogueCsv").GetProperty("Path").GetString(),
-                root.GetProperty("AprilDialogueCsv").GetProperty("Path").GetString(),
+                root.GetProperty("AprilDialogueCsv").GetProperty("Path").GetString()
             }
             .Where(pathValue => !string.IsNullOrWhiteSpace(pathValue))
             .Select(pathValue => Path.GetFullPath(pathValue!))
@@ -689,10 +688,12 @@ internal static partial class CorpusSuppressionReportCommand
         return result;
     }
 
-    private static string? GetField(List<string> fields, int index) =>
-        index >= 0 && index < fields.Count && !string.IsNullOrWhiteSpace(fields[index])
+    private static string? GetField(List<string> fields, int index)
+    {
+        return index >= 0 && index < fields.Count && !string.IsNullOrWhiteSpace(fields[index])
             ? fields[index].Trim()
             : null;
+    }
 
     private static void WriteDialogueCsv(string path, IReadOnlyList<DialogueReportRow> rows)
     {
@@ -726,7 +727,7 @@ internal static partial class CorpusSuppressionReportCommand
                 row.ReasonCodes,
                 row.Reasons,
                 row.DumpCount.ToString(CultureInfo.InvariantCulture),
-                row.Dumps,
+                row.Dumps
             }.Select(CsvEscape)));
         }
 
@@ -776,7 +777,8 @@ internal static partial class CorpusSuppressionReportCommand
             builder.AppendLine();
             builder.AppendLine($"- Speaker: {DisplayOrUnknown(first.SpeakerNames)}");
             builder.AppendLine($"- Quest: {DisplayOrUnknown(first.QuestNames)}");
-            builder.AppendLine($"- Topic: {DisplayOrUnknown(first.TopicNames)} ({DisplayOrUnknown(first.TopicFormIds)})");
+            builder.AppendLine(
+                $"- Topic: {DisplayOrUnknown(first.TopicNames)} ({DisplayOrUnknown(first.TopicFormIds)})");
             builder.AppendLine($"- Prompt: {DisplayOrUnknown(first.Prompts)}");
             if (!string.IsNullOrWhiteSpace(first.MissingVariableIds)
                 || !string.IsNullOrWhiteSpace(first.MissingVariableNames))
@@ -786,6 +788,7 @@ internal static partial class CorpusSuppressionReportCommand
                                    $"{DisplayOrUnknown(first.TargetScriptEditorIds)} " +
                                    $"{DisplayOrUnknown(first.TargetScriptFormIds)}");
             }
+
             builder.AppendLine($"- Suppression code: {DisplayOrUnknown(first.ReasonCodes)}");
             builder.AppendLine($"- Coverage: {infoDumps.Length:N0} dump(s): {string.Join(", ", infoDumps)}");
             builder.AppendLine();
@@ -819,7 +822,7 @@ internal static partial class CorpusSuppressionReportCommand
                 row.ReasonCodes,
                 row.Reasons,
                 row.DumpCount.ToString(CultureInfo.InvariantCulture),
-                row.Dumps,
+                row.Dumps
             }.Select(CsvEscape)));
         }
 
@@ -860,8 +863,10 @@ internal static partial class CorpusSuppressionReportCommand
         File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
     }
 
-    private static string DisplayOrUnknown(string value) =>
-        string.IsNullOrWhiteSpace(value) ? "(unknown)" : value;
+    private static string DisplayOrUnknown(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(unknown)" : value;
+    }
 
     private static string CsvEscape(string? value)
     {
@@ -871,23 +876,29 @@ internal static partial class CorpusSuppressionReportCommand
             : $"\"{value.Replace("\"", "\"\"")}\"";
     }
 
-    private static bool IsUsableText(string? text) =>
-        !string.IsNullOrWhiteSpace(text)
-        && !string.Equals(text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal);
+    private static bool IsUsableText(string? text)
+    {
+        return !string.IsNullOrWhiteSpace(text)
+               && !string.Equals(text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal);
+    }
 
     private static string? ResolveName(
         uint? formId,
         IReadOnlyDictionary<uint, string?> local,
-        IReadOnlyDictionary<uint, string?> master) =>
-        formId is { } id
+        IReadOnlyDictionary<uint, string?> master)
+    {
+        return formId is { } id
             // Retail identity is authoritative. Runtime DIAL/FULL fields in old dumps can
             // contain transient prompt text, so DMP names are only a prototype-only fallback.
             ? master.GetValueOrDefault(id) ?? local.GetValueOrDefault(id)
             : null;
+    }
 
-    private static string? BestName(IEnumerable<string?> editorIds, IEnumerable<string?> fullNames) =>
-        fullNames.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
-        ?? editorIds.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    private static string? BestName(IEnumerable<string?> editorIds, IEnumerable<string?> fullNames)
+    {
+        return fullNames.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+               ?? editorIds.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    }
 
     private static Dictionary<uint, string?> BuildSpeakerNames(RecordCollection collection)
     {
@@ -922,8 +933,10 @@ internal static partial class CorpusSuppressionReportCommand
         return result;
     }
 
-    private static string? FormatFormId(uint? formId) =>
-        formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    private static string? FormatFormId(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    }
 
     private static uint? ParseFormId(string? value)
     {
@@ -943,12 +956,25 @@ internal static partial class CorpusSuppressionReportCommand
             : null;
     }
 
-    private static string? NormalizeFormId(string? value) => FormatFormId(ParseFormId(value));
+    private static string? NormalizeFormId(string? value)
+    {
+        return FormatFormId(ParseFormId(value));
+    }
 
-    private static uint? ParseDecimalUInt32(string? value) =>
-        uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+    private static uint? ParseDecimalUInt32(string? value)
+    {
+        return uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;
+    }
+
+    private static void AddIfPresent(this SortedSet<string> target, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            target.Add(value.Trim());
+        }
+    }
 
     private sealed record CorpusManifest(
         string MasterEsmPath,
@@ -1056,30 +1082,36 @@ internal static partial class CorpusSuppressionReportCommand
         public SortedSet<string> Reasons { get; } = new(StringComparer.Ordinal);
         public SortedSet<string> Dumps { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public DialogueReportRow Freeze() => new(
-            infoFormId,
-            responseNumber,
-            text,
-            Join(TextSources),
-            Join(EditorIds),
-            Join(Prompts),
-            Join(TopicFormIds),
-            Join(TopicNames),
-            Join(QuestFormIds),
-            Join(QuestNames),
-            Join(SpeakerFormIds),
-            Join(SpeakerNames),
-            Join(TargetFormIds),
-            Join(TargetScriptFormIds),
-            Join(TargetScriptEditorIds),
-            Join(MissingVariableIds),
-            Join(MissingVariableNames),
-            Join(ReasonCodes),
-            Join(Reasons),
-            Dumps.Count,
-            Join(Dumps));
+        public DialogueReportRow Freeze()
+        {
+            return new DialogueReportRow(
+                infoFormId,
+                responseNumber,
+                text,
+                Join(TextSources),
+                Join(EditorIds),
+                Join(Prompts),
+                Join(TopicFormIds),
+                Join(TopicNames),
+                Join(QuestFormIds),
+                Join(QuestNames),
+                Join(SpeakerFormIds),
+                Join(SpeakerNames),
+                Join(TargetFormIds),
+                Join(TargetScriptFormIds),
+                Join(TargetScriptEditorIds),
+                Join(MissingVariableIds),
+                Join(MissingVariableNames),
+                Join(ReasonCodes),
+                Join(Reasons),
+                Dumps.Count,
+                Join(Dumps));
+        }
 
-        private static string Join(IEnumerable<string> values) => string.Join("; ", values);
+        private static string Join(IEnumerable<string> values)
+        {
+            return string.Join("; ", values);
+        }
     }
 
     private sealed class MutableScriptRow(uint sourceFormId)
@@ -1095,21 +1127,27 @@ internal static partial class CorpusSuppressionReportCommand
         public SortedSet<string> Reasons { get; } = new(StringComparer.Ordinal);
         public SortedSet<string> Dumps { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public ScriptReportRow Freeze() => new(
-            sourceFormId,
-            Join(EmittedFormIds),
-            Join(EditorIds),
-            Join(OwnerQuestFormIds),
-            Join(ReferenceFields),
-            Join(ReferenceActions),
-            Join(TargetSourceFormIds),
-            Join(TargetEmittedFormIds),
-            Join(ReasonCodes),
-            Join(Reasons),
-            Dumps.Count,
-            Join(Dumps));
+        public ScriptReportRow Freeze()
+        {
+            return new ScriptReportRow(
+                sourceFormId,
+                Join(EmittedFormIds),
+                Join(EditorIds),
+                Join(OwnerQuestFormIds),
+                Join(ReferenceFields),
+                Join(ReferenceActions),
+                Join(TargetSourceFormIds),
+                Join(TargetEmittedFormIds),
+                Join(ReasonCodes),
+                Join(Reasons),
+                Dumps.Count,
+                Join(Dumps));
+        }
 
-        private static string Join(IEnumerable<string> values) => string.Join("; ", values);
+        private static string Join(IEnumerable<string> values)
+        {
+            return string.Join("; ", values);
+        }
     }
 
     internal sealed record MasterNames(
@@ -1118,25 +1156,22 @@ internal static partial class CorpusSuppressionReportCommand
         IReadOnlyDictionary<uint, string?> SpeakerNames,
         IReadOnlyDictionary<uint, string?> ScriptEditorIds)
     {
-        public static MasterNames From(RecordCollection collection) => new(
-            collection.DialogTopics.GroupBy(record => record.FormId).ToDictionary(
-                group => group.Key,
-                group => BestName(group.Select(record => record.EditorId), group.Select(record => record.FullName))),
-            collection.Quests.GroupBy(record => record.FormId).ToDictionary(
-                group => group.Key,
-                group => BestName(group.Select(record => record.EditorId), group.Select(record => record.FullName))),
-            BuildSpeakerNames(collection),
-            collection.Scripts.GroupBy(record => record.FormId).ToDictionary(
-                group => group.Key,
-                group => group.Select(record => record.EditorId)
-                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))));
-    }
-
-    private static void AddIfPresent(this SortedSet<string> target, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
+        public static MasterNames From(RecordCollection collection)
         {
-            target.Add(value.Trim());
+            return new MasterNames(
+                collection.DialogTopics.GroupBy(record => record.FormId).ToDictionary(
+                    group => group.Key,
+                    group => BestName(group.Select(record => record.EditorId),
+                        group.Select(record => record.FullName))),
+                collection.Quests.GroupBy(record => record.FormId).ToDictionary(
+                    group => group.Key,
+                    group => BestName(group.Select(record => record.EditorId),
+                        group.Select(record => record.FullName))),
+                BuildSpeakerNames(collection),
+                collection.Scripts.GroupBy(record => record.FormId).ToDictionary(
+                    group => group.Key,
+                    group => group.Select(record => record.EditorId)
+                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))));
         }
     }
 }

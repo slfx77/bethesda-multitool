@@ -54,11 +54,11 @@ internal static class AssetPackBsaPlanner
         if (EstimateBsaSize(ordered) <= maxArchiveBytes)
         {
             yield return new BsaOutputPlan(
-                OutputPath: "",
-                Bucket: bucket,
-                BucketLabel: BucketLabel(bucket),
-                ChunkIndex: 0,
-                Files: ordered);
+                "",
+                bucket,
+                BucketLabel(bucket),
+                0,
+                ordered);
             yield break;
         }
 
@@ -71,11 +71,11 @@ internal static class AssetPackBsaPlanner
             if (chunk.Count > 0 && candidateEstimate > maxArchiveBytes)
             {
                 yield return new BsaOutputPlan(
-                    OutputPath: "",
-                    Bucket: bucket,
-                    BucketLabel: BucketLabel(bucket),
-                    ChunkIndex: chunkIndex++,
-                    Files: chunk);
+                    "",
+                    bucket,
+                    BucketLabel(bucket),
+                    chunkIndex++,
+                    chunk);
                 chunk = [];
                 chunkEstimate = new BsaSizeEstimate();
             }
@@ -87,11 +87,11 @@ internal static class AssetPackBsaPlanner
         if (chunk.Count > 0)
         {
             yield return new BsaOutputPlan(
-                OutputPath: "",
-                Bucket: bucket,
-                BucketLabel: BucketLabel(bucket),
-                ChunkIndex: chunkIndex,
-                Files: chunk);
+                "",
+                bucket,
+                BucketLabel(bucket),
+                chunkIndex,
+                chunk);
         }
     }
 
@@ -125,56 +125,6 @@ internal static class AssetPackBsaPlanner
                + dataLength;
     }
 
-    private sealed class BsaSizeEstimate
-    {
-        private readonly HashSet<(string Folder, string Name)> _files = [];
-        private readonly HashSet<string> _folders = new(StringComparer.Ordinal);
-        private long _total = 36;
-
-        /// <summary>Returns the projected total BSA size if the given file were added, without adding it.</summary>
-        public long EstimateWith((string Path, byte[] Data) file)
-        {
-            var key = Normalize(file.Path);
-            if (_files.Contains(key))
-            {
-                return _total;
-            }
-
-            var estimate = _total + 16 + key.Name.Length + 1 + file.Data.Length;
-            if (!_folders.Contains(key.Folder))
-            {
-                estimate += 16 + 1 + key.Folder.Length + 1;
-            }
-
-            return estimate;
-        }
-
-        /// <summary>Adds a file to the running BSA size estimate (ignores duplicates by path).</summary>
-        public void Add((string Path, byte[] Data) file)
-        {
-            var key = Normalize(file.Path);
-            if (!_files.Add(key))
-            {
-                return;
-            }
-
-            _total += 16 + key.Name.Length + 1 + file.Data.Length;
-            if (_folders.Add(key.Folder))
-            {
-                _total += 16 + 1 + key.Folder.Length + 1;
-            }
-        }
-
-        private static (string Folder, string Name) Normalize(string path)
-        {
-            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
-            var slash = normalized.LastIndexOf('\\');
-            return slash >= 0
-                ? (normalized[..slash], normalized[(slash + 1)..])
-                : ("", normalized);
-        }
-    }
-
     private static AssetPackBucket ClassifyAssetBucket(string path)
     {
         var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
@@ -203,32 +153,41 @@ internal static class AssetPackBsaPlanner
         return AssetPackBucket.Main;
     }
 
-    private static int BucketSortOrder(AssetPackBucket bucket) => bucket switch
+    private static int BucketSortOrder(AssetPackBucket bucket)
     {
-        AssetPackBucket.Main => 0,
-        AssetPackBucket.Textures => 1,
-        AssetPackBucket.Sounds => 2,
-        AssetPackBucket.Voices => 3,
-        _ => 99
-    };
+        return bucket switch
+        {
+            AssetPackBucket.Main => 0,
+            AssetPackBucket.Textures => 1,
+            AssetPackBucket.Sounds => 2,
+            AssetPackBucket.Voices => 3,
+            _ => 99
+        };
+    }
 
-    private static string BucketLabel(AssetPackBucket bucket) => bucket switch
+    private static string BucketLabel(AssetPackBucket bucket)
     {
-        AssetPackBucket.Main => "main",
-        AssetPackBucket.Textures => "texture",
-        AssetPackBucket.Sounds => "sound",
-        AssetPackBucket.Voices => "voice",
-        _ => "misc"
-    };
+        return bucket switch
+        {
+            AssetPackBucket.Main => "main",
+            AssetPackBucket.Textures => "texture",
+            AssetPackBucket.Sounds => "sound",
+            AssetPackBucket.Voices => "voice",
+            _ => "misc"
+        };
+    }
 
-    private static string BucketSuffix(AssetPackBucket bucket) => bucket switch
+    private static string BucketSuffix(AssetPackBucket bucket)
     {
-        AssetPackBucket.Main => "Main",
-        AssetPackBucket.Textures => "Textures",
-        AssetPackBucket.Sounds => "Sounds",
-        AssetPackBucket.Voices => "Voices",
-        _ => "Assets"
-    };
+        return bucket switch
+        {
+            AssetPackBucket.Main => "Main",
+            AssetPackBucket.Textures => "Textures",
+            AssetPackBucket.Sounds => "Sounds",
+            AssetPackBucket.Voices => "Voices",
+            _ => "Assets"
+        };
+    }
 
     private static string BuildSidecarPath(string outputBsaPath, AssetPackBucket bucket, int chunkIndex)
     {
@@ -299,6 +258,56 @@ internal static class AssetPackBsaPlanner
                 sink.Warn("AssetPacking",
                     $"Could not delete stale BSA output {fullPath}: {ex.GetType().Name}: {ex.Message}");
             }
+        }
+    }
+
+    private sealed class BsaSizeEstimate
+    {
+        private readonly HashSet<(string Folder, string Name)> _files = [];
+        private readonly HashSet<string> _folders = new(StringComparer.Ordinal);
+        private long _total = 36;
+
+        /// <summary>Returns the projected total BSA size if the given file were added, without adding it.</summary>
+        public long EstimateWith((string Path, byte[] Data) file)
+        {
+            var key = Normalize(file.Path);
+            if (_files.Contains(key))
+            {
+                return _total;
+            }
+
+            var estimate = _total + 16 + key.Name.Length + 1 + file.Data.Length;
+            if (!_folders.Contains(key.Folder))
+            {
+                estimate += 16 + 1 + key.Folder.Length + 1;
+            }
+
+            return estimate;
+        }
+
+        /// <summary>Adds a file to the running BSA size estimate (ignores duplicates by path).</summary>
+        public void Add((string Path, byte[] Data) file)
+        {
+            var key = Normalize(file.Path);
+            if (!_files.Add(key))
+            {
+                return;
+            }
+
+            _total += 16 + key.Name.Length + 1 + file.Data.Length;
+            if (_folders.Add(key.Folder))
+            {
+                _total += 16 + 1 + key.Folder.Length + 1;
+            }
+        }
+
+        private static (string Folder, string Name) Normalize(string path)
+        {
+            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+            var slash = normalized.LastIndexOf('\\');
+            return slash >= 0
+                ? (normalized[..slash], normalized[(slash + 1)..])
+                : ("", normalized);
         }
     }
 }

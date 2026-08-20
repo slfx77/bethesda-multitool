@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
@@ -232,24 +231,24 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
     {
         Assert.True(EsmScriptDiagnosticsResolvers.IsFormIdConditionParameter(
             BethesdaGame.Skyrim,
-            functionIndex: 407,
-            parameterIndex: 1,
-            conditionType: 0,
-            runOn: 0,
-            parameter1Value: 0));
+            407,
+            1,
+            0,
+            0,
+            0));
         Assert.False(EsmScriptDiagnosticsResolvers.IsFormIdConditionParameter(
             BethesdaGame.Skyrim,
-            functionIndex: 407,
-            parameterIndex: 1,
-            conditionType: 0,
-            runOn: 0,
-            parameter1Value: 5));
+            407,
+            1,
+            0,
+            0,
+            5));
         Assert.False(EsmScriptDiagnosticsResolvers.IsFormIdConditionParameter(
             BethesdaGame.Skyrim,
-            functionIndex: 407,
-            parameterIndex: 1,
-            conditionType: 0,
-            runOn: 0));
+            407,
+            1,
+            0,
+            0));
     }
 
     [Fact]
@@ -261,7 +260,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var records = new[]
         {
             Record("NPC_", actorId, StringSub("EDID", "ActorFive")),
-            Record("INFO", fnvInfoId, Ctda(0x03C, 0, parameter2: actorId)),
+            Record("INFO", fnvInfoId, Ctda(0x03C, 0, actorId)),
             Record("INFO", fo4InfoId, Ctda(0x0001, actorId, type: 0x02, length: 32))
         };
 
@@ -360,7 +359,9 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                 Record("QUST", targetId, StringSub("EDID", "QuestTarget")),
                 Record("INFO", infoId, Ctda(0x02F, targetId,
                     length: game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or
-                        BethesdaGame.Starfield ? 32 : 28))
+                        BethesdaGame.Starfield
+                        ? 32
+                        : 28))
             ],
             ["fixture"],
             game,
@@ -404,7 +405,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
             row => row.FormId == rawInfoId && row.Category == "condition-raw" && row.LinkedFormId == 0);
         Assert.Contains(provenance.StateTrace,
             row => row.FormId == questInfoId && row.Category == "condition-parameter"
-                   && row.LinkedFormId == questId);
+                                             && row.LinkedFormId == questId);
     }
 
     [Fact]
@@ -431,7 +432,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var provenance = EsmScriptProvenanceAnalyzer.AnalyzeRecords(records, result, null, null);
         Assert.Contains(provenance.StateTrace,
             row => row.FormId == infoId && row.Category == "condition-parameter"
-                   && row.LinkedFormId == actorValueId);
+                                        && row.LinkedFormId == actorValueId);
     }
 
     [Theory]
@@ -876,7 +877,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         Assert.False(conditions[0].ReferenceStorageIsSemantic);
         Assert.False(conditions[1].ReferenceStorageIsSemantic);
         Assert.True(conditions[2].ReferenceStorageIsSemantic);
-        Assert.Equal<uint?>(markerId, conditions[2].SemanticReferenceFormId);
+        Assert.Equal(markerId, conditions[2].SemanticReferenceFormId);
         Assert.True(conditions[3].ReferenceStorageIsSemantic);
         Assert.Equal<uint?>(0, conditions[3].ReferenceStorage);
         Assert.Null(conditions[3].SemanticReferenceFormId);
@@ -927,7 +928,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         Assert.Equal(actorId, condition.ReferenceStorage);
         Assert.Equal(game is BethesdaGame.Unknown ? "unsupported_game" : "valid", condition.LayoutStatus);
         Assert.Equal(expectedSemanticReference, condition.ReferenceStorageIsSemantic);
-        Assert.Equal<uint?>(expectedSemanticReference ? actorId : null, condition.SemanticReferenceFormId);
+        Assert.Equal(expectedSemanticReference ? actorId : null, condition.SemanticReferenceFormId);
         Assert.Equal(expectedSemanticReference ? "Ulysses" : string.Empty,
             condition.SemanticReferenceLabel);
 
@@ -988,8 +989,10 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var rows = diagnostics.Conditions.Where(row => row.FormId == infoId).ToArray();
         Assert.Equal(Enumerable.Range(1, 7), rows.Select(row => row.ConditionIndex));
         Assert.Equal(
-            ["valid", "unsupported_length", "valid", "unsupported_length", "valid",
-                "unsupported_length", "game_width_mismatch"],
+            [
+                "valid", "unsupported_length", "valid", "unsupported_length", "valid",
+                "unsupported_length", "game_width_mismatch"
+            ],
             rows.Select(row => row.LayoutStatus));
         Assert.Null(rows[0].RunOn);
         Assert.Null(rows[0].ReferenceStorage);
@@ -998,7 +1001,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         Assert.Equal<uint?>(0, rows[4].RunOn);
         Assert.Equal<uint?>(0, rows[4].ReferenceStorage);
         Assert.Null(rows[0].Parameter3);
-        Assert.Equal<int?>(0, rows[6].Parameter3);
+        Assert.Equal(0, rows[6].Parameter3);
 
         var csvLines = EsmScriptDiagnosticsCsvWriter.BuildConditionsCsv(diagnostics)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -1033,8 +1036,8 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var generated = new[]
         {
             Record("INFO", infoId,
-                CtdaWithWidth(32, bigEndian, parameter3: 0),
-                CtdaWithWidth(32, bigEndian, parameter3: -42))
+                CtdaWithWidth(32, bigEndian),
+                CtdaWithWidth(32, bigEndian, -42))
         };
 
         var diagnostics = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
@@ -1042,11 +1045,12 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
             new HashSet<uint> { infoId });
 
         var rows = diagnostics.Conditions.Where(row => row.FormId == infoId).ToArray();
-        Assert.Equal<int?>([0, -42], rows.Select(row => row.Parameter3));
+        Assert.Equal([0, -42], rows.Select(row => row.Parameter3));
         Assert.All(rows, row => Assert.Equal("valid", row.LayoutStatus));
 
         var csv = EsmScriptDiagnosticsCsvWriter.BuildConditionsCsv(diagnostics);
-        Assert.Contains(",parameter3,reference_storage_is_semantic,semantic_reference_form_id,ctda_body_length,layout_status",
+        Assert.Contains(
+            ",parameter3,reference_storage_is_semantic,semantic_reference_form_id,ctda_body_length,layout_status",
             csv.Split('\n')[0], StringComparison.Ordinal);
         var provenance = EsmScriptProvenanceAnalyzer.AnalyzeRecords(generated, diagnostics, null, null);
         Assert.Contains(provenance.StateTrace,
@@ -1137,6 +1141,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         {
             BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(20), runOn);
         }
+
         return Sub("CTDA", data);
     }
 
@@ -1242,7 +1247,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
     private static byte[] BuildTes4Plugin(float version)
     {
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         writer.Write("TES4"u8.ToArray());
         writer.Write(18u); // HEDR subrecord header (6) + body (12)
         writer.Write(0u); // flags

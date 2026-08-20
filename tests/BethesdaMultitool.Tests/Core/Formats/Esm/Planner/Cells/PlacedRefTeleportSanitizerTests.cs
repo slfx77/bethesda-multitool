@@ -17,10 +17,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 ///     reuse the same REFR identity with different base types, so a teleport whose target
 ///     resolves to a STAT would hand the engine a door it cannot open.
 ///     <para>
-///     Owned by <c>PlacedRefLinkPlanner</c> since retirement Stage H5 (2026-08-12). It was
-///     previously a post-encode writer pass (<c>PlacedRefTeleportSanitizer</c>) that re-derived
-///     the answer from master records while serializing; the decision is now settled at plan
-///     time and the writer only obeys it.
+///         Owned by <c>PlacedRefLinkPlanner</c> since retirement Stage H5 (2026-08-12). It was
+///         previously a post-encode writer pass (<c>PlacedRefTeleportSanitizer</c>) that re-derived
+///         the answer from master records while serializing; the decision is now settled at plan
+///         time and the writer only obeys it.
 ///     </para>
 /// </summary>
 public sealed class PlacedRefTeleportSanitizerTests

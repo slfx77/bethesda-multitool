@@ -70,7 +70,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord("CNAM"),
-                FormId = cnam,
+                FormId = cnam
             };
         }
 
@@ -85,7 +85,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.IndexedMember("CTDA", i, "Reference"),
-                    FormId = reference,
+                    FormId = reference
                 };
             }
         }
@@ -117,7 +117,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
         {
             FieldPath = FieldPath.Member(signature, "Union"),
             FormId = location.Union,
-            ContainerSignature = signature,
+            ContainerSignature = signature
         };
     }
 
@@ -132,7 +132,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
         {
             FieldPath = FieldPath.Member(signature, "FormIdOrType"),
             FormId = target.FormIdOrType,
-            ContainerSignature = signature,
+            ContainerSignature = signature
         };
     }
 
@@ -150,7 +150,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = $"{fieldPath}.INAM",
-                FormId = action.IdleFormId,
+                FormId = action.IdleFormId
             };
         }
 
@@ -168,7 +168,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = $"{fieldPath}.Scripts[{scriptIndex}].SCRO[{referenceIndex}]",
-                    FormId = formId,
+                    FormId = formId
                 };
             }
         }
@@ -178,9 +178,8 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = $"{fieldPath}.TNAM",
-                FormId = action.TopicFormId,
+                FormId = action.TopicFormId
             };
         }
     }
-
 }

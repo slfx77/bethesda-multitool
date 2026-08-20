@@ -49,18 +49,35 @@ internal sealed class MappedBtdBytes : IBtdBytes
 
     public long Length { get; }
 
-    public byte ReadU8(long offset) => _view.ReadByte(offset);
+    public byte ReadU8(long offset)
+    {
+        return _view.ReadByte(offset);
+    }
 
-    public ushort ReadU16(long offset) => _view.ReadUInt16(offset);
+    public ushort ReadU16(long offset)
+    {
+        return _view.ReadUInt16(offset);
+    }
 
-    public uint ReadU32(long offset) => _view.ReadUInt32(offset);
+    public uint ReadU32(long offset)
+    {
+        return _view.ReadUInt32(offset);
+    }
 
-    public int ReadI32(long offset) => _view.ReadInt32(offset);
+    public int ReadI32(long offset)
+    {
+        return _view.ReadInt32(offset);
+    }
 
-    public float ReadF32(long offset) => _view.ReadSingle(offset);
+    public float ReadF32(long offset)
+    {
+        return _view.ReadSingle(offset);
+    }
 
-    public void ReadArray(long offset, byte[] destination, int destinationIndex, int count) =>
+    public void ReadArray(long offset, byte[] destination, int destinationIndex, int count)
+    {
         _view.ReadArray(offset, destination, destinationIndex, count);
+    }
 
     public void Dispose()
     {
@@ -87,23 +104,43 @@ internal sealed class ArrayBtdBytes(byte[] data) : IBtdBytes
 
     public long Length => _data.Length;
 
-    public byte ReadU8(long offset) => _data[checked((int)offset)];
+    public byte ReadU8(long offset)
+    {
+        return _data[checked((int)offset)];
+    }
 
-    public ushort ReadU16(long offset) => BinaryPrimitives.ReadUInt16LittleEndian(Slice(offset, 2));
+    public ushort ReadU16(long offset)
+    {
+        return BinaryPrimitives.ReadUInt16LittleEndian(Slice(offset, 2));
+    }
 
-    public uint ReadU32(long offset) => BinaryPrimitives.ReadUInt32LittleEndian(Slice(offset, 4));
+    public uint ReadU32(long offset)
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(Slice(offset, 4));
+    }
 
-    public int ReadI32(long offset) => BinaryPrimitives.ReadInt32LittleEndian(Slice(offset, 4));
+    public int ReadI32(long offset)
+    {
+        return BinaryPrimitives.ReadInt32LittleEndian(Slice(offset, 4));
+    }
 
-    public float ReadF32(long offset) => BinaryPrimitives.ReadSingleLittleEndian(Slice(offset, 4));
+    public float ReadF32(long offset)
+    {
+        return BinaryPrimitives.ReadSingleLittleEndian(Slice(offset, 4));
+    }
 
-    public void ReadArray(long offset, byte[] destination, int destinationIndex, int count) =>
+    public void ReadArray(long offset, byte[] destination, int destinationIndex, int count)
+    {
         Buffer.BlockCopy(_data, checked((int)offset), destination, destinationIndex, count);
+    }
 
     public void Dispose()
     {
         // Nothing to release: the array is owned by the caller / the GC.
     }
 
-    private ReadOnlySpan<byte> Slice(long offset, int count) => _data.AsSpan(checked((int)offset), count);
+    private ReadOnlySpan<byte> Slice(long offset, int count)
+    {
+        return _data.AsSpan(checked((int)offset), count);
+    }
 }

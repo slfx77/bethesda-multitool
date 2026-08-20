@@ -41,7 +41,8 @@ public sealed class PlannerRoutingConsistencyTests
     /// </summary>
     private static readonly Dictionary<string, string> TopLevelRoutingExemptions = new(StringComparer.Ordinal)
     {
-        ["CELL"] = "Sentinel: activates the cell hierarchy via EsmAssembler, explicitly excluded at the planner dispatch.",
+        ["CELL"] =
+            "Sentinel: activates the cell hierarchy via EsmAssembler, explicitly excluded at the planner dispatch.",
         ["REFR"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",
         ["ACHR"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",
         ["ACRE"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",

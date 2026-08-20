@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+
 internal static class HeightmapExportGridMatcher
 {
     internal static CellGridSubrecord? FindNearestCellGrid(long heightmapOffset, List<CellGridSubrecord>? cellGrids)
@@ -17,5 +18,4 @@ internal static class HeightmapExportGridMatcher
             .OrderByDescending(g => g.Offset)
             .FirstOrDefault();
     }
-
 }

@@ -28,7 +28,7 @@ public sealed class PlannedPackEncoder : IPlannedRecordEncoder<PackageRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedPackEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedPackEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

@@ -1,7 +1,5 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using Spectre.Console;
 using System.Globalization;
+using Spectre.Console;
 using static BethesdaMultitool.Core.Utils.BinaryUtils;
 
 namespace EsmAnalyzer.Commands.Terrain;
@@ -159,14 +157,14 @@ internal static class LandVhgtCompareCommand
         }
 
         var n = (double)count;
-        var denom = (n * sumXX) - (sumX * sumX);
-        var scale = Math.Abs(denom) < 1e-9 ? 0 : ((n * sumXY) - (sumX * sumY)) / denom;
-        var bias = (sumY - (scale * sumX)) / n;
+        var denom = n * sumXX - sumX * sumX;
+        var scale = Math.Abs(denom) < 1e-9 ? 0 : (n * sumXY - sumX * sumY) / denom;
+        var bias = (sumY - scale * sumX) / n;
 
         double mae = 0;
         for (var i = 0; i < count; i++)
         {
-            var predicted = (scale * left[i]) + bias;
+            var predicted = scale * left[i] + bias;
             mae += Math.Abs(predicted - right[i]);
         }
 
@@ -174,4 +172,3 @@ internal static class LandVhgtCompareCommand
         return (scale, bias, mae);
     }
 }
-

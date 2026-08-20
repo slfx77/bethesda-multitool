@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Planner;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
@@ -64,13 +66,13 @@ internal static class PlannerLegacyStateBridge
     ///     because <c>DialogGrupBuilder</c> owns their actual allocation and emission.
     /// </summary>
     public static void RegisterEmittedNewRecords(
-        IEnumerable<BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan> records,
+        IEnumerable<RecordPlan> records,
         IReadOnlySet<string> skippedRecordTypes,
         Action<string, uint> register)
     {
         foreach (var record in records)
         {
-            if (record.Disposition != BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New
+            if (record.Disposition != RecordDisposition.New
                 || record.Type is "DIAL" or "INFO"
                 || skippedRecordTypes.Contains(record.Type))
             {

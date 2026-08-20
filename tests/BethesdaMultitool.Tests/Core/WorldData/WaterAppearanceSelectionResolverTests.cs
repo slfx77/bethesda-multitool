@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.WorldData;
@@ -78,10 +79,10 @@ public sealed class WaterAppearanceSelectionResolverTests
 
         var result = WaterAppearanceSelectionResolver.Resolve(
             new CellRecord { FormId = 0x10, WaterFormId = null },
-            worldspace: null,
+            null,
             Index(interiorDefault, exteriorDefault),
             BethesdaGame.FalloutNewVegas,
-            isInterior: true);
+            true);
 
         Assert.Same(interiorDefault, result.Water);
         Assert.Equal(WaterAppearanceSelectionSource.EngineDefault, result.Source);
@@ -96,10 +97,10 @@ public sealed class WaterAppearanceSelectionResolverTests
 
         var result = WaterAppearanceSelectionResolver.Resolve(
             new CellRecord { FormId = 0x10, WaterFormId = null },
-            worldspace: null,
+            null,
             Index(interiorDefault, exteriorDefault),
             BethesdaGame.FalloutNewVegas,
-            isInterior: false);
+            false);
 
         Assert.Same(exteriorDefault, result.Water);
         Assert.Equal(WaterAppearanceSelectionSource.EngineDefault, result.Source);
@@ -114,10 +115,10 @@ public sealed class WaterAppearanceSelectionResolverTests
 
         var result = WaterAppearanceSelectionResolver.Resolve(
             new CellRecord { FormId = 0x10, WaterFormId = cellWater.FormId },
-            worldspace: null,
+            null,
             Index(cellWater, interiorDefault),
             BethesdaGame.FalloutNewVegas,
-            isInterior: true);
+            true);
 
         Assert.Same(cellWater, result.Water);
         Assert.Equal(WaterAppearanceSelectionSource.CellXcwt, result.Source);
@@ -135,10 +136,10 @@ public sealed class WaterAppearanceSelectionResolverTests
     {
         var result = WaterAppearanceSelectionResolver.Resolve(
             new CellRecord { FormId = 0x10, WaterFormId = null },
-            worldspace: null,
+            null,
             Index(Water(0x0000421E, "DefaultInteriorWater"), Water(0x00000018, "DefaultWater")),
             game,
-            isInterior: true);
+            true);
 
         Assert.Null(result.Water);
         Assert.Equal(WaterAppearanceSelectionSource.Unavailable, result.Source);
@@ -152,10 +153,10 @@ public sealed class WaterAppearanceSelectionResolverTests
 
         var result = WaterAppearanceSelectionResolver.Resolve(
             new CellRecord { FormId = 0x10, WaterFormId = null },
-            worldspace: null,
+            null,
             Index(renumbered),
             BethesdaGame.Fallout3,
-            isInterior: true);
+            true);
 
         Assert.Same(renumbered, result.Water);
         Assert.Equal(WaterAppearanceSelectionSource.EngineDefault, result.Source);

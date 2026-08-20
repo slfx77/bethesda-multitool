@@ -29,7 +29,7 @@ public sealed class JsonlConversionProgressSink : IConversionProgressSink, IDisp
             new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read),
             new UTF8Encoding(false))
         {
-            AutoFlush = true,
+            AutoFlush = true
         };
     }
 
@@ -175,6 +175,7 @@ public sealed class JsonlConversionProgressSink : IConversionProgressSink, IDisp
         {
             json.WriteNumber(key, value);
         }
+
         json.WriteEndObject();
     }
 }

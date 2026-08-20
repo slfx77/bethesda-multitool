@@ -10,10 +10,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
 /// </summary>
 public sealed class Hdr09CinematicOnlySourceContractTests
 {
-    private static string ReadTonemapShader() => File.ReadAllText(Path.Combine(
-        SourceContract.RepoRoot,
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu",
-        "Shaders", "Post", "tonemap.frag.hlsl"));
+    private static string ReadTonemapShader()
+    {
+        return File.ReadAllText(Path.Combine(
+            SourceContract.RepoRoot,
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu",
+            "Shaders", "Post", "tonemap.frag.hlsl"));
+    }
 
     [Fact]
     public void StandaloneCinematicBranch_PrecedesModernAndUsesOnlyClampedSceneGrade()

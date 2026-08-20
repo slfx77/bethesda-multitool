@@ -1,9 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using BethesdaMultitool.CLI.Rendering;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;

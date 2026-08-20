@@ -20,13 +20,13 @@ public sealed class Logger
     /// </summary>
     private static readonly AsyncLocal<TextWriter?> CustomOutput = new();
 
+    /// <summary>Serializes writes to <see cref="_logFileWriter" /> (StreamWriter is not thread-safe).</summary>
+    private readonly Lock _logFileLock = new();
+
     /// <summary>
     ///     Optional file writer for logging to file (useful for GUI apps).
     /// </summary>
     private StreamWriter? _logFileWriter;
-
-    /// <summary>Serializes writes to <see cref="_logFileWriter" /> (StreamWriter is not thread-safe).</summary>
-    private readonly Lock _logFileLock = new();
 
     private Logger()
     {
@@ -73,6 +73,13 @@ public sealed class Logger
     public bool IncludeLevel { get; set; } = true;
 
     /// <summary>
+    ///     True when a file sink is currently open (see <see cref="SetLogFile" />). Lets late
+    ///     call sites (e.g. window constructors) open a fallback log WITHOUT re-opening — and
+    ///     thereby disposing — a sink the process entry path already established.
+    /// </summary>
+    public bool HasLogFile => _logFileWriter is not null;
+
+    /// <summary>
     ///     Configure logger from verbose flag (maps to Debug level).
     /// </summary>
     public void SetVerbose(bool verbose)
@@ -98,13 +105,6 @@ public sealed class Logger
                 new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
             { AutoFlush = true };
     }
-
-    /// <summary>
-    ///     True when a file sink is currently open (see <see cref="SetLogFile" />). Lets late
-    ///     call sites (e.g. window constructors) open a fallback log WITHOUT re-opening — and
-    ///     thereby disposing — a sink the process entry path already established.
-    /// </summary>
-    public bool HasLogFile => _logFileWriter is not null;
 
     /// <summary>
     ///     Disable file logging.

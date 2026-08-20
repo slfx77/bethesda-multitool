@@ -19,10 +19,10 @@ internal sealed class NifValueConverter
     private const string TrianglesFieldName = "Triangles";
 
     private static readonly Logger Log = Logger.Instance;
+    private readonly bool _measure;
 
     private readonly NifSchema _schema;
     private readonly NifVersionContext _versionContext;
-    private readonly bool _measure;
 
     public NifValueConverter(NifSchema schema, NifVersionContext versionContext, bool measure)
     {
@@ -306,7 +306,8 @@ internal sealed class NifValueConverter
         var maxElements = ctx.End - ctx.Position;
         if (count > maxElements)
         {
-            Log.Trace($"    [Schema] WARNING: Array length {count} exceeds {maxElements} remaining bytes, skipping field {field.Name}");
+            Log.Trace(
+                $"    [Schema] WARNING: Array length {count} exceeds {maxElements} remaining bytes, skipping field {field.Name}");
             return;
         }
 

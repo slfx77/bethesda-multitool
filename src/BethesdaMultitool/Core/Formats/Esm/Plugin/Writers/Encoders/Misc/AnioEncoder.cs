@@ -7,13 +7,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///     a model to the IDLE animation that plays on it; without the encoder a proto-only ANIO is
 ///     stripped and anything referencing it animates as a static prop.
 ///     <para>
-///     ANIO has no dedicated typed model and arrives as a <see cref="GenericEsmRecord" /> from
-///     <c>RuntimeGenericReader</c>, whose <see cref="GenericEsmRecord.Fields" /> keys are PDB
-///     identifiers.
+///         ANIO has no dedicated typed model and arrives as a <see cref="GenericEsmRecord" /> from
+///         <c>RuntimeGenericReader</c>, whose <see cref="GenericEsmRecord.Fields" /> keys are PDB
+///         identifiers.
 ///     </para>
 ///     <para>
-///     Canonical order from xEdit <c>wbRecord(ANIO)</c> (wbDefinitionsFNV.pas):
-///     EDID(req), MODL(req), DATA(req — IDLE FormID). Note ANIO has no OBND and no FULL.
+///         Canonical order from xEdit <c>wbRecord(ANIO)</c> (wbDefinitionsFNV.pas):
+///         EDID(req), MODL(req), DATA(req — IDLE FormID). Note ANIO has no OBND and no FULL.
 ///     </para>
 /// </summary>
 public sealed class AnioEncoder : IRecordEncoder

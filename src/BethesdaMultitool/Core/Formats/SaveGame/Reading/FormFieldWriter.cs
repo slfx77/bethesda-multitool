@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
+
 namespace BethesdaMultitool.Core.Formats.SaveGame.Reading;
 
 /// <summary>

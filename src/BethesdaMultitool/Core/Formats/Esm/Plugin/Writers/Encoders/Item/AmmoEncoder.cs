@@ -22,7 +22,7 @@ public sealed class AmmoEncoder : IRecordEncoder
         ["Speed"] = m => m.Speed,
         ["Flags"] = m => m.Flags,
         ["Value"] = m => m.Value,
-        ["ClipRounds"] = m => m.ClipRounds,
+        ["ClipRounds"] = m => m.ClipRounds
     };
 
     public string RecordType => "AMMO";

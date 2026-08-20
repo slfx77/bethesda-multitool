@@ -22,7 +22,7 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
     [Fact]
     public void ChildHostedEnvironmentEffect_AppliesToSiblingShapes()
     {
-        var (data, nif) = BuildNif(switchState: true, affectedNodes: [], textureType: 2, coordGen: 2);
+        var (data, nif) = BuildNif(true, [], 2, 2);
         var nodeChildren = new Dictionary<int, List<int>> { [0] = [1, 3] };
 
         var map = NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
@@ -37,8 +37,8 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
     {
         // Effect ref only in the NiNode Effects array (well-formed Gamebryo), not in Children.
         var (data, nif) = BuildNif(
-            switchState: true, affectedNodes: [], textureType: 2, coordGen: 2,
-            effectInChildren: false);
+            true, [], 2, 2,
+            false);
         var nodeChildren = new Dictionary<int, List<int>> { [0] = [3] };
 
         var map = NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
@@ -51,7 +51,7 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
     [Fact]
     public void SwitchedOffEffect_IsIgnored()
     {
-        var (data, nif) = BuildNif(switchState: false, affectedNodes: [], textureType: 2, coordGen: 2);
+        var (data, nif) = BuildNif(false, [], 2, 2);
         var nodeChildren = new Dictionary<int, List<int>> { [0] = [1, 3] };
 
         Assert.Null(NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
@@ -76,7 +76,7 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
     public void AffectedNodeScope_RestrictsToListedSubtrees()
     {
         // Effect scoped to node 4; the shape hangs under node 0 only → not applied.
-        var (data, nif) = BuildNif(switchState: true, affectedNodes: [4], textureType: 2, coordGen: 2);
+        var (data, nif) = BuildNif(true, [4], 2, 2);
         var nodeChildren = new Dictionary<int, List<int>> { [0] = [1, 3] };
 
         Assert.Null(NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
@@ -84,7 +84,7 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
 
         // Scoped to the hosting node itself (an ancestor of the shape) → applied.
         var (scopedData, scopedNif) = BuildNif(
-            switchState: true, affectedNodes: [0], textureType: 2, coordGen: 2);
+            true, [0], 2, 2);
         var scopedMap = NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
             scopedData, scopedNif, new Dictionary<int, List<int>> { [0] = [1, 3] }, [3]);
 
@@ -118,16 +118,16 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
         if (effectInChildren)
         {
             AppendUInt(node, 2); // Num Children
-            AppendInt(node, 1);  // the effect (TES3 exporter style)
-            AppendInt(node, 3);  // the shape
+            AppendInt(node, 1); // the effect (TES3 exporter style)
+            AppendInt(node, 3); // the shape
             AppendUInt(node, 0); // Num Effects (empty — retail Morrowind authoring)
         }
         else
         {
             AppendUInt(node, 1); // Num Children
-            AppendInt(node, 3);  // the shape only
+            AppendInt(node, 3); // the shape only
             AppendUInt(node, 1); // Num Effects
-            AppendInt(node, 1);  // the effect (well-formed Gamebryo authoring)
+            AppendInt(node, 1); // the effect (well-formed Gamebryo authoring)
         }
 
         var effect = new List<byte>();
@@ -149,7 +149,7 @@ public sealed class NifTextureEffectEnvironmentPolicyTests
         AppendUInt(effect, 3); // Texture Clamping
         AppendUInt(effect, textureType);
         AppendUInt(effect, coordGen);
-        AppendInt(effect, 2);  // Source Texture ref → block 2
+        AppendInt(effect, 2); // Source Texture ref → block 2
 
         var source = new List<byte>();
         AppendObjectNet(source);

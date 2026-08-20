@@ -1,8 +1,8 @@
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView;
 
-/// <summary>Flattens a Core <see cref="RecordDetailModel"/> into the GUI's <see cref="EsmPropertyEntry"/> rows.</summary>
+/// <summary>Flattens a Core <see cref="RecordDetailModel" /> into the GUI's <see cref="EsmPropertyEntry" /> rows.</summary>
 internal static class RecordDetailPropertyAdapter
 {
     /// <summary>Converts a record-detail model's sections and entries into a flat property-entry list.</summary>

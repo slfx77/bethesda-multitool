@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 
@@ -43,7 +42,7 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
         {
             var shaderBytes = new byte[ShaderDataSize];
             Array.Copy(view.Buffer, shaderOff, shaderBytes, 0, ShaderDataSize);
-            visualProperties = SubrecordSchemaView.TryRead("DNAM", "WATR", shaderBytes, bigEndian: true)?.Raw;
+            visualProperties = SubrecordSchemaView.TryRead("DNAM", "WATR", shaderBytes, true)?.Raw;
         }
 
         return new WaterRecord
@@ -60,4 +59,3 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
         };
     }
 }
-

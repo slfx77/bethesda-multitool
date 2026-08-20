@@ -26,7 +26,7 @@ public sealed class PlannedImadEncoder : IPlannedRecordEncoder<ImageSpaceModifie
             RecordDisposition.New => EncodeRequiredNew(model, refs),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedImadEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedImadEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 

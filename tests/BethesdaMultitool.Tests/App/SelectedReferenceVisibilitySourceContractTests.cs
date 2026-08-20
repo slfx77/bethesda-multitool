@@ -91,7 +91,8 @@ public sealed class SelectedReferenceVisibilitySourceContractTests
             "private bool IsSelectedReferenceVisible()",
             "private void ClearSelection3D()");
         Assert.Contains("_referenceEnabledOverrides.IsVisible(", selectionEligibility, StringComparison.Ordinal);
-        Assert.Contains("_hiddenCategories.Contains(reference.Category)", selectionEligibility, StringComparison.Ordinal);
+        Assert.Contains("_hiddenCategories.Contains(reference.Category)", selectionEligibility,
+            StringComparison.Ordinal);
         Assert.Contains("reference.IsGrass && !_showGrass", selectionEligibility, StringComparison.Ordinal);
         Assert.Contains("reference.IsMarker && !_showMarkers", selectionEligibility, StringComparison.Ordinal);
 

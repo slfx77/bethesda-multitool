@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 
 namespace BethesdaMultitool.Core.Collections;
 
@@ -19,8 +20,8 @@ public sealed class BulkObservableCollection<T> : ObservableCollection<T>
             Items.Add(item);
         }
 
-        OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(Count)));
-        OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs("Item[]"));
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
         OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
     }
 }

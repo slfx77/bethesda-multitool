@@ -3,7 +3,6 @@ using System.Text;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
@@ -15,8 +14,8 @@ namespace BethesdaMultitool.Core.Recovery;
 /// </summary>
 internal static class DmpGapRecoveryScanner
 {
-    private static readonly Dictionary<uint, string> NormalSignatures = BuildSignatureMap(reverseBytes: false);
-    private static readonly Dictionary<uint, string> ReversedSignatures = BuildSignatureMap(reverseBytes: true);
+    private static readonly Dictionary<uint, string> NormalSignatures = BuildSignatureMap(false);
+    private static readonly Dictionary<uint, string> ReversedSignatures = BuildSignatureMap(true);
 
     private static readonly string[] DialogueNeedles =
     [
@@ -30,7 +29,10 @@ internal static class DmpGapRecoveryScanner
         "NAM1"
     ];
 
-    /// <summary>Scans the coverage report's unrecognized gaps for validated raw ESM records and RTTI-backed runtime structs, returning the recoverable candidates and summary counts.</summary>
+    /// <summary>
+    ///     Scans the coverage report's unrecognized gaps for validated raw ESM records and RTTI-backed runtime structs,
+    ///     returning the recoverable candidates and summary counts.
+    /// </summary>
     public static DmpGapRecoveryResult Scan(
         AnalysisResult result,
         CoverageResult coverage,

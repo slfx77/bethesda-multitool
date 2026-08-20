@@ -23,8 +23,10 @@ public record CameraPathRecord
     /// <summary>List of camera shot FormIDs (SNAM subrecords on ESM side).</summary>
     public List<uint> CameraShotFormIds { get; init; } = [];
 
-    /// <summary>Number of CTDA conditions in the source record (parser captures this even when
-    /// <see cref="Conditions" /> is empty, e.g. legacy ESM scans that ran before 4.2d).</summary>
+    /// <summary>
+    ///     Number of CTDA conditions in the source record (parser captures this even when
+    ///     <see cref="Conditions" /> is empty, e.g. legacy ESM scans that ran before 4.2d).
+    /// </summary>
     public int ConditionCount { get; init; }
 
     /// <summary>

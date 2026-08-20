@@ -32,7 +32,7 @@ public sealed class WaterHardwareOcclusionSourceContractTests
                      "water_fnv.frag.hlsl",
                      "water_oblivion.frag.hlsl",
                      "water_fo4.frag.hlsl",
-                     "water_morrowind.frag.hlsl",
+                     "water_morrowind.frag.hlsl"
                  ])
         {
             var shader = SourceContract.ReadShaderSource(file);

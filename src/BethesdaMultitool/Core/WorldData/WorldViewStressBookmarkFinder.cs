@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>A candidate camera-focus point for stress profiling, scored by nearby placed-object count.</summary>
 internal readonly record struct WorldViewStressBookmark(Vector2 CanvasCenter, int Score);

@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Collections;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -400,6 +401,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             if (condition()) return true;
             await Task.Delay(100);
         }
+
         return condition();
     }
 

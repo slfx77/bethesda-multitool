@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Shared cell-grid math for new v3 code. The 2D viewer (WorldMapControl + helpers)
@@ -10,10 +10,16 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldGridConstants
 {
-    /// <summary>Width of one exterior cell in world units (Bethesda standard, all 4 builds — verified by ExteriorCellCrossBuildParityTests).</summary>
+    /// <summary>
+    ///     Width of one exterior cell in world units (Bethesda standard, all 4 builds — verified by
+    ///     ExteriorCellCrossBuildParityTests).
+    /// </summary>
     public const float CellSize = 4096f;
 
-    /// <summary>Conservative vertical extent for cell AABB tests — wide enough to contain any cell's terrain + REFR Z range. Tighten when terrain bounds are known.</summary>
+    /// <summary>
+    ///     Conservative vertical extent for cell AABB tests — wide enough to contain any cell's terrain + REFR Z range.
+    ///     Tighten when terrain bounds are known.
+    /// </summary>
     public const float CellMinZ = -32768f;
 
     /// <summary>Conservative vertical extent for cell AABB tests — wide enough to contain any cell's terrain + REFR Z range.</summary>
@@ -28,7 +34,6 @@ internal static class WorldGridConstants
         var minX = gridX * CellSize;
         var minY = gridY * CellSize;
         return (new Vector3(minX, minY, CellMinZ),
-                new Vector3(minX + CellSize, minY + CellSize, CellMaxZ));
+            new Vector3(minX + CellSize, minY + CellSize, CellMaxZ));
     }
-
 }

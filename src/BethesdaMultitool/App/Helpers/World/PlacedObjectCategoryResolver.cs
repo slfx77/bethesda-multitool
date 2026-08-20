@@ -1,9 +1,11 @@
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -150,6 +152,7 @@ internal static class PlacedObjectCategoryResolver
                 ? mp
                 : null;
         }
+
         if (!string.IsNullOrEmpty(modelPath) &&
             !RenderableReference.IsMarkerModelPath(modelPath) &&
             !RenderableReference.IsImposterModelPath(
@@ -437,7 +440,10 @@ internal static class PlacedObjectCategoryResolver
         return !string.IsNullOrEmpty(obj.EditorId) ? obj.EditorId : resolver?.GetEditorId(obj.FormId);
     }
 
-    /// <summary>Returns the best display name for a placed reference, preferring marker name then EditorId then base record name.</summary>
+    /// <summary>
+    ///     Returns the best display name for a placed reference, preferring marker name then EditorId then base record
+    ///     name.
+    /// </summary>
     public static string GetReferenceAwareName(PlacedReference obj, FormIdResolver? resolver)
     {
         if (obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))
@@ -626,4 +632,3 @@ internal static class PlacedObjectCategoryResolver
         });
     }
 }
-

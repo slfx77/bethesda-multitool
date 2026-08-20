@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using BethesdaMultitool.Core.Diagnostics;
 using Spectre.Console;
@@ -27,7 +28,7 @@ internal static class CliResourceStatsReporter
             {
                 DisplayName = r.RunCount > 1
                     ? $"{r.DisplayName} (disposed ×{r.RunCount.ToString("N0", CultureInfo.InvariantCulture)})"
-                    : r.DisplayName + " (disposed)",
+                    : r.DisplayName + " (disposed)"
             }))
             .ToList();
         if (snapshot.Count == 0)
@@ -46,7 +47,8 @@ internal static class CliResourceStatsReporter
         table.AddColumn(new TableColumn("Depth").RightAligned());
         table.AddColumn(new TableColumn("Processed").RightAligned());
 
-        foreach (var row in snapshot.OrderBy(static r => r.Category).ThenBy(static r => r.DisplayName, StringComparer.Ordinal))
+        foreach (var row in snapshot.OrderBy(static r => r.Category)
+                     .ThenBy(static r => r.DisplayName, StringComparer.Ordinal))
         {
             var s = row.Stats;
             var isQueue = row.Category == ResourceCategory.Queue;
@@ -63,7 +65,7 @@ internal static class CliResourceStatsReporter
 
         AnsiConsole.Write(table);
 
-        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        using var process = Process.GetCurrentProcess();
         var gcInfo = GC.GetGCMemoryInfo();
         AnsiConsole.MarkupLine(
             "[grey]Process: WS {0} · GC heap {1} · Gen0/1/2 {2}/{3}/{4} · registered CPU-cache total {5}[/]",
@@ -73,26 +75,30 @@ internal static class CliResourceStatsReporter
             FormatBytes(registry.TotalTrackedBytes(ResourceCategory.CpuCache)));
     }
 
-    internal static string CategoryLabel(ResourceCategory category) => category switch
+    internal static string CategoryLabel(ResourceCategory category)
     {
-        ResourceCategory.CpuCache => "CPU cache",
-        ResourceCategory.GpuResident => "GPU",
-        ResourceCategory.GpuMeta => "GPU meta",
-        ResourceCategory.DiskCache => "Disk cache",
-        ResourceCategory.MappedFile => "Mapped file",
-        ResourceCategory.Queue => "Queue",
-        ResourceCategory.SessionScope => "Session",
-        _ => category.ToString(),
-    };
+        return category switch
+        {
+            ResourceCategory.CpuCache => "CPU cache",
+            ResourceCategory.GpuResident => "GPU",
+            ResourceCategory.GpuMeta => "GPU meta",
+            ResourceCategory.DiskCache => "Disk cache",
+            ResourceCategory.MappedFile => "Mapped file",
+            ResourceCategory.Queue => "Queue",
+            ResourceCategory.SessionScope => "Session",
+            _ => category.ToString()
+        };
+    }
 
     internal static string FormatBytes(long bytes)
     {
         return bytes switch
         {
-            >= 1024L * 1024 * 1024 => (bytes / (1024.0 * 1024 * 1024)).ToString("F2", CultureInfo.InvariantCulture) + " GB",
+            >= 1024L * 1024 * 1024 => (bytes / (1024.0 * 1024 * 1024)).ToString("F2", CultureInfo.InvariantCulture) +
+                                      " GB",
             >= 1024L * 1024 => (bytes / (1024.0 * 1024)).ToString("F1", CultureInfo.InvariantCulture) + " MB",
             >= 1024L => (bytes / 1024.0).ToString("F1", CultureInfo.InvariantCulture) + " KB",
-            _ => bytes.ToString("N0", CultureInfo.InvariantCulture) + " B",
+            _ => bytes.ToString("N0", CultureInfo.InvariantCulture) + " B"
         };
     }
 }

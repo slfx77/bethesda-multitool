@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 using Xunit;
@@ -43,7 +42,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             });
         var listHead = CreateListHead(inlineItem, nodeVa);
 
-        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, maxItems: 3).ToArray();
+        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, 3).ToArray();
 
         Assert.Equal([inlineItem, nodeItem, tailItem], items);
     }
@@ -62,7 +61,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             new MinidumpMemoryRegion { VirtualAddress = nodeVa + 5, Size = 4, FileOffset = 16 });
         var listHead = CreateListHead(inlineItem, nodeVa);
 
-        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, maxItems: 2).ToArray();
+        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, 2).ToArray();
 
         Assert.Equal([inlineItem], items);
     }
@@ -79,7 +78,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             new MinidumpMemoryRegion { VirtualAddress = nodeVa, Size = 8, FileOffset = 8 });
         var listHead = CreateListHead(0, nodeVa);
 
-        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, maxItems: 1).ToArray();
+        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, 1).ToArray();
 
         Assert.Empty(items);
     }
@@ -90,7 +89,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
         var context = CreateContext([]);
 
         var items = context.WalkInlineBSSimpleListItemPointers(
-            new byte[8], int.MaxValue, maxItems: 1).ToArray();
+            new byte[8], int.MaxValue, 1).ToArray();
 
         Assert.Empty(items);
     }
@@ -109,7 +108,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             new MinidumpMemoryRegion { VirtualAddress = nodeVa, Size = 24, FileOffset = 8 });
         var listHead = CreateListHead(0, nodeVa);
 
-        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, maxItems: 3).ToArray();
+        var items = context.WalkInlineBSSimpleListItemPointers(listHead, 0, 3).ToArray();
 
         Assert.Empty(items);
     }
@@ -128,7 +127,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             new MinidumpMemoryRegion { VirtualAddress = selfNodeVa, Size = 8, FileOffset = 8 });
 
         var selfCycleItems = selfCycleContext.WalkInlineBSSimpleListItemPointers(
-            CreateListHead(inlineItem, selfNodeVa), 0, maxItems: 10).ToArray();
+            CreateListHead(inlineItem, selfNodeVa), 0, 10).ToArray();
 
         Assert.Equal([inlineItem, firstNodeItem], selfCycleItems);
 
@@ -141,7 +140,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             new MinidumpMemoryRegion { VirtualAddress = firstNodeVa, Size = 16, FileOffset = 8 });
 
         var twoNodeCycleItems = twoNodeCycleContext.WalkInlineBSSimpleListItemPointers(
-            CreateListHead(inlineItem, firstNodeVa), 0, maxItems: 10).ToArray();
+            CreateListHead(inlineItem, firstNodeVa), 0, 10).ToArray();
 
         Assert.Equal([inlineItem, firstNodeItem, secondNodeItem], twoNodeCycleItems);
     }
@@ -165,7 +164,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             CreateListHead(inlineRejectedItem, nodeVa),
             0,
             pointer => pointer == beyondBudgetItem ? "accepted" : null,
-            maxItems: 2);
+            2);
 
         Assert.Empty(items);
     }
@@ -181,7 +180,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
         var data = new byte[128];
         WriteNode(data, 8, rejectedFormVa, nodeVa + 8);
         WriteNode(data, 16, acceptedFormVa, 0);
-        WriteTesFormHeader(data, 48, formType: 0x28, formId: 0x00654321);
+        WriteTesFormHeader(data, 48, 0x28, 0x00654321);
         WriteTesFormHeader(data, 80, expectedFormType, acceptedFormId);
         var context = CreateContext(
             data,
@@ -194,7 +193,7 @@ public sealed class RuntimeMemoryContextSimpleListTests
             CreateListHead(0, nodeVa),
             0,
             expectedFormType,
-            maxItems: 2);
+            2);
 
         Assert.Empty(formIds);
     }

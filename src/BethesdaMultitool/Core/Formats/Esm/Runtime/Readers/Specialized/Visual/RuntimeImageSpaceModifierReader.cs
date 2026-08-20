@@ -3,7 +3,6 @@ using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Visual;
@@ -31,30 +30,30 @@ internal sealed class RuntimeImageSpaceModifierReader(
     // fields do not exist, so Data and every later own-class field are PDB-8.
     private static readonly RuntimeLayout EarlyLayout = new(
         "ReleaseBeta-0x740",
-        StructSize: 0x740,
-        OwnerShift: -8,
-        DataOffset: 0x28,
-        InterpolatorOffset: 0x11C,
-        ParameterKeyPointerOffset: 0x65C,
-        FirstNamedKeyPointerOffset: 0x704,
-        LastNamedKeyPointerOffset: 0x734,
-        NameOffset: 0x738,
-        OutroSoundOffset: null,
-        IntroSoundOffset: null);
+        0x740,
+        -8,
+        0x28,
+        0x11C,
+        0x65C,
+        0x704,
+        0x734,
+        0x738,
+        null,
+        null);
 
     // Fallout MemDebug August PDB: sizeof(TESImageSpaceModifier)=0x748.
     private static readonly RuntimeLayout FinalPdbLayout = new(
         "MemDebugPdb-0x748",
-        StructSize: 0x748,
-        OwnerShift: 0,
-        DataOffset: 0x30,
-        InterpolatorOffset: 0x124,
-        ParameterKeyPointerOffset: 0x664,
-        FirstNamedKeyPointerOffset: 0x70C,
-        LastNamedKeyPointerOffset: 0x73C,
-        NameOffset: 0x740,
-        OutroSoundOffset: 0x28,
-        IntroSoundOffset: 0x2C);
+        0x748,
+        0,
+        0x30,
+        0x124,
+        0x664,
+        0x70C,
+        0x73C,
+        0x740,
+        0x28,
+        0x2C);
 
     private static readonly Dictionary<string, string> NamedPointerFields =
         new(StringComparer.Ordinal)
@@ -71,7 +70,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
             ["WNAM"] = "pDepthOfFieldStrengthFloatKey",
             ["XNAM"] = "pDepthOfFieldDistanceFloatKey",
             ["YNAM"] = "pDepthOfFieldRangeFloatKey",
-            ["NAM4"] = "pMotionBlurStrengthFloatKey",
+            ["NAM4"] = "pMotionBlurStrengthFloatKey"
         };
 
     private readonly RuntimeMemoryContext _context = context;
@@ -159,7 +158,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
             2 + ImageSpaceModifierCaptureValidator.FrameTableLayouts.Count + 2)
         {
             new("EDID", Encoding.ASCII.GetBytes(entry.EditorId + '\0')),
-            new("DNAM", EncodeCanonicalDnam(data)),
+            new("DNAM", EncodeCanonicalDnam(data))
         };
         var parameterKeys = new IReadOnlyList<ImageSpaceModifierFloatKey>?[21, 2];
         var scalarKeys = new Dictionary<string, IReadOnlyList<ImageSpaceModifierFloatKey>>(
@@ -250,7 +249,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
             OrderedSubrecords = ordered,
             Offset = view.FileOffset,
             IsBigEndian = false,
-            FromRuntime = true,
+            FromRuntime = true
         };
 
         if (!ImageSpaceModifierCaptureValidator.IsCompleteNewCapture(result, out failure))
@@ -452,12 +451,12 @@ internal sealed class RuntimeImageSpaceModifierReader(
         payload[48] = useRadialTarget;
         payload[49] = BitConverter.SingleToUInt32Bits(radialCenterX);
         payload[50] = BitConverter.SingleToUInt32Bits(radialCenterY);
-        payload[54] = (uint)(useDofTarget | dofFlags << 8);
+        payload[54] = (uint)(useDofTarget | (dofFlags << 8));
         data = new ImageSpaceModifierData
         {
             AnimatableFlag = animatable,
             Duration = duration,
-            RawPayload = payload,
+            RawPayload = payload
         };
         return true;
     }

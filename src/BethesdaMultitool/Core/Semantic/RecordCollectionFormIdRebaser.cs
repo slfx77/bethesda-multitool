@@ -12,7 +12,10 @@ internal static class RecordCollectionFormIdRebaser
 {
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> WritablePropertyCache = new();
 
-    /// <summary>Deep-clones a record collection, rewriting every registered FormID-bearing property through <paramref name="mapFormId" />.</summary>
+    /// <summary>
+    ///     Deep-clones a record collection, rewriting every registered FormID-bearing property through
+    ///     <paramref name="mapFormId" />.
+    /// </summary>
     internal static RecordCollection Rebase(RecordCollection records, Func<uint, uint> mapFormId)
     {
         return (RecordCollection)CloneValue(records, nameof(RecordCollection), mapFormId)!;

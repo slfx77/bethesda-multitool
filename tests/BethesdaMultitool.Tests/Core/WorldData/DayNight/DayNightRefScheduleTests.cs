@@ -15,49 +15,49 @@ namespace BethesdaMultitool.Tests.Core.WorldData.DayNight;
 public sealed class DayNightRefScheduleTests
 {
     private const string QuestScript = """
-        scn StreetScript
-        Short LightsOn
-        Begin GameMode
-        If GetCurrentTime < 20.00 && GetCurrentTime > 6.00
-        	If LightsOn == 1
-        		StarterREF.Disable
-        		Set LightsOn to 0
-        	Endif
-        Elseif GetCurrentTime > 20.00 || GetCurrentTime < 6.00
-        	If LightsOn != 1
-        		StarterREF.Enable
-        		Set LightsOn to 1
-        	Endif
-        Endif
-        End
-        """;
+                                       scn StreetScript
+                                       Short LightsOn
+                                       Begin GameMode
+                                       If GetCurrentTime < 20.00 && GetCurrentTime > 6.00
+                                       	If LightsOn == 1
+                                       		StarterREF.Disable
+                                       		Set LightsOn to 0
+                                       	Endif
+                                       Elseif GetCurrentTime > 20.00 || GetCurrentTime < 6.00
+                                       	If LightsOn != 1
+                                       		StarterREF.Enable
+                                       		Set LightsOn to 1
+                                       	Endif
+                                       Endif
+                                       End
+                                       """;
 
     private const string SelfScript = """
-        scn glowdaynight
-        float Time
-        int State
-        begin GameMode
-        	set Time to GetCurrentTime
-        	if (Time > 20 || Time < 6) && State == 0
-        		enable
-        		set State to 1
-        	elseif Time < 20 && Time > 6 && State == 1
-        		disable
-        		set State to 0
-        	endif
-        end
-        """;
+                                      scn glowdaynight
+                                      float Time
+                                      int State
+                                      begin GameMode
+                                      	set Time to GetCurrentTime
+                                      	if (Time > 20 || Time < 6) && State == 0
+                                      		enable
+                                      		set State to 1
+                                      	elseif Time < 20 && Time > 6 && State == 1
+                                      		disable
+                                      		set State to 0
+                                      	endif
+                                      end
+                                      """;
 
     private static DayNightRefSchedule? BuildWorld()
     {
         var scripts = new List<ScriptRecord>
         {
             new() { FormId = 0x100, EditorId = "StreetScript", SourceText = QuestScript },
-            new() { FormId = 0x200, EditorId = "glowdaynight", SourceText = SelfScript },
+            new() { FormId = 0x200, EditorId = "glowdaynight", SourceText = SelfScript }
         };
         var activators = new List<ActivatorRecord>
         {
-            new() { FormId = 0x300, EditorId = "GlowFxBase", Script = 0x200 },
+            new() { FormId = 0x300, EditorId = "GlowFxBase", Script = 0x200 }
         };
         var cell = new CellRecord
         {
@@ -72,15 +72,15 @@ public sealed class DayNightRefScheduleTests
                 new PlacedReference
                 {
                     FormId = 0x1002, BaseFormId = 0x9991,
-                    EnableParentFormId = 0x1000, EnableParentFlags = 0x01,
+                    EnableParentFormId = 0x1000, EnableParentFlags = 0x01
                 },
                 // A two-hop chain: child -> mid -> starter.
                 new PlacedReference { FormId = 0x1003, BaseFormId = 0x9991, EnableParentFormId = 0x1001 },
                 // Two self-toggling glow instances, one with a linked ref.
                 new PlacedReference { FormId = 0x2000, BaseFormId = 0x300 },
                 new PlacedReference { FormId = 0x2001, BaseFormId = 0x300, LinkedRefFormId = 0x2002 },
-                new PlacedReference { FormId = 0x2002, BaseFormId = 0x9992 },
-            },
+                new PlacedReference { FormId = 0x2002, BaseFormId = 0x9992 }
+            }
         };
 
         return DayNightRefSchedule.Build(scripts, [cell], activators, []);
@@ -127,9 +127,9 @@ public sealed class DayNightRefScheduleTests
         var noonVersion = store.Version;
         Assert.True(noonVersion > 0);
         Assert.True(store.TryGetDisabled(0x1000, out var noonDisabled) && noonDisabled);
-        Assert.True(store.EffectiveDisabled(0x1000, authoredDisabled: false));
+        Assert.True(store.EffectiveDisabled(0x1000, false));
         // Ungated refs fall through to their authored state.
-        Assert.False(store.EffectiveDisabled(0x9990, authoredDisabled: false));
+        Assert.False(store.EffectiveDisabled(0x9990, false));
 
         // Re-applying within the same 3-minute slot is a no-op.
         store.Apply(schedule, 12.001f);

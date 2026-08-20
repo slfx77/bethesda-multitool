@@ -1,15 +1,13 @@
 using System.Collections.Immutable;
-using System.Globalization;
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
-using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Core.Vfs;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Dmp;
@@ -323,7 +321,7 @@ public static class DmpToEsmCommand
         // (inside PluginConversionPipeline) and the pack phase index the same Data folders back-to-back, and
         // without this scope the registry's dispose-at-zero would re-parse every archive between
         // them. Handles release when the command finishes.
-        using var warmArchives = Core.Vfs.ArchiveHandleRegistry.Shared.KeepWarm();
+        using var warmArchives = ArchiveHandleRegistry.Shared.KeepWarm();
 
         // v22 asset-rename: when any secondary data folder is supplied, also feed the
         // PluginConversionPipeline so it can rewrite record paths in-place to match unified asset
@@ -405,7 +403,7 @@ public static class DmpToEsmCommand
                 diagnosticRetainMasterSubrecords.OrderBy(pair => pair.Key).Select(pair =>
                     $"0x{pair.Key:X8}:{string.Join(",", pair.Value.Order(StringComparer.Ordinal))}"));
             AnsiConsole.MarkupLine(
-                $"[yellow]Master-subrecord diagnostics:[/] " +
+                "[yellow]Master-subrecord diagnostics:[/] " +
                 Markup.Escape(retentionSummary));
         }
 
@@ -421,7 +419,8 @@ public static class DmpToEsmCommand
 
         if (!recoverLeveledSpawns)
         {
-            AnsiConsole.MarkupLine("[yellow]Leveled-spawn recovery:[/] disabled via --no-recover-leveled-spawns (bare-master baseline)");
+            AnsiConsole.MarkupLine(
+                "[yellow]Leveled-spawn recovery:[/] disabled via --no-recover-leveled-spawns (bare-master baseline)");
         }
 
         var inputs = new DmpToEsmInputs
@@ -502,7 +501,7 @@ public static class DmpToEsmCommand
                          {
                              observation.XespEmitted,
                              observation.ParentStatus,
-                             observation.Reason,
+                             observation.Reason
                          })
                          .OrderBy(group => group.Key.XespEmitted)
                          .ThenBy(group => group.Key.ParentStatus)
@@ -513,6 +512,7 @@ public static class DmpToEsmCommand
                              $"parents={FormatXespParentPreview(group)}";
                 AnsiConsole.MarkupLine(Markup.Escape(detail));
             }
+
             if (s.RecoverableGapCandidates > 0 || s.PromotedGapRawRecords > 0 ||
                 s.PromotedGapRuntimeDialogue > 0 || s.PromotedGapPlacedRefs > 0)
             {
@@ -522,6 +522,7 @@ public static class DmpToEsmCommand
                     $"dialogue={s.PromotedGapRuntimeDialogue:N0}, " +
                     $"placed refs={s.PromotedGapPlacedRefs:N0}, audit/skipped={s.SkippedGapCandidates:N0}");
             }
+
             AnsiConsole.MarkupLine($"  Output: {s.OutputBytes:N0} bytes in {s.Elapsed.TotalSeconds:F2}s");
 
             var leveledRecovered = s.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered");
@@ -629,13 +630,15 @@ public static class DmpToEsmCommand
             {
                 continue;
             }
+
             var s = raw.Trim();
             if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
             {
                 s = s[2..];
             }
-            if (uint.TryParse(s, System.Globalization.NumberStyles.HexNumber,
-                System.Globalization.CultureInfo.InvariantCulture, out var fid))
+
+            if (uint.TryParse(s, NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture, out var fid))
             {
                 set.Add(fid);
             }
@@ -644,6 +647,7 @@ public static class DmpToEsmCommand
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] could not parse FormID '{Markup.Escape(raw)}', skipping.");
             }
         }
+
         return set;
     }
 
@@ -687,7 +691,7 @@ public static class DmpToEsmCommand
             }
 
             var formId = ParseDiagnosticFormId(raw[..colon]);
-            var signatureTokens = raw[(colon + 1)..].Split(',', StringSplitOptions.None);
+            var signatureTokens = raw[(colon + 1)..].Split(',');
             if (!byFormId.TryGetValue(formId, out var signatures))
             {
                 signatures = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
@@ -699,8 +703,8 @@ public static class DmpToEsmCommand
                 var signature = token.Trim().ToUpperInvariant();
                 if (signature.Length != 4 || signature.Any(static character =>
                         character is not (>= 'A' and <= 'Z')
-                        and not (>= '0' and <= '9')
-                        and not '_'))
+                            and not (>= '0' and <= '9')
+                            and not '_'))
                 {
                     throw new FormatException(
                         $"Invalid subrecord signature '{token}' for 0x{formId:X8}; " +
@@ -768,7 +772,7 @@ public static class DmpToEsmCommand
         string[] secondaryDataFolders,
         string[] secondaryDataFolders360)
     {
-        return BuildSecondaryFolders(secondaryDataFolders, secondaryDataFolders360, warnMissing: false);
+        return BuildSecondaryFolders(secondaryDataFolders, secondaryDataFolders360, false);
     }
 
     private static List<SecondaryDataFolder> BuildSecondaryFolders(
@@ -846,7 +850,7 @@ public static class DmpToEsmCommand
             return;
         }
 
-        var secondaries = BuildSecondaryFolders(secondaryDataFolders, secondaryDataFolders360, warnMissing: true);
+        var secondaries = BuildSecondaryFolders(secondaryDataFolders, secondaryDataFolders360, true);
 
         if (secondaries.Count == 0)
         {

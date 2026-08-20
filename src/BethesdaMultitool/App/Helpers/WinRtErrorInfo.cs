@@ -65,7 +65,7 @@ internal static class WinRtErrorInfo
             foreach (var key in new[] { "RestrictedDescription", "RestrictedErrorReference" })
             {
                 if (ex.Data.Contains(key) && ex.Data[key] is string value
-                    && !string.IsNullOrWhiteSpace(value))
+                                          && !string.IsNullOrWhiteSpace(value))
                 {
                     return value.Trim();
                 }

@@ -9,7 +9,7 @@ using BethesdaMultitool.Core.Formats.Tes3;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 
-namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
+namespace BethesdaMultitool.Tests.Core.Formats.Esm.Tes3;
 
 /// <summary>
 ///     Fixture-free tests for the Morrowind (TES3) subrecord framing + decoder. Byte buffers are

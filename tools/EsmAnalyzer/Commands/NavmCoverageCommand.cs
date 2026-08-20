@@ -1,6 +1,5 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -61,8 +60,8 @@ internal static class NavmCoverageCommand
         var emptyRawSubs = nm.Count - hasRawSubs;
         var hasVerts = nm.Count(n => n.VertexCount > 0);
         var emptyRawButHasVerts = nm.Count(n => n.RawSubrecords.Count == 0 && n.VertexCount > 0);
-        var totalVerts = nm.Sum(n => (long)n.VertexCount);
-        var totalTris = nm.Sum(n => (long)n.TriangleCount);
+        var totalVerts = nm.Sum(n => n.VertexCount);
+        var totalTris = nm.Sum(n => n.TriangleCount);
 
         // Cross-check runtime editor-id map: the BSTHashMap<BSFixedString, TESForm*> is
         // STRING-keyed. NAVMs typically have no editor-id, so they likely never appear here
@@ -87,14 +86,14 @@ internal static class NavmCoverageCommand
         AnsiConsole.MarkupLine($"  With non-empty EditorId:    {parsedWithEditorId:N0}");
         AnsiConsole.MarkupLine($"  Total VertexCount across all NAVMs:   {totalVerts:N0}");
         AnsiConsole.MarkupLine($"  Total TriangleCount across all NAVMs: {totalTris:N0}");
-        AnsiConsole.MarkupLine($"  [grey]---[/]");
+        AnsiConsole.MarkupLine("  [grey]---[/]");
         AnsiConsole.MarkupLine($"  Cells in DMP:               {cellCount:N0} ({exteriorCellCount:N0} exterior)");
         AnsiConsole.MarkupLine($"  Runtime editor-id entries with FormType 0x43:  " +
                                $"[bold]{runtimeNavmEntries:N0}[/]");
         AnsiConsole.MarkupLine(runtimeNavmEntries == 0
             ? "  [red]The editor-id hash table contains ZERO NAVM entries.[/] " +
               "MergeRuntimeRecords has no input — runtime NAVMs are invisible."
-            : $"  [yellow]Discovery path uses string-keyed editor-id map; NAVMs without " +
+            : "  [yellow]Discovery path uses string-keyed editor-id map; NAVMs without " +
               "editor IDs cannot be added even when their BSNavMesh structs exist in memory.[/]");
 
         if (emptyRawButHasVerts > 0)

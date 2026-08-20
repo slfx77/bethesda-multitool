@@ -23,7 +23,7 @@ public sealed class PlannedGlobEncoder : IPlannedRecordEncoder<GlobalRecord>
             RecordDisposition.New => GlobEncoder.EncodeNew(model),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedGlobEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedGlobEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

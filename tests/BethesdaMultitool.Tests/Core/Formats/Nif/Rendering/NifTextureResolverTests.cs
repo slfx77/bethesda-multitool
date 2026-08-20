@@ -4,9 +4,9 @@ using System.Text;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -52,9 +52,9 @@ public sealed class NifTextureResolverTests
         [
             new GpuTextureCache12.AliasTraceEntry(
                 GpuTextureCache12.NormalizeCacheKey(archiveRelative),
-                IsResident: true,
-                ResidentPayloadBytes: 4_096,
-                AliasTrace: aliases)
+                true,
+                4_096,
+                aliases)
         ]);
         Assert.Empty(spellingOnlySummary.Groups);
         Assert.Equal(0, spellingOnlySummary.LegacyExtraKeys);
@@ -80,19 +80,19 @@ public sealed class NifTextureResolverTests
         [
             new GpuTextureCache12.AliasTraceEntry(
                 residentKey,
-                IsResident: true,
-                ResidentPayloadBytes: 4_096,
-                AliasTrace: residentAliases),
+                true,
+                4_096,
+                residentAliases),
             new GpuTextureCache12.AliasTraceEntry(
                 pendingKey,
-                IsResident: false,
-                ResidentPayloadBytes: 8_192,
-                AliasTrace: pendingAliases),
+                false,
+                8_192,
+                pendingAliases),
             new GpuTextureCache12.AliasTraceEntry(
                 @"textures\architecture\single_d.dds",
-                IsResident: true,
-                ResidentPayloadBytes: 2_048,
-                AliasTrace: new GpuTextureCache12.LegacyAliasTrace(
+                true,
+                2_048,
+                new GpuTextureCache12.LegacyAliasTrace(
                     @"textures\Architecture\Single_d.dds"))
         ]);
 
@@ -124,9 +124,9 @@ public sealed class NifTextureResolverTests
         [
             new GpuTextureCache12.AliasTraceEntry(
                 canonicalKey,
-                IsResident: true,
-                ResidentPayloadBytes: 4_096,
-                AliasTrace: replacementLifetime)
+                true,
+                4_096,
+                replacementLifetime)
         ]);
 
         Assert.Empty(summary.Groups);
@@ -141,9 +141,9 @@ public sealed class NifTextureResolverTests
         [
             new GpuTextureCache12.AliasTraceEntry(
                 @"textures\architecture\single_d.dds",
-                IsResident: true,
-                ResidentPayloadBytes: 2_048,
-                AliasTrace: null)
+                true,
+                2_048,
+                null)
         ]);
 
         Assert.Equal(1, summary.ResidentEntries);

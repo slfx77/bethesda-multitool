@@ -60,7 +60,7 @@ public sealed class SpeedTreeLiveWindRigSeamTests
         var rig = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.FalloutNewVegas };
         var clock = SettleLiveRig(rig);
 
-        rig.Tick(0f, 0f);                            // what SetWind(dir, 0f, 0f) did to the live rig
+        rig.Tick(0f, 0f); // what SetWind(dir, 0f, 0f) did to the live rig
         rig.Tick(ClearWeatherStrength, clock + FrameSeconds); // the next live frame
 
         Assert.Equal(rig.WindMatrix(0), rig.WindMatrix(1));

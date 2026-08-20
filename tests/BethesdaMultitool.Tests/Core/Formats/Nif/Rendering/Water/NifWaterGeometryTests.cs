@@ -1,7 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

@@ -19,7 +19,7 @@ public sealed class PlanReferenceLookup
     private readonly EmitPlan? _plan;
 
     public PlanReferenceLookup(RecordPlan record)
-        : this(record, plan: null)
+        : this(record, null)
     {
     }
 
@@ -74,18 +74,22 @@ public sealed class PlanReferenceLookup
                 $"Encoder requested resolution for {fieldPath} but the walker did not produce one.");
 
     /// <summary>Non-throwing variant. Returns true when present.</summary>
-    public bool TryGet(string fieldPath, out ResolvedRef resolved) =>
-        _byPath.TryGetValue(fieldPath, out resolved!);
+    public bool TryGet(string fieldPath, out ResolvedRef resolved)
+    {
+        return _byPath.TryGetValue(fieldPath, out resolved!);
+    }
 
     /// <summary>
     ///     Convenience: returns the final FormID when <see cref="ResolvedRefAction.Resolved" />,
     ///     otherwise null. Encoders use this for "emit this FormID OR drop the subrecord" sites.
     /// </summary>
-    public uint? GetResolvedOrNull(string fieldPath) =>
-        _byPath.TryGetValue(fieldPath, out var resolved)
-            && resolved.Action == ResolvedRefAction.Resolved
+    public uint? GetResolvedOrNull(string fieldPath)
+    {
+        return _byPath.TryGetValue(fieldPath, out var resolved)
+               && resolved.Action == ResolvedRefAction.Resolved
             ? resolved.FinalFormId
             : null;
+    }
 
     /// <summary>
     ///     True when any reference with FieldPath starting with <paramref name="signature" />

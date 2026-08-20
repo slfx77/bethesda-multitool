@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>A validated inclusive exterior-cell rectangle for 2D map export.</summary>
 internal readonly record struct WorldMapExportGridBounds(
@@ -93,17 +93,20 @@ internal sealed record WorldMapExportPlan(
             error = "the export grid must contain at least one cell";
             return false;
         }
+
         if (pixelsPerCell < 1 || cellsPerTile < 1 || maxTileDimension < 1)
         {
             error = "pixel and tile dimensions must be positive";
             return false;
         }
+
         if (!float.IsFinite(cellWorldSize) || cellWorldSize <= 0f)
         {
             error = "cell world size must be finite and positive";
             return false;
         }
-        var pixelsPerWorldUnit = (float)pixelsPerCell / cellWorldSize;
+
+        var pixelsPerWorldUnit = pixelsPerCell / cellWorldSize;
         if (!float.IsFinite(pixelsPerWorldUnit) || pixelsPerWorldUnit <= 0f)
         {
             error = "the pixel-to-world scale must be finite and positive";
@@ -214,15 +217,15 @@ internal sealed record WorldMapExportPlan(
         int pixelsPerCell)
     {
         var maxAbsGridEdge = Math.Max(
-            Math.Max(Math.Abs((long)grid.MinGridX), Math.Abs((long)grid.MaxGridX + 1L)),
-            Math.Max(Math.Abs((long)grid.MinGridY), Math.Abs((long)grid.MaxGridY + 1L)));
+            Math.Max(Math.Abs((long)grid.MinGridX), Math.Abs(grid.MaxGridX + 1L)),
+            Math.Max(Math.Abs((long)grid.MinGridY), Math.Abs(grid.MaxGridY + 1L)));
         return maxAbsGridEdge <= MaxSafeProjectedGridMagnitude / pixelsPerCell;
     }
 
     private static bool HasRepresentableCellSpan(int gridCoordinate, float cellWorldSize)
     {
-        return TryConvertGridEdge(gridCoordinate, upperEdge: false, cellWorldSize, out var min) &&
-               TryConvertGridEdge(gridCoordinate, upperEdge: true, cellWorldSize, out var max) &&
+        return TryConvertGridEdge(gridCoordinate, false, cellWorldSize, out var min) &&
+               TryConvertGridEdge(gridCoordinate, true, cellWorldSize, out var max) &&
                max > min;
     }
 
@@ -237,10 +240,10 @@ internal sealed record WorldMapExportPlan(
         bounds = default;
         if (maxGridX < minGridX || maxGridY < minGridY ||
             !float.IsFinite(cellWorldSize) || cellWorldSize <= 0f ||
-            !TryConvertGridEdge(minGridX, upperEdge: false, cellWorldSize, out var minX) ||
-            !TryConvertGridEdge(maxGridX, upperEdge: true, cellWorldSize, out var maxX) ||
-            !TryConvertGridEdge(minGridY, upperEdge: false, cellWorldSize, out var minY) ||
-            !TryConvertGridEdge(maxGridY, upperEdge: true, cellWorldSize, out var maxY) ||
+            !TryConvertGridEdge(minGridX, false, cellWorldSize, out var minX) ||
+            !TryConvertGridEdge(maxGridX, true, cellWorldSize, out var maxX) ||
+            !TryConvertGridEdge(minGridY, false, cellWorldSize, out var minY) ||
+            !TryConvertGridEdge(maxGridY, true, cellWorldSize, out var maxY) ||
             maxX <= minX || maxY <= minY)
         {
             return false;
@@ -256,7 +259,7 @@ internal sealed record WorldMapExportPlan(
         float cellWorldSize,
         out float worldCoordinate)
     {
-        var gridEdge = (double)gridCoordinate + (upperEdge ? 1d : 0d);
+        var gridEdge = gridCoordinate + (upperEdge ? 1d : 0d);
         var worldEdge = gridEdge * cellWorldSize;
         if (!double.IsFinite(worldEdge) || worldEdge < -float.MaxValue || worldEdge > float.MaxValue)
         {

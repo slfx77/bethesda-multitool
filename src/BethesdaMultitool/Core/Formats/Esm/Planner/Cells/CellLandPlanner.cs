@@ -13,7 +13,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 public enum CellLandHeightSource
 {
     CapturedHeightmap,
-    CompleteRuntimeMesh,
+    CompleteRuntimeMesh
 }
 
 /// <summary>The immutable terrain payload selected for one exterior cell's LAND emission.</summary>
@@ -72,7 +72,7 @@ public static class CellLandPlanner
                 ? entry.MasterContext?.WorldspaceFormId is not null || cell.WorldspaceFormId.HasValue
                 : cell.WorldspaceFormId.HasValue;
             if (isInterior || !hasWorldspace
-                || (isOverride && entry.MasterContext?.IsPersistentCellContainer == true))
+                           || (isOverride && entry.MasterContext?.IsPersistentCellContainer == true))
             {
                 continue;
             }
@@ -102,7 +102,7 @@ public static class CellLandPlanner
                         RecordType = "CELL",
                         FormId = cell.FormId,
                         Message = $"Skipped captured LAND for {cellKind} CELL 0x{cell.FormId:X8}: source parent was "
-                                  + FormatParent(capturedHeightmap.SourceParentCellFormId) + ".",
+                                  + FormatParent(capturedHeightmap.SourceParentCellFormId) + "."
                     });
                 }
             }
@@ -130,13 +130,13 @@ public static class CellLandPlanner
                         // absent, reconstruct only with the base-height provenance carried by
                         // the mesh itself; an unavailable base fails closed below.
                         heightmap = cell.Heightmap is
-                            {
-                                ExactHeights: not null,
-                                SourceParentCellFormId: var heightmapParent,
-                            } enrichedRuntimeHeightmap
-                            && heightmapParent == cell.FormId
-                                ? enrichedRuntimeHeightmap
-                                : runtimeMesh.ToLandHeightmap(runtimeMesh.RuntimeBaseHeight!.Value);
+                                    {
+                                        ExactHeights: not null,
+                                        SourceParentCellFormId: var heightmapParent
+                                    } enrichedRuntimeHeightmap
+                                    && heightmapParent == cell.FormId
+                            ? enrichedRuntimeHeightmap
+                            : runtimeMesh.ToLandHeightmap(runtimeMesh.RuntimeBaseHeight!.Value);
                         source = CellLandHeightSource.CompleteRuntimeMesh;
                     }
                     catch (InvalidOperationException)
@@ -156,18 +156,19 @@ public static class CellLandPlanner
                     {
                         skipCode = "land.runtime-mesh-parent-mismatch";
                         skipMessage = $"Skipped runtime LAND for {cellKind} CELL 0x{cell.FormId:X8}: source parent was "
-                            + FormatParent(runtimeMesh.SourceParentCellFormId) + ".";
+                                      + FormatParent(runtimeMesh.SourceParentCellFormId) + ".";
                     }
                     else if (baseHeightMissing)
                     {
                         skipCode = "land.runtime-base-height-missing";
                         skipMessage = $"Skipped runtime LAND for {cellKind} CELL 0x{cell.FormId:X8}: "
-                            + "LoadedLandData base-height provenance was unavailable.";
+                                      + "LoadedLandData base-height provenance was unavailable.";
                     }
                     else
                     {
                         skipCode = "land.runtime-mesh-not-complete";
-                        skipMessage = $"Skipped LAND for {cellKind} CELL 0x{cell.FormId:X8}: runtime terrain source coverage was "
+                        skipMessage =
+                            $"Skipped LAND for {cellKind} CELL 0x{cell.FormId:X8}: runtime terrain source coverage was "
                             + $"{quality.SourceSampleCount} accepted samples "
                             + $"({quality.SourceCoveragePercent:F1}%, {quality.Classification}).";
                     }
@@ -179,7 +180,7 @@ public static class CellLandPlanner
                         Code = skipCode,
                         RecordType = "CELL",
                         FormId = cell.FormId,
-                        Message = skipMessage,
+                        Message = skipMessage
                     });
                 }
             }
@@ -215,7 +216,7 @@ public static class CellLandPlanner
                     RecordType = "CELL",
                     FormId = cell.FormId,
                     Message = $"Rejected effectively-flat captured LAND for master CELL 0x{entry.CellFormId:X8}; "
-                              + "master terrain retained.",
+                              + "master terrain retained."
                 });
                 continue; // Writer keeps master LAND verbatim via the carry-forward fallback.
             }
@@ -238,7 +239,7 @@ public static class CellLandPlanner
                     RecordType = "CELL",
                     FormId = cell.FormId,
                     Message = $"Dropped LAND visual data for {cellKind} CELL 0x{cell.FormId:X8}: source parent was "
-                              + FormatParent(visualData.SourceParentCellFormId) + ".",
+                              + FormatParent(visualData.SourceParentCellFormId) + "."
                 });
                 visualData = null;
             }
@@ -248,21 +249,23 @@ public static class CellLandPlanner
                 CellSourceFormId = cell.FormId,
                 Heightmap = heightmap,
                 VisualData = LandVisualData.MergeForEmission(
-                    visualData, runtimeVertexColors, fallback: masterVisualData),
+                    visualData, runtimeVertexColors, masterVisualData),
                 HeightSource = source,
-                MasterLandFormId = masterLandFormId,
+                MasterLandFormId = masterLandFormId
             };
         }
 
         return new CellLandPlanningResult
         {
             DecisionsByCellSourceFormId = decisions.ToImmutable(),
-            Diagnostics = diagnostics.ToImmutable(),
+            Diagnostics = diagnostics.ToImmutable()
         };
     }
 
-    private static bool IsUsable(LandHeightmap? heightmap) =>
-        heightmap?.HeightDeltas is { Length: LandVertexCount };
+    private static bool IsUsable(LandHeightmap? heightmap)
+    {
+        return heightmap?.HeightDeltas is { Length: LandVertexCount };
+    }
 
     private static bool HasCompleteRuntimeSource(RuntimeTerrainMesh mesh, TerrainMeshDiagnostic quality)
     {
@@ -430,7 +433,7 @@ public static class CellLandPlanner
         var gridX = (int)MathF.Round((x - reconstruction.MinX) / spacingX);
         var gridY = (int)MathF.Round((y - reconstruction.MinY) / spacingY);
         if (gridX < 0 || gridX >= reconstruction.SourceGridSize
-            || gridY < 0 || gridY >= reconstruction.SourceGridSize)
+                      || gridY < 0 || gridY >= reconstruction.SourceGridSize)
         {
             return null;
         }
@@ -470,7 +473,7 @@ public static class CellLandPlanner
                 var dataSize = recordBytes.Length - 24;
                 var data = new byte[dataSize];
                 Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
-                result = LandSubrecordParser.Parse(data, dataSize, isBigEndian: false);
+                result = LandSubrecordParser.Parse(data, dataSize, false);
             }
         }
 
@@ -478,8 +481,10 @@ public static class CellLandPlanner
         return result;
     }
 
-    private static string FormatParent(uint? formId) =>
-        formId.HasValue ? $"0x{formId.Value:X8}" : "unknown";
+    private static string FormatParent(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : "unknown";
+    }
 }
 
 public sealed record CellLandPlanningResult

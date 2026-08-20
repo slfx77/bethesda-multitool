@@ -219,6 +219,8 @@ internal sealed class OblivionDialogueExtractor : IDialogueExtractor
         return flags;
     }
 
-    private static string? ReadString(byte[] data) =>
-        data.Length == 0 ? null : EsmStringUtils.ReadNullTermString(data);
+    private static string? ReadString(byte[] data)
+    {
+        return data.Length == 0 ? null : EsmStringUtils.ReadNullTermString(data);
+    }
 }

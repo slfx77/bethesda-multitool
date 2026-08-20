@@ -45,7 +45,8 @@ internal sealed class QuestProfile : IRecordProfile
                 RecordDetailHelpers.Scalar("Name", displayName ?? "(none)"),
                 RecordDetailHelpers.Scalar("Priority", ((byte)(Int(ChildByLabel(data, "Priority")) ?? 0)).ToString()),
                 RecordDetailHelpers.Scalar("Flags", $"0x{(byte)(Int(ChildByLabel(data, "Flags")) ?? 0):X2}"),
-                RecordDetailHelpers.Scalar("Quest Delay", (Float(ChildByLabel(data, "Quest Delay")) ?? 0f).ToString("F2")),
+                RecordDetailHelpers.Scalar("Quest Delay",
+                    (Float(ChildByLabel(data, "Quest Delay")) ?? 0f).ToString("F2")),
                 RecordDetailHelpers.Link("Script", KeepZero(TopBySignature(tree, "SCRI")), resolver)
             ]),
             RecordDetailHelpers.ListSection("Objectives", ReadObjectives(tree)
@@ -128,5 +129,8 @@ internal sealed class QuestProfile : IRecordProfile
         return stages;
     }
 
-    private static uint? KeepZero(DecodedNode? node) => node?.RawValue as uint?;
+    private static uint? KeepZero(DecodedNode? node)
+    {
+        return node?.RawValue as uint?;
+    }
 }

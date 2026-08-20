@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
 using BethesdaMultitool.Core.Minidump;
@@ -21,7 +20,7 @@ public sealed class RuntimeDialogueConditionReaderTests
     [Fact]
     public void ReadConditions_UseGlobal_ResolvesGlobalFormIdWithoutInferringSpeaker()
     {
-        var buffer = BuildConditionDump(type: 0x24, comparisonValue: 0f);
+        var buffer = BuildConditionDump(0x24, 0f);
         SyntheticStructFactory.WriteFormHeader(buffer, GlobalOffset, 0x06, GlobalFormId);
         BinaryTestWriter.WriteUInt32BE(buffer, ConditionOffset + 4, HeapVa + GlobalOffset);
 
@@ -36,7 +35,7 @@ public sealed class RuntimeDialogueConditionReaderTests
     [Fact]
     public void ReadConditions_LiteralPositiveGetIsId_StillInfersSpeaker()
     {
-        var buffer = BuildConditionDump(type: 0x00, comparisonValue: 1f);
+        var buffer = BuildConditionDump(0x00, 1f);
 
         var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0);
 
@@ -48,7 +47,7 @@ public sealed class RuntimeDialogueConditionReaderTests
     [Fact]
     public void ReadConditions_UseGlobal_RejectsWrongTypedPointerTarget()
     {
-        var buffer = BuildConditionDump(type: 0x04, comparisonValue: 0f);
+        var buffer = BuildConditionDump(0x04, 0f);
         BinaryTestWriter.WriteUInt32BE(buffer, ConditionOffset + 4, HeapVa + SpeakerOffset);
 
         var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0);
@@ -60,7 +59,7 @@ public sealed class RuntimeDialogueConditionReaderTests
     [Fact]
     public void ReadConditions_SemanticReference_ResolvesRuntimePointer()
     {
-        var buffer = BuildConditionDump(0, 1f, functionIndex: 1, runOn: 2, referencePtr: HeapVa + ReferenceOffset);
+        var buffer = BuildConditionDump(0, 1f, 1, 2, HeapVa + ReferenceOffset);
         SyntheticStructFactory.WriteFormHeader(buffer, ReferenceOffset, 0x3B, ReferenceFormId);
 
         var condition = Assert.Single(
@@ -92,7 +91,7 @@ public sealed class RuntimeDialogueConditionReaderTests
     [Fact]
     public void ReadConditions_RawIndexAtOpcodeBase_DoesNotResolveThroughScriptTable()
     {
-        var buffer = BuildConditionDump(0, 1f, functionIndex: 0x1001);
+        var buffer = BuildConditionDump(0, 1f, 0x1001);
 
         var condition = Assert.Single(
             new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0).Conditions);
@@ -106,7 +105,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         // GetActorValue's parameter is an enum code, never a TESForm pointer. A pointer-shaped
         // adversarial value makes the old misclassification observable: following it would yield
         // SpeakerFormId from the synthetic target instead of preserving the raw storage.
-        var buffer = BuildConditionDump(0, 1f, functionIndex: 0x000E);
+        var buffer = BuildConditionDump(0, 1f, 0x000E);
 
         var condition = Assert.Single(
             new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0).Conditions);

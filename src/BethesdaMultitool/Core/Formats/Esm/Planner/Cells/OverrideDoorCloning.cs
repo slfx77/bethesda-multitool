@@ -34,9 +34,11 @@ public static class OverrideDoorCloning
         IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
         IReadOnlyDictionary<uint, uint>? masterRefToCell,
-        FormIdAllocator allocator) =>
-        Apply(cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator,
+        FormIdAllocator allocator)
+    {
+        return Apply(cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator,
             out _, out _);
+    }
 
     public static ImmutableDictionary<uint, CellPlan> Apply(
         ImmutableDictionary<uint, CellPlan> cells,
@@ -105,7 +107,7 @@ public static class OverrideDoorCloning
             {
                 PersistentChildren = persistent,
                 TemporaryChildren = temporary,
-                VwdChildren = vwd,
+                VwdChildren = vwd
             };
         }
 
@@ -159,8 +161,8 @@ public static class OverrideDoorCloning
                     PolicyId = ClonePolicyId,
                     Reason = "Master door re-placed by the proto in a new-worldspace cell; "
                              + "cloned as NEW with the captured placement + teleport preserved "
-                             + $"(master REFR 0x{child.FormId:X8}, base 0x{placed.BaseFormId:X8}).",
-                },
+                             + $"(master REFR 0x{child.FormId:X8}, base 0x{placed.BaseFormId:X8})."
+                }
             });
             mutated = true;
         }
@@ -210,9 +212,11 @@ public static class OverrideDoorCloning
 
     private static bool IsDoorBase(
         uint baseFormId,
-        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId) =>
-        masterRecordsByFormId.TryGetValue(baseFormId, out var baseRecord)
-        && baseRecord.Header.Signature == "DOOR";
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+    {
+        return masterRecordsByFormId.TryGetValue(baseFormId, out var baseRecord)
+               && baseRecord.Header.Signature == "DOOR";
+    }
 
     /// <summary>
     ///     True when master places the same door REFR in the SAME worldspace within 1 unit
@@ -242,6 +246,6 @@ public static class OverrideDoorCloning
         var dx = placed.X - masterPosition.X;
         var dy = placed.Y - masterPosition.Y;
         var dz = placed.Z - masterPosition.Z;
-        return (dx * dx) + (dy * dy) + (dz * dz) <= OverlapDistanceSquared;
+        return dx * dx + dy * dy + dz * dz <= OverlapDistanceSquared;
     }
 }

@@ -80,8 +80,10 @@ internal static class AssetPackAuditWriter
     }
 
     private static bool IsVoicePath(string path)
-        => path.StartsWith("sound\\voice\\", StringComparison.OrdinalIgnoreCase)
-           || path.StartsWith("sound/voice/", StringComparison.OrdinalIgnoreCase);
+    {
+        return path.StartsWith("sound\\voice\\", StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith("sound/voice/", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string PathStem(string path)
     {

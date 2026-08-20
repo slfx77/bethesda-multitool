@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     One shared placement index over every cell's <see cref="CellRecord.PlacedObjects" />
@@ -16,15 +16,20 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed class PlacedRefIndex
 {
+    private readonly Dictionary<uint, Entry> _byId;
+
+    private PlacedRefIndex(Dictionary<uint, Entry> byId)
+    {
+        _byId = byId;
+    }
+
     /// <summary>An index with no placements — the save-only load path, which has no ESM cells.</summary>
     public static PlacedRefIndex Empty { get; } = new([]);
 
-    /// <summary>A placement and the cell whose <c>PlacedObjects</c> list carries it.</summary>
-    public readonly record struct Entry(PlacedReference Ref, CellRecord Cell);
+    public int Count => _byId.Count;
 
-    private readonly Dictionary<uint, Entry> _byId;
-
-    private PlacedRefIndex(Dictionary<uint, Entry> byId) => _byId = byId;
+    /// <summary>All indexed placements, for consumers that used to re-scan every cell.</summary>
+    public Dictionary<uint, Entry>.ValueCollection Entries => _byId.Values;
 
     /// <summary>
     ///     Single pass over all cells, first placement wins per FormID (the shared semantics every
@@ -53,9 +58,10 @@ public sealed class PlacedRefIndex
         return new PlacedRefIndex(byId);
     }
 
-    public int Count => _byId.Count;
-
-    public bool TryGetEntry(uint formId, out Entry entry) => _byId.TryGetValue(formId, out entry);
+    public bool TryGetEntry(uint formId, out Entry entry)
+    {
+        return _byId.TryGetValue(formId, out entry);
+    }
 
     /// <summary>The parent cell of a placement (the old ref→cell reverse index).</summary>
     public bool TryGetCell(uint formId, [NotNullWhen(true)] out CellRecord? cell)
@@ -98,6 +104,6 @@ public sealed class PlacedRefIndex
         return false;
     }
 
-    /// <summary>All indexed placements, for consumers that used to re-scan every cell.</summary>
-    public Dictionary<uint, Entry>.ValueCollection Entries => _byId.Values;
+    /// <summary>A placement and the cell whose <c>PlacedObjects</c> list carries it.</summary>
+    public readonly record struct Entry(PlacedReference Ref, CellRecord Cell);
 }

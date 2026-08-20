@@ -92,7 +92,8 @@ internal sealed class MiscRecordHandler(RecordParserContext context) : RecordHan
                         default:
                         {
                             // Try schema-based parsing first
-                            if (SubrecordSchemaView.TryRead(sub.Signature, recordType, subData, record.IsBigEndian) is { } v)
+                            if (SubrecordSchemaView.TryRead(sub.Signature, recordType, subData, record.IsBigEndian) is
+                                { } v)
                             {
                                 fields[sub.Signature] = v.Raw;
                                 break;

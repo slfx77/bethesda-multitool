@@ -57,7 +57,7 @@ internal static class MasterScriptVariableAugmentationEncoder
         var patchedSctx = sctx is null ? null : InsertSourceDeclarations(sctx.Data, augmentations);
 
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.Latin1, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.Latin1, true);
         var insertedLocals = false;
         foreach (var subrecord in master.Subrecords)
         {
@@ -78,7 +78,7 @@ internal static class MasterScriptVariableAugmentationEncoder
             {
                 "SCHR" => patchedSchr,
                 "SCTX" => patchedSctx!,
-                _ => subrecord.Data,
+                _ => subrecord.Data
             };
             SubrecordEncoder.WriteSubrecord(writer, subrecord.Signature, payload);
         }
@@ -152,15 +152,18 @@ internal static class MasterScriptVariableAugmentationEncoder
         return result;
     }
 
-    private static string DeclarationKeyword(ScriptVariableDeclarationKind kind) => kind switch
+    private static string DeclarationKeyword(ScriptVariableDeclarationKind kind)
     {
-        ScriptVariableDeclarationKind.Short => "short",
-        ScriptVariableDeclarationKind.Long => "long",
-        ScriptVariableDeclarationKind.Int => "int",
-        ScriptVariableDeclarationKind.Float => "float",
-        ScriptVariableDeclarationKind.Reference => "ref",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-    };
+        return kind switch
+        {
+            ScriptVariableDeclarationKind.Short => "short",
+            ScriptVariableDeclarationKind.Long => "long",
+            ScriptVariableDeclarationKind.Int => "int",
+            ScriptVariableDeclarationKind.Float => "float",
+            ScriptVariableDeclarationKind.Reference => "ref",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+    }
 
     private static int FindFirstBeginLine(string source)
     {

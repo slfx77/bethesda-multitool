@@ -1,5 +1,4 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using Spectre.Console;
 
@@ -9,7 +8,8 @@ public static class EsmCoverageCommand
 {
     public static Command CreateCoverageCommand()
     {
-        var command = new Command("coverage", "Report how completely the parser models each record/subrecord type (CSV + Markdown)");
+        var command = new Command("coverage",
+            "Report how completely the parser models each record/subrecord type (CSV + Markdown)");
         var inputArg = new Argument<string>("esm-input") { Description = "Path to ESM/ESM file" };
         var outputOpt = new Option<string>("--output")
         {

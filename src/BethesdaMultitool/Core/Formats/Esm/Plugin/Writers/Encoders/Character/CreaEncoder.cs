@@ -2,8 +2,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 
@@ -12,10 +10,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 ///     Non-human actors. Closely parallels NPC_ but with the creature-specific DATA layout
 ///     and physical/sound trim (OBND/RNAM/TNAM/BNAM/WNAM/NAM4/NAM5) that NPCs lack.
 ///     Emit order roughly follows the canonical vanilla shape:
-///         EDID, OBND, FULL?, MODL?, SPLO*, EAMT?, NIFZ?, NIFT?, ACBS, SNAM*, INAM?, SCRI?,
-///         VTCK?, TPLT?, CNTO*[+COED?], AIDT?, PKID*, KFFZ?, KFNM?, DATA, RNAM?, ZNAM?,
-///         PNAM?, TNAM?, BNAM?, WNAM?, NAM4?, NAM5?, CSCR?, CSDT*/CSDI*/CSDC*, CNAM?, LNAM?,
-///         EITM?, DEST?/DSTD?/DMDL?/DMDT?/DSTF?.
+///     EDID, OBND, FULL?, MODL?, SPLO*, EAMT?, NIFZ?, NIFT?, ACBS, SNAM*, INAM?, SCRI?,
+///     VTCK?, TPLT?, CNTO*[+COED?], AIDT?, PKID*, KFFZ?, KFNM?, DATA, RNAM?, ZNAM?,
+///     PNAM?, TNAM?, BNAM?, WNAM?, NAM4?, NAM5?, CSCR?, CSDT*/CSDI*/CSDC*, CNAM?, LNAM?,
+///     EITM?, DEST?/DSTD?/DMDL?/DMDT?/DSTF?.
 ///     DATA layout (17B): uint8 CreatureType + uint8 CombatSkill + uint8 MagicSkill +
 ///     uint8 StealthSkill + int32 Health + int16 AttackDamage + 7 bytes unused.
 ///     FormID-bearing subrecords (SPLO, INAM, SCRI, VTCK, TPLT, ZNAM, CSCR, LNAM, EITM,
@@ -24,25 +22,27 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// </summary>
 public sealed class CreaEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<CreatureRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["CreatureType"] = m => m.CreatureType,
-        ["CombatSkill"] = m => m.CombatSkill,
-        ["MagicSkill"] = m => m.MagicSkill,
-        ["StealthSkill"] = m => m.StealthSkill,
-        // Health field intentionally omitted — engine computes from Endurance + level.
-        ["AttackDamage"] = m => m.AttackDamage,
-        // Remaining(7) bytes left unset → zero-fill.
-    };
+    private static readonly Dictionary<string, Func<CreatureRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["CreatureType"] = m => m.CreatureType,
+            ["CombatSkill"] = m => m.CombatSkill,
+            ["MagicSkill"] = m => m.MagicSkill,
+            ["StealthSkill"] = m => m.StealthSkill,
+            // Health field intentionally omitted — engine computes from Endurance + level.
+            ["AttackDamage"] = m => m.AttackDamage
+            // Remaining(7) bytes left unset → zero-fill.
+        };
 
     // ACBS bytes-builder + flag-policy lives in ActorBaseAcbsBuilder, shared with NpcEncoder.
     // Both record types use the identical extractor dict + flag-policy fixups.
 
-    private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors = new(StringComparer.Ordinal)
-    {
-        ["Faction"] = m => m.FactionFormId,
-        ["Rank"] = m => (byte)m.Rank,
-    };
+    private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Faction"] = m => m.FactionFormId,
+            ["Rank"] = m => (byte)m.Rank
+        };
 
     public string RecordType => "CREA";
     public Type ModelType => typeof(CreatureRecord);
@@ -115,7 +115,7 @@ public sealed class CreaEncoder : IRecordEncoder
         if (crea.Stats is { } stats)
         {
             subs.Add(new EncodedSubrecord("ACBS",
-                ActorBaseAcbsBuilder.Build("CREA", stats, forceAutoCalc: true)));
+                ActorBaseAcbsBuilder.Build("CREA", stats, true)));
         }
         else
         {
@@ -189,6 +189,7 @@ public sealed class CreaEncoder : IRecordEncoder
                 subs.Add(new EncodedSubrecord("COED", ContEncoder.BuildCoedSubrecord(item)));
             }
         }
+
         if (droppedItems > 0)
         {
             warnings.Add(
@@ -338,4 +339,3 @@ public sealed class CreaEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 }
-

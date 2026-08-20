@@ -585,4 +585,3 @@ internal static class GeckActorDetailWriter
         return sb.ToString();
     }
 }
-

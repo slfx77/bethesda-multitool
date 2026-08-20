@@ -145,7 +145,7 @@ public sealed class DoorTeleportTargetRescueTests
     {
         return new Dictionary<uint, PcEsmCellContext>
         {
-            [RetailExteriorCell] = new PcEsmCellContext
+            [RetailExteriorCell] = new()
             {
                 CellFormId = RetailExteriorCell,
                 IsInterior = false,
@@ -153,7 +153,7 @@ public sealed class DoorTeleportTargetRescueTests
                 BlockGroupType = 4,
                 SubblockGroupType = 5
             },
-            [InteriorCell] = new PcEsmCellContext
+            [InteriorCell] = new()
             {
                 CellFormId = InteriorCell,
                 IsInterior = true,

@@ -41,27 +41,10 @@ internal sealed class StarfieldMaterialDatabase
 
     private const int NormalSlot = 1;
 
-    /// <summary>dbID → the texture files that object's own components declare, by slot index.</summary>
-    private readonly Dictionary<uint, Dictionary<int, string>> _texturesByObject = [];
+    private static readonly uint[] Crc32Table = BuildCrc32Table();
 
-    /// <summary>
-    ///     Material dbID → its layer objects by layer index. A CE2 material is a STACK of layers, and
-    ///     layer 0 is the base surface whose albedo the shape actually shows.
-    /// </summary>
-    private readonly Dictionary<uint, Dictionary<int, uint>> _layersByObject = [];
-
-    /// <summary>Layer dbID → the material object it uses.</summary>
-    private readonly Dictionary<uint, uint> _materialByLayer = [];
-
-    /// <summary>Material dbID → the texture-set object it uses.</summary>
-    private readonly Dictionary<uint, uint> _textureSetByMaterial = [];
-
-    /// <summary>
-    ///     Texture-set dbID → per-slot flat colour standing in for an absent texture
-    ///     (<c>BSMaterial::TextureReplacement</c>). Enabled replacements are how a material declares
-    ///     "this slot is a solid colour, not an image" — plain plastic, painted metal, and so on.
-    /// </summary>
-    private readonly Dictionary<uint, Dictionary<int, (bool Enabled, uint Rgba)>> _replacementsByObject = [];
+    /// <summary>dbID → the object it inherits from (shader-model templates like LayeredMaterials.mat).</summary>
+    private readonly Dictionary<uint, uint> _baseByObject = [];
 
     /// <summary>
     ///     Objects reached through a <c>BSMaterial::BlenderID</c>. A blender's own texture is the MASK
@@ -74,11 +57,30 @@ internal sealed class StarfieldMaterialDatabase
     /// <summary>parent dbID → its child dbIDs, from the edge table.</summary>
     private readonly Dictionary<uint, List<uint>> _childrenByObject = [];
 
-    /// <summary>dbID → the object it inherits from (shader-model templates like LayeredMaterials.mat).</summary>
-    private readonly Dictionary<uint, uint> _baseByObject = [];
+    /// <summary>
+    ///     Material dbID → its layer objects by layer index. A CE2 material is a STACK of layers, and
+    ///     layer 0 is the base surface whose albedo the shape actually shows.
+    /// </summary>
+    private readonly Dictionary<uint, Dictionary<int, uint>> _layersByObject = [];
+
+    /// <summary>Layer dbID → the material object it uses.</summary>
+    private readonly Dictionary<uint, uint> _materialByLayer = [];
 
     /// <summary>Resource ID (dir, file, ext CRCs) → dbID, for resolving a <c>.mat</c> path.</summary>
     private readonly Dictionary<(uint Dir, uint File, uint Ext), uint> _objectByResourceId = [];
+
+    /// <summary>
+    ///     Texture-set dbID → per-slot flat colour standing in for an absent texture
+    ///     (<c>BSMaterial::TextureReplacement</c>). Enabled replacements are how a material declares
+    ///     "this slot is a solid colour, not an image" — plain plastic, painted metal, and so on.
+    /// </summary>
+    private readonly Dictionary<uint, Dictionary<int, (bool Enabled, uint Rgba)>> _replacementsByObject = [];
+
+    /// <summary>dbID → the texture files that object's own components declare, by slot index.</summary>
+    private readonly Dictionary<uint, Dictionary<int, string>> _texturesByObject = [];
+
+    /// <summary>Material dbID → the texture-set object it uses.</summary>
+    private readonly Dictionary<uint, uint> _textureSetByMaterial = [];
 
     /// <summary>Objects whose components were successfully decoded (diagnostics).</summary>
     public int TextureObjectCount => _texturesByObject.Count;
@@ -99,7 +101,10 @@ internal sealed class StarfieldMaterialDatabase
     internal IReadOnlyDictionary<(uint Dir, uint File, uint Ext), uint> ResourceIds => _objectByResourceId;
 
     /// <summary>Reflected CRC-32 of an ASCII string, lowercased. Exposed for format diagnostics.</summary>
-    internal static uint DiagnosticCrc(string value) => Crc32Lower(value);
+    internal static uint DiagnosticCrc(string value)
+    {
+        return Crc32Lower(value);
+    }
 
     /// <summary>
     ///     Parses one <c>.cdb</c>. Returns null rather than throwing when the buffer is not a version-4
@@ -141,14 +146,22 @@ internal sealed class StarfieldMaterialDatabase
     ///     Resolves a <c>materials\...\*.mat</c> path to its diffuse texture path, or null when the
     ///     material is absent or declares none.
     /// </summary>
-    public string? ResolveDiffuse(string materialPath) => ResolveSlot(materialPath, DiffuseSlot).TexturePath;
+    public string? ResolveDiffuse(string materialPath)
+    {
+        return ResolveSlot(materialPath, DiffuseSlot).TexturePath;
+    }
 
     /// <summary>Resolves a material path to its normal-map texture path, or null.</summary>
-    public string? ResolveNormal(string materialPath) => ResolveSlot(materialPath, NormalSlot).TexturePath;
+    public string? ResolveNormal(string materialPath)
+    {
+        return ResolveSlot(materialPath, NormalSlot).TexturePath;
+    }
 
     /// <summary>Resolves the albedo slot, which may be a texture path OR a flat replacement colour.</summary>
-    internal StarfieldMaterialSlot ResolveDiffuseSlot(string materialPath) =>
-        ResolveSlot(materialPath, DiffuseSlot);
+    internal StarfieldMaterialSlot ResolveDiffuseSlot(string materialPath)
+    {
+        return ResolveSlot(materialPath, DiffuseSlot);
+    }
 
     /// <summary>
     ///     True when the database has an object for <paramref name="materialPath" /> at all —
@@ -156,13 +169,17 @@ internal sealed class StarfieldMaterialDatabase
     ///     legitimately drawn without a diffuse, or not at all) from "material missing" (broken
     ///     content, worth surfacing loudly).
     /// </summary>
-    internal bool Contains(string materialPath) =>
-        !string.IsNullOrWhiteSpace(materialPath) &&
-        _objectByResourceId.ContainsKey(ComputeResourceId(materialPath));
+    internal bool Contains(string materialPath)
+    {
+        return !string.IsNullOrWhiteSpace(materialPath) &&
+               _objectByResourceId.ContainsKey(ComputeResourceId(materialPath));
+    }
 
     /// <summary>Resolves the normal slot, which may be a texture path OR a flat replacement colour.</summary>
-    internal StarfieldMaterialSlot ResolveNormalSlot(string materialPath) =>
-        ResolveSlot(materialPath, NormalSlot);
+    internal StarfieldMaterialSlot ResolveNormalSlot(string materialPath)
+    {
+        return ResolveSlot(materialPath, NormalSlot);
+    }
 
     /// <summary>
     ///     Resolves one texture slot of a material, following the CE2 object model:
@@ -646,7 +663,11 @@ internal sealed class StarfieldMaterialDatabase
 
     private static uint PackColor(float r, float g, float b, float a)
     {
-        static uint Channel(float v) => (uint)Math.Clamp((int)MathF.Round(v * 255f), 0, 255);
+        static uint Channel(float v)
+        {
+            return (uint)Math.Clamp((int)MathF.Round(v * 255f), 0, 255);
+        }
+
         return Channel(r) | (Channel(g) << 8) | (Channel(b) << 16) | (Channel(a) << 24);
     }
 
@@ -688,7 +709,6 @@ internal sealed class StarfieldMaterialDatabase
         {
             objectInfoSize = 33;
         }
-
     }
 
     private void ReadList(
@@ -899,8 +919,6 @@ internal sealed class StarfieldMaterialDatabase
 
         return crc;
     }
-
-    private static readonly uint[] Crc32Table = BuildCrc32Table();
 
     private static uint[] BuildCrc32Table()
     {

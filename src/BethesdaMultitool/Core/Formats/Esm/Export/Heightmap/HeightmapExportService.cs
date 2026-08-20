@@ -65,4 +65,3 @@ public sealed class HeightmapExportService
 }
 
 #pragma warning restore CA1822, S2325
-

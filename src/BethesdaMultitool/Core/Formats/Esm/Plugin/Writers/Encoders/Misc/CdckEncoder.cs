@@ -31,6 +31,7 @@ public sealed class CdckEncoder : IRecordEncoder
             {
                 continue;
             }
+
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("CARD", cardFormId));
         }
 

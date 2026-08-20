@@ -24,7 +24,7 @@ public sealed class PlannedCreaEncoder : IPlannedRecordEncoder<CreatureRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedCreaEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedCreaEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

@@ -250,4 +250,3 @@ internal static class GeckScriptWriter
         return sb.ToString();
     }
 }
-

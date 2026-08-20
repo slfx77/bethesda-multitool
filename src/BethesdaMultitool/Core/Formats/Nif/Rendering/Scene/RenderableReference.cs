@@ -1,8 +1,6 @@
-using System.IO;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
 
@@ -45,8 +43,6 @@ internal readonly record struct RenderableReference(
     // or a reciprocal conversion that the retail evidence does not support.
     float GrassWaveMultiplier = 0f)
 {
-    private static readonly char[] PathSeparators = ['/', '\\'];
-
     /// <summary>
     ///     Cull-sphere radius (world units) used for a reference whose base record has NO OBND, until its
     ///     mesh first resolves and supplies true bounds. Sized to one exterior cell (4096) so it comfortably
@@ -83,16 +79,57 @@ internal readonly record struct RenderableReference(
     /// </summary>
     private const float SelectionFallbackCells = 1f / 16f;
 
+    private static readonly char[] PathSeparators = ['/', '\\'];
+
+    /// <summary>
+    ///     The composed model-to-world matrix. The engine's REFR orientation is decompiled from the
+    ///     Xbox 360 MemDebug XEX (tools/GhidraProject/refr_rotation_decompiled.txt):
+    ///     <list type="bullet">
+    ///         <item>
+    ///             <c>TESObjectREFR::GetOrientation</c> (VA 0x823A3738) calls
+    ///             <c>NiMatrix3::FromEulerAnglesXYZ(rotX, rotY, rotZ)</c> (VA 0x82E20B38).
+    ///         </item>
+    ///         <item>
+    ///             <c>FromEulerAnglesXYZ</c> builds <c>M = Rx · (Ry · Rz)</c> — column-vector
+    ///             standard right-handed rotations (each <c>Make*Rotation</c> is the textbook RH
+    ///             matrix, e.g. <c>MakeZRotation = [c,-s,0; s,c,0; 0,0,1]</c>).
+    ///         </item>
+    ///     </list>
+    ///     On-screen the rotation is <c>W = Rx(−RotX)·Ry(−RotY)·Rz(−RotZ)</c> — the engine matrix
+    ///     <c>M = Rx·Ry·Rz</c> with ALL THREE Euler angles negated (the renderer's world frame is a
+    ///     chirality flip of the engine's, so a rotation reads as its negation). See
+    ///     <see cref="ComposeWorldMatrix" /> for the derivation, proven against ground-truth quarry
+    ///     conveyor placement geometry. Pinned by <c>EngineRotationConventionTests</c>.
+    /// </summary>
+    // Live ground-truth diagnostic. Set FALLOUT_VIEWER_DUMP_REFR=<substring> (matched against the
+    // ModelPath, e.g. "road" or "dome") to append, for every matching placed object the live viewer
+    // loads: the parsed rotation, the world-space bearing its local +X/+Y axes end up pointing, AND
+    // the full affine world matrix (the exact transform handed to the GPU). The matrix lets us apply a
+    // mesh's real connector-vertex local coords offline and measure whether consecutive pieces' joints
+    // actually coincide in the live transform (e.g. monorail curve "slight rotation offset"). Output:
+    // %TEMP%\fallout_refr_dump.txt. Capped to avoid runaway writes.
+    private static readonly string? DumpFilter =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.DumpReference);
+
+    private static readonly object DumpLock = new();
+    private static int _dumpCount;
+
     /// <summary>
     ///     Cull-sphere fallback radius scaled to <paramref name="cellSize" />. On Starfield's 100-unit
     ///     cell the fixed 4096 literal is 41 cells wide, so every OBND-less ref became a cull-proof
     ///     candidate: AkilaCity culled only 2,618 of 40,874 refs, pushing the rest through the far more
     ///     expensive mesh-resolve path every frame.
     /// </summary>
-    internal static float NoBoundsFallbackRadiusFor(float cellSize) => NoBoundsFallbackCells * cellSize;
+    internal static float NoBoundsFallbackRadiusFor(float cellSize)
+    {
+        return NoBoundsFallbackCells * cellSize;
+    }
 
     /// <summary>Selection-target fallback radius scaled to <paramref name="cellSize" />.</summary>
-    internal static float SelectionFallbackRadiusFor(float cellSize) => SelectionFallbackCells * cellSize;
+    internal static float SelectionFallbackRadiusFor(float cellSize)
+    {
+        return SelectionFallbackCells * cellSize;
+    }
 
     /// <summary>
     ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
@@ -103,7 +140,9 @@ internal readonly record struct RenderableReference(
     ///     registry / per-frame resolve map both live and die with the process.
     /// </summary>
     public static uint ComputeMeshId(string modelPath)
-        => (uint)string.GetHashCode(modelPath, StringComparison.OrdinalIgnoreCase);
+    {
+        return (uint)string.GetHashCode(modelPath, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     ///     True when <paramref name="modelPath" /> is an engine "marker" object the game hides in
@@ -145,7 +184,6 @@ internal readonly record struct RenderableReference(
     ///     visible-when-distant stand-ins the engine swaps out for full models, so rendering both
     ///     z-fights. <c>*explod.nif</c> is excluded: FNV DLC explosion FX meshes end in "explod".
     ///     See memory: viewer_imposter_doubling.
-    ///
     ///     Skyrim is deliberately excluded from the filename-suffix heuristic: its master places
     ///     some <c>*LOD.nif</c> meshes as the only parent-world representation of architecture
     ///     (for example Whiterun's WRCastleMainBuilding01LOD), so treating the suffix alone as an
@@ -189,8 +227,10 @@ internal readonly record struct RenderableReference(
     ///     Skyrim SE masters).
     /// </summary>
     public static bool IsLodDuplicateBaseEditorId(string? baseEditorId)
-        => !string.IsNullOrEmpty(baseEditorId) &&
-           baseEditorId.EndsWith("_LOD", StringComparison.OrdinalIgnoreCase);
+    {
+        return !string.IsNullOrEmpty(baseEditorId) &&
+               baseEditorId.EndsWith("_LOD", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     ///     Builds a <see cref="RenderableReference" /> from a <see cref="PlacedReference" />.
@@ -221,7 +261,8 @@ internal readonly record struct RenderableReference(
         var (center, radius) = ComposeWorldBounds(
             placement, world, GameProfiles.CellWorldSizeOrDefault(game));
 
-        if (DumpFilter is { Length: > 0 } && placement.ModelPath!.Contains(DumpFilter, StringComparison.OrdinalIgnoreCase))
+        if (DumpFilter is { Length: > 0 } &&
+            placement.ModelPath!.Contains(DumpFilter, StringComparison.OrdinalIgnoreCase))
             DumpRefr(placement, world);
 
         // Fold the alternate-texture variant key into the MeshId so re-skinned placements of a shared
@@ -231,12 +272,12 @@ internal readonly record struct RenderableReference(
             : ComputeMeshId(placement.ModelPath! + "#" + alternateTextures.VariantKey);
 
         return new RenderableReference(
-            FormId: placement.FormId,
-            WorldMatrix: world,
-            ModelPath: placement.ModelPath!,
-            BoundsCenter: center,
-            BoundsRadius: radius,
-            MeshId: meshId,
+            placement.FormId,
+            world,
+            placement.ModelPath!,
+            center,
+            radius,
+            meshId,
             // XESP enable-parent chains slave a ref's enable state to its parent; the resolved
             // initial-world state rides the same flag the cull's ShowInitiallyDisabled toggle reads.
             // XSRF Imposter refs are deliberately NOT folded in: the 2026-08-10 census of all 301
@@ -245,45 +286,13 @@ internal readonly record struct RenderableReference(
             // stripped the skyline (A/B: TestOutput/fo3-parity-2026-08/xsrf-ab). The one ending-FX
             // ref (vLegateCampFortFireFX) is already silenced by the dormant-triggered-FX particle
             // resolve (its NIF's only sequence is 'Forward'), verified at the reported pose.
-            IsInitiallyDisabled: placement.IsInitiallyDisabled || xespDisabled,
-            IsMarker: IsMarkerModelPath(placement.ModelPath),
-            IsImposter: IsImposterModelPath(placement.ModelPath, game) ||
-                        IsLodDuplicateBaseEditorId(placement.BaseEditorId),
-            Category: category,
-            AlternateTextures: alternateTextures);
+            placement.IsInitiallyDisabled || xespDisabled,
+            IsMarkerModelPath(placement.ModelPath),
+            IsImposterModelPath(placement.ModelPath, game) ||
+            IsLodDuplicateBaseEditorId(placement.BaseEditorId),
+            category,
+            alternateTextures);
     }
-
-    /// <summary>
-    ///     The composed model-to-world matrix. The engine's REFR orientation is decompiled from the
-    ///     Xbox 360 MemDebug XEX (tools/GhidraProject/refr_rotation_decompiled.txt):
-    ///     <list type="bullet">
-    ///       <item>
-    ///         <c>TESObjectREFR::GetOrientation</c> (VA 0x823A3738) calls
-    ///         <c>NiMatrix3::FromEulerAnglesXYZ(rotX, rotY, rotZ)</c> (VA 0x82E20B38).
-    ///       </item>
-    ///       <item>
-    ///         <c>FromEulerAnglesXYZ</c> builds <c>M = Rx · (Ry · Rz)</c> — column-vector
-    ///         standard right-handed rotations (each <c>Make*Rotation</c> is the textbook RH
-    ///         matrix, e.g. <c>MakeZRotation = [c,-s,0; s,c,0; 0,0,1]</c>).
-    ///       </item>
-    ///     </list>
-    ///     On-screen the rotation is <c>W = Rx(−RotX)·Ry(−RotY)·Rz(−RotZ)</c> — the engine matrix
-    ///     <c>M = Rx·Ry·Rz</c> with ALL THREE Euler angles negated (the renderer's world frame is a
-    ///     chirality flip of the engine's, so a rotation reads as its negation). See
-    ///     <see cref="ComposeWorldMatrix" /> for the derivation, proven against ground-truth quarry
-    ///     conveyor placement geometry. Pinned by <c>EngineRotationConventionTests</c>.
-    /// </summary>
-    // Live ground-truth diagnostic. Set FALLOUT_VIEWER_DUMP_REFR=<substring> (matched against the
-    // ModelPath, e.g. "road" or "dome") to append, for every matching placed object the live viewer
-    // loads: the parsed rotation, the world-space bearing its local +X/+Y axes end up pointing, AND
-    // the full affine world matrix (the exact transform handed to the GPU). The matrix lets us apply a
-    // mesh's real connector-vertex local coords offline and measure whether consecutive pieces' joints
-    // actually coincide in the live transform (e.g. monorail curve "slight rotation offset"). Output:
-    // %TEMP%\fallout_refr_dump.txt. Capped to avoid runaway writes.
-    private static readonly string? DumpFilter =
-        EnvironmentVariables.Get(EnvironmentVariables.Viewer.DumpReference);
-    private static readonly object DumpLock = new();
-    private static int _dumpCount;
 
     private static void DumpRefr(PlacedReference p, Matrix4x4 world)
     {
@@ -295,7 +304,12 @@ internal readonly record struct RenderableReference(
             var lx = Vector3.Transform(Vector3.UnitX, world) - origin;
             var ly = Vector3.Transform(Vector3.UnitY, world) - origin;
             var lz = Vector3.Transform(Vector3.UnitZ, world) - origin;
-            static float Bearing(Vector3 v) => MathF.Atan2(v.Y, v.X) * 180f / MathF.PI;
+
+            static float Bearing(Vector3 v)
+            {
+                return MathF.Atan2(v.Y, v.X) * 180f / MathF.PI;
+            }
+
             var line =
                 $"0x{p.FormId:X8} '{p.ModelPath}' pos=({p.X:F0},{p.Y:F0},{p.Z:F0}) " +
                 $"rotZdeg={p.RotZ * 180f / MathF.PI:F1} rotX={p.RotX:F3} rotY={p.RotY:F3} scale={p.Scale:F2} " +
@@ -309,7 +323,8 @@ internal readonly record struct RenderableReference(
                 $"T=({world.M41:F2},{world.M42:F2},{world.M43:F2})";
             try
             {
-                File.AppendAllText(Path.Combine(Path.GetTempPath(), "fallout_refr_dump.txt"), line + Environment.NewLine);
+                File.AppendAllText(Path.Combine(Path.GetTempPath(), "fallout_refr_dump.txt"),
+                    line + Environment.NewLine);
             }
             catch
             {
@@ -326,7 +341,9 @@ internal readonly record struct RenderableReference(
     // at bake time (NifSceneGraphWalker.ComputeWorldTransforms treatRootsAsIdentity), because placing
     // a REFR replaces the scene root's transform with this placement.
     private static Matrix4x4 ComposeWorldMatrix(PlacedReference p)
-        => PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+    {
+        return PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+    }
 
     /// <summary>
     ///     World-space bounding sphere from the base record's OBND, conservatively wrapped
@@ -375,4 +392,3 @@ internal readonly record struct RenderableReference(
         return (worldCenter, radius);
     }
 }
-

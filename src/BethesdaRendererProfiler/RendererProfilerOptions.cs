@@ -953,8 +953,10 @@ internal sealed record RendererProfilerOptions
         return true;
     }
 
-    /// <summary>As <see cref="TryReadPositiveInt" /> but admits 0, which is a meaningful setting for
-    /// counts that mean "none" (e.g. driving no live frames between motion poses).</summary>
+    /// <summary>
+    ///     As <see cref="TryReadPositiveInt" /> but admits 0, which is a meaningful setting for
+    ///     counts that mean "none" (e.g. driving no live frames between motion poses).
+    /// </summary>
     private static bool TryReadNonNegativeInt(
         string[] args,
         ref int index,

@@ -1,5 +1,4 @@
 using BethesdaMultitool.CLI.Commands.Dmp;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using Xunit;

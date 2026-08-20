@@ -28,8 +28,9 @@ public sealed class EsmPlanner
     private static readonly HashSet<string> CellPipelineOwnedTypes =
         new(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE", "LAND" };
 
-    private readonly DispositionEngine _disposition;
     private readonly FormIdPlanner _allocation;
+
+    private readonly DispositionEngine _disposition;
     private readonly ReferenceResolver _references;
 
     public EsmPlanner(
@@ -112,7 +113,7 @@ public sealed class EsmPlanner
         // double-allocate, producing two different emit FormIDs for the same source and
         // crashing the AddRange merge below.
         var catalogTypes = coverage.Contains("CELL")
-            ? (IReadOnlySet<string>)enabledTypes
+            ? enabledTypes
                 .Where(t => !CellPipelineOwnedTypes.Contains(t))
                 .ToHashSet(StringComparer.Ordinal)
             : enabledTypes;
@@ -183,7 +184,7 @@ public sealed class EsmPlanner
         var containedAllocations = cellSection?.LandByCellSourceToEmitted.Values
             .Concat(cellSection.AdditionalEmittedFormIds) ?? [];
         var emittedFormIds = BuildEmittedFormIds(
-            decisions, sourceToEmitted, masterFormIds, containedAllocations)
+                decisions, sourceToEmitted, masterFormIds, containedAllocations)
             .Union(RuntimeStateRecordPolicy.EngineFormIds);
 
         // Allocation precedes eligibility finalization so established plugin FormID ordinals
@@ -242,8 +243,8 @@ public sealed class EsmPlanner
             {
                 NextObjectId = _allocation.NextObjectId,
                 MasterPath = masterPath,
-                PlannerCoverage = coverage,
-            },
+                PlannerCoverage = coverage
+            }
         };
 
         if (cellSection is { } cellResult)
@@ -253,7 +254,7 @@ public sealed class EsmPlanner
                 CellsByFormId = cellResult.CellsByFormId,
                 WorldspacesByFormId = cellResult.WorldspacesByFormId,
                 NavmEntries = cellResult.NavmEntries,
-                LandByCellSourceFormId = cellResult.LandByCellSourceToEmitted,
+                LandByCellSourceFormId = cellResult.LandByCellSourceToEmitted
             };
         }
 
@@ -272,7 +273,7 @@ public sealed class EsmPlanner
             {
                 CellsByFormId = CellChildVerdictPlanner.Apply(
                     plan.CellsByFormId, masterRecordsByFormId!,
-                    sourceToEmitted, emittedFormIds, verdictInputs),
+                    sourceToEmitted, emittedFormIds, verdictInputs)
             };
             plan = PostVerdictScriptClosurePlanner.Apply(plan, masterRecords);
 
@@ -281,7 +282,7 @@ public sealed class EsmPlanner
             plan = plan with
             {
                 EmittedNavmFormIds = PlanNavmEmission.Compute(
-                    plan.CellsByFormId, verdictInputs.DiagnosticSkipCellNavm),
+                    plan.CellsByFormId, verdictInputs.DiagnosticSkipCellNavm)
             };
         }
 
@@ -335,7 +336,7 @@ public sealed class EsmPlanner
                         ? $"Dropped {reference.FieldPath} package reference 0x{reference.OriginalFormId ?? 0:X8}: "
                           + $"resolved target 0x{finalFormId:X8} is live but is not a PACK record."
                         : $"Dropped {reference.FieldPath} package reference "
-                          + $"0x{reference.OriginalFormId ?? 0:X8}: {reference.Reason}",
+                          + $"0x{reference.OriginalFormId ?? 0:X8}: {reference.Reason}"
                 });
             }
         }
@@ -423,9 +424,9 @@ public sealed class EsmPlanner
         {
             var (entry, decision) = decisions[i];
             var formId = entry.MasterFormId
-                ?? (entry.DmpFormId is { } src && sourceToEmitted.TryGetValue(src, out var allocated)
-                    ? allocated
-                    : entry.DmpFormId ?? 0u);
+                         ?? (entry.DmpFormId is { } src && sourceToEmitted.TryGetValue(src, out var allocated)
+                             ? allocated
+                             : entry.DmpFormId ?? 0u);
             var refs = refsByIndex.TryGetValue(i, out var resolved)
                 ? resolved
                 : ImmutableArray<ResolvedRef>.Empty;
@@ -446,7 +447,7 @@ public sealed class EsmPlanner
                 OverrideSubrecords = null,
                 RetainMasterSubrecordSignatures = retainedSignatures,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = decision.Provenance,
+                Provenance = decision.Provenance
             });
         }
 
@@ -466,9 +467,8 @@ public sealed class EsmPlanner
             {
                 NextObjectId = _allocation.NextObjectId,
                 MasterPath = masterPath,
-                PlannerCoverage = coverage,
-            },
+                PlannerCoverage = coverage
+            }
         };
     }
 }
-

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace BethesdaMultitool.Core.Orchestration;
 
 /// <summary>
@@ -19,15 +21,6 @@ namespace BethesdaMultitool.Core.Orchestration;
 /// </summary>
 internal readonly record struct ConcurrencyPolicy
 {
-    private enum PresetKind
-    {
-        Fixed,
-        FullCores,
-        CoresMinusOne,
-        DoubleCores,
-        HalfCoresClamped,
-    }
-
     private PresetKind Kind { get; init; }
 
     private int FixedValue { get; init; }
@@ -80,12 +73,16 @@ internal readonly record struct ConcurrencyPolicy
     ///     Zero, negative, and unparseable values fall through to the preset — the legacy knob
     ///     semantics every existing <c>FALLOUT_*_CONCURRENCY</c> variable already has.
     /// </summary>
-    public ConcurrencyPolicy WithEnvironmentOverride(string variableName, int min = 1, int max = 64) =>
-        this with { EnvironmentVariable = variableName, EnvironmentMin = min, EnvironmentMax = max };
+    public ConcurrencyPolicy WithEnvironmentOverride(string variableName, int min = 1, int max = 64)
+    {
+        return this with { EnvironmentVariable = variableName, EnvironmentMin = min, EnvironmentMax = max };
+    }
 
     /// <summary>Caller-supplied override (e.g. a CLI flag); ignored when null or below 1. Wins over everything.</summary>
-    public ConcurrencyPolicy WithExplicitOverride(int? degree) =>
-        this with { ExplicitOverride = degree is >= 1 ? degree : null };
+    public ConcurrencyPolicy WithExplicitOverride(int? degree)
+    {
+        return this with { ExplicitOverride = degree is >= 1 ? degree : null };
+    }
 
     /// <summary>Resolves the effective degree of parallelism. Always at least 1.</summary>
     public int Resolve()
@@ -98,8 +95,8 @@ internal readonly record struct ConcurrencyPolicy
         if (EnvironmentVariable is not null &&
             int.TryParse(
                 EnvironmentVariables.Get(EnvironmentVariable),
-                System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
                 out var fromEnvironment) &&
             fromEnvironment >= 1)
         {
@@ -114,7 +111,16 @@ internal readonly record struct ConcurrencyPolicy
             PresetKind.CoresMinusOne => Math.Max(1, cores - 1),
             PresetKind.DoubleCores => Math.Max(1, cores * 2),
             PresetKind.HalfCoresClamped => Math.Clamp(cores / 2, ClampMin, ClampMax),
-            _ => 1,
+            _ => 1
         };
+    }
+
+    private enum PresetKind
+    {
+        Fixed,
+        FullCores,
+        CoresMinusOne,
+        DoubleCores,
+        HalfCoresClamped
     }
 }

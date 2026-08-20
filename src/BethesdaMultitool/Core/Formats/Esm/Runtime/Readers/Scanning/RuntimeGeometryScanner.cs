@@ -539,7 +539,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
             return 0;
         }
 
-        var nestedPtr = BinaryUtils.ReadUInt32BE(nestedPtrBytes, 0);
+        var nestedPtr = BinaryUtils.ReadUInt32BE(nestedPtrBytes);
         if (!_context.IsValidPointer(nestedPtr))
         {
             return 0;
@@ -551,7 +551,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
             return 0;
         }
 
-        var packedAddress = BinaryUtils.ReadUInt32BE(packedAddressBytes, 0);
+        var packedAddress = BinaryUtils.ReadUInt32BE(packedAddressBytes);
         return unchecked((packedAddress & 0x1FFF_FFFFu) +
                          (((packedAddress >> 20) + 0x200u) & 0x1000u) -
                          0x4000_0000u);
@@ -676,6 +676,12 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         return hash;
     }
 
+    private readonly record struct ExtractionOptions(bool AllowImplicitLeafCardIndices)
+    {
+        public static readonly ExtractionOptions Default = new(false);
+        public static readonly ExtractionOptions SpeedTreeLeafCards = new(true);
+    }
+
     #region NiGeometryData Field Offsets (PDB-verified, no shift)
 
     private const int VertexCountOffset = 8; // m_usVertices: uint16 BE
@@ -705,12 +711,6 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     private const int TriStripsStructSize = 80;
 
     #endregion
-
-    private readonly record struct ExtractionOptions(bool AllowImplicitLeafCardIndices)
-    {
-        public static readonly ExtractionOptions Default = new(false);
-        public static readonly ExtractionOptions SpeedTreeLeafCards = new(true);
-    }
 
     #region Validation Thresholds
 

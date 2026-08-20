@@ -3,11 +3,18 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    /// <summary>
+    ///     Why the placed-object (reference) pipeline is unavailable, or null when it initialized.
+    ///     Surfaced persistently by <c>UpdateHud</c> so a silent loss of every REFR is impossible.
+    /// </summary>
+    private string? _referencePipelineInitError;
+
     /// <summary>
     ///     Collects texture-BSA paths from the primary data file plus every Load Order entry.
     ///     Each unique parent directory is globbed once (so a load order with 5 ESMs in the same
@@ -37,6 +44,7 @@ public sealed partial class WorldView3DControl
         {
             foreach (var path in data.AdditionalDataPaths) AddFrom(path);
         }
+
         return result.ToArray();
 
         void AddFrom(string? candidatePath)
@@ -86,7 +94,8 @@ public sealed partial class WorldView3DControl
                 enableFuzzy: _data.IsMemoryDump,
                 includeLooseFiles: _data.IsMemoryDump);
             _referenceTextureResolver = new NifTextureResolver(textureBsas);
-            _referenceGpuTextureResolver12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);
+            _referenceGpuTextureResolver12 =
+                new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);
 
             if (_gpu12 is null ||
                 _commandRecorder12 is null ||
@@ -147,7 +156,7 @@ public sealed partial class WorldView3DControl
                 TreeShadowsEnabled = _canopyShadowsEnabled,
                 WindowReflectionsEnabled = _windowReflectionsEnabled,
                 // Scripted day/night reference states (street lights, glow FX) follow the game hour.
-                DayNightStates = _dayNightStates,
+                DayNightStates = _dayNightStates
             };
             _references.SetHiddenCategories(_hiddenCategories);
             Log.Info("WorldView3DControl: reference pipeline initialized ({0} meshes BSA(s), {1} textures BSA(s)).",
@@ -168,12 +177,6 @@ public sealed partial class WorldView3DControl
             DisposeReferencePipeline();
         }
     }
-
-    /// <summary>
-    ///     Why the placed-object (reference) pipeline is unavailable, or null when it initialized.
-    ///     Surfaced persistently by <c>UpdateHud</c> so a silent loss of every REFR is impossible.
-    /// </summary>
-    private string? _referencePipelineInitError;
 
     /// <summary>
     ///     Resolves a placed-ref's requested mesh path against the open archive set and returns the
@@ -211,11 +214,17 @@ public sealed partial class WorldView3DControl
         // alias telemetry first so the reference-cache summary describes the final live scene rather
         // than the intentionally empty cache left by that release cascade.
         _referenceTextureCache12?.EmitTraceSummary();
-        _references?.Dispose(); _references = null;
-        _referenceMeshCache12?.Dispose(); _referenceMeshCache12 = null;
-        _referenceTextureCache12?.Dispose(); _referenceTextureCache12 = null;
-        _referenceGpuTextureResolver12?.Dispose(); _referenceGpuTextureResolver12 = null;
-        _referenceTextureResolver?.Dispose(); _referenceTextureResolver = null;
-        _meshArchives?.Dispose(); _meshArchives = null;
+        _references?.Dispose();
+        _references = null;
+        _referenceMeshCache12?.Dispose();
+        _referenceMeshCache12 = null;
+        _referenceTextureCache12?.Dispose();
+        _referenceTextureCache12 = null;
+        _referenceGpuTextureResolver12?.Dispose();
+        _referenceGpuTextureResolver12 = null;
+        _referenceTextureResolver?.Dispose();
+        _referenceTextureResolver = null;
+        _meshArchives?.Dispose();
+        _meshArchives = null;
     }
 }

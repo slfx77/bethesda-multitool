@@ -3,11 +3,10 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
@@ -447,7 +446,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
 
     private static int FindPayloadOffset(byte[] bytes)
     {
-        using var stream = new MemoryStream(bytes, writable: false);
+        using var stream = new MemoryStream(bytes, false);
         using var reader = new BinaryReader(stream);
         _ = reader.ReadBytes(8); // magic
         _ = reader.ReadInt32(); // container version

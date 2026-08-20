@@ -201,10 +201,12 @@ internal sealed class DialogueCsvCatalog
             selected, selectedAudio, ordinals, rowsRead, rowsParsed, rowsQuarantined);
     }
 
-    private static IOrderedEnumerable<DialogueCsvRow> Rank(IEnumerable<DialogueCsvRow> rows) =>
-        rows.OrderByDescending(static row => IsTempVoiceFile(row.FilePath))
+    private static IOrderedEnumerable<DialogueCsvRow> Rank(IEnumerable<DialogueCsvRow> rows)
+    {
+        return rows.OrderByDescending(static row => IsTempVoiceFile(row.FilePath))
             .ThenBy(static row => row.CsvOrder)
             .ThenBy(static row => row.RowOrder);
+    }
 
     private static bool IsTempVoiceFile(string filePath)
     {

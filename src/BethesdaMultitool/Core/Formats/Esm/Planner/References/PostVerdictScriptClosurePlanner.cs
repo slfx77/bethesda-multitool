@@ -3,7 +3,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 
@@ -46,7 +45,7 @@ internal static class PostVerdictScriptClosurePlanner
                     Message = $"Suppressed new SCPT {identity} after final cell verdicts: "
                               + issueText + ".",
                     Metadata = ScriptSuppressionDiagnosticFormatter.Metadata(
-                        script.Model as ScriptRecord, script.SourceFormId, script.FormId, issues),
+                        script.Model as ScriptRecord, script.SourceFormId, script.FormId, issues)
                 });
             }
 
@@ -81,7 +80,7 @@ internal static class PostVerdictScriptClosurePlanner
                     reference.Action == ResolvedRefAction.Resolved
                         ? $"{ScriptSuppressionDiagnosticFormatter.ReferenceIdentity(reference)} target was dropped"
                         : $"{ScriptSuppressionDiagnosticFormatter.ReferenceIdentity(reference)} is unresolved",
-                    Reference: reference))
+                    reference))
                 .ToList();
             if (issues.Count > 0)
             {
@@ -143,7 +142,7 @@ internal static class PostVerdictScriptClosurePlanner
             // child's SCRO target is pruned from the closure (or a dropped child keeps one live).
             if (child.Type is not ("LAND" or "NAVM" or "REFR" or "ACHR" or "ACRE" or "PGRE")
                 || child.Disposition == RecordDisposition.Skip
-                || child.Type == "NAVM" && cell.NavmOnlySuppressed)
+                || (child.Type == "NAVM" && cell.NavmOnlySuppressed))
             {
                 continue;
             }
@@ -176,6 +175,7 @@ internal static class PostVerdictScriptClosurePlanner
             // retained in record order and the final occurrence owns point lookup.
             index[records[position].FormId] = position;
         }
+
         return plan with
         {
             Records = records,
@@ -184,7 +184,7 @@ internal static class PostVerdictScriptClosurePlanner
             ValidScriptFormIds = ScriptReferenceSafetyPlanner.BuildValidScriptFormIds(
                 masterRecords, records),
             RecordIndexByEmittedFormId = index.ToImmutable(),
-            Diagnostics = plan.Diagnostics.AddRange(diagnostics),
+            Diagnostics = plan.Diagnostics.AddRange(diagnostics)
         };
     }
 }

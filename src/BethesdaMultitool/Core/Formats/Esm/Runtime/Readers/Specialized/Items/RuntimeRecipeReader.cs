@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Items;
@@ -14,9 +13,9 @@ internal sealed class RuntimeRecipeReader(RuntimeMemoryContext context)
 {
     private const byte RcpeFormType = 0x6A;
     private const int MaxListNodes = 32;
+    private readonly RuntimeMemoryContext _context = context;
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
-    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>Reads the runtime recipe record for the given DMP entry, or null if it can't be read.</summary>
     public RecipeRecord? ReadRuntimeRecipe(RuntimeEditorIdEntry entry)

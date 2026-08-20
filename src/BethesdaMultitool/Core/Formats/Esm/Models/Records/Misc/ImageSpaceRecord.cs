@@ -17,7 +17,7 @@ public record ImageSpaceRecord
 
     /// <summary>
     ///     Classic FO3/FNV HDR parameters. Modern 36-byte HNAM records are deliberately not projected
-    ///     through this ordinal contract; use <see cref="ModernHdr"/> for Skyrim/FO4-family records.
+    ///     through this ordinal contract; use <see cref="ModernHdr" /> for Skyrim/FO4-family records.
     /// </summary>
     public ImageSpaceHdr? Hdr { get; init; }
 
@@ -42,7 +42,7 @@ public record ImageSpaceRecord
     /// <summary>Depth-of-field parameters (DNAM, variable). Optional.</summary>
     public IReadOnlyList<float>? DepthOfField { get; init; }
 
-    /// <summary>Lossless modern DNAM depth-of-field data. <see cref="DepthOfField"/> is its compatibility projection.</summary>
+    /// <summary>Lossless modern DNAM depth-of-field data. <see cref="DepthOfField" /> is its compatibility projection.</summary>
     public ImageSpaceDepthOfField? DepthOfFieldData { get; init; }
 
     /// <summary>FO4-family TX00 color-grading LUT path. Retained even when the renderer has no LUT binding.</summary>
@@ -148,7 +148,7 @@ public record ImageSpaceCinematic
     ///     FO3/FNV cinematic enable mask: bit 0 Saturation, bit 1 Contrast, bit 2 Tint,
     ///     bit 3 Brightness. High bits in the source dword are non-semantic and remain preserved in
     ///     <see cref="ImageSpaceClassicData.PostBodyWords" /> rather than projected into this enum.
-    ///     Consult <see cref="HasExplicitFlags"/> because Skyrim-style CNAM has no stored mask.
+    ///     Consult <see cref="HasExplicitFlags" /> because Skyrim-style CNAM has no stored mask.
     ///     This is source metadata, not a switch in the recovered shipped classic composite shader.
     /// </summary>
     public ImageSpaceCinematicFlags Flags { get; init; } = ImageSpaceCinematicFlags.All;
@@ -169,7 +169,7 @@ public enum ImageSpaceCinematicFlags : byte
     Contrast = 1 << 1,
     Tint = 1 << 2,
     Brightness = 1 << 3,
-    All = Saturation | Contrast | Tint | Brightness,
+    All = Saturation | Contrast | Tint | Brightness
 }
 
 /// <summary>IMGS TNAM payload (16 bytes, 4 LE floats: Amount, Red, Green, Blue).</summary>
@@ -205,6 +205,7 @@ public sealed record ImageSpaceClassicData
     ///     <see cref="ImageSpaceRecord.Tint" /> properties are authoritative for writing.
     /// </summary>
     public required ImageSpaceHdr Hdr { get; init; }
+
     public required ImageSpaceClassicBloom Bloom { get; init; }
     public required ImageSpaceClassicGetHit GetHit { get; init; }
     public required ImageSpaceClassicNightEye NightEye { get; init; }
@@ -224,7 +225,7 @@ public enum ImageSpaceClassicDnamLayout
 {
     Dnam132 = 132,
     Dnam148 = 148,
-    Dnam152 = 152,
+    Dnam152 = 152
 }
 
 /// <summary>Classic packed-DNAM Bloom block (three floats).</summary>

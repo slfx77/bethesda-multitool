@@ -303,4 +303,3 @@ public sealed class EsmGrupWriter(byte[] input, EsmRecordWriter recordWriter, Es
 
     #endregion
 }
-

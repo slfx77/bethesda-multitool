@@ -11,13 +11,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// </summary>
 public sealed class ClasEncoder : IRecordEncoder
 {
-    private static int TagSkillAt(ClassRecord clas, int index)
-    {
-        return clas.TagSkills is { Length: > 0 } && index < clas.TagSkills.Length
-            ? clas.TagSkills[index]
-            : -1;
-    }
-
     private static readonly Dictionary<string, Func<ClassRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
     {
         ["TagSkill1"] = m => TagSkillAt(m, 0),
@@ -27,11 +20,18 @@ public sealed class ClasEncoder : IRecordEncoder
         ["Flags"] = m => m.Flags,
         ["BuysServices"] = m => m.BarterFlags,
         ["Teaches"] = m => (sbyte)m.TrainingSkill,
-        ["MaxTrainingLevel"] = m => m.TrainingLevel,
+        ["MaxTrainingLevel"] = m => m.TrainingLevel
     };
 
     public string RecordType => "CLAS";
     public Type ModelType => typeof(ClassRecord);
+
+    private static int TagSkillAt(ClassRecord clas, int index)
+    {
+        return clas.TagSkills is { Length: > 0 } && index < clas.TagSkills.Length
+            ? clas.TagSkills[index]
+            : -1;
+    }
 
     internal static EncodedRecord EncodeNew(ClassRecord clas)
     {

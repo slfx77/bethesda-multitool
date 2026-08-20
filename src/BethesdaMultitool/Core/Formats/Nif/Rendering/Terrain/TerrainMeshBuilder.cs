@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
@@ -37,9 +38,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 /// </summary>
 internal static class TerrainMeshBuilder
 {
-    /// <summary>33×33 grid (1089 vertices) per cell. Mirrors <see cref="TerrainConstants.LandGridSize" />.
-    /// This is the default for Fallout/Oblivion/Skyrim and the runtime DMP path; Morrowind is 65×65.</summary>
+    /// <summary>
+    ///     33×33 grid (1089 vertices) per cell. Mirrors <see cref="TerrainConstants.LandGridSize" />.
+    ///     This is the default for Fallout/Oblivion/Skyrim and the runtime DMP path; Morrowind is 65×65.
+    /// </summary>
     private const int Grid = TerrainConstants.LandGridSize;
+
     private const int LastIndex = Grid - 1;
 
     /// <summary>Vertex count for one 33×33 cell mesh: 33×33 = 1089 (the default-grid value).</summary>
@@ -59,14 +63,17 @@ internal static class TerrainMeshBuilder
     /// <summary>Spacing between adjacent grid vertices in world units for the default grid (4096 / 32 = 128).</summary>
     private const float VertexSpacing = TerrainConstants.LandVertexSpacing;
 
-    /// <summary>A built terrain cell mesh: its GPU vertices and triangle index buffer.</summary>
-    public readonly record struct TerrainMesh(GpuMeshUploader.GpuVertex[] Vertices, ushort[] Indices);
-
     /// <summary>Vertex count for an <paramref name="gridSize" />×<paramref name="gridSize" /> cell mesh.</summary>
-    public static int VertexCountFor(int gridSize) => gridSize * gridSize;
+    public static int VertexCountFor(int gridSize)
+    {
+        return gridSize * gridSize;
+    }
 
     /// <summary>Index count for an <paramref name="gridSize" />×<paramref name="gridSize" /> cell mesh.</summary>
-    public static int IndexCountFor(int gridSize) => (gridSize - 1) * (gridSize - 1) * 6;
+    public static int IndexCountFor(int gridSize)
+    {
+        return (gridSize - 1) * (gridSize - 1) * 6;
+    }
 
     /// <summary>
     ///     The LAND grid resolution (vertices per edge) this cell's terrain will build at: the ESM
@@ -75,7 +82,9 @@ internal static class TerrainMeshBuilder
     ///     buffer + scratch) read this once per worldspace.
     /// </summary>
     public static int ResolveGridSize(CellRecord cell)
-        => cell.Heightmap?.ExactHeights?.GetLength(0) ?? Grid;
+    {
+        return cell.Heightmap?.ExactHeights?.GetLength(0) ?? Grid;
+    }
 
     /// <summary>
     ///     Allocates fresh vertex + index arrays and builds the mesh into them. Convenient for
@@ -94,7 +103,10 @@ internal static class TerrainMeshBuilder
     ///     Builds the invariant index buffer for a 33×33 LAND cell mesh (the default grid). Renderers
     ///     should upload this once and reuse it across all cells of the same grid size.
     /// </summary>
-    public static ushort[] BuildSharedIndexBufferData() => BuildSharedIndexBufferData(Grid);
+    public static ushort[] BuildSharedIndexBufferData()
+    {
+        return BuildSharedIndexBufferData(Grid);
+    }
 
     /// <summary>
     ///     Builds the invariant index buffer for an <paramref name="gridSize" />×<paramref name="gridSize" />
@@ -102,7 +114,9 @@ internal static class TerrainMeshBuilder
     ///     per worldspace load and reused across every cell.
     /// </summary>
     public static ushort[] BuildSharedIndexBufferData(int gridSize)
-        => BuildSharedIndexBufferData(gridSize, TerrainTriangleTopology.FixedSouthEastNorthWest);
+    {
+        return BuildSharedIndexBufferData(gridSize, TerrainTriangleTopology.FixedSouthEastNorthWest);
+    }
 
     /// <summary>
     ///     Builds the invariant index buffer for a LAND cell using the requested engine-family
@@ -135,7 +149,9 @@ internal static class TerrainMeshBuilder
     ///     <see cref="BuildSharedIndexBufferData(int)" /> once and call this method for each uploaded cell.
     /// </summary>
     public static bool TryBuildVertices(CellRecord cell, Span<GpuMeshUploader.GpuVertex> vertices)
-        => TryBuildVertices(cell, vertices, cache: null);
+    {
+        return TryBuildVertices(cell, vertices, null);
+    }
 
     /// <summary>
     ///     Builds the per-cell terrain vertices into <paramref name="vertices" />, optionally pulling decoded
@@ -144,7 +160,7 @@ internal static class TerrainMeshBuilder
     public static bool TryBuildVertices(
         CellRecord cell,
         Span<GpuMeshUploader.GpuVertex> vertices,
-        global::BethesdaMultitool.WorldRenderCache? cache)
+        WorldRenderCache? cache)
     {
         if (cell.GridX is not int gx || cell.GridY is not int gy) return false;
 
@@ -288,14 +304,14 @@ internal static class TerrainMeshBuilder
         // Central differences in cell-local units, falling back to forward/backward at edges.
         // dz/dx ≈ (h[i+1] - h[i-1]) / (2 * spacing); same for dz/dy. The surface normal of
         // z = f(x,y) is (-dz/dx, -dz/dy, 1) normalized — for a flat heightmap this is exactly +Z.
-        float hxMinus = i > 0 ? heights[j, i - 1] : heights[j, i];
-        float hxPlus = i < lastIndex ? heights[j, i + 1] : heights[j, i];
-        float hyMinus = j > 0 ? heights[j - 1, i] : heights[j, i];
-        float hyPlus = j < lastIndex ? heights[j + 1, i] : heights[j, i];
+        var hxMinus = i > 0 ? heights[j, i - 1] : heights[j, i];
+        var hxPlus = i < lastIndex ? heights[j, i + 1] : heights[j, i];
+        var hyMinus = j > 0 ? heights[j - 1, i] : heights[j, i];
+        var hyPlus = j < lastIndex ? heights[j + 1, i] : heights[j, i];
 
         // Span = 2 * spacing for interior, 1 * spacing at edges (forward/backward diff).
-        var xSpan = (i > 0 && i < lastIndex) ? 2f * spacing : spacing;
-        var ySpan = (j > 0 && j < lastIndex) ? 2f * spacing : spacing;
+        var xSpan = i > 0 && i < lastIndex ? 2f * spacing : spacing;
+        var ySpan = j > 0 && j < lastIndex ? 2f * spacing : spacing;
 
         var dx = (hxPlus - hxMinus) / xSpan;
         var dy = (hyPlus - hyMinus) / ySpan;
@@ -307,13 +323,13 @@ internal static class TerrainMeshBuilder
 
     private static Vector3 ComputeNormal(float[] heights, int i, int j)
     {
-        float hxMinus = i > 0 ? heights[j * Grid + i - 1] : heights[j * Grid + i];
-        float hxPlus = i < LastIndex ? heights[j * Grid + i + 1] : heights[j * Grid + i];
-        float hyMinus = j > 0 ? heights[(j - 1) * Grid + i] : heights[j * Grid + i];
-        float hyPlus = j < LastIndex ? heights[(j + 1) * Grid + i] : heights[j * Grid + i];
+        var hxMinus = i > 0 ? heights[j * Grid + i - 1] : heights[j * Grid + i];
+        var hxPlus = i < LastIndex ? heights[j * Grid + i + 1] : heights[j * Grid + i];
+        var hyMinus = j > 0 ? heights[(j - 1) * Grid + i] : heights[j * Grid + i];
+        var hyPlus = j < LastIndex ? heights[(j + 1) * Grid + i] : heights[j * Grid + i];
 
-        var xSpan = (i > 0 && i < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
-        var ySpan = (j > 0 && j < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
+        var xSpan = i > 0 && i < LastIndex ? 2f * VertexSpacing : VertexSpacing;
+        var ySpan = j > 0 && j < LastIndex ? 2f * VertexSpacing : VertexSpacing;
 
         var dx = (hxPlus - hxMinus) / xSpan;
         var dy = (hyPlus - hyMinus) / ySpan;
@@ -347,7 +363,9 @@ internal static class TerrainMeshBuilder
     }
 
     private static void FillIndices(Span<ushort> indices, int n)
-        => FillIndices(indices, n, TerrainTriangleTopology.FixedSouthEastNorthWest);
+    {
+        FillIndices(indices, n, TerrainTriangleTopology.FixedSouthEastNorthWest);
+    }
 
     private static void FillIndices(
         Span<ushort> indices,
@@ -378,16 +396,27 @@ internal static class TerrainMeshBuilder
 
                     if (TerrainSurfaceTopology.UsesSouthwestNortheastDiagonal(topology, i, j))
                     {
-                        indices[k++] = v00; indices[k++] = v10; indices[k++] = v11;
-                        indices[k++] = v00; indices[k++] = v11; indices[k++] = v01;
+                        indices[k++] = v00;
+                        indices[k++] = v10;
+                        indices[k++] = v11;
+                        indices[k++] = v00;
+                        indices[k++] = v11;
+                        indices[k++] = v01;
                     }
                     else
                     {
-                        indices[k++] = v00; indices[k++] = v10; indices[k++] = v01;
-                        indices[k++] = v01; indices[k++] = v10; indices[k++] = v11;
+                        indices[k++] = v00;
+                        indices[k++] = v10;
+                        indices[k++] = v01;
+                        indices[k++] = v01;
+                        indices[k++] = v10;
+                        indices[k++] = v11;
                     }
                 }
             }
         }
     }
+
+    /// <summary>A built terrain cell mesh: its GPU vertices and triangle index buffer.</summary>
+    public readonly record struct TerrainMesh(GpuMeshUploader.GpuVertex[] Vertices, ushort[] Indices);
 }

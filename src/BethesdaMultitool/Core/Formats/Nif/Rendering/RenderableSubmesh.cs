@@ -1,5 +1,9 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -221,7 +225,7 @@ internal sealed class RenderableSubmesh
     ///     The GPU renderer samples it from the shared animation clock and multiplies the result by
     ///     <see cref="MaterialAlpha" />. Null keeps the ordinary static-material path byte-identical.
     /// </summary>
-    public Animation.NifMaterialAlphaController? MaterialAlphaController { get; set; }
+    public NifMaterialAlphaController? MaterialAlphaController { get; set; }
 
     /// <summary>Material glossiness from NiMaterialProperty. Fallout 3 / New Vegas commonly default this to 10.</summary>
     public float MaterialGlossiness { get; init; } = 10f;
@@ -320,7 +324,7 @@ internal sealed class RenderableSubmesh
     ///     <c>uv += frac(velocity × animClock)</c> as a per-draw constant — the authored UVs stay
     ///     untouched, so a renderer without an animation clock draws the static base frame.
     /// </summary>
-    public System.Numerics.Vector2 UvScrollVelocity { get; set; }
+    public Vector2 UvScrollVelocity { get; set; }
 
     /// <summary>
     ///     Pre-skinning vertex positions in world space (same layout as <see cref="Positions" />).
@@ -390,7 +394,7 @@ internal sealed class RenderableSubmesh
     ///     Non-persisted legacy particle source for the opt-in live D3D12 path. Null for ordinary geometry
     ///     and for renderers that consume only the static baked arrays above.
     /// </summary>
-    public Particles.ParticleRuntimeDefinition? ParticleRuntime { get; set; }
+    public ParticleRuntimeDefinition? ParticleRuntime { get; set; }
 
     /// <summary>
     ///     True for SpeedTree bark/frond geometry carrying the specialized branch-wind payload.
@@ -400,13 +404,13 @@ internal sealed class RenderableSubmesh
     public bool IsSpeedTreeBranch { get; set; }
 
     /// <summary>TREE CNAM (RockSpeed, RustleSpeed), applied per SpeedTree batch.</summary>
-    public System.Numerics.Vector2 SpeedTreeWindSpeeds { get; set; } = System.Numerics.Vector2.One;
+    public Vector2 SpeedTreeWindSpeeds { get; set; } = Vector2.One;
 
     /// <summary>
     ///     Non-persisted identity for one component of the temporary opt-in SpeedTree runtime-LOD
     ///     sequence. Null on the established single-LOD path and on ordinary NIF geometry.
     /// </summary>
-    public BethesdaMultitool.Core.Formats.SpeedTree.SpeedTreeLodMetadata? SpeedTreeLod { get; set; }
+    public SpeedTreeLodMetadata? SpeedTreeLod { get; set; }
 
     /// <summary>
     ///     True when this submesh came from a <c>BSMeshLODTriShape</c> whose LOD0 slice is EMPTY, so

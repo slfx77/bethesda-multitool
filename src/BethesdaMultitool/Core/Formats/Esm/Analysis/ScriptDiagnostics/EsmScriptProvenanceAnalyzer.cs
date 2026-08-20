@@ -3,13 +3,14 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptProvenanceClassifier;
-using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
+using ScriptReferenceSlot =
+    BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
@@ -265,7 +266,8 @@ public static class EsmScriptProvenanceAnalyzer
         foreach (var dialogue in records.Dialogues)
         {
             var snapshots = dialogue.ResultScripts.Count == 0
-                ? [
+                ?
+                [
                     new BlockSnapshot(
                         string.Empty,
                         string.Empty,
@@ -414,7 +416,8 @@ public static class EsmScriptProvenanceAnalyzer
                 FormatHashes(emitted),
                 Truncate(string.Join(" | ", source.Select(s => s.SourceText).Where(s => !string.IsNullOrWhiteSpace(s))),
                     180),
-                Truncate(string.Join(" | ", emitted.Select(s => s.SourceText).Where(s => !string.IsNullOrWhiteSpace(s))),
+                Truncate(
+                    string.Join(" | ", emitted.Select(s => s.SourceText).Where(s => !string.IsNullOrWhiteSpace(s))),
                     180),
                 string.Join(' ', source.Select(s => s.References.Count.ToString(CultureInfo.InvariantCulture))),
                 string.Join(' ', emitted.Select(s => s.References.Count.ToString(CultureInfo.InvariantCulture))),
@@ -528,6 +531,7 @@ public static class EsmScriptProvenanceAnalyzer
                     {
                         referenceDetail = "reference_storage=absent";
                     }
+
                     var runOnDetail = physical.RunOn is { } runOn ? runOn.ToString() : "absent";
                     var parameter3Detail = physical.Parameter3 is { } parameter3
                         ? parameter3.ToString()
@@ -873,7 +877,9 @@ public static class EsmScriptProvenanceAnalyzer
         public Dictionary<InfoTopicKey, List<BlockSnapshot>> DialogueByTopic { get; } = [];
         public Dictionary<string, List<BlockSnapshot>> DialogueByTopicLabel { get; } = new(StringComparer.Ordinal);
         public Dictionary<uint, List<BlockSnapshot>> PackageByFormId { get; } = [];
-        public Dictionary<string, List<BlockSnapshot>> PackageByEditorId { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public Dictionary<string, List<BlockSnapshot>> PackageByEditorId { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
 
         public void AddScript(ScriptRecord script, BlockSnapshot snapshot)
         {
@@ -969,4 +975,3 @@ public static class EsmScriptProvenanceAnalyzer
         uint TopicFormId,
         uint SpeakerFormId);
 }
-

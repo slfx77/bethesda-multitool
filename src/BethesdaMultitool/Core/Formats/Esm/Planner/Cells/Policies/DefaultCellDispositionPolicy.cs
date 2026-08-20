@@ -19,8 +19,8 @@ public sealed class DefaultCellDispositionPolicy : ICellDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultCellDispositionPolicy.MasterOnly",
-                    Reason = "Master CELL had no DMP override; copy verbatim from master ESM.",
-                },
+                    Reason = "Master CELL had no DMP override; copy verbatim from master ESM."
+                }
             },
             SourceKind.DmpOverride => new DispositionDecision
             {
@@ -28,8 +28,8 @@ public sealed class DefaultCellDispositionPolicy : ICellDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultCellDispositionPolicy.DmpOverride",
-                    Reason = "DMP captured a CELL sharing FormID with master; emit override.",
-                },
+                    Reason = "DMP captured a CELL sharing FormID with master; emit override."
+                }
             },
             SourceKind.DmpNew => new DispositionDecision
             {
@@ -37,8 +37,8 @@ public sealed class DefaultCellDispositionPolicy : ICellDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultCellDispositionPolicy.DmpNew",
-                    Reason = "DMP captured a CELL without a master counterpart; allocate plugin FormID.",
-                },
+                    Reason = "DMP captured a CELL without a master counterpart; allocate plugin FormID."
+                }
             },
             SourceKind.Fo3Source => new DispositionDecision
             {
@@ -46,10 +46,10 @@ public sealed class DefaultCellDispositionPolicy : ICellDispositionPolicy
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "DefaultCellDispositionPolicy.Fo3NotSupported",
-                    Reason = "FO3 source CELLs are not yet wired into the planner; deferred.",
-                },
+                    Reason = "FO3 source CELLs are not yet wired into the planner; deferred."
+                }
             },
-            _ => throw new InvalidOperationException($"Unknown SourceKind: {entry.Source}"),
+            _ => throw new InvalidOperationException($"Unknown SourceKind: {entry.Source}")
         };
     }
 }

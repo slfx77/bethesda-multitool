@@ -1,16 +1,13 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Merge;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
@@ -91,7 +88,8 @@ public static class EsmGameplayAuditCommand
         AnsiConsole.MarkupLine($"[blue]Loading master ESM:[/] {Markup.Escape(Path.GetFileName(pcEsmPath))}");
         using var master = await SemanticFileLoader.LoadAsync(pcEsmPath, cancellationToken: cancellationToken);
 
-        var rawGenerated = EsmParser.EnumerateRecordsWithGrups(await File.ReadAllBytesAsync(generatedPath, cancellationToken)).Records;
+        var rawGenerated = EsmParser
+            .EnumerateRecordsWithGrups(await File.ReadAllBytesAsync(generatedPath, cancellationToken)).Records;
         WriteCellMergeAudit(Path.Combine(outputDirectory, "cell_merge_audit.csv"),
             generated.Records, source.Records, master.Records);
         WriteLandAudit(Path.Combine(outputDirectory, "land_audit.csv"),
@@ -117,7 +115,8 @@ public static class EsmGameplayAuditCommand
         var sourceBaseTypes = BuildBaseTypeIndex(source, master);
 
         var sb = new StringBuilder();
-        sb.AppendLine("cell_form_id,grid,worldspace,selected_mode,loaded_evidence_count,dmp_refs,master_refs,generated_refs,preserved_master_refs,dropped_or_deleted_master_refs,preserved_master_temp_refs");
+        sb.AppendLine(
+            "cell_form_id,grid,worldspace,selected_mode,loaded_evidence_count,dmp_refs,master_refs,generated_refs,preserved_master_refs,dropped_or_deleted_master_refs,preserved_master_temp_refs");
         foreach (var sourceCell in source.Cells.Where(c => !c.IsInterior).OrderBy(c => c.FormId))
         {
             if (!masterCells.TryGetValue(sourceCell.FormId, out var masterCell))
@@ -167,7 +166,8 @@ public static class EsmGameplayAuditCommand
         var rawLandRangesByCell = BuildRawLandRangesByCell(rawGenerated);
 
         var sb = new StringBuilder();
-        sb.AppendLine("cell_form_id,grid,land_source,source_range,generated_range,master_range,generated_has_water,generated_xclw,raw_land_form_id,raw_vhgt_length,raw_min,raw_max,raw_range");
+        sb.AppendLine(
+            "cell_form_id,grid,land_source,source_range,generated_range,master_range,generated_has_water,generated_xclw,raw_land_form_id,raw_vhgt_length,raw_min,raw_max,raw_range");
         foreach (var generatedCell in generated.Cells.Where(c => !c.IsInterior).OrderBy(c => c.FormId))
         {
             sourceCells.TryGetValue(generatedCell.FormId, out var sourceCell);
@@ -222,7 +222,8 @@ public static class EsmGameplayAuditCommand
         var generatedById = ToFirstByFormId(generated.MapMarkers, m => m.FormId);
         var masterById = ToFirstByFormId(master.MapMarkers, m => m.FormId);
         var sb = new StringBuilder();
-        sb.AppendLine("classification,form_id,generated_form_id,match_strategy,source_name,generated_name,master_name,source_type,generated_type,master_type,source_pos,generated_pos,master_pos");
+        sb.AppendLine(
+            "classification,form_id,generated_form_id,match_strategy,source_name,generated_name,master_name,source_type,generated_type,master_type,source_pos,generated_pos,master_pos");
 
         foreach (var sourceMarker in source.MapMarkers.OrderBy(m => m.FormId))
         {
@@ -277,11 +278,13 @@ public static class EsmGameplayAuditCommand
     {
         var labels = BuildLabelIndex(generated, source, master);
         var sb = new StringBuilder();
-        sb.AppendLine("target,origin,npc_form_id,editor_id,full_name,race,race_label,original_race,template,template_flags,uses_traits,face_npc,has_facegen,inventory,matching_armor_addons");
+        sb.AppendLine(
+            "target,origin,npc_form_id,editor_id,full_name,race,race_label,original_race,template,template_flags,uses_traits,face_npc,has_facegen,inventory,matching_armor_addons");
 
         foreach (var target in actors.Where(a => !string.IsNullOrWhiteSpace(a)).DefaultIfEmpty("Ulysses"))
         {
-            foreach (var (origin, records) in new[] { ("generated", generated), ("source", source), ("master", master) })
+            foreach (var (origin, records) in new[]
+                         { ("generated", generated), ("source", source), ("master", master) })
             {
                 foreach (var npc in records.Npcs.Where(n => MatchesNpc(n, target)))
                 {
@@ -544,4 +547,3 @@ public static class EsmGameplayAuditCommand
 
     private readonly record struct RawLandRange(uint LandFormId, int VhgtLength, float? Min, float? Max, float? Range);
 }
-

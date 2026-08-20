@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.NavMesh;
 using BethesdaMultitool.Core.Minidump;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
@@ -16,6 +15,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime.Readers;
 /// </summary>
 public sealed class RuntimeNavMeshDiscoverySparseTests
 {
+    public enum GapTarget
+    {
+        NaviRoot,
+        BucketArray,
+        MapItem,
+        NavMeshInfo,
+        CellPointer,
+        NavMeshArray,
+        NavMeshPointerArray,
+        NavMesh,
+        Vertices,
+        Triangles,
+        DoorPortals,
+        ParentForm,
+        DoorForm
+    }
+
     [Fact]
     public void Discovery_StitchesCapturedObjectsAndProjectsCanonicalSubrecords()
     {
@@ -38,7 +54,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [InlineData(GapTarget.NavMeshPointerArray)]
     public void CellDiscovery_FailsClosedAcrossRequiredTraversalGap(GapTarget gap)
     {
-        var fixture = new Fixture(gap: gap);
+        var fixture = new Fixture(gap);
 
         Assert.Empty(fixture.Discovery.DiscoverForCellVa(Fixture.CellVa, Fixture.FallbackCellFormId));
     }
@@ -50,7 +66,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [InlineData(GapTarget.DoorPortals)]
     public void DirectDiscovery_RejectsIncompleteDeclaredGeometry(GapTarget gap)
     {
-        var fixture = new Fixture(gap: gap);
+        var fixture = new Fixture(gap);
 
         Assert.Null(fixture.Discovery.DiscoverForNavMeshVa(Fixture.NavMeshVa, Fixture.FallbackCellFormId));
     }
@@ -58,7 +74,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [Fact]
     public void DirectDiscovery_UsesFallbackWhenParentFormIdCrossesGap()
     {
-        var fixture = new Fixture(gap: GapTarget.ParentForm);
+        var fixture = new Fixture(GapTarget.ParentForm);
 
         var record = fixture.Discovery.DiscoverForNavMeshVa(Fixture.NavMeshVa, Fixture.FallbackCellFormId);
 
@@ -69,7 +85,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [Fact]
     public void DirectDiscovery_ZeroesDoorFormIdWhenTargetHeaderCrossesGap()
     {
-        var fixture = new Fixture(gap: GapTarget.DoorForm);
+        var fixture = new Fixture(GapTarget.DoorForm);
 
         var record = fixture.Discovery.DiscoverForNavMeshVa(Fixture.NavMeshVa, Fixture.FallbackCellFormId);
 
@@ -86,7 +102,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [InlineData(GapTarget.NavMeshInfo)]
     public void InfoMapDiscovery_FailsClosedAcrossTraversalGap(GapTarget gap)
     {
-        var fixture = new Fixture(gap: gap);
+        var fixture = new Fixture(gap);
 
         Assert.Empty(fixture.Discovery.Discover(fixture.NaviEntry));
     }
@@ -94,7 +110,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [Fact]
     public void InfoMapDiscovery_PreservesTrustedStubWhenNavMeshBodyCrossesGap()
     {
-        var fixture = new Fixture(gap: GapTarget.NavMesh);
+        var fixture = new Fixture(GapTarget.NavMesh);
 
         var record = Assert.Single(fixture.Discovery.Discover(fixture.NaviEntry));
 
@@ -107,7 +123,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
     [Fact]
     public void StructuralValidator_RejectsNavMeshWindowAcrossGapDespiteFlatBait()
     {
-        var fixture = new Fixture(gap: GapTarget.NavMesh);
+        var fixture = new Fixture(GapTarget.NavMesh);
         var validator = new BsNavMeshStructuralValidator(
             fixture.Context,
             new HashSet<uint> { Fixture.ParentFormVa },
@@ -149,23 +165,6 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
         var nvdp = Assert.Single(record.RawSubrecords, subrecord => subrecord.Signature == "NVDP").Bytes;
         Assert.Equal(Fixture.DoorFormId, BinaryPrimitives.ReadUInt32LittleEndian(nvdp));
         Assert.Equal((ushort)7, BinaryPrimitives.ReadUInt16LittleEndian(nvdp.AsSpan(4, 2)));
-    }
-
-    public enum GapTarget
-    {
-        NaviRoot,
-        BucketArray,
-        MapItem,
-        NavMeshInfo,
-        CellPointer,
-        NavMeshArray,
-        NavMeshPointerArray,
-        NavMesh,
-        Vertices,
-        Triangles,
-        DoorPortals,
-        ParentForm,
-        DoorForm
     }
 
     private sealed class Fixture
@@ -242,7 +241,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
 
         private static byte[] BuildNavi()
         {
-            var bytes = BuildTesForm(0x38, NaviFormId, size: 80);
+            var bytes = BuildTesForm(0x38, NaviFormId, 80);
             WriteUInt32BE(bytes, 48, 1); // InfoMap +4: hash size.
             WriteUInt32BE(bytes, 52, BucketArrayVa); // InfoMap +8: bucket table.
             return bytes;
@@ -275,7 +274,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
 
         private static byte[] BuildCell()
         {
-            var bytes = BuildTesForm(0x39, ParentCellFormId, size: 192);
+            var bytes = BuildTesForm(0x39, ParentCellFormId, 192);
             WriteUInt32BE(bytes, 116, NavMeshArrayVa);
             return bytes;
         }
@@ -298,7 +297,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
 
         private static byte[] BuildNavMesh()
         {
-            var bytes = BuildTesForm(0x43, NavMeshFormId, size: 280);
+            var bytes = BuildTesForm(0x43, NavMeshFormId, 280);
             WriteUInt32BE(bytes, 0, ModuleVtable);
             WriteUInt32BE(bytes, 52, ParentFormVa);
             WriteArrayHeader(bytes, 56, VerticesVa, 1);
@@ -367,8 +366,8 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
         private const int SplitTailOffset = 0x400;
 
         private readonly byte[] _file = new byte[0x10000];
-        private readonly List<MinidumpMemoryRegion> _regions = [];
         private readonly Dictionary<uint, long> _fileOffsets = [];
+        private readonly List<MinidumpMemoryRegion> _regions = [];
         private int _slot;
 
         public void Map(uint va, byte[] bytes, int splitAt, SparseMapMode mode)

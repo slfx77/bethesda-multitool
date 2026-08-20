@@ -23,14 +23,14 @@ public sealed class PlannedNpcEncoder : IPlannedRecordEncoder<NpcRecord>
         {
             RecordDisposition.New => NpcEncoder.EncodeNew(
                 model,
-                masterFormIds: refs.EmittedFormIds,
-                masterNpcByRace: null,
-                validPackageFormIds: refs.ValidPackageFormIds,
-                remapTable: refs.SourceToEmittedFormId,
-                validFormIds: refs.EmittedFormIds),
+                refs.EmittedFormIds,
+                null,
+                refs.ValidPackageFormIds,
+                refs.SourceToEmittedFormId,
+                refs.EmittedFormIds),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedNpcEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedNpcEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

@@ -773,7 +773,7 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
 
         WriteRefrLockData(data, lockDataOffset, 75, FileOffsetToVa(lockKeyOffset), 0x05, 2, 1);
         WriteDoorTeleportData(data, teleportDataOffset, FileOffsetToVa(destinationDoorOffset),
-            x: 6528f, y: 3712f, z: 8256f, rotX: 0f, rotY: 0f, rotZ: -3.1415f, flags: 0x01);
+            6528f, 3712f, 8256f, 0f, 0f, -3.1415f, 0x01);
         WriteMapMarkerData(data, mapDataOffset, FileOffsetToVa(markerNameOffset), "Camp Marker", markerNameOffset, 7);
 
         var reader = CreateReader(data);

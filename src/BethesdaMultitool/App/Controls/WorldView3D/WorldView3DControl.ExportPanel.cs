@@ -20,33 +20,37 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldView3DControl
 {
+    // Projection mode + per-mode direction labels (relocated from MapExport3DDialog).
+    private static readonly ProjectionMode[] s_exportModes =
+        [ProjectionMode.Orthographic, ProjectionMode.Isometric, ProjectionMode.Trimetric];
+
+    private static readonly string[] s_exportOrthoDirections =
+        ["North at top", "East at top", "South at top", "West at top"];
+
+    private static readonly string[] s_exportIsoDirections =
+        ["From the NE", "From the SE", "From the SW", "From the NW"];
+
+    // Amber — distinct from the collision cage (green) and the navmesh overlay.
+    private static readonly Vector4 ExportFramingColor = new(1.0f, 0.75f, 0.1f, 0.9f);
+    private bool _exportBoundsValid;
+    private bool _exportFramingDirty = true;
+    private Vector3[]? _exportFramingLines;
+    private string? _exportLastFolder;
+    private float _exportMinX, _exportMaxX, _exportMinY, _exportMaxY, _exportMinZ, _exportMaxZ;
+
+    private float _exportScale = 1f;
+
+    private bool _exportSeeded;
+
+    // True while the Export tab is the selected right-panel tab (set by the host). Combined with the
+    // panel's "Show framing" toggle to decide whether Frame.cs draws the framing overlay.
+    private bool _exportTabSelected;
+
     /// <summary>
     ///     The viewer's export panel, constructed in the ctor and displayed by the host's right-panel
     ///     Export tab. Owned here so the run action reaches the live renderer.
     /// </summary>
     internal WorldView3DExportPanel ExportPanel { get; }
-
-    // Projection mode + per-mode direction labels (relocated from MapExport3DDialog).
-    private static readonly ProjectionMode[] s_exportModes =
-        [ProjectionMode.Orthographic, ProjectionMode.Isometric, ProjectionMode.Trimetric];
-    private static readonly string[] s_exportOrthoDirections =
-        ["North at top", "East at top", "South at top", "West at top"];
-    private static readonly string[] s_exportIsoDirections =
-        ["From the NE", "From the SE", "From the SW", "From the NW"];
-
-    private float _exportScale = 1f;
-    private bool _exportBoundsValid;
-    private bool _exportSeeded;
-    private float _exportMinX, _exportMaxX, _exportMinY, _exportMaxY, _exportMinZ, _exportMaxZ;
-    private string? _exportLastFolder;
-    // True while the Export tab is the selected right-panel tab (set by the host). Combined with the
-    // panel's "Show framing" toggle to decide whether Frame.cs draws the framing overlay.
-    private bool _exportTabSelected;
-    private bool _exportFramingDirty = true;
-    private Vector3[]? _exportFramingLines;
-
-    // Amber — distinct from the collision cage (green) and the navmesh overlay.
-    private static readonly Vector4 ExportFramingColor = new(1.0f, 0.75f, 0.1f, 0.9f);
 
     private ProjectionMode SelectedExportMode =>
         ExportPanel.ProjectionComboBox.SelectedIndex >= 0
@@ -60,9 +64,11 @@ public sealed partial class WorldView3DControl
     private bool ExportFramingVisible =>
         _exportTabSelected && _exportBoundsValid && ExportPanel.ShowFramingToggle.IsOn;
 
-    /// <summary>Subscribes the export panel's controls, mirroring <c>WireSettingsPanel</c>. The 13
-    /// include checkboxes are intentionally NOT wired — they are an independent export-only copy read
-    /// at export time, not live-view drivers.</summary>
+    /// <summary>
+    ///     Subscribes the export panel's controls, mirroring <c>WireSettingsPanel</c>. The 13
+    ///     include checkboxes are intentionally NOT wired — they are an independent export-only copy read
+    ///     at export time, not live-view drivers.
+    /// </summary>
     private void WireExportPanel()
     {
         var p = ExportPanel;
@@ -199,8 +205,10 @@ public sealed partial class WorldView3DControl
         _exportFramingDirty = true;
     }
 
-    /// <summary>Rebuilds the framing edge list when the projection/bounds changed. Called from the
-    /// live frame only while the overlay is visible, so an off-screen tab costs nothing.</summary>
+    /// <summary>
+    ///     Rebuilds the framing edge list when the projection/bounds changed. Called from the
+    ///     live frame only while the overlay is visible, so an off-screen tab costs nothing.
+    /// </summary>
     private void EnsureExportFramingLines()
     {
         if (!_exportFramingDirty) return;
@@ -208,8 +216,10 @@ public sealed partial class WorldView3DControl
         _exportFramingLines = _exportBoundsValid ? BuildExportFramingLines() : null;
     }
 
-    /// <summary>The export's captured world AABB (12 edges) + a view-direction gizmo from the box
-    /// center toward the ortho eye — a flat list of edge endpoint PAIRS in absolute world coords.</summary>
+    /// <summary>
+    ///     The export's captured world AABB (12 edges) + a view-direction gizmo from the box
+    ///     center toward the ortho eye — a flat list of edge endpoint PAIRS in absolute world coords.
+    /// </summary>
     private Vector3[] BuildExportFramingLines()
     {
         float x0 = _exportMinX, x1 = _exportMaxX;
@@ -218,13 +228,28 @@ public sealed partial class WorldView3DControl
         var corners = new[]
         {
             new Vector3(x0, y0, z0), new Vector3(x1, y0, z0), new Vector3(x1, y1, z0), new Vector3(x0, y1, z0),
-            new Vector3(x0, y0, z1), new Vector3(x1, y0, z1), new Vector3(x1, y1, z1), new Vector3(x0, y1, z1),
+            new Vector3(x0, y0, z1), new Vector3(x1, y0, z1), new Vector3(x1, y1, z1), new Vector3(x0, y1, z1)
         };
         var lines = new List<Vector3>(26);
-        void Edge(int a, int b) { lines.Add(corners[a]); lines.Add(corners[b]); }
-        Edge(0, 1); Edge(1, 2); Edge(2, 3); Edge(3, 0); // floor
-        Edge(4, 5); Edge(5, 6); Edge(6, 7); Edge(7, 4); // ceiling
-        Edge(0, 4); Edge(1, 5); Edge(2, 6); Edge(3, 7); // verticals
+
+        void Edge(int a, int b)
+        {
+            lines.Add(corners[a]);
+            lines.Add(corners[b]);
+        }
+
+        Edge(0, 1);
+        Edge(1, 2);
+        Edge(2, 3);
+        Edge(3, 0); // floor
+        Edge(4, 5);
+        Edge(5, 6);
+        Edge(6, 7);
+        Edge(7, 4); // ceiling
+        Edge(0, 4);
+        Edge(1, 5);
+        Edge(2, 6);
+        Edge(3, 7); // verticals
 
         // View-direction gizmo: box center → toward the ortho eye (shows the projection angle live).
         var plan = MapExport3DPlanner.Plan(
@@ -240,6 +265,7 @@ public sealed partial class WorldView3DControl
             lines.Add(center);
             lines.Add(center + Vector3.Normalize(toEye) * (0.25f * extent));
         }
+
         return lines.ToArray();
     }
 
@@ -300,6 +326,7 @@ public sealed partial class WorldView3DControl
                 ExportPanel.FolderTextBox.Text =
                     _exportLastFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             }
+
             if (string.IsNullOrWhiteSpace(ExportPanel.FileNameTextBox.Text))
             {
                 ExportPanel.FileNameTextBox.Text = $"{ExportWorldspaceName()}_3d";
@@ -319,10 +346,12 @@ public sealed partial class WorldView3DControl
             : "worldspace";
     }
 
-    /// <summary>Runs the export: reads the panel's current options, plans, and drives the offscreen
-    /// pipeline to <c>{folder}\{name}.png</c> (tiled runs add <c>_r{j}_c{i}</c> + a manifest). This is
-    /// the relocated body of the former <c>ExportButton_Click</c>, sourced from the panel + folder/name
-    /// fields instead of a modal dialog + save picker.</summary>
+    /// <summary>
+    ///     Runs the export: reads the panel's current options, plans, and drives the offscreen
+    ///     pipeline to <c>{folder}\{name}.png</c> (tiled runs add <c>_r{j}_c{i}</c> + a manifest). This is
+    ///     the relocated body of the former <c>ExportButton_Click</c>, sourced from the panel + folder/name
+    ///     fields instead of a modal dialog + save picker.
+    /// </summary>
     private async void ExportRun_Click(object sender, RoutedEventArgs e)
     {
         if (_data is null) return;
@@ -331,6 +360,7 @@ public sealed partial class WorldView3DControl
             ShowStatus("3D export isn't ready yet — the renderer is still initializing.", autoDismiss: true);
             return;
         }
+
         if (_selectedInterior is not null)
         {
             ShowStatus("3D export covers exterior worldspaces. Switch to an exterior view first.", autoDismiss: true);
@@ -353,6 +383,7 @@ public sealed partial class WorldView3DControl
             ShowStatus($"Export folder does not exist:\n{folder}", autoDismiss: true);
             return;
         }
+
         _exportLastFolder = folder;
         var basePath = Path.Combine(folder, name + ".png");
 

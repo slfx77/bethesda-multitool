@@ -1,6 +1,5 @@
 using System.Text;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Semantic;

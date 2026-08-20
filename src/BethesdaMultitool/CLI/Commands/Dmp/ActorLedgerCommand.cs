@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
@@ -27,7 +28,7 @@ internal static class ActorLedgerCommand
         var esmOpt = new Option<string>("--esm")
         {
             Description = "Path to the converted output plugin (.esm) to compare against",
-            Required = true,
+            Required = true
         };
         var pcEsmOpt = new Option<string>("--pc-esm")
         {
@@ -60,7 +61,8 @@ internal static class ActorLedgerCommand
             }
         }
 
-        AnsiConsole.MarkupLine($"[blue]Actor ledger[/] — {Markup.Escape(Path.GetFileName(dmpPath))} vs {Markup.Escape(Path.GetFileName(esmPath))}");
+        AnsiConsole.MarkupLine(
+            $"[blue]Actor ledger[/] — {Markup.Escape(Path.GetFileName(dmpPath))} vs {Markup.Escape(Path.GetFileName(esmPath))}");
 
         AnsiConsole.MarkupLine("[dim]Loading DMP (runtime scan; takes a minute)...[/]");
         using var dump = await SemanticFileLoader.LoadAsync(
@@ -84,13 +86,6 @@ internal static class ActorLedgerCommand
         var dmpSide = CollectPlacements(dump, names);
         var outSide = CollectPlacements(output, names);
         Print(dmpSide, outSide);
-    }
-
-    /// <summary>One base's placements on one side of the ledger.</summary>
-    private sealed class BaseTally
-    {
-        public int Count;
-        public readonly List<string> Cells = [];
     }
 
     private static Dictionary<string, BaseTally> CollectPlacements(
@@ -146,7 +141,8 @@ internal static class ActorLedgerCommand
 
         if (losses.Count == 0)
         {
-            AnsiConsole.MarkupLine("[green]No base lost placements: every DMP-placed actor base has at least as many output placements.[/]");
+            AnsiConsole.MarkupLine(
+                "[green]No base lost placements: every DMP-placed actor base has at least as many output placements.[/]");
         }
         else
         {
@@ -179,6 +175,13 @@ internal static class ActorLedgerCommand
                 $"[dim]{gains.Count:N0} base(s) appear only in the output (recovery/rescue re-pointing): " +
                 $"{Markup.Escape(string.Join(", ", gains.Take(10)))}{(gains.Count > 10 ? ", …" : "")}[/]");
         }
+    }
+
+    /// <summary>One base's placements on one side of the ledger.</summary>
+    private sealed class BaseTally
+    {
+        public readonly List<string> Cells = [];
+        public int Count;
     }
 
     /// <summary>
@@ -249,7 +252,7 @@ internal static class ActorLedgerCommand
                 : $"0x{baseId:X8}";
         }
 
-        public string CellLabel(Core.Formats.Esm.Models.Records.World.CellRecord cell)
+        public string CellLabel(CellRecord cell)
         {
             string worldspace;
             if (cell.WorldspaceFormId is { } ws)

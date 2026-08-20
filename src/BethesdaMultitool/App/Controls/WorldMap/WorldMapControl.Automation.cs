@@ -157,7 +157,10 @@ internal sealed class WorldMapControlAutomationPeer(WorldMapControl owner)
 }
 
 internal readonly record struct MapMarkerAutomationKey(
-    uint FormId, int XBits, int YBits, int MarkerType)
+    uint FormId,
+    int XBits,
+    int YBits,
+    int MarkerType)
 {
     internal static MapMarkerAutomationKey From(PlacedReference marker) => new(
         marker.FormId,

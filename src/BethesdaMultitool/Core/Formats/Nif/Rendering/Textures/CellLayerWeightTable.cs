@@ -27,17 +27,40 @@ public struct VertexWeights
     public LayerWeight[]? Overflow;
 #pragma warning restore S1104
 
-    /// <summary>Adds a layer weight, merging into the existing entry for the same FormID and spilling to the overflow array past four entries.</summary>
+    /// <summary>
+    ///     Adds a layer weight, merging into the existing entry for the same FormID and spilling to the overflow array
+    ///     past four entries.
+    /// </summary>
     public void Add(uint formId, float weight)
     {
         if (weight <= 0f) return;
 
         // If the same FormID already has an entry, merge in place — happens at shared edge
         // vertices when two quadrants reference the same BTXT.
-        if (Count > 0 && E0.FormId == formId) { E0 = new LayerWeight(formId, E0.Weight + weight); return; }
-        if (Count > 1 && E1.FormId == formId) { E1 = new LayerWeight(formId, E1.Weight + weight); return; }
-        if (Count > 2 && E2.FormId == formId) { E2 = new LayerWeight(formId, E2.Weight + weight); return; }
-        if (Count > 3 && E3.FormId == formId) { E3 = new LayerWeight(formId, E3.Weight + weight); return; }
+        if (Count > 0 && E0.FormId == formId)
+        {
+            E0 = new LayerWeight(formId, E0.Weight + weight);
+            return;
+        }
+
+        if (Count > 1 && E1.FormId == formId)
+        {
+            E1 = new LayerWeight(formId, E1.Weight + weight);
+            return;
+        }
+
+        if (Count > 2 && E2.FormId == formId)
+        {
+            E2 = new LayerWeight(formId, E2.Weight + weight);
+            return;
+        }
+
+        if (Count > 3 && E3.FormId == formId)
+        {
+            E3 = new LayerWeight(formId, E3.Weight + weight);
+            return;
+        }
+
         if (Overflow is not null)
         {
             var n = Count - 4;
@@ -53,10 +76,22 @@ public struct VertexWeights
 
         switch (Count)
         {
-            case 0: E0 = new LayerWeight(formId, weight); Count = 1; return;
-            case 1: E1 = new LayerWeight(formId, weight); Count = 2; return;
-            case 2: E2 = new LayerWeight(formId, weight); Count = 3; return;
-            case 3: E3 = new LayerWeight(formId, weight); Count = 4; return;
+            case 0:
+                E0 = new LayerWeight(formId, weight);
+                Count = 1;
+                return;
+            case 1:
+                E1 = new LayerWeight(formId, weight);
+                Count = 2;
+                return;
+            case 2:
+                E2 = new LayerWeight(formId, weight);
+                Count = 3;
+                return;
+            case 3:
+                E3 = new LayerWeight(formId, weight);
+                Count = 4;
+                return;
             default:
                 var overflowIndex = Count - 4;
                 if (Overflow is null)
@@ -67,6 +102,7 @@ public struct VertexWeights
                 {
                     Array.Resize(ref Overflow, Overflow.Length * 2);
                 }
+
                 Overflow[overflowIndex] = new LayerWeight(formId, weight);
                 Count++;
                 return;
@@ -85,6 +121,7 @@ public struct VertexWeights
             var n = Count - 4;
             for (var i = 0; i < n; i++) sum += Overflow[i].Weight;
         }
+
         return sum;
     }
 
@@ -111,13 +148,11 @@ public struct VertexWeights
 ///     Shared edge vertices (cell column 16, cell row 16) and the cell center carry
 ///     contributions from 2 or 4 quadrants respectively — that overlap is exactly what kills
 ///     the BTXT seam at the cell midlines during bilinear interp.
-///
 ///     This mirrors what FNV's <c>NiTerrainLandShader</c> does in the live engine (and what
 ///     xLODGen replicates offline): a unified per-vertex blend table that the per-pixel pass
 ///     bilinearly interpolates. The hard-quadrant-boundary layout the 2D overview previously
 ///     used produced a seam any time adjacent quadrants used different BTXTs; this layout
 ///     reproduces the engine's smooth cross-quadrant blend.
-///
 ///     Streaming workers reuse a single thread-local instance across cells via
 ///     <see cref="BuildInto" />, so the ATXT dense grids and the alpha scratch list are
 ///     pooled on the table itself (zero per-cell GC pressure on the hot path). The static
@@ -145,15 +180,36 @@ public sealed class CellLayerWeightTable
     /// </summary>
     public const uint EngineDefaultSentinelFormId = 0u;
 
-    /// <summary>This table's LAND grid edge length (33 for Fallout-family, 65 for Morrowind).</summary>
-    public int GridSize { get; }
+    // Per-edge quadrant selectors. Pre-staticed so the per-cell neighbor-accumulate path
+    // doesn't allocate four two-element arrays on every BuildInto call.
+    private static readonly int[] s_eastEdgeQuads = { 0, 2 };
+    private static readonly int[] s_westEdgeQuads = { 1, 3 };
+    private static readonly int[] s_northEdgeQuads = { 0, 1 };
+    private static readonly int[] s_southEdgeQuads = { 2, 3 };
 
-    /// <summary>Quadrant-local vertex grid edge length: <c>(GridSize + 1) / 2</c> (17 for 33, 33 for 65).</summary>
-    public int QuadEdge { get; }
+    /// <summary>
+    ///     Pooled alpha-layer scratch list reused across quadrants and across calls. Cleared
+    ///     by <see cref="QuadrantLayerSelector.SelectBaseAndAlphas" /> before each refill.
+    /// </summary>
+    private readonly List<LandTextureLayer> _alphaScratch = new(4);
 
-    private readonly int _mid;             // center cross index: (GridSize - 1) / 2  (16 for 33, 32 for 65)
-    private readonly int _last;            // last vertex index:  GridSize - 1        (32 for 33, 64 for 65)
-    private readonly int _quadVertCount;   // QuadEdge * QuadEdge (289 for 33, 1089 for 65)
+    private readonly int _last; // last vertex index:  GridSize - 1        (32 for 33, 64 for 65)
+
+    private readonly int _mid; // center cross index: (GridSize - 1) / 2  (16 for 33, 32 for 65)
+    private readonly int _quadVertCount; // QuadEdge * QuadEdge (289 for 33, 1089 for 65)
+
+    /// <summary>
+    ///     Pooled dense 17×17 opacity grids, one per ATXT. Grown lazily; rebuilt from
+    ///     scratch (Array.Clear + sparse fill) on every <see cref="BuildInto" /> so the
+    ///     pool's lifetime spans many cells.
+    /// </summary>
+    private float[][] _atxtDenseGridsPool = new float[8][];
+
+    /// <summary>
+    ///     Pooled source-resolution scratch grid for <see cref="PopulateAtxtGrids" /> when a layer's
+    ///     <see cref="LandTextureLayer.BlendGridEdge" /> differs from this table's <see cref="QuadEdge" />.
+    /// </summary>
+    private float[]? _atxtSourceScratch;
 
     /// <summary>
     ///     Construct a weight table for an <paramref name="gridSize" />×<paramref name="gridSize" />
@@ -171,28 +227,18 @@ public sealed class CellLayerWeightTable
         Vertices = new VertexWeights[gridSize * gridSize];
     }
 
+    /// <summary>This table's LAND grid edge length (33 for Fallout-family, 65 for Morrowind).</summary>
+    public int GridSize { get; }
+
+    /// <summary>Quadrant-local vertex grid edge length: <c>(GridSize + 1) / 2</c> (17 for 33, 33 for 65).</summary>
+    public int QuadEdge { get; }
+
     public VertexWeights[] Vertices { get; }
 
-    /// <summary>
-    ///     Pooled dense 17×17 opacity grids, one per ATXT. Grown lazily; rebuilt from
-    ///     scratch (Array.Clear + sparse fill) on every <see cref="BuildInto" /> so the
-    ///     pool's lifetime spans many cells.
-    /// </summary>
-    private float[][] _atxtDenseGridsPool = new float[8][];
-
-    /// <summary>
-    ///     Pooled alpha-layer scratch list reused across quadrants and across calls. Cleared
-    ///     by <see cref="QuadrantLayerSelector.SelectBaseAndAlphas" /> before each refill.
-    /// </summary>
-    private readonly List<LandTextureLayer> _alphaScratch = new(4);
-
-    /// <summary>
-    ///     Pooled source-resolution scratch grid for <see cref="PopulateAtxtGrids" /> when a layer's
-    ///     <see cref="LandTextureLayer.BlendGridEdge" /> differs from this table's <see cref="QuadEdge" />.
-    /// </summary>
-    private float[]? _atxtSourceScratch;
-
-    public ref VertexWeights At(int vx, int vy) => ref Vertices[vy * GridSize + vx];
+    public ref VertexWeights At(int vx, int vy)
+    {
+        return ref Vertices[vy * GridSize + vx];
+    }
 
     /// <summary>
     ///     Clear the vertex grid so this instance can be reused by <see cref="BuildInto" />.
@@ -231,6 +277,7 @@ public sealed class CellLayerWeightTable
                 ref _atxtDenseGridsPool,
                 Math.Max(alphas.Count, _atxtDenseGridsPool.Length * 2));
         }
+
         for (var i = 0; i < alphas.Count; i++)
         {
             var grid = _atxtDenseGridsPool[i] ??= new float[_quadVertCount];
@@ -284,12 +331,12 @@ public sealed class CellLayerWeightTable
                     var x0 = (int)fx;
                     var tx = fx - x0;
                     var x1 = Math.Min(x0 + 1, srcEdge - 1);
-                    var top = (src[(y0 * srcEdge) + x0] * (1f - tx)) + (src[(y0 * srcEdge) + x1] * tx);
-                    var bottom = (src[(y1 * srcEdge) + x0] * (1f - tx)) + (src[(y1 * srcEdge) + x1] * tx);
-                    var value = (top * (1f - ty)) + (bottom * ty);
+                    var top = src[y0 * srcEdge + x0] * (1f - tx) + src[y0 * srcEdge + x1] * tx;
+                    var bottom = src[y1 * srcEdge + x0] * (1f - tx) + src[y1 * srcEdge + x1] * tx;
+                    var value = top * (1f - ty) + bottom * ty;
                     if (value > 0f)
                     {
-                        grid[(qy * QuadEdge) + qx] = value;
+                        grid[qy * QuadEdge + qx] = value;
                     }
                 }
             }
@@ -305,12 +352,10 @@ public sealed class CellLayerWeightTable
     ///     with the engine-default sentinel so the per-pixel path can fall back to
     ///     DirtWasteland01 (matching the prior per-quadrant behavior). Returns null when no
     ///     quadrant contributed anything.
-    ///
     ///     After all four quadrants are processed, each cell vertex's weights are renormalized
     ///     to sum to 1. Shared edge vertices typically receive weight=1 from each adjacent
     ///     quadrant's BTXT (when no ATXTs cover that vertex) for a raw sum of 2 → renormalized
     ///     to 0.5/0.5; bilinear interp during sampling then gives the smooth boundary fade.
-    ///
     ///     Pass the four directional neighbor cells' layer lists to extend the same blend
     ///     ACROSS cell boundaries. The shared edge vertices (vx=0/32 and vy=0/32) accumulate
     ///     contributions from the neighbor's adjacent edge quadrants, producing a smooth
@@ -318,7 +363,6 @@ public sealed class CellLayerWeightTable
     ///     neighbor missing, corner vertices receive contributions from 3 of 4 surrounding
     ///     cells — close enough to the engine's behavior; the diagonal contribution is small
     ///     in practice because adjacent cells usually share BTXTs at boundaries.
-    ///
     ///     Allocating one-shot entry point. Streaming workers should call
     ///     <see cref="BuildInto" /> on a pooled instance instead.
     /// </summary>
@@ -328,8 +372,10 @@ public sealed class CellLayerWeightTable
         IReadOnlyList<LandTextureLayer>? westNeighborLayers = null,
         IReadOnlyList<LandTextureLayer>? northNeighborLayers = null,
         IReadOnlyList<LandTextureLayer>? southNeighborLayers = null)
-        => Build(CellVertexCount, layers, eastNeighborLayers, westNeighborLayers, northNeighborLayers,
+    {
+        return Build(CellVertexCount, layers, eastNeighborLayers, westNeighborLayers, northNeighborLayers,
             southNeighborLayers);
+    }
 
     /// <summary>
     ///     Grid-size-aware overload: builds the weight table at <paramref name="gridSize" />×
@@ -345,7 +391,8 @@ public sealed class CellLayerWeightTable
         IReadOnlyList<LandTextureLayer>? southNeighborLayers = null)
     {
         var table = new CellLayerWeightTable(gridSize);
-        return BuildInto(table, layers, eastNeighborLayers, westNeighborLayers, northNeighborLayers, southNeighborLayers)
+        return BuildInto(table, layers, eastNeighborLayers, westNeighborLayers, northNeighborLayers,
+            southNeighborLayers)
             ? table
             : null;
     }
@@ -399,7 +446,7 @@ public sealed class CellLayerWeightTable
                     (true, true) => (northEast, 0, 0),
                     (true, false) => (north, 0, col),
                     (false, true) => (east, row, 0),
-                    _ => (vtexFormIds, row, col),
+                    _ => (vtexFormIds, row, col)
                 };
                 if (grid is null)
                 {
@@ -408,7 +455,7 @@ public sealed class CellLayerWeightTable
                     c = Math.Min(col, vtexSize - 1);
                 }
 
-                table.At(vx, vy).Add(grid[(r * vtexSize) + c], 1f);
+                table.At(vx, vy).Add(grid[r * vtexSize + c], 1f);
             }
         }
 
@@ -495,14 +542,17 @@ public sealed class CellLayerWeightTable
         {
             AccumulateNeighborEastEdge(table, eastNeighborLayers);
         }
+
         if (westNeighborLayers is { Count: > 0 })
         {
             AccumulateNeighborWestEdge(table, westNeighborLayers);
         }
+
         if (northNeighborLayers is { Count: > 0 })
         {
             AccumulateNeighborNorthEdge(table, northNeighborLayers);
         }
+
         if (southNeighborLayers is { Count: > 0 })
         {
             AccumulateNeighborSouthEdge(table, southNeighborLayers);
@@ -547,18 +597,12 @@ public sealed class CellLayerWeightTable
             atxtSum += op;
             table.At(cellVx, cellVy).Add(alphas[i].TextureFormId, op);
         }
+
         var baseWeight = 1f - atxtSum;
         if (baseWeight <= 0f) return;
         var baseFormId = baseLayer?.TextureFormId ?? EngineDefaultSentinelFormId;
         table.At(cellVx, cellVy).Add(baseFormId, baseWeight);
     }
-
-    // Per-edge quadrant selectors. Pre-staticed so the per-cell neighbor-accumulate path
-    // doesn't allocate four two-element arrays on every BuildInto call.
-    private static readonly int[] s_eastEdgeQuads = { 0, 2 };
-    private static readonly int[] s_westEdgeQuads = { 1, 3 };
-    private static readonly int[] s_northEdgeQuads = { 0, 1 };
-    private static readonly int[] s_southEdgeQuads = { 2, 3 };
 
     /// <summary>
     ///     East neighbor: its west quadrants (SW=0, NW=2) share their western edge column
@@ -578,8 +622,8 @@ public sealed class CellLayerWeightTable
             for (var qy = 0; qy < table.QuadEdge; qy++)
             {
                 var cellVy = quadrant == 0 ? table._last - qy : table._mid - qy;
-                AccumulateOneVertex(table, cellVx: table._last, cellVy: cellVy,
-                    qx: 0, qy: qy, baseLayer, alphaScratch, atxtGrids);
+                AccumulateOneVertex(table, table._last, cellVy,
+                    0, qy, baseLayer, alphaScratch, atxtGrids);
             }
         }
     }
@@ -601,8 +645,8 @@ public sealed class CellLayerWeightTable
             for (var qy = 0; qy < table.QuadEdge; qy++)
             {
                 var cellVy = quadrant == 1 ? table._last - qy : table._mid - qy;
-                AccumulateOneVertex(table, cellVx: 0, cellVy: cellVy,
-                    qx: table._mid, qy: qy, baseLayer, alphaScratch, atxtGrids);
+                AccumulateOneVertex(table, 0, cellVy,
+                    table._mid, qy, baseLayer, alphaScratch, atxtGrids);
             }
         }
     }
@@ -624,8 +668,8 @@ public sealed class CellLayerWeightTable
             for (var qx = 0; qx < table.QuadEdge; qx++)
             {
                 var cellVx = quadrant == 0 ? qx : table._mid + qx;
-                AccumulateOneVertex(table, cellVx: cellVx, cellVy: 0,
-                    qx: qx, qy: 0, baseLayer, alphaScratch, atxtGrids);
+                AccumulateOneVertex(table, cellVx, 0,
+                    qx, 0, baseLayer, alphaScratch, atxtGrids);
             }
         }
     }
@@ -647,8 +691,8 @@ public sealed class CellLayerWeightTable
             for (var qx = 0; qx < table.QuadEdge; qx++)
             {
                 var cellVx = quadrant == 2 ? qx : table._mid + qx;
-                AccumulateOneVertex(table, cellVx: cellVx, cellVy: table._last,
-                    qx: qx, qy: table._mid, baseLayer, alphaScratch, atxtGrids);
+                AccumulateOneVertex(table, cellVx, table._last,
+                    qx, table._mid, baseLayer, alphaScratch, atxtGrids);
             }
         }
     }

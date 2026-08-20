@@ -20,7 +20,7 @@ internal static class NifTrackSampler
     /// </summary>
     internal static float MapTime(float t, float frequency, float phase, float start, float stop, bool loop)
     {
-        var u = (t * frequency) + phase;
+        var u = t * frequency + phase;
         var length = stop - start;
         if (length <= 0f)
         {

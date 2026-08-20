@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -16,13 +16,6 @@ internal static class InlineScriptReferenceSafetyPlanner
 {
     private static readonly ImmutableHashSet<string> OwnerTypes =
         ImmutableHashSet.Create(StringComparer.Ordinal, "INFO", "PACK", "TERM");
-
-    internal sealed record Result(
-        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
-        ImmutableDictionary<uint, uint> SourceToEmitted,
-        ImmutableHashSet<uint> EmittedFormIds,
-        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> References,
-        ImmutableArray<PlanDiagnostic> Diagnostics);
 
     public static Result Apply(
         IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> decisions,
@@ -80,8 +73,8 @@ internal static class InlineScriptReferenceSafetyPlanner
                     Provenance = new PlanProvenance
                     {
                         PolicyId = "InlineScriptReferenceSafetyPlanner.UnsafeBundle",
-                        Reason = $"{issue.Message} Inline SCDA/SLSD/SCRO/SCRV is atomic.",
-                    },
+                        Reason = $"{issue.Message} Inline SCDA/SLSD/SCRO/SCRV is atomic."
+                    }
                 });
 
                 if (!keepMaster && emitted is > 0)
@@ -96,9 +89,9 @@ internal static class InlineScriptReferenceSafetyPlanner
                     Code = "inline-script.suppress-unsafe-owner",
                     RecordType = entry.Type,
                     FormId = entry.DmpFormId ?? entry.MasterFormId,
-                    Message = $"{action} {entry.Type} 0x{(entry.DmpFormId ?? entry.MasterFormId ?? 0):X8}: "
+                    Message = $"{action} {entry.Type} 0x{entry.DmpFormId ?? entry.MasterFormId ?? 0:X8}: "
                               + issue.Message,
-                    Metadata = BuildMetadata(entry, emitted, disposition, issue),
+                    Metadata = BuildMetadata(entry, emitted, disposition, issue)
                 });
             }
 
@@ -152,10 +145,19 @@ internal static class InlineScriptReferenceSafetyPlanner
             ["target-source-form-id"] = FormatFormId(issue.SourceFormId),
             ["target-emitted-form-id"] = FormatFormId(issue.ResolvedFormId),
             ["local-variable-id"] = issue.LocalVariableId?.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
+                CultureInfo.InvariantCulture)
         };
     }
 
-    private static string? FormatFormId(uint? formId) =>
-        formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    private static string? FormatFormId(uint? formId)
+    {
+        return formId.HasValue ? $"0x{formId.Value:X8}" : null;
+    }
+
+    internal sealed record Result(
+        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
+        ImmutableDictionary<uint, uint> SourceToEmitted,
+        ImmutableHashSet<uint> EmittedFormIds,
+        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> References,
+        ImmutableArray<PlanDiagnostic> Diagnostics);
 }

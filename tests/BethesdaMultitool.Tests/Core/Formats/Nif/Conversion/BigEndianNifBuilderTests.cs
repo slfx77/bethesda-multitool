@@ -55,7 +55,7 @@ public sealed class BigEndianNifBuilderTests
     [Fact]
     public void Parse_AlphaPropertyFieldsReadBackAtDocumentedOffsets()
     {
-        var data = BigEndianNifBuilder.Build(0x12EC, 80);
+        var data = BigEndianNifBuilder.Build();
         var info = Assert.IsType<NifInfo>(NifParser.Parse(data));
         var alphaBlock = info.Blocks[BigEndianNifBuilder.NiAlphaPropertyBlockIndex];
 

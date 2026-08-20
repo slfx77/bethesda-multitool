@@ -37,8 +37,10 @@ internal static class WalkCollisionFallbackPolicy
     ///     static). Path-gated so it holds for every placement of the model.
     /// </summary>
     public static bool IsSpeedTreeModel(string? modelPath)
-        => modelPath is not null &&
-           modelPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase);
+    {
+        return modelPath is not null &&
+               modelPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     ///     Viewer policy treats Plants and Tree placements as walk-through UNLESS they ship authored
@@ -49,7 +51,9 @@ internal static class WalkCollisionFallbackPolicy
     ///     authoritative, so a plant that genuinely ships collision is still solid.
     /// </summary>
     public static bool IsVegetation(PlacedObjectCategory category)
-        => category is PlacedObjectCategory.Plants or PlacedObjectCategory.Tree;
+    {
+        return category is PlacedObjectCategory.Plants or PlacedObjectCategory.Tree;
+    }
 
     /// <summary>
     ///     Visual geometry under the effects folder is presentation, not an inferred walk surface.
@@ -58,9 +62,11 @@ internal static class WalkCollisionFallbackPolicy
     public static bool AllowsVisualMeshFallback(
         string? modelPath,
         PlacedObjectCategory category = PlacedObjectCategory.Unknown)
-        => !IsEffectModel(modelPath, category) &&
-           !IsVegetation(category) &&
-           !IsSpeedTreeModel(modelPath);
+    {
+        return !IsEffectModel(modelPath, category) &&
+               !IsVegetation(category) &&
+               !IsSpeedTreeModel(modelPath);
+    }
 
     /// <summary>
     ///     True for an explicit effect-category placement, a missing model path, or a model stored

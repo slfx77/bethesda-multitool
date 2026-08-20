@@ -2,8 +2,8 @@ using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells.Policies;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
@@ -62,7 +62,9 @@ public sealed class CellSectionPlanner
         // Coord-paired proto cells re-keyed to master FormIDs — their NAVMs must follow the
         // alias or they orphan (never attach as children while NAVI rows still emit).
         uint EffectiveCellFormId(uint cellFormId)
-            => protoToMasterCellAlias.TryGetValue(cellFormId, out var master) ? master : cellFormId;
+        {
+            return protoToMasterCellAlias.TryGetValue(cellFormId, out var master) ? master : cellFormId;
+        }
 
         // Master-cell NAVM gate — rationale, engine RE, and why the Warning must be loud all
         // live on MasterCellNavmSuppression. Post-alias, so folded proto cells count as master.
@@ -149,19 +151,19 @@ public sealed class CellSectionPlanner
                 .AddRange(doorDiagnostics)
                 .AddRange(reparentingDiagnostics)
                 .AddRange(navmSuppressionDiagnostics)
-                .AddRange(duplicateChildDiagnostics),
+                .AddRange(duplicateChildDiagnostics)
         };
     }
 
     private static (ImmutableDictionary<uint, CellPlan> Cells, ImmutableArray<PlanDiagnostic> Diagnostics)
         BuildCellPlans(
-        IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions,
-        IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
-        IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
-        CellChildAllocator.AllocationResult allocations,
-        IReadOnlySet<uint> masterFormIds,
-        IReadOnlySet<uint> masterRefFormIds,
-        bool replaceCellTemporariesOnOverride)
+            IReadOnlyList<(CellCatalogEntry Entry, DispositionDecision Decision)> decisions,
+            IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
+            IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
+            CellChildAllocator.AllocationResult allocations,
+            IReadOnlySet<uint> masterFormIds,
+            IReadOnlySet<uint> masterRefFormIds,
+            bool replaceCellTemporariesOnOverride)
     {
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
         var duplicateDiagnostics = ImmutableArray.CreateBuilder<PlanDiagnostic>();
@@ -190,9 +192,10 @@ public sealed class CellSectionPlanner
                     FormId = entry.CellFormId,
                     Message =
                         $"CELL 0x{entry.CellFormId:X8}: dropped {duplicateChildDrops:N0} duplicate " +
-                        "placed-ref capture(s) that resolved to an already-planned FormID.",
+                        "placed-ref capture(s) that resolved to an already-planned FormID."
                 });
             }
+
             // DmpNew cells whose proto FormID isn't in master get a fresh plugin-range
             // FormID in Pass 0 of the allocator. Use that emitted ID as the cell's plan
             // key (== record FormID == GRUP label) so the engine sees the cell as new
@@ -217,7 +220,7 @@ public sealed class CellSectionPlanner
                     References = ImmutableArray<ResolvedRef>.Empty,
                     OverrideSubrecords = null,
                     ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                    Provenance = decision.Provenance,
+                    Provenance = decision.Provenance
                 },
                 Context = context,
                 PersistentChildren = persistent,
@@ -225,7 +228,7 @@ public sealed class CellSectionPlanner
                 TemporaryChildren = temporary,
                 ParentWorldspaceFormId = context.WorldspaceFormId,
                 Mode = mode,
-                DropRenderCullingMarkers = dropRenderCullingMarkers,
+                DropRenderCullingMarkers = dropRenderCullingMarkers
             });
         }
 
@@ -250,23 +253,23 @@ public sealed class CellSectionPlanner
         {
             (false, _) => CellMergeMode.LoadedReplacement,
             (true, null) => CellMergeMode.Skip,
-            (true, { } dmpModel) => CellMerger.Classify(dmpModel, masterRefFormIds),
+            (true, { } dmpModel) => CellMerger.Classify(dmpModel, masterRefFormIds)
         };
 
         // Replaced interiors drop captured render-culling markers (their final-game bounds
         // mis-cull the proto layout) unless the diagnostic replace-temporaries mode is on.
         var dropRenderCullingMarkers = isMasterAnchored
-            && context.IsInterior
-            && mode == CellMergeMode.LoadedReplacement
-            && !replaceCellTemporariesOnOverride;
+                                       && context.IsInterior
+                                       && mode == CellMergeMode.LoadedReplacement
+                                       && !replaceCellTemporariesOnOverride;
 
         return (mode, dropRenderCullingMarkers);
     }
 
     private static (ImmutableDictionary<uint, WorldspacePlan> Plans,
         ImmutableDictionary<uint, uint> SourceToEmitted) BuildWorldspacePlans(
-        IReadOnlyList<WorldspaceCatalog.WorldspaceCatalogEntry> worldspaceEntries,
-        FormIdAllocator allocator)
+            IReadOnlyList<WorldspaceCatalog.WorldspaceCatalogEntry> worldspaceEntries,
+            FormIdAllocator allocator)
     {
         var worldspaces = ImmutableDictionary.CreateBuilder<uint, WorldspacePlan>();
         var sourceToEmitted = ImmutableDictionary.CreateBuilder<uint, uint>();
@@ -278,7 +281,7 @@ public sealed class CellSectionPlanner
                 WorldspaceCatalog.WorldspaceCatalogSource.MasterOnly => RecordDisposition.KeepMaster,
                 WorldspaceCatalog.WorldspaceCatalogSource.DmpOverride => RecordDisposition.Override,
                 WorldspaceCatalog.WorldspaceCatalogSource.DmpNew => RecordDisposition.New,
-                _ => throw new InvalidOperationException($"Unknown WorldspaceCatalogSource: {entry.Source}"),
+                _ => throw new InvalidOperationException($"Unknown WorldspaceCatalogSource: {entry.Source}")
             };
 
             // DmpNew worldspaces get a plugin-range FormID up front so cell GRUPs can wrap
@@ -310,28 +313,31 @@ public sealed class CellSectionPlanner
                     Provenance = new PlanProvenance
                     {
                         PolicyId = "WorldspaceCatalog." + entry.Source,
-                        Reason = $"Worldspace owns {entry.CellFormIds.Count} planned cell(s).",
-                    },
+                        Reason = $"Worldspace owns {entry.CellFormIds.Count} planned cell(s)."
+                    }
                 },
-                CellFormIds = entry.CellFormIds.ToImmutableArray(),
+                CellFormIds = entry.CellFormIds.ToImmutableArray()
             });
         }
 
         return (worldspaces.ToImmutable(), sourceToEmitted.ToImmutable());
     }
 
-    private static CellSectionResult Empty() => new()
+    private static CellSectionResult Empty()
     {
-        CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty,
-        WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty,
-        NavmEntries = ImmutableArray<PlannedNavmEntry>.Empty,
-        CellChildSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
-        NavmSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
-        LandByCellSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
-        AdditionalEmittedFormIds = ImmutableHashSet<uint>.Empty,
-        WorldspaceSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-    };
+        return new CellSectionResult
+        {
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty,
+            WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty,
+            NavmEntries = ImmutableArray<PlannedNavmEntry>.Empty,
+            CellChildSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+            NavmSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+            LandByCellSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+            AdditionalEmittedFormIds = ImmutableHashSet<uint>.Empty,
+            WorldspaceSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty
+        };
+    }
 
     public sealed record CellSectionResult
     {
@@ -340,15 +346,20 @@ public sealed class CellSectionPlanner
         public required ImmutableArray<PlannedNavmEntry> NavmEntries { get; init; }
         public required ImmutableDictionary<uint, uint> CellChildSourceToEmitted { get; init; }
         public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
+
         public ImmutableDictionary<uint, uint> LandByCellSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
+
         /// <summary>Post-allocation child FormIDs that must enter the emitted-ID set.</summary>
         public ImmutableHashSet<uint> AdditionalEmittedFormIds { get; init; } =
             ImmutableHashSet<uint>.Empty;
+
         public ImmutableDictionary<uint, uint> WorldspaceSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
+
         public ImmutableDictionary<uint, uint> CellSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
+
         public ImmutableArray<PlanDiagnostic> Diagnostics { get; init; } =
             ImmutableArray<PlanDiagnostic>.Empty;
     }

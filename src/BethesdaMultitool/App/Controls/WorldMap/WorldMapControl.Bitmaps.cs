@@ -9,11 +9,14 @@ using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Windows.Foundation;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
-/// <summary>World bitmap build/apply (single + per-cell + coarse-tile), the standalone world-water layer,
-/// the layer-build status banner, marker icons, the cell-grid spatial index, and cursor state.</summary>
+/// <summary>
+///     World bitmap build/apply (single + per-cell + coarse-tile), the standalone world-water layer,
+///     the layer-build status banner, marker icons, the cell-grid spatial index, and cursor state.
+/// </summary>
 public sealed partial class WorldMapControl
 {
     private List<CellRecord> GetActiveCells()
@@ -76,7 +79,8 @@ public sealed partial class WorldMapControl
         _worldWaterWorldspaceFormId = worldspaceFormId;
         var version = ++_worldWaterVersion;
         var defaultWaterHeight = _currentDefaultWaterHeight;
-        var palette = _currentWaterPalette; // toggle-independent: the bitmap is built colored, drawn only when _showWater
+        var palette =
+            _currentWaterPalette; // toggle-independent: the bitmap is built colored, drawn only when _showWater
         var cache = _data.RenderCache;
         // Snapshot the cell list for the background pass (mirrors the terrain-aggregate build).
         _ = BuildWorldWaterBitmapAsync(cells.ToList(), defaultWaterHeight, palette, cache, version, worldspaceFormId);
@@ -89,7 +93,7 @@ public sealed partial class WorldMapControl
         try
         {
             var bmp = await Task.Run(() =>
-                WorldMapLayerRenderer.RenderWorldWaterAggregate(cells, defaultWaterHeight, cache, palette))
+                    WorldMapLayerRenderer.RenderWorldWaterAggregate(cells, defaultWaterHeight, cache, palette))
                 .ConfigureAwait(false);
             // The applier runs CanvasBitmap.CreateFromBytes on the UI thread; a Win2D device-lost
             // throw inside a TryEnqueue callback is otherwise an unhandled UI-thread exception
@@ -108,7 +112,8 @@ public sealed partial class WorldMapControl
         }
         catch (Exception ex)
         {
-            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("World water bitmap build failed: {0}", ex.ToString());
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("World water bitmap build failed: {0}",
+                ex.ToString());
             _ = DispatcherQueue.TryEnqueue(() => { _worldWaterBuilding = false; });
         }
     }
@@ -130,6 +135,7 @@ public sealed partial class WorldMapControl
             _worldWaterPixelWidth = b.Width;
             _worldWaterPixelHeight = b.Height;
         }
+
         _worldWaterWorldspaceFormId = worldspaceFormId;
         Map2DProfilerTrace.Event("world-water-built",
             $"ws=0x{worldspaceFormId ?? 0:X8} present={(_worldWaterBitmap is not null)} size={_worldWaterPixelWidth}x{_worldWaterPixelHeight}");
@@ -166,6 +172,7 @@ public sealed partial class WorldMapControl
                     {
                         _terrainTextureViewportKey = null;
                     }
+
                     ShowLayerBuildStatus($"{request.Layer.DisplayName()} failed: {ex.Message}", busy: false);
                     MapCanvas.Invalidate();
                 }
@@ -181,14 +188,16 @@ public sealed partial class WorldMapControl
         }
 
         var hasContent = result.Bitmap is not null || result.CellPixels is not null
-            || result.CoarseTiles is not null;
+                                                   || result.CoarseTiles is not null;
         if (!hasContent)
         {
             if (_currentLayer == WorldMapLayer.TerrainTextures)
             {
                 _terrainTextureViewportKey = null;
             }
-            ShowLayerBuildStatus(result.Message ?? $"{_currentLayer.DisplayName()} has no renderable data.", busy: false);
+
+            ShowLayerBuildStatus(result.Message ?? $"{_currentLayer.DisplayName()} has no renderable data.",
+                busy: false);
             MapCanvas.Invalidate();
             return;
         }
@@ -198,8 +207,8 @@ public sealed partial class WorldMapControl
         // diff). Merge them in instead of disposing the rest. The key now includes
         // pixelsPerCell so multiple resolutions of the same cell can coexist.
         var isIncrementalMerge = result.CellPixels is not null
-            && _layerCellBitmaps is not null
-            && _layerCellBitmapsLayer == _currentLayer;
+                                 && _layerCellBitmaps is not null
+                                 && _layerCellBitmapsLayer == _currentLayer;
 
         if (!isIncrementalMerge)
         {
@@ -214,6 +223,7 @@ public sealed partial class WorldMapControl
                 Map2DProfilerTrace.Event("cache-gen-bump",
                     $"to={_layerCellBitmapsCacheGen} reason=ApplyWorldBitmapBuildResult disposed={disposed}");
             }
+
             DisposeCoarseTileBitmaps();
             _layerCellBitmapsLayer = null;
             // The cache the held cap was sized for was just replaced; size fresh next rebuild.
@@ -222,7 +232,8 @@ public sealed partial class WorldMapControl
 
         if (result.CellPixels is not null)
         {
-            _layerCellBitmaps ??= new OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>(result.CellPixels.Count);
+            _layerCellBitmaps ??=
+                new OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>(result.CellPixels.Count);
             foreach (var ((gx, gy), pixels) in result.CellPixels)
             {
                 var tripleKey = (gx, gy, result.CellPixelsPerCell);
@@ -231,6 +242,7 @@ public sealed partial class WorldMapControl
                     stale.Dispose();
                     _layerCellBitmaps.Remove(tripleKey);
                 }
+
                 _layerCellBitmaps.Add(tripleKey, CanvasBitmap.CreateFromBytes(
                     MapCanvas,
                     pixels,
@@ -238,6 +250,7 @@ public sealed partial class WorldMapControl
                     result.CellPixelsPerCell,
                     Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized));
             }
+
             _layerCellBitmapsLayer = _currentLayer;
         }
         else if (result.CoarseTiles is not null)
@@ -258,6 +271,7 @@ public sealed partial class WorldMapControl
                     tileSidePx,
                     Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
             }
+
             Map2DProfilerTrace.Event("coarse-tiles-built",
                 $"layer={_currentLayer} tiles={_coarseTileBitmaps.Count} span={_coarseTileCellSpan} ppc={_coarseTilePixelsPerCell}");
         }
@@ -361,6 +375,7 @@ public sealed partial class WorldMapControl
                 using var tintEffect = new ColorMatrixEffect { Source = icon, ColorMatrix = tintScale };
                 rtds.DrawImage(tintEffect, new Rect(0, 0, w, h), new Rect(0, 0, w, h));
             }
+
             tinted[raw] = rt; // CanvasRenderTarget is a CanvasBitmap; blit it directly per marker.
         }
 
@@ -390,4 +405,3 @@ public sealed partial class WorldMapControl
         }
     }
 }
-

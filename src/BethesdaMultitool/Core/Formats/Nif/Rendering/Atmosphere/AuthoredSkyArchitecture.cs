@@ -14,7 +14,10 @@ internal static class AuthoredSkyArchitecture
     // can change the opt-in without depending on class-load order.
     internal static bool Enabled => EnvironmentVariables.IsEnabled(EnvironmentVariableName);
 
-    internal static bool ShouldLoadAtmosphereNif(bool explicitlyEnabled) => explicitlyEnabled;
+    internal static bool ShouldLoadAtmosphereNif(bool explicitlyEnabled)
+    {
+        return explicitlyEnabled;
+    }
 
     /// <summary>
     ///     Skyrim's DALC cube is scene lighting and is enabled independently of the authored
@@ -24,6 +27,8 @@ internal static class AuthoredSkyArchitecture
     internal static AtmosphereState.ResolvedAmbientCube? SelectDirectionalAmbientForUpload(
         BethesdaGame game,
         bool explicitlyEnabled,
-        AtmosphereState.ResolvedAmbientCube? directionalAmbient) =>
-        game == BethesdaGame.Skyrim || explicitlyEnabled ? directionalAmbient : null;
+        AtmosphereState.ResolvedAmbientCube? directionalAmbient)
+    {
+        return game == BethesdaGame.Skyrim || explicitlyEnabled ? directionalAmbient : null;
+    }
 }

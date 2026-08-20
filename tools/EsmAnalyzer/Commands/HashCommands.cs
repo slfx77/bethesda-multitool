@@ -1,7 +1,7 @@
-using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
 using System.Security.Cryptography;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 

@@ -1,7 +1,5 @@
-using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Utils;
 
@@ -45,9 +43,9 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived.
     private const int SvarNameOffset = 24; // BSStringT cName
     private const int SvarStructSize = 32;
+    private readonly RuntimeMemoryContext _context = context;
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
-    private readonly RuntimeMemoryContext _context = context;
 
     /// <summary>Reads the runtime script for the given DMP entry, or null if it can't be read.</summary>
     public RuntimeScriptData? ReadRuntimeScript(RuntimeEditorIdEntry entry)
@@ -137,7 +135,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
                                        && payload.Variables.Items.Count == payload.VariableCount
                                        && ScriptBytecodeAnalyzer.HasCompleteLocalVariableBindings(
                                            payload.CompiledData,
-                                           isBigEndian: true,
+                                           true,
                                            payload.Variables.Items,
                                            referencedObjects);
         var completeSourceOnlyBundle = payload.DataSize == 0
@@ -178,21 +176,21 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             compiledData,
             variables,
             completeExecutableBundle ? referencedObjects : [],
-            isBigEndian: completeExecutableBundle,
-            scriptName: null,
-            resolveFormName: ResolveFormName);
+            completeExecutableBundle,
+            null,
+            ResolveFormName);
         var sourceOrigin = string.IsNullOrEmpty(payload.SourceText)
             ? ScriptSourceTextOrigin.None
             : ScriptSourceTextOrigin.RuntimeSameObject;
         var sourceDecision = CapturedScriptEmissionContract.EvaluateInline(
-            isDmpDerived: true,
+            true,
             sourceOrigin,
             compiledData,
             payload.SourceText,
             decompiledText,
             variables,
             completeExecutableBundle ? referencedObjects : [],
-            isBigEndian: completeExecutableBundle);
+            completeExecutableBundle);
         var result = new DialogueResultScript
         {
             SourceText = sourceDecision.SourceText,
@@ -206,7 +204,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             ReferencedObjects = completeExecutableBundle ? referencedObjects : [],
             IsBigEndianBytecode = completeExecutableBundle,
             IsIncompleteExecutableBundle = incompleteExecutableBundle
-                                           || !sourceDecision.ExecutableBundleSafe,
+                                           || !sourceDecision.ExecutableBundleSafe
         };
 
         return result.HasContent ? result : null;
@@ -214,7 +212,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
 
     private ScriptPayload? ReadPayload(PdbStructView view)
     {
-
         // SCRIPT_HEADER inner fields parsed manually against the resolved struct offset.
         var hdrOff = view.Offset("m_header", "Script");
         if (hdrOff is not { } h || h + 19 > view.Buffer.Length)

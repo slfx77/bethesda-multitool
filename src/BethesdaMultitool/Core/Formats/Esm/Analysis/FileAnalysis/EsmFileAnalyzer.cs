@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.FileFormat;
@@ -64,7 +63,9 @@ public static class EsmFileAnalyzer
         IProgress<AnalysisProgress>? progress,
         bool verbose,
         CancellationToken cancellationToken)
-        => AnalyzeArtifactsCore(filePath, progress, verbose, false, cancellationToken).Result;
+    {
+        return AnalyzeArtifactsCore(filePath, progress, verbose, false, cancellationToken).Result;
+    }
 
     private static EsmAnalysisArtifacts AnalyzeArtifactsCore(
         string filePath,
@@ -136,7 +137,7 @@ public static class EsmFileAnalyzer
             {
                 var pct = scanTotal <= 0
                     ? 10.0
-                    : 10.0 + (Math.Min(bytesScanned, scanTotal) / (double)scanTotal * 45.0);
+                    : 10.0 + Math.Min(bytesScanned, scanTotal) / (double)scanTotal * 45.0;
                 if (pct - lastReportedPct < 1.0 || reportTimer.ElapsedMilliseconds < 30)
                 {
                     return;
@@ -731,4 +732,3 @@ public static class EsmFileAnalyzer
         });
     }
 }
-

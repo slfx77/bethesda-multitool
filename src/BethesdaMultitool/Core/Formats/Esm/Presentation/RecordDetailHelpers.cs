@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -218,4 +217,3 @@ internal static class RecordDetailHelpers
         return value.Value ? "Yes" : "No";
     }
 }
-

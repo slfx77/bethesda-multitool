@@ -19,7 +19,7 @@ public sealed class CellEncoder : IRecordEncoder
     private static readonly Dictionary<string, Func<CellRecord, object?>> XclcExtractors = new(StringComparer.Ordinal)
     {
         ["X"] = m => m.GridX ?? 0,
-        ["Y"] = m => m.GridY ?? 0,
+        ["Y"] = m => m.GridY ?? 0
         // LandFlags / ForceHideLand left unset → zero-fill (the prior encoder also wrote 0).
     };
 

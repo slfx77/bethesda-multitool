@@ -17,12 +17,12 @@ public sealed class PlannedLvliEncoder : IPlannedRecordEncoder<LeveledListRecord
     private static readonly EncodedRecord EmptyEncoded =
         new() { Subrecords = [], Warnings = [] };
 
-    public string RecordType { get; }
-
     public PlannedLvliEncoder(string recordType = "LVLI")
     {
         RecordType = recordType;
     }
+
+    public string RecordType { get; }
 
     public EncodedRecord Encode(LeveledListRecord model, RecordPlan plan, PlanReferenceLookup refs)
     {
@@ -32,7 +32,7 @@ public sealed class PlannedLvliEncoder : IPlannedRecordEncoder<LeveledListRecord
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedLvliEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedLvliEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
@@ -11,7 +10,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
@@ -417,7 +415,8 @@ public record RecordCollection
         Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
-        Sounds.Count + MusicTypes.Count + TextureSets.Count + MaterialSwaps.Count + LandTextures.Count + Grasses.Count + ArmorAddons.Count + Water.Count +
+        Sounds.Count + MusicTypes.Count + TextureSets.Count + MaterialSwaps.Count + LandTextures.Count + Grasses.Count +
+        ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
         LightingTemplates.Count + NavMeshes.Count + Weather.Count + Climate.Count +
         ImageSpaces.Count + ImageSpaceModifiers.Count;
@@ -646,11 +645,15 @@ public record RecordCollection
     ///     silently dropped by the renderer (<c>RenderableReference.TryBuild</c>) — it renders "missing
     ///     entirely". This pass closes that gap for every game:
     ///     <list type="number">
-    ///       <item>by <see cref="PlacedReference.BaseFormId" /> through the merged
-    ///       <see cref="ModelPathIndex" /> (TES4+ references carry real, cross-plugin-stable FormIDs); then</item>
-    ///       <item>by <see cref="PlacedReference.BaseEditorId" /> for refs whose cross-plugin FormID is
-    ///       unresolved — TES3 references are editor-id strings, so a master-defined base leaves
-    ///       <c>BaseFormId == 0</c> — which also backfills the FormID.</item>
+    ///         <item>
+    ///             by <see cref="PlacedReference.BaseFormId" /> through the merged
+    ///             <see cref="ModelPathIndex" /> (TES4+ references carry real, cross-plugin-stable FormIDs); then
+    ///         </item>
+    ///         <item>
+    ///             by <see cref="PlacedReference.BaseEditorId" /> for refs whose cross-plugin FormID is
+    ///             unresolved — TES3 references are editor-id strings, so a master-defined base leaves
+    ///             <c>BaseFormId == 0</c> — which also backfills the FormID.
+    ///         </item>
     ///     </list>
     ///     Call after <see cref="MergeWith" />; mutates each cell's <see cref="CellRecord.PlacedObjects" />
     ///     list in place (replacing entries via <c>with</c>; the shared base records are never mutated).
@@ -1158,7 +1161,8 @@ public record RecordCollection
             GridY = overrideCell.GridY ?? baseCell.GridY,
             WorldspaceFormId = overrideCell.WorldspaceFormId ?? baseCell.WorldspaceFormId,
             // 0 is the "not set" sentinel, so this must stay an exact comparison.
-            CellWorldSize = !overrideCell.CellWorldSize.Equals(0f) ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
+            CellWorldSize =
+            !overrideCell.CellWorldSize.Equals(0f) ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
             WaterHeight = overrideCell.WaterHeight ?? baseCell.WaterHeight,
             WaterFormId = overrideCell.WaterFormId ?? baseCell.WaterFormId,
             EncounterZoneFormId = overrideCell.EncounterZoneFormId ?? baseCell.EncounterZoneFormId,
@@ -1168,7 +1172,7 @@ public record RecordCollection
             ClimateFormId = overrideCell.ClimateFormId ?? baseCell.ClimateFormId,
             LightingTemplateFormId = overrideCell.LightingTemplateFormId ?? baseCell.LightingTemplateFormId,
             LightingTemplateInheritanceFlags =
-                overrideCell.LightingTemplateInheritanceFlags ?? baseCell.LightingTemplateInheritanceFlags,
+            overrideCell.LightingTemplateInheritanceFlags ?? baseCell.LightingTemplateInheritanceFlags,
             LightingData = overrideCell.LightingData ?? baseCell.LightingData,
             RadiationRegionFormIds = overrideCell.RadiationRegionFormIds.Count > 0
                 ? overrideCell.RadiationRegionFormIds
@@ -1178,7 +1182,7 @@ public record RecordCollection
             Heightmap = overrideCell.Heightmap ?? baseCell.Heightmap,
             LandVisualData = overrideCell.LandVisualData ?? baseCell.LandVisualData,
             RuntimeTerrainMesh = overrideCell.RuntimeTerrainMesh ?? baseCell.RuntimeTerrainMesh,
-            HasPersistentObjects = overrideCell.HasPersistentObjects || baseCell.HasPersistentObjects,
+            HasPersistentObjects = overrideCell.HasPersistentObjects || baseCell.HasPersistentObjects
         };
     }
 
@@ -1210,10 +1214,12 @@ public record RecordCollection
     /// </summary>
     private static List<RuntimeScriptData> SelectOverlayRuntimeScripts(
         List<RuntimeScriptData> baseRuntimeScripts,
-        List<RuntimeScriptData> overlayRuntimeScripts) =>
-        baseRuntimeScripts.Count == 0
+        List<RuntimeScriptData> overlayRuntimeScripts)
+    {
+        return baseRuntimeScripts.Count == 0
             ? new List<RuntimeScriptData>(overlayRuntimeScripts)
             : [];
+    }
 
     /// <summary>
     ///     Runtime TESRegion recovery cannot read the variable-length RPLI/RPLD point lists or
@@ -1253,7 +1259,7 @@ public record RecordCollection
                     DataBlockCount = staticRegion.DataBlockCount,
                     DataBlocks = staticRegion.DataBlocks,
                     WeatherTypes = staticRegion.WeatherTypes,
-                    GrassFormIds = staticRegion.GrassFormIds,
+                    GrassFormIds = staticRegion.GrassFormIds
                 });
             }
             else
@@ -1277,4 +1283,3 @@ public record RecordCollection
         return merged;
     }
 }
-

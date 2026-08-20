@@ -2,12 +2,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Semantic;
@@ -28,11 +24,11 @@ internal static class DmpCellInventoryCommand
     ///     1. Interior flag set → <see cref="InteriorBucket" />.
     ///     2. PC master ESM authority (when --pc-esm is supplied) — canonical GRUP-derived owner.
     ///     3. <c>WorldspaceFormId</c> already resolved by the parsing pipeline
-    ///        (<c>CellLinkageHandler.InferCellWorldspaces</c> + <c>ResolveRuntimeAnchoredCellRuns</c>).
+    ///     (<c>CellLinkageHandler.InferCellWorldspaces</c> + <c>ResolveRuntimeAnchoredCellRuns</c>).
     ///     4. Direct runtime <c>pCellMap</c> ownership (RuntimeWorldspaceData.Cells),
-    ///        in case the cell slipped through the linkage handler's connected-component logic.
+    ///     in case the cell slipped through the linkage handler's connected-component logic.
     ///     5. Per-DMP FormID-range fallback constrained to <c>CandidateWorldspaceFormIds</c>
-    ///        (only when exactly one candidate matches the observed range).
+    ///     (only when exactly one candidate matches the observed range).
     ///     6. <c>CandidateWorldspaceFormIds</c> populated but unresolved → <see cref="AmbiguousExteriorBucket" />.
     ///     7. Otherwise <see cref="UnlinkedExteriorBucket" />.
     /// </summary>
@@ -159,7 +155,8 @@ internal static class DmpCellInventoryCommand
                 $"{(authorityLoad.RefWindows is { Count: > 0 } windows ? $", {windows.Count:N0} ref window(s)" : "")}.[/]");
         }
 
-        var combinedMetadata = CellWorldspaceAuthorityJson.MergeMetadata(pcAuthority?.CellMetadata, authorityLoad.Cells);
+        var combinedMetadata =
+            CellWorldspaceAuthorityJson.MergeMetadata(pcAuthority?.CellMetadata, authorityLoad.Cells);
         var combinedAuthority = CellWorldspaceAuthorityJson.Merge(
             pcAuthority?.CellToWorldspace,
             authorityLoad.CellToWorldspace);
@@ -449,9 +446,11 @@ internal static class DmpCellInventoryCommand
         {
             return null;
         }
+
         if (!File.Exists(pcEsmPath))
         {
-            AnsiConsole.MarkupLine($"[yellow]--pc-esm not found, skipping authoritative map: {Markup.Escape(pcEsmPath)}[/]");
+            AnsiConsole.MarkupLine(
+                $"[yellow]--pc-esm not found, skipping authoritative map: {Markup.Escape(pcEsmPath)}[/]");
             return null;
         }
 
@@ -472,7 +471,7 @@ internal static class DmpCellInventoryCommand
             return new PcEsmCellAuthority(esmRecords.CellToWorldspaceMap, refToCell, analysis.FormIdMap, metadata);
         }
 
-        AnsiConsole.MarkupLine($"[yellow]PC ESM produced no cell/ref authority map (file empty or unparseable).[/]");
+        AnsiConsole.MarkupLine("[yellow]PC ESM produced no cell/ref authority map (file empty or unparseable).[/]");
         return null;
     }
 
@@ -484,7 +483,7 @@ internal static class DmpCellInventoryCommand
         foreach (var cell in cells)
         {
             cellToWorldspace.TryGetValue(cell.FormId, out var mappedWorldspace);
-            var worldspaceFormId = cell.WorldspaceFormId ?? (mappedWorldspace != 0 ? (uint?)mappedWorldspace : null);
+            var worldspaceFormId = cell.WorldspaceFormId ?? (mappedWorldspace != 0 ? mappedWorldspace : null);
             metadata[cell.FormId] = CellAuthorityMetadata.FromCell(cell, worldspaceFormId);
         }
 
@@ -761,7 +760,7 @@ internal static class DmpCellInventoryCommand
 
         pcAuthority.CellMetadata.TryGetValue(masterCellFormId, out var metadata);
         pcAuthority.CellToWorldspace.TryGetValue(masterCellFormId, out var worldspaceFormId);
-        uint? resolvedWorldspaceFormId = metadata?.WorldspaceFormId;
+        var resolvedWorldspaceFormId = metadata?.WorldspaceFormId;
         if (resolvedWorldspaceFormId is null or 0u && worldspaceFormId != 0)
         {
             resolvedWorldspaceFormId = worldspaceFormId;

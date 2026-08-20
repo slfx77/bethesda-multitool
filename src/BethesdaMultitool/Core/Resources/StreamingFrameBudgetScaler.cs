@@ -38,9 +38,19 @@ internal static class StreamingFrameBudgetScaler
     /// </summary>
     public const double MaxScale = 4.0;
 
-    /// <summary>Weight of the newest frame in the smoothed frame time. Low enough that one 450 ms
-    /// outlier (measured on a streaming sweep) moves the budget by a fraction of its size.</summary>
+    /// <summary>
+    ///     Weight of the newest frame in the smoothed frame time. Low enough that one 450 ms
+    ///     outlier (measured on a streaming sweep) moves the budget by a fraction of its size.
+    /// </summary>
     public const double SmoothingAlpha = 0.15;
+
+    /// <summary>
+    ///     Largest share of a frame that render-thread streaming work may consume. The scale keeps
+    ///     loading THROUGHPUT constant as the frame rate falls, but without a ceiling that also means a
+    ///     slow frame hands streaming an ever-larger absolute slice — so the budget is additionally
+    ///     capped at a fraction of the frame it is running inside.
+    /// </summary>
+    public const double MaxFrameFraction = 0.15;
 
     /// <summary>
     ///     Exponential moving average of the frame duration that <see cref="Scale" /> should be driven
@@ -60,7 +70,7 @@ internal static class StreamingFrameBudgetScaler
             return frameSeconds; // first sample seeds the average
         }
 
-        return previousAverageSeconds + ((frameSeconds - previousAverageSeconds) * SmoothingAlpha);
+        return previousAverageSeconds + (frameSeconds - previousAverageSeconds) * SmoothingAlpha;
     }
 
     /// <summary>
@@ -79,14 +89,6 @@ internal static class StreamingFrameBudgetScaler
     }
 
     /// <summary>
-    ///     Largest share of a frame that render-thread streaming work may consume. The scale keeps
-    ///     loading THROUGHPUT constant as the frame rate falls, but without a ceiling that also means a
-    ///     slow frame hands streaming an ever-larger absolute slice — so the budget is additionally
-    ///     capped at a fraction of the frame it is running inside.
-    /// </summary>
-    public const double MaxFrameFraction = 0.15;
-
-    /// <summary>
     ///     Per-frame time allowance for streaming work: the scaled base, but never more than
     ///     <see cref="MaxFrameFraction" /> of the (smoothed) frame it runs inside, and never less than
     ///     the unscaled base so a slow scene always makes progress instead of stalling forever.
@@ -103,8 +105,10 @@ internal static class StreamingFrameBudgetScaler
         return Math.Max(baseMilliseconds, Math.Min(scaled, smoothedFrameMilliseconds * MaxFrameFraction));
     }
 
-    /// <summary>Scales an integer per-frame allowance, saturating instead of overflowing (an
-    /// unthrottled allowance of <see cref="int.MaxValue" /> stays unbounded).</summary>
+    /// <summary>
+    ///     Scales an integer per-frame allowance, saturating instead of overflowing (an
+    ///     unthrottled allowance of <see cref="int.MaxValue" /> stays unbounded).
+    /// </summary>
     public static int ScaleCount(int baseCount, double scale)
     {
         if (baseCount <= 0)

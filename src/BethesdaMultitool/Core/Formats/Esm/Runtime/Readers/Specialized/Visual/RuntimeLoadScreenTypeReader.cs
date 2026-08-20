@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Visual;
 
@@ -36,7 +35,7 @@ internal sealed class RuntimeLoadScreenTypeReader(RuntimeMemoryContext context)
         {
             var dataBytes = new byte[DataSize];
             Array.Copy(view.Buffer, dataOff, dataBytes, 0, DataSize);
-            layoutData = SubrecordSchemaView.TryRead("DATA", "LSCT", dataBytes, bigEndian: true)?.Raw;
+            layoutData = SubrecordSchemaView.TryRead("DATA", "LSCT", dataBytes, true)?.Raw;
         }
 
         return new LoadScreenTypeRecord
@@ -49,4 +48,3 @@ internal sealed class RuntimeLoadScreenTypeReader(RuntimeMemoryContext context)
         };
     }
 }
-

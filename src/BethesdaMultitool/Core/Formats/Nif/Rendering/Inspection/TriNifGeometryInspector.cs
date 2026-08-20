@@ -10,7 +10,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 /// </summary>
 internal static class TriNifGeometryInspector
 {
-    /// <summary>Inspects the NIF (and optional TRI) and returns a geometry report, or <c>null</c> when the NIF can't be parsed.</summary>
+    /// <summary>
+    ///     Inspects the NIF (and optional TRI) and returns a geometry report, or <c>null</c> when the NIF can't be
+    ///     parsed.
+    /// </summary>
     public static TriNifGeometryInspection? Inspect(byte[] nifData, TriParser? tri = null)
     {
         var nif = NifParser.Parse(nifData);

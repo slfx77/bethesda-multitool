@@ -55,7 +55,7 @@ internal readonly record struct ReferenceVisibilityKey(
         return enabledOverrides.IsVisible(
                    reference.FormId,
                    dayNightStates?.EffectiveDisabled(reference.FormId, reference.IsInitiallyDisabled)
-                       ?? reference.IsInitiallyDisabled,
+                   ?? reference.IsInitiallyDisabled,
                    ShowInitiallyDisabled)
                && (ShowGrass || !reference.IsGrass)
                && (ShowMarkers || !reference.IsMarker)

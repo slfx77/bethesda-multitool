@@ -26,9 +26,6 @@ public interface IPlannedRecordEncoder
 /// </summary>
 public interface IPlannedRecordEncoder<in TModel> : IPlannedRecordEncoder where TModel : class
 {
-    /// <summary>Strongly-typed Encode method.</summary>
-    EncodedRecord Encode(TModel model, RecordPlan plan, PlanReferenceLookup refs);
-
     EncodedRecord IPlannedRecordEncoder.Encode(object model, RecordPlan plan, PlanReferenceLookup refs)
     {
         if (model is not TModel typed)
@@ -42,4 +39,7 @@ public interface IPlannedRecordEncoder<in TModel> : IPlannedRecordEncoder where 
     }
 
     Type IPlannedRecordEncoder.ModelType => typeof(TModel);
+
+    /// <summary>Strongly-typed Encode method.</summary>
+    EncodedRecord Encode(TModel model, RecordPlan plan, PlanReferenceLookup refs);
 }

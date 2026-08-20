@@ -20,8 +20,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.World;
 /// </remarks>
 public sealed class PlannedPlacedReferenceEncoder : IPlannedRecordEncoder<PlacedReference>
 {
-    public string RecordType { get; }
-
     public PlannedPlacedReferenceEncoder(string recordType)
     {
         if (recordType is not ("REFR" or "ACHR" or "ACRE"))
@@ -34,6 +32,8 @@ public sealed class PlannedPlacedReferenceEncoder : IPlannedRecordEncoder<Placed
         RecordType = recordType;
     }
 
+    public string RecordType { get; }
+
     public EncodedRecord Encode(PlacedReference model, RecordPlan plan, PlanReferenceLookup refs)
     {
         return plan.Disposition switch
@@ -41,7 +41,7 @@ public sealed class PlannedPlacedReferenceEncoder : IPlannedRecordEncoder<Placed
             RecordDisposition.New => RefrEncoder.EncodeNewPlacedReference(model, refs),
             RecordDisposition.Override => RefrEncoder.EncodePlacedReference(model),
             _ => throw new InvalidOperationException(
-                $"PlannedPlacedReferenceEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedPlacedReferenceEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

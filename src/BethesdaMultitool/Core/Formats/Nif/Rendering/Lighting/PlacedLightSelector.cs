@@ -44,6 +44,7 @@ internal static class PlacedLightSelector
             {
                 continue;
             }
+
             scratch.Add(light);
         }
 

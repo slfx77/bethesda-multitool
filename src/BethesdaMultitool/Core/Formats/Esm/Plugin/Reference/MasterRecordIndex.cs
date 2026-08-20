@@ -7,7 +7,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 /// <summary>Where a master child record lives: its parent cell FormID, child-GRUP type, and record type.</summary>
 public sealed record MasterChildLocation(uint CellFormId, int GroupType, string RecordType);
 
-/// <summary>Prebuilt lookup tables over the master ESM's records (by FormID, type, editor ID, cell, etc.) for fast conversion-time queries.</summary>
+/// <summary>
+///     Prebuilt lookup tables over the master ESM's records (by FormID, type, editor ID, cell, etc.) for fast
+///     conversion-time queries.
+/// </summary>
 public sealed record MasterRecordIndex
 {
     public required IReadOnlyList<ParsedMainRecord> Records { get; init; }
@@ -16,6 +19,7 @@ public sealed record MasterRecordIndex
     public required Dictionary<string, HashSet<uint>> FormIdsByType { get; init; }
     public required Dictionary<string, Dictionary<string, uint>> EditorIdToFormIdByType { get; init; }
     public required Dictionary<string, Dictionary<string, List<uint>>> StemToFormIdsByType { get; init; }
+
     /// <summary>
     ///     Exact, case-insensitive SCPT identity lookup. Script names are global record
     ///     identities, but scripts are not legal placed-reference bases, so this index is
@@ -24,6 +28,7 @@ public sealed record MasterRecordIndex
     /// </summary>
     public Dictionary<string, uint> ScriptFormIdByEditorId { get; init; } =
         new(StringComparer.OrdinalIgnoreCase);
+
     public required Dictionary<uint, MasterChildLocation> ChildLocations { get; init; }
     public required Dictionary<uint, uint> RefToCell { get; init; }
     public required Dictionary<uint, List<uint>> RefsByCell { get; init; }

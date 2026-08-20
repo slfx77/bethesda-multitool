@@ -1,7 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Pure bounds math shared by the world-map hit tester. Resolves an object's clamped half-extents
@@ -14,15 +14,6 @@ internal static class WorldMapBoundsMath
 {
     /// <summary>Maximum half-extent for hit testing (matches the rendering clamp).</summary>
     internal const float MaxHalfExtent = 2048f;
-
-    /// <summary>Clamped half-extents resolved from an object's OBND bounds (if any).</summary>
-    internal readonly record struct ClampedExtents(bool HasBounds, float HalfW, float HalfH)
-    {
-        internal static readonly ClampedExtents None = new(false, 0f, 0f);
-
-        /// <summary>Bounding area (halfW * halfH); 0 when there are no usable bounds.</summary>
-        internal float Area => HasBounds ? HalfW * HalfH : 0f;
-    }
 
     /// <summary>
     ///     Resolves an object's clamped half-extents from the bounds index with a single lookup.
@@ -38,5 +29,14 @@ internal static class WorldMapBoundsMath
         }
 
         return ClampedExtents.None;
+    }
+
+    /// <summary>Clamped half-extents resolved from an object's OBND bounds (if any).</summary>
+    internal readonly record struct ClampedExtents(bool HasBounds, float HalfW, float HalfH)
+    {
+        internal static readonly ClampedExtents None = new(false, 0f, 0f);
+
+        /// <summary>Bounding area (halfW * halfH); 0 when there are no usable bounds.</summary>
+        internal float Area => HasBounds ? HalfW * HalfH : 0f;
     }
 }

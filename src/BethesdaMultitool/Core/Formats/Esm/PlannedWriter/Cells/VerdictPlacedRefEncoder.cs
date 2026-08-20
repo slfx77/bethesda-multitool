@@ -1,9 +1,9 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
@@ -99,7 +99,7 @@ internal static class VerdictPlacedRefEncoder
         {
             8 => PlannedPlacedRefEncoder.PersistentFlag,
             10 => PlannedPlacedRefEncoder.VisibleWhenDistantFlag,
-            _ => 0u,
+            _ => 0u
         };
         if (verdict.NewInitiallyDisabled ?? placed.IsInitiallyDisabled)
         {
@@ -174,9 +174,9 @@ internal static class VerdictPlacedRefEncoder
         // Initially-Disabled bit (header flags dword at offset 8).
         if (verdict.OverrideInitiallyDisabled is { } initiallyDisabled)
         {
-            var headerFlags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
+            var headerFlags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
             headerFlags = initiallyDisabled ? headerFlags | 0x00000800u : headerFlags & ~0x00000800u;
-            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8, 4), headerFlags);
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8, 4), headerFlags);
         }
 
         if (verdict.MarksMasterCovered)

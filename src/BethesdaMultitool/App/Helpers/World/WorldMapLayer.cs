@@ -23,7 +23,7 @@ internal enum WorldMapLayer
     Slope
 }
 
-/// <summary>Display-string helpers for <see cref="WorldMapLayer"/>.</summary>
+/// <summary>Display-string helpers for <see cref="WorldMapLayer" />.</summary>
 internal static class WorldMapLayerExtensions
 {
     /// <summary>Returns the user-facing label for a world map layer.</summary>

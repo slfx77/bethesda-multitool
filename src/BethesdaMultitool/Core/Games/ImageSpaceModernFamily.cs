@@ -9,5 +9,5 @@ namespace BethesdaMultitool.Core.Games;
 public enum ImageSpaceModernFamily
 {
     Skyrim,
-    Fallout4,
+    Fallout4
 }

@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Per-worldspace water tint pair (Shallow + Deep) sourced from the WATR record's DNAM
@@ -43,7 +43,7 @@ internal sealed record WaterColorPalette(
         // place (the 3D WaterRenderer12 reads the same WaterAppearance). The 2D overlay only
         // needs Shallow + Deep; Reflection is decoded but unused here (runtime Fresnel-mixes it,
         // which isn't reproducible at overview scale).
-        var appearance = WaterAppearance.FromVisualProperties(props, noiseTexture: null);
+        var appearance = WaterAppearance.FromVisualProperties(props, null);
         return appearance is null ? null : new WaterColorPalette(appearance.Shallow, appearance.Deep);
     }
 }

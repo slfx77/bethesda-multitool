@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
@@ -33,9 +33,9 @@ internal static class FnvActiveLocalLightOracle
             {
                 var normalizedX = Math.Abs(x - center) / center;
                 var squaredDistance = Math.Min(
-                    (normalizedX * normalizedX) + (normalizedY * normalizedY),
+                    normalizedX * normalizedX + normalizedY * normalizedY,
                     1.0);
-                result[(y * AttenuationTextureSize) + x] =
+                result[y * AttenuationTextureSize + x] =
                     (byte)Math.Floor(byte.MaxValue * squaredDistance);
             }
         }
@@ -43,7 +43,10 @@ internal static class FnvActiveLocalLightOracle
         return result;
     }
 
-    internal static float NormalizeAttenuationTexel(byte value) => value / 255f;
+    internal static float NormalizeAttenuationTexel(byte value)
+    {
+        return value / 255f;
+    }
 
     /// <summary>
     ///     Reconstructs the point-light color prepared by FNV's <c>SetLight1x2x</c> path for pass
@@ -106,7 +109,7 @@ internal static class FnvActiveLocalLightOracle
         var localTangentSpace = ProjectThroughAuthoredBasis(
             tangent, bitangent, vertexNormal, normalizedPointDirection);
         var attenuationCoordinates = new Vector4(
-            ((pointDelta / localLightRadius) * 0.5f) + new Vector3(0.5f),
+            pointDelta / localLightRadius * 0.5f + new Vector3(0.5f),
             0.5f);
         return new FnvActiveId220Interpolants(
             sunTangentSpace,
@@ -143,8 +146,8 @@ internal static class FnvActiveLocalLightOracle
         var localDot = Vector3.Dot(normalizedDecodedNormal, normalizedLocal);
         var attenuation = 1f - attenuationXyRed - attenuationZRed;
         var totalBeforeClamp = ambientRgb +
-                               (sunRgb * sunDot) +
-                               (preparedLocalRgb * (localDot * attenuation));
+                               sunRgb * sunDot +
+                               preparedLocalRgb * (localDot * attenuation);
         var shade = Vector3.Max(totalBeforeClamp, Vector3.Zero);
         var rgb = Vector3.Multiply(
             EffectiveBase(classifierMode, baseRgb, vertexRgb),
@@ -169,10 +172,12 @@ internal static class FnvActiveLocalLightOracle
         Vector3 tangent,
         Vector3 bitangent,
         Vector3 vertexNormal,
-        Vector3 sunLightData) =>
-        NormalizeRequired(
+        Vector3 sunLightData)
+    {
+        return NormalizeRequired(
             ProjectThroughAuthoredBasis(tangent, bitangent, vertexNormal, sunLightData),
             nameof(sunLightData));
+    }
 
     /// <summary>
     ///     Models one enabled, pre-count-mask ID143 local-light VS direction at one vertex. Retail
@@ -248,7 +253,7 @@ internal static class FnvActiveLocalLightOracle
             local2Constants,
             totalLightCountGate > 3f);
         var totalBeforeClamp = ambientRgb +
-                               (sunRgb * sunDot) +
+                               sunRgb * sunDot +
                                local0Evaluation.Contribution +
                                local1Evaluation.Contribution +
                                local2Evaluation.Contribution;
@@ -308,34 +313,40 @@ internal static class FnvActiveLocalLightOracle
             contribution);
     }
 
-    private static Vector3 DecodeNormal(Vector3 normalMapSample) =>
-        NormalizeRequired(
+    private static Vector3 DecodeNormal(Vector3 normalMapSample)
+    {
+        return NormalizeRequired(
             (normalMapSample - new Vector3(0.5f)) * 2f,
             nameof(normalMapSample));
+    }
 
     private static Vector3 ProjectThroughAuthoredBasis(
         Vector3 tangent,
         Vector3 bitangent,
         Vector3 vertexNormal,
-        Vector3 value) =>
-        new(
+        Vector3 value)
+    {
+        return new Vector3(
             Vector3.Dot(tangent, value),
             Vector3.Dot(bitangent, value),
             Vector3.Dot(vertexNormal, value));
+    }
 
     private static Vector3 EffectiveBase(
         FnvClassicBasicShaderMode classifierMode,
         Vector3 baseRgb,
-        Vector3 vertexRgb) =>
-        classifierMode == FnvClassicBasicShaderMode.Sls1013VertexColor
+        Vector3 vertexRgb)
+    {
+        return classifierMode == FnvClassicBasicShaderMode.Sls1013VertexColor
             ? Vector3.Multiply(baseRgb, vertexRgb)
             : baseRgb;
+    }
 
     private static void ValidateMode(FnvClassicBasicShaderMode classifierMode)
     {
         if (classifierMode is not (
-                FnvClassicBasicShaderMode.Sls1009 or
-                FnvClassicBasicShaderMode.Sls1013VertexColor))
+            FnvClassicBasicShaderMode.Sls1009 or
+            FnvClassicBasicShaderMode.Sls1013VertexColor))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(classifierMode), classifierMode,

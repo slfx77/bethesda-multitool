@@ -47,6 +47,7 @@ public sealed class HdptEncoder : IRecordEncoder
             {
                 continue;
             }
+
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("HNAM", extraFormId));
         }
 

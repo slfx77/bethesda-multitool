@@ -32,8 +32,10 @@ internal static class VtexCellWeightTableBuilder
     }
 
     private static uint[]? NeighborGrid(
-        IReadOnlyDictionary<(int gx, int gy), CellRecord> cells, int gx, int gy) =>
-        cells.TryGetValue((gx, gy), out var neighbor)
+        IReadOnlyDictionary<(int gx, int gy), CellRecord> cells, int gx, int gy)
+    {
+        return cells.TryGetValue((gx, gy), out var neighbor)
             ? neighbor.LandVisualData?.VtexTextureFormIds
             : null;
+    }
 }

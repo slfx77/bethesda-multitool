@@ -1,15 +1,6 @@
 using System.CommandLine;
 using System.Security.Cryptography;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands.Audits;
 
@@ -23,18 +14,19 @@ public static class FormIdAuditCommands
     /// </summary>
     public static Command CreateFormIdAuditCommand()
     {
-        var command = new Command("formid-audit", "Audit FormID references - find references that resolve differently between two ESM files");
+        var command = new Command("formid-audit",
+            "Audit FormID references - find references that resolve differently between two ESM files");
 
         var convertedArg = new Argument<string>("converted") { Description = "Converted ESM file" };
         var pcArg = new Argument<string>("pc") { Description = "PC reference ESM file" };
         var typeOption = new Option<string?>("-t", "--type")
-        { Description = "Record type to filter (e.g., REFR, QUST, NPC_)" };
+            { Description = "Record type to filter (e.g., REFR, QUST, NPC_)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Max mismatches to show (default: 100)", DefaultValueFactory = _ => 100 };
+            { Description = "Max mismatches to show (default: 100)", DefaultValueFactory = _ => 100 };
         var outputOption = new Option<string?>("-o", "--output")
-        { Description = "Output TSV file for full results" };
+            { Description = "Output TSV file for full results" };
         var deepOption = new Option<bool>("--deep")
-        { Description = "Deep audit: also check records without EDIDs by comparing type/content" };
+            { Description = "Deep audit: also check records without EDIDs by comparing type/content" };
 
         command.Arguments.Add(convertedArg);
         command.Arguments.Add(pcArg);
@@ -58,7 +50,8 @@ public static class FormIdAuditCommands
         return command;
     }
 
-    private static int RunFormIdAudit(string convertedPath, string pcPath, string? recordTypeFilter, int limit, string? outputPath, bool deep = false)
+    private static int RunFormIdAudit(string convertedPath, string pcPath, string? recordTypeFilter, int limit,
+        string? outputPath, bool deep = false)
     {
         AnsiConsole.MarkupLine("[bold cyan]FormID Reference Audit[/]");
         AnsiConsole.MarkupLine($"[grey]Converted:[/] {convertedPath}");
@@ -68,8 +61,8 @@ public static class FormIdAuditCommands
         AnsiConsole.WriteLine();
 
         // Load files using the standard loader
-        var converted = EsmFileLoader.Load(convertedPath, printStatus: false);
-        var pc = EsmFileLoader.Load(pcPath, printStatus: false);
+        var converted = EsmFileLoader.Load(convertedPath, false);
+        var pc = EsmFileLoader.Load(pcPath, false);
 
         if (converted == null || pc == null)
         {
@@ -95,7 +88,8 @@ public static class FormIdAuditCommands
             AnsiConsole.MarkupLine("[grey]Building record info maps for deep audit...[/]");
             convertedRecordMap = BuildRecordInfoMap(convertedData, convertedBigEndian);
             pcRecordMap = BuildRecordInfoMap(pcData, pcBigEndian);
-            AnsiConsole.MarkupLine($"[grey]Loaded {convertedRecordMap.Count} Converted, {pcRecordMap.Count} PC records[/]");
+            AnsiConsole.MarkupLine(
+                $"[grey]Loaded {convertedRecordMap.Count} Converted, {pcRecordMap.Count} PC records[/]");
         }
 
         AnsiConsole.WriteLine();
@@ -328,7 +322,8 @@ public static class FormIdAuditCommands
         if (deep && deepMismatches.Count > 0)
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[bold red]Deep Audit: Found {stats.DeepMismatches:N0} mismatches in records without EDIDs[/]");
+            AnsiConsole.MarkupLine(
+                $"[bold red]Deep Audit: Found {stats.DeepMismatches:N0} mismatches in records without EDIDs[/]");
             if (stats.DeepMismatches > limit)
                 AnsiConsole.MarkupLine($"[grey](showing first {limit})[/]");
             AnsiConsole.WriteLine();
@@ -384,18 +379,21 @@ public static class FormIdAuditCommands
         if (!string.IsNullOrEmpty(outputPath))
         {
             using var writer = new StreamWriter(outputPath);
-            writer.WriteLine("Type\tRecordType\tRecordFormId\tSubrecord\tField\tReferencedFormId\tConvertedInfo\tPcInfo");
+            writer.WriteLine(
+                "Type\tRecordType\tRecordFormId\tSubrecord\tField\tReferencedFormId\tConvertedInfo\tPcInfo");
 
             foreach (var m in mismatches)
             {
-                writer.WriteLine($"EDID\t{m.RecordType}\t0x{m.RecordFormId:X8}\t{m.SubrecordType}\t{m.FieldName}\t0x{m.ReferencedFormId:X8}\t{m.ConvertedEdid ?? "(null)"}\t{m.PcEdid ?? "(null)"}");
+                writer.WriteLine(
+                    $"EDID\t{m.RecordType}\t0x{m.RecordFormId:X8}\t{m.SubrecordType}\t{m.FieldName}\t0x{m.ReferencedFormId:X8}\t{m.ConvertedEdid ?? "(null)"}\t{m.PcEdid ?? "(null)"}");
             }
 
             foreach (var m in deepMismatches)
             {
                 var convertedInfo = m.ConvertedType != null ? $"{m.ConvertedType}:{m.ConvertedSize}" : "(null)";
                 var pcInfo = m.PcType != null ? $"{m.PcType}:{m.PcSize}" : "(null)";
-                writer.WriteLine($"DEEP:{m.MismatchType}\t{m.SourceRecordType}\t0x{m.SourceRecordFormId:X8}\t{m.SubrecordType}\t{m.FieldName}\t0x{m.FormId:X8}\t{convertedInfo}\t{pcInfo}");
+                writer.WriteLine(
+                    $"DEEP:{m.MismatchType}\t{m.SourceRecordType}\t0x{m.SourceRecordFormId:X8}\t{m.SubrecordType}\t{m.FieldName}\t0x{m.FormId:X8}\t{convertedInfo}\t{pcInfo}");
             }
 
             AnsiConsole.MarkupLine($"[grey]Full results written to: {outputPath}[/]");
@@ -567,4 +565,3 @@ public static class FormIdAuditCommands
         public string? FieldName { get; set; }
     }
 }
-

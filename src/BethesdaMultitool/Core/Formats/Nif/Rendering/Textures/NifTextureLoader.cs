@@ -1,5 +1,5 @@
-using DDXConv;
 using BethesdaMultitool.Core.Formats.Dds;
+using DDXConv;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 

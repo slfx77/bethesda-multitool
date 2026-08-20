@@ -102,11 +102,15 @@ internal static class NifClassicParallaxPolicy
         return baseUv + new Vector2(tangentView.X, tangentView.Y) * offset;
     }
 
-    private static Vector3 ReadVector3(float[] values, int offset) =>
-        new(values[offset], values[offset + 1], values[offset + 2]);
+    private static Vector3 ReadVector3(float[] values, int offset)
+    {
+        return new Vector3(values[offset], values[offset + 1], values[offset + 2]);
+    }
 
-    private static bool IsUsable(Vector3 value) =>
-        IsFinite(value) && value.LengthSquared() > BasisLengthSquaredEpsilon;
+    private static bool IsUsable(Vector3 value)
+    {
+        return IsFinite(value) && value.LengthSquared() > BasisLengthSquaredEpsilon;
+    }
 
     private static bool TryNormalize(Vector3 value, out Vector3 normalized)
     {
@@ -121,11 +125,15 @@ internal static class NifClassicParallaxPolicy
         return true;
     }
 
-    private static bool IsFinite(Vector2 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y);
+    private static bool IsFinite(Vector2 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y);
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }
 
 internal readonly record struct NifClassicParallaxMaterial(string HeightMapTexturePath);

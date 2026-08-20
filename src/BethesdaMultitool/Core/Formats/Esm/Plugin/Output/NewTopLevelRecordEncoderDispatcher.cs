@@ -6,7 +6,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
@@ -27,8 +26,6 @@ internal sealed record NewTopLevelRecordEncodingContext(
 
 internal static class NewTopLevelRecordEncoderDispatcher
 {
-    private delegate EncodedRecord Encoder(object model, NewTopLevelRecordEncodingContext context);
-
     private static readonly IReadOnlyDictionary<string, Encoder> Encoders =
         new Dictionary<string, Encoder>(StringComparer.Ordinal)
         {
@@ -183,4 +180,6 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ? encoder(model, context)
             : null;
     }
+
+    private delegate EncodedRecord Encoder(object model, NewTopLevelRecordEncodingContext context);
 }

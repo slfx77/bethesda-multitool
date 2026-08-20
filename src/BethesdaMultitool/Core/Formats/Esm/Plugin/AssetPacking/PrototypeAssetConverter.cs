@@ -1,7 +1,7 @@
-using DDXConv;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Xma;
+using DDXConv;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -32,8 +32,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 /// </summary>
 internal sealed class PrototypeAssetConverter
 {
-    private readonly DdxConverter _ddx = new();
     private readonly Func<string, byte[]?>? _companionFetcher;
+    private readonly DdxConverter _ddx = new();
 
     /// <summary>
     ///     Creates the converter with an optional companion-asset fetcher (used to pull sidecar
@@ -86,7 +86,7 @@ internal sealed class PrototypeAssetConverter
 
             var outputData = result.OutputData;
             var newPath = Path.ChangeExtension(
-                sourcePath, ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
+                sourcePath, ExtensionAfterConversion(sourcePath, true));
 
             // FNV's runtime DDS loader doesn't accept BC5/ATI2 (the Xbox 360 native normal-map
             // format) — the texture slot stays unbound and renders whatever stale memory
@@ -181,7 +181,7 @@ internal sealed class PrototypeAssetConverter
             }
 
             var newPath = Path.ChangeExtension(
-                sourcePath, ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
+                sourcePath, ExtensionAfterConversion(sourcePath, true));
             return ConvertedAsset.Converted(result.OutputData, newPath);
         }
         catch (Exception ex)
@@ -207,7 +207,7 @@ internal sealed class PrototypeAssetConverter
             }
 
             var newPath = Path.ChangeExtension(
-                sourcePath, ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
+                sourcePath, ExtensionAfterConversion(sourcePath, true));
             return ConvertedAsset.Converted(result.OutputData, newPath);
         }
         catch (Exception ex)
@@ -221,11 +221,11 @@ internal sealed class PrototypeAssetConverter
     ///     of <see cref="ConvertAsync" /> derives its output path from this, so it is the one
     ///     place the 360→PC container policy lives.
     ///     <para>
-    ///     A PC-sourced asset is never converted, so it keeps its own extension — which is NOT
-    ///     necessarily the requested one. That case is real: a <c>.wav</c> request can resolve
-    ///     to a PC <c>.ogg</c> donor through <see cref="AssetPathRules.ExtensionSwaps" />, and
-    ///     the bytes packed are Ogg. Callers predicting a name must honour it, so this method
-    ///     answers unconditionally rather than only when a conversion occurs.
+    ///         A PC-sourced asset is never converted, so it keeps its own extension — which is NOT
+    ///         necessarily the requested one. That case is real: a <c>.wav</c> request can resolve
+    ///         to a PC <c>.ogg</c> donor through <see cref="AssetPathRules.ExtensionSwaps" />, and
+    ///         the bytes packed are Ogg. Callers predicting a name must honour it, so this method
+    ///         answers unconditionally rather than only when a conversion occurs.
     ///     </para>
     /// </summary>
     public static string ExtensionAfterConversion(string sourcePath, bool sourceIsXbox360)
@@ -240,7 +240,7 @@ internal sealed class PrototypeAssetConverter
         {
             ".ddx" => ".dds",
             ".xma" => IsDialogueVoicePath(sourcePath) ? ".ogg" : ".wav",
-            _ => extension,
+            _ => extension
         };
     }
 
@@ -250,11 +250,11 @@ internal sealed class PrototypeAssetConverter
     ///     the record uses — and only ever changes its extension, so this is a pure function of
     ///     (request, source).
     ///     <para>
-    ///     <c>AssetPackingService</c> calls it with the request it is about to pack.
-    ///     <c>AssetPathRewriter</c> calls it with the path it is about to write into a record,
-    ///     because that value becomes the packer's request on the next pass. One function, one
-    ///     answer — which is the whole point: the two used to derive the name independently and
-    ///     drifted, leaving records pointing at files no archive contained.
+    ///         <c>AssetPackingService</c> calls it with the request it is about to pack.
+    ///         <c>AssetPathRewriter</c> calls it with the path it is about to write into a record,
+    ///         because that value becomes the packer's request on the next pass. One function, one
+    ///         answer — which is the whole point: the two used to derive the name independently and
+    ///         drifted, leaving records pointing at files no archive contained.
     ///     </para>
     /// </summary>
     public static string PredictPackedPath(string requestedPath, string sourcePath, bool sourceIsXbox360)

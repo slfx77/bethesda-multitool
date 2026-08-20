@@ -96,7 +96,7 @@ public sealed partial class WorldMapControl
             // suppress the per-cell dict so the renderer draws the aggregate (it prefers per-cell when
             // present). Otherwise the normal single-bitmap (+ per-cell for TerrainTextures zoomed in).
             var aggActive = _currentLayer == WorldMapLayer.TerrainTextures
-                && _terrainTexturesAggregateActive && _terrainAggregateBitmap is not null;
+                            && _terrainTexturesAggregateActive && _terrainAggregateBitmap is not null;
             var overviewBitmap = aggActive ? _terrainAggregateBitmap : _worldHeightmapBitmap;
             var overviewBmpW = aggActive ? _terrainAggPixelWidth : _worldHmPixelWidth;
             var overviewBmpH = aggActive ? _terrainAggPixelHeight : _worldHmPixelHeight;
@@ -135,7 +135,8 @@ public sealed partial class WorldMapControl
             // only when the decision changes so it pinpoints the frame the heightmap starts winning.
             if (Map2DProfilerTrace.IsEnabled && _currentLayer == WorldMapLayer.TerrainTextures)
             {
-                var drawKey = $"agg={aggActive}/{overviewBitmap is not null} cells={overviewCells?.Count ?? -1} coarse={coarseForLayer?.Count ?? -1} staleCoarse={(_coarseTileBitmaps is not null && _coarseTileBitmapsLayer != _currentLayer)} hmBmp={_worldHeightmapBitmap is not null} aggBmp={_terrainAggregateBitmap is not null}";
+                var drawKey =
+                    $"agg={aggActive}/{overviewBitmap is not null} cells={overviewCells?.Count ?? -1} coarse={coarseForLayer?.Count ?? -1} staleCoarse={(_coarseTileBitmaps is not null && _coarseTileBitmapsLayer != _currentLayer)} hmBmp={_worldHeightmapBitmap is not null} aggBmp={_terrainAggregateBitmap is not null}";
                 if (drawKey != _lastTerrainDrawLog)
                 {
                     _lastTerrainDrawLog = drawKey;

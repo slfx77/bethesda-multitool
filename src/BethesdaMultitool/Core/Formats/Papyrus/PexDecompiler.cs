@@ -50,16 +50,19 @@ public static class PexDecompiler
         };
     }
 
-    internal static string FormatValue(PexValue value) => value switch
+    internal static string FormatValue(PexValue value)
     {
-        PexNoneValue => "None",
-        PexIdentifierValue identifier => FormatIdentifier(identifier.Identifier.Value),
-        PexStringValue text => $"\"{EscapeString(text.String.Value)}\"",
-        PexIntegerValue integer => integer.Value.ToString(CultureInfo.InvariantCulture),
-        PexFloatValue floating => FormatFloat(floating.Value),
-        PexBooleanValue boolean => boolean.Value ? "True" : "False",
-        _ => "None"
-    };
+        return value switch
+        {
+            PexNoneValue => "None",
+            PexIdentifierValue identifier => FormatIdentifier(identifier.Identifier.Value),
+            PexStringValue text => $"\"{EscapeString(text.String.Value)}\"",
+            PexIntegerValue integer => integer.Value.ToString(CultureInfo.InvariantCulture),
+            PexFloatValue floating => FormatFloat(floating.Value),
+            PexBooleanValue boolean => boolean.Value ? "True" : "False",
+            _ => "None"
+        };
+    }
 
     internal static string FormatIdentifier(string name)
     {
@@ -91,23 +94,31 @@ public static class PexDecompiler
         return name;
     }
 
-    internal static string RawName(PexValue value) => value switch
+    internal static string RawName(PexValue value)
     {
-        PexIdentifierValue identifier => FormatIdentifier(identifier.Identifier.Value),
-        PexStringValue text => text.String.Value,
-        _ => FormatValue(value)
-    };
+        return value switch
+        {
+            PexIdentifierValue identifier => FormatIdentifier(identifier.Identifier.Value),
+            PexStringValue text => text.String.Value,
+            _ => FormatValue(value)
+        };
+    }
 
-    internal static bool IsCompilerTemporary(string name) =>
-        name.StartsWith("::temp", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("::nonevar", StringComparison.OrdinalIgnoreCase);
+    internal static bool IsCompilerTemporary(string name)
+    {
+        return name.StartsWith("::temp", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("::nonevar", StringComparison.OrdinalIgnoreCase);
+    }
 
-    internal static string EscapeString(string value) => value
-        .Replace("\\", "\\\\", StringComparison.Ordinal)
-        .Replace("\"", "\\\"", StringComparison.Ordinal)
-        .Replace("\r", "\\r", StringComparison.Ordinal)
-        .Replace("\n", "\\n", StringComparison.Ordinal)
-        .Replace("\t", "\\t", StringComparison.Ordinal);
+    internal static string EscapeString(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal);
+    }
 
     private static string FormatFloat(float value)
     {
@@ -186,7 +197,10 @@ public static class PexDecompiler
             _output.AppendLine(text);
         }
 
-        public override string ToString() => _output.ToString();
+        public override string ToString()
+        {
+            return _output.ToString();
+        }
 
         private void WriteStructs(PexObject obj)
         {
@@ -374,12 +388,12 @@ public static class PexDecompiler
             _indent++;
             if (property.ReadFunction is { } getter)
             {
-                WriteFunction(obj, getter, "Get", forceFunction: true);
+                WriteFunction(obj, getter, "Get", true);
             }
 
             if (property.WriteFunction is { } setter)
             {
-                WriteFunction(obj, setter, "Set", forceFunction: true);
+                WriteFunction(obj, setter, "Set", true);
             }
 
             _indent--;
@@ -520,20 +534,22 @@ public static class PexDecompiler
             }
         }
 
-        private static bool IsAutoReadOnly(PexProperty property) =>
-            property.AutoVariableName is null &&
-            property.Flags.HasFlag(PexPropertyFlags.Readable) &&
-            !property.Flags.HasFlag(PexPropertyFlags.Writable) &&
-            property.ReadFunction is
-            {
-                Instructions.Length: 1
-            } getter &&
-            getter.Instructions[0] is
-            {
-                OpCode: PexOpCode.Return,
-                Arguments.Length: 1
-            } instruction &&
-            instruction.Arguments[0] is not PexIdentifierValue;
+        private static bool IsAutoReadOnly(PexProperty property)
+        {
+            return property.AutoVariableName is null &&
+                   property.Flags.HasFlag(PexPropertyFlags.Readable) &&
+                   !property.Flags.HasFlag(PexPropertyFlags.Writable) &&
+                   property.ReadFunction is
+                   {
+                       Instructions.Length: 1
+                   } getter &&
+                   getter.Instructions[0] is
+                   {
+                       OpCode: PexOpCode.Return,
+                       Arguments.Length: 1
+                   } instruction &&
+                   instruction.Arguments[0] is not PexIdentifierValue;
+        }
 
         private static bool IsEvent(string name, PexFunction function, bool remoteEvent)
         {

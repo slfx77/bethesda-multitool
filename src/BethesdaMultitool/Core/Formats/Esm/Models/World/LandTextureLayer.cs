@@ -91,7 +91,7 @@ public record LandTextureLayer
                     continue;
                 }
 
-                yield return entry with { Position = (ushort)(((sy / stride) * VtxtGridEdge) + (sx / stride)) };
+                yield return entry with { Position = (ushort)(sy / stride * VtxtGridEdge + sx / stride) };
             }
         }
     }

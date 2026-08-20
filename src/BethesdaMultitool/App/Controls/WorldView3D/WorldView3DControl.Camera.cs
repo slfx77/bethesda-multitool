@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -167,8 +168,10 @@ public sealed partial class WorldView3DControl
         NavigateToCell(destCell, warpPose);
     }
 
-    /// <summary>Frames the camera on a single exterior cell's grid position, reusing the same
-    /// pitched-down posture as <see cref="ResetCameraToDataCentroid" />.</summary>
+    /// <summary>
+    ///     Frames the camera on a single exterior cell's grid position, reusing the same
+    ///     pitched-down posture as <see cref="ResetCameraToDataCentroid" />.
+    /// </summary>
     private void CenterCameraOnCell(CellRecord cell)
     {
         if (cell.GridX is not int gx || cell.GridY is not int gy) return;
@@ -205,6 +208,7 @@ public sealed partial class WorldView3DControl
             sumY += cell.GridY!.Value;
             count++;
         }
+
         if (count == 0) return;
 
         var avgGridX = sumX / count;
@@ -312,6 +316,7 @@ public sealed partial class WorldView3DControl
                     return i;
                 }
             }
+
             for (var i = 0; i < data.Worldspaces.Count; i++)
             {
                 var ws = data.Worldspaces[i];
@@ -376,7 +381,8 @@ public sealed partial class WorldView3DControl
         _stressBookmarkApplied = true;
         if (bookmark is not { } heavy)
         {
-            Log.Warn("WorldView3DControl: WastelandNV Heavy stress bookmark requested, but no renderable reference cluster was found.");
+            Log.Warn(
+                "WorldView3DControl: WastelandNV Heavy stress bookmark requested, but no renderable reference cluster was found.");
             return;
         }
 

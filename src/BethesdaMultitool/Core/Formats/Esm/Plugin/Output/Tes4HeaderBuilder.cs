@@ -132,4 +132,3 @@ public static class Tes4HeaderBuilder
         SubrecordEncoder.WriteSubrecord(writer, "DATA", data);
     }
 }
-

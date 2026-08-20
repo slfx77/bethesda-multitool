@@ -261,7 +261,8 @@ internal static class EsmScriptSourceCoverageAnalyzer
             })
             .Where(static item => item.FormId != 0 && item.EditorIds.Count == 1)
             .GroupBy(static item => item.FormId)
-            .Where(static group => group.SelectMany(item => item.EditorIds).Distinct(StringComparer.Ordinal).Count() == 1)
+            .Where(static group =>
+                group.SelectMany(item => item.EditorIds).Distinct(StringComparer.Ordinal).Count() == 1)
             .ToDictionary(
                 static group => group.Key,
                 static group => group.SelectMany(item => item.EditorIds).First());
@@ -449,12 +450,14 @@ internal static class EsmScriptSourceCoverageAnalyzer
 
         if (missing.Count > 0)
         {
-            issues.Add($"missing-slsd={string.Join('|', missing.OrderBy(static name => name, StringComparer.OrdinalIgnoreCase))}");
+            issues.Add(
+                $"missing-slsd={string.Join('|', missing.OrderBy(static name => name, StringComparer.OrdinalIgnoreCase))}");
         }
 
         if (typeMismatches.Count > 0)
         {
-            issues.Add($"type={string.Join('|', typeMismatches.OrderBy(static name => name, StringComparer.OrdinalIgnoreCase))}");
+            issues.Add(
+                $"type={string.Join('|', typeMismatches.OrderBy(static name => name, StringComparer.OrdinalIgnoreCase))}");
         }
 
         var declarationNames = declarations
@@ -542,9 +545,12 @@ internal static class EsmScriptSourceCoverageAnalyzer
             .Select(static pair => $"{pair.Key}={pair.Value}"));
     }
 
-    private static string NormalizeNewlines(string value) => value
-        .Replace("\r\n", "\n", StringComparison.Ordinal)
-        .Replace('\r', '\n');
+    private static string NormalizeNewlines(string value)
+    {
+        return value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+    }
 
     private enum DeclarationKind
     {
@@ -554,7 +560,10 @@ internal static class EsmScriptSourceCoverageAnalyzer
     }
 
     private sealed record SourceDeclaration(string Name, DeclarationKind Kind);
+
     private sealed record SourceScan(string Classification, List<SourceDeclaration> Declarations);
+
     private sealed record LocalEntry(uint? Index, string? Name, byte? Type);
+
     private sealed record LocalTable(List<LocalEntry> Entries, List<ScriptVariableInfo> ValidVariables);
 }

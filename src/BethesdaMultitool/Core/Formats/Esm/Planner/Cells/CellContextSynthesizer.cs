@@ -16,12 +16,12 @@ public static class CellContextSynthesizer
         ArgumentNullException.ThrowIfNull(entry);
 
         var cell = entry.DmpModel
-            ?? throw new InvalidOperationException(
-                $"CellCatalogEntry 0x{entry.CellFormId:X8} has neither master context nor DMP model.");
+                   ?? throw new InvalidOperationException(
+                       $"CellCatalogEntry 0x{entry.CellFormId:X8} has neither master context nor DMP model.");
 
         if (!cell.WorldspaceFormId.HasValue)
         {
-            return Create(entry, isInterior: true, blockType: 2, subblockType: 3);
+            return Create(entry, true, 2, 3);
         }
 
         // Test this before grid coordinates. Runtime captures of the real persistent
@@ -29,7 +29,7 @@ public static class CellContextSynthesizer
         // directly beneath World Children rather than beneath exterior grid GRUPs.
         if (cell.IsPersistentCell)
         {
-            return Create(entry, isInterior: false, blockType: 0, subblockType: 0);
+            return Create(entry, false, 0, 0);
         }
 
         // Virtual/orphan buckets are removed by PersistentCellReparenting after any
@@ -37,7 +37,7 @@ public static class CellContextSynthesizer
         // merely planning the bucket does not invent a real grid location for it.
         if (cell.IsVirtual || cell.IsUnresolvedBucket)
         {
-            return Create(entry, isInterior: false, blockType: 4, subblockType: 5);
+            return Create(entry, false, 4, 5);
         }
 
         if (cell.GridX is not { } gridX || cell.GridY is not { } gridY)
@@ -59,7 +59,7 @@ public static class CellContextSynthesizer
             BlockGroupType = 4,
             SubblockGroupType = 5,
             BlockLabel = EncodeGridLabel(blockX, blockY),
-            SubblockLabel = EncodeGridLabel(subblockX, subblockY),
+            SubblockLabel = EncodeGridLabel(subblockX, subblockY)
         };
     }
 
@@ -67,16 +67,19 @@ public static class CellContextSynthesizer
         CellCatalogEntry entry,
         bool isInterior,
         int blockType,
-        int subblockType) => new()
+        int subblockType)
     {
-        CellFormId = entry.CellFormId,
-        IsInterior = isInterior,
-        WorldspaceFormId = entry.DmpModel!.WorldspaceFormId,
-        BlockGroupType = blockType,
-        SubblockGroupType = subblockType,
-        BlockLabel = null,
-        SubblockLabel = null,
-    };
+        return new PcEsmCellContext
+        {
+            CellFormId = entry.CellFormId,
+            IsInterior = isInterior,
+            WorldspaceFormId = entry.DmpModel!.WorldspaceFormId,
+            BlockGroupType = blockType,
+            SubblockGroupType = subblockType,
+            BlockLabel = null,
+            SubblockLabel = null
+        };
+    }
 
     private static byte[] EncodeGridLabel(int x, int y)
     {

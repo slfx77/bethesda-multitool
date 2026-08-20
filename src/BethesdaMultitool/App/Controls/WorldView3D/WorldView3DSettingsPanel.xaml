@@ -184,7 +184,8 @@
                   AutomationProperties.Name="Terrain"
                   ToolTipService.ToolTip="Show terrain (press 2)" />
         <StackPanel x:Name="TerrainDependentControls" Spacing="8">
-          <CheckBox x:Name="TerrainTexturesToggle" x:FieldModifier="internal" IsChecked="True" Content="Terrain textures"
+          <CheckBox x:Name="TerrainTexturesToggle" x:FieldModifier="internal" IsChecked="True"
+                    Content="Terrain textures"
                     AutomationProperties.Name="Terrain textures"
                     ToolTipService.ToolTip="Show terrain diffuse textures (off = flat shaded)" />
           <CheckBox x:Name="VertexColorsToggle" x:FieldModifier="internal" IsChecked="True" Content="Vertex colors"
@@ -224,13 +225,15 @@
 
           <TextBlock Text="Others" FontWeight="SemiBold"
                      AutomationProperties.HeadingLevel="Level3" />
-          <CheckBox x:Name="EditorMarkersCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Editor markers"
+          <CheckBox x:Name="EditorMarkersCheckBox" x:FieldModifier="internal" IsChecked="False"
+                    Content="Editor markers"
                     AutomationProperties.Name="Editor markers"
                     ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)" />
           <CheckBox x:Name="ActivatorsCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Activators"
                     AutomationProperties.Name="Activators"
                     ToolTipService.ToolTip="Show activator objects (levers, terminals, buttons)" />
-          <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Initially-disabled objects"
+          <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" IsChecked="False"
+                    Content="Initially-disabled objects"
                     AutomationProperties.Name="Initially-disabled objects"
                     ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)" />
         </StackPanel>
@@ -279,12 +282,13 @@
                       AutomationProperties.Name="Camera mode"
                       ToolTipService.ToolTip="Fly (free camera) or Walk (ground-locked) — press F" />
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBlock x:Name="DrawDistanceLabel" x:FieldModifier="internal" Text="Draw distance" VerticalAlignment="Center" />
+          <TextBlock x:Name="DrawDistanceLabel" x:FieldModifier="internal" Text="Draw distance"
+                     VerticalAlignment="Center" />
           <Slider x:Name="DrawDistanceSlider" x:FieldModifier="internal" Width="130" VerticalAlignment="Center"
-                   Minimum="2" Maximum="7.64" Value="4" StepFrequency="0.01"
-                   ThumbToolTipValueConverter="{StaticResource DrawDistanceTooltip}"
-                   AutomationProperties.Name="Draw distance"
-                   ToolTipService.ToolTip="Streaming view distance in cells, log scale (Page Up / Page Down)" />
+                  Minimum="2" Maximum="7.64" Value="4" StepFrequency="0.01"
+                  ThumbToolTipValueConverter="{StaticResource DrawDistanceTooltip}"
+                  AutomationProperties.Name="Draw distance"
+                  ToolTipService.ToolTip="Streaming view distance in cells, log scale (Page Up / Page Down)" />
           <TextBlock x:Name="DrawDistanceValueLabel" x:FieldModifier="internal" Text="16 c" VerticalAlignment="Center" />
         </StackPanel>
       </StackPanel>

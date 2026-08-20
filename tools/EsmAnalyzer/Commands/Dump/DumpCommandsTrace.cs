@@ -1,11 +1,4 @@
 using Spectre.Console;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Schema;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.RecordTraversalHelpers;
 
 namespace EsmAnalyzer.Commands.Dump;
@@ -182,4 +175,3 @@ internal static class DumpCommandsTrace
         return 0;
     }
 }
-

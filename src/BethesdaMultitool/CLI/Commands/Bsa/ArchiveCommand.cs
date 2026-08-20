@@ -1,8 +1,7 @@
 using System.CommandLine;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
@@ -17,8 +16,10 @@ namespace BethesdaMultitool.CLI.Commands.Bsa;
 /// </summary>
 public static class ArchiveCommand
 {
-    public static Command Create() =>
-        BuildGroup("archive", "Archive operations (BSA / BA2) — accepts .bsa or .ba2");
+    public static Command Create()
+    {
+        return BuildGroup("archive", "Archive operations (BSA / BA2) — accepts .bsa or .ba2");
+    }
 
     /// <summary>
     ///     Builds an archive command group under <paramref name="name" /> with the full subcommand set.

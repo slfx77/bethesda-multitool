@@ -32,11 +32,11 @@ public sealed class MenuProcessor : IRepackProcessor
     ///     playability requires it (everything else stays prototype).
     ///     Evidence (2026-08-18/19 July-prototype playtests):
     ///     - hud_main_menu.xml: HUDMainMenu ctor dereferences the CNDArrows/Rads/LMBs tile
-    ///       lookups with no null check — the July HUD predates those tiles (boot AV at 0xA0CBA2).
+    ///     lookups with no null check — the July HUD predates those tiles (boot AV at 0xA0CBA2).
     ///     - stats_menu.xml: "MENUS: Stats Menu Creation Failed" on the retail exe, followed by
-    ///       the same NULL-tile AV when the Pip-Boy opens.
+    ///     the same NULL-tile AV when the Pip-Boy opens.
     ///     - inventory/container/barter/recipe: the shared item-list helper (FUN_00707e30)
-    ///       looks up CNDArrows per entry, unguarded — crashes when the first item list renders.
+    ///     looks up CNDArrows per entry, unguarded — crashes when the first item list renders.
     ///     When no PC donor is configured the console document is still written (a partially
     ///     unstable interface beats none) and a warning is reported.
     /// </summary>

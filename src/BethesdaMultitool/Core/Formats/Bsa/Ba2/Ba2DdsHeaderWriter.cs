@@ -95,7 +95,9 @@ public static class Ba2DdsHeaderWriter
     private const uint XboxXdkVersion = 13202;
 
     private static uint MakeFourCc(char c0, char c1, char c2, char c3)
-        => (uint)(byte)c0 | ((uint)(byte)c1 << 8) | ((uint)(byte)c2 << 16) | ((uint)(byte)c3 << 24);
+    {
+        return (byte)c0 | ((uint)(byte)c1 << 8) | ((uint)(byte)c2 << 16) | ((uint)(byte)c3 << 24);
+    }
 
     /// <summary>
     ///     Builds the DDS header bytes for <paramref name="tex" /> (a DX10 entry from an archive of the
@@ -182,11 +184,11 @@ public static class Ba2DdsHeaderWriter
         // DDS_HEADER_DXT10 (20 bytes) — for formats with no legacy FourCC, and any Xbox-tiled surface.
         if (NeedsDxt10Header(format) || xbox)
         {
-            bw.Write((uint)tex.Format);                                  // dxgiFormat
-            bw.Write(DimensionTexture2D);                               // resourceDimension
+            bw.Write((uint)tex.Format); // dxgiFormat
+            bw.Write(DimensionTexture2D); // resourceDimension
             bw.Write(tex.IsCubemap == 1 ? ResourceMiscTextureCube : 0u); // miscFlag
-            bw.Write(1u);                                               // arraySize
-            bw.Write(AlphaModeUnknown);                                 // miscFlags2
+            bw.Write(1u); // arraySize
+            bw.Write(AlphaModeUnknown); // miscFlags2
         }
 
         if (!xbox)
@@ -215,11 +217,6 @@ public static class Ba2DdsHeaderWriter
         }
     }
 
-    /// <summary>The DDS_PIXELFORMAT fields plus the dwPitchOrLinearSize for one DXGI format.</summary>
-    private readonly record struct PixelFormat(
-        uint Flags, uint FourCc, uint RgbBitCount, uint RBitMask, uint GBitMask, uint BBitMask, uint ABitMask,
-        uint PitchOrLinearSize);
-
     private static PixelFormat ResolvePixelFormat(
         Ba2DxgiFormat format, uint width, uint height, out uint headerFlags)
     {
@@ -227,7 +224,10 @@ public static class Ba2DdsHeaderWriter
         // formats override to the pitch flags below.
         headerFlags = HeaderFlagsLinear;
 
-        uint Block16(uint w, uint h) => (uint)(Math.Ceiling(w / 4m) * Math.Ceiling(h / 4m) * 16);
+        uint Block16(uint w, uint h)
+        {
+            return (uint)(Math.Ceiling(w / 4m) * Math.Ceiling(h / 4m) * 16);
+        }
 
         switch (format)
         {
@@ -242,7 +242,7 @@ public static class Ba2DdsHeaderWriter
             case Ba2DxgiFormat.BC5_SNORM:
                 return FourCc('B', 'C', '5', 'S', width * height);
             case Ba2DxgiFormat.BC4_UNORM:
-                return FourCc('B', 'C', '4', 'U', (width / 4) * (height / 4) * 8);
+                return FourCc('B', 'C', '4', 'U', width / 4 * (height / 4) * 8);
 
             // Formats with no legacy FourCC use the DX10 marker; the real DXGI format goes in the
             // DDS_HEADER_DXT10 block.
@@ -292,23 +292,46 @@ public static class Ba2DdsHeaderWriter
         }
 
         static PixelFormat FourCc(char a, char b, char c, char d, uint linear)
-            => new(DdpfFourCc, MakeFourCc(a, b, c, d), 0, 0, 0, 0, 0, linear);
+        {
+            return new PixelFormat(DdpfFourCc, MakeFourCc(a, b, c, d), 0, 0, 0, 0, 0, linear);
+        }
 
         static PixelFormat Dx10(uint linear)
-            => new(DdpfFourCc, MakeFourCc('D', 'X', '1', '0'), 0, 0, 0, 0, 0, linear);
+        {
+            return new PixelFormat(DdpfFourCc, MakeFourCc('D', 'X', '1', '0'), 0, 0, 0, 0, 0, linear);
+        }
 
         static PixelFormat Rgba(uint r, uint g, uint b, uint a, uint pitch)
-            => new(DdpfRgba, 0, 32, r, g, b, a, pitch);
+        {
+            return new PixelFormat(DdpfRgba, 0, 32, r, g, b, a, pitch);
+        }
     }
 
-    private static bool NeedsDxt10Header(Ba2DxgiFormat format) => format is
-        Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC3_UNORM_SRGB or Ba2DxgiFormat.BC6H_UF16
-        or Ba2DxgiFormat.BC7_UNORM or Ba2DxgiFormat.BC7_UNORM_SRGB or Ba2DxgiFormat.R32G32B32A32_FLOAT
-        or Ba2DxgiFormat.R8G8B8A8_UNORM_SRGB;
+    private static bool NeedsDxt10Header(Ba2DxgiFormat format)
+    {
+        return format is
+            Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC3_UNORM_SRGB or Ba2DxgiFormat.BC6H_UF16
+            or Ba2DxgiFormat.BC7_UNORM or Ba2DxgiFormat.BC7_UNORM_SRGB or Ba2DxgiFormat.R32G32B32A32_FLOAT
+            or Ba2DxgiFormat.R8G8B8A8_UNORM_SRGB;
+    }
 
-    private static bool IsBlockCompressed(Ba2DxgiFormat format) => format is
-        Ba2DxgiFormat.BC1_UNORM or Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC2_UNORM
-        or Ba2DxgiFormat.BC3_UNORM or Ba2DxgiFormat.BC3_UNORM_SRGB or Ba2DxgiFormat.BC4_UNORM
-        or Ba2DxgiFormat.BC5_SNORM or Ba2DxgiFormat.BC5_UNORM or Ba2DxgiFormat.BC7_UNORM
-        or Ba2DxgiFormat.BC7_UNORM_SRGB;
+    private static bool IsBlockCompressed(Ba2DxgiFormat format)
+    {
+        return format is
+            Ba2DxgiFormat.BC1_UNORM or Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC2_UNORM
+            or Ba2DxgiFormat.BC3_UNORM or Ba2DxgiFormat.BC3_UNORM_SRGB or Ba2DxgiFormat.BC4_UNORM
+            or Ba2DxgiFormat.BC5_SNORM or Ba2DxgiFormat.BC5_UNORM or Ba2DxgiFormat.BC7_UNORM
+            or Ba2DxgiFormat.BC7_UNORM_SRGB;
+    }
+
+    /// <summary>The DDS_PIXELFORMAT fields plus the dwPitchOrLinearSize for one DXGI format.</summary>
+    private readonly record struct PixelFormat(
+        uint Flags,
+        uint FourCc,
+        uint RgbBitCount,
+        uint RBitMask,
+        uint GBitMask,
+        uint BBitMask,
+        uint ABitMask,
+        uint PitchOrLinearSize);
 }

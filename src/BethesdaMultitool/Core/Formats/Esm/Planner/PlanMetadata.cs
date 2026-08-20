@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
 /// <summary>
@@ -25,5 +27,5 @@ public sealed record PlanMetadata
     ///     from <c>PlannedEncoders.KnownRecordTypes</c>; synthetic plans may provide a subset
     ///     to exercise bounded writer and reference-policy behavior.
     /// </summary>
-    public required System.Collections.Immutable.ImmutableHashSet<string> PlannerCoverage { get; init; }
+    public required ImmutableHashSet<string> PlannerCoverage { get; init; }
 }

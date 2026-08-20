@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
@@ -395,7 +394,9 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
     private int PackTargPtrOffset => 48 + _s; // PackageTarget* pPackTarg
     private int IdleCollectionPtrOffset => 52 + _s; // BGSIdleCollection* pIdleCollection (PDB +68)
     private int PackSchedOffset => 56 + _s; // PackageSchedule (8 bytes inline)
+
     private int PackConditionsOffset => 64 + _s; // TESCondition packConditions (PDB +80)
+
     // pCombatStyle: PDB +88. The constant is `pdb - _s = 88 - 16 = 72`. Was
     // mistakenly `88 + _s = +104` until the Phase 1B.6 follow-up — that landed inside
     // the OnBegin PackageEventAction struct (+92..+107), so the typed-pointer gate

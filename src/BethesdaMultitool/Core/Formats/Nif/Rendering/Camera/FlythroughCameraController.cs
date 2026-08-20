@@ -348,7 +348,8 @@ internal sealed class FlythroughCameraController
         if (!_airborne && jumpHeld)
         {
             var launchPosition = _camera.Position;
-            Vector3? currentGroundedPosition = GroundHeightSampler(launchPosition.X, launchPosition.Y) is float launchGround
+            Vector3? currentGroundedPosition =
+ GroundHeightSampler(launchPosition.X, launchPosition.Y) is float launchGround
                 ? new Vector3(launchPosition.X, launchPosition.Y, launchGround + EyeHeight)
                 : null;
             if (_voidRecovery.TryArmJump(currentGroundedPosition))

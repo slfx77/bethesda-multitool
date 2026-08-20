@@ -1,9 +1,5 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using Spectre.Console;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Conversion;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using static EsmAnalyzer.Commands.Audits.OrphanedRefAnalyzer;
 
 namespace EsmAnalyzer.Commands.Audits;
@@ -19,13 +15,13 @@ public static class OrphanedFormIdCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file to scan" };
         var outputOption = new Option<string?>("-o", "--output") { Description = "Output TSV file for full results" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Max orphans to display (default: 200)", DefaultValueFactory = _ => 200 };
+            { Description = "Max orphans to display (default: 200)", DefaultValueFactory = _ => 200 };
         var dumpOption = new Option<string?>("--dump")
-        { Description = "Path to a .dmp file or directory of dumps — extracts runtime scripts and merges FormIDs" };
+            { Description = "Path to a .dmp file or directory of dumps — extracts runtime scripts and merges FormIDs" };
         var compareOption = new Option<string?>("--compare")
-        { Description = "Second ESM to cross-reference (shows which orphans exist in this file)" };
+            { Description = "Second ESM to cross-reference (shows which orphans exist in this file)" };
         var allRecordsOption = new Option<bool>("--all-records")
-        { Description = "Also scan non-script records for orphaned FormID references" };
+            { Description = "Also scan non-script records for orphaned FormID references" };
 
         var command = new Command("orphan-refs",
             "Find FormID references that point to non-existent records (cut content detection)");
@@ -70,7 +66,7 @@ public static class OrphanedFormIdCommands
         AnsiConsole.WriteLine();
 
         // ── Phase 1: Load ESM and build FormID universe ──────────────────────
-        var esm = EsmFileLoader.Load(filePath, printStatus: true);
+        var esm = EsmFileLoader.Load(filePath, true);
         if (esm == null)
         {
             return 1;
@@ -107,14 +103,14 @@ public static class OrphanedFormIdCommands
 
         // ── Phase 2: Extract scripts from ESM ────────────────────────────────
         AnsiConsole.MarkupLine("[grey]Extracting scripts from ESM...[/]");
-        var esmScripts = OrphanedRefAnalyzer.ExtractScriptsFromEsm(allEsmRecords, data, bigEndian);
+        var esmScripts = ExtractScriptsFromEsm(allEsmRecords, data, bigEndian);
         AnsiConsole.MarkupLine($"[grey]Found {esmScripts.Count:N0} scripts in ESM[/]");
 
         // ── Phase 3: Load dumps (optional) ───────────────────────────────────
         var dumpScripts = new List<(string Source, ScriptRecord Script)>();
         if (dumpPath != null)
         {
-            await OrphanedRefAnalyzer.LoadDumpScriptsAsync(dumpPath, knownFormIds, edidMap, dumpScripts);
+            await LoadDumpScriptsAsync(dumpPath, knownFormIds, edidMap, dumpScripts);
         }
 
         // ── Phase 4: Identify orphans ────────────────────────────────────────
@@ -195,7 +191,7 @@ public static class OrphanedFormIdCommands
         if (allRecords)
         {
             AnsiConsole.MarkupLine("[grey]Scanning all record types for orphaned FormID fields...[/]");
-            OrphanedRefAnalyzer.ScanAllRecordsForOrphans(
+            ScanAllRecordsForOrphans(
                 allEsmRecords, data, bigEndian, knownFormIds, edidMap, allRecordOrphans, stats);
         }
 
@@ -208,7 +204,7 @@ public static class OrphanedFormIdCommands
 
         // Decompile context for ESM scripts with orphans
         var orphanedFormIdSet = new HashSet<uint>(localOrphans.Select(o => o.OrphanedFormId));
-        OrphanedRefAnalyzer.DecompileContextForOrphans(
+        DecompileContextForOrphans(
             esmScripts, orphanedFormIdSet, edidMap, bigEndian, localOrphans);
 
         // For dump scripts, use their existing DecompiledText
@@ -218,7 +214,7 @@ public static class OrphanedFormIdCommands
                 .FirstOrDefault(ds => ds.Script.FormId == orphan.ScriptFormId).Script;
             if (dumpScript?.DecompiledText != null)
             {
-                orphan.DecompiledContext = OrphanedRefAnalyzer.FindOrphanInText(
+                orphan.DecompiledContext = FindOrphanInText(
                     dumpScript.DecompiledText, orphan.OrphanedFormId);
             }
         }
@@ -230,7 +226,7 @@ public static class OrphanedFormIdCommands
         if (comparePath != null)
         {
             AnsiConsole.MarkupLine($"\n[grey]Loading compare file: {comparePath}[/]");
-            var compare = EsmFileLoader.Load(comparePath, printStatus: false);
+            var compare = EsmFileLoader.Load(comparePath, false);
             if (compare != null)
             {
                 var compareRecords = EsmRecordParser.ScanAllRecords(compare.Data, compare.IsBigEndian);
@@ -265,7 +261,8 @@ public static class OrphanedFormIdCommands
 
         // ── Phase 7: Output ──────────────────────────────────────────────────
         AnsiConsole.WriteLine();
-        OrphanedRefDisplay.DisplayStats(stats, dumpPath != null, comparePath != null, allRecords, allRecordOrphans.Count);
+        OrphanedRefDisplay.DisplayStats(stats, dumpPath != null, comparePath != null, allRecords,
+            allRecordOrphans.Count);
         AnsiConsole.WriteLine();
 
         if (localOrphans.Count == 0 && allRecordOrphans.Count == 0)

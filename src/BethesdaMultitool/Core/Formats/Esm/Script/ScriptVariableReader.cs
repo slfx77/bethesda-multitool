@@ -251,7 +251,7 @@ internal sealed class ScriptVariableReader
                 return ReadLocalVariable(reader, marker);
 
             case ScriptOpcodes.MarkerReference:
-                return ReadReferenceVariable(reader, isWrite: true);
+                return ReadReferenceVariable(reader, true);
 
             case ScriptOpcodes.MarkerGlobal:
                 return ReadGlobalVariable(reader);
@@ -267,7 +267,7 @@ internal sealed class ScriptVariableReader
                         idx = (ushort)((idx >> 8) | ((idx & 0xFF) << 8));
                     }
 
-                    reader.TrackLocalVariableRead(idx, operandOffset, marker: null);
+                    reader.TrackLocalVariableRead(idx, operandOffset, null);
                     return GetVariableName(idx);
                 }
 

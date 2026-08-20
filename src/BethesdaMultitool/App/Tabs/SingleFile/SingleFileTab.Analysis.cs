@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Coverage;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Extraction;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -25,13 +26,15 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class SingleFileTab
 {
-    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
-
     // Monotonic floor for AnalysisProgressBar: the multi-phase load (scan → BA2 localization → typed
     // parse → coverage) and DMP's ×0.8 scaling report through DIFFERENT sinks whose per-phase
     // percentages restart low, which made the bar visibly jump backwards. All writers go through
     // SetAnalysisProgress so the bar only ever advances until the next operation resets it.
     private double _analysisProgressFloor;
+    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
+
+    // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
+    private SaveFile? _pendingSaveData;
 
     private void SetAnalysisProgress(double value)
     {
@@ -44,9 +47,6 @@ public sealed partial class SingleFileTab
         _analysisProgressFloor = 0;
         AnalysisProgressBar.Value = 0;
     }
-
-    // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
-    private SaveFile? _pendingSaveData;
 
     #region Dependency Checking
 
@@ -490,39 +490,39 @@ public sealed partial class SingleFileTab
             // with a DLC-sized load order, doubled by the pre-single-flight double populate.
             var (tree, placements, usageIndex, factionMembers, raceLookup, semanticResult) =
                 await Task.Run(() =>
-            {
-                // Merge load order records so DLC content appears in the browser. An ESM/ESP primary's
-                // MAST list anchors the slots, so entries land where its raw FormIDs already point.
-                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
-                var merged = loadOrderRecords != null
-                    ? loadOrderRecords.MergeWith(primaryResult)
-                    : primaryResult;
+                {
+                    // Merge load order records so DLC content appears in the browser. An ESM/ESP primary's
+                    // MAST list anchors the slots, so entries land where its raw FormIDs already point.
+                    var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
+                    var merged = loadOrderRecords != null
+                        ? loadOrderRecords.MergeWith(primaryResult)
+                        : primaryResult;
 
-                ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
-                var builtTree = EsmBrowserTreeBuilder.BuildTree(merged, resolver);
-                EsmBrowserTreeBuilder.AppendRecoverableGapCategory(builtTree, recoverableGaps);
+                    ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
+                    var builtTree = EsmBrowserTreeBuilder.BuildTree(merged, resolver);
+                    EsmBrowserTreeBuilder.AppendRecoverableGapCategory(builtTree, recoverableGaps);
 
-                // Build reverse placement index for Count (base FormID → world placements)
-                var placementIndex = merged.BuildBaseToPlacementsMap();
+                    // Build reverse placement index for Count (base FormID → world placements)
+                    var placementIndex = merged.BuildBaseToPlacementsMap();
 
-                // Build reverse usage index for GECK-style Use (scripts, lists, containers, packages)
-                var formUsageIndex = FormUsageIndex.Build(merged);
+                    // Build reverse usage index for GECK-style Use (scripts, lists, containers, packages)
+                    var formUsageIndex = FormUsageIndex.Build(merged);
 
-                // Build reverse faction index (faction FormID → NPC/creature members)
-                var factionIndex = merged.BuildFactionMembersIndex();
+                    // Build reverse faction index (faction FormID → NPC/creature members)
+                    var factionIndex = merged.BuildFactionMembersIndex();
 
-                // Build race lookup for FaceGen slider computation in property panels
-                var races = merged.Races.Count > 0
-                    ? (IReadOnlyDictionary<uint, RaceRecord>)merged.Races
-                        .DistinctBy(r => r.FormId)
-                        .ToDictionary(r => r.FormId)
-                    : null;
+                    // Build race lookup for FaceGen slider computation in property panels
+                    var races = merged.Races.Count > 0
+                        ? (IReadOnlyDictionary<uint, RaceRecord>)merged.Races
+                            .DistinctBy(r => r.FormId)
+                            .ToDictionary(r => r.FormId)
+                        : null;
 
-                ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
-                EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
+                    ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
+                    EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
-                return (builtTree, placementIndex, formUsageIndex, factionIndex, races, merged);
-            });
+                    return (builtTree, placementIndex, formUsageIndex, factionIndex, races, merged);
+                });
 
             _esmBrowserTree = tree;
             _placementIndex = placements;
@@ -635,4 +635,3 @@ public sealed partial class SingleFileTab
 
     #endregion
 }
-

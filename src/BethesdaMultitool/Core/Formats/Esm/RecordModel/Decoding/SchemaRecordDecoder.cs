@@ -27,6 +27,8 @@ public static class SchemaRecordDecoder
     /// <summary>Resolves a FormID to a display name (EditorID / FULL), or null. Optional.</summary>
     public delegate string? FormIdNameResolver(uint formId);
 
+    private static readonly (string?, object?, uint?) NoValue = (null, null, null);
+
     public static IReadOnlyList<DecodedNode> Decode(
         RecordDef schema,
         IReadOnlyList<RawSubrecord> subrecords,
@@ -188,8 +190,8 @@ public static class SchemaRecordDecoder
             while (i < subrecords.Count)
             {
                 var sub = subrecords[i];
-                var variant = union.Variants.FirstOrDefault(
-                    v => IsMemberActive(v, ctx) && v.Signature == sub.Signature);
+                var variant =
+                    union.Variants.FirstOrDefault(v => IsMemberActive(v, ctx) && v.Signature == sub.Signature);
                 if (variant is null)
                 {
                     break;
@@ -232,8 +234,10 @@ public static class SchemaRecordDecoder
         };
     }
 
-    private static bool GroupContainsSignature(StructDef group, string signature, DecodeContext ctx) =>
-        group.Members.Any(m => IsMemberActive(m, ctx) && m.Signature == signature);
+    private static bool GroupContainsSignature(StructDef group, string signature, DecodeContext ctx)
+    {
+        return group.Members.Any(m => IsMemberActive(m, ctx) && m.Signature == signature);
+    }
 
     /// <summary>
     ///     Consumes one group element: walks the struct's signed children in order, decoding each from its
@@ -293,8 +297,8 @@ public static class SchemaRecordDecoder
             }
 
             var parameterLabel = $"Parameter #{parameterNumber}";
-            var placeholderIndex = ctdaChildren.FindIndex(
-                node => string.Equals(node.Label, parameterLabel, StringComparison.Ordinal));
+            var placeholderIndex =
+                ctdaChildren.FindIndex(node => string.Equals(node.Label, parameterLabel, StringComparison.Ordinal));
             if (placeholderIndex >= 0)
             {
                 var placeholder = ctdaChildren[placeholderIndex];
@@ -322,22 +326,27 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>Displays the exact scalar bits without retaining a FormID resolver's friendly name.</summary>
-    private static string? FormatConditionPlaceholderBits(object? rawValue, string? fallback) => rawValue switch
+    private static string? FormatConditionPlaceholderBits(object? rawValue, string? fallback)
     {
-        byte value => $"0x{value:X2}",
-        sbyte value => $"0x{unchecked((byte)value):X2}",
-        ushort value => $"0x{value:X4}",
-        short value => $"0x{unchecked((ushort)value):X4}",
-        uint value => $"0x{value:X8}",
-        int value => $"0x{unchecked((uint)value):X8}",
-        ulong value => $"0x{value:X16}",
-        long value => $"0x{unchecked((ulong)value):X16}",
-        byte[] value => Convert.ToHexString(value),
-        _ => fallback
-    };
+        return rawValue switch
+        {
+            byte value => $"0x{value:X2}",
+            sbyte value => $"0x{unchecked((byte)value):X2}",
+            ushort value => $"0x{value:X4}",
+            short value => $"0x{unchecked((ushort)value):X4}",
+            uint value => $"0x{value:X8}",
+            int value => $"0x{unchecked((uint)value):X8}",
+            ulong value => $"0x{value:X16}",
+            long value => $"0x{unchecked((ulong)value):X16}",
+            byte[] value => Convert.ToHexString(value),
+            _ => fallback
+        };
+    }
 
-    private static string ElementLabel(MemberDef element, string fallback) =>
-        element.Name ?? (string.IsNullOrEmpty(fallback) ? "Item" : fallback);
+    private static string ElementLabel(MemberDef element, string fallback)
+    {
+        return element.Name ?? (string.IsNullOrEmpty(fallback) ? "Item" : fallback);
+    }
 
     /// <summary>Decodes a member that owns a whole framed subrecord (its <see cref="MemberDef.Signature" />).</summary>
     private static DecodedNode DecodeSignedMember(MemberDef member, string sig, byte[] data, DecodeContext ctx)
@@ -365,7 +374,8 @@ public static class SchemaRecordDecoder
             case FormIdDef:
             {
                 var (value, raw, formId) = DecodeFormId(data, 0, data.Length, ctx, leMap);
-                return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = formId, Signature = sig };
+                return new DecodedNode
+                    { Label = label, Value = value, RawValue = raw, FormId = formId, Signature = sig };
             }
             case StructDef structDef:
             {
@@ -486,7 +496,8 @@ public static class SchemaRecordDecoder
                     }
 
                     var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
-                    output.Add(new DecodedNode { Label = formIdDef.Name ?? "FormID", Value = value, RawValue = raw, FormId = formId });
+                    output.Add(new DecodedNode
+                        { Label = formIdDef.Name ?? "FormID", Value = value, RawValue = raw, FormId = formId });
                     offset += 4;
                     break;
                 }
@@ -527,7 +538,8 @@ public static class SchemaRecordDecoder
                     // four bytes and TryDecodeConditionUnion below preserves those bits for alignment.
                     // Emit no placeholder node here, so a later active sibling starts at this offset.
                     break;
-                case UnionDef union when TryDecodeConditionUnion(union, data, offset, limit, ctx, leMap, output, out var conditionNode):
+                case UnionDef union when TryDecodeConditionUnion(union, data, offset, limit, ctx, leMap, output,
+                    out var conditionNode):
                 {
                     // CTDA deciders resolved from the ALREADY-DECODED siblings: the Function index
                     // picks each Parameter's numeric-vs-FormID interpretation via the game's
@@ -592,7 +604,8 @@ public static class SchemaRecordDecoder
                 }
 
                 var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
-                output.Add(new DecodedNode { Label = $"Item [{index}]", Value = value, RawValue = raw, FormId = formId });
+                output.Add(new DecodedNode
+                    { Label = $"Item [{index}]", Value = value, RawValue = raw, FormId = formId });
                 return offset + 4;
             }
             case StructDef structDef:
@@ -887,8 +900,10 @@ public static class SchemaRecordDecoder
         return new DecodedNode { Label = label, Value = value, RawValue = raw };
     }
 
-    /// <summary>An already-decoded sibling's numeric raw value by label, searching backwards (the
-    /// decider fields precede the unions they steer in every CTDA layout).</summary>
+    /// <summary>
+    ///     An already-decoded sibling's numeric raw value by label, searching backwards (the
+    ///     decider fields precede the unions they steer in every CTDA layout).
+    /// </summary>
     private static long? FindSiblingRawValue(List<DecodedNode> siblings, string label)
     {
         for (var i = siblings.Count - 1; i >= 0; i--)
@@ -905,7 +920,7 @@ public static class SchemaRecordDecoder
                     uint u => u,
                     int n => n,
                     long l => l,
-                    _ => null,
+                    _ => null
                 };
             }
         }
@@ -913,8 +928,10 @@ public static class SchemaRecordDecoder
         return null;
     }
 
-    /// <summary>True when every union variant has the same known fixed width (so decoding any one keeps the
-    /// enclosing struct byte-aligned). Returns false for variable/mixed-width unions (e.g. GMST DATA).</summary>
+    /// <summary>
+    ///     True when every union variant has the same known fixed width (so decoding any one keeps the
+    ///     enclosing struct byte-aligned). Returns false for variable/mixed-width unions (e.g. GMST DATA).
+    /// </summary>
     private static bool TryUniformVariantSize(UnionDef union, DecodeContext ctx, out int size)
     {
         size = 0;
@@ -978,18 +995,19 @@ public static class SchemaRecordDecoder
         return total;
     }
 
-    private static int? FixedPrimSize(FieldDef field) => field.Type switch
+    private static int? FixedPrimSize(FieldDef field)
     {
-        PrimType.U8 or PrimType.S8 => 1,
-        PrimType.U16 or PrimType.S16 or PrimType.Half => 2,
-        PrimType.U24 => 3,
-        PrimType.U32 or PrimType.S32 or PrimType.Float or PrimType.FormId or PrimType.LString => 4,
-        PrimType.U64 or PrimType.S64 or PrimType.Double => 8,
-        PrimType.ByteArray => field.FixedSize,
-        _ => null
-    };
-
-    private static readonly (string?, object?, uint?) NoValue = (null, null, null);
+        return field.Type switch
+        {
+            PrimType.U8 or PrimType.S8 => 1,
+            PrimType.U16 or PrimType.S16 or PrimType.Half => 2,
+            PrimType.U24 => 3,
+            PrimType.U32 or PrimType.S32 or PrimType.Float or PrimType.FormId or PrimType.LString => 4,
+            PrimType.U64 or PrimType.S64 or PrimType.Double => 8,
+            PrimType.ByteArray => field.FixedSize,
+            _ => null
+        };
+    }
 
     /// <summary>
     ///     Reads a u32 honoring a conversion-schema fixed-LE override at this offset: <c>WordSwapped</c>
@@ -997,37 +1015,47 @@ public static class SchemaRecordDecoder
     ///     <c>(BE16@o+2 &lt;&lt; 16) | BE16@o</c>, matching <c>SubrecordSchemaReader.ReadUInt32WordSwapped</c>);
     ///     <c>LittleEndian</c> forces a plain LE read; otherwise the context's endianness applies.
     /// </summary>
-    private static uint ReadU32Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) => le switch
+    private static uint ReadU32Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le)
     {
-        LeFieldKind.WordSwapped =>
-            ((uint)BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset + 2, 2)) << 16)
-            | BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2)),
-        LeFieldKind.LittleEndian => BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4)),
-        _ => ctx.ReadU32(data, offset)
-    };
+        return le switch
+        {
+            LeFieldKind.WordSwapped =>
+                ((uint)BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset + 2, 2)) << 16)
+                | BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2)),
+            LeFieldKind.LittleEndian => BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4)),
+            _ => ctx.ReadU32(data, offset)
+        };
+    }
 
     /// <summary>Signed counterpart of <see cref="ReadU32Overridden" /> (Int32LittleEndian fields).</summary>
-    private static int ReadS32Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) => le switch
+    private static int ReadS32Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le)
     {
-        LeFieldKind.LittleEndian => BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4)),
-        LeFieldKind.WordSwapped => unchecked((int)ReadU32Overridden(data, offset, ctx, LeFieldKind.WordSwapped)),
-        _ => ctx.ReadS32(data, offset)
-    };
+        return le switch
+        {
+            LeFieldKind.LittleEndian => BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4)),
+            LeFieldKind.WordSwapped => unchecked((int)ReadU32Overridden(data, offset, ctx, LeFieldKind.WordSwapped)),
+            _ => ctx.ReadS32(data, offset)
+        };
+    }
 
     /// <summary>
     ///     16-bit counterpart of <see cref="ReadU32Overridden" /> (UInt16LittleEndian fields; no
     ///     word-swapped u16 exists, so only the plain-LE override applies).
     /// </summary>
-    private static ushort ReadU16Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) =>
-        le == LeFieldKind.LittleEndian
+    private static ushort ReadU16Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le)
+    {
+        return le == LeFieldKind.LittleEndian
             ? BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2))
             : ctx.ReadU16(data, offset);
+    }
 
     /// <summary>Signed counterpart of <see cref="ReadU16Overridden" />.</summary>
-    private static short ReadS16Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) =>
-        le == LeFieldKind.LittleEndian
+    private static short ReadS16Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le)
+    {
+        return le == LeFieldKind.LittleEndian
             ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset, 2))
             : ctx.ReadS16(data, offset);
+    }
 
     private static (string? Value, object? Raw, uint? FormId) DecodeScalar(
         FieldDef field, byte[] data, int offset, int limit, DecodeContext ctx,
@@ -1046,15 +1074,23 @@ public static class SchemaRecordDecoder
             case PrimType.S8:
                 return Fits(1, available, out size) ? Integer(field, (sbyte)data[offset]) : NoValue;
             case PrimType.U16:
-                return Fits(2, available, out size) ? Integer(field, ReadU16Overridden(data, offset, ctx, le)) : NoValue;
+                return Fits(2, available, out size)
+                    ? Integer(field, ReadU16Overridden(data, offset, ctx, le))
+                    : NoValue;
             case PrimType.S16:
-                return Fits(2, available, out size) ? Integer(field, ReadS16Overridden(data, offset, ctx, le)) : NoValue;
+                return Fits(2, available, out size)
+                    ? Integer(field, ReadS16Overridden(data, offset, ctx, le))
+                    : NoValue;
             case PrimType.U24:
                 return Fits(3, available, out size) ? Integer(field, ctx.ReadU24(data, offset)) : NoValue;
             case PrimType.U32:
-                return Fits(4, available, out size) ? Integer(field, ReadU32Overridden(data, offset, ctx, le)) : NoValue;
+                return Fits(4, available, out size)
+                    ? Integer(field, ReadU32Overridden(data, offset, ctx, le))
+                    : NoValue;
             case PrimType.S32:
-                return Fits(4, available, out size) ? Integer(field, ReadS32Overridden(data, offset, ctx, le)) : NoValue;
+                return Fits(4, available, out size)
+                    ? Integer(field, ReadS32Overridden(data, offset, ctx, le))
+                    : NoValue;
             case PrimType.U64:
                 return Fits(8, available, out size) ? Integer(field, (long)ctx.ReadU64(data, offset)) : NoValue;
             case PrimType.S64:
@@ -1112,8 +1148,10 @@ public static class SchemaRecordDecoder
         return false;
     }
 
-    private static (string? Value, object? Raw, uint? FormId) Scalar(object value) =>
-        (Convert.ToString(value, CultureInfo.InvariantCulture), value, null);
+    private static (string? Value, object? Raw, uint? FormId) Scalar(object value)
+    {
+        return (Convert.ToString(value, CultureInfo.InvariantCulture), value, null);
+    }
 
     /// <summary>Formats an integer with its enum label / flag breakdown when the field declares one.</summary>
     private static (string? Value, object? Raw, uint? FormId) Integer(FieldDef field, long value)
@@ -1135,14 +1173,17 @@ public static class SchemaRecordDecoder
         return (value.ToString(CultureInfo.InvariantCulture), value, null);
     }
 
-    private static DecodedNode RawNode(string label, string? sig, byte[] data) => new()
+    private static DecodedNode RawNode(string label, string? sig, byte[] data)
     {
-        Label = label,
-        Value = $"<{data.Length} bytes>",
-        RawValue = data,
-        Signature = sig,
-        IsRaw = true
-    };
+        return new DecodedNode
+        {
+            Label = label,
+            Value = $"<{data.Length} bytes>",
+            RawValue = data,
+            Signature = sig,
+            IsRaw = true
+        };
+    }
 
     private static string DecodeString(byte[] data, int offset, int count)
     {
@@ -1189,55 +1230,89 @@ public static class SchemaRecordDecoder
         public BethesdaGame Game { get; } = game;
         public ushort? FormVersion { get; } = formVersion;
 
-        /// <summary>The top-level record signature (e.g. "WEAP", "RGDL"), used to resolve the conversion
-        /// schema's per-subrecord fixed-LE layout for big-endian records.</summary>
+        /// <summary>
+        ///     The top-level record signature (e.g. "WEAP", "RGDL"), used to resolve the conversion
+        ///     schema's per-subrecord fixed-LE layout for big-endian records.
+        /// </summary>
         public string RecordSignature { get; } = recordSignature;
 
-        /// <summary>The game's condition-function table, or null when the game is unknown.
-        /// Unknown parameter semantics remain visible as raw four-byte values.</summary>
+        /// <summary>
+        ///     The game's condition-function table, or null when the game is unknown.
+        ///     Unknown parameter semantics remain visible as raw four-byte values.
+        /// </summary>
         public ConditionFunctionTable? ConditionTable =>
             Game == BethesdaGame.Unknown
                 ? null
                 : _conditionTable ??= ConditionFunctionTable.For(Game);
 
-        public ushort ReadU16(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(o, 2))
-            : BinaryPrimitives.ReadUInt16LittleEndian(d.AsSpan(o, 2));
+        public ushort ReadU16(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(o, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(d.AsSpan(o, 2));
+        }
 
-        public short ReadS16(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadInt16BigEndian(d.AsSpan(o, 2))
-            : BinaryPrimitives.ReadInt16LittleEndian(d.AsSpan(o, 2));
+        public short ReadS16(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadInt16BigEndian(d.AsSpan(o, 2))
+                : BinaryPrimitives.ReadInt16LittleEndian(d.AsSpan(o, 2));
+        }
 
-        public int ReadU24(byte[] d, int o) => BigEndian
-            ? (d[o] << 16) | (d[o + 1] << 8) | d[o + 2]
-            : d[o] | (d[o + 1] << 8) | (d[o + 2] << 16);
+        public int ReadU24(byte[] d, int o)
+        {
+            return BigEndian
+                ? (d[o] << 16) | (d[o + 1] << 8) | d[o + 2]
+                : d[o] | (d[o + 1] << 8) | (d[o + 2] << 16);
+        }
 
-        public uint ReadU32(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(o, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(o, 4));
+        public uint ReadU32(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(o, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(o, 4));
+        }
 
-        public int ReadS32(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadInt32BigEndian(d.AsSpan(o, 4))
-            : BinaryPrimitives.ReadInt32LittleEndian(d.AsSpan(o, 4));
+        public int ReadS32(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadInt32BigEndian(d.AsSpan(o, 4))
+                : BinaryPrimitives.ReadInt32LittleEndian(d.AsSpan(o, 4));
+        }
 
-        public ulong ReadU64(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadUInt64BigEndian(d.AsSpan(o, 8))
-            : BinaryPrimitives.ReadUInt64LittleEndian(d.AsSpan(o, 8));
+        public ulong ReadU64(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadUInt64BigEndian(d.AsSpan(o, 8))
+                : BinaryPrimitives.ReadUInt64LittleEndian(d.AsSpan(o, 8));
+        }
 
-        public long ReadS64(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadInt64BigEndian(d.AsSpan(o, 8))
-            : BinaryPrimitives.ReadInt64LittleEndian(d.AsSpan(o, 8));
+        public long ReadS64(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadInt64BigEndian(d.AsSpan(o, 8))
+                : BinaryPrimitives.ReadInt64LittleEndian(d.AsSpan(o, 8));
+        }
 
-        public float ReadFloat(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadSingleBigEndian(d.AsSpan(o, 4))
-            : BinaryPrimitives.ReadSingleLittleEndian(d.AsSpan(o, 4));
+        public float ReadFloat(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadSingleBigEndian(d.AsSpan(o, 4))
+                : BinaryPrimitives.ReadSingleLittleEndian(d.AsSpan(o, 4));
+        }
 
-        public double ReadDouble(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadDoubleBigEndian(d.AsSpan(o, 8))
-            : BinaryPrimitives.ReadDoubleLittleEndian(d.AsSpan(o, 8));
+        public double ReadDouble(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadDoubleBigEndian(d.AsSpan(o, 8))
+                : BinaryPrimitives.ReadDoubleLittleEndian(d.AsSpan(o, 8));
+        }
 
-        public Half ReadHalf(byte[] d, int o) => BigEndian
-            ? BinaryPrimitives.ReadHalfBigEndian(d.AsSpan(o, 2))
-            : BinaryPrimitives.ReadHalfLittleEndian(d.AsSpan(o, 2));
+        public Half ReadHalf(byte[] d, int o)
+        {
+            return BigEndian
+                ? BinaryPrimitives.ReadHalfBigEndian(d.AsSpan(o, 2))
+                : BinaryPrimitives.ReadHalfLittleEndian(d.AsSpan(o, 2));
+        }
     }
 }

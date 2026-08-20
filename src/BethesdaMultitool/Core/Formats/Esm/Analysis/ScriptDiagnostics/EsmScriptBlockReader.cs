@@ -10,9 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 /// </summary>
 internal static class EsmScriptBlockReader
 {
-    /// <summary>A single SCRO/SCRV reference slot inside a compiled-script block.</summary>
-    public sealed record ScriptReferenceSlot(string Kind, uint RawValue);
-
     /// <summary>
     ///     Finds the index of the subrecord that terminates the current script block (the next block/event boundary),
     ///     or the subrecord count if no boundary follows.
@@ -129,4 +126,7 @@ internal static class EsmScriptBlockReader
 
         return string.Empty;
     }
+
+    /// <summary>A single SCRO/SCRV reference slot inside a compiled-script block.</summary>
+    public sealed record ScriptReferenceSlot(string Kind, uint RawValue);
 }

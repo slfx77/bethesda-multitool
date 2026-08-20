@@ -17,13 +17,13 @@ public sealed class ArmoEncoder : IRecordEncoder
     {
         ["Value"] = m => m.Value,
         ["Health"] = m => m.Health,
-        ["Weight"] = m => m.Weight,
+        ["Weight"] = m => m.Weight
     };
 
     private static readonly Dictionary<string, Func<ArmorRecord, object?>> DnamExtractors = new(StringComparer.Ordinal)
     {
         ["DamageResistance"] = m => (short)m.DamageResistance,
-        ["DamageThreshold"] = m => m.DamageThreshold,
+        ["DamageThreshold"] = m => m.DamageThreshold
         // Unknown(4) bytes left unset → zero-fill.
     };
 

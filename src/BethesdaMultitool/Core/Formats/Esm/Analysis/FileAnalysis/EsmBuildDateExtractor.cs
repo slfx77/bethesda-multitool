@@ -222,4 +222,3 @@ internal static class EsmBuildDateExtractor
         return true;
     }
 }
-

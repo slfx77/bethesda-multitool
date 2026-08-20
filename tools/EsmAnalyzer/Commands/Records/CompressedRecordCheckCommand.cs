@@ -3,8 +3,6 @@ using System.Buffers.Binary;
 using System.CommandLine;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Records;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Records;
@@ -33,19 +31,6 @@ internal static class CompressedRecordCheckCommand
         command.Arguments.Add(pathArg);
         command.SetAction(parseResult => Execute(parseResult.GetValue(pathArg)!));
         return command;
-    }
-
-    private sealed class FileStats
-    {
-        public required string Name;
-        public int MainRecords;
-        public int BeMain;
-        public int Compressed;
-        public int CompressedBe;
-        public int CleanOk;
-        public int PartialRecoverable;
-        public long PartialBytes;
-        public int Dead;
     }
 
     private static int Execute(string path)
@@ -115,7 +100,7 @@ internal static class CompressedRecordCheckCommand
         var stats = new FileStats { Name = Path.GetFileName(file) };
         var fileSize = new FileInfo(file).Length;
         using var mmf = MemoryMappedFile.CreateFromFile(
-            file, FileMode.Open, mapName: null, capacity: 0, MemoryMappedFileAccess.Read);
+            file, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
 
         var scan = EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileSize);
@@ -127,7 +112,7 @@ internal static class CompressedRecordCheckCommand
         stats.Compressed = compressed.Count;
         stats.CompressedBe = compressed.Count(r => r.IsBigEndian);
 
-        var context = new RecordParserContext(scan, formIdCorrelations: null, accessor, fileSize, minidumpInfo: null);
+        var context = new RecordParserContext(scan, null, accessor, fileSize, null);
         var buffer = ArrayPool<byte>.Shared.Rent(1 << 20);
         try
         {
@@ -167,7 +152,8 @@ internal static class CompressedRecordCheckCommand
 
     // The first 4 payload bytes are the declared decompressed size (in the record's endianness). Sane = a
     // small positive value, which separates real truncated records from garbage false-positive matches.
-    private static bool IsDeclaredSizeSane(MemoryMappedViewAccessor accessor, long payloadStart, int available, bool bigEndian)
+    private static bool IsDeclaredSizeSane(MemoryMappedViewAccessor accessor, long payloadStart, int available,
+        bool bigEndian)
     {
         if (available < 4)
         {
@@ -221,5 +207,18 @@ internal static class CompressedRecordCheckCommand
         }
 
         return recovered;
+    }
+
+    private sealed class FileStats
+    {
+        public int BeMain;
+        public int CleanOk;
+        public int Compressed;
+        public int CompressedBe;
+        public int Dead;
+        public int MainRecords;
+        public required string Name;
+        public long PartialBytes;
+        public int PartialRecoverable;
     }
 }

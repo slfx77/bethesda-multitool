@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Dds;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;

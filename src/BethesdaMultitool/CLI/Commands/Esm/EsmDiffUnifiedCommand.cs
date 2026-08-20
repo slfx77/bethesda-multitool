@@ -1,7 +1,6 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Esm;
@@ -476,4 +475,3 @@ internal static class EsmDiffUnifiedCommand
         public int Other { get; set; }
     }
 }
-

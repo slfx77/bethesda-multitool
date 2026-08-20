@@ -13,22 +13,24 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// </summary>
 public sealed class EnchEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<EnchantmentRecord, object?>> EnitExtractors = new(StringComparer.Ordinal)
-    {
-        ["Type"] = m => m.EnchantType,
-        ["ChargeAmount"] = m => m.ChargeAmount,
-        ["EnchantCost"] = m => m.EnchantCost,
-        ["Flags"] = m => m.Flags,
-    };
+    private static readonly Dictionary<string, Func<EnchantmentRecord, object?>> EnitExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Type"] = m => m.EnchantType,
+            ["ChargeAmount"] = m => m.ChargeAmount,
+            ["EnchantCost"] = m => m.EnchantCost,
+            ["Flags"] = m => m.Flags
+        };
 
-    private static readonly Dictionary<string, Func<EnchantmentEffect, object?>> EfitExtractors = new(StringComparer.Ordinal)
-    {
-        ["Magnitude"] = m => m.Magnitude,
-        ["Area"] = m => m.Area,
-        ["Duration"] = m => m.Duration,
-        ["Type"] = m => m.Type,
-        ["ActorValue"] = m => m.ActorValue,
-    };
+    private static readonly Dictionary<string, Func<EnchantmentEffect, object?>> EfitExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Magnitude"] = m => m.Magnitude,
+            ["Area"] = m => m.Area,
+            ["Duration"] = m => m.Duration,
+            ["Type"] = m => m.Type,
+            ["ActorValue"] = m => m.ActorValue
+        };
 
     public string RecordType => "ENCH";
     public Type ModelType => typeof(EnchantmentRecord);

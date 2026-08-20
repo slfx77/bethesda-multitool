@@ -67,6 +67,7 @@ internal static class DmpDanglingWriter
         {
             w.WriteNumber(k, byConf.GetValueOrDefault(k, 0));
         }
+
         w.WriteEndObject();
         w.WriteEndObject();
 
@@ -85,11 +86,13 @@ internal static class DmpDanglingWriter
                     w.WriteString("worldspace_editor_id", g.WorldspaceEditorId);
                 }
             }
+
             w.WriteString("cell", $"0x{g.CellFormId:X8}");
             if (!string.IsNullOrEmpty(g.CellEditorId))
             {
                 w.WriteString("cell_editor_id", g.CellEditorId);
             }
+
             w.WriteNumber("grid_x", gx);
             w.WriteNumber("grid_y", gy);
             w.WriteString("confidence", g.Confidence);
@@ -103,10 +106,13 @@ internal static class DmpDanglingWriter
                 {
                     w.WriteStringValue($"0x{f:X8}");
                 }
+
                 w.WriteEndArray();
             }
+
             w.WriteEndObject();
         }
+
         w.WriteEndObject();
 
         // Cut regions (no cell at grid in any worldspace)
@@ -125,10 +131,13 @@ internal static class DmpDanglingWriter
                 {
                     w.WriteStringValue($"0x{f:X8}");
                 }
+
                 w.WriteEndArray();
             }
+
             w.WriteEndObject();
         }
+
         w.WriteEndArray();
 
         // Per-REFR positions (when --positions was supplied)
@@ -146,53 +155,65 @@ internal static class DmpDanglingWriter
                 {
                     w.WriteNumber("scale", p.Scale);
                 }
+
                 w.WriteNumber("grid_x", p.GridX);
                 w.WriteNumber("grid_y", p.GridY);
                 if (p.WorldspaceFormId.HasValue && p.WorldspaceFormId.Value != 0)
                 {
                     w.WriteString("worldspace", $"0x{p.WorldspaceFormId.Value:X8}");
                 }
+
                 if (p.CellFormId != 0)
                 {
                     w.WriteString("cell", $"0x{p.CellFormId:X8}");
                 }
+
                 if (!string.IsNullOrEmpty(p.CellEditorId))
                 {
                     w.WriteString("cell_editor_id", p.CellEditorId);
                 }
+
                 if (p.BaseFormId != 0)
                 {
                     w.WriteString("base_form_id", $"0x{p.BaseFormId:X8}");
                 }
+
                 if (p.BaseFormType != 0)
                 {
                     w.WriteString("base_form_type", $"0x{p.BaseFormType:X2}");
                 }
+
                 w.WriteString("confidence", p.Confidence);
                 if (p.FoundInDumps > 1)
                 {
                     w.WriteNumber("found_in_dumps", p.FoundInDumps);
                 }
+
                 if (!string.IsNullOrEmpty(p.EditorId))
                 {
                     w.WriteString("editor_id", p.EditorId);
                 }
+
                 if (!string.IsNullOrEmpty(p.BaseEditorId))
                 {
                     w.WriteString("base_editor_id", p.BaseEditorId);
                 }
+
                 if (!string.IsNullOrEmpty(p.BaseFullName))
                 {
                     w.WriteString("base_full_name", p.BaseFullName);
                 }
+
                 if (!string.IsNullOrEmpty(p.ModelPath))
                 {
                     w.WriteString("model_path", p.ModelPath);
                 }
+
                 if (!string.IsNullOrEmpty(p.RecordType) && p.RecordType != "REFR")
                 {
                     w.WriteString("record_type", p.RecordType);
                 }
+
                 if (p.IsMapMarker)
                 {
                     w.WriteBoolean("is_map_marker", true);
@@ -200,13 +221,16 @@ internal static class DmpDanglingWriter
                     {
                         w.WriteString("marker_name", p.MarkerName);
                     }
+
                     if (p.MarkerType.HasValue)
                     {
                         w.WriteNumber("marker_type", p.MarkerType.Value);
                     }
                 }
+
                 w.WriteEndObject();
             }
+
             w.WriteEndArray();
         }
 

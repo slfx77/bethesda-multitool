@@ -21,7 +21,7 @@ public sealed class PlannedTermEncoder : IPlannedRecordEncoder<TerminalRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedTermEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedTermEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

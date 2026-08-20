@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+
 internal static class HeightmapExportPixelRenderer
 {
     internal static byte[] VclrToImagePixels(byte[] vclr)

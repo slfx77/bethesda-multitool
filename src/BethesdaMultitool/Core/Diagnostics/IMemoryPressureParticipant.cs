@@ -7,7 +7,7 @@ internal enum TrimLevel
     Gentle,
 
     /// <summary>Shed everything that can be rebuilt on demand.</summary>
-    Aggressive,
+    Aggressive
 }
 
 /// <summary>Which thread is allowed to execute <see cref="IMemoryPressureParticipant.Trim" />.</summary>
@@ -21,7 +21,7 @@ internal enum TrimAffinity
     ///     on the resource's <see cref="ResourceRegistration" />; the owner consumes it in its
     ///     per-frame tick via <see cref="ResourceRegistration.TryConsumePendingTrim" />.
     /// </summary>
-    OwnerThread,
+    OwnerThread
 }
 
 /// <summary>

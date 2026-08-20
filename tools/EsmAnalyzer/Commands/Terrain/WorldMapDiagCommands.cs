@@ -1,8 +1,5 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -256,7 +253,8 @@ public static class WorldMapDiagCommands
         // Summary
         var totalUnknown = categorized.GetValueOrDefault("Unknown", 0);
         var unknownPct = allRefs.Count > 0 ? 100.0 * totalUnknown / allRefs.Count : 0;
-        AnsiConsole.MarkupLine($"[bold]Summary:[/] {totalUnknown:N0} Unknown out of {allRefs.Count:N0} total ({unknownPct:F1}%)");
+        AnsiConsole.MarkupLine(
+            $"[bold]Summary:[/] {totalUnknown:N0} Unknown out of {allRefs.Count:N0} total ({unknownPct:F1}%)");
     }
 
     /// <summary>
@@ -297,6 +295,4 @@ public static class WorldMapDiagCommands
         var sepIndex = path.IndexOfAny('\\', '/');
         return sepIndex <= 0 ? null : path[..sepIndex].ToString();
     }
-
 }
-

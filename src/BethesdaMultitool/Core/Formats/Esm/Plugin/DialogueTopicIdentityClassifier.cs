@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 
@@ -8,7 +8,7 @@ internal enum DialogueTopicIdentityKind
     MasterAnchor,
     SharedChildAnchor,
     PrototypeDistinct,
-    Ambiguous,
+    Ambiguous
 }
 
 internal sealed record DialogueTopicIdentity(
@@ -78,7 +78,7 @@ internal static class DialogueTopicIdentityClassifier
             {
                 var exactInfoConflicts = DescribeDuplicateInfoScopeConflicts(relevantSharedInfos);
                 exactInfoConflicts.AddRange(DescribeInfoEvidenceConflicts(
-                    scope.FormId, relevantSharedInfos, requireRawParent: false));
+                    scope.FormId, relevantSharedInfos, false));
                 results[scope.FormId] = new DialogueTopicIdentity(
                     scope.FormId,
                     DialogueTopicIdentityKind.MasterAnchor,
@@ -88,7 +88,7 @@ internal static class DialogueTopicIdentityClassifier
                         ? "Exact DIAL FormID exists in the retail master."
                         : "Exact DIAL FormID exists in the retail master, but shared INFO structural evidence conflicts.")
                 {
-                    Conflicts = exactInfoConflicts,
+                    Conflicts = exactInfoConflicts
                 };
                 RegisterClaim(claimsByMasterDial, scope.FormId, scope.FormId);
                 continue;
@@ -225,21 +225,21 @@ internal static class DialogueTopicIdentityClassifier
                     evidenceIds,
                     "Raw type-7 ancestry names an exact retail DIAL, but no prototype DIAL record was captured.")
                 {
-                    IsOrphanRawParentClaim = true,
+                    IsOrphanRawParentClaim = true
                 };
                 RegisterClaim(claimsByMasterDial, rawParent, rawParent);
             }
             else if (classifier.IsOverride(rawParent))
             {
                 identity = Ambiguous(
-                    rawParent,
-                    null,
-                    evidenceIds,
-                    "Raw type-7 ancestry names a retail non-DIAL FormID and no prototype DIAL record was captured.",
-                    ["Missing captured DIAL structural scope."]) with
-                {
-                    IsOrphanRawParentClaim = true,
-                };
+                        rawParent,
+                        null,
+                        evidenceIds,
+                        "Raw type-7 ancestry names a retail non-DIAL FormID and no prototype DIAL record was captured.",
+                        ["Missing captured DIAL structural scope."]) with
+                    {
+                        IsOrphanRawParentClaim = true
+                    };
             }
             else
             {
@@ -255,8 +255,10 @@ internal static class DialogueTopicIdentityClassifier
                 var reason = masterParents.Count switch
                 {
                     0 => "Raw type-7 ancestry names an uncaptured prototype DIAL without a shared retail child anchor.",
-                    1 => "Shared INFO ancestry suggests one retail DIAL, but the prototype DIAL scope was not captured.",
-                    _ => "Shared INFO ancestry suggests multiple retail DIALs and the prototype DIAL scope was not captured.",
+                    1 =>
+                        "Shared INFO ancestry suggests one retail DIAL, but the prototype DIAL scope was not captured.",
+                    _ =>
+                        "Shared INFO ancestry suggests multiple retail DIALs and the prototype DIAL scope was not captured."
                 };
                 var conflicts = new List<string> { "Missing captured DIAL structural scope." };
                 if (masterParents.Count > 1)
@@ -265,10 +267,10 @@ internal static class DialogueTopicIdentityClassifier
                 }
 
                 identity = Ambiguous(
-                    rawParent, masterDial, evidenceIds, reason, conflicts) with
-                {
-                    IsOrphanRawParentClaim = true,
-                };
+                        rawParent, masterDial, evidenceIds, reason, conflicts) with
+                    {
+                        IsOrphanRawParentClaim = true
+                    };
             }
 
             results[rawParent] = identity;
@@ -299,7 +301,7 @@ internal static class DialogueTopicIdentityClassifier
                 {
                     Kind = DialogueTopicIdentityKind.Ambiguous,
                     Conflicts = prior.Conflicts.Concat([conflict]).ToList(),
-                    Reason = "Multiple prototype DIAL claims compete for the same retail structural anchor.",
+                    Reason = "Multiple prototype DIAL claims compete for the same retail structural anchor."
                 };
             }
         }
@@ -572,20 +574,26 @@ internal static class DialogueTopicIdentityClassifier
         return conflicts;
     }
 
-    private static List<uint> EvidenceInfoIds(IEnumerable<DialogueRecord> infos) =>
-        infos.Select(static info => info.FormId)
+    private static List<uint> EvidenceInfoIds(IEnumerable<DialogueRecord> infos)
+    {
+        return infos.Select(static info => info.FormId)
             .Where(static formId => formId != 0)
             .Distinct()
             .Order()
             .ToList();
+    }
 
     private static bool QuestScopeMatches(PrototypeTopicScope prototype, MasterDialogueTopic master)
-        => prototype.QuestFormIds.SetEquals(master.QuestFormIds);
+    {
+        return prototype.QuestFormIds.SetEquals(master.QuestFormIds);
+    }
 
     private static bool TopicSpeakerScopeMatches(
         PrototypeTopicScope prototype,
-        MasterDialogueTopic master) =>
-        prototype.TopicSpeakerFormIds.SetEquals(master.TopicSpeakerFormIds);
+        MasterDialogueTopic master)
+    {
+        return prototype.TopicSpeakerFormIds.SetEquals(master.TopicSpeakerFormIds);
+    }
 
     private static bool SpeakerScopeMatches(DialogueRecord prototype, MasterDialogueInfo master)
     {
@@ -595,22 +603,30 @@ internal static class DialogueTopicIdentityClassifier
             : master.ExactSpeakerFormIds.Count == 0;
     }
 
-    private static string FormatFormIds(IEnumerable<uint> formIds) =>
-        string.Join(",", formIds.Distinct().Order().Select(static formId => $"0x{formId:X8}"));
+    private static string FormatFormIds(IEnumerable<uint> formIds)
+    {
+        return string.Join(",", formIds.Distinct().Order().Select(static formId => $"0x{formId:X8}"));
+    }
 
-    private static DialogueTopicIdentity Distinct(uint sourceDial, string reason) => new(
-        sourceDial, DialogueTopicIdentityKind.PrototypeDistinct, null, [], reason);
+    private static DialogueTopicIdentity Distinct(uint sourceDial, string reason)
+    {
+        return new DialogueTopicIdentity(
+            sourceDial, DialogueTopicIdentityKind.PrototypeDistinct, null, [], reason);
+    }
 
     private static DialogueTopicIdentity Ambiguous(
         uint sourceDial,
         uint? masterDial,
         IReadOnlyList<uint> evidence,
         string reason,
-        IReadOnlyList<string>? conflicts = null) => new(
-        sourceDial, DialogueTopicIdentityKind.Ambiguous, masterDial, evidence, reason)
+        IReadOnlyList<string>? conflicts = null)
     {
-        Conflicts = conflicts ?? [],
-    };
+        return new DialogueTopicIdentity(
+            sourceDial, DialogueTopicIdentityKind.Ambiguous, masterDial, evidence, reason)
+        {
+            Conflicts = conflicts ?? []
+        };
+    }
 
     private sealed record PrototypeTopicScope(
         uint FormId,

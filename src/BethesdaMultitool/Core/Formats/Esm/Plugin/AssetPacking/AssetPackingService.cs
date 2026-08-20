@@ -143,7 +143,8 @@ public sealed class AssetPackingService
                     cancellationToken.ThrowIfCancellationRequested();
                     sink.Info("AssetPacking",
                         $"Indexing secondary folder ({(secondary.IsXbox360Format ? "Xbox 360" : "PC")}): {secondary.Path}");
-                    var idx = new DataFolderIndex(secondary.Path, secondary.IsXbox360Format, ArchiveHandleRegistry.Shared);
+                    var idx = new DataFolderIndex(secondary.Path, secondary.IsXbox360Format,
+                        ArchiveHandleRegistry.Shared);
                     idx.Build();
                     sink.Info("AssetPacking",
                         $"  → {idx.EntryCount} entries");
@@ -324,6 +325,7 @@ public sealed class AssetPackingService
                             "signed 2 GB boundary. Split rules should be tightened before in-game use.");
                     }
                 }
+
                 stopwatch.Stop();
 
                 // Drop a per-asset audit next to the BSA so the user can review what
@@ -424,37 +426,37 @@ public sealed class AssetPackingService
         await ParallelWork.ForEachAsync(
             "asset-pack-nif-scan", nifPaths, ConcurrencyPolicy.FullCores,
             (nifPath, ct) =>
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var resolution = resolver.Resolve(nifPath);
-            if (resolution.Source is null)
             {
-                // AlreadyInBaseline / Missing — either the engine finds it via vanilla
-                // (and any textures the vanilla NIF references are also vanilla, so they
-                // don't need packing) or there's nothing to scan. Either way: skip.
+                ct.ThrowIfCancellationRequested();
+
+                var resolution = resolver.Resolve(nifPath);
+                if (resolution.Source is null)
+                {
+                    // AlreadyInBaseline / Missing — either the engine finds it via vanilla
+                    // (and any textures the vanilla NIF references are also vanilla, so they
+                    // don't need packing) or there's nothing to scan. Either way: skip.
+                    return ValueTask.CompletedTask;
+                }
+
+                byte[] bytes;
+                try
+                {
+                    bytes = resolution.Source.Read();
+                }
+                catch
+                {
+                    Interlocked.Increment(ref scanFailures);
+                    return ValueTask.CompletedTask;
+                }
+
+                foreach (var path in NifEmbeddedAssetCollector.ScanBytes(bytes))
+                {
+                    discovered.Add(path);
+                }
+
+                Interlocked.Increment(ref scanned);
                 return ValueTask.CompletedTask;
-            }
-
-            byte[] bytes;
-            try
-            {
-                bytes = resolution.Source.Read();
-            }
-            catch
-            {
-                Interlocked.Increment(ref scanFailures);
-                return ValueTask.CompletedTask;
-            }
-
-            foreach (var path in NifEmbeddedAssetCollector.ScanBytes(bytes))
-            {
-                discovered.Add(path);
-            }
-
-            Interlocked.Increment(ref scanned);
-            return ValueTask.CompletedTask;
-        }, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var added = 0;
         foreach (var path in discovered)
@@ -705,7 +707,9 @@ public sealed class AssetPackingService
         string outputBsaPath,
         IReadOnlyList<(string Path, byte[] Data)> packedFiles,
         long maxArchiveBytes = DefaultMaxBsaBytes)
-        => AssetPackBsaPlanner.Plan(outputBsaPath, packedFiles, maxArchiveBytes);
+    {
+        return AssetPackBsaPlanner.Plan(outputBsaPath, packedFiles, maxArchiveBytes);
+    }
 
     /// <summary>
     ///     Writes assets that cannot live in an archive as loose files, Data-relative to the

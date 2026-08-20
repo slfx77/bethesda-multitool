@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Projections;
 
 /// <summary>
@@ -29,7 +30,9 @@ internal sealed record CellSkeleton
     public bool IsUnresolvedBucket { get; init; }
     public bool HasPersistentObjects { get; init; }
 
-    /// <summary>Lightweight placement projections; the originating <c>CellRecord.PlacedObjects</c> can be dropped once these exist.</summary>
+    /// <summary>
+    ///     Lightweight placement projections; the originating <c>CellRecord.PlacedObjects</c> can be dropped once these
+    ///     exist.
+    /// </summary>
     public IReadOnlyList<PlacedObjectSkeleton> PlacedObjects { get; init; } = [];
 }
-

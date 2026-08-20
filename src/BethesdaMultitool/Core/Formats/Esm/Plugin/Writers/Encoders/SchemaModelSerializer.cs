@@ -27,8 +27,8 @@ internal static class SchemaModelSerializer
         IReadOnlyDictionary<string, Func<TModel, object?>> fieldExtractors)
     {
         var schema = SubrecordSchemaRegistry.GetSchema(signature, recordType, dataLength)
-            ?? throw new InvalidOperationException(
-                $"No schema registered for {recordType}/{signature} (dataLength={dataLength}).");
+                     ?? throw new InvalidOperationException(
+                         $"No schema registered for {recordType}/{signature} (dataLength={dataLength}).");
 
         var values = new Dictionary<string, object?>(fieldExtractors.Count, StringComparer.Ordinal);
         foreach (var field in schema.Fields)

@@ -6,18 +6,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 ///     Cheap "does this NIF carry Havok collision" test, used only to break a tie when more
 ///     than one donor folder has an exact hit for the same mesh path.
 ///     <para>
-///     Deliberately a block-type-name marker scan rather than a real parse. A NIF stores its
-///     block types as length-prefixed ASCII near the head of the file, and those bytes are
-///     ASCII in both little- and big-endian (Xbox 360) NIFs, so one scan serves both without
-///     needing to know the version or endianness. <c>HavokCollisionExtractor.Extract</c>
-///     would be exact but needs a fully parsed <c>NifInfo</c>, which is far too heavy for a
-///     resolver tie-break run over thousands of contested paths.
+///         Deliberately a block-type-name marker scan rather than a real parse. A NIF stores its
+///         block types as length-prefixed ASCII near the head of the file, and those bytes are
+///         ASCII in both little- and big-endian (Xbox 360) NIFs, so one scan serves both without
+///         needing to know the version or endianness. <c>HavokCollisionExtractor.Extract</c>
+///         would be exact but needs a fully parsed <c>NifInfo</c>, which is far too heavy for a
+///         resolver tie-break run over thousands of contested paths.
 ///     </para>
 ///     <para>
-///     Measured imprecision versus an exact block-type-table parse on this corpus: 5 files in
-///     3,035 (~0.16%), from a marker string appearing outside the type table. That is
-///     acceptable here because both candidates are scanned identically — a shared false
-///     positive simply leaves the caller on its normal folder-order fallback.
+///         Measured imprecision versus an exact block-type-table parse on this corpus: 5 files in
+///         3,035 (~0.16%), from a marker string appearing outside the type table. That is
+///         acceptable here because both candidates are scanned identically — a shared false
+///         positive simply leaves the caller on its normal folder-order fallback.
 ///     </para>
 /// </summary>
 internal static class NifCollisionMarkerProbe
@@ -59,6 +59,8 @@ internal static class NifCollisionMarkerProbe
     ///     True when the path is a mesh the probe understands. Non-NIF assets keep plain
     ///     folder-order resolution — there is no collision concept to compare.
     /// </summary>
-    public static bool AppliesTo(string normalizedPath) =>
-        normalizedPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase);
+    public static bool AppliesTo(string normalizedPath)
+    {
+        return normalizedPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase);
+    }
 }

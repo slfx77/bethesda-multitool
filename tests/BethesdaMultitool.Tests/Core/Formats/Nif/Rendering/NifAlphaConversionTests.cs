@@ -45,7 +45,7 @@ public sealed class NifAlphaConversionTests
     [Fact]
     public void ConvertedSyntheticBigEndianNif_PreservesExplicitAlphaTest()
     {
-        var xboxData = BigEndianNifBuilder.Build(0x12EC, 80);
+        var xboxData = BigEndianNifBuilder.Build();
 
         var converted = NifConverter.Convert(xboxData);
 

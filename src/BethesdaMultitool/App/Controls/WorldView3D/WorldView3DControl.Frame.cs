@@ -12,96 +12,6 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    // SpeedTree leaf-wind animation clock + strength. Engine model (Sky::UpdateWind): S = the active
-    // weather's wind-speed byte / 255, forced 0 in interiors — so by default wind FOLLOWS the same
-    // weather selection that drives clouds/lighting. _windStrength is a MANUAL OVERRIDE: null = auto
-    // (weather-driven); set via the lighting panel's "Override wind" row or the FALLOUT_VIEWER_SPT_WIND
-    // env var.
-    private float _windClockSeconds;
-    private float? _windStrength;
-    private bool _windEnvChecked;
-    private static readonly Vector2 WindDirection = Vector2.Normalize(new Vector2(0.82f, 0.57f));
-
-    // Translation-tolerant cull cache kill-switch (FALLOUT_VIEWER_TOLERANT_CULL=0 → exact compare).
-    private static readonly bool TolerantCullEnabled =
-        EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull) != "0";
-
-    // Sun shadow map (directional shadows: reference batches cast onto terrain + references).
-    // Lazily created on the first shadow-enabled frame; disposed with the D3D12 backend
-    // (DisposeD3D12Backend). Kill-switch FALLOUT_VIEWER_SHADOWS=0; UI toggle in the lighting flyout.
-    private Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12? _shadowMap;
-    private static readonly bool ShadowsEnvEnabled =
-        EnvironmentVariables.Get(EnvironmentVariables.Viewer.Shadows) != "0";
-
-    // The directional-light direction resolved by the LAST BindAtmosphereConstants call — the
-    // frame-end shadow pass fits the light frustum around it (same frame, same resolve).
-    private Vector3 _lastResolvedSunDirection = new(0.5f, 0.5f, 1f);
-    private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
-
-    // FIXED cascade radii ladder (near → far). Deliberately DECOUPLED from the render-distance
-    // setting: quality bands and shadow reach are properties of the shadow system; the draw
-    // distance only bounds where geometry — and therefore any shadow — exists at all. The far
-    // cascade's 32-cell reach covers every practical draw distance at a constant ~64 units/texel;
-    // FALLOUT_VIEWER_SHADOW_RADIUS (world units) can cap the LAST cascade for diagnostics.
-    private static readonly float[] ShadowCascadeRadii = { 2048f, 8192f, 32768f, 131072f };
-
-    /// <summary>
-    ///     Per-cascade camera-drift quantum for the re-render pose key, ~radius/4.
-    ///     <para>
-    ///         A single key over all four cascades at <see cref="SunShadowMath.CenterSnap" /> (512)
-    ///         re-rendered the ENTIRE ladder on the near cascade's schedule. At 4096 texels the far
-    ///         cascade resolves 64 world units per texel, so a 512-unit camera move shifts it by
-    ///         EIGHT texels — invisible, yet it cost a full replay of every caster and every resident
-    ///         terrain cell. Scaling the quantum with the radius keeps each cascade's re-render rate
-    ///         proportional to what it can actually resolve: at 2048 u/s the ladder goes from
-    ///         {3.5, 3.5, 3.5, 3.5} frames between renders to {3.5, 14, 56, 226}.
-    ///     </para>
-    /// </summary>
-    private static readonly float[] ShadowCascadeSnap = { 512f, 2048f, 8192f, 32768f };
-
-    // ── Unit-scaled ladder ─────────────────────────────────────────────────────────────────────
-    // The radii/snap ladders above are HUMAN-SCALE distances in classic units (~70/metre). In
-    // Starfield (1 unit = 1 m) the unscaled near cascade covers 2 km and resolves ~1 m per texel,
-    // with the derived two-texel pixel bias reaching ~2 m — metre-scale geometry casts blocky
-    // shadows detached from their bases. Scaled lazily against _unitScale so every shadow-pass
-    // entry point stays correct without depending on grid-build ordering; classic games alias the
-    // static arrays (zero per-frame cost, bit-identical behavior).
-    private float[] _shadowCascadeRadiiScaled = ShadowCascadeRadii;
-    private float[] _shadowCascadeSnapScaled = ShadowCascadeSnap;
-    private float _shadowCasterRingRadiusScaled = ShadowCasterRingRadius;
-    private float _shadowLadderScaledForUnit = 1f;
-
-    private void EnsureShadowLadderScale()
-    {
-        // Change detection on an ASSIGNED value (HumanScaleFactor output), so a tight epsilon is
-        // purely to satisfy the float-equality rule — the real scales are 1 and 1/70.
-        const float epsilon = 1e-6f;
-        if (MathF.Abs(_shadowLadderScaledForUnit - _unitScale) < epsilon) return;
-        _shadowLadderScaledForUnit = _unitScale;
-        if (MathF.Abs(_unitScale - 1f) < epsilon)
-        {
-            _shadowCascadeRadiiScaled = ShadowCascadeRadii;
-            _shadowCascadeSnapScaled = ShadowCascadeSnap;
-            _shadowCasterRingRadiusScaled = ShadowCasterRingRadius;
-            return;
-        }
-
-        _shadowCascadeRadiiScaled = ScaleLadder(ShadowCascadeRadii, _unitScale);
-        _shadowCascadeSnapScaled = ScaleLadder(ShadowCascadeSnap, _unitScale);
-        _shadowCasterRingRadiusScaled = ShadowCasterRingRadius * _unitScale;
-
-        static float[] ScaleLadder(float[] source, float scale)
-        {
-            var scaled = new float[source.Length];
-            for (var i = 0; i < source.Length; i++)
-            {
-                scaled[i] = source[i] * scale;
-            }
-
-            return scaled;
-        }
-    }
-
     /// <summary>
     ///     Cascades allowed to re-render in one frame. Spreading an overdue ladder across frames turns
     ///     a single ~60 ms spike into a sequence of ~30 ms frames — the mean is unchanged but the
@@ -141,8 +51,81 @@ public sealed partial class WorldView3DControl
     // immediately before it draws. Sized for up to WaterPassMaxReservedBatches distinct visible WATR
     // materials; beyond that the pass reverts to the ordinary soft-skip, exactly like the reference pass.
     private const uint WaterPassMaxReservedBatches = 64;
+
     private const uint WaterPassRingReservationBytes =
         WaterPassMaxReservedBatches * 4u * GpuRingBuffer12.CbAlignment; // per batch: noise CB + uniforms CB + pad
+
+    // Render-loop failure tolerance: skip + retry on transient frame failures, detach only when
+    // they persist (see the OnRendering catch block).
+    private const int MaxConsecutiveRenderFailures = 3;
+
+    // Grid pitch for the snapped camera-relative render origin (see sceneRenderOrigin). One FNV
+    // cell; fixed across games — it's a precision/stability trade, not a world-structure quantity.
+    private const float RenderOriginGridSize = 4096f;
+
+    // Far plane for the synthetic perspective sky view in the ortho projection modes: only needs
+    // to clear the fixed 12k dome radius (+ sun/moon billboards). Scene clipping is unaffected.
+    private const float OrthoSkyFarPlane = 32_000f;
+    private static readonly Vector2 WindDirection = Vector2.Normalize(new Vector2(0.82f, 0.57f));
+
+    // Translation-tolerant cull cache kill-switch (FALLOUT_VIEWER_TOLERANT_CULL=0 → exact compare).
+    private static readonly bool TolerantCullEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull) != "0";
+
+    private static readonly bool ShadowsEnvEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.Shadows) != "0";
+
+    // FIXED cascade radii ladder (near → far). Deliberately DECOUPLED from the render-distance
+    // setting: quality bands and shadow reach are properties of the shadow system; the draw
+    // distance only bounds where geometry — and therefore any shadow — exists at all. The far
+    // cascade's 32-cell reach covers every practical draw distance at a constant ~64 units/texel;
+    // FALLOUT_VIEWER_SHADOW_RADIUS (world units) can cap the LAST cascade for diagnostics.
+    private static readonly float[] ShadowCascadeRadii = { 2048f, 8192f, 32768f, 131072f };
+
+    /// <summary>
+    ///     Per-cascade camera-drift quantum for the re-render pose key, ~radius/4.
+    ///     <para>
+    ///         A single key over all four cascades at <see cref="SunShadowMath.CenterSnap" /> (512)
+    ///         re-rendered the ENTIRE ladder on the near cascade's schedule. At 4096 texels the far
+    ///         cascade resolves 64 world units per texel, so a 512-unit camera move shifts it by
+    ///         EIGHT texels — invisible, yet it cost a full replay of every caster and every resident
+    ///         terrain cell. Scaling the quantum with the radius keeps each cascade's re-render rate
+    ///         proportional to what it can actually resolve: at 2048 u/s the ladder goes from
+    ///         {3.5, 3.5, 3.5, 3.5} frames between renders to {3.5, 14, 56, 226}.
+    ///     </para>
+    /// </summary>
+    private static readonly float[] ShadowCascadeSnap = { 512f, 2048f, 8192f, 32768f };
+
+    // Per-render console logging is DIAGNOSTIC-ONLY (FALLOUT_VIEWER_SHADOW_DIAG=1): the log line
+    // fired on every re-render, which while walking meant constantly — console I/O at frame rate
+    // was a measurable part of the reported lag.
+    private static readonly bool ShadowDiagLogging =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowDiag) == "1";
+
+    /// <summary>
+    ///     Planar reflection infrastructure kill-switch (env). "0" restores the 2-row
+    ///     sky-gradient stand-in regardless of the GUI toggle; the live per-session state is the
+    ///     Video expander's Water Reflections toggle (<c>_waterReflectionsEnabled</c>), ANDed below.
+    /// </summary>
+    private static readonly bool WaterReflectionEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.WaterReflection) != "0";
+
+    private static readonly float? ShadowRadiusEnvOverride = ParseShadowRadiusEnvOverride();
+
+    private readonly int[] _lastShadowReferenceDrawsByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowReferenceInstancesByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowTerrainCellDrawsByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly ShadowContentKey[] _shadowContentKeys =
+        new ShadowContentKey[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _shadowContentThrottles =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
     // Re-render policy state (see RecordSunShadowPass), PER CASCADE: the pose key each cascade was
     // last rendered at, the exact content key it saw, its throttle counter, and the anchor it was
@@ -151,69 +134,12 @@ public sealed partial class WorldView3DControl
     // this can be shared, which is what made the far cascade re-render on the near cascade's clock.
     private readonly SunShadowMath.ShadowKey[] _shadowPoseKeys =
         new SunShadowMath.ShadowKey[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    private readonly ShadowContentKey[] _shadowContentKeys =
-        new ShadowContentKey[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    private readonly int[] _shadowContentThrottles =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
     private readonly Vector3[] _shadowPublishedAnchors =
         new Vector3[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    private bool _shadowAnimatedActive;
 
-    /// <summary>
-    ///     Exact stationary-shadow content identity. Reference and terrain visibility are separate
-    ///     from resident content versions so user-facing filter changes can refresh immediately while
-    ///     mesh streaming remains subject to the ordinary content throttle.
-    /// </summary>
-    private readonly record struct ShadowContentKey(
-        int ReferenceBatchContentVersion,
-        int TerrainContentVersion,
-        ReferenceVisibilityKey ReferenceVisibility,
-        bool TerrainVisible);
-
-    /// <summary>Which path <see cref="RecordSunShadowPass" /> took on the most recent frame.</summary>
-    internal enum ShadowPassMode
-    {
-        /// <summary>Cache hit — no cascade re-rendered.</summary>
-        Skipped = 0,
-
-        /// <summary>Wind/skinning refresh of the near cascades only.</summary>
-        Animated = 1,
-
-        /// <summary>Pose/content-driven refit path. The cascade mask says which subset rendered.</summary>
-        Full = 2
-    }
-
-    // Shadow-pass telemetry. The mean GPU cost cannot distinguish a large full render every few
-    // frames from a cheap animated refresh every frame, and those want opposite fixes — so the mode,
-    // the cascade set and the submitted draw counts are recorded per pass and emitted to the trace.
-    private ShadowPassMode _lastShadowMode;
-    private int _lastShadowCascadeMask;
-    // Captured batches before cascade filtering. The arrays below are the submitted-work truth.
-    private int _lastShadowDrawCount;
-    private int _lastShadowTerrainCellDraws;
-    private readonly int[] _lastShadowReferenceDrawsByCascade =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    private readonly int[] _lastShadowReferenceInstancesByCascade =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    private readonly int[] _lastShadowTerrainCellDrawsByCascade =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-
-    // This frame's raw camera timestep (see FrameProfileSample.DeltaSeconds).
-    private float _lastDeltaSeconds;
-
-    // Raw-dt history for the median-of-3 camera timestep filter (single-writer: the render loop).
-    private float _frameDtPrev1;
-    private float _frameDtPrev2;
-    private int _frameDtSampleCount;
-
-    // Cascade anchor resolved when the shadow capture was armed, reused verbatim by the frame-end pass.
-    private Vector3 _shadowFrameAnchor;
-
-    // Rendered-scene world Z span sampled alongside the anchor, and reused verbatim for the same
-    // reason: it feeds SunShadowMath.CascadeCasterReach on BOTH sides (the instance classification
-    // at arm time and the frustum fit at frame end), and those two must agree exactly or the near
-    // cascade gets a caster-shaped hole.
-    private float _shadowFrameSceneZSpan;
+    private readonly Vector3[] _shadowPublishedCylinderCenters =
+        new Vector3[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
     // The frustums the cascades were last PUBLISHED with (+ the render origin they were built
     // against and the terrain-cylinder center used). Animated-only refreshes MUST replay these
@@ -224,67 +150,86 @@ public sealed partial class WorldView3DControl
     // foliage kept the per-frame refresh alive. The terrain cylinder replays the published
     // center for the same reason: a current-camera cylinder leaves the cleared trailing-edge
     // strip of the footprint unredrawn, popping terrain shadows there.
-    /// <summary>Each cascade's PUBLISHED frustum, expressed in <see cref="_shadowPublishedOrigins" />
-    /// at the same index. The two are written together and must never diverge — folding a matrix into
-    /// a new origin without updating the origin makes the next fold apply the delta twice.</summary>
+    /// <summary>
+    ///     Each cascade's PUBLISHED frustum, expressed in <see cref="_shadowPublishedOrigins" />
+    ///     at the same index. The two are written together and must never diverge — folding a matrix into
+    ///     a new origin without updating the origin makes the next fold apply the delta twice.
+    /// </summary>
     private readonly SunShadowMath.LightFrustum[] _shadowPublishedFrustums =
         new SunShadowMath.LightFrustum[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
     private readonly Vector3[] _shadowPublishedOrigins =
         new Vector3[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    private readonly Vector3[] _shadowPublishedCylinderCenters =
-        new Vector3[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
-    // Per-render console logging is DIAGNOSTIC-ONLY (FALLOUT_VIEWER_SHADOW_DIAG=1): the log line
-    // fired on every re-render, which while walking meant constantly — console I/O at frame rate
-    // was a measurable part of the reported lag.
-    private static readonly bool ShadowDiagLogging =
-        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowDiag) == "1";
+    private int _consecutiveRenderFailures;
 
-    /// <summary>Planar reflection infrastructure kill-switch (env). "0" restores the 2-row
-    /// sky-gradient stand-in regardless of the GUI toggle; the live per-session state is the
-    /// Video expander's Water Reflections toggle (<c>_waterReflectionsEnabled</c>), ANDed below.</summary>
-    private static readonly bool WaterReflectionEnabled =
-        EnvironmentVariables.Get(EnvironmentVariables.Viewer.WaterReflection) != "0";
+    // Raw-dt history for the median-of-3 camera timestep filter (single-writer: the render loop).
+    private float _frameDtPrev1;
+    private float _frameDtPrev2;
+    private int _frameDtSampleCount;
 
-    /// <summary>The live water-reflection gate: env kill-switch AND the Video-expander toggle.</summary>
-    private bool WaterReflectionActive => WaterReflectionEnabled && _waterReflectionsEnabled;
+    // GPU address of the most recent b3 atmosphere CB bound by BindAtmosphereConstants.
+    private ulong _lastAtmosphereCbGpuAddress;
+    private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
 
-    /// <summary>Adapter handing the reference renderer's blended loop the water drain (the unified
-    /// transparency stream's merge hook). Cached per water-renderer instance.</summary>
-    private sealed class WaterStreamInterleave(
-        Core.Formats.Nif.Rendering.D3D12.WaterRenderer12 water)
-        : Core.Formats.Nif.Rendering.D3D12.ITransparencyInterleave
-    {
-        public Core.Formats.Nif.Rendering.D3D12.WaterRenderer12 Water { get; } = water;
+    // This frame's raw camera timestep (see FrameProfileSample.DeltaSeconds).
+    private float _lastDeltaSeconds;
 
-        public bool DrainDownTo(float depth) => Water.DrainTransparencyDownTo(depth);
-    }
+    // The directional-light direction resolved by the LAST BindAtmosphereConstants call — the
+    // frame-end shadow pass fits the light frustum around it (same frame, same resolve).
+    private Vector3 _lastResolvedSunDirection = new(0.5f, 0.5f, 1f);
+
+    private int _lastShadowCascadeMask;
+
+    // Captured batches before cascade filtering. The arrays below are the submitted-work truth.
+    private int _lastShadowDrawCount;
+
+    // Shadow-pass telemetry. The mean GPU cost cannot distinguish a large full render every few
+    // frames from a cheap animated refresh every frame, and those want opposite fixes — so the mode,
+    // the cascade set and the submitted draw counts are recorded per pass and emitted to the trace.
+    private ShadowPassMode _lastShadowMode;
+    private int _lastShadowTerrainCellDraws;
+    private bool _shadowAnimatedActive;
+
+    // ── Unit-scaled ladder ─────────────────────────────────────────────────────────────────────
+    // The radii/snap ladders above are HUMAN-SCALE distances in classic units (~70/metre). In
+    // Starfield (1 unit = 1 m) the unscaled near cascade covers 2 km and resolves ~1 m per texel,
+    // with the derived two-texel pixel bias reaching ~2 m — metre-scale geometry casts blocky
+    // shadows detached from their bases. Scaled lazily against _unitScale so every shadow-pass
+    // entry point stays correct without depending on grid-build ordering; classic games alias the
+    // static arrays (zero per-frame cost, bit-identical behavior).
+    private float[] _shadowCascadeRadiiScaled = ShadowCascadeRadii;
+    private float[] _shadowCascadeSnapScaled = ShadowCascadeSnap;
+    private float _shadowCasterRingRadiusScaled = ShadowCasterRingRadius;
+
+    // Cascade anchor resolved when the shadow capture was armed, reused verbatim by the frame-end pass.
+    private Vector3 _shadowFrameAnchor;
+
+    // Rendered-scene world Z span sampled alongside the anchor, and reused verbatim for the same
+    // reason: it feeds SunShadowMath.CascadeCasterReach on BOTH sides (the instance classification
+    // at arm time and the frustum fit at frame end), and those two must agree exactly or the near
+    // cascade gets a caster-shaped hole.
+    private float _shadowFrameSceneZSpan;
+    private float _shadowLadderScaledForUnit = 1f;
+
+    // Sun shadow map (directional shadows: reference batches cast onto terrain + references).
+    // Lazily created on the first shadow-enabled frame; disposed with the D3D12 backend
+    // (DisposeD3D12Backend). Kill-switch FALLOUT_VIEWER_SHADOWS=0; UI toggle in the lighting flyout.
+    private Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12? _shadowMap;
 
     private WaterStreamInterleave? _waterStreamInterleave;
 
-    private static readonly float? ShadowRadiusEnvOverride = ParseShadowRadiusEnvOverride();
+    // SpeedTree leaf-wind animation clock + strength. Engine model (Sky::UpdateWind): S = the active
+    // weather's wind-speed byte / 255, forced 0 in interiors — so by default wind FOLLOWS the same
+    // weather selection that drives clouds/lighting. _windStrength is a MANUAL OVERRIDE: null = auto
+    // (weather-driven); set via the lighting panel's "Override wind" row or the FALLOUT_VIEWER_SPT_WIND
+    // env var.
+    private float _windClockSeconds;
+    private bool _windEnvChecked;
+    private float? _windStrength;
 
-    private static float? ParseShadowRadiusEnvOverride()
-    {
-        var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowRadius);
-        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
-            ? v
-            : null;
-    }
-
-    // Render-loop failure tolerance: skip + retry on transient frame failures, detach only when
-    // they persist (see the OnRendering catch block).
-    private const int MaxConsecutiveRenderFailures = 3;
-    private int _consecutiveRenderFailures;
-
-    // Grid pitch for the snapped camera-relative render origin (see sceneRenderOrigin). One FNV
-    // cell; fixed across games — it's a precision/stability trade, not a world-structure quantity.
-    private const float RenderOriginGridSize = 4096f;
-
-    // Far plane for the synthetic perspective sky view in the ortho projection modes: only needs
-    // to clear the fixed 12k dome radius (+ sun/moon billboards). Scene clipping is unaffected.
-    private const float OrthoSkyFarPlane = 32_000f;
+    /// <summary>The live water-reflection gate: env kill-switch AND the Video-expander toggle.</summary>
+    private bool WaterReflectionActive => WaterReflectionEnabled && _waterReflectionsEnabled;
 
     /// <summary>
     ///     Camera-relative scene rendering: the ONE definition, shared by the live frame and the
@@ -295,6 +240,46 @@ public sealed partial class WorldView3DControl
     private static bool CameraRelativeSceneRendering => !string.Equals(
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.CameraRelative), "0",
         StringComparison.Ordinal);
+
+    private void EnsureShadowLadderScale()
+    {
+        // Change detection on an ASSIGNED value (HumanScaleFactor output), so a tight epsilon is
+        // purely to satisfy the float-equality rule — the real scales are 1 and 1/70.
+        const float epsilon = 1e-6f;
+        if (MathF.Abs(_shadowLadderScaledForUnit - _unitScale) < epsilon) return;
+        _shadowLadderScaledForUnit = _unitScale;
+        if (MathF.Abs(_unitScale - 1f) < epsilon)
+        {
+            _shadowCascadeRadiiScaled = ShadowCascadeRadii;
+            _shadowCascadeSnapScaled = ShadowCascadeSnap;
+            _shadowCasterRingRadiusScaled = ShadowCasterRingRadius;
+            return;
+        }
+
+        _shadowCascadeRadiiScaled = ScaleLadder(ShadowCascadeRadii, _unitScale);
+        _shadowCascadeSnapScaled = ScaleLadder(ShadowCascadeSnap, _unitScale);
+        _shadowCasterRingRadiusScaled = ShadowCasterRingRadius * _unitScale;
+
+        static float[] ScaleLadder(float[] source, float scale)
+        {
+            var scaled = new float[source.Length];
+            for (var i = 0; i < source.Length; i++)
+            {
+                scaled[i] = source[i] * scale;
+            }
+
+            return scaled;
+        }
+    }
+
+    private static float? ParseShadowRadiusEnvOverride()
+    {
+        var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowRadius);
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
+            ? v
+            : null;
+    }
 
     private static Vector3 SnapToRenderOriginGrid(Vector3 position) => new(
         RenderOriginGridSize * MathF.Floor(position.X / RenderOriginGridSize),
@@ -377,7 +362,7 @@ public sealed partial class WorldView3DControl
             var speed = Math.Clamp(tonemap.EyeAdaptSpeed, 0.01f, 0.999f);
             tonemap = tonemap with
             {
-                AdaptFactor = MathF.Pow(speed, Math.Clamp(15f * Math.Max(deltaSeconds, 0f), 0f, 1f)),
+                AdaptFactor = MathF.Pow(speed, Math.Clamp(15f * Math.Max(deltaSeconds, 0f), 0f, 1f))
             };
         }
 
@@ -444,12 +429,26 @@ public sealed partial class WorldView3DControl
                 _consecutiveRenderFailures, MaxConsecutiveRenderFailures, ex);
             // Drain any pending D3D12 validation messages while we still can — if this ends in a
             // detach the next-frame pump won't get a chance. No-op unless FALLOUT_VIEWER_D3D12_DEBUG=1.
-            try { _gpu12?.PumpDebugMessages(); }
-            catch (Exception pumpEx) { Log.Warn("PumpDebugMessages on render-frame failure threw: {0}", pumpEx.Message); }
+            try
+            {
+                _gpu12?.PumpDebugMessages();
+            }
+            catch (Exception pumpEx)
+            {
+                Log.Warn("PumpDebugMessages on render-frame failure threw: {0}", pumpEx.Message);
+            }
+
             // If the GPU device was removed (TDR / page fault — the usual "crash with no cause"),
             // attribute it. No-op when the device is fine. Needs FALLOUT_VIEWER_DRED=1 for breadcrumbs.
-            try { _gpu12?.LogDeviceRemovedDiagnostics("render-frame"); }
-            catch (Exception dredEx) { Log.Warn("LogDeviceRemovedDiagnostics on render-frame failure threw: {0}", dredEx.Message); }
+            try
+            {
+                _gpu12?.LogDeviceRemovedDiagnostics("render-frame");
+            }
+            catch (Exception dredEx)
+            {
+                Log.Warn("LogDeviceRemovedDiagnostics on render-frame failure threw: {0}", dredEx.Message);
+            }
+
             if (_consecutiveRenderFailures >= MaxConsecutiveRenderFailures)
             {
                 Log.Warn("WorldView3DControl: {0} consecutive render failures — detaching loop.",
@@ -508,7 +507,7 @@ public sealed partial class WorldView3DControl
         // specular view vector reads as parallel; ortho is always absolute (camera-relative off there).
         var cameraOrigin = cameraOriginOverride ?? (cameraRelative ? _camera.Position : Vector3.Zero);
         var shadingCameraPos = shadingCameraPosOverride
-            ?? (cameraRelative ? _camera.Position - cameraOrigin : _camera.Position);
+                               ?? (cameraRelative ? _camera.Position - cameraOrigin : _camera.Position);
         // Root SRV t9 is bound on every path, including lighting-off/top-down frames. Its returned
         // count rides the previously spare b3 Params.w slot so both shading PSOs read one list.
         var placedLightCount = BindPlacedLights(
@@ -549,6 +548,7 @@ public sealed partial class WorldView3DControl
         {
             shadow = shadowMap.GetSampleConstants(cameraOrigin);
         }
+
         var projectedSunShadowActive =
             shadow.Params0.X > 0f || shadow.Params1.X > 0f ||
             shadow.Params2.X > 0f || shadow.Params3.X > 0f;
@@ -576,146 +576,15 @@ public sealed partial class WorldView3DControl
         // Neutral (0,0,0,1) clips nothing; the water-reflection mirror pass passes its plane here.
         constants.ClipPlane = clipPlane ?? new Vector4(0f, 0f, 0f, 1f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
-        unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
+        unsafe
+        {
+            *(AtmosphereConstants*)alloc.CpuPtr = constants;
+        }
+
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
         // Stash the bound address so a nested pass (the mirror block) can restore the MAIN b3
         // after rebinding its own — water/blended passes read b3 afterward.
         _lastAtmosphereCbGpuAddress = alloc.GpuAddress;
-    }
-
-    // GPU address of the most recent b3 atmosphere CB bound by BindAtmosphereConstants.
-    private ulong _lastAtmosphereCbGpuAddress;
-
-    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare. 10 float4
-    // = 160 bytes before the shadow constants (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
-    // pre-atmosphere behavior, so a disabled toggle keeps that aspect of the scene looking flat.
-    // (Shaders that don't apply fog — e.g. skybox — declare only the leading float4s they use, which
-    // is layout-safe since later fields are appended at the end.)
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct AtmosphereConstants
-    {
-        public Vector4 SunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
-        public Vector4 SunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
-        public Vector4 AmbientColor;       // rgb = ambient, w = spare
-        public Vector4 SkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
-        public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = effective HDR active (0/1)
-        public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
-        public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
-        public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
-        public Vector4 FogFarColorMax;     // rgb = far-fog color, w = maximum powered fog amount
-        // Camera-relative render origin the scene VS subtract from each world vertex before
-        // projection (0 when camera-relative is off). The PS shaders that read this CB
-        // declare only the prefix they use, so fields appended after their prefix are layout-safe.
-        public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos),
-                                           // w = IMGS EmissiveMult (explicit 1 when inactive)
-        // Sun shadow CASCADES (appended after CameraOrigin — same append-safe contract). Each
-        // matrix maps origin-relative world positions (the PS's vWorldPos space) into that
-        // cascade's shadow clip; each params float4 packs (enabled, texel UV size, normalized
-        // depth bias, bindless SRV slot). The PS picks the smallest containing cascade; all
-        // params.x == 0 short-circuits ShadowFactor to 1.0, keeping the scene pixel-identical.
-        public Matrix4x4 ShadowMatrix0;
-        public Matrix4x4 ShadowMatrix1;
-        public Matrix4x4 ShadowMatrix2;
-        public Matrix4x4 ShadowMatrix3;
-        public Vector4 ShadowParams0;
-        public Vector4 ShadowParams1;
-        public Vector4 ShadowParams2;
-        public Vector4 ShadowParams3;
-        // Full WTHR DALC directional-ambient cube. PositiveX.w is the explicit presence flag;
-        // legacy weather keeps all six zero and shaders use AmbientColor.rgb unchanged.
-        public Vector4 AmbientPositiveX;
-        public Vector4 AmbientNegativeX;
-        public Vector4 AmbientPositiveY;
-        public Vector4 AmbientNegativeY;
-        public Vector4 AmbientPositiveZ;
-        public Vector4 AmbientNegativeZ;
-
-        /// <summary>
-        ///     Classic FO3/FNV grass sun term: rgb = the sun colour WITHOUT the imagespace
-        ///     SunlightDimmer (retail's TallGrassShader copies NiLight m_kDiffuseColor raw; only
-        ///     BSShaderLightingProperty applies the dimmer, i.e. to statics/actors/LAND), w = the
-        ///     imagespace GrassDimmer the engine writes into the grass VS AddlParams.x. w == 0 marks
-        ///     the lane unset so consumers fall back to today's behaviour.
-        /// </summary>
-        public Vector4 GrassSunColorScale;
-
-        /// <summary>
-        ///     Half-space clip plane in origin-relative <c>vWorldPos</c> space, consumed by the
-        ///     terrain + reference PS entry (<c>clip(dot(p, xyz) + w)</c>). The neutral default
-        ///     (0,0,0,1) clips nothing; the water-reflection mirror pass binds (0,0,1,−h′) so
-        ///     below-plane geometry never enters the mirror.
-        /// </summary>
-        public Vector4 ClipPlane;
-
-        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16 + 16 + 16;
-
-        public static AtmosphereConstants From(
-            AtmosphereState.Resolved a,
-            Core.Games.BethesdaGame game,
-            float gameHour,
-            Vector3 cameraPos,
-            float lightingEnabled,
-            float skyEnabled,
-            float fogEnabled,
-            float placedLightCount,
-            Vector3 cameraOrigin,
-            float ambientScale = 0.3f,
-            Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
-            float emissiveMult = 1f,
-            bool hdrActive = true,
-            float sunlightScale = 1f,
-            float grassScale = 1f)
-        {
-            var directionalAmbient = AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-                game, AuthoredSkyArchitecture.Enabled, a.DirectionalAmbient);
-
-            return new()
-            {
-                SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
-                SunColorLighting = new Vector4(a.SunColor * sunlightScale, lightingEnabled),
-                // Grass takes the sun colour RAW plus its own dimmer — see the field doc above.
-                GrassSunColorScale = new Vector4(a.SunColor, grassScale),
-                // w carries the per-game ambient ("fill") scale read by the object/terrain shaders.
-                AmbientColor = new Vector4(a.AmbientColor, ambientScale),
-                SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
-                // Spare w is the explicit HDR branch used only by classic Lighting30. This avoids
-                // overloading EmissiveMult=0, which is valid authored IMGS data.
-                SkyHorizon = new Vector4(a.SkyHorizonColor, hdrActive ? 1f : 0f),
-                FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
-                Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
-                CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
-                FogFarColorMax = new Vector4(a.FogFarColor, a.FogMaxOpacity),
-                // w = IMGS EmissiveMult (hdrData[3]); manual/headless CB writers likewise upload
-                // an explicit neutral 1 when no imagespace is active.
-                CameraOrigin = new Vector4(cameraOrigin, emissiveMult),
-                ShadowMatrix0 = shadow.Matrix0,
-                ShadowMatrix1 = shadow.Matrix1,
-                ShadowMatrix2 = shadow.Matrix2,
-                ShadowMatrix3 = shadow.Matrix3,
-                ShadowParams0 = shadow.Params0,
-                ShadowParams1 = shadow.Params1,
-                ShadowParams2 = shadow.Params2,
-                ShadowParams3 = shadow.Params3,
-                AmbientPositiveX = directionalAmbient is { } cube
-                    ? new Vector4(cube.PositiveX, 1f)
-                    : Vector4.Zero,
-                AmbientNegativeX = directionalAmbient is { } cubeNx
-                    ? new Vector4(cubeNx.NegativeX, 0f)
-                    : Vector4.Zero,
-                AmbientPositiveY = directionalAmbient is { } cubePy
-                    ? new Vector4(cubePy.PositiveY, 0f)
-                    : Vector4.Zero,
-                AmbientNegativeY = directionalAmbient is { } cubeNy
-                    ? new Vector4(cubeNy.NegativeY, 0f)
-                    : Vector4.Zero,
-                AmbientPositiveZ = directionalAmbient is { } cubePz
-                    ? new Vector4(cubePz.PositiveZ, 0f)
-                    : Vector4.Zero,
-                AmbientNegativeZ = directionalAmbient is { } cubeNz
-                    ? new Vector4(cubeNz.NegativeZ, 0f)
-                    : Vector4.Zero,
-            };
-        }
     }
 
     /// <summary>
@@ -768,8 +637,8 @@ public sealed partial class WorldView3DControl
     {
         EnsureShadowLadderScale();
         var lastRadius = MathF.Min(
-            _shadowCascadeRadiiScaled[^1], ShadowRadiusEnvOverride ?? float.MaxValue)
-            + (SunShadowMath.CenterSnap * _unitScale);
+                             _shadowCascadeRadiiScaled[^1], ShadowRadiusEnvOverride ?? float.MaxValue)
+                         + (SunShadowMath.CenterSnap * _unitScale);
         var radii = new float[_shadowCascadeRadiiScaled.Length];
         for (var i = 0; i < radii.Length; i++)
         {
@@ -837,8 +706,8 @@ public sealed partial class WorldView3DControl
 
         EnsureShadowLadderScale();
         var lastRadius = MathF.Min(
-            _shadowCascadeRadiiScaled[^1], ShadowRadiusEnvOverride ?? float.MaxValue)
-            + (SunShadowMath.CenterSnap * _unitScale);
+                             _shadowCascadeRadiiScaled[^1], ShadowRadiusEnvOverride ?? float.MaxValue)
+                         + (SunShadowMath.CenterSnap * _unitScale);
         var animated = _references.ShadowDrawsIncludeAnimatedLeaves
                        || _references.ShadowDrawsIncludeAnimatedMeshes;
 
@@ -877,7 +746,8 @@ public sealed partial class WorldView3DControl
                                           _shadowContentKeys[i].ReferenceBatchContentVersion;
             referenceExtentIdentityChanged |= referenceVisibilityChanged || referenceContentChanged;
             var residentContentChanged = referenceContentChanged ||
-                contentKey.TerrainContentVersion != _shadowContentKeys[i].TerrainContentVersion;
+                                         contentKey.TerrainContentVersion !=
+                                         _shadowContentKeys[i].TerrainContentVersion;
             var contentPending = visibilityPending[i] ||
                                  (residentContentChanged &&
                                   _shadowContentThrottles[i] >= ShadowContentRerenderFrames << i);
@@ -977,7 +847,7 @@ public sealed partial class WorldView3DControl
                 frustums[i] = published with
                 {
                     ViewProj = SunShadowMath.FoldSampleMatrix(
-                        published.ViewProj, _shadowPublishedOrigins[i], renderOrigin),
+                        published.ViewProj, _shadowPublishedOrigins[i], renderOrigin)
                 };
             }
         }
@@ -987,7 +857,8 @@ public sealed partial class WorldView3DControl
             if (dueCount > 0)
             {
                 _shadowAnimatedActive = false;
-                Log.Info("[Shadow] re-fitting cascades: draws={0} due={1} dir=({2:0.00},{3:0.00},{4:0.00}) anchorZ={5:0}",
+                Log.Info(
+                    "[Shadow] re-fitting cascades: draws={0} due={1} dir=({2:0.00},{3:0.00},{4:0.00}) anchorZ={5:0}",
                     _references.ShadowDrawCount, dueCount,
                     _lastResolvedSunDirection.X, _lastResolvedSunDirection.Y, _lastResolvedSunDirection.Z,
                     anchor.Z);
@@ -1045,6 +916,7 @@ public sealed partial class WorldView3DControl
                 _lastShadowTerrainCellDraws += terrainCellDraws;
                 drewCascade |= terrainCellDraws > 0;
             }
+
             _shadowMap.EndCascade(cmd, i);
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampProfiler12.ShadowCascadeEnd[i]);
             cascadeHasDraws[i] = drewCascade;
@@ -1213,7 +1085,7 @@ public sealed partial class WorldView3DControl
             // farthest loaded point is within _renderDistance horizontally and |Z| vertically of the
             // camera, so cover that plus a couple cells of slack. Reversed-Z keeps precision at range.
             _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z)
-                               + 2f * _cellSize;
+                                                    + 2f * _cellSize;
             var proj = _camera.GetProjectionMatrix(aspect);
             // Camera-relative rendering (default on; FALLOUT_VIEWER_CAMERA_RELATIVE=0 disables). The
             // ABSOLUTE viewProj drives sky + debug overlays (their geometry stays in world space and they
@@ -1233,6 +1105,7 @@ public sealed partial class WorldView3DControl
             viewProjSky = _camera.GetViewMatrixCameraRelative() * proj;
             cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
         }
+
         var cameraMs = ElapsedMilliseconds(segmentStarted);
 
         // Per-card SpeedTree leaf billboards: hand the reference renderer the camera world right/up (from
@@ -1265,6 +1138,7 @@ public sealed partial class WorldView3DControl
                 LightingPanel.SeedWindOverride(_windStrength.Value); // reflect in the Weather section UI
             }
         }
+
         var weatherTransition = ResolveSelectedWeatherTransition();
         var currentWind = (weatherTransition.CurrentWeather?.Data?.WindSpeed ?? 0) / 255f;
         var outgoingWind = (weatherTransition.OutgoingWeather?.Data?.WindSpeed ?? 0) / 255f;
@@ -1281,6 +1155,7 @@ public sealed partial class WorldView3DControl
         {
             weatherWind = outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
         }
+
         var effectiveWind = _windStrength ?? weatherWind;
         // In auto mode, keep the (disabled) wind slider showing the weather-driven value. We're on the
         // UI thread (CompositionTarget.Rendering); the panel never raises events for display updates.
@@ -1288,6 +1163,7 @@ public sealed partial class WorldView3DControl
         {
             LightingPanel.SetWindSpeedDisplay(weatherWind);
         }
+
         _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
             _data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown));
         _references?.SetWind(WindDirection, effectiveWind, _windClockSeconds);
@@ -1526,6 +1402,7 @@ public sealed partial class WorldView3DControl
                     ? Vector3.Normalize(_projectionFocus - orthoEye)
                     : _camera.Forward) ?? 0;
         }
+
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);
         // Hand the water renderer the placed-NIF water planes the reference pass accumulated (cave/
@@ -1587,6 +1464,7 @@ public sealed partial class WorldView3DControl
                 {
                     _terrain?.RenderMirror(mirrorViewProjScene, cylinder);
                 }
+
                 _references?.RenderMirrorColor(mirrorViewProjScene);
                 waterReflectionBound = sceneMirrorTarget.TryPrepareWaterOpaqueSnapshot(cmd);
                 if (waterReflectionBound)
@@ -1654,9 +1532,9 @@ public sealed partial class WorldView3DControl
             {
                 RefreshWaterAppearanceForCurrentCell();
                 var streamDepthReady = waterUsesDepth &&
-                    surface.TryEnsureOpaqueDepthSnapshotResource() &&
-                    TryEnsureOpaqueDepthSnapshotSrv() &&
-                    surface.TryPrepareOpaqueDepthSnapshot(cmd);
+                                       surface.TryEnsureOpaqueDepthSnapshotResource() &&
+                                       TryEnsureOpaqueDepthSnapshotSrv() &&
+                                       surface.TryPrepareOpaqueDepthSnapshot(cmd);
                 opaqueDepthSnapshotPrepared = streamDepthReady;
                 var streamDepthIndex = streamDepthReady
                     ? _opaqueDepthSnapshotSrv!.Value.BindlessIndex
@@ -1787,8 +1665,14 @@ public sealed partial class WorldView3DControl
                 {
                     surface.DiscardWaterOpaqueSnapshotPreparation();
                     surface.DiscardOpaqueDepthSnapshotPreparation();
-                    try { recorder.AbortFrame(); }
-                    catch { /* The outer render failure path logs device/recorder failures. */ }
+                    try
+                    {
+                        recorder.AbortFrame();
+                    }
+                    catch
+                    {
+                        /* The outer render failure path logs device/recorder failures. */
+                    }
                 }
 
                 throw;
@@ -1796,185 +1680,200 @@ public sealed partial class WorldView3DControl
         }
         else
         {
-        try
-        {
-            RefreshWaterAppearanceForCurrentCell();
-            _water?.SetSceneDepth(
-                waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
-                _camera.NearPlane,
-                _camera.FarPlane,
-                surface.SampleCount);
-            if (_showWater && _water is not null)
+            try
             {
-                // NOTE: the water pass's protected ring reservation is deliberately still held here
-                // and released only after this split (below). Releasing it first — so the split could
-                // not truncate a submerged draw — let the below-water leg consume the water pass's
-                // budget on dense frames, and water dropped out of individual frames: the ring-
-                // starvation flicker this reservation exists to prevent. Losing the far tail of the
-                // submerged partition is the far cheaper failure, and it degrades gracefully because
-                // ReserveNearestBlendedDrawConstants keeps the draws NEAREST the camera.
-                // Split translucent references around the water surface BEFORE the WATER001 snapshot
-                // decision — the two are independent concerns. Water draws with DepthWriteMask.Zero,
-                // so anything issued after it composites on top no matter where it sits in the world;
-                // ordering is the only lever, and submerged decals must therefore be issued first.
-                // Game-agnostic: every title draws water without depth writes, and the classification
-                // is now data-driven (per-XY authored water height) with no per-game constants.
-                if (_showReferences && _references is not null &&
-                    _water.HasVisibleWaterToPartition(cylinder))
+                RefreshWaterAppearanceForCurrentCell();
+                _water?.SetSceneDepth(
+                    waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
+                    _camera.NearPlane,
+                    _camera.FarPlane,
+                    surface.SampleCount);
+                if (_showWater && _water is not null)
                 {
-                    _references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);
-                    // The complementary at/above-water partition draws after the surface, so the
-                    // split is self-contained: a failed WATER001 snapshot must NOT fall back to
-                    // redrawing everything post-water — that would double-blend the submerged half
-                    // and restore the bug.
-                    waterTransparencyPartitioned = true;
-                }
+                    // NOTE: the water pass's protected ring reservation is deliberately still held here
+                    // and released only after this split (below). Releasing it first — so the split could
+                    // not truncate a submerged draw — let the below-water leg consume the water pass's
+                    // budget on dense frames, and water dropped out of individual frames: the ring-
+                    // starvation flicker this reservation exists to prevent. Losing the far tail of the
+                    // submerged partition is the far cheaper failure, and it degrades gracefully because
+                    // ReserveNearestBlendedDrawConstants keeps the draws NEAREST the camera.
+                    // Split translucent references around the water surface BEFORE the WATER001 snapshot
+                    // decision — the two are independent concerns. Water draws with DepthWriteMask.Zero,
+                    // so anything issued after it composites on top no matter where it sits in the world;
+                    // ordering is the only lever, and submerged decals must therefore be issued first.
+                    // Game-agnostic: every title draws water without depth writes, and the classification
+                    // is now data-driven (per-XY authored water height) with no per-game constants.
+                    if (_showReferences && _references is not null &&
+                        _water.HasVisibleWaterToPartition(cylinder))
+                    {
+                        _references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);
+                        // The complementary at/above-water partition draws after the surface, so the
+                        // split is self-contained: a failed WATER001 snapshot must NOT fall back to
+                        // redrawing everything post-water — that would double-blend the submerged half
+                        // and restore the bug.
+                        waterTransparencyPartitioned = true;
+                    }
 
-                var fnvWater001Preflight = _water.GetFnvWater001Preflight(
-                    cylinder,
-                    isPerspectiveProjection: !projectionActive);
-                if (fnvWater001Preflight.Candidate &&
-                    TryEnsureWaterOpaqueSnapshotSrv() &&
-                    surface.TryPrepareWaterOpaqueSnapshot(cmd))
-                {
-                    fnvWater001SnapshotPrepared = true;
-                    _water.SetFnvWater001Snapshot(
-                        _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
-                        surface.Width,
-                        surface.Height);
+                    var fnvWater001Preflight = _water.GetFnvWater001Preflight(
+                        cylinder,
+                        isPerspectiveProjection: !projectionActive);
+                    if (fnvWater001Preflight.Candidate &&
+                        TryEnsureWaterOpaqueSnapshotSrv() &&
+                        surface.TryPrepareWaterOpaqueSnapshot(cmd))
+                    {
+                        fnvWater001SnapshotPrepared = true;
+                        _water.SetFnvWater001Snapshot(
+                            _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                            surface.Width,
+                            surface.Height);
+                    }
+                    else
+                    {
+                        // Keep the positive preflight armed when allocation/capture failed: Render repeats
+                        // the check and records SnapshotUnavailable as the local WATER003 fallback reason.
+                        _water.SetFnvWater001Snapshot(null, 0, 0);
+                    }
                 }
                 else
                 {
-                    // Keep the positive preflight armed when allocation/capture failed: Render repeats
-                    // the check and records SnapshotUnavailable as the local WATER003 fallback reason.
-                    _water.SetFnvWater001Snapshot(null, 0, 0);
+                    _water?.SetFnvWater001Snapshot(null, 0, 0);
                 }
-            }
-            else
-            {
-                _water?.SetFnvWater001Snapshot(null, 0, 0);
-            }
-            _references?.SetSceneDepth(
-                referencesUseDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
-                _camera.NearPlane,
-                _camera.FarPlane,
-                surface.SampleCount);
-            if (waterUsesDepth)
-            {
-                // Depth stays bound as a READ-ONLY DSV while it is simultaneously the water
-                // shader's SRV: the depth-sample PSOs keep the hardware GreaterEqual test, whose
-                // per-sample rejection antialiases water edges at MSAA'd mesh silhouettes (the
-                // old shader-side clip was pixel-rate and left bright fringes).
-                cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
-                cmd.ResourceBarrierTransition(depthRes!,
-                    Vortice.Direct3D12.ResourceStates.DepthWrite,
-                    sampledDepthState);
-                waterDepthSampled = true;
-            }
 
-            // Hand the water pass its protected ring budget now that every earlier consumer (terrain,
-            // references, the below-water transparency partition) has finished allocating. The shadow
-            // reservation, stacked beneath this one, stays protected for the frame-end replay.
-            if (waterRingReserved)
-            {
-                _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
+                _references?.SetSceneDepth(
+                    referencesUseDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
+                    _camera.NearPlane,
+                    _camera.FarPlane,
+                    surface.SampleCount);
+                if (waterUsesDepth)
+                {
+                    // Depth stays bound as a READ-ONLY DSV while it is simultaneously the water
+                    // shader's SRV: the depth-sample PSOs keep the hardware GreaterEqual test, whose
+                    // per-sample rejection antialiases water edges at MSAA'd mesh silhouettes (the
+                    // old shader-side clip was pixel-rate and left bright fringes).
+                    cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
+                    cmd.ResourceBarrierTransition(depthRes!,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite,
+                        sampledDepthState);
+                    waterDepthSampled = true;
+                }
+
+                // Hand the water pass its protected ring budget now that every earlier consumer (terrain,
+                // references, the below-water transparency partition) has finished allocating. The shadow
+                // reservation, stacked beneath this one, stays protected for the frame-end replay.
+                if (waterRingReserved)
+                {
+                    _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
 #pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
-                waterRingReserved = false;
+                    waterRingReserved = false;
 #pragma warning restore S1854
-            }
+                }
 
-            visibleWater = _showWater
-                ? _water?.Render(
-                    viewProjScene,
-                    cylinder,
-                    referenceRenderOrigin,
-                    isPerspectiveProjection: !projectionActive) ?? 0
-                : 0;
+                visibleWater = _showWater
+                    ? _water?.Render(
+                        viewProjScene,
+                        cylinder,
+                        referenceRenderOrigin,
+                        isPerspectiveProjection: !projectionActive) ?? 0
+                    : 0;
 
-            // Render consumes the descriptor up front; clear it again defensively and return the
-            // borrowed/copy snapshot to its ordinary ResolveDest/CopyDest baseline before blends.
-            _water?.SetFnvWater001Snapshot(null, 0, 0);
-            if (fnvWater001SnapshotPrepared)
-            {
-                surface.RestoreWaterOpaqueSnapshot(cmd);
-                fnvWater001SnapshotPrepared = false;
-            }
-        }
-        catch
-        {
-            try
-            {
+                // Render consumes the descriptor up front; clear it again defensively and return the
+                // borrowed/copy snapshot to its ordinary ResolveDest/CopyDest baseline before blends.
                 _water?.SetFnvWater001Snapshot(null, 0, 0);
                 if (fnvWater001SnapshotPrepared)
                 {
                     surface.RestoreWaterOpaqueSnapshot(cmd);
+                    fnvWater001SnapshotPrepared = false;
                 }
-                if (waterDepthSampled)
-                {
-                    cmd.OMSetRenderTargets(sceneRtv);
-                    cmd.ResourceBarrierTransition(depthRes!, sampledDepthState,
-                        Vortice.Direct3D12.ResourceStates.DepthWrite);
-                    cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
-                }
-
-                // Submit only the valid partial scene recorded before the failure. Scene color,
-                // depth, and the borrowed/copy snapshot are all back at their next-frame baselines;
-                // the back buffer was never touched because final resolve has not run yet.
-                recorder.EndFrame();
             }
             catch
             {
-                // If cleanup itself cannot be recorded, discard the entire unsubmitted list. Its
-                // barriers never reach the GPU, so forgetting the CPU preparation flag is correct.
-                surface.DiscardWaterOpaqueSnapshotPreparation();
-                try { recorder.AbortFrame(); }
-                catch { /* The outer render failure path logs device/recorder failures. */ }
+                try
+                {
+                    _water?.SetFnvWater001Snapshot(null, 0, 0);
+                    if (fnvWater001SnapshotPrepared)
+                    {
+                        surface.RestoreWaterOpaqueSnapshot(cmd);
+                    }
+
+                    if (waterDepthSampled)
+                    {
+                        cmd.OMSetRenderTargets(sceneRtv);
+                        cmd.ResourceBarrierTransition(depthRes!, sampledDepthState,
+                            Vortice.Direct3D12.ResourceStates.DepthWrite);
+                        cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
+                    }
+
+                    // Submit only the valid partial scene recorded before the failure. Scene color,
+                    // depth, and the borrowed/copy snapshot are all back at their next-frame baselines;
+                    // the back buffer was never touched because final resolve has not run yet.
+                    recorder.EndFrame();
+                }
+                catch
+                {
+                    // If cleanup itself cannot be recorded, discard the entire unsubmitted list. Its
+                    // barriers never reach the GPU, so forgetting the CPU preparation flag is correct.
+                    surface.DiscardWaterOpaqueSnapshotPreparation();
+                    try
+                    {
+                        recorder.AbortFrame();
+                    }
+                    catch
+                    {
+                        /* The outer render failure path logs device/recorder failures. */
+                    }
+                }
+
+                throw;
             }
-            throw;
         }
-        }
+
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
         // Legacy split order only: blended references draw AFTER water under the read-only DSV.
         // The unified stream drew everything above with the live DSV writable throughout.
         if (!streamTransparency)
         {
-        // Blended (transparent) reference submeshes draw AFTER water so water never paints over
-        // them. Eligible effects sample scene depth and manually reject/fade intersections; the
-        // read-only DSV keeps the established GreaterEqual hardware test for every blended draw.
-        if (referencesUseDepth)
-        {
-            if (!waterUsesDepth)
+            // Blended (transparent) reference submeshes draw AFTER water so water never paints over
+            // them. Eligible effects sample scene depth and manually reject/fade intersections; the
+            // read-only DSV keeps the established GreaterEqual hardware test for every blended draw.
+            if (referencesUseDepth)
             {
-                cmd.OMSetRenderTargets(sceneRtv);
+                if (!waterUsesDepth)
+                {
+                    cmd.OMSetRenderTargets(sceneRtv);
+                    cmd.ResourceBarrierTransition(depthRes!,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite,
+                        sampledDepthState);
+                }
+
+                cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
+            }
+
+            if (_showReferences)
+            {
+                _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.BlendedStart);
+                if (waterTransparencyPartitioned && _water is not null)
+                {
+                    _references?.RenderBlendedDeferredAtOrAboveWater(_water, _camera.Position.Z);
+                }
+                else
+                {
+                    _references?.RenderBlendedDeferred();
+                }
+
+                _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.BlendedEnd);
+            }
+
+            if (sceneDepthSampled)
+            {
+                cmd.OMSetRenderTargets(sceneRtv); // release read-only DSV before returning to DepthWrite
                 cmd.ResourceBarrierTransition(depthRes!,
-                    Vortice.Direct3D12.ResourceStates.DepthWrite,
-                    sampledDepthState);
+                    sampledDepthState,
+                    Vortice.Direct3D12.ResourceStates.DepthWrite);
+                cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
             }
-            cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
         }
-        if (_showReferences)
-        {
-            _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.BlendedStart);
-            if (waterTransparencyPartitioned && _water is not null)
-            {
-                _references?.RenderBlendedDeferredAtOrAboveWater(_water, _camera.Position.Z);
-            }
-            else
-            {
-                _references?.RenderBlendedDeferred();
-            }
-            _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.BlendedEnd);
-        }
-        if (sceneDepthSampled)
-        {
-            cmd.OMSetRenderTargets(sceneRtv); // release read-only DSV before returning to DepthWrite
-            cmd.ResourceBarrierTransition(depthRes!,
-                sampledDepthState,
-                Vortice.Direct3D12.ResourceStates.DepthWrite);
-            cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
-        }
-        }
+
         // Cell-grid wireframe stays in the HDR scene pass: unlike the depth-disabled diagnostics it
         // deliberately depth-TESTS against the scene so terrain occludes the grid cage ("part of
         // the 3D scene, not painted over it") — the post-resolve LDR target has no scene depth.
@@ -1998,6 +1897,7 @@ public sealed partial class WorldView3DControl
             {
                 _ringBuffer12!.ReleaseTailReservation();
             }
+
             RecordSunShadowPass(cmd, referenceRenderOrigin, _camera.Position);
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ShadowEnd);
         }
@@ -2076,6 +1976,7 @@ public sealed partial class WorldView3DControl
                 _selectionHighlight!.Render(viewProjAbsolute, ldrTarget: true);
             }
         }
+
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ResolveEnd);
 
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
@@ -2163,6 +2064,180 @@ public sealed partial class WorldView3DControl
                 _gpuTimestampsAutoEnabled = true;
                 EnableGpuTimestamps("auto-stall");
             }
+        }
+    }
+
+    /// <summary>
+    ///     Exact stationary-shadow content identity. Reference and terrain visibility are separate
+    ///     from resident content versions so user-facing filter changes can refresh immediately while
+    ///     mesh streaming remains subject to the ordinary content throttle.
+    /// </summary>
+    private readonly record struct ShadowContentKey(
+        int ReferenceBatchContentVersion,
+        int TerrainContentVersion,
+        ReferenceVisibilityKey ReferenceVisibility,
+        bool TerrainVisible);
+
+    /// <summary>Which path <see cref="RecordSunShadowPass" /> took on the most recent frame.</summary>
+    internal enum ShadowPassMode
+    {
+        /// <summary>Cache hit — no cascade re-rendered.</summary>
+        Skipped = 0,
+
+        /// <summary>Wind/skinning refresh of the near cascades only.</summary>
+        Animated = 1,
+
+        /// <summary>Pose/content-driven refit path. The cascade mask says which subset rendered.</summary>
+        Full = 2
+    }
+
+    /// <summary>
+    ///     Adapter handing the reference renderer's blended loop the water drain (the unified
+    ///     transparency stream's merge hook). Cached per water-renderer instance.
+    /// </summary>
+    private sealed class WaterStreamInterleave(
+        Core.Formats.Nif.Rendering.D3D12.WaterRenderer12 water)
+        : Core.Formats.Nif.Rendering.D3D12.ITransparencyInterleave
+    {
+        public Core.Formats.Nif.Rendering.D3D12.WaterRenderer12 Water { get; } = water;
+
+        public bool DrainDownTo(float depth) => Water.DrainTransparencyDownTo(depth);
+    }
+
+    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare. 10 float4
+    // = 160 bytes before the shadow constants (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
+    // pre-atmosphere behavior, so a disabled toggle keeps that aspect of the scene looking flat.
+    // (Shaders that don't apply fog — e.g. skybox — declare only the leading float4s they use, which
+    // is layout-safe since later fields are appended at the end.)
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct AtmosphereConstants
+    {
+        public Vector4 SunDirIntensity; // xyz = sun world dir (toward sun), w = intensity
+        public Vector4 SunColorLighting; // rgb = sun color, w = lightingEnabled (0/1)
+        public Vector4 AmbientColor; // rgb = ambient, w = spare
+        public Vector4 SkyTopSkyEnabled; // rgb = sky-top color, w = skyEnabled (0/1)
+        public Vector4 SkyHorizon; // rgb = sky-horizon color, w = effective HDR active (0/1)
+        public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
+        public Vector4 Params; // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
+        public Vector4 CameraPosFogPower; // xyz = camera world pos (0 in camera-relative mode), w = fog power
+
+        public Vector4 FogFarColorMax; // rgb = far-fog color, w = maximum powered fog amount
+
+        // Camera-relative render origin the scene VS subtract from each world vertex before
+        // projection (0 when camera-relative is off). The PS shaders that read this CB
+        // declare only the prefix they use, so fields appended after their prefix are layout-safe.
+        public Vector4 CameraOrigin; // xyz = render origin (= camera world pos),
+
+        // w = IMGS EmissiveMult (explicit 1 when inactive)
+        // Sun shadow CASCADES (appended after CameraOrigin — same append-safe contract). Each
+        // matrix maps origin-relative world positions (the PS's vWorldPos space) into that
+        // cascade's shadow clip; each params float4 packs (enabled, texel UV size, normalized
+        // depth bias, bindless SRV slot). The PS picks the smallest containing cascade; all
+        // params.x == 0 short-circuits ShadowFactor to 1.0, keeping the scene pixel-identical.
+        public Matrix4x4 ShadowMatrix0;
+        public Matrix4x4 ShadowMatrix1;
+        public Matrix4x4 ShadowMatrix2;
+        public Matrix4x4 ShadowMatrix3;
+        public Vector4 ShadowParams0;
+        public Vector4 ShadowParams1;
+        public Vector4 ShadowParams2;
+
+        public Vector4 ShadowParams3;
+
+        // Full WTHR DALC directional-ambient cube. PositiveX.w is the explicit presence flag;
+        // legacy weather keeps all six zero and shaders use AmbientColor.rgb unchanged.
+        public Vector4 AmbientPositiveX;
+        public Vector4 AmbientNegativeX;
+        public Vector4 AmbientPositiveY;
+        public Vector4 AmbientNegativeY;
+        public Vector4 AmbientPositiveZ;
+        public Vector4 AmbientNegativeZ;
+
+        /// <summary>
+        ///     Classic FO3/FNV grass sun term: rgb = the sun colour WITHOUT the imagespace
+        ///     SunlightDimmer (retail's TallGrassShader copies NiLight m_kDiffuseColor raw; only
+        ///     BSShaderLightingProperty applies the dimmer, i.e. to statics/actors/LAND), w = the
+        ///     imagespace GrassDimmer the engine writes into the grass VS AddlParams.x. w == 0 marks
+        ///     the lane unset so consumers fall back to today's behaviour.
+        /// </summary>
+        public Vector4 GrassSunColorScale;
+
+        /// <summary>
+        ///     Half-space clip plane in origin-relative <c>vWorldPos</c> space, consumed by the
+        ///     terrain + reference PS entry (<c>clip(dot(p, xyz) + w)</c>). The neutral default
+        ///     (0,0,0,1) clips nothing; the water-reflection mirror pass binds (0,0,1,−h′) so
+        ///     below-plane geometry never enters the mirror.
+        /// </summary>
+        public Vector4 ClipPlane;
+
+        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16 + 16 + 16;
+
+        public static AtmosphereConstants From(
+            AtmosphereState.Resolved a,
+            Core.Games.BethesdaGame game,
+            float gameHour,
+            Vector3 cameraPos,
+            float lightingEnabled,
+            float skyEnabled,
+            float fogEnabled,
+            float placedLightCount,
+            Vector3 cameraOrigin,
+            float ambientScale = 0.3f,
+            Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
+            float emissiveMult = 1f,
+            bool hdrActive = true,
+            float sunlightScale = 1f,
+            float grassScale = 1f)
+        {
+            var directionalAmbient = AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+                game, AuthoredSkyArchitecture.Enabled, a.DirectionalAmbient);
+
+            return new()
+            {
+                SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
+                SunColorLighting = new Vector4(a.SunColor * sunlightScale, lightingEnabled),
+                // Grass takes the sun colour RAW plus its own dimmer — see the field doc above.
+                GrassSunColorScale = new Vector4(a.SunColor, grassScale),
+                // w carries the per-game ambient ("fill") scale read by the object/terrain shaders.
+                AmbientColor = new Vector4(a.AmbientColor, ambientScale),
+                SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
+                // Spare w is the explicit HDR branch used only by classic Lighting30. This avoids
+                // overloading EmissiveMult=0, which is valid authored IMGS data.
+                SkyHorizon = new Vector4(a.SkyHorizonColor, hdrActive ? 1f : 0f),
+                FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
+                Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
+                CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
+                FogFarColorMax = new Vector4(a.FogFarColor, a.FogMaxOpacity),
+                // w = IMGS EmissiveMult (hdrData[3]); manual/headless CB writers likewise upload
+                // an explicit neutral 1 when no imagespace is active.
+                CameraOrigin = new Vector4(cameraOrigin, emissiveMult),
+                ShadowMatrix0 = shadow.Matrix0,
+                ShadowMatrix1 = shadow.Matrix1,
+                ShadowMatrix2 = shadow.Matrix2,
+                ShadowMatrix3 = shadow.Matrix3,
+                ShadowParams0 = shadow.Params0,
+                ShadowParams1 = shadow.Params1,
+                ShadowParams2 = shadow.Params2,
+                ShadowParams3 = shadow.Params3,
+                AmbientPositiveX = directionalAmbient is { } cube
+                    ? new Vector4(cube.PositiveX, 1f)
+                    : Vector4.Zero,
+                AmbientNegativeX = directionalAmbient is { } cubeNx
+                    ? new Vector4(cubeNx.NegativeX, 0f)
+                    : Vector4.Zero,
+                AmbientPositiveY = directionalAmbient is { } cubePy
+                    ? new Vector4(cubePy.PositiveY, 0f)
+                    : Vector4.Zero,
+                AmbientNegativeY = directionalAmbient is { } cubeNy
+                    ? new Vector4(cubeNy.NegativeY, 0f)
+                    : Vector4.Zero,
+                AmbientPositiveZ = directionalAmbient is { } cubePz
+                    ? new Vector4(cubePz.PositiveZ, 0f)
+                    : Vector4.Zero,
+                AmbientNegativeZ = directionalAmbient is { } cubeNz
+                    ? new Vector4(cubeNz.NegativeZ, 0f)
+                    : Vector4.Zero
+            };
         }
     }
 }

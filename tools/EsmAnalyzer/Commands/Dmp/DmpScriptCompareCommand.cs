@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Formats.Esm.Models;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using Spectre.Console;
 
@@ -34,7 +34,8 @@ internal static class DmpScriptCompareCommand
 
             if (filtered.Count == 0)
             {
-                AnsiConsole.MarkupLine($"[red]No matching scripts with both SCTX and decompiled text: {scriptFilter}[/]");
+                AnsiConsole.MarkupLine(
+                    $"[red]No matching scripts with both SCTX and decompiled text: {scriptFilter}[/]");
                 return;
             }
 
@@ -85,6 +86,7 @@ internal static class DmpScriptCompareCommand
             var rateColor = overallMatchRate >= 80 ? "green" : overallMatchRate >= 60 ? "yellow" : "red";
             AnsiConsole.MarkupLine($"[{rateColor}]Overall match rate: {overallMatchRate:F1}%[/]");
         }
+
         AnsiConsole.WriteLine();
 
         // Category breakdown table
@@ -210,8 +212,8 @@ internal static class DmpScriptCompareCommand
         }
 
         var hexStr = filter.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? filter[2..] : filter;
-        if (uint.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber,
-                System.Globalization.CultureInfo.InvariantCulture, out var formId))
+        if (uint.TryParse(hexStr, NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture, out var formId))
         {
             return script.FormId == formId;
         }

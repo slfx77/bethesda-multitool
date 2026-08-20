@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 
@@ -57,7 +58,7 @@ internal static class NavMeshConnectivity
         var pendingLargeSize = -1;
         while (j + 6 <= body.Length)
         {
-            var sig = System.Text.Encoding.ASCII.GetString(body.Slice(j, 4));
+            var sig = Encoding.ASCII.GetString(body.Slice(j, 4));
             int subSize = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(j + 4, 2));
             if (sig == "XXXX")
             {
@@ -65,11 +66,13 @@ internal static class NavMeshConnectivity
                 j += 6 + subSize;
                 continue;
             }
+
             if (pendingLargeSize >= 0)
             {
                 subSize = pendingLargeSize;
                 pendingLargeSize = -1;
             }
+
             if (j + 6 + subSize > body.Length)
             {
                 break;

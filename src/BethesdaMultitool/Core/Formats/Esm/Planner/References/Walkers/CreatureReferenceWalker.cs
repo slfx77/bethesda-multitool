@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
@@ -78,7 +77,7 @@ public sealed class CreatureReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.IndexedMember("SNAM", i, "Faction"),
-                FormId = crea.Factions[i].FactionFormId,
+                FormId = crea.Factions[i].FactionFormId
             };
         }
 
@@ -87,7 +86,7 @@ public sealed class CreatureReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("SPLO", i),
-                FormId = crea.Spells[i],
+                FormId = crea.Spells[i]
             };
         }
 
@@ -97,14 +96,14 @@ public sealed class CreatureReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.IndexedMember("CNTO", i, "Item"),
-                FormId = item.ItemFormId,
+                FormId = item.ItemFormId
             };
             if (item.OwnerFormId is uint owner && owner != 0)
             {
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.IndexedMember("COED", i, "Owner"),
-                    FormId = owner,
+                    FormId = owner
                 };
             }
         }
@@ -114,7 +113,7 @@ public sealed class CreatureReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("PKID", i),
-                FormId = crea.Packages[i],
+                FormId = crea.Packages[i]
             };
         }
     }
@@ -126,9 +125,8 @@ public sealed class CreatureReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord(signature),
-                FormId = id,
+                FormId = id
             };
         }
     }
 }
-

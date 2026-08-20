@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
@@ -50,10 +51,8 @@ public class ConditionFunctionTableTests
         Assert.Equal(829, ScriptFunctionTable.All.Count);
         Assert.Equal(250, ScriptFunctionTable.ConditionFunctionCount);
         Assert.Equal(250, ScriptFunctionTable.ConditionFunctions.Count);
-        Assert.Equal(250, ScriptFunctionTable.All.Values.Count(
-            item => item.IsConditionFunction is true));
-        Assert.Equal(579, ScriptFunctionTable.All.Values.Count(
-            item => item.IsConditionFunction is false));
+        Assert.Equal(250, ScriptFunctionTable.All.Values.Count(item => item.IsConditionFunction is true));
+        Assert.Equal(579, ScriptFunctionTable.All.Values.Count(item => item.IsConditionFunction is false));
         Assert.DoesNotContain(ScriptFunctionTable.All.Values,
             item => item.IsConditionFunction is null);
 
@@ -248,7 +247,8 @@ public class ConditionFunctionTableTests
         Assert.Equal(64, Fallout4ScriptFunctionTable.ConditionTypeOverrideEligibility.Values
             .Sum(parameters => parameters.Count(item => item)));
         Assert.Equal(479, Fallout4ScriptFunctionTable.Functions.Values.Count(item => item.IsConditionFunction is true));
-        Assert.Equal(331, Fallout4ScriptFunctionTable.Functions.Values.Count(item => item.IsConditionFunction is false));
+        Assert.Equal(331,
+            Fallout4ScriptFunctionTable.Functions.Values.Count(item => item.IsConditionFunction is false));
         Assert.DoesNotContain(Fallout4ScriptFunctionTable.Functions.Values, item => item.IsConditionFunction is null);
 
         var getItemCount = set.Get(0x102F);
@@ -279,17 +279,17 @@ public class ConditionFunctionTableTests
         var lowCondition = new ScriptFunctionDef("IsTeamLeader", "", false, []);
         var highCondition = new ScriptFunctionDef("PlayerHasQuest", "", false, []);
         var set = new ScriptFunctionSet(
-            game: BethesdaGame.Fallout76,
-            functions: new Dictionary<ushort, ScriptFunctionDef>
+            BethesdaGame.Fallout76,
+            new Dictionary<ushort, ScriptFunctionDef>
             {
                 [0x138C] = scriptCommand
             },
-            conditionFunctionsByIndex: new Dictionary<ushort, ScriptFunctionDef>
+            new Dictionary<ushort, ScriptFunctionDef>
             {
                 [908] = lowCondition,
                 [5004] = highCondition
             },
-            conditionParamKindsByIndex: new Dictionary<ushort, ConditionParamKind?[]>
+            new Dictionary<ushort, ConditionParamKind?[]>
             {
                 [908] = [],
                 [5004] = [ConditionParamKind.FormId]
@@ -312,16 +312,16 @@ public class ConditionFunctionTableTests
             [0x102F] = projectedCommand
         };
         var explicitEmpty = new ScriptFunctionSet(
-            game: BethesdaGame.Starfield,
-            functions: functions,
-            conditionFunctionsByIndex: new Dictionary<ushort, ScriptFunctionDef>());
+            BethesdaGame.Starfield,
+            functions,
+            new Dictionary<ushort, ScriptFunctionDef>());
         var legacyNull = new ScriptFunctionSet(
-            game: BethesdaGame.FalloutNewVegas,
-            functions: functions,
+            BethesdaGame.FalloutNewVegas,
+            functions,
             useLegacyConditionOpcodeProjection: true);
         var modernNull = new ScriptFunctionSet(
-            game: BethesdaGame.Fallout76,
-            functions: functions);
+            BethesdaGame.Fallout76,
+            functions);
 
         Assert.Null(explicitEmpty.GetConditionFunction(0x02F));
         Assert.Same(projectedCommand, legacyNull.GetConditionFunction(0x02F));
@@ -335,10 +335,10 @@ public class ConditionFunctionTableTests
             "FormCondition", "", false,
             [new ScriptFunctionParamDef("Object", ScriptParamType.Form, false)]);
         var set = new ScriptFunctionSet(
-            game: BethesdaGame.Starfield,
-            functions: new Dictionary<ushort, ScriptFunctionDef>(),
-            conditionFunctionsByIndex: new Dictionary<ushort, ScriptFunctionDef> { [0x02F] = condition },
-            conditionParamKindsByIndex: new Dictionary<ushort, ConditionParamKind?[]>());
+            BethesdaGame.Starfield,
+            new Dictionary<ushort, ScriptFunctionDef>(),
+            new Dictionary<ushort, ScriptFunctionDef> { [0x02F] = condition },
+            new Dictionary<ushort, ConditionParamKind?[]>());
 
         Assert.True(set.HasAuthoritativeConditionParamKinds);
         Assert.False(set.TryGetConditionParamKind(0x02F, 0, out _));
@@ -348,8 +348,8 @@ public class ConditionFunctionTableTests
     public void LegacyConditionProjection_FailsClosedAboveClassicIndexRange()
     {
         var set = new ScriptFunctionSet(
-            game: BethesdaGame.FalloutNewVegas,
-            functions: new Dictionary<ushort, ScriptFunctionDef>
+            BethesdaGame.FalloutNewVegas,
+            new Dictionary<ushort, ScriptFunctionDef>
             {
                 [0x1000] = new("GetWantBlocking", "", true, [])
             },
@@ -459,7 +459,10 @@ public class ConditionFunctionTableTests
     [Fact]
     public void Fallout4Formatter_UsesConditionTypeAndRunOnContext()
     {
-        static string Resolve(uint formId) => $"FORM_{formId}";
+        static string Resolve(uint formId)
+        {
+            return $"FORM_{formId}";
+        }
 
         var ordinary = new DialogueCondition
         {
@@ -701,7 +704,10 @@ public class ConditionFunctionTableTests
     [Fact]
     public void Formatter_PrefersPresentCisStrings_AndEscapesThemDeterministically()
     {
-        static string Resolve(uint formId) => $"FORM_{formId}";
+        static string Resolve(uint formId)
+        {
+            return $"FORM_{formId}";
+        }
 
         var escaped = new DialogueCondition
         {
@@ -788,8 +794,9 @@ public class ConditionFunctionTableTests
         Assert.Equal(638, Fallout76ConditionFunctionTable.ConditionFunctions.Count);
         Assert.Equal(638, Fallout76ConditionFunctionTable.ConditionParamKinds.Count);
         Assert.Equal(68, Fallout76ConditionFunctionTable.ConditionTypeOverrideEligibility.Count);
-        Assert.Equal(69, Fallout76ConditionFunctionTable.ConditionTypeOverrideEligibility.Values.Sum(
-            slots => slots.Count(eligible => eligible)));
+        Assert.Equal(69,
+            Fallout76ConditionFunctionTable.ConditionTypeOverrideEligibility.Values.Sum(slots =>
+                slots.Count(eligible => eligible)));
 
         var low = conditions.Get(908);
         var high = conditions.Get(5004);
@@ -887,8 +894,9 @@ public class ConditionFunctionTableTests
         Assert.Equal(610, StarfieldConditionFunctionTable.ConditionFunctions.Count);
         Assert.Equal(610, StarfieldConditionFunctionTable.ConditionParamKinds.Count);
         Assert.Equal(82, StarfieldConditionFunctionTable.ConditionTypeOverrideEligibility.Count);
-        Assert.Equal(83, StarfieldConditionFunctionTable.ConditionTypeOverrideEligibility.Values.Sum(
-            slots => slots.Count(eligible => eligible)));
+        Assert.Equal(83,
+            StarfieldConditionFunctionTable.ConditionTypeOverrideEligibility.Values.Sum(slots =>
+                slots.Count(eligible => eligible)));
 
         Assert.Equal("GetDistance", conditions.GetName(1));
         Assert.Equal("GetActionDataForm", conditions.GetName(819));
@@ -1035,8 +1043,9 @@ public class ConditionFunctionTableTests
         Assert.Equal(402, SkyrimConditionFunctionTable.ConditionFunctions.Count);
         Assert.Equal(402, SkyrimConditionFunctionTable.ConditionParamKinds.Count);
         Assert.Equal(49, SkyrimConditionFunctionTable.ConditionTypeOverrideEligibility.Count);
-        Assert.Equal(50, SkyrimConditionFunctionTable.ConditionTypeOverrideEligibility.Values.Sum(
-            slots => slots.Count(eligible => eligible)));
+        Assert.Equal(50,
+            SkyrimConditionFunctionTable.ConditionTypeOverrideEligibility.Values.Sum(slots =>
+                slots.Count(eligible => eligible)));
 
         Assert.Equal("GetDistance", conditions.GetName(0x0001));
         Assert.Equal("IsRidingMount", conditions.GetName(0x0147));
@@ -1101,9 +1110,9 @@ public class ConditionFunctionTableTests
         Assert.True(table.TryClassifyParam(
             SkyrimConditionFunctionTable.VatsValueFunctionIndex,
             1,
-            conditionType: 0,
-            runOn: 0,
-            parameter1Value: selector,
+            0,
+            0,
+            selector,
             out var actual));
         Assert.Equal(expected, actual);
     }
@@ -1120,7 +1129,7 @@ public class ConditionFunctionTableTests
             1,
             0,
             0,
-            parameter1Value: 21,
+            21,
             out _));
 
         var weapon = new DialogueCondition
@@ -1211,14 +1220,11 @@ public class ConditionFunctionTableTests
         Assert.Equal(31, OblivionScriptFunctionTable.XObseExtensionCount);
         Assert.Equal(200, OblivionScriptFunctionTable.ConditionFunctionCount);
         Assert.Equal(200, OblivionScriptFunctionTable.ConditionFunctions.Count);
-        Assert.Equal(169, OblivionScriptFunctionTable.ConditionFunctions.Keys.Count(
-            index => index <= 0x0171));
-        Assert.Equal(31, OblivionScriptFunctionTable.ConditionFunctions.Keys.Count(
-            index => index > 0x0171));
-        Assert.Equal(200, OblivionScriptFunctionTable.Functions.Values.Count(
-            item => item.IsConditionFunction is true));
-        Assert.Equal(332, OblivionScriptFunctionTable.Functions.Values.Count(
-            item => item.IsConditionFunction is false));
+        Assert.Equal(169, OblivionScriptFunctionTable.ConditionFunctions.Keys.Count(index => index <= 0x0171));
+        Assert.Equal(31, OblivionScriptFunctionTable.ConditionFunctions.Keys.Count(index => index > 0x0171));
+        Assert.Equal(200, OblivionScriptFunctionTable.Functions.Values.Count(item => item.IsConditionFunction is true));
+        Assert.Equal(332,
+            OblivionScriptFunctionTable.Functions.Values.Count(item => item.IsConditionFunction is false));
         Assert.DoesNotContain(OblivionScriptFunctionTable.Functions.Values,
             item => item.IsConditionFunction is null);
         foreach (var (rawIndex, definition) in OblivionScriptFunctionTable.ConditionFunctions)
@@ -1344,7 +1350,7 @@ public class ConditionFunctionTableTests
 
         Assert.Contains("GetActorValue(5)", formatted, StringComparison.Ordinal);
         Assert.False(DialogueConditionDisplayFormatter.IsFormReference(
-            condition, 0, BethesdaGame.FalloutNewVegas));
+            condition, 0));
     }
 
     [Fact]

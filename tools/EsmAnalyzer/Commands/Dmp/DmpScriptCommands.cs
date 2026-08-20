@@ -1,8 +1,8 @@
 using System.CommandLine;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dmp;
@@ -17,7 +17,8 @@ public static class DmpScriptCommands
     /// </summary>
     public static Command CreateScriptsCommand()
     {
-        var command = new Command("scripts", "Inspect and compare scripts recovered from a memory dump (list, show, compare, crossrefs)");
+        var command = new Command("scripts",
+            "Inspect and compare scripts recovered from a memory dump (list, show, compare, crossrefs)");
         command.Subcommands.Add(CreateListCommand());
         command.Subcommands.Add(CreateShowCommand());
         command.Subcommands.Add(CreateCompareCommand());
@@ -64,9 +65,12 @@ public static class DmpScriptCommands
     public static Command CreateCompareCommand()
     {
         var inputArg = new Argument<string>("dump") { Description = "Path to the Xbox 360 minidump file" };
-        var reportOpt = new Option<string?>("-r", "--report") { Description = "Write detailed mismatch report to file" };
-        var scriptOpt = new Option<string?>("--script") { Description = "Compare only this script (EditorId or FormId)" };
-        var categoryOpt = new Option<string?>("--category") { Description = "Filter report to specific category (e.g., Other, UnresolvedVariable)" };
+        var reportOpt = new Option<string?>("-r", "--report")
+            { Description = "Write detailed mismatch report to file" };
+        var scriptOpt = new Option<string?>("--script")
+            { Description = "Compare only this script (EditorId or FormId)" };
+        var categoryOpt = new Option<string?>("--category")
+            { Description = "Filter report to specific category (e.g., Other, UnresolvedVariable)" };
 
         var command = new Command("compare", "Semantic comparison of SCTX source vs decompiled SCDA bytecode");
         command.Arguments.Add(inputArg);
@@ -120,7 +124,7 @@ public static class DmpScriptCommands
                 await Task.Yield(); // Ensure async context
             });
 
-        var analyzer = new BethesdaMultitool.Core.Minidump.MinidumpAnalyzer();
+        var analyzer = new MinidumpAnalyzer();
         var analysisResult = await analyzer.AnalyzeAsync(path, includeMetadata: true);
 
         if (analysisResult.EsmRecords == null)
@@ -283,8 +287,8 @@ public static class DmpScriptCommands
 
         // Try FormId (hex)
         var hexStr = filter.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? filter[2..] : filter;
-        if (uint.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber,
-                System.Globalization.CultureInfo.InvariantCulture, out var formId))
+        if (uint.TryParse(hexStr, NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture, out var formId))
         {
             match = scripts.FirstOrDefault(s => s.FormId == formId);
             if (match != null)

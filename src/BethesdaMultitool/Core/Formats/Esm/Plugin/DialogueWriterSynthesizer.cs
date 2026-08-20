@@ -15,15 +15,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 /// </summary>
 internal static class DialogueWriterSynthesizer
 {
-    internal sealed record Rule(
-        uint InfoFormId,
-        uint QuestFormId,
-        ushort SourceVariableIndex,
-        string VariableName,
-        string ScriptSource,
-        string FallbackResponseText,
-        string Evidence);
-
     /// <summary>
     ///     bUlyssesHired: the recruit-acceptance INFO 0x0013408B (topic 0x0013408A "Interested
     ///     in traveling with me?", CTDA GetIsID(Ulysses), Goodbye+RunImmediately flags) was
@@ -37,18 +28,20 @@ internal static class DialogueWriterSynthesizer
     public static IReadOnlyList<Rule> Rules { get; } =
     [
         new(
-            InfoFormId: 0x0013408B,
-            QuestFormId: 0x000B16D0,
-            SourceVariableIndex: 24,
-            VariableName: "bUlyssesHired",
-            ScriptSource: "set VNPCFollowers.bUlyssesHired to 1",
-            FallbackResponseText: "Let's go.",
-            Evidence: "retail companion recruit pattern; proto VNPCFollowersQuestSCRIPT local 24; " +
-                      "captured consumers: FollowersUlysses* PACKs, VMS18 companion variant"),
+            0x0013408B,
+            0x000B16D0,
+            24,
+            "bUlyssesHired",
+            "set VNPCFollowers.bUlyssesHired to 1",
+            "Let's go.",
+            "retail companion recruit pattern; proto VNPCFollowersQuestSCRIPT local 24; " +
+            "captured consumers: FollowersUlysses* PACKs, VMS18 companion variant")
     ];
 
-    public static void Apply(List<DialogueRecord> dialogues, IConversionProgressSink sink) =>
+    public static void Apply(List<DialogueRecord> dialogues, IConversionProgressSink sink)
+    {
         Apply(dialogues, Rules, sink);
+    }
 
     internal static void Apply(
         List<DialogueRecord> dialogues,
@@ -84,10 +77,10 @@ internal static class DialogueWriterSynthesizer
             {
                 SourceText = rule.ScriptSource,
                 CompiledData = BuildSetQuestVariableBytecode(
-                    scroIndex: 1, rule.SourceVariableIndex),
+                    1, rule.SourceVariableIndex),
                 ReferencedObjects = [rule.QuestFormId],
                 IsBigEndianBytecode = false,
-                IsDmpDerived = false,
+                IsDmpDerived = false
             };
             var responses = info.Responses;
             if (!responses.Any(static response =>
@@ -95,7 +88,7 @@ internal static class DialogueWriterSynthesizer
             {
                 responses =
                 [
-                    new DialogueResponse { ResponseNumber = 1, Text = rule.FallbackResponseText },
+                    new DialogueResponse { ResponseNumber = 1, Text = rule.FallbackResponseText }
                 ];
             }
 
@@ -103,7 +96,7 @@ internal static class DialogueWriterSynthesizer
             {
                 ResultScripts = [script],
                 Responses = responses,
-                HasResultScript = true,
+                HasResultScript = true
             };
             sink.Warn("Synthesizing dialogue writers",
                 $"Synthesized result script on INFO 0x{rule.InfoFormId:X8}: " +
@@ -116,7 +109,7 @@ internal static class DialogueWriterSynthesizer
                     ["variable"] = rule.VariableName,
                     ["quest"] = $"0x{rule.QuestFormId:X8}",
                     ["source-index"] = rule.SourceVariableIndex.ToString(),
-                    ["evidence"] = rule.Evidence,
+                    ["evidence"] = rule.Evidence
                 });
         }
     }
@@ -128,13 +121,25 @@ internal static class DialogueWriterSynthesizer
     ///     opcode 0x0015 Set, payload length, 0x72 referenced-object marker + SCRO index,
     ///     0x73 quest-local marker + variable index, expression length 2, expression " 1".
     /// </summary>
-    internal static byte[] BuildSetQuestVariableBytecode(ushort scroIndex, ushort variableIndex) =>
-    [
-        0x15, 0x00,
-        0x0A, 0x00,
-        0x72, (byte)scroIndex, (byte)(scroIndex >> 8),
-        0x73, (byte)variableIndex, (byte)(variableIndex >> 8),
-        0x02, 0x00,
-        0x20, 0x31,
-    ];
+    internal static byte[] BuildSetQuestVariableBytecode(ushort scroIndex, ushort variableIndex)
+    {
+        return
+        [
+            0x15, 0x00,
+            0x0A, 0x00,
+            0x72, (byte)scroIndex, (byte)(scroIndex >> 8),
+            0x73, (byte)variableIndex, (byte)(variableIndex >> 8),
+            0x02, 0x00,
+            0x20, 0x31
+        ];
+    }
+
+    internal sealed record Rule(
+        uint InfoFormId,
+        uint QuestFormId,
+        ushort SourceVariableIndex,
+        string VariableName,
+        string ScriptSource,
+        string FallbackResponseText,
+        string Evidence);
 }

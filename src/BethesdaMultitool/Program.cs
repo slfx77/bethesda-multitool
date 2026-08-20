@@ -1,9 +1,8 @@
 using System.CommandLine;
 using System.CommandLine.Help;
 using System.Text;
-using BethesdaMultitool.CLI;
-using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Diagnostics;
 using Spectre.Console;
 
 namespace BethesdaMultitool;
@@ -40,13 +39,17 @@ public static class Program
     /// </summary>
     public static string? AutoOpenLayer { get; internal set; }
 
-    /// <summary>When <c>--rendered-models</c> is passed, turns on the top-down "Rendered models" overlay
-    /// once the world map is up (drives the top-down render path for repro/perf testing).</summary>
+    /// <summary>
+    ///     When <c>--rendered-models</c> is passed, turns on the top-down "Rendered models" overlay
+    ///     once the world map is up (drives the top-down render path for repro/perf testing).
+    /// </summary>
     public static bool AutoRenderedModels { get; internal set; }
 
-    /// <summary>When <c>--repro-layer-toggle</c> is passed, after the world map is set up the auto-open
-    /// switches to Heightmap then back to the requested layer (with state logging) — the repro for the
-    /// "textures work until you toggle layers and back" bug.</summary>
+    /// <summary>
+    ///     When <c>--repro-layer-toggle</c> is passed, after the world map is set up the auto-open
+    ///     switches to Heightmap then back to the requested layer (with state logging) — the repro for the
+    ///     "textures work until you toggle layers and back" bug.
+    /// </summary>
     public static bool AutoReproLayerToggle { get; internal set; }
 
     [STAThread]
@@ -136,7 +139,7 @@ public static class Program
         rootCommand.Subcommands.Add(ExportCommand.Create());
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());
-        rootCommand.Subcommands.Add(CLI.Commands.Version.VersionTrackCommand.Create());
+        rootCommand.Subcommands.Add(VersionTrackCommand.Create());
 
         var exitCode = rootCommand.Parse(args).Invoke();
 
@@ -144,8 +147,8 @@ public static class Program
         // when opted in and anything actually registered during the run.
         if (resourceStats)
         {
-            CLI.Shared.CliResourceStatsReporter.WriteIfAnyRegistered(
-                Core.Diagnostics.ResourceRegistry.Instance);
+            CliResourceStatsReporter.WriteIfAnyRegistered(
+                ResourceRegistry.Instance);
         }
 
         return exitCode;

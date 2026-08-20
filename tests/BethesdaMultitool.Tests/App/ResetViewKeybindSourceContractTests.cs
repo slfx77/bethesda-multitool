@@ -12,9 +12,15 @@ namespace BethesdaMultitool.Tests.App;
 /// </summary>
 public sealed class ResetViewKeybindSourceContractTests
 {
-    private static string Read3DInput() => SourceContract.ReadAppSource("WorldView3DControl.Input.cs");
+    private static string Read3DInput()
+    {
+        return SourceContract.ReadAppSource("WorldView3DControl.Input.cs");
+    }
 
-    private static string ReadMapInput() => SourceContract.ReadAppSource("WorldMapControl.Input.cs");
+    private static string ReadMapInput()
+    {
+        return SourceContract.ReadAppSource("WorldMapControl.Input.cs");
+    }
 
     [Fact]
     public void ThreeDViewerHandlesRAndCallsTheSharedFramingEntryPoint()

@@ -28,7 +28,7 @@ public sealed class ScriptDispositionPolicy : IDispositionPolicy
 {
     public IReadOnlySet<string> RecordTypes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        "SCPT",
+        "SCPT"
     };
 
     public DispositionDecision? Decide(CatalogEntry entry)
@@ -53,8 +53,8 @@ public sealed class ScriptDispositionPolicy : IDispositionPolicy
                     PolicyId = "ScriptDispositionPolicy.RefuseDowngrade",
                     Reason =
                         $"Proto SCDA {protoCompiledSize}B < master {masterCompiledSize}B; "
-                        + "would downgrade compiled bytecode.",
-                },
+                        + "would downgrade compiled bytecode."
+                }
             };
         }
 

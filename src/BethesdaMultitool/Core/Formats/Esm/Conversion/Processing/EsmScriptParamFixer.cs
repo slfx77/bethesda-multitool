@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
@@ -6,18 +7,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 /// <summary>
 ///     Rewrites July-2010-era IsPlayerInRegion call sites in compiled SCPT bytecode.
 ///     <para>
-///     The July-era compiler encoded the Region parameter of IsPlayerInRegion (function opcode
-///     0x1260) INSIDE the compiled SCDA bytecode as an inline editor-ID string. Retail PC
-///     FalloutNV.exe cannot resolve string-encoded FORM parameters (it logs
-///     "Invalid Parameter used in script IsPlayerInRegion" and the region-gated logic never runs).
-///     PC final proves the fix shape: Obsidian recompiled these scripts, replacing each inline
-///     string with a `72 &lt;u16 index&gt;` reference into the script's SCRO table.
+///         The July-era compiler encoded the Region parameter of IsPlayerInRegion (function opcode
+///         0x1260) INSIDE the compiled SCDA bytecode as an inline editor-ID string. Retail PC
+///         FalloutNV.exe cannot resolve string-encoded FORM parameters (it logs
+///         "Invalid Parameter used in script IsPlayerInRegion" and the region-gated logic never runs).
+///         PC final proves the fix shape: Obsidian recompiled these scripts, replacing each inline
+///         string with a `72 &lt;u16 index&gt;` reference into the script's SCRO table.
 ///     </para>
 ///     <para>
-///     This pass runs AFTER normal subrecord conversion: the record data handed to
-///     <see cref="FixScriptRegionParams" /> already has little-endian subrecord headers and
-///     little-endian SCDA/SCRO payloads. Only opcode 0x1260 is touched — functions whose
-///     parameter type genuinely IS a string (e.g. GetGameSetting, 0x1100) are left alone.
+///         This pass runs AFTER normal subrecord conversion: the record data handed to
+///         <see cref="FixScriptRegionParams" /> already has little-endian subrecord headers and
+///         little-endian SCDA/SCRO payloads. Only opcode 0x1260 is touched — functions whose
+///         parameter type genuinely IS a string (e.g. GetGameSetting, 0x1100) are left alone.
 ///     </para>
 /// </summary>
 public sealed class EsmScriptParamFixer(IReadOnlyDictionary<string, uint> regionFormIdsByEdid, EsmConversionStats stats)
@@ -70,12 +71,12 @@ public sealed class EsmScriptParamFixer(IReadOnlyDictionary<string, uint> region
     ///     IsPlayerInRegion parameters and rewrites them as SCRO references.
     ///     Returns the fixed record data, or null when nothing was changed.
     ///     <para>
-    ///     Index semantics (verified against PC final and the RefCount invariant across all
-    ///     2,487 July scripts): the script's runtime reference array is the COMBINED SCRO+SCRV
-    ///     subrecord sequence in on-disk order (SCRV entries are interleaved among SCROs and
-    ///     occupy array slots), the `72` operand's u16 is a 1-based index into that combined
-    ///     array, and SCHR.RefCount equals its total length. An appended SCRO therefore gets
-    ///     index (SCRO count + SCRV count + 1).
+    ///         Index semantics (verified against PC final and the RefCount invariant across all
+    ///         2,487 July scripts): the script's runtime reference array is the COMBINED SCRO+SCRV
+    ///         subrecord sequence in on-disk order (SCRV entries are interleaved among SCROs and
+    ///         occupy array slots), the `72` operand's u16 is a 1-based index into that combined
+    ///         array, and SCHR.RefCount equals its total length. An appended SCRO therefore gets
+    ///         index (SCRO count + SCRV count + 1).
     ///     </para>
     /// </summary>
     public byte[]? FixScriptRegionParams(byte[] recordData)
@@ -276,7 +277,7 @@ public sealed class EsmScriptParamFixer(IReadOnlyDictionary<string, uint> region
                 continue;
             }
 
-            var edid = System.Text.Encoding.ASCII.GetString(recordData, paramOffset + 2, strLen);
+            var edid = Encoding.ASCII.GetString(recordData, paramOffset + 2, strLen);
             if (!_regionFormIdsByEdid.TryGetValue(edid, out var regionFormId))
             {
                 i++;

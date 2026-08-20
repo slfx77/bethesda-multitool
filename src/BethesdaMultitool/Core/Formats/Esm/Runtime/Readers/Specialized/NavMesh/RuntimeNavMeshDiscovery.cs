@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.NavMesh;
@@ -10,23 +9,59 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.NavMesh
 ///     Walks the engine's NavMeshInfoMap.InfoMap (a <c>NiTPointerMap&lt;uint32, NavMeshInfo*&gt;</c>)
 ///     to discover captured, reachable BSNavMesh structs in DMP memory and reconstruct synthetic ESM
 ///     RawSubrecord bytes (DATA + NVER + NVVX + NVTR + NVDP) for each one.
-///
 ///     The in-DMP ESM byte stream typically only carries 5-30 navmeshes (the active cell grid),
 ///     but the engine has hundreds more BSNavMesh structs loaded for surrounding cells. Those
 ///     are invisible via the editor-id hash table (NAVMs lack editor IDs in vanilla content),
 ///     so the existing <see cref="RuntimeNavMeshReader" /> never sees them and they end up
 ///     missing from <c>scanResult.NavMeshes</c> entirely.
-///
 ///     PDB-derived layouts (verified on Aug_RB MemDebug PDB):
 ///     <list type="bullet">
-///         <item><description><c>NavMeshInfoMap</c> at the NAVI singleton's iFormID: bUpdateAll(+40), <b>InfoMap(+44, NiTMapBase 16B)</b>, CellKeyNavMeshInfoMap(+60), bInit(+76).</description></item>
-///         <item><description><c>NiTMapBase&lt;..,uint,NavMeshInfo*&gt;</c>: vfptr(+0), m_uiHashSize(+4 uint32), m_ppkHashTable(+8 NiTMapItem**), m_kAllocator(+12 4B).</description></item>
-///         <item><description><c>NiTMapItem&lt;uint, NavMeshInfo*&gt;</c> (12B): m_pkNext(+0), m_key(+4 FormID), m_val(+8 NavMeshInfo*).</description></item>
-///         <item><description><c>NavMeshInfo</c> (92B): NavMeshID(+0), ParentSpaceID(+4), uiFlags(+8), iCellKey(+12 packed gridX/gridY), ApproxLocation(+16 NiPoint3), <b>pNavMesh(+84)</b>, pBounds(+88).</description></item>
-///         <item><description><c>BSNavMesh</c> (280B, FormType 0x43): pParentCell(+52), <b>Vertices(+56 BSSimpleArray)</b>, <b>Triangles(+72 BSSimpleArray)</b>, ExtraEdgeInfo(+88), <b>DoorPortals(+104 BSSimpleArray)</b>.</description></item>
-///         <item><description><c>NavMeshVertex</c> (12B): NiPoint3 X/Y/Z floats — matches NVVX format directly.</description></item>
-///         <item><description><c>NavMeshTriangle</c> (16B): Vertices(3×int16, +0), Triangles(3×int16 adj-tri, +6), TriangleFlags(uint32, +12) — matches NVTR.</description></item>
-///         <item><description><c>NavMeshTriangleDoorPortal</c> (8B): pDoorForm(+0 TESObjectDOOR*), iOwningTriangleIndex(uint16, +4), padding(+6) — NVDP after dereferencing the door pointer to its FormID.</description></item>
+///         <item>
+///             <description>
+///                 <c>NavMeshInfoMap</c> at the NAVI singleton's iFormID: bUpdateAll(+40),
+///                 <b>InfoMap(+44, NiTMapBase 16B)</b>, CellKeyNavMeshInfoMap(+60), bInit(+76).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>NiTMapBase&lt;..,uint,NavMeshInfo*&gt;</c>: vfptr(+0), m_uiHashSize(+4 uint32),
+///                 m_ppkHashTable(+8 NiTMapItem**), m_kAllocator(+12 4B).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>NiTMapItem&lt;uint, NavMeshInfo*&gt;</c> (12B): m_pkNext(+0), m_key(+4 FormID), m_val(+8
+///                 NavMeshInfo*).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>NavMeshInfo</c> (92B): NavMeshID(+0), ParentSpaceID(+4), uiFlags(+8), iCellKey(+12 packed
+///                 gridX/gridY), ApproxLocation(+16 NiPoint3), <b>pNavMesh(+84)</b>, pBounds(+88).
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>BSNavMesh</c> (280B, FormType 0x43): pParentCell(+52), <b>Vertices(+56 BSSimpleArray)</b>,
+///                 <b>Triangles(+72 BSSimpleArray)</b>, ExtraEdgeInfo(+88), <b>DoorPortals(+104 BSSimpleArray)</b>.
+///             </description>
+///         </item>
+///         <item>
+///             <description><c>NavMeshVertex</c> (12B): NiPoint3 X/Y/Z floats — matches NVVX format directly.</description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>NavMeshTriangle</c> (16B): Vertices(3×int16, +0), Triangles(3×int16 adj-tri, +6),
+///                 TriangleFlags(uint32, +12) — matches NVTR.
+///             </description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>NavMeshTriangleDoorPortal</c> (8B): pDoorForm(+0 TESObjectDOOR*),
+///                 iOwningTriangleIndex(uint16, +4), padding(+6) — NVDP after dereferencing the door pointer to its
+///                 FormID.
+///             </description>
+///         </item>
 ///     </list>
 /// </summary>
 internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
@@ -150,7 +185,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
 
                 var navmFormId = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemKeyOffset);
                 var navMeshInfoVa = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemValueOffset);
-                itemVa = BinaryUtils.ReadUInt32BE(itemBytes, NiTMapItemNextOffset);
+                itemVa = BinaryUtils.ReadUInt32BE(itemBytes);
 
                 if (navmFormId is 0 or 0xFFFFFFFF
                     || seenFormIds.Contains(navmFormId)
@@ -176,14 +211,25 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
     ///     point for runtime NAVM discovery: named cells DO have editor IDs and DO appear in
     ///     <c>ScanResult.RuntimeEditorIds</c>, unlike the NavMeshInfoMap singleton or vanilla NAVMs
     ///     themselves.
-    ///
     ///     <para>
-    ///     PDB-derived layout (Aug_RB MemDebug, UDT 0x00017374 — TESObjectCELL is 192 bytes):
+    ///         PDB-derived layout (Aug_RB MemDebug, UDT 0x00017374 — TESObjectCELL is 192 bytes):
     ///     </para>
     ///     <list type="bullet">
-    ///         <item><description><c>TESObjectCELL +116</c> = <c>pNavMeshes</c>: 4-byte pointer to <c>NavMeshArray</c>.</description></item>
-    ///         <item><description><c>NavMeshArray</c> (UDT 0x0002C7DB, 16 bytes total): single member <c>NavMeshes</c> at offset 0, a <c>BSSimpleArray&lt;NavMeshPtr, 1024&gt;</c>.</description></item>
-    ///         <item><description><c>BSSimpleArray</c> header: vfptr(+0), pBuffer(+4), iSize(+8), iReservedSize(+12). pBuffer points to a heap-allocated array of <c>NavMeshPtr</c> (4-byte NavMesh pointers).</description></item>
+    ///         <item>
+    ///             <description><c>TESObjectCELL +116</c> = <c>pNavMeshes</c>: 4-byte pointer to <c>NavMeshArray</c>.</description>
+    ///         </item>
+    ///         <item>
+    ///             <description>
+    ///                 <c>NavMeshArray</c> (UDT 0x0002C7DB, 16 bytes total): single member <c>NavMeshes</c> at offset
+    ///                 0, a <c>BSSimpleArray&lt;NavMeshPtr, 1024&gt;</c>.
+    ///             </description>
+    ///         </item>
+    ///         <item>
+    ///             <description>
+    ///                 <c>BSSimpleArray</c> header: vfptr(+0), pBuffer(+4), iSize(+8), iReservedSize(+12). pBuffer
+    ///                 points to a heap-allocated array of <c>NavMeshPtr</c> (4-byte NavMesh pointers).
+    ///             </description>
+    ///         </item>
     ///     </list>
     /// </summary>
     public List<NavMeshRecord> DiscoverForCell(RuntimeEditorIdEntry cellEntry)
@@ -222,7 +268,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return [];
         }
 
-        var navMeshArrayVa = BinaryUtils.ReadUInt32BE(pNavMeshesBytes, 0);
+        var navMeshArrayVa = BinaryUtils.ReadUInt32BE(pNavMeshesBytes);
         if (!context.IsValidPointer(navMeshArrayVa))
         {
             return [];
@@ -306,7 +352,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return null;
         }
 
-        var infoFormId = BinaryUtils.ReadUInt32BE(infoBytes, NavMeshInfoFormIdOffset);
+        var infoFormId = BinaryUtils.ReadUInt32BE(infoBytes);
         if (infoFormId != expectedFormId)
         {
             // The InfoMap key should match NavMeshInfo.NavMeshID exactly. Mismatch means
@@ -344,7 +390,10 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
     ///     occasionally show up with FormID=0 — those are filtered).
     /// </summary>
     /// <param name="navMeshVa">Virtual address of the BSNavMesh instance.</param>
-    /// <param name="fallbackParentCellFormId">Parent cell FormID to use when <c>pParentCell</c> is unmapped (typically the editor-id entry's own FormID for the cell-based discovery path).</param>
+    /// <param name="fallbackParentCellFormId">
+    ///     Parent cell FormID to use when <c>pParentCell</c> is unmapped (typically the
+    ///     editor-id entry's own FormID for the cell-based discovery path).
+    /// </param>
     /// <param name="seenFormIds">Per-discovery-call dedup set; mutated to record FormIDs the caller has already surfaced.</param>
     private NavMeshRecord? TryReadNavMeshAtVa(
         uint navMeshVa,
@@ -402,7 +451,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         var nvtr = ProjectTrianglesToNvtr(trianglesBytes);
         var nvdp = ProjectDoorPortalsToNvdp(doorPortalsBytes);
         var data = BuildDataPayload(parentCellFormId, vertexCount, triangleCount,
-            edgeLinkCount: 0u, doorLinkCount: (uint)doorPortalCount);
+            0u, (uint)doorPortalCount);
         var nver = BuildNverPayload(NavmeshFnvVersion);
 
         var rawSubrecords = new List<NavMeshSubrecord>
@@ -414,10 +463,12 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         {
             rawSubrecords.Add(new NavMeshSubrecord("NVVX", nvvx));
         }
+
         if (nvtr is not null)
         {
             rawSubrecords.Add(new NavMeshSubrecord("NVTR", nvtr));
         }
+
         if (nvdp is not null)
         {
             rawSubrecords.Add(new NavMeshSubrecord("NVDP", nvdp));
@@ -504,7 +555,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return null;
         }
 
-        var formId = BinaryUtils.ReadUInt32BE(bytes, 0);
+        var formId = BinaryUtils.ReadUInt32BE(bytes);
         return formId is 0 or 0xFFFFFFFF ? null : formId;
     }
 

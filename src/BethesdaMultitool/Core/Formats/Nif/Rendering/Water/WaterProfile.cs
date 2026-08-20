@@ -20,28 +20,36 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 /// </summary>
 public enum WaterShaderVariant
 {
-    /// <summary>The shared recovered RT-free color core used by FO3/FNV and the bounded Skyrim path;
-    /// game-specific normal/prepass/input contracts remain outside this variant selector.</summary>
+    /// <summary>
+    ///     The shared recovered RT-free color core used by FO3/FNV and the bounded Skyrim path;
+    ///     game-specific normal/prepass/input contracts remain outside this variant selector.
+    /// </summary>
     FnvWater000,
 
-    /// <summary>Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
-    /// single sun specular. Compiled from its own file, <c>water_oblivion.frag.hlsl</c>.</summary>
+    /// <summary>
+    ///     Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
+    ///     single sun specular. Compiled from its own file, <c>water_oblivion.frag.hlsl</c>.
+    /// </summary>
     OblivionWater000,
 
-    /// <summary>FO4's <c>BSWaterShader</c> (D3D11 ps_5_0, disassembled from
-    /// <c>Fallout4 - Shaders.ba2</c> → <c>ShadersFX\Shaders011.fxp</c> group 5; see
-    /// <c>tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt</c>): Oren-Nayar sun diffuse +
-    /// transmission/backscatter, normalized Kelemen/Schlick Blinn specular (F0 = 0.2), analytic
-    /// Shallow→Deep color/alpha ramps by water column (the engine's baked depth LUT), reflection ×
-    /// lighting composite. Compiled from its own file, <c>water_fo4.frag.hlsl</c>.</summary>
+    /// <summary>
+    ///     FO4's <c>BSWaterShader</c> (D3D11 ps_5_0, disassembled from
+    ///     <c>Fallout4 - Shaders.ba2</c> → <c>ShadersFX\Shaders011.fxp</c> group 5; see
+    ///     <c>tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt</c>): Oren-Nayar sun diffuse +
+    ///     transmission/backscatter, normalized Kelemen/Schlick Blinn specular (F0 = 0.2), analytic
+    ///     Shallow→Deep color/alpha ramps by water column (the engine's baked depth LUT), reflection ×
+    ///     lighting composite. Compiled from its own file, <c>water_fo4.frag.hlsl</c>.
+    /// </summary>
     Fo4Water,
 
-    /// <summary>Morrowind's fixed-function water — NetImmerse 4.0.0.2 predates water pixel shaders,
-    /// so there is nothing to disassemble: the engine draws an animated tiled diffuse plane
-    /// (<c>Morrowind.ini [Water]</c>: <c>textures\water\water00–31.dds</c> cycling at
-    /// <c>SurfaceFPS=12</c>, surface opacity <c>World Alpha=0.75</c>). Compiled from its own file,
-    /// <c>water_morrowind.frag.hlsl</c>; the optional <c>[PixelWater]</c> terrain-reflection
-    /// path is a follow-up. Derivation: <c>docs/research/morrowind_atmosphere_water_model.md</c>.</summary>
+    /// <summary>
+    ///     Morrowind's fixed-function water — NetImmerse 4.0.0.2 predates water pixel shaders,
+    ///     so there is nothing to disassemble: the engine draws an animated tiled diffuse plane
+    ///     (<c>Morrowind.ini [Water]</c>: <c>textures\water\water00–31.dds</c> cycling at
+    ///     <c>SurfaceFPS=12</c>, surface opacity <c>World Alpha=0.75</c>). Compiled from its own file,
+    ///     <c>water_morrowind.frag.hlsl</c>; the optional <c>[PixelWater]</c> terrain-reflection
+    ///     path is a follow-up. Derivation: <c>docs/research/morrowind_atmosphere_water_model.md</c>.
+    /// </summary>
     MorrowindWater,
 
     /// <summary>
@@ -53,7 +61,7 @@ public enum WaterShaderVariant
     ///     so it cannot produce the silhouette fringe the depth-driven variants get from the
     ///     nearest-sample MSAA depth resolve. Compiled from its own file, <c>water_flat.frag.hlsl</c>.
     /// </summary>
-    FlatTinted,
+    FlatTinted
 }
 
 /// <summary>
@@ -71,7 +79,7 @@ public enum LegacySurfaceFrameRole
     Diffuse,
 
     /// <summary>Oblivion: frames are WATER000's global animated NormalMap input.</summary>
-    GlobalNormal,
+    GlobalNormal
 }
 
 /// <summary>
@@ -92,65 +100,6 @@ public enum LegacySurfaceFrameRole
 /// </summary>
 public sealed record WaterProfile
 {
-    /// <summary>Which shader path / PSO the renderer compiles and selects for this game.</summary>
-    public WaterShaderVariant ShaderVariant { get; init; }
-
-    /// <summary>
-    ///     The per-game water pixel-shader FILE for <see cref="ShaderVariant" /> (the
-    ///     <see cref="GrassShaderProfile" /> pattern: game identity is a file, technique axes stay
-    ///     preprocessor macros — <c>WATER_HARDWARE_OCCLUSION</c>, <c>FO4_WATER_ARCHITECTURAL</c>).
-    ///     FNV's separately compiled WATER001 program (<c>water_fnv001.frag.hlsl</c>) is not selected
-    ///     here: it is a draw-time route inside the FNV variant, not a per-game profile decision.
-    /// </summary>
-    public string PixelShaderFile => ShaderVariant switch
-    {
-        WaterShaderVariant.OblivionWater000 => "water_oblivion.frag.hlsl",
-        WaterShaderVariant.Fo4Water => "water_fo4.frag.hlsl",
-        WaterShaderVariant.MorrowindWater => "water_morrowind.frag.hlsl",
-        WaterShaderVariant.FlatTinted => "water_flat.frag.hlsl",
-        _ => "water_fnv.frag.hlsl",
-    };
-
-    /// <summary>World units per NNAM normal-map tile at the base octave (<c>uNoiseParams.y</c>); the shader
-    /// samples 3 octaves at ×1/×2.2/×4.7 this frequency, so the finest ripple ≈ this/4.7. 512 → ripple
-    /// detail down to ~110 world units (FNV cells are 4096). Larger = broader swell, smaller = finer/busier;
-    /// this is the single spatial-frequency knob (the recovered VS's absolute <c>TexScale</c>).</summary>
-    public uint NoiseTilingWorldUnits { get; init; }
-
-    /// <summary>Depth-sample occlusion tie-break (world units) so a shoreline where water and terrain are
-    /// ~coplanar resolves in the water's favour instead of z-fighting (3D-2). Tiny vs the DepthFalloff.</summary>
-    public float DepthTieBiasWorldUnits { get; init; }
-
-    /// <summary>Frames/second of the legacy <c>water00..31.dds</c> cycle. Morrowind samples it as
-    /// the fixed-function diffuse surface; Oblivion samples it as WATER000's global NormalMap.
-    /// Both shipped INIs specify 12 FPS. Zero means no frame cycle.</summary>
-    public float SurfaceFrameFps { get; init; }
-
-    /// <summary>How (and whether) the legacy <c>water00–31.dds</c> frames bind for this game —
-    /// the texture-slot side of <see cref="SurfaceFrameFps" />.</summary>
-    public LegacySurfaceFrameRole LegacyFrames { get; init; } = LegacySurfaceFrameRole.None;
-
-    /// <summary>True when the WATR TNAM detail texture is sampled as a per-water diffuse layer
-    /// (Oblivion only; other games' TNAM is unused by the renderer).</summary>
-    public bool UsesWatrDetailTexture { get; init; }
-
-    /// <summary>Opacity of a flat plane: <see cref="WaterShaderVariant.MorrowindWater" />'s
-    /// fixed-function surface (<c>[Water] World Alpha</c>) and
-    /// <see cref="WaterShaderVariant.FlatTinted" />'s stand-in, which uses it whenever the WATR
-    /// authored no ANAM opacity of its own. Unused by the recovered shader variants — their alpha is
-    /// derived in-shader from fresnel/depth ramps.</summary>
-    public float SurfaceAlpha { get; init; }
-
-    /// <summary>Fallback Shallow/Deep/Reflection tints when the worldspace has no resolvable WATR
-    /// appearance (DNAM colors).</summary>
-    public Vector3 DefaultShallow { get; init; }
-
-    /// <inheritdoc cref="DefaultShallow" />
-    public Vector3 DefaultDeep { get; init; }
-
-    /// <inheritdoc cref="DefaultShallow" />
-    public Vector3 DefaultReflection { get; init; }
-
     /// <summary>
     ///     The canonical FNV profile, shared by FO3 (identical <c>shaderpackage019.sdp</c> water set) and
     ///     the bounded Skyrim path (RE-confirmed same RT-free core). It is no longer the catch-all for
@@ -170,7 +119,7 @@ public sealed record WaterProfile
         DepthTieBiasWorldUnits = 1f,
         DefaultShallow = new Vector3(0.12f, 0.24f, 0.32f),
         DefaultDeep = new Vector3(0.03f, 0.09f, 0.16f),
-        DefaultReflection = new Vector3(0.22f, 0.32f, 0.40f),
+        DefaultReflection = new Vector3(0.22f, 0.32f, 0.40f)
     };
 
     /// <summary>
@@ -185,7 +134,7 @@ public sealed record WaterProfile
         ShaderVariant = WaterShaderVariant.OblivionWater000,
         SurfaceFrameFps = 12f, // Oblivion_default.ini [Water] uSurfaceFPS=12
         LegacyFrames = LegacySurfaceFrameRole.GlobalNormal,
-        UsesWatrDetailTexture = true,
+        UsesWatrDetailTexture = true
     };
 
     /// <summary>
@@ -198,7 +147,7 @@ public sealed record WaterProfile
     /// </summary>
     public static readonly WaterProfile Fallout4 = Fnv with
     {
-        ShaderVariant = WaterShaderVariant.Fo4Water,
+        ShaderVariant = WaterShaderVariant.Fo4Water
     };
 
     /// <summary>
@@ -221,10 +170,10 @@ public sealed record WaterProfile
     public static readonly WaterProfile Morrowind = Fnv with
     {
         ShaderVariant = WaterShaderVariant.MorrowindWater,
-        NoiseTilingWorldUnits = 819,  // [Water] SurfaceTileCount=10 per 8192 cell — TO-CONFIRM vs oracle
-        SurfaceFrameFps = 12f,        // [Water] SurfaceFPS=12
-        SurfaceAlpha = 0.75f,         // [Water] World Alpha=0.75
-        LegacyFrames = LegacySurfaceFrameRole.Diffuse,
+        NoiseTilingWorldUnits = 819, // [Water] SurfaceTileCount=10 per 8192 cell — TO-CONFIRM vs oracle
+        SurfaceFrameFps = 12f, // [Water] SurfaceFPS=12
+        SurfaceAlpha = 0.75f, // [Water] World Alpha=0.75
+        LegacyFrames = LegacySurfaceFrameRole.Diffuse
     };
 
     /// <summary>
@@ -249,8 +198,81 @@ public sealed record WaterProfile
     {
         ShaderVariant = WaterShaderVariant.FlatTinted,
         SurfaceAlpha = 0.6f,
-        DefaultShallow = new Vector3(0.10f, 0.28f, 0.42f),
+        DefaultShallow = new Vector3(0.10f, 0.28f, 0.42f)
     };
+
+    /// <summary>Which shader path / PSO the renderer compiles and selects for this game.</summary>
+    public WaterShaderVariant ShaderVariant { get; init; }
+
+    /// <summary>
+    ///     The per-game water pixel-shader FILE for <see cref="ShaderVariant" /> (the
+    ///     <see cref="GrassShaderProfile" /> pattern: game identity is a file, technique axes stay
+    ///     preprocessor macros — <c>WATER_HARDWARE_OCCLUSION</c>, <c>FO4_WATER_ARCHITECTURAL</c>).
+    ///     FNV's separately compiled WATER001 program (<c>water_fnv001.frag.hlsl</c>) is not selected
+    ///     here: it is a draw-time route inside the FNV variant, not a per-game profile decision.
+    /// </summary>
+    public string PixelShaderFile => ShaderVariant switch
+    {
+        WaterShaderVariant.OblivionWater000 => "water_oblivion.frag.hlsl",
+        WaterShaderVariant.Fo4Water => "water_fo4.frag.hlsl",
+        WaterShaderVariant.MorrowindWater => "water_morrowind.frag.hlsl",
+        WaterShaderVariant.FlatTinted => "water_flat.frag.hlsl",
+        _ => "water_fnv.frag.hlsl"
+    };
+
+    /// <summary>
+    ///     World units per NNAM normal-map tile at the base octave (<c>uNoiseParams.y</c>); the shader
+    ///     samples 3 octaves at ×1/×2.2/×4.7 this frequency, so the finest ripple ≈ this/4.7. 512 → ripple
+    ///     detail down to ~110 world units (FNV cells are 4096). Larger = broader swell, smaller = finer/busier;
+    ///     this is the single spatial-frequency knob (the recovered VS's absolute <c>TexScale</c>).
+    /// </summary>
+    public uint NoiseTilingWorldUnits { get; init; }
+
+    /// <summary>
+    ///     Depth-sample occlusion tie-break (world units) so a shoreline where water and terrain are
+    ///     ~coplanar resolves in the water's favour instead of z-fighting (3D-2). Tiny vs the DepthFalloff.
+    /// </summary>
+    public float DepthTieBiasWorldUnits { get; init; }
+
+    /// <summary>
+    ///     Frames/second of the legacy <c>water00..31.dds</c> cycle. Morrowind samples it as
+    ///     the fixed-function diffuse surface; Oblivion samples it as WATER000's global NormalMap.
+    ///     Both shipped INIs specify 12 FPS. Zero means no frame cycle.
+    /// </summary>
+    public float SurfaceFrameFps { get; init; }
+
+    /// <summary>
+    ///     How (and whether) the legacy <c>water00–31.dds</c> frames bind for this game —
+    ///     the texture-slot side of <see cref="SurfaceFrameFps" />.
+    /// </summary>
+    public LegacySurfaceFrameRole LegacyFrames { get; init; } = LegacySurfaceFrameRole.None;
+
+    /// <summary>
+    ///     True when the WATR TNAM detail texture is sampled as a per-water diffuse layer
+    ///     (Oblivion only; other games' TNAM is unused by the renderer).
+    /// </summary>
+    public bool UsesWatrDetailTexture { get; init; }
+
+    /// <summary>
+    ///     Opacity of a flat plane: <see cref="WaterShaderVariant.MorrowindWater" />'s
+    ///     fixed-function surface (<c>[Water] World Alpha</c>) and
+    ///     <see cref="WaterShaderVariant.FlatTinted" />'s stand-in, which uses it whenever the WATR
+    ///     authored no ANAM opacity of its own. Unused by the recovered shader variants — their alpha is
+    ///     derived in-shader from fresnel/depth ramps.
+    /// </summary>
+    public float SurfaceAlpha { get; init; }
+
+    /// <summary>
+    ///     Fallback Shallow/Deep/Reflection tints when the worldspace has no resolvable WATR
+    ///     appearance (DNAM colors).
+    /// </summary>
+    public Vector3 DefaultShallow { get; init; }
+
+    /// <inheritdoc cref="DefaultShallow" />
+    public Vector3 DefaultDeep { get; init; }
+
+    /// <inheritdoc cref="DefaultShallow" />
+    public Vector3 DefaultReflection { get; init; }
 
     /// <summary>
     ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set and
@@ -262,13 +284,16 @@ public sealed record WaterProfile
     ///     FNV's over foreign data was exactly that guess wearing a recovered shader's name. Per-game
     ///     color fidelity still comes from the per-game WATR data parse either way.
     /// </summary>
-    public static WaterProfile ForGame(BethesdaGame game) => game switch
+    public static WaterProfile ForGame(BethesdaGame game)
     {
-        BethesdaGame.Morrowind => Morrowind,
-        BethesdaGame.Oblivion => Oblivion,
-        BethesdaGame.Fallout4 => Fallout4,
-        BethesdaGame.Fallout76 => Fallout76,
-        BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas or BethesdaGame.Skyrim => Fnv,
-        _ => Flat,
-    };
+        return game switch
+        {
+            BethesdaGame.Morrowind => Morrowind,
+            BethesdaGame.Oblivion => Oblivion,
+            BethesdaGame.Fallout4 => Fallout4,
+            BethesdaGame.Fallout76 => Fallout76,
+            BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas or BethesdaGame.Skyrim => Fnv,
+            _ => Flat
+        };
+    }
 }

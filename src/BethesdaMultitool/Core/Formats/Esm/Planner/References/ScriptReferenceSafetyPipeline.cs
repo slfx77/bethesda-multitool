@@ -7,13 +7,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 /// <summary>Runs top-level and embedded script fixed-table safety as one planner phase.</summary>
 internal static class ScriptReferenceSafetyPipeline
 {
-    internal sealed record Result(
-        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
-        ImmutableDictionary<uint, uint> SourceToEmitted,
-        ImmutableHashSet<uint> EmittedFormIds,
-        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> References,
-        ImmutableArray<PlanDiagnostic> Diagnostics);
-
     internal static Result Apply(
         IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> decisions,
         ImmutableDictionary<uint, uint> sourceToEmitted,
@@ -36,4 +29,11 @@ internal static class ScriptReferenceSafetyPipeline
             inline.References,
             topLevel.Diagnostics.AddRange(inline.Diagnostics));
     }
+
+    internal sealed record Result(
+        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
+        ImmutableDictionary<uint, uint> SourceToEmitted,
+        ImmutableHashSet<uint> EmittedFormIds,
+        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> References,
+        ImmutableArray<PlanDiagnostic> Diagnostics);
 }

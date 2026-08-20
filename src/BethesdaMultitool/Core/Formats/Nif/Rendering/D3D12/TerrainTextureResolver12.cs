@@ -1,9 +1,10 @@
+using System.Diagnostics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
-
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Resources;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -19,19 +20,23 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 internal sealed class TerrainTextureResolver12 : IDisposable
 {
-    private readonly IReadOnlyDictionary<uint, LandscapeTextureRecord> _ltexByFormId;
-    private readonly IReadOnlyDictionary<uint, TextureSetRecord> _txstByFormId;
-    private readonly NifGpuTextureResolver _textureResolver;
-    private readonly GpuTextureCache12 _textureCache;
     private readonly Dictionary<uint, GpuTextureCache12.Entry> _byLtex = new();
+    private readonly BethesdaGame _game;
+    private readonly IReadOnlyDictionary<uint, LandscapeTextureRecord> _ltexByFormId;
     private readonly Dictionary<uint, GpuTextureCache12.Entry?> _normalByLtex = new();
-    private readonly BethesdaMultitool.Core.Games.BethesdaGame _game;
+    private readonly GpuTextureCache12 _textureCache;
+    private readonly NifGpuTextureResolver _textureResolver;
+    private readonly IReadOnlyDictionary<uint, TextureSetRecord> _txstByFormId;
+
     private GpuTextureCache12.Entry? _engineDefaultNormal;
+
     // Timestamp of the previous ResetFrameStats call (time-based streaming pace; 0 = first frame).
     private long _lastFrameTimestamp;
 
-    /// <summary>EMA of the observed frame duration that drives the streaming budget scale. Smoothed
-    /// because the raw previous frame is partly a RESULT of this budget — see StreamingFrameBudgetScaler.</summary>
+    /// <summary>
+    ///     EMA of the observed frame duration that drives the streaming budget scale. Smoothed
+    ///     because the raw previous frame is partly a RESULT of this budget — see StreamingFrameBudgetScaler.
+    /// </summary>
     private double _smoothedFrameSeconds;
 
     public TerrainTextureResolver12(
@@ -42,27 +47,31 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         IReadOnlyDictionary<uint, LandscapeTextureRecord> ltexByFormId,
         IReadOnlyDictionary<uint, TextureSetRecord> txstByFormId,
         string[] texturesBsaPaths,
-        BethesdaMultitool.Core.Games.BethesdaGame game = BethesdaMultitool.Core.Games.BethesdaGame.Unknown)
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         _ltexByFormId = ltexByFormId;
         _txstByFormId = txstByFormId;
         _game = game;
         _textureResolver = new NifGpuTextureResolver(texturesBsaPaths);
         _textureCache = new GpuTextureCache12(gpu, recorder, heap, _textureResolver, deletionQueue)
-            .RegisterWith(Diagnostics.ResourceRegistry.Instance, "terrain");
+            .RegisterWith(ResourceRegistry.Instance, "terrain");
     }
 
     /// <summary>1×1 white texture returned only when even the engine-default fails.</summary>
     public GpuTextureCache12.Entry WhiteFallback => _textureCache.WhitePixel;
 
-    /// <summary>The flat-normal placeholder (encoded (0,0,1)) — e.g. the water renderer's
-    /// ripples-off substitute surface.</summary>
+    /// <summary>
+    ///     The flat-normal placeholder (encoded (0,0,1)) — e.g. the water renderer's
+    ///     ripples-off substitute surface.
+    /// </summary>
     public GpuTextureCache12.Entry FlatNormalFallback => _textureCache.FlatNormal;
 
-    /// <summary>Engine-default landscape diffuse for the active game (FNV DirtWasteland01, FO4
-    /// CommonwealthDefault01, …). Lazy — first access uploads it via the texture cache (which records
-    /// onto the current frame's command list). Game-keyed so a non-FNV worldspace's no-BTXT quadrants
-    /// don't bind FNV's texture (absent in their archives → white base).</summary>
+    /// <summary>
+    ///     Engine-default landscape diffuse for the active game (FNV DirtWasteland01, FO4
+    ///     CommonwealthDefault01, …). Lazy — first access uploads it via the texture cache (which records
+    ///     onto the current frame's command list). Game-keyed so a non-FNV worldspace's no-BTXT quadrants
+    ///     don't bind FNV's texture (absent in their archives → white base).
+    /// </summary>
     public GpuTextureCache12.Entry EngineDefault =>
         _textureCache.GetOrUpload(EngineDefaultLandscapeTexture.DiffuseFor(_game));
 
@@ -80,8 +89,8 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     public float CellWorldSize => GameProfiles.CellWorldSizeOrDefault(_game);
 
     public bool LandscapeNormalMappingEnabled =>
-        _game is BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
-            or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3;
+        _game is BethesdaGame.FalloutNewVegas
+            or BethesdaGame.Fallout3;
 
     /// <summary>
     ///     Engine-default landscape normal for FNV's no-BTXT/base-layer sentinel. Null means there is
@@ -94,7 +103,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
             if (!LandscapeNormalMappingEnabled) return null;
             var path = EngineDefaultLandscapeTexture.NormalFor(_game);
             if (string.IsNullOrWhiteSpace(path)) return null;
-            return _engineDefaultNormal ??= _textureCache.GetOrUpload(path, isNormalMap: true);
+            return _engineDefaultNormal ??= _textureCache.GetOrUpload(path, true);
         }
     }
 
@@ -112,6 +121,15 @@ internal sealed class TerrainTextureResolver12 : IDisposable
 
     public int PendingTextureUploads => _textureCache.PendingUploadCount;
 
+    public void Dispose()
+    {
+        _byLtex.Clear();
+        _normalByLtex.Clear();
+        _engineDefaultNormal = null;
+        _textureCache.Dispose();
+        _textureResolver.Dispose();
+    }
+
     public void ResetFrameStats()
     {
         FrameCacheMisses = 0;
@@ -119,7 +137,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         // terrain texture streaming keeps its throughput when the frame rate collapses under GPU
         // contention. Same pattern as ReferenceMeshCache12.ResetFrameStats.
         // Driven from a SMOOTHED frame time so one hitch cannot license the burst that sustains it.
-        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        var now = Stopwatch.GetTimestamp();
         double scale;
         if (_lastFrameTimestamp == 0)
         {
@@ -127,10 +145,10 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         }
         else
         {
-            _smoothedFrameSeconds = Core.Resources.StreamingFrameBudgetScaler.SmoothFrameSeconds(
+            _smoothedFrameSeconds = StreamingFrameBudgetScaler.SmoothFrameSeconds(
                 _smoothedFrameSeconds,
-                System.Diagnostics.Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds);
-            scale = Core.Resources.StreamingFrameBudgetScaler.Scale(_smoothedFrameSeconds);
+                Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds);
+            scale = StreamingFrameBudgetScaler.Scale(_smoothedFrameSeconds);
         }
 
         _lastFrameTimestamp = now;
@@ -172,7 +190,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         FrameCacheMisses++;
 
         var path = LandscapeTexturePathResolver.ResolveNormal(ltexFormId, _ltexByFormId, _txstByFormId);
-        var entry = path is null ? null : _textureCache.GetOrUpload(path, isNormalMap: true);
+        var entry = path is null ? null : _textureCache.GetOrUpload(path, true);
         _normalByLtex[ltexFormId] = entry;
         return entry;
     }
@@ -188,7 +206,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     public uint? ResolveNormalMapBindlessIndex(string? texturePath)
     {
         if (string.IsNullOrWhiteSpace(texturePath)) return null;
-        return _textureCache.GetOrUpload(texturePath, isNormalMap: true).BindlessIndex;
+        return _textureCache.GetOrUpload(texturePath, true).BindlessIndex;
     }
 
     /// <summary>
@@ -196,8 +214,10 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     ///     Used for the Oblivion water-surface animation frames the engine generates at runtime
     ///     (retail ships no <c>water00-31.dds</c>) — see <c>OblivionWaterSurfaceSynthesizer</c>.
     /// </summary>
-    public uint GetOrCreateSyntheticBindlessIndex(string key, int width, int height, byte[] rgba) =>
-        _textureCache.GetOrCreateSynthetic(key, width, height, rgba).BindlessIndex;
+    public uint GetOrCreateSyntheticBindlessIndex(string key, int width, int height, byte[] rgba)
+    {
+        return _textureCache.GetOrCreateSynthetic(key, width, height, rgba).BindlessIndex;
+    }
 
     /// <summary>
     ///     Resolves an arbitrary diffuse texture path (e.g. the CLMT sun texture or a fixed sky texture
@@ -218,14 +238,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     ///     texture) so nothing is shown that the game doesn't actually ship — no per-game path table.
     /// </summary>
     public bool TextureExists(string? texturePath)
-        => !string.IsNullOrWhiteSpace(texturePath) && _textureResolver.Exists(texturePath);
-
-    public void Dispose()
     {
-        _byLtex.Clear();
-        _normalByLtex.Clear();
-        _engineDefaultNormal = null;
-        _textureCache.Dispose();
-        _textureResolver.Dispose();
+        return !string.IsNullOrWhiteSpace(texturePath) && _textureResolver.Exists(texturePath);
     }
 }

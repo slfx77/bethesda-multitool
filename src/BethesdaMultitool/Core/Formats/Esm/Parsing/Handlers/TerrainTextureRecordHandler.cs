@@ -11,6 +11,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 /// </summary>
 internal sealed class TerrainTextureRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
+    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool isBigEndian)
+    {
+        return isBigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
+            : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
+    }
+
     #region Texture Sets
 
     /// <summary>
@@ -451,11 +458,4 @@ internal sealed class TerrainTextureRecordHandler(RecordParserContext context) :
     }
 
     #endregion
-
-    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool isBigEndian)
-    {
-        return isBigEndian
-            ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
-            : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
-    }
 }

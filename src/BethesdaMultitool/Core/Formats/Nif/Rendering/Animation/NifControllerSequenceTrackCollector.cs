@@ -43,13 +43,6 @@ internal static class NifControllerSequenceTrackCollector
     // NiTransformInterpolator: static pose (Vec3 + Quat + float = 32 bytes), then Data ref.
     private const int InterpolatorDataRefOffset = 32;
 
-    private enum CycleType
-    {
-        Loop = 0,
-        Reverse = 1,
-        Clamp = 2,
-    }
-
     internal static NifMeshAnimation? Collect(byte[] data, NifInfo nif)
     {
         if (nif.BinaryVersion != NifVersions.Gamebryo202007 || nif.BsVersion == 0)
@@ -85,7 +78,7 @@ internal static class NifControllerSequenceTrackCollector
             return null;
         }
 
-        var tail = pos + (numBlocks * ControlledBlockStride);
+        var tail = pos + numBlocks * ControlledBlockStride;
         if (tail + SequenceTailSize > end)
         {
             return null; // stride mismatch for this stream flavor — bail rather than misread
@@ -126,7 +119,7 @@ internal static class NifControllerSequenceTrackCollector
         var tracksByNode = new Dictionary<int, NifNodeTrack>();
         for (var i = 0; i < numBlocks; i++)
         {
-            var blockStart = pos + (i * ControlledBlockStride);
+            var blockStart = pos + i * ControlledBlockStride;
             var interpolatorRef = BinaryUtils.ReadInt32(data, blockStart, be);
             var nodeNameIndex = BinaryUtils.ReadInt32(data, blockStart + NodeNameFieldOffset, be);
             if (interpolatorRef < 0 || interpolatorRef >= nif.Blocks.Count ||
@@ -159,7 +152,7 @@ internal static class NifControllerSequenceTrackCollector
             var dataRef = BinaryUtils.ReadInt32(
                 data, interpolator.DataOffset + InterpolatorDataRefOffset, be);
             var track = NifKeyframeDataTrackReader.TryReadTrack(
-                data, nif, dataRef, nodeName, frequency, phase: 0f);
+                data, nif, dataRef, nodeName, frequency, 0f);
             if (track is { HasMotion: true })
             {
                 tracksByNode[nodeBlock] = track;
@@ -180,7 +173,7 @@ internal static class NifControllerSequenceTrackCollector
         // CYCLE_REVERSE (ping-pong) plays as a plain loop — labeled stand-in; no ambient asset
         // sighted with it yet. CYCLE_CLAMP holds the final pose (MapTime clamps at stop).
         return new NifMeshAnimation(
-            bones, tracks, textKeys, startTime, stopTime, ClipLoops: cycleType != CycleType.Clamp);
+            bones, tracks, textKeys, startTime, stopTime, cycleType != CycleType.Clamp);
     }
 
     /// <summary>The BSXFlags value, or null when the NIF has no BSXFlags block (TES3/plain Gamebryo).</summary>
@@ -197,8 +190,10 @@ internal static class NifControllerSequenceTrackCollector
         return null;
     }
 
-    /// <summary>The idle-named sequence, or null — deliberately NO first-sequence fallback (unlike
-    /// the NPC pose selector): a manager whose only sequences are activation clips must stay static.</summary>
+    /// <summary>
+    ///     The idle-named sequence, or null — deliberately NO first-sequence fallback (unlike
+    ///     the NPC pose selector): a manager whose only sequences are activation clips must stay static.
+    /// </summary>
     private static BlockInfo? SelectIdleSequence(byte[] data, NifInfo nif, bool be)
     {
         foreach (var block in nif.Blocks)
@@ -219,8 +214,10 @@ internal static class NifControllerSequenceTrackCollector
         return null;
     }
 
-    /// <summary>NiDefaultAVObjectPalette: scene ref + count + (SizedString name, object ref) pairs.
-    /// Null when absent or unreadable (caller falls back to a node-name scan).</summary>
+    /// <summary>
+    ///     NiDefaultAVObjectPalette: scene ref + count + (SizedString name, object ref) pairs.
+    ///     Null when absent or unreadable (caller falls back to a node-name scan).
+    /// </summary>
     private static Dictionary<string, int>? ReadObjectPalette(byte[] data, NifInfo nif, bool be)
     {
         foreach (var block in nif.Blocks)
@@ -280,5 +277,12 @@ internal static class NifControllerSequenceTrackCollector
         }
 
         return map;
+    }
+
+    private enum CycleType
+    {
+        Loop = 0,
+        Reverse = 1,
+        Clamp = 2
     }
 }

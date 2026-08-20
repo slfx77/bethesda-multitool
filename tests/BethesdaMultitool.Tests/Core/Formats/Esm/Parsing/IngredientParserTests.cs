@@ -67,8 +67,10 @@ public sealed class IngredientParserTests
         return bytes;
     }
 
-    private static byte[] FloatBytes(float value, bool bigEndian) =>
-        UInt32Bytes(BitConverter.SingleToUInt32Bits(value), bigEndian);
+    private static byte[] FloatBytes(float value, bool bigEndian)
+    {
+        return UInt32Bytes(BitConverter.SingleToUInt32Bits(value), bigEndian);
+    }
 
     [Fact]
     public async Task RetailFalloutNv_HasOneExplicitlyNonCreatableIngredient()

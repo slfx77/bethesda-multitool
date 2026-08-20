@@ -26,9 +26,12 @@ internal sealed class NpcRenderModelCache
     public LruCache<string, NifRenderableModel?> HeadMeshes { get; }
 
     /// <summary>The standard bounded head-mesh cache (callers that thread a cache through builders).</summary>
-    public static LruCache<string, NifRenderableModel?> CreateHeadMeshCache() => new(
-        "NpcHeadMeshCache",
-        ResourceCategory.CpuCache,
-        maxEntries: MaxHeadMeshes,
-        comparer: StringComparer.OrdinalIgnoreCase);
+    public static LruCache<string, NifRenderableModel?> CreateHeadMeshCache()
+    {
+        return new LruCache<string, NifRenderableModel?>(
+            "NpcHeadMeshCache",
+            ResourceCategory.CpuCache,
+            MaxHeadMeshes,
+            comparer: StringComparer.OrdinalIgnoreCase);
+    }
 }

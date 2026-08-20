@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Globalization;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
-using BethesdaMultitool.Core;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Analysis;

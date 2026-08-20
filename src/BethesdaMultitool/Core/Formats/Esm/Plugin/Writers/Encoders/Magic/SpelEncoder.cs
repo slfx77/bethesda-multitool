@@ -16,7 +16,7 @@ public sealed class SpelEncoder : IRecordEncoder
         ["Type"] = m => (uint)m.Type,
         ["Cost"] = m => m.Cost,
         ["Level"] = m => m.Level,
-        ["Flags"] = m => m.Flags,
+        ["Flags"] = m => m.Flags
     };
 
     public string RecordType => "SPEL";

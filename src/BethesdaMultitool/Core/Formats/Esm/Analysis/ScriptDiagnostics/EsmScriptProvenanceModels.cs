@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
+using ScriptReferenceSlot =
+    BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 

@@ -17,10 +17,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(123.25f, -456.5f, 789.75f),
             -90f,
             17.5f,
-            IsInterior: true,
-            InteriorCellTarget: "Gomorrah01",
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 4096f));
+            true,
+            "Gomorrah01",
+            null,
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("coc Gomorrah01", block.Text, StringComparison.Ordinal);
@@ -40,10 +40,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(-0.25f, -4096.01f, 42f),
             90f,
             0f,
-            IsInterior: false,
-            InteriorCellTarget: null,
-            ExteriorWorldspaceEditorId: "Tamriel",
-            CellSize: 4096f));
+            false,
+            null,
+            "Tamriel",
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("cow Tamriel -1 -2", block.Text, StringComparison.Ordinal);
@@ -57,10 +57,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(-0.00004f, 0f, 42f),
             0f,
             0f,
-            IsInterior: false,
-            InteriorCellTarget: null,
-            ExteriorWorldspaceEditorId: "WastelandNV",
-            CellSize: 4096f));
+            false,
+            null,
+            "WastelandNV",
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("cow WastelandNV -1 0", block.Text, StringComparison.Ordinal);
@@ -76,10 +76,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(1_000_000_000f, 2f, 3f),
             4f,
             5f,
-            IsInterior: true,
-            InteriorCellTarget: "TestCell",
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 4096f));
+            true,
+            "TestCell",
+            null,
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Equal("1000000000", GetSetPosXValue(block));
@@ -95,10 +95,10 @@ public sealed class InGameTeleportCommandFormatterTests
                 new Vector3(coordinate, 2f, 3f),
                 4f,
                 5f,
-                IsInterior: true,
-                InteriorCellTarget: "TestCell",
-                ExteriorWorldspaceEditorId: null,
-                CellSize: 4096f));
+                true,
+                "TestCell",
+                null,
+                4096f));
 
             Assert.True(block.HasTeleportCommands);
             var emitted = GetSetPosXValue(block);
@@ -119,10 +119,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(negativeZero, 2f, 3f),
             4f,
             5f,
-            IsInterior: true,
-            InteriorCellTarget: "TestCell",
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 4096f));
+            true,
+            "TestCell",
+            null,
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("player.setpos x 0", block.Text, StringComparison.Ordinal);
@@ -142,10 +142,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(1f, 2f, 3f),
             4f,
             5f,
-            IsInterior: true,
-            InteriorCellTarget: "TestCell",
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 4096f));
+            true,
+            "TestCell",
+            null,
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("coc TestCell", block.Text, StringComparison.Ordinal);
@@ -160,10 +160,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(-0.25f, -4096.01f, -333.75f),
             450f,
             12f,
-            IsInterior: false,
-            InteriorCellTarget: null,
-            ExteriorWorldspaceEditorId: "Tamriel",
-            CellSize: 4096f));
+            false,
+            null,
+            "Tamriel",
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("cow Tamriel -1 -2", block.Text, StringComparison.Ordinal);
@@ -208,10 +208,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(10.125f, 20.25f, 30.5f),
             450f,
             -12f,
-            IsInterior: true,
-            InteriorCellTarget: "Balmora, Guild of Mages",
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 8192f));
+            true,
+            "Balmora, Guild of Mages",
+            null,
+            8192f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains(
@@ -229,10 +229,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(-9000f, 8193f, 80f),
             180f,
             0f,
-            IsInterior: false,
-            InteriorCellTarget: null,
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 8192f));
+            false,
+            null,
+            null,
+            8192f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains("player->Position -9000, 8193, 80, 180", block.Text, StringComparison.Ordinal);
@@ -250,10 +250,10 @@ public sealed class InGameTeleportCommandFormatterTests
             Vector3.One,
             0f,
             0f,
-            IsInterior: true,
-            InteriorCellTarget: "TestCell",
-            ExteriorWorldspaceEditorId: "TestWorld",
-            CellSize: 4096f));
+            true,
+            "TestCell",
+            "TestWorld",
+            4096f));
 
         Assert.False(block.HasTeleportCommands);
         Assert.Contains("No reliable in-game command was generated", block.Text, StringComparison.Ordinal);
@@ -274,10 +274,10 @@ public sealed class InGameTeleportCommandFormatterTests
             Vector3.One,
             0f,
             0f,
-            IsInterior: true,
-            InteriorCellTarget: editorId,
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 4096f));
+            true,
+            editorId,
+            null,
+            4096f));
 
         Assert.False(block.HasTeleportCommands);
         Assert.Contains("no console-safe EditorID", block.Text, StringComparison.Ordinal);
@@ -291,10 +291,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(float.MaxValue, 0f, 0f),
             0f,
             0f,
-            IsInterior: false,
-            InteriorCellTarget: null,
-            ExteriorWorldspaceEditorId: "WastelandNV",
-            CellSize: 4096f));
+            false,
+            null,
+            "WastelandNV",
+            4096f));
 
         Assert.False(block.HasTeleportCommands);
         Assert.Contains("outside the supported exterior cell-grid range", block.Text, StringComparison.Ordinal);
@@ -325,10 +325,10 @@ public sealed class InGameTeleportCommandFormatterTests
             new Vector3(111f, 222f, -333.75f),
             yaw,
             45f,
-            IsInterior: true,
-            InteriorCellTarget: "TestCell",
-            ExteriorWorldspaceEditorId: null,
-            CellSize: 4096f));
+            true,
+            "TestCell",
+            null,
+            4096f));
 
         Assert.True(block.HasTeleportCommands);
         Assert.Contains(expectedYawCommand, block.Text, StringComparison.Ordinal);

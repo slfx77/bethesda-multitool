@@ -32,7 +32,7 @@ internal static class CtdaParser
             BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => length is 20 or 24 or 28,
             BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or
                 BethesdaGame.Starfield => length == 32,
-            _ => false,
+            _ => false
         };
     }
 

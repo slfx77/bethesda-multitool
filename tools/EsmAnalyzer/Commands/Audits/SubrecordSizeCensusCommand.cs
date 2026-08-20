@@ -2,9 +2,6 @@ using System.Buffers;
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Audits;
@@ -57,9 +54,6 @@ internal static class SubrecordSizeCensusCommand
 
         return command;
     }
-
-    // (RecordType, Sig) -> size -> count, per file.
-    private sealed record FileCensus(string Label, Dictionary<(string Rec, string Sig), Dictionary<int, int>> Tally);
 
     private static int Execute(string[] files, string? typeFilter, bool showAll, double minCoverage)
     {
@@ -138,9 +132,11 @@ internal static class SubrecordSizeCensusCommand
 
         AnsiConsole.WriteLine();
         AnsiConsole.Write(table);
-        AnsiConsole.MarkupLine($"\n[cyan]{deltaRows}[/] (RecordType, Subrecord) pairs differ in modal size across files.");
-        AnsiConsole.MarkupLine("[grey]Clean fixed-size flips (single size per file, e.g. 4 vs 12) are real format deltas; " +
-                               "low modal coverage = naturally variable subrecord (string/array).[/]");
+        AnsiConsole.MarkupLine(
+            $"\n[cyan]{deltaRows}[/] (RecordType, Subrecord) pairs differ in modal size across files.");
+        AnsiConsole.MarkupLine(
+            "[grey]Clean fixed-size flips (single size per file, e.g. 4 vs 12) are real format deltas; " +
+            "low modal coverage = naturally variable subrecord (string/array).[/]");
         return 0;
     }
 
@@ -166,16 +162,17 @@ internal static class SubrecordSizeCensusCommand
 
         var fileSize = new FileInfo(file).Length;
         using var mmf = MemoryMappedFile.CreateFromFile(
-            file, FileMode.Open, mapName: null, capacity: 0, MemoryMappedFileAccess.Read);
+            file, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
-        var context = new RecordParserContext(scan, formIdCorrelations: null, accessor, fileSize, minidumpInfo: null);
+        var context = new RecordParserContext(scan, null, accessor, fileSize, null);
 
         var buffer = ArrayPool<byte>.Shared.Rent(1 << 20);
         try
         {
             foreach (var record in scan.MainRecords)
             {
-                if (typeFilter != null && !string.Equals(record.RecordType, typeFilter, StringComparison.OrdinalIgnoreCase))
+                if (typeFilter != null &&
+                    !string.Equals(record.RecordType, typeFilter, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -207,4 +204,7 @@ internal static class SubrecordSizeCensusCommand
 
         return new FileCensus(LabelFor(file), tally);
     }
+
+    // (RecordType, Sig) -> size -> count, per file.
+    private sealed record FileCensus(string Label, Dictionary<(string Rec, string Sig), Dictionary<int, int>> Tally);
 }

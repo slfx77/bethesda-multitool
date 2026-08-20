@@ -26,18 +26,17 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 /// </summary>
 internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
 {
-    public static readonly SkyrimDialogueExtractor Instance = new();
-
-    private SkyrimDialogueExtractor()
-    {
-    }
-
     // Skyrim condition function indices (wbDefinitionsTES5 — same low indices as FNV/Oblivion, plus
     // GetIsVoiceType for generic voiced dialogue).
     private const ushort GetIsRace = 69;
     private const ushort GetInFaction = 71;
     private const ushort GetIsId = 72;
     private const ushort GetIsVoiceType = 426;
+    public static readonly SkyrimDialogueExtractor Instance = new();
+
+    private SkyrimDialogueExtractor()
+    {
+    }
 
     public DialogTopicRecord BuildTopic(
         uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian,

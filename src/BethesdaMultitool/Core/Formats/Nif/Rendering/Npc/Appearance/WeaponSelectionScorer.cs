@@ -211,4 +211,3 @@ internal static class WeaponSelectionScorer
         };
     }
 }
-

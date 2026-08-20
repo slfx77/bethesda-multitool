@@ -51,8 +51,10 @@ internal sealed class ArmorProfile : IRecordProfile
                 RecordDetailHelpers.Scalar("Weight", (Float(ChildByLabel(data, "Weight")) ?? 0f).ToString("F1")),
                 RecordDetailHelpers.Scalar("Value", ((int)(Int(ChildByLabel(data, "Value")) ?? 0)).ToString()),
                 RecordDetailHelpers.Scalar("Health", ((int)(Int(ChildByLabel(data, "Health")) ?? 0)).ToString()),
-                RecordDetailHelpers.Scalar("Biped Flags", $"0x{(uint)(Int(ChildByLabel(bmdt, "Biped Flags")) ?? 0):X8}"),
-                RecordDetailHelpers.Scalar("General Flags", $"0x{(byte)(Int(ChildByLabel(bmdt, "General Flags")) ?? 0):X2}")
+                RecordDetailHelpers.Scalar("Biped Flags",
+                    $"0x{(uint)(Int(ChildByLabel(bmdt, "Biped Flags")) ?? 0):X8}"),
+                RecordDetailHelpers.Scalar("General Flags",
+                    $"0x{(byte)(Int(ChildByLabel(bmdt, "General Flags")) ?? 0):X2}")
             ]),
             RecordDetailHelpers.Section("Presentation",
             [

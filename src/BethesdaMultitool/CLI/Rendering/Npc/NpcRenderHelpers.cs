@@ -1,17 +1,15 @@
 using System.IO.MemoryMappedFiles;
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
@@ -621,4 +619,3 @@ internal static class NpcRenderHelpers
         RuntimeActorWeaponReader.RuntimeActorWeaponState? WeaponState,
         RuntimeActorWeaponReader.RuntimeActorWornArmorState? WornArmorState);
 }
-

@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
-using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Utils;
@@ -492,4 +490,3 @@ public static class EsmParser
         }
     }
 }
-

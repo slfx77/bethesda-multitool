@@ -329,25 +329,28 @@ internal static class SubrecordCellAndMiscSchemas
         // Shared 184-byte water-visual body: the 196-byte DNAM minus the 3 trailing Noise-Layer
         // Amplitude-Scale floats (xEdit marks those wbEmpty in the legacy form). Used by the two
         // PC-side-only variants below (Xbox master is always DATA=2 + DNAM=196 -> conversion no-ops).
-        static SubrecordField[] WaterVisualBody() =>
-        [
-            F.Float("Unknown1"), F.Float("Unknown2"), F.Float("Unknown3"), F.Float("Unknown4"),
-            F.Float("SunPower"), F.Float("ReflectivityAmount"), F.Float("FresnelAmount"),
-            F.Padding(4),
-            F.Float("FogNear"), F.Float("FogFar"),
-            F.UInt32("ShallowColor"), F.UInt32("DeepColor"), F.UInt32("ReflectionColor"),
-            F.Padding(4),
-            F.Float("RainForce"), F.Float("RainVelocity"), F.Float("RainFalloff"), F.Float("RainDampner"),
-            F.Float("DisplacementStartingSize"), F.Float("DisplacementForce"), F.Float("DisplacementVelocity"),
-            F.Float("DisplacementFalloff"), F.Float("DisplacementDampner"), F.Float("RainStartingSize"),
-            F.Float("NoiseScale"), F.Float("NoiseLayer1WindDir"), F.Float("NoiseLayer2WindDir"),
-            F.Float("NoiseLayer3WindDir"), F.Float("NoiseLayer1WindSpeed"), F.Float("NoiseLayer2WindSpeed"),
-            F.Float("NoiseLayer3WindSpeed"), F.Float("DepthFalloffStart"), F.Float("DepthFalloffEnd"),
-            F.Float("AboveWaterFogAmount"), F.Float("NormalsUVScale"), F.Float("UnderWaterFogAmount"),
-            F.Float("UnderWaterFogNear"), F.Float("UnderWaterFogFar"), F.Float("DistortionAmount"),
-            F.Float("Shininess"), F.Float("ReflectionHDRMult"), F.Float("LightRadius"), F.Float("LightBrightness"),
-            F.Float("NoiseLayer1UVScale"), F.Float("NoiseLayer2UVScale"), F.Float("NoiseLayer3UVScale")
-        ];
+        static SubrecordField[] WaterVisualBody()
+        {
+            return
+            [
+                F.Float("Unknown1"), F.Float("Unknown2"), F.Float("Unknown3"), F.Float("Unknown4"),
+                F.Float("SunPower"), F.Float("ReflectivityAmount"), F.Float("FresnelAmount"),
+                F.Padding(4),
+                F.Float("FogNear"), F.Float("FogFar"),
+                F.UInt32("ShallowColor"), F.UInt32("DeepColor"), F.UInt32("ReflectionColor"),
+                F.Padding(4),
+                F.Float("RainForce"), F.Float("RainVelocity"), F.Float("RainFalloff"), F.Float("RainDampner"),
+                F.Float("DisplacementStartingSize"), F.Float("DisplacementForce"), F.Float("DisplacementVelocity"),
+                F.Float("DisplacementFalloff"), F.Float("DisplacementDampner"), F.Float("RainStartingSize"),
+                F.Float("NoiseScale"), F.Float("NoiseLayer1WindDir"), F.Float("NoiseLayer2WindDir"),
+                F.Float("NoiseLayer3WindDir"), F.Float("NoiseLayer1WindSpeed"), F.Float("NoiseLayer2WindSpeed"),
+                F.Float("NoiseLayer3WindSpeed"), F.Float("DepthFalloffStart"), F.Float("DepthFalloffEnd"),
+                F.Float("AboveWaterFogAmount"), F.Float("NormalsUVScale"), F.Float("UnderWaterFogAmount"),
+                F.Float("UnderWaterFogNear"), F.Float("UnderWaterFogFar"), F.Float("DistortionAmount"),
+                F.Float("Shininess"), F.Float("ReflectionHDRMult"), F.Float("LightRadius"), F.Float("LightBrightness"),
+                F.Float("NoiseLayer1UVScale"), F.Float("NoiseLayer2UVScale"), F.Float("NoiseLayer3UVScale")
+            ];
+        }
 
         // DNAM - WATR (184 bytes): version without the 3 trailing amplitude-scale floats.
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "WATR", 184)] = new SubrecordSchema(WaterVisualBody())

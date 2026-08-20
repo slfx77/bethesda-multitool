@@ -185,7 +185,8 @@ internal static class VerifyOpenMwFields
                 continue;
             }
 
-            var variant = rec.Fields.FirstOrDefault(kv => kv.Key.StartsWith("variant", StringComparison.OrdinalIgnoreCase));
+            var variant =
+                rec.Fields.FirstOrDefault(kv => kv.Key.StartsWith("variant", StringComparison.OrdinalIgnoreCase));
             if (variant.Key is null)
             {
                 continue;
@@ -467,7 +468,8 @@ internal static class VerifyOpenMwFields
         var rows = new List<Mismatch>();
         var compared = 0;
 
-        string[] weather = ["Clear", "Cloudy", "Fog", "Overcast", "Rain", "Thunder", "Ash", "Blight", "Snow", "Blizzard"];
+        string[] weather =
+            ["Clear", "Cloudy", "Fog", "Overcast", "Rain", "Thunder", "Ash", "Blight", "Snow", "Blizzard"];
 
         foreach (var rec in FetchEsmtool(esmtool, file, "REGN"))
         {
@@ -529,30 +531,42 @@ internal static class VerifyOpenMwFields
 
     // ---- helpers ------------------------------------------------------------------------------------
 
-    private static Dictionary<string, GenericEsmRecord> OurByEditorId(RecordCollection records, string type) =>
-        records.GenericRecords
+    private static Dictionary<string, GenericEsmRecord> OurByEditorId(RecordCollection records, string type)
+    {
+        return records.GenericRecords
             .Where(r => r.RecordType == type && !string.IsNullOrEmpty(r.EditorId))
             .GroupBy(r => r.EditorId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+    }
 
-    private static string? FieldStr(GenericEsmRecord r, string key) =>
-        r.Fields.TryGetValue(key, out var v) ? v?.ToString() : null;
+    private static string? FieldStr(GenericEsmRecord r, string key)
+    {
+        return r.Fields.TryGetValue(key, out var v) ? v?.ToString() : null;
+    }
 
-    private static string Unquote(string s) =>
-        s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+    private static string Unquote(string s)
+    {
+        return s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+    }
 
     // Whitespace-insensitive content equality (collapses runs of spaces/newlines to one space).
-    private static bool TextEq(string a, string b) =>
-        string.Equals(Collapse(a), Collapse(b), StringComparison.Ordinal);
+    private static bool TextEq(string a, string b)
+    {
+        return string.Equals(Collapse(a), Collapse(b), StringComparison.Ordinal);
+    }
 
-    private static string Collapse(string s) =>
-        string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    private static string Collapse(string s)
+    {
+        return string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
 
-    private static bool IntEq(string a, string b) =>
-        long.TryParse(a, NumberStyles.Integer, CultureInfo.InvariantCulture, out var x)
-        && long.TryParse(b, NumberStyles.Integer, CultureInfo.InvariantCulture, out var y)
+    private static bool IntEq(string a, string b)
+    {
+        return long.TryParse(a, NumberStyles.Integer, CultureInfo.InvariantCulture, out var x)
+               && long.TryParse(b, NumberStyles.Integer, CultureInfo.InvariantCulture, out var y)
             ? x == y
             : string.Equals(a.Trim(), b.Trim(), StringComparison.Ordinal);
+    }
 
     private static bool FloatEq(string a, string b)
     {
@@ -565,8 +579,11 @@ internal static class VerifyOpenMwFields
         return string.Equals(a.Trim(), b.Trim(), StringComparison.Ordinal);
     }
 
-    private static bool PathEq(string a, string b) =>
-        string.Equals(a.Replace('/', '\\').Trim(), b.Replace('/', '\\').Trim(), StringComparison.OrdinalIgnoreCase);
+    private static bool PathEq(string a, string b)
+    {
+        return string.Equals(a.Replace('/', '\\').Trim(), b.Replace('/', '\\').Trim(),
+            StringComparison.OrdinalIgnoreCase);
+    }
 
     private static int Report(string type, List<Mismatch> rows, int compared)
     {

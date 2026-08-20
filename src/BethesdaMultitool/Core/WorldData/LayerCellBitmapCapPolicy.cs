@@ -1,4 +1,4 @@
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Hysteresis policy for the per-cell bitmap LRU cap in the 2D map's TerrainTextures view.
@@ -17,7 +17,10 @@ namespace BethesdaMultitool;
 ///         halving bounds worst-case retention (a zoomed-out 18k-entry cap decays to the floor in
 ///         ~5 windows) while comfortably out-waiting the sub-second off-region excursion of a pan.
 ///     </para>
-///     <para>Single-threaded (UI thread). Callers pass <see cref="Environment.TickCount64" /> so tests can drive time explicitly.</para>
+///     <para>
+///         Single-threaded (UI thread). Callers pass <see cref="Environment.TickCount64" /> so tests can drive time
+///         explicitly.
+///     </para>
 /// </summary>
 internal sealed class LayerCellBitmapCapPolicy(int minCap = 256, int viewportMultiplier = 3, int holdMs = 3000)
 {

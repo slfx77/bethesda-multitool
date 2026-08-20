@@ -1,6 +1,9 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
-/// <summary>The result of inspecting a head NIF against a TRI file: per-block geometry summaries and aggregate vertex/triangle-count match tallies.</summary>
+/// <summary>
+///     The result of inspecting a head NIF against a TRI file: per-block geometry summaries and aggregate
+///     vertex/triangle-count match tallies.
+/// </summary>
 internal sealed class TriNifGeometryInspection
 {
     private NifGeometryBlockSummary[] _geometryBlocks = [];

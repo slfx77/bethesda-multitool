@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.Trivial;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.DialogueConditionTestConstants;
 
@@ -52,24 +53,24 @@ public sealed class MagicEffectReferenceWalkerTests
                             FunctionIndex = GetIsID,
                             Parameter1 = 8,
                             RunOn = 2,
-                            Reference = 9,
+                            Reference = 9
                         },
                         new DialogueCondition
                         {
                             FunctionIndex = 0x003C,
                             Parameter1 = 10,
-                            Parameter2 = 11,
+                            Parameter2 = 11
                         },
                         new DialogueCondition { FunctionIndex = GetActorValue, Parameter1 = 12 },
                         new DialogueCondition
                         {
                             FunctionIndex = GetIsID,
                             Parameter1 = 13,
-                            Parameter1String = string.Empty,
-                        },
-                    ],
-                },
-            ],
+                            Parameter1String = string.Empty
+                        }
+                    ]
+                }
+            ]
         };
 
         var references = new ConsumableReferenceWalker().Walk(model)
@@ -113,24 +114,24 @@ public sealed class MagicEffectReferenceWalkerTests
                     Conditions =
                     [
                         new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = discardedSource },
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = dangling },
-                    ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = dangling }
+                    ]
                 },
                 new EnchantmentEffect
                 {
                     EffectFormId = effectTarget,
                     Conditions =
                     [
-                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = retainedSource },
-                    ],
-                },
-            ],
+                        new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = retainedSource }
+                    ]
+                }
+            ]
         };
         var remap = new Dictionary<uint, uint>
         {
             [effectSource] = effectTarget,
             [discardedSource] = discardedTarget,
-            [retainedSource] = retainedTarget,
+            [retainedSource] = retainedTarget
         };
         var live = new HashSet<uint> { effectTarget, discardedTarget, retainedTarget };
         var plan = NewPlan(
@@ -170,8 +171,8 @@ public sealed class MagicEffectReferenceWalkerTests
             Effects =
             [
                 new EnchantmentEffect { EffectFormId = danglingEffect },
-                new EnchantmentEffect { EffectFormId = validEffect },
-            ],
+                new EnchantmentEffect { EffectFormId = validEffect }
+            ]
         };
         var plan = NewPlan(
             "SPEL",
@@ -203,8 +204,8 @@ public sealed class MagicEffectReferenceWalkerTests
             Effects =
             [
                 new EnchantmentEffect { EffectFormId = 0 },
-                new EnchantmentEffect { EffectFormId = validEffect },
-            ],
+                new EnchantmentEffect { EffectFormId = validEffect }
+            ]
         };
         var plan = NewPlan(
             "SPEL",
@@ -256,18 +257,18 @@ public sealed class MagicEffectReferenceWalkerTests
                             Parameter1 = parameter1Source,
                             Parameter2 = parameter2Source,
                             RunOn = 2,
-                            Reference = referenceSource,
-                        },
-                    ],
-                },
-            ],
+                            Reference = referenceSource
+                        }
+                    ]
+                }
+            ]
         };
         var remap = new Dictionary<uint, uint>
         {
             [globalSource] = globalTarget,
             [parameter1Source] = parameter1Target,
             [parameter2Source] = parameter2Target,
-            [referenceSource] = referenceTarget,
+            [referenceSource] = referenceTarget
         };
         var live = new HashSet<uint>
         {
@@ -275,7 +276,7 @@ public sealed class MagicEffectReferenceWalkerTests
             globalTarget,
             parameter1Target,
             parameter2Target,
-            referenceTarget,
+            referenceTarget
         };
         var plan = NewPlan(
             "ENCH",
@@ -314,12 +315,12 @@ public sealed class MagicEffectReferenceWalkerTests
             PickupSoundFormId = pickupDangling,
             WithdrawalEffectFormId = withdrawalSource,
             ConsumeSoundFormId = consumeDangling,
-            Effects = [new EnchantmentEffect { EffectFormId = effectFormId }],
+            Effects = [new EnchantmentEffect { EffectFormId = effectFormId }]
         };
         var remap = new Dictionary<uint, uint>
         {
             [scriptSource] = scriptTarget,
-            [withdrawalSource] = withdrawalTarget,
+            [withdrawalSource] = withdrawalTarget
         };
         var live = new HashSet<uint> { scriptTarget, withdrawalTarget, effectFormId };
         var plan = NewPlan(
@@ -365,7 +366,7 @@ public sealed class MagicEffectReferenceWalkerTests
                         FieldPath = reference.FieldPath,
                         OriginalFormId = reference.FormId,
                         Action = ResolvedRefAction.Resolved,
-                        FinalFormId = 0,
+                        FinalFormId = 0
                     };
                 }
 
@@ -376,14 +377,14 @@ public sealed class MagicEffectReferenceWalkerTests
                         FieldPath = reference.FieldPath,
                         OriginalFormId = original,
                         Action = ResolvedRefAction.Resolved,
-                        FinalFormId = target,
+                        FinalFormId = target
                     }
                     : new ResolvedRef
                     {
                         FieldPath = reference.FieldPath,
                         OriginalFormId = original,
                         Action = ResolvedRefAction.DropSubrecord,
-                        Reason = $"0x{target:X8} is not live.",
+                        Reason = $"0x{target:X8} is not live."
                     };
             })
             .ToImmutableArray();
@@ -393,8 +394,9 @@ public sealed class MagicEffectReferenceWalkerTests
         string recordType,
         uint formId,
         object model,
-        ImmutableArray<ResolvedRef> references) =>
-        new()
+        ImmutableArray<ResolvedRef> references)
+    {
+        return new RecordPlan
         {
             Type = recordType,
             Disposition = RecordDisposition.New,
@@ -403,13 +405,14 @@ public sealed class MagicEffectReferenceWalkerTests
             Model = model,
             References = references,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
+    }
 
-    private static List<List<BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.EncodedSubrecord>> SplitEffects(
-        IReadOnlyList<BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.EncodedSubrecord> subrecords)
+    private static List<List<EncodedSubrecord>> SplitEffects(
+        IReadOnlyList<EncodedSubrecord> subrecords)
     {
-        var result = new List<List<BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.EncodedSubrecord>>();
+        var result = new List<List<EncodedSubrecord>>();
         foreach (var subrecord in subrecords)
         {
             if (subrecord.Signature == "EFID")

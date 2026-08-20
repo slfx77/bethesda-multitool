@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -93,14 +94,23 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     ///     <see cref="MipLevelCount" />); an empty array is the miss sentinel.
     /// </summary>
     private readonly ConcurrentDictionary<uint, byte[][]> _tiles = new();
+
+    private int _engineDefaultLoaded; // 0 = not loaded, 1 = loaded; written via Volatile to publish the tile
     private byte[][]? _engineDefaultTile;
-    private int _engineDefaultLoaded;  // 0 = not loaded, 1 = loaded; written via Volatile to publish the tile
 
     private LandscapeTexturePalette(WorldViewData data, List<INifTextureSource> sources)
     {
         _data = data;
         _sources = sources;
     }
+
+    public string ResourceName => nameof(LandscapeTexturePalette);
+
+    public ResourceCategory Category => ResourceCategory.CpuCache;
+
+    public int TrimPriority => 30;
+
+    public TrimAffinity TrimAffinity => TrimAffinity.AnyThread;
 
     /// <summary>
     ///     Releases the texture sources (and their shared-archive leases). Only for a palette that
@@ -115,14 +125,6 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         }
     }
 
-    public string ResourceName => nameof(LandscapeTexturePalette);
-
-    public ResourceCategory Category => ResourceCategory.CpuCache;
-
-    public int TrimPriority => 30;
-
-    public TrimAffinity TrimAffinity => TrimAffinity.AnyThread;
-
     /// <summary>
     ///     No hit/miss counters here on purpose: <see cref="Sample" /> runs per pixel (millions of
     ///     calls per render) and must stay free of interlocked traffic. Bytes/entries are the
@@ -131,7 +133,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     public ResourceStats GetStats() => new()
     {
         EstimatedBytes = (long)_tiles.Count * PyramidBytes,
-        EntryCount = _tiles.Count,
+        EntryCount = _tiles.Count
     };
 
     /// <summary>
@@ -355,8 +357,10 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         // Caller-side stepper guarantees [0, 1); a defensive clamp here avoids out-of-bounds
         // reads if rounding error pushes the input slightly past 1.0 (e.g., accumulated
         // single-precision drift over a 528-pixel row).
-        if (tileFracX < 0f) tileFracX = 0f; else if (tileFracX >= 1f) tileFracX = 0.9999999f;
-        if (tileFracY < 0f) tileFracY = 0f; else if (tileFracY >= 1f) tileFracY = 0.9999999f;
+        if (tileFracX < 0f) tileFracX = 0f;
+        else if (tileFracX >= 1f) tileFracX = 0.9999999f;
+        if (tileFracY < 0f) tileFracY = 0f;
+        else if (tileFracY >= 1f) tileFracY = 0.9999999f;
 
         var x = tileFracX * tileSize;
         var y = tileFracY * tileSize;
@@ -491,6 +495,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         {
             levels[i] = Downsample2x(levels[i - 1], TileSize >> (i - 1));
         }
+
         return levels;
     }
 
@@ -518,6 +523,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
                 }
             }
         }
+
         return dst;
     }
 
@@ -538,6 +544,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
                 result[dstIdx + 3] = a;
             }
         }
+
         return result;
     }
 

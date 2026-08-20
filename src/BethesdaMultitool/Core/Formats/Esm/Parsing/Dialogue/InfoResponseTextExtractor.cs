@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 
 /// <summary>

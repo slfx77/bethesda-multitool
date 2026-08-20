@@ -2,9 +2,9 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+
 internal static class GeckWorldspaceReportBuilder
 {
     internal static RecordReport BuildWorldspaceReport(WorldspaceRecord wrld, FormIdResolver resolver)
@@ -219,4 +219,3 @@ internal static class GeckWorldspaceReportBuilder
         return sb.ToString();
     }
 }
-

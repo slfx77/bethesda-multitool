@@ -21,9 +21,7 @@ namespace BethesdaMultitool;
 public sealed partial class DiagnosticsTab : UserControl
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(1);
-
-    private readonly DispatcherQueueTimer _refreshTimer;
-    private readonly Dictionary<string, ResourceStatRow> _rows = new(StringComparer.Ordinal);
+    private readonly CollectionViewSource _groupedSource;
 
     // Persistent grouped source, bound to the ListView ONCE. Each refresh reconciles rows and
     // groups in place (add new, remove vanished, update values) instead of replacing ItemsSource —
@@ -31,7 +29,9 @@ public sealed partial class DiagnosticsTab : UserControl
     // which previously churned the row set and triggered a full ItemsSource rebuild (scroll-to-top)
     // on every refresh. The CollectionViewSource is held in a field so it is not collected.
     private readonly ObservableCollection<DiagnosticsGroup> _groups = [];
-    private readonly CollectionViewSource _groupedSource;
+
+    private readonly DispatcherQueueTimer _refreshTimer;
+    private readonly Dictionary<string, ResourceStatRow> _rows = new(StringComparer.Ordinal);
 
     public DiagnosticsTab()
     {
@@ -177,7 +177,8 @@ public sealed partial class DiagnosticsTab : UserControl
     {
         var snapshot = ResourceRegistry.Instance.GetSnapshot();
         var builder = new StringBuilder(snapshot.Count * 96 + 128);
-        builder.AppendLine("Name\tCategory\tBytes\tEntries\tHits\tMisses\tEvictions\tQueueDepth\tInFlight\tProcessed\tFailures");
+        builder.AppendLine(
+            "Name\tCategory\tBytes\tEntries\tHits\tMisses\tEvictions\tQueueDepth\tInFlight\tProcessed\tFailures");
         foreach (var record in snapshot)
         {
             var s = record.Stats;

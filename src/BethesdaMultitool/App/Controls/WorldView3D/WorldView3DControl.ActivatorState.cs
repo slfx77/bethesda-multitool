@@ -93,7 +93,7 @@ public sealed partial class WorldView3DControl
         {
             0 => "Reset per-object previews",
             1 => "Reset 1 per-object preview",
-            _ => $"Reset {count} per-object previews",
+            _ => $"Reset {count} per-object previews"
         };
     }
 }

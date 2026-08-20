@@ -21,61 +21,100 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 internal static class DecodedTreeReader
 {
     /// <summary>First top-level node whose subrecord signature is <paramref name="signature" />, or null.</summary>
-    public static DecodedNode? TopBySignature(IReadOnlyList<DecodedNode> tree, string signature) =>
-        tree.FirstOrDefault(n => n.Signature == signature);
+    public static DecodedNode? TopBySignature(IReadOnlyList<DecodedNode> tree, string signature)
+    {
+        return tree.FirstOrDefault(n => n.Signature == signature);
+    }
 
     /// <summary>Every top-level node with the given signature (e.g. the repeated CNTO inventory entries).</summary>
-    public static IEnumerable<DecodedNode> AllTopBySignature(IReadOnlyList<DecodedNode> tree, string signature) =>
-        tree.Where(n => n.Signature == signature);
+    public static IEnumerable<DecodedNode> AllTopBySignature(IReadOnlyList<DecodedNode> tree, string signature)
+    {
+        return tree.Where(n => n.Signature == signature);
+    }
 
     /// <summary>First top-level node with the given label (for unsignatured array nodes), or null.</summary>
-    public static DecodedNode? TopByLabel(IReadOnlyList<DecodedNode> tree, string label) =>
-        tree.FirstOrDefault(n => n.Label == label);
+    public static DecodedNode? TopByLabel(IReadOnlyList<DecodedNode> tree, string label)
+    {
+        return tree.FirstOrDefault(n => n.Label == label);
+    }
 
     /// <summary>First child of <paramref name="node" /> with the given label, or null.</summary>
-    public static DecodedNode? ChildByLabel(DecodedNode? node, string label) =>
-        node?.Children.FirstOrDefault(c => c.Label == label);
+    public static DecodedNode? ChildByLabel(DecodedNode? node, string label)
+    {
+        return node?.Children.FirstOrDefault(c => c.Label == label);
+    }
 
     /// <summary>The node's integer raw value (decoder boxes all integer fields as <c>long</c>), or null.</summary>
-    public static long? Int(DecodedNode? node) => node?.RawValue switch
+    public static long? Int(DecodedNode? node)
     {
-        long l => l,
-        int i => i,
-        uint u => u,
-        ushort us => us,
-        short s => s,
-        byte b => b,
-        sbyte sb => sb,
-        _ => null
-    };
+        return node?.RawValue switch
+        {
+            long l => l,
+            int i => i,
+            uint u => u,
+            ushort us => us,
+            short s => s,
+            byte b => b,
+            sbyte sb => sb,
+            _ => null
+        };
+    }
 
     /// <summary>The node's float raw value, or null.</summary>
-    public static float? Float(DecodedNode? node) => node?.RawValue switch
+    public static float? Float(DecodedNode? node)
     {
-        float f => f,
-        double d => (float)d,
-        _ => null
-    };
+        return node?.RawValue switch
+        {
+            float f => f,
+            double d => (float)d,
+            _ => null
+        };
+    }
 
     /// <summary>The node's string raw value, or null.</summary>
-    public static string? Str(DecodedNode? node) => node?.RawValue as string;
+    public static string? Str(DecodedNode? node)
+    {
+        return node?.RawValue as string;
+    }
 
     /// <summary>The node's raw bytes (raw/ByteArray nodes), or null.</summary>
-    public static byte[]? Bytes(DecodedNode? node) => node?.RawValue as byte[];
+    public static byte[]? Bytes(DecodedNode? node)
+    {
+        return node?.RawValue as byte[];
+    }
 
     /// <summary>The node's FormID (set on FormID-reference nodes), or null when 0/absent.</summary>
-    public static uint? FormId(DecodedNode? node) => node?.FormId is { } f and not 0 ? f : null;
+    public static uint? FormId(DecodedNode? node)
+    {
+        return node?.FormId is { } f and not 0 ? f : null;
+    }
 
     // Little-endian primitive reads from a raw-tail byte span (PC plugins).
-    public static short? ReadS16(byte[]? data, int offset) =>
-        data is not null && offset + 2 <= data.Length ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset)) : null;
+    public static short? ReadS16(byte[]? data, int offset)
+    {
+        return data is not null && offset + 2 <= data.Length
+            ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset))
+            : null;
+    }
 
-    public static uint? ReadU32(byte[]? data, int offset) =>
-        data is not null && offset + 4 <= data.Length ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset)) : null;
+    public static uint? ReadU32(byte[]? data, int offset)
+    {
+        return data is not null && offset + 4 <= data.Length
+            ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset))
+            : null;
+    }
 
-    public static int? ReadS32(byte[]? data, int offset) =>
-        data is not null && offset + 4 <= data.Length ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset)) : null;
+    public static int? ReadS32(byte[]? data, int offset)
+    {
+        return data is not null && offset + 4 <= data.Length
+            ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset))
+            : null;
+    }
 
-    public static float? ReadFloat(byte[]? data, int offset) =>
-        data is not null && offset + 4 <= data.Length ? BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset)) : null;
+    public static float? ReadFloat(byte[]? data, int offset)
+    {
+        return data is not null && offset + 4 <= data.Length
+            ? BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset))
+            : null;
+    }
 }

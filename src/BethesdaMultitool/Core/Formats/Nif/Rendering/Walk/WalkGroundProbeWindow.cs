@@ -26,5 +26,8 @@ internal readonly record struct WalkGroundProbeWindow(
     ///     True when a warm collision hit or cold OBND top is no higher than the current step window.
     ///     There is deliberately no lower bound: ledge/fall handling belongs to the camera controller.
     /// </summary>
-    public bool AllowsPlacedSurface(float surfaceZ) => surfaceZ <= HighestStepZ;
+    public bool AllowsPlacedSurface(float surfaceZ)
+    {
+        return surfaceZ <= HighestStepZ;
+    }
 }

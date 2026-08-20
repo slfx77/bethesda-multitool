@@ -232,7 +232,7 @@ internal static class NifParticleSystemExtractor
                     data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, relative),
                 "NiTriShapeData" => NifBlockParsers.ExtractTriShapeData(
                     data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, relative),
-                _ => null,
+                _ => null
             };
 
             if (sub?.Positions is not { Length: >= 3 } positions)
@@ -301,7 +301,7 @@ internal static class NifParticleSystemExtractor
             (-1f, -1f, 0f, 1f),
             (1f, -1f, 1f, 1f),
             (1f, 1f, 1f, 0f),
-            (-1f, 1f, 0f, 0f),
+            (-1f, 1f, 0f, 0f)
         ];
 
         for (var k = 0; k < n; k++)
@@ -392,7 +392,7 @@ internal static class NifParticleSystemExtractor
             SrcBlendMode = def.SrcBlendMode,
             DstBlendMode = def.DstBlendMode,
             MaterialAlpha = 1f,
-            MaterialAlphaController = def.MaterialAlphaController,
+            MaterialAlphaController = def.MaterialAlphaController
         };
     }
 }

@@ -28,6 +28,7 @@ public sealed class NifTextureEffectRetailTests
         @"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion - Meshes.bsa";
 
     private const string GlassBootsPath = @"meshes\a\a_glass_boots_gnd.nif";
+
     private const string LeyawiinWindowPath =
         @"meshes\architecture\castle\leyawiin\leyawiinwindow01.nif";
 

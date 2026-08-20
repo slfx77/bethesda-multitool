@@ -11,8 +11,8 @@ namespace BethesdaMultitool.Core.Diagnostics;
 internal sealed class ResourceRegistration : IDisposable
 {
     private readonly ResourceRegistry _registry;
-    private int _pendingTrim; // 0 = none, otherwise (int)TrimLevel + 1
     private int _disposed;
+    private int _pendingTrim; // 0 = none, otherwise (int)TrimLevel + 1
 
     internal ResourceRegistration(ResourceRegistry registry, ITrackableResource resource, string displayName)
     {
@@ -24,6 +24,14 @@ internal sealed class ResourceRegistration : IDisposable
     public ITrackableResource Resource { get; }
 
     public string DisplayName { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _registry.Unregister(this);
+        }
+    }
 
     /// <summary>Posts a trim request for the owner thread. A higher pending level is never downgraded.</summary>
     public void PostTrim(TrimLevel level)
@@ -52,13 +60,5 @@ internal sealed class ResourceRegistration : IDisposable
 
         level = (TrimLevel)(encoded - 1);
         return true;
-    }
-
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0)
-        {
-            _registry.Unregister(this);
-        }
     }
 }

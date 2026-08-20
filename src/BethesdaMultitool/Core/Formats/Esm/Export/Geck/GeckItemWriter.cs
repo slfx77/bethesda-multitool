@@ -445,4 +445,3 @@ internal static class GeckItemWriter
         return sb.ToString();
     }
 }
-

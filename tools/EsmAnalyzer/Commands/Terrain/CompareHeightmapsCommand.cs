@@ -1,7 +1,4 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 
 namespace EsmAnalyzer.Commands.Terrain;
 

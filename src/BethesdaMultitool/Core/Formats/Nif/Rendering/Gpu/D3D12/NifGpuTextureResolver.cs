@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -24,8 +25,6 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     internal const string LeafAtlasMipsSuffix = "|leafmips";
 
-    private static readonly Logger Log = Logger.Instance;
-
     /// <summary>
     ///     RGBA fallback decodes that produce more than this many bytes (mip 0 + chain) are
     ///     logged at warning level. The uncompressed fallback path allocates <c>w*h*4</c> per
@@ -35,11 +34,13 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     private const long LargeRgbaFallbackWarnBytes = 16L * 1024L * 1024L;
 
+    private static readonly Logger Log = Logger.Instance;
+
     private readonly ConcurrentLazyCache<string, GpuTexturePayload> _cache;
-    private readonly List<INifTextureSource> _sources;
-    private readonly ReferenceDecodedTextureDiskCache12? _persistentCache;
-    private readonly string _sourceSetIdentity;
     private readonly Func<string, GpuTexturePayload?>? _loadTextureOverride;
+    private readonly ReferenceDecodedTextureDiskCache12? _persistentCache;
+    private readonly List<INifTextureSource> _sources;
+    private readonly string _sourceSetIdentity;
 
     public NifGpuTextureResolver(params string[] textureSourcePaths)
     {
@@ -79,7 +80,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     private static string BuildSourceSetIdentity(string[] textureSourcePaths)
     {
-        var builder = new System.Text.StringBuilder(256);
+        var builder = new StringBuilder(256);
         builder.Append("decoder=").Append(ReferenceDecodedTextureDiskCache12.DecoderVersion).Append('\n');
         foreach (var path in textureSourcePaths)
         {
@@ -111,16 +112,20 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return builder.ToString();
     }
 
-    /// <summary>Resolves a texture path to a GPU payload, normalizing the path and caching the decoded result.
-    /// A trailing <see cref="LeafAtlasMipsSuffix" /> marker survives as part of the cache key but is
-    /// stripped for path normalization (and later for the archive lookup).</summary>
+    /// <summary>
+    ///     Resolves a texture path to a GPU payload, normalizing the path and caching the decoded result.
+    ///     A trailing <see cref="LeafAtlasMipsSuffix" /> marker survives as part of the cache key but is
+    ///     stripped for path normalization (and later for the archive lookup).
+    /// </summary>
     public GpuTexturePayload? GetTexture(string texturePath)
     {
         return _cache.GetOrCreate(NormalizeKey(texturePath));
     }
 
-    /// <summary>Normalizes the path portion of a texture cache key, preserving a trailing
-    /// <see cref="LeafAtlasMipsSuffix" /> variant marker outside the normalization.</summary>
+    /// <summary>
+    ///     Normalizes the path portion of a texture cache key, preserving a trailing
+    ///     <see cref="LeafAtlasMipsSuffix" /> variant marker outside the normalization.
+    /// </summary>
     private static string NormalizeKey(string texturePath)
     {
         if (texturePath.EndsWith(LeafAtlasMipsSuffix, StringComparison.Ordinal))
@@ -179,17 +184,19 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     public void Release(string texturePath)
     {
-        _cache.Release(NormalizeKey(texturePath), keepNegative: true);
+        _cache.Release(NormalizeKey(texturePath), true);
     }
 
-    private ConcurrentLazyCache<string, GpuTexturePayload> CreateCache() =>
-        new(
+    private ConcurrentLazyCache<string, GpuTexturePayload> CreateCache()
+    {
+        return new ConcurrentLazyCache<string, GpuTexturePayload>(
             nameof(NifGpuTextureResolver),
             ResourceCategory.CpuCache,
             LoadTexture,
-            sizeOf: static payload => payload.ByteSize,
-            comparer: StringComparer.OrdinalIgnoreCase,
-            trimPriority: 10);
+            static payload => payload.ByteSize,
+            StringComparer.OrdinalIgnoreCase,
+            10);
+    }
 
     private GpuTexturePayload? LoadTexture(string path)
     {
@@ -228,8 +235,10 @@ internal sealed class NifGpuTextureResolver : IDisposable
     ///     material exists but resolves no albedo in any form, so its shape should be skipped rather
     ///     than drawn with the white fallback.
     /// </summary>
-    internal bool IsStarfieldNoDrawMaterial(string materialPath) =>
-        MaterialTexturePathResolver.IsStarfieldNoDrawMaterial(materialPath, _sources);
+    internal bool IsStarfieldNoDrawMaterial(string materialPath)
+    {
+        return MaterialTexturePathResolver.IsStarfieldNoDrawMaterial(materialPath, _sources);
+    }
 
     /// <summary>
     ///     A 1×1 RGBA8 texture of <paramref name="rgba" /> (R in the low byte), for a material slot

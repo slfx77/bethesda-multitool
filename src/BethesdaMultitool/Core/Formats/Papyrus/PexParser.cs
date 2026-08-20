@@ -23,7 +23,6 @@ public sealed class PexParseException : IOException
 #pragma warning restore RCS1194
 {
     public PexParseException()
-        : base()
     {
     }
 
@@ -454,11 +453,11 @@ public static class PexParser
 
     private static (bool Present, ImmutableArray<PexStringReference> References)
         ReadFallout76ObjectTail(
-        ref PexCursor reader,
-        ImmutableArray<string> strings,
-        int bodyStart,
-        int bethesdaBodySize,
-        int capricaBodySize)
+            ref PexCursor reader,
+            ImmutableArray<string> strings,
+            int bodyStart,
+            int bethesdaBodySize,
+            int capricaBodySize)
     {
         // Every object in the retail Fallout 76 MiscClient corpus ends with this count followed
         // by references to same-object state names. Preserve their order and indices; the table's
@@ -564,7 +563,8 @@ public static class PexParser
             var documentation = ReadStringReference(ref reader, strings, "property documentation");
             var userFlags = reader.ReadUInt32("property user flags");
             var rawFlags = reader.ReadByte("property flags");
-            if ((rawFlags & ~(byte)(PexPropertyFlags.Readable | PexPropertyFlags.Writable | PexPropertyFlags.Auto)) != 0)
+            if ((rawFlags & ~(byte)(PexPropertyFlags.Readable | PexPropertyFlags.Writable | PexPropertyFlags.Auto)) !=
+                0)
             {
                 throw reader.Invalid($"property has unknown flags 0x{rawFlags:X2}");
             }
@@ -734,32 +734,35 @@ public static class PexParser
         return new PexInstruction(opcode, arguments.MoveToImmutable(), variadicArguments);
     }
 
-    private static int GetFixedArgumentCount(PexOpCode opcode) => opcode switch
+    private static int GetFixedArgumentCount(PexOpCode opcode)
     {
-        PexOpCode.Nop => 0,
-        >= PexOpCode.IAdd and <= PexOpCode.IMod => 3,
-        >= PexOpCode.Not and <= PexOpCode.Cast => 2,
-        >= PexOpCode.CompareEqual and <= PexOpCode.CompareGreaterThanOrEqual => 3,
-        PexOpCode.Jump => 1,
-        PexOpCode.JumpTrue or PexOpCode.JumpFalse => 2,
-        PexOpCode.CallMethod or PexOpCode.CallStatic => 3,
-        PexOpCode.CallParent => 2,
-        PexOpCode.Return => 1,
-        >= PexOpCode.StringConcat and <= PexOpCode.PropertySet => 3,
-        PexOpCode.ArrayCreate or PexOpCode.ArrayLength => 2,
-        PexOpCode.ArrayGetElement or PexOpCode.ArraySetElement => 3,
-        PexOpCode.ArrayFindElement or PexOpCode.ArrayRFindElement => 4,
-        PexOpCode.Is => 3,
-        PexOpCode.StructCreate => 1,
-        PexOpCode.StructGet or PexOpCode.StructSet => 3,
-        PexOpCode.ArrayFindStruct or PexOpCode.ArrayRFindStruct => 5,
-        PexOpCode.ArrayAdd or PexOpCode.ArrayInsert => 3,
-        PexOpCode.ArrayRemoveLast => 1,
-        PexOpCode.ArrayRemove => 3,
-        PexOpCode.ArrayClear => 1,
-        PexOpCode.ArrayGetAllMatchingStructs => 6,
-        _ => throw new ArgumentOutOfRangeException(nameof(opcode), opcode, "Unknown PEX opcode")
-    };
+        return opcode switch
+        {
+            PexOpCode.Nop => 0,
+            >= PexOpCode.IAdd and <= PexOpCode.IMod => 3,
+            >= PexOpCode.Not and <= PexOpCode.Cast => 2,
+            >= PexOpCode.CompareEqual and <= PexOpCode.CompareGreaterThanOrEqual => 3,
+            PexOpCode.Jump => 1,
+            PexOpCode.JumpTrue or PexOpCode.JumpFalse => 2,
+            PexOpCode.CallMethod or PexOpCode.CallStatic => 3,
+            PexOpCode.CallParent => 2,
+            PexOpCode.Return => 1,
+            >= PexOpCode.StringConcat and <= PexOpCode.PropertySet => 3,
+            PexOpCode.ArrayCreate or PexOpCode.ArrayLength => 2,
+            PexOpCode.ArrayGetElement or PexOpCode.ArraySetElement => 3,
+            PexOpCode.ArrayFindElement or PexOpCode.ArrayRFindElement => 4,
+            PexOpCode.Is => 3,
+            PexOpCode.StructCreate => 1,
+            PexOpCode.StructGet or PexOpCode.StructSet => 3,
+            PexOpCode.ArrayFindStruct or PexOpCode.ArrayRFindStruct => 5,
+            PexOpCode.ArrayAdd or PexOpCode.ArrayInsert => 3,
+            PexOpCode.ArrayRemoveLast => 1,
+            PexOpCode.ArrayRemove => 3,
+            PexOpCode.ArrayClear => 1,
+            PexOpCode.ArrayGetAllMatchingStructs => 6,
+            _ => throw new ArgumentOutOfRangeException(nameof(opcode), opcode, "Unknown PEX opcode")
+        };
+    }
 
     private static PexValue ReadValue(
         ref PexCursor reader,
@@ -878,7 +881,10 @@ public static class PexParser
                 : BinaryPrimitives.ReadUInt32BigEndian(bytes);
         }
 
-        public int ReadInt32(string field) => unchecked((int)ReadUInt32(field));
+        public int ReadInt32(string field)
+        {
+            return unchecked((int)ReadUInt32(field));
+        }
 
         public long ReadInt64(string field)
         {
@@ -891,7 +897,9 @@ public static class PexParser
         }
 
         public float ReadSingle(string field)
-            => BitConverter.Int32BitsToSingle(ReadInt32(field));
+        {
+            return BitConverter.Int32BitsToSingle(ReadInt32(field));
+        }
 
         public string ReadString(Encoding encoding, string field)
         {
@@ -910,7 +918,10 @@ public static class PexParser
             }
         }
 
-        public readonly bool CanRead(int count) => count >= 0 && count <= Remaining;
+        public readonly bool CanRead(int count)
+        {
+            return count >= 0 && count <= Remaining;
+        }
 
         public readonly PexCursor PeekSubCursor(int length, string field)
         {
@@ -934,7 +945,9 @@ public static class PexParser
         }
 
         public readonly void ConsumeItems(int count, string field)
-            => _budget.Consume(count, field, AbsolutePosition);
+        {
+            _budget.Consume(count, field, AbsolutePosition);
+        }
 
         public readonly void RequireEnd(string field)
         {
@@ -948,7 +961,9 @@ public static class PexParser
             string message,
             int? offset = null,
             Exception? innerException = null)
-            => new(message, offset ?? AbsolutePosition, innerException);
+        {
+            return new PexParseException(message, offset ?? AbsolutePosition, innerException);
+        }
 
         private readonly void Ensure(int count, string field)
         {

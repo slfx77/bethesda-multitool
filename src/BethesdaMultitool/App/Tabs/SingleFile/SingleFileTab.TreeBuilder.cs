@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -18,17 +19,30 @@ public sealed partial class SingleFileTab
 {
     private const int TreeNodeBatchSize = 200;
 
-    /// <summary>Max batches loaded per scroll settle (look-ahead), one batch per dispatcher tick.
-    /// A FIXED cap — never driven by the post-insert <c>ExtentHeight</c>, which is stale until the
-    /// next layout pass and would otherwise cascade through an entire huge section in back-to-back
-    /// ticks, freezing the UI thread (and starving container realization → stale rows).</summary>
+    /// <summary>
+    ///     Max batches loaded per scroll settle (look-ahead), one batch per dispatcher tick.
+    ///     A FIXED cap — never driven by the post-insert <c>ExtentHeight</c>, which is stale until the
+    ///     next layout pass and would otherwise cascade through an entire huge section in back-to-back
+    ///     ticks, freezing the UI thread (and starving container realization → stale rows).
+    /// </summary>
     private const int MaxBatchesPerScroll = 6;
 
     /// <summary>Tracks expanded nodes that have more children to load on scroll.</summary>
     private readonly Dictionary<TreeViewNode, (ObservableCollection<EsmBrowserNode> AllChildren, int LoadedCount)>
         _pendingTreeLoads = new();
 
-    private ScrollViewer? _treeScrollViewer;
+    /// <summary>
+    ///     RecordType nodes whose (expensive) data-model children are being built on a background
+    ///     thread right now. Guards against starting a second build if the user re-expands mid-load.
+    ///     UI-thread-only access (expand handlers + the post-await continuation), so no lock needed.
+    /// </summary>
+    private readonly HashSet<EsmBrowserNode> _recordTypeLoadsInFlight = [];
+
+    /// <summary>
+    ///     Remaining look-ahead batches for the current scroll settle (see
+    ///     <see cref="MaxBatchesPerScroll" />). Decremented per loaded batch; a fresh settle refills it.
+    /// </summary>
+    private int _treeLoadBudget;
 
     /// <summary>
     ///     In-flight guard for the coalesced, dispatcher-deferred tree-node load. Multiple
@@ -37,14 +51,7 @@ public sealed partial class SingleFileTab
     /// </summary>
     private bool _treeLoadScheduled;
 
-    /// <summary>RecordType nodes whose (expensive) data-model children are being built on a background
-    /// thread right now. Guards against starting a second build if the user re-expands mid-load.
-    /// UI-thread-only access (expand handlers + the post-await continuation), so no lock needed.</summary>
-    private readonly HashSet<EsmBrowserNode> _recordTypeLoadsInFlight = [];
-
-    /// <summary>Remaining look-ahead batches for the current scroll settle (see
-    /// <see cref="MaxBatchesPerScroll" />). Decremented per loaded batch; a fresh settle refills it.</summary>
-    private int _treeLoadBudget;
+    private ScrollViewer? _treeScrollViewer;
 
     #region TreeView Events
 
@@ -303,8 +310,10 @@ public sealed partial class SingleFileTab
         });
     }
 
-    /// <summary>Loads one batch of child nodes into each expanded pending parent. Returns the number
-    /// of nodes added this call (0 = nothing left to load / all pending parents collapsed).</summary>
+    /// <summary>
+    ///     Loads one batch of child nodes into each expanded pending parent. Returns the number
+    ///     of nodes added this call (0 = nothing left to load / all pending parents collapsed).
+    /// </summary>
     private int LoadNextPendingBatches()
     {
         var completed = new List<TreeViewNode>();
@@ -493,6 +502,7 @@ public sealed partial class SingleFileTab
             {
                 typeNodes = categoryNode.Children.ToList();
             }
+
             foreach (var typeNode in typeNodes)
             {
                 if (typeNode?.Children == null) continue;
@@ -647,4 +657,3 @@ public sealed partial class SingleFileTab
 
     #endregion
 }
-

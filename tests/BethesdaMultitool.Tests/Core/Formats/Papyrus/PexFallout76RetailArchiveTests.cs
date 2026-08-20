@@ -11,6 +11,7 @@ public sealed class PexFallout76RetailArchiveTests
 {
     private const string ExpectedSha256 =
         "55EB81033476842FB7C528E072F5FDCB3D09C5E594845540059018CA3DF183CD";
+
     private const int ExpectedScriptCount = 7_194;
 
     [Fact]

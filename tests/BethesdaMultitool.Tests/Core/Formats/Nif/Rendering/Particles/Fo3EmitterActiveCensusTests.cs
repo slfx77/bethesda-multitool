@@ -92,7 +92,7 @@ public sealed class Fo3EmitterActiveCensusTests
             "nifPath,systemIndex,capacity,lifeSpan,boolBinding,rateBinding,dormantTriggeredFx,"
             + "authoredRate,restRate0,restRate2_5,legacyVerdict,timingMode,bakeWindowSeconds,"
             + "bakedAtShipped,maxRateOverWindow,firstActiveTime,dutyFraction,bestSnapshot,"
-            + "bakedAtBest,bakedAtWarmup,verdict,silenceCause",
+            + "bakedAtBest,bakedAtWarmup,verdict,silenceCause"
         };
         var gatedRows = new List<string>();
 
@@ -307,12 +307,14 @@ public sealed class Fo3EmitterActiveCensusTests
         _output.WriteLine($"{label} EmitterActive census -> {csvPath}");
         _output.WriteLine($"NIFs scanned:        {totalNifs}");
         _output.WriteLine($"Prefiltered (ctlr):  {prefiltered}");
-        _output.WriteLine($"Parsed:              {parsed} (extract failures {extractFailures}, parse failures {parseFailures})");
+        _output.WriteLine(
+            $"Parsed:              {parsed} (extract failures {extractFailures}, parse failures {parseFailures})");
         _output.WriteLine($"Particle systems:    {totalSystems}");
         _output.WriteLine($"  no rate ctrl:      {noRateController}");
         _output.WriteLine($"  no bool binding:   {noBoolBinding}");
         _output.WriteLine($"  bool-bound rows:   {rows.Count - 1}");
-        _output.WriteLine($"    renders-at-shipped: {rendersAtShipped}  (the 2026-08-10 census called many of these gated)");
+        _output.WriteLine(
+            $"    renders-at-shipped: {rendersAtShipped}  (the 2026-08-10 census called many of these gated)");
         _output.WriteLine($"    pulses-invisible:   {pulsesInvisible}  (authored to emit, but not at snapshot 0)");
         _output.WriteLine($"    silent-everywhere:  {silentEverywhere}");
         _output.WriteLine($"  legacy gated-to-zero: {legacyGatedToZero} (old two-instant verdict, for diffing)");

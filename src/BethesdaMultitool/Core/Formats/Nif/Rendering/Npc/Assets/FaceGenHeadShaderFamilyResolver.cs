@@ -3,7 +3,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 
-/// <summary>Resolves the FaceGen head shader's texture family (diffuse, normal, subsurface) and subsurface tint for an NPC head.</summary>
+/// <summary>
+///     Resolves the FaceGen head shader's texture family (diffuse, normal, subsurface) and subsurface tint for an NPC
+///     head.
+/// </summary>
 internal static class FaceGenHeadShaderFamilyResolver
 {
     private static readonly DecodedTexture DefaultFaceGenMap1Texture = CreateDefaultFaceGenMap1Texture();

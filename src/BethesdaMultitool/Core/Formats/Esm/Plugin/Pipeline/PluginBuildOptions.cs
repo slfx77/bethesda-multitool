@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
@@ -52,7 +51,6 @@ public sealed record PluginBuildOptions
     ///     NAVM(s) the DMP captured for that cell so NPCs pathfind on the reshaped layout.
     ///     Default <c>false</c> — proven harmful in-game (see below); opt in only for new
     ///     (non-master) cells, which are emitted regardless of this flag.
-    ///
     ///     DISABLED BY DEFAULT because our reconstructed NAVMs carry EMPTY NVCI door-link
     ///     arrays (<c>NavInfoMapBuilder.BuildNvci</c>), and degenerate captures (6-7 vertex
     ///     stubs) besides. When emitted into an overridden MASTER interior they shadow the
@@ -62,7 +60,6 @@ public sealed record PluginBuildOptions
     ///     fixed by suppressing them). Master's navmeshes are strictly better than our
     ///     reconstructions until NVCI door-link reconstruction exists, so master cells keep
     ///     theirs and we emit nothing. Re-enable only after NVCI is reconstructed.
-    ///
     ///     Independent of the ESM/master flag — that is tied to the presence of cell-child
     ///     overrides (see <see cref="Output.Tes4HeaderBuilder" />), not to this option.
     /// </summary>
@@ -77,7 +74,6 @@ public sealed record PluginBuildOptions
     ///     resolved through <c>SourceToEmittedFormId</c> and accepted only if it lands on a
     ///     type-compatible <c>NPC_</c> (ACHR) / <c>CREA</c> (ACRE) base — master or captured-proto.
     ///     Default <c>true</c> (opt out with <c>--no-recover-leveled-spawns</c>).
-    ///
     ///     Trade-off: the re-pointed base is the crash-time resolved template, so the actor is a
     ///     fixed instance (no re-leveling); this faithfully reconstructs the captured scene, which
     ///     is the goal (populate cells the runtime showed inhabited). A leveled-list

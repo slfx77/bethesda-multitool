@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 
 /// <summary>
@@ -522,4 +523,3 @@ internal static class CrossBuildReportComparer
         internal Dictionary<string, List<RecordDiff>> Regressions { get; } = new(StringComparer.Ordinal);
     }
 }
-

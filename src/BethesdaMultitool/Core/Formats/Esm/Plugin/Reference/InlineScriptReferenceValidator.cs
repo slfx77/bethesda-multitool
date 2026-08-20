@@ -14,21 +14,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 /// </summary>
 internal static class InlineScriptReferenceValidator
 {
-    internal sealed record Issue(
-        string ScriptPath,
-        string FieldPath,
-        string Message,
-        uint? SourceFormId = null,
-        uint? ResolvedFormId = null,
-        uint? LocalVariableId = null);
-
-    internal sealed record Result(
-        bool IsSafe,
-        ImmutableArray<uint> ResolvedReferences,
-        Issue? Issue,
-        string? SourceTextForEmission,
-        Issue? SourceContractIssue);
-
     public static Result Validate(
         DialogueResultScript? script,
         string scriptPath,
@@ -147,8 +132,8 @@ internal static class InlineScriptReferenceValidator
                     scriptPath,
                     fieldPath,
                     $"{fieldPath} target 0x{raw:X8} does not resolve; the owning record must be retained or suppressed.",
-                    SourceFormId: raw,
-                    ResolvedFormId: resolvedFormId);
+                    raw,
+                    resolvedFormId);
                 return new Result(
                     false,
                     ImmutableArray<uint>.Empty,
@@ -248,7 +233,7 @@ internal static class InlineScriptReferenceValidator
                 terminal,
                 validFormIds,
                 remapTable),
-            _ => null,
+            _ => null
         };
     }
 
@@ -329,8 +314,9 @@ internal static class InlineScriptReferenceValidator
         TerminalMenuItem item,
         string scriptPath,
         IReadOnlySet<uint>? validFormIds,
-        IReadOnlyDictionary<uint, uint>? remapTable) =>
-        Validate(
+        IReadOnlyDictionary<uint, uint>? remapTable)
+    {
+        return Validate(
             item.CompiledData,
             item.SourceText,
             item.Variables,
@@ -343,4 +329,20 @@ internal static class InlineScriptReferenceValidator
             item.SourceTextOrigin,
             item.DecompiledText,
             item.IsBigEndianBytecode);
+    }
+
+    internal sealed record Issue(
+        string ScriptPath,
+        string FieldPath,
+        string Message,
+        uint? SourceFormId = null,
+        uint? ResolvedFormId = null,
+        uint? LocalVariableId = null);
+
+    internal sealed record Result(
+        bool IsSafe,
+        ImmutableArray<uint> ResolvedReferences,
+        Issue? Issue,
+        string? SourceTextForEmission,
+        Issue? SourceContractIssue);
 }

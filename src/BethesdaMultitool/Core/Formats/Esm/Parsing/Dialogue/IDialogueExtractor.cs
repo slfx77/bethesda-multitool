@@ -38,17 +38,20 @@ internal interface IDialogueExtractor
 /// </summary>
 internal static class DialogueExtractors
 {
-    public static IDialogueExtractor For(BethesdaGame game) => game switch
+    public static IDialogueExtractor For(BethesdaGame game)
     {
-        BethesdaGame.Oblivion => OblivionDialogueExtractor.Instance,
-        BethesdaGame.Skyrim => SkyrimDialogueExtractor.Instance,
-        BethesdaGame.Fallout4 or BethesdaGame.Fallout76 => Fallout4DialogueExtractor.Instance,
-        BethesdaGame.Unknown or
-            BethesdaGame.Morrowind or
-            BethesdaGame.Fallout3 or
-            BethesdaGame.FalloutNewVegas or
-            BethesdaGame.Starfield => throw new NotSupportedException(
-                $"No schema-primary dialogue extractor is registered for {game}."),
-        _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
-    };
+        return game switch
+        {
+            BethesdaGame.Oblivion => OblivionDialogueExtractor.Instance,
+            BethesdaGame.Skyrim => SkyrimDialogueExtractor.Instance,
+            BethesdaGame.Fallout4 or BethesdaGame.Fallout76 => Fallout4DialogueExtractor.Instance,
+            BethesdaGame.Unknown or
+                BethesdaGame.Morrowind or
+                BethesdaGame.Fallout3 or
+                BethesdaGame.FalloutNewVegas or
+                BethesdaGame.Starfield => throw new NotSupportedException(
+                    $"No schema-primary dialogue extractor is registered for {game}."),
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null)
+        };
+    }
 }

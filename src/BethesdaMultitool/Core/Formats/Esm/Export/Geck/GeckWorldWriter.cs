@@ -99,4 +99,3 @@ internal static class GeckWorldWriter
         return GeckCellReportBuilder.GenerateNonPersistentObjectsReport(cells, resolver);
     }
 }
-

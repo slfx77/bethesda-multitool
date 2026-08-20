@@ -1,7 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Lighting;

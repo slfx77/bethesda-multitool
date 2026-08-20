@@ -102,7 +102,7 @@ internal static class PlannedMagicEffectResolver
             resolvedEffects.Add(effect with
             {
                 EffectFormId = resolvedEffectFormId,
-                Conditions = resolvedConditions,
+                Conditions = resolvedConditions
             });
         }
 
@@ -116,23 +116,25 @@ internal static class PlannedMagicEffectResolver
         return new PlannedMagicEffectResolution
         {
             Effects = resolvedEffects,
-            Warnings = warnings,
+            Warnings = warnings
         };
     }
 
     private static DialogueCondition Apply(
         DialogueCondition condition,
         MagicEffectReferenceMember member,
-        uint formId) =>
-        member switch
+        uint formId)
+    {
+        return member switch
         {
             MagicEffectReferenceMember.ComparisonGlobal => condition with
             {
-                ComparisonValue = BitConverter.UInt32BitsToSingle(formId),
+                ComparisonValue = BitConverter.UInt32BitsToSingle(formId)
             },
             MagicEffectReferenceMember.Reference => condition with { Reference = formId },
             MagicEffectReferenceMember.Parameter1 => condition with { Parameter1 = formId },
             MagicEffectReferenceMember.Parameter2 => condition with { Parameter2 = formId },
-            _ => condition,
+            _ => condition
         };
+    }
 }

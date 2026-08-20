@@ -9,6 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Dds;
 /// </summary>
 internal static class DdsTextureDecoder
 {
+    // BC5 normal-map Z reconstruction depends only on the two input bytes (nx, ny), so there are just
+    // 256*256 distinct results. Precompute them once instead of running 2 divides + 1 sqrt per pixel
+    // (~16M float ops on a 4K texture). The table is built with the identical float expression, so the
+    // per-pixel output is byte-for-byte the same as the previous inline math.
+    private static readonly byte[] Bc5NormalZLut = BuildBc5NormalZLut();
+
     /// <summary>
     ///     Decode a DDS file to RGBA8888 mip levels.
     ///     Returns null if the format is unsupported or data is invalid.
@@ -94,7 +100,7 @@ internal static class DdsTextureDecoder
                 width,
                 height,
                 mipCount,
-                static (s, o, w, h) => DecodeBc4Level(s, o, w, h, signedFmt: true),
+                static (s, o, w, h) => DecodeBc4Level(s, o, w, h, true),
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 8)),
             // BC5 two-channel: "ATI2"/"BC5U" unsigned; "BC5S" signed (Fallout 4/76 normal maps).
             "ATI2" or "BC5U" => DecodeMipChain(
@@ -111,7 +117,7 @@ internal static class DdsTextureDecoder
                 width,
                 height,
                 mipCount,
-                static (s, o, w, h) => DecodeBc5Level(s, o, w, h, signedFmt: true),
+                static (s, o, w, h) => DecodeBc5Level(s, o, w, h, true),
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
             _ => null
         };
@@ -147,12 +153,14 @@ internal static class DdsTextureDecoder
             79 or 80 => DecodeMipChain(data, dataOffset, width, height, mipCount,
                 static (s, o, w, h) => DecodeBc4Level(s, o, w, h), static (w, h) => GetCompressedLevelSize(w, h, 8)),
             81 => DecodeMipChain(data, dataOffset, width, height, mipCount,
-                static (s, o, w, h) => DecodeBc4Level(s, o, w, h, signedFmt: true), static (w, h) => GetCompressedLevelSize(w, h, 8)),
+                static (s, o, w, h) => DecodeBc4Level(s, o, w, h, true),
+                static (w, h) => GetCompressedLevelSize(w, h, 8)),
             // BC5 (two channel): 82 = UNORM, 84 = SNORM
             82 or 83 => DecodeMipChain(data, dataOffset, width, height, mipCount,
                 static (s, o, w, h) => DecodeBc5Level(s, o, w, h), static (w, h) => GetCompressedLevelSize(w, h, 16)),
             84 => DecodeMipChain(data, dataOffset, width, height, mipCount,
-                static (s, o, w, h) => DecodeBc5Level(s, o, w, h, signedFmt: true), static (w, h) => GetCompressedLevelSize(w, h, 16)),
+                static (s, o, w, h) => DecodeBc5Level(s, o, w, h, true),
+                static (w, h) => GetCompressedLevelSize(w, h, 16)),
             // R8G8B8A8 UNORM / UNORM_SRGB
             28 or 29 => DecodeMipChain(data, dataOffset, width, height, mipCount,
                 static (s, o, w, h) => DecodeRgbLevel(s, o, w, h, 4, 0, 1, 2, 3), static (w, h) => w * h * 4),
@@ -161,7 +169,8 @@ internal static class DdsTextureDecoder
                 static (s, o, w, h) => DecodeRgbLevel(s, o, w, h, 4, 2, 1, 0, 3), static (w, h) => w * h * 4),
             // BC6H HDR (96 = signed, 95 = unsigned) — decoded to LDR RGBA by the library.
             95 or 96 => DecodeMipChain(data, dataOffset, width, height, mipCount,
-                (s, o, w, h) => DecodeBcnLevel(s, o, w, h, dxgiFormat == 96 ? CompressionFormat.Bc6S : CompressionFormat.Bc6U, 16),
+                (s, o, w, h) => DecodeBcnLevel(s, o, w, h,
+                    dxgiFormat == 96 ? CompressionFormat.Bc6S : CompressionFormat.Bc6U, 16),
                 static (w, h) => GetCompressedLevelSize(w, h, 16)),
             // BC7 (97 TYPELESS / 98 UNORM / 99 UNORM_SRGB)
             97 or 98 or 99 => DecodeMipChain(data, dataOffset, width, height, mipCount,
@@ -194,10 +203,10 @@ internal static class DdsTextureDecoder
             var count = Math.Min(pixels.Length, width * height);
             for (var i = 0; i < count; i++)
             {
-                rgba[(i * 4) + 0] = pixels[i].r;
-                rgba[(i * 4) + 1] = pixels[i].g;
-                rgba[(i * 4) + 2] = pixels[i].b;
-                rgba[(i * 4) + 3] = pixels[i].a;
+                rgba[i * 4 + 0] = pixels[i].r;
+                rgba[i * 4 + 1] = pixels[i].g;
+                rgba[i * 4 + 2] = pixels[i].b;
+                rgba[i * 4 + 3] = pixels[i].a;
             }
 
             return rgba;
@@ -227,10 +236,10 @@ internal static class DdsTextureDecoder
 
         // Resolve the byte offset within each pixel for each channel from the mask. With
         // standard 8-bit-per-channel masks the mask sits in exactly one byte; locate which.
-        int? rOff = MaskToByteOffset(rMask);
-        int? gOff = MaskToByteOffset(gMask);
-        int? bOff = MaskToByteOffset(bMask);
-        int? aOff = bitCount == 32 ? MaskToByteOffset(aMask) : null;
+        var rOff = MaskToByteOffset(rMask);
+        var gOff = MaskToByteOffset(gMask);
+        var bOff = MaskToByteOffset(bMask);
+        var aOff = bitCount == 32 ? MaskToByteOffset(aMask) : null;
         if (rOff is null || gOff is null || bOff is null) return null;
         if (bitCount == 32 && aOff is null) return null;
 
@@ -275,6 +284,7 @@ internal static class DdsTextureDecoder
             pixels[dst + 2] = data[src + bOff];
             pixels[dst + 3] = aOff is int a ? data[src + a] : (byte)255;
         }
+
         return pixels;
     }
 
@@ -612,12 +622,6 @@ internal static class DdsTextureDecoder
         return pixels;
     }
 
-    // BC5 normal-map Z reconstruction depends only on the two input bytes (nx, ny), so there are just
-    // 256*256 distinct results. Precompute them once instead of running 2 divides + 1 sqrt per pixel
-    // (~16M float ops on a 4K texture). The table is built with the identical float expression, so the
-    // per-pixel output is byte-for-byte the same as the previous inline math.
-    private static readonly byte[] Bc5NormalZLut = BuildBc5NormalZLut();
-
     private static byte[] BuildBc5NormalZLut()
     {
         var lut = new byte[256 * 256];
@@ -750,14 +754,14 @@ internal static class DdsTextureDecoder
         {
             for (var i = 2; i < 8; i++)
             {
-                palette[i] = (((8 - i) * e0) + ((i - 1) * e1)) / 7f;
+                palette[i] = ((8 - i) * e0 + (i - 1) * e1) / 7f;
             }
         }
         else
         {
             for (var i = 2; i < 6; i++)
             {
-                palette[i] = (((6 - i) * e0) + ((i - 1) * e1)) / 5f;
+                palette[i] = ((6 - i) * e0 + (i - 1) * e1) / 5f;
             }
 
             palette[6] = -1f;
@@ -783,8 +787,8 @@ internal static class DdsTextureDecoder
                 var idx = (int)(bits & 0x7);
                 bits >>= 3;
 
-                var unorm = (int)MathF.Round(((palette[idx] * 0.5f) + 0.5f) * 255f);
-                pixels[((pixelY * width + pixelX) * 4) + channelOffset] = (byte)Math.Clamp(unorm, 0, 255);
+                var unorm = (int)MathF.Round((palette[idx] * 0.5f + 0.5f) * 255f);
+                pixels[(pixelY * width + pixelX) * 4 + channelOffset] = (byte)Math.Clamp(unorm, 0, 255);
             }
         }
     }

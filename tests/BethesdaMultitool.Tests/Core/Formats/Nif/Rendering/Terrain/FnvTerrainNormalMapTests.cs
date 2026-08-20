@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
-using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
 using BethesdaMultitool.Tests.Helpers;
@@ -362,11 +361,11 @@ public sealed class FnvTerrainNormalMapTests
         // FO3 parity 2026-08-10: the landscape shader family is byte-identical between FO3 and
         // FNV (all 16 packages), so the pass is enabled for the classic pair and no one else.
         Assert.Contains(
-            "_game is BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas",
+            "_game is BethesdaGame.FalloutNewVegas",
             enabledProperty,
             StringComparison.Ordinal);
         Assert.Contains(
-            "or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3;",
+            "or BethesdaGame.Fallout3;",
             enabledProperty,
             StringComparison.Ordinal);
         Assert.DoesNotContain("Oblivion", enabledProperty, StringComparison.Ordinal);
@@ -383,7 +382,7 @@ public sealed class FnvTerrainNormalMapTests
             "LandscapeTexturePathResolver.ResolveNormal(ltexFormId, _ltexByFormId, _txstByFormId)",
             normalResolver,
             StringComparison.Ordinal);
-        Assert.Contains("path is null ? null : _textureCache.GetOrUpload(path, isNormalMap: true)",
+        Assert.Contains("path is null ? null : _textureCache.GetOrUpload(path, true)",
             normalResolver,
             StringComparison.Ordinal);
 
@@ -508,7 +507,10 @@ public sealed class FnvTerrainNormalMapTests
         Assert.NotEmpty(bytecode);
     }
 
-    private static string ReadEmbeddedShader(string name) => GpuShaderCompiler12.ReadSource(name);
+    private static string ReadEmbeddedShader(string name)
+    {
+        return GpuShaderCompiler12.ReadSource(name);
+    }
 
     private static string Slice(string source, string startMarker, string endMarker)
     {

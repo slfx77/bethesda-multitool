@@ -77,11 +77,14 @@ public sealed class ImgsEncoder : IRecordEncoder
         var classic = record.ClassicDnam ??
                       throw new ArgumentException("Classic packed-DNAM provenance is required.", nameof(record));
         var hdr = record.Hdr ??
-                  throw new ArgumentException("Classic packed-DNAM encoding requires top-level HDR semantics.", nameof(record));
+                  throw new ArgumentException("Classic packed-DNAM encoding requires top-level HDR semantics.",
+                      nameof(record));
         var cinematic = record.Cinematic ??
-                        throw new ArgumentException("Classic packed-DNAM encoding requires top-level cinematic semantics.", nameof(record));
+                        throw new ArgumentException(
+                            "Classic packed-DNAM encoding requires top-level cinematic semantics.", nameof(record));
         var tint = record.Tint ??
-                   throw new ArgumentException("Classic packed-DNAM encoding requires top-level tint semantics.", nameof(record));
+                   throw new ArgumentException("Classic packed-DNAM encoding requires top-level tint semantics.",
+                       nameof(record));
         const int length = (int)ImageSpaceClassicDnamLayout.Dnam152;
         var bytes = new byte[length];
 

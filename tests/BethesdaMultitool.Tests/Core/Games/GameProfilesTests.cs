@@ -163,8 +163,10 @@ public class GameProfilesTests
     [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
-    public void HumanScaleFactor_IsExactlyOneForClassicUnitGames(BethesdaGame game) =>
+    public void HumanScaleFactor_IsExactlyOneForClassicUnitGames(BethesdaGame game)
+    {
         Assert.Equal(1f, GameProfiles.HumanScaleFactor(game));
+    }
 
     [Fact]
     public void HumanScaleFactor_ScalesStarfieldToMetres()

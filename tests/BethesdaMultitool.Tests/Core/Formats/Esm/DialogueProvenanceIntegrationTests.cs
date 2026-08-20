@@ -1,6 +1,5 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -107,7 +106,10 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
         return false;
     }
 
-    private static bool IsIdentifierCharacter(char value) => char.IsAsciiLetterOrDigit(value) || value == '_';
+    private static bool IsIdentifierCharacter(char value)
+    {
+        return char.IsAsciiLetterOrDigit(value) || value == '_';
+    }
 
     private static async Task<T> WithParsedDumpAsync<T>(
         string dumpPath,

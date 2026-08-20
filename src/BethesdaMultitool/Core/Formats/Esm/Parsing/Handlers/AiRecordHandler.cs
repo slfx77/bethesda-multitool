@@ -547,9 +547,11 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         private uint _idleFormId;
         private uint _topicFormId;
 
-        internal static bool IsEventPayloadSubrecord(string signature) =>
-            signature is "INAM" or "TNAM" or "SCHR" or "SCDA" or "SCTX" or "SCRO"
+        internal static bool IsEventPayloadSubrecord(string signature)
+        {
+            return signature is "INAM" or "TNAM" or "SCHR" or "SCDA" or "SCTX" or "SCRO"
                 or "SLSD" or "SCVR" or "SCRV" or "NEXT";
+        }
 
         internal void ApplySubrecord(string signature, ReadOnlySpan<byte> data, bool isBigEndian)
         {

@@ -57,9 +57,9 @@ internal sealed record DataFolderResolution
 internal sealed class DataFolderResolver
 {
     private readonly DataFolderIndex _baseline;
+    private readonly bool _enableFuzzy;
     private readonly bool _overrideBaseline;
     private readonly IReadOnlyList<DataFolderIndex> _secondaries;
-    private readonly bool _enableFuzzy;
 
     /// <summary>
     ///     Creates a resolver over a baseline data folder and ordered secondary folders;
@@ -317,7 +317,7 @@ internal sealed class DataFolderResolver
             useLoose
                 ? static (folder, lookupKey) => folder.EnumerateByLooseBasename(lookupKey)
                 : static (folder, lookupKey) => folder.EnumerateByBasename(lookupKey),
-            requireCompatibleExtension: useLoose);
+            useLoose);
     }
 
     /// <summary>
@@ -344,7 +344,7 @@ internal sealed class DataFolderResolver
             Path.GetExtension(requestedBasename),
             requestedTokens,
             static (folder, lookupKey) => folder.EnumerateByLooseBasename(lookupKey),
-            requireCompatibleExtension: true);
+            true);
     }
 
     private static FuzzyCandidate? FindBestIndexedCandidate(
@@ -734,24 +734,24 @@ internal sealed class DataFolderResolver
         ///     Tie-break rule for a path several donor folders all provide: prefer a mesh that
         ///     has collision over one that does not, otherwise keep folder order.
         ///     <para>
-        ///     Folder order alone is the wrong tool here. It encodes nothing about the asset,
-        ///     so a cross-game PC donor listed first silently outranks the Xbox 360 build the
-        ///     DMP came from — which is how the Ultra Luxe fountain basin
-        ///     (<c>architecture\urban\civicspace\dupontcirclefountain01.nif</c>) shipped as
-        ///     Fallout 3's collision-free original instead of the July-2010 360 re-export that
-        ///     carries a 658-triangle <c>bhkRigidBodyT</c>. Flipping the ORDER instead would
-        ///     have been just as arbitrary and would have lost collision on ten Anchorage mill
-        ///     meshes where the FO3 copy is the one with Havok. Comparing the actual asset
-        ///     gets both directions right without any era heuristic.
+        ///         Folder order alone is the wrong tool here. It encodes nothing about the asset,
+        ///         so a cross-game PC donor listed first silently outranks the Xbox 360 build the
+        ///         DMP came from — which is how the Ultra Luxe fountain basin
+        ///         (<c>architecture\urban\civicspace\dupontcirclefountain01.nif</c>) shipped as
+        ///         Fallout 3's collision-free original instead of the July-2010 360 re-export that
+        ///         carries a 658-triangle <c>bhkRigidBodyT</c>. Flipping the ORDER instead would
+        ///         have been just as arbitrary and would have lost collision on ten Anchorage mill
+        ///         meshes where the FO3 copy is the one with Havok. Comparing the actual asset
+        ///         gets both directions right without any era heuristic.
         ///     </para>
         ///     <para>
-        ///     Narrow by design: it fires only when candidates DISAGREE about collision. On
-        ///     this corpus that is 11 of ~5,000 contested meshes — the rest have collision in
-        ///     both copies or neither, and keep folder order untouched. Note "has collision"
-        ///     is not universally "more correct": collision can legitimately move to a
-        ///     companion mesh between builds, which is exactly what the paired
-        ///     <c>effects\NV\NV_ULfountain.NIF</c> (FX, no physics) and this basin do. The rule
-        ///     is a tie-break among copies of the SAME path, so that case does not arise here.
+        ///         Narrow by design: it fires only when candidates DISAGREE about collision. On
+        ///         this corpus that is 11 of ~5,000 contested meshes — the rest have collision in
+        ///         both copies or neither, and keep folder order untouched. Note "has collision"
+        ///         is not universally "more correct": collision can legitimately move to a
+        ///         companion mesh between builds, which is exactly what the paired
+        ///         <c>effects\NV\NV_ULfountain.NIF</c> (FX, no physics) and this basin do. The rule
+        ///         is a tie-break among copies of the SAME path, so that case does not arise here.
         ///     </para>
         /// </summary>
         private static (int Index, AssetSource Source) TryPreferCollisionBearing(

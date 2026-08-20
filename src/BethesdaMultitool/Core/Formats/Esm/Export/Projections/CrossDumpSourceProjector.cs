@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Semantic;
@@ -316,7 +317,7 @@ internal static class CrossDumpSourceProjector
         RecordCollection records,
         FormIdResolver resolver,
         Dictionary<uint, List<(uint FormId, string? Name)>> factionMembers,
-        Dictionary<uint, List<(Models.Records.Item.WeaponRecord Weapon, WeaponModSlot Slot)>> modToWeapon,
+        Dictionary<uint, List<(WeaponRecord Weapon, WeaponModSlot Slot)>> modToWeapon,
         IReadOnlyDictionary<uint, PlacedReferenceLocation> placedReferenceLocations)
     {
         var reportsByType = new Dictionary<string, Dictionary<uint, RecordReport>>(StringComparer.OrdinalIgnoreCase);
@@ -342,12 +343,12 @@ internal static class CrossDumpSourceProjector
                 record,
                 resolver,
                 factionMembers,
-                keyLockedDoors: null, // cross-source — not needed for non-Key reports
+                null, // cross-source — not needed for non-Key reports
                 modToWeapon,
                 placedReferenceLocations,
-                npcPlacements: null, // cross-source — not needed for non-NPC reports
-                npcScriptReferences: null, // cross-source — not needed for non-NPC reports
-                containerPlacements: null // cross-source — not needed for non-Container reports
+                null, // cross-source — not needed for non-NPC reports
+                null, // cross-source — not needed for non-NPC reports
+                null // cross-source — not needed for non-Container reports
             );
             if (report == null)
             {
@@ -369,4 +370,3 @@ internal static class CrossDumpSourceProjector
         return reportsByType;
     }
 }
-

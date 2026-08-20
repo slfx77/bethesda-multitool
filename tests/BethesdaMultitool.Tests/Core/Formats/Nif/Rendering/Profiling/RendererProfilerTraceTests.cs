@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaRendererProfiler;
 using Xunit;
 
@@ -67,9 +68,9 @@ public sealed class RendererProfilerTraceTests
         [
             new GpuTextureCache12.AliasTraceEntry(
                 @"textures\setdressing\newsstand\newstand01_n.dds",
-                IsResident: true,
-                ResidentPayloadBytes: 4_096,
-                AliasTrace: aliases)
+                true,
+                4_096,
+                aliases)
         ]);
         var fields = GpuTextureCache12.BuildCacheSummaryTraceFields(
             "reference",
@@ -83,10 +84,10 @@ public sealed class RendererProfilerTraceTests
                 QueueDepth = 3,
                 InFlight = 4
             },
-            pendingResolves: 5,
-            pendingUploads: 6,
-            pendingUploadDispatch: 3,
-            aliases: aliasSummary);
+            5,
+            6,
+            3,
+            aliasSummary);
 
         using var writer = new StringWriter();
         try

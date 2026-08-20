@@ -30,19 +30,6 @@ public sealed partial class WorldspaceListControl : UserControl
     /// <summary>Raised with the picked worldspace's index into the owning ComboBox.</summary>
     public event EventHandler<int>? WorldspaceActivated;
 
-    /// <summary>
-    ///     One row. <see cref="ComboIndex" /> is the authoritative link back to the toolbar picker —
-    ///     the list is re-sorted and filtered, so row order never matches combo order.
-    /// </summary>
-    public sealed record WorldspaceListItem(
-        int ComboIndex,
-        string EditorId,
-        string DisplayName,
-        int CellCount)
-    {
-        public string CellCountLabel => CellCount > 0 ? $"{CellCount}" : "—";
-    }
-
     /// <summary>Replaces the rows. <paramref name="items" /> must be in ComboBox order.</summary>
     public void Populate(IReadOnlyList<WorldspaceListItem> items)
     {
@@ -113,7 +100,8 @@ public sealed partial class WorldspaceListControl : UserControl
         }
 
         var result = byCellCount
-            ? filtered.OrderByDescending(i => i.CellCount).ThenBy(i => i.EditorId, StringComparer.OrdinalIgnoreCase).ToList()
+            ? filtered.OrderByDescending(i => i.CellCount).ThenBy(i => i.EditorId, StringComparer.OrdinalIgnoreCase)
+                .ToList()
             : filtered.OrderBy(i => i.EditorId, StringComparer.OrdinalIgnoreCase).ToList();
 
         WorldspaceListView.ItemsSource = result;
@@ -128,5 +116,18 @@ public sealed partial class WorldspaceListControl : UserControl
         {
             WorldspaceActivated?.Invoke(this, item.ComboIndex);
         }
+    }
+
+    /// <summary>
+    ///     One row. <see cref="ComboIndex" /> is the authoritative link back to the toolbar picker —
+    ///     the list is re-sorted and filtered, so row order never matches combo order.
+    /// </summary>
+    public sealed record WorldspaceListItem(
+        int ComboIndex,
+        string EditorId,
+        string DisplayName,
+        int CellCount)
+    {
+        public string CellCountLabel => CellCount > 0 ? $"{CellCount}" : "—";
     }
 }

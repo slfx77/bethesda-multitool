@@ -1,7 +1,7 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Xma;
@@ -224,6 +224,7 @@ internal static class BsaConvertCommand
                     "textures\\landscape\\lod\\...). Engine falls back to master's terrain-matching LOD.[/]",
                     lodSkipped);
             }
+
             var relativePaths = allFiles.Select(f => Path.GetRelativePath(extractDir, f));
             using var writer = BsaWriter.CreateWithAutoFlags(relativePaths, compress);
 
@@ -411,25 +412,26 @@ internal static class BsaConvertCommand
             {
                 var task = ctx.AddTask("[green]XMA -> WAV[/]", maxValue: xmaFiles.Length);
 
-                await ParallelWork.ForEachAsync("bsa-convert", xmaFiles, ConcurrencyPolicy.FullCores, async (xmaFile, ct) =>
-                {
-                    var xmaData = await File.ReadAllBytesAsync(xmaFile, ct);
-                    var result = await XmaWavConverter.ConvertAsync(xmaData);
-
-                    if (result is { Success: true, OutputData: not null })
+                await ParallelWork.ForEachAsync("bsa-convert", xmaFiles, ConcurrencyPolicy.FullCores,
+                    async (xmaFile, ct) =>
                     {
-                        var wavFile = Path.ChangeExtension(xmaFile, ".wav");
-                        await File.WriteAllBytesAsync(wavFile, result.OutputData, ct);
-                        File.Delete(xmaFile);
-                        Interlocked.Increment(ref xmaConverted);
-                    }
-                    else
-                    {
-                        Interlocked.Increment(ref xmaFailed);
-                    }
+                        var xmaData = await File.ReadAllBytesAsync(xmaFile, ct);
+                        var result = await XmaWavConverter.ConvertAsync(xmaData);
 
-                    task.Increment(1);
-                }, cancellationToken: cancellationToken);
+                        if (result is { Success: true, OutputData: not null })
+                        {
+                            var wavFile = Path.ChangeExtension(xmaFile, ".wav");
+                            await File.WriteAllBytesAsync(wavFile, result.OutputData, ct);
+                            File.Delete(xmaFile);
+                            Interlocked.Increment(ref xmaConverted);
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref xmaFailed);
+                        }
+
+                        task.Increment(1);
+                    }, cancellationToken: cancellationToken);
             });
 
         AnsiConsole.MarkupLine("  Converted: {0:N0}, Failed: {1:N0}", xmaConverted, xmaFailed);

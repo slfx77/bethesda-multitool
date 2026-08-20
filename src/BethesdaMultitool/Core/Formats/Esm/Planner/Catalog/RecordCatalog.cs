@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
 /// <summary>
@@ -128,7 +127,7 @@ public static class RecordCatalog
                 {
                     Source = SourceKind.DmpOverride,
                     DmpFormId = formId,
-                    Model = model,
+                    Model = model
                 };
                 pairedMasterFormIds.Add(masterLookupFormId);
                 continue;
@@ -139,7 +138,7 @@ public static class RecordCatalog
                 Type = type,
                 Source = SourceKind.DmpNew,
                 DmpFormId = formId,
-                Model = model,
+                Model = model
             });
         }
 
@@ -147,4 +146,3 @@ public static class RecordCatalog
         return entries;
     }
 }
-

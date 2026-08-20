@@ -21,13 +21,8 @@ internal sealed class GpuDeletionQueue12 : ITrackableResource, IDisposable
 {
     private readonly int _framesToHold;
     private readonly Queue<PendingDeletion> _pending = new();
-    private ResourceRegistration? _registration;
-    private uint _currentFrame;
     private bool _disposed;
-
-    /// <summary>The tick counter, exposed so geometry diagnostics can correlate free timing with
-    /// the fence-synced frame clock.</summary>
-    public uint CurrentFrame => _currentFrame;
+    private ResourceRegistration? _registration;
 
     public GpuDeletionQueue12(int framesToHold)
     {
@@ -36,12 +31,37 @@ internal sealed class GpuDeletionQueue12 : ITrackableResource, IDisposable
         _framesToHold = framesToHold;
     }
 
+    /// <summary>
+    ///     The tick counter, exposed so geometry diagnostics can correlate free timing with
+    ///     the fence-synced frame clock.
+    /// </summary>
+    public uint CurrentFrame { get; private set; }
+
+    /// <summary>
+    ///     Drains all remaining pending resources synchronously. Caller must ensure
+    ///     the GPU is idle (e.g. via <c>WaitForGpuIdle</c>) before calling.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _registration?.Dispose();
+        _registration = null;
+        while (_pending.TryDequeue(out var p))
+        {
+            p.Resource.Dispose();
+        }
+    }
+
     public string ResourceName => nameof(GpuDeletionQueue12);
 
     public ResourceCategory Category => ResourceCategory.GpuMeta;
 
     /// <summary>Pending depth is the useful signal: a depth that only grows is a disposal leak.</summary>
-    public ResourceStats GetStats() => new() { QueueDepth = _pending.Count };
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats { QueueDepth = _pending.Count };
+    }
 
     /// <summary>
     ///     Registers the queue with <paramref name="registry" /> (unregistered again on
@@ -66,7 +86,8 @@ internal sealed class GpuDeletionQueue12 : ITrackableResource, IDisposable
             resource.Dispose();
             return;
         }
-        _pending.Enqueue(new PendingDeletion(resource, _currentFrame + (uint)_framesToHold));
+
+        _pending.Enqueue(new PendingDeletion(resource, CurrentFrame + (uint)_framesToHold));
     }
 
     /// <summary>
@@ -76,25 +97,11 @@ internal sealed class GpuDeletionQueue12 : ITrackableResource, IDisposable
     /// </summary>
     public void Tick()
     {
-        _currentFrame++;
-        while (_pending.TryPeek(out var head) && head.SafeFrame <= _currentFrame)
+        CurrentFrame++;
+        while (_pending.TryPeek(out var head) && head.SafeFrame <= CurrentFrame)
         {
             _pending.Dequeue();
             head.Resource.Dispose();
-        }
-    }
-
-    /// <summary>Drains all remaining pending resources synchronously. Caller must ensure
-    /// the GPU is idle (e.g. via <c>WaitForGpuIdle</c>) before calling.</summary>
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        while (_pending.TryDequeue(out var p))
-        {
-            p.Resource.Dispose();
         }
     }
 

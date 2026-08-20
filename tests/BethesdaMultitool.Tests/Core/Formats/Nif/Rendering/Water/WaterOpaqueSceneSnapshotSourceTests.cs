@@ -147,7 +147,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             source,
             "public bool TryPrepareWaterOpaqueSnapshot(",
             "public bool RestoreWaterOpaqueSnapshot(");
-        Assert.Contains("_disposed || snapshot is null || _waterOpaqueSnapshotPrepared", prepare,
+        Assert.Contains("_disposed || snapshot is null || IsWaterOpaqueSnapshotPrepared", prepare,
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             prepare,
@@ -170,7 +170,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "cmd.ResolveSubresource(_hdrResolveTex, 0, _colorTex, 0, ColorFormat);");
 
         var dispose = Extract(source, "public void Dispose()", "_colorTex.Dispose();");
-        Assert.Contains("_waterOpaqueSnapshotPrepared = false;", dispose, StringComparison.Ordinal);
+        Assert.Contains("IsWaterOpaqueSnapshotPrepared = false;", dispose, StringComparison.Ordinal);
         Assert.Contains("_waterOpaqueCopy?.Dispose();", dispose, StringComparison.Ordinal);
         Assert.Contains("_hdrResolveTex?.Dispose();", dispose, StringComparison.Ordinal);
     }
@@ -268,7 +268,8 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         var device = ReadAppSource("WorldView3DControl.Device.cs");
         SourceContract.AssertOrder(
             device,
-            "_cbvSrvUavHeap12?.Dispose(); _cbvSrvUavHeap12 = null;",
+            "_cbvSrvUavHeap12?.Dispose();",
+            "_cbvSrvUavHeap12 = null;",
             "_waterOpaqueSnapshotSrv = null;",
             "_waterOpaqueSnapshotSrvResource = null;",
             "_captureWaterOpaqueSnapshotSrv = null;");
@@ -319,8 +320,8 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         var captureRelease = Extract(
             offscreen,
             "public bool ReleaseDedicatedWaterOpaqueSnapshotResource()",
-            "public bool TonemapHistoryReset");
-        Assert.Contains("_disposed || _waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null",
+            "public bool TryEnsureResolvedDepthResource()");
+        Assert.Contains("_disposed || IsWaterOpaqueSnapshotPrepared || _waterOpaqueCopy is null",
             captureRelease, StringComparison.Ordinal);
         SourceContract.AssertOrder(captureRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;",
             "return true;");
@@ -361,10 +362,10 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         SourceContract.AssertOrder(
             abort,
             "if (!_frameOpen) return false;",
-            "_commandList.Close();",
+            "CommandList.Close();",
             "resource.Dispose();",
             "_currentFrameRetirements.Clear();",
-            "_frameIndex = (_frameIndex + 1) % FramesInFlight;",
+            "FrameIndex = (FrameIndex + 1) % FramesInFlight;",
             "_frameOpen = false;",
             "return true;");
         Assert.DoesNotContain("ExecuteCommandList", abort, StringComparison.Ordinal);

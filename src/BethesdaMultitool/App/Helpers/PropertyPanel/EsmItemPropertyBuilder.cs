@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -327,4 +328,3 @@ internal static class EsmItemPropertyBuilder
         return new EsmPropertyEntry { Name = "", Value = item.ToString() ?? "" };
     }
 }
-

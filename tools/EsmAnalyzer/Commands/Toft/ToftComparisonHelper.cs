@@ -1,11 +1,7 @@
-using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using Spectre.Console;
 using static EsmAnalyzer.Commands.Toft.ToftCommands;
 
 namespace EsmAnalyzer.Commands.Toft;
@@ -412,12 +408,12 @@ internal static class ToftComparisonHelper
         bool hasToft)
     {
         return hasPrimary && hasToft
-            ? (summary with { WithStringsBoth = summary.WithStringsBoth + 1 })
+            ? summary with { WithStringsBoth = summary.WithStringsBoth + 1 }
             : hasPrimary
-            ? (summary with { WithStringsPrimaryOnly = summary.WithStringsPrimaryOnly + 1 })
-            : hasToft
-            ? (summary with { WithStringsToftOnly = summary.WithStringsToftOnly + 1 })
-            : (summary with { WithStringsNone = summary.WithStringsNone + 1 });
+                ? summary with { WithStringsPrimaryOnly = summary.WithStringsPrimaryOnly + 1 }
+                : hasToft
+                    ? summary with { WithStringsToftOnly = summary.WithStringsToftOnly + 1 }
+                    : summary with { WithStringsNone = summary.WithStringsNone + 1 };
     }
 
     private static void AddStringCompareRow(Table table, uint formId, List<string> primaryStrings,

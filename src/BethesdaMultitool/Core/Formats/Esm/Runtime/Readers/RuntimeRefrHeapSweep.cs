@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Minidump;
-using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
 
@@ -56,7 +55,7 @@ internal static class RuntimeRefrHeapSweep
         // REFR base form code = the lowest table FormType (REFR < ACHR < ACRE). The scan is
         // scoped to master REFR FormIDs (caller filter), so every swept hit is a REFR — no
         // formtype byte read (it drifts across builds and is unreliable for the struct itself).
-        byte refrFormType = byte.MaxValue;
+        var refrFormType = byte.MaxValue;
         foreach (var entry in scanResult.RuntimeRefrFormEntries)
         {
             existing.Add(entry.FormId);
@@ -92,7 +91,7 @@ internal static class RuntimeRefrHeapSweep
             }
 
             ScanRegion(buffer, shift, masterFormIds, existing, addedFids,
-                emit: hit =>
+                hit =>
                 {
                     scanResult.RuntimeRefrFormEntries.Add(new RuntimeEditorIdEntry
                     {
@@ -144,7 +143,7 @@ internal static class RuntimeRefrHeapSweep
 
                 scanned += buffer.Length;
                 ScanRegion(buffer, shift, masterFormIds, existing, seen,
-                    emit: _ => hits++);
+                    _ => hits++);
             }
 
             if (hits > bestHits)

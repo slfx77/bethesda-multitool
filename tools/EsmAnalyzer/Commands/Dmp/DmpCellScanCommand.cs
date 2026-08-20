@@ -13,7 +13,6 @@ namespace EsmAnalyzer.Commands.Dmp;
 ///     DMP, looks for the (X, Y, Z) float triple at TESObjectREFR offsets +64/+68/+72,
 ///     and validates the surrounding bytes match a TESObjectREFR layout (vftable at
 ///     +0, FormID at +12, scale at +76, pParentCell at +80).
-///
 ///     Complements `dmp cell-inventory`: that command lists placements the cell-traversal
 ///     pipeline reached. This one finds placements whose memory still lives in the
 ///     dump but which no CELL.PlacedObjects list points to.
@@ -136,7 +135,8 @@ internal static class DmpCellScanCommand
             bytesScanned += region.Size;
         }
 
-        AnsiConsole.MarkupLine($"Scanned [cyan]{bytesScanned:N0}[/] bytes across [cyan]{info.MemoryRegions.Count}[/] regions");
+        AnsiConsole.MarkupLine(
+            $"Scanned [cyan]{bytesScanned:N0}[/] bytes across [cyan]{info.MemoryRegions.Count}[/] regions");
         AnsiConsole.MarkupLine($"Found [yellow]{candidates.Count}[/] hits in cell bounds");
         AnsiConsole.WriteLine();
 
@@ -234,7 +234,7 @@ internal static class DmpCellScanCommand
             var fidOk = fid != 0 && fid != 0xFFFFFFFFu;
             var scaleOk = scale > 0.01f && scale <= 100f && !float.IsNaN(scale);
             var pCellOk = pCell == 0
-                || (pCell >= HeapVaLo && pCell < ModuleVaHi); // null or in user-mode VA range
+                          || (pCell >= HeapVaLo && pCell < ModuleVaHi); // null or in user-mode VA range
 
             var isRefrShaped = vftOk && fidOk && scaleOk && pCellOk;
 

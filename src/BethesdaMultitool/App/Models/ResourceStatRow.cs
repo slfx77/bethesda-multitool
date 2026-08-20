@@ -15,10 +15,10 @@ public sealed class ResourceStatRow : INotifyPropertyChanged
 {
     private string _bytesDisplay = "";
     private string _entriesDisplay = "";
-    private string _hitRateDisplay = "";
     private string _evictionsDisplay = "";
-    private string _queueDisplay = "";
+    private string _hitRateDisplay = "";
     private string _processedDisplay = "";
+    private string _queueDisplay = "";
 
     internal ResourceStatRow(string name, ResourceCategory category)
     {
@@ -26,8 +26,6 @@ public sealed class ResourceStatRow : INotifyPropertyChanged
         Category = category;
         CategoryLabel = CliResourceStatsReporter.CategoryLabel(category);
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 
     public string Name { get; }
 
@@ -70,6 +68,8 @@ public sealed class ResourceStatRow : INotifyPropertyChanged
         get => _processedDisplay;
         private set => SetField(ref _processedDisplay, value, nameof(ProcessedDisplay));
     }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     internal void Update(ResourceStats stats)
     {

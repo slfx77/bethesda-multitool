@@ -20,7 +20,7 @@ public sealed class WeapEncoder : IRecordEncoder
         ["Health"] = m => m.Health,
         ["Weight"] = m => m.Weight,
         ["Damage"] = m => m.Damage,
-        ["ClipSize"] = m => m.ClipSize,
+        ["ClipSize"] = m => m.ClipSize
     };
 
     // CRDT helper mutates weap.CriticalEffectFormId via `with` so the static map sees the
@@ -30,7 +30,7 @@ public sealed class WeapEncoder : IRecordEncoder
         ["CriticalDamage"] = m => (ushort)m.CriticalDamage,
         ["CriticalChanceMult"] = m => m.CriticalChance,
         // "EffectOnDeath" not in model → zero-fill.
-        ["CriticalEffect"] = m => m.CriticalEffectFormId ?? 0u,
+        ["CriticalEffect"] = m => m.CriticalEffectFormId ?? 0u
     };
 
     // DNAM payload is 204 bytes long. See the WEAP DNAM entry in SubrecordItemSchemas for
@@ -87,19 +87,20 @@ public sealed class WeapEncoder : IRecordEncoder
         ["KillImpulse"] = m => m.KillImpulse,
         // ModActionOneValueTwo/Two/Three not in model → zero-fill.
         ["KillImpulseDistance"] = m => m.KillImpulseDistance,
-        ["SkillRequirement"] = m => m.SkillRequirement,
+        ["SkillRequirement"] = m => m.SkillRequirement
     };
 
-    private static readonly Dictionary<string, Func<VatsAttackData, object?>> VatsExtractors = new(StringComparer.Ordinal)
-    {
-        ["VatSpecialEffect"] = m => m.EffectFormId,
-        ["VatSpecialAP"] = m => m.ActionPointCost,
-        ["VatSpecialMultiplier"] = m => m.DamageMultiplier,
-        ["VatSkillRequired"] = m => m.SkillRequired,
-        ["Silent"] = m => m.IsSilent ? (byte)1 : (byte)0,
-        ["ModRequired"] = m => m.RequiresMod ? (byte)1 : (byte)0,
-        ["Flags"] = m => m.ExtraFlags,
-    };
+    private static readonly Dictionary<string, Func<VatsAttackData, object?>> VatsExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["VatSpecialEffect"] = m => m.EffectFormId,
+            ["VatSpecialAP"] = m => m.ActionPointCost,
+            ["VatSpecialMultiplier"] = m => m.DamageMultiplier,
+            ["VatSkillRequired"] = m => m.SkillRequired,
+            ["Silent"] = m => m.IsSilent ? 1 : 0,
+            ["ModRequired"] = m => m.RequiresMod ? 1 : 0,
+            ["Flags"] = m => m.ExtraFlags
+        };
 
     /// <summary>
     ///     The engine-valid DNAM Attack Animation bytes, per xEdit <c>wbDefinitionsFNV</c>
@@ -116,16 +117,6 @@ public sealed class WeapEncoder : IRecordEncoder
         255
     ];
 
-    /// <summary>
-    ///     Clamp an out-of-enum attack-animation byte to 255 (DEFAULT — the animation type
-    ///     picks its standard attack group). 0 is uninitialized runtime state, not data;
-    ///     emitting it verbatim ships an unfireable weapon.
-    /// </summary>
-    private static byte NormalizeAttackAnim(byte value)
-    {
-        return ValidAttackAnimations.Contains(value) ? value : (byte)255;
-    }
-
     public string RecordType => "WEAP";
     public Type ModelType => typeof(WeaponRecord);
 
@@ -138,6 +129,16 @@ public sealed class WeapEncoder : IRecordEncoder
             Subrecords = [SchemaModelSerializer.SerializeSubrecord("DATA", "WEAP", 15, weap, DataExtractors)],
             Warnings = []
         };
+    }
+
+    /// <summary>
+    ///     Clamp an out-of-enum attack-animation byte to 255 (DEFAULT — the animation type
+    ///     picks its standard attack group). 0 is uninitialized runtime state, not data;
+    ///     emitting it verbatim ships an unfireable weapon.
+    /// </summary>
+    private static byte NormalizeAttackAnim(byte value)
+    {
+        return ValidAttackAnimations.Contains(value) ? value : (byte)255;
     }
 
     /// <summary>
@@ -253,7 +254,9 @@ public sealed class WeapEncoder : IRecordEncoder
         // DNAM embeds the projectile FormID at offset 36. When dangling, zero it (engine
         // logs "Could not find projectile" but the weapon still loads — just fires nothing).
         subs.Add(new EncodedSubrecord("DNAM",
-            BuildDnamSubrecord(weap, ResolveOrZero(weap.ProjectileFormId, validFormIds, remapTable, warnings, weap.FormId, "DNAM projectile"))));
+            BuildDnamSubrecord(weap,
+                ResolveOrZero(weap.ProjectileFormId, validFormIds, remapTable, warnings, weap.FormId,
+                    "DNAM projectile"))));
 
         // CRDT — critical-hit data (16 bytes). Master canonical order has CRDT directly
         // after DNAM and before VATS. Emit only when the model carries non-default values

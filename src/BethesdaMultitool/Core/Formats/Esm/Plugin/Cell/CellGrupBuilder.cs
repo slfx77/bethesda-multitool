@@ -48,9 +48,9 @@ public static class CellGrupBuilder
     ///     THIS file at the master's offsets and every loaded exterior cell fails with
     ///     "CELLS: Failed to load temporary data".
     ///     <para>
-    ///     Dropping it is only half the job: the record is then re-emitted with a table rebuilt
-    ///     for this file by <see cref="WorldOfstTableBuilder" />. Shipping no OFST at all is a
-    ///     third, separately broken state — see that class for why it crashes the cell attach.
+    ///         Dropping it is only half the job: the record is then re-emitted with a table rebuilt
+    ///         for this file by <see cref="WorldOfstTableBuilder" />. Shipping no OFST at all is a
+    ///         third, separately broken state — see that class for why it crashes the cell attach.
     ///     </para>
     /// </summary>
     private static readonly IReadOnlySet<string> WrldAnchorStripSubrecords =
@@ -273,15 +273,20 @@ public static class CellGrupBuilder
         // master block/sub labels — that path is FormID-agnostic and their coords are canonical.
         var useInteriorFormula = blockGroupType == 2;
 
-        byte[] BlockLabelFor(CellOverrideBundle b) =>
-            useInteriorFormula ? LabelBytes((b.CellFormId & 0xFFFFFFu) % 10) : b.Context.BlockLabel!;
-        byte[] SubblockLabelFor(CellOverrideBundle b) =>
-            useInteriorFormula ? LabelBytes((b.CellFormId & 0xFFFFFFu) % 100 / 10) : b.Context.SubblockLabel!;
+        byte[] BlockLabelFor(CellOverrideBundle b)
+        {
+            return useInteriorFormula ? LabelBytes((b.CellFormId & 0xFFFFFFu) % 10) : b.Context.BlockLabel!;
+        }
+
+        byte[] SubblockLabelFor(CellOverrideBundle b)
+        {
+            return useInteriorFormula ? LabelBytes((b.CellFormId & 0xFFFFFFu) % 100 / 10) : b.Context.SubblockLabel!;
+        }
 
         // Group by block label, then by subblock label.
         var byBlock = bundles
             .Where(b => useInteriorFormula
-                || (b.Context.BlockLabel is { Length: 4 } && b.Context.SubblockLabel is { Length: 4 }))
+                        || (b.Context.BlockLabel is { Length: 4 } && b.Context.SubblockLabel is { Length: 4 }))
             .GroupBy(b => BinaryPrimitives.ReadUInt32LittleEndian(BlockLabelFor(b)))
             .OrderBy(g => g.Key);
 
@@ -401,7 +406,9 @@ public static class CellGrupBuilder
     ///     compressed flag is cleared on output.
     /// </remarks>
     public static byte[] ReconstructRecordBytes(ParsedMainRecord parsed)
-        => ReconstructRecordBytes(parsed, stripSubrecordSignatures: null);
+    {
+        return ReconstructRecordBytes(parsed, null);
+    }
 
     /// <summary>
     ///     Reconstructs a parsed main record's raw bytes, optionally omitting subrecords whose
@@ -442,4 +449,3 @@ public static class CellGrupBuilder
         return stream.ToArray();
     }
 }
-

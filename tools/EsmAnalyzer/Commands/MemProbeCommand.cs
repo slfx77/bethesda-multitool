@@ -1,3 +1,4 @@
+using System.Collections;
 using System.CommandLine;
 using System.Diagnostics;
 using System.Reflection;
@@ -5,6 +6,7 @@ using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -106,7 +108,7 @@ internal static class MemProbeCommand
         {
             if (property.GetIndexParameters().Length > 0 ||
                 property.PropertyType == typeof(string) ||
-                property.GetValue(records) is not System.Collections.IEnumerable sequence)
+                property.GetValue(records) is not IEnumerable sequence)
             {
                 continue;
             }
@@ -148,7 +150,7 @@ internal static class MemProbeCommand
                 BindingFlags.Instance | BindingFlags.NonPublic);
             cleared += records.DecodedTreesByFormId.Count;
             dictField?.SetValue(records, new Dictionary<uint, IReadOnlyList<
-                BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding.DecodedNode>>());
+                DecodedNode>>());
         }
 
         return cleared;
@@ -175,10 +177,10 @@ internal static class MemProbeCommand
 
     private static (double ManagedMb, double WorkingSetMb, double PrivateMb) Measure(string phase)
     {
-        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.Collect(2, GCCollectionMode.Forced, true, true);
         GC.WaitForPendingFinalizers();
-        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
-        var managed = GC.GetTotalMemory(forceFullCollection: true) / (1024.0 * 1024.0);
+        GC.Collect(2, GCCollectionMode.Forced, true, true);
+        var managed = GC.GetTotalMemory(true) / (1024.0 * 1024.0);
         var process = Process.GetCurrentProcess();
         process.Refresh();
         var workingSet = process.WorkingSet64 / (1024.0 * 1024.0);
@@ -191,10 +193,14 @@ internal static class MemProbeCommand
         string label,
         int cleared,
         (double ManagedMb, double WorkingSetMb, double PrivateMb) before,
-        (double ManagedMb, double WorkingSetMb, double PrivateMb) after) =>
+        (double ManagedMb, double WorkingSetMb, double PrivateMb) after)
+    {
         Log($"{label}: cleared {cleared:N0} entries, reclaimed {before.ManagedMb - after.ManagedMb:N0} MB managed " +
             $"({before.PrivateMb - after.PrivateMb:N0} MB private)");
+    }
 
-    private static void Log(string message) =>
+    private static void Log(string message)
+    {
         AnsiConsole.MarkupLineInterpolated($"[grey]{DateTime.Now:HH:mm:ss}[/] {message}");
+    }
 }

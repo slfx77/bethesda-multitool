@@ -14,15 +14,23 @@ namespace BethesdaMultitool.Tests.App;
 /// </summary>
 public sealed class CrashCaptureSourceContractTests
 {
-    private static string ReadGuiEntryPoint() => SourceContract.ReadAppSource("GuiEntryPoint.cs");
+    private static string ReadGuiEntryPoint()
+    {
+        return SourceContract.ReadAppSource("GuiEntryPoint.cs");
+    }
 
-    private static string ReadFalloutApp() =>
-        SourceContract.ReadSource("src", "BethesdaMultitool", "App.xaml.cs");
+    private static string ReadFalloutApp()
+    {
+        return SourceContract.ReadSource("src", "BethesdaMultitool", "App.xaml.cs");
+    }
 
-    private static string ConfigureDiagnosticsRegion() => SourceContract.Extract(
-        ReadGuiEntryPoint(),
-        "private static void ConfigureDiagnostics()",
-        "private static void OnUnhandledException");
+    private static string ConfigureDiagnosticsRegion()
+    {
+        return SourceContract.Extract(
+            ReadGuiEntryPoint(),
+            "private static void ConfigureDiagnostics()",
+            "private static void OnUnhandledException");
+    }
 
     // ---- 1. Always-on crash capture ------------------------------------------------------------
 

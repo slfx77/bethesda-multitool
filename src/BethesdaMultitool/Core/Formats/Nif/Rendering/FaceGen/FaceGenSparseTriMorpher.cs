@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 
 /// <summary>
@@ -85,4 +86,3 @@ internal static class FaceGenSparseTriMorpher
         return new Dictionary<string, float>();
     }
 }
-

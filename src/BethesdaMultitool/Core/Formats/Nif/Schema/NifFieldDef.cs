@@ -34,15 +34,17 @@ public sealed class NifFieldDef
     ///     explicit names "Compressed", "Interpolation" (#ARG# for Key structs) and "Block Size"
     ///     (2D-array width for NiAGDDataBlock.Data).
     /// </summary>
-    public static bool ComputeStoresValueForLaterUse(string name) =>
-        name.StartsWith("Num ", StringComparison.Ordinal) ||
-        name.EndsWith(" Count", StringComparison.Ordinal) ||
-        name.StartsWith("Has ", StringComparison.Ordinal) ||
-        name.Contains("Flags", StringComparison.Ordinal) ||
-        name.Contains("Type", StringComparison.Ordinal) ||
-        name == "Compressed" ||
-        name == "Interpolation" ||
-        name == "Block Size";
+    public static bool ComputeStoresValueForLaterUse(string name)
+    {
+        return name.StartsWith("Num ", StringComparison.Ordinal) ||
+               name.EndsWith(" Count", StringComparison.Ordinal) ||
+               name.StartsWith("Has ", StringComparison.Ordinal) ||
+               name.Contains("Flags", StringComparison.Ordinal) ||
+               name.Contains("Type", StringComparison.Ordinal) ||
+               name == "Compressed" ||
+               name == "Interpolation" ||
+               name == "Block Size";
+    }
 
     public override string ToString()
     {

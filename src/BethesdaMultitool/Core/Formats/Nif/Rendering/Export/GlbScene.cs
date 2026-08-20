@@ -29,7 +29,10 @@ internal sealed class GlbScene
 
     public static int RootNodeIndex => 0;
 
-    /// <summary>Appends a node to the scene graph and returns its index; registers <paramref name="lookupName" /> for later resolution.</summary>
+    /// <summary>
+    ///     Appends a node to the scene graph and returns its index; registers <paramref name="lookupName" /> for later
+    ///     resolution.
+    /// </summary>
     public int AddNode(
         string name,
         int? parentIndex,

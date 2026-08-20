@@ -120,4 +120,3 @@ internal static class CrossDumpComparisonIndexPageBuilder
         sb.AppendLine("  </table>");
     }
 }
-

@@ -54,7 +54,9 @@ internal static class ExportLandCommand
 
         IEnumerable<AnalyzerRecordInfo> landRecords = landRecordList;
 
-        landRecords = targetFormId.HasValue ? landRecords.Where(r => r.FormId == targetFormId.Value) : landRecords.Take(limit);
+        landRecords = targetFormId.HasValue
+            ? landRecords.Where(r => r.FormId == targetFormId.Value)
+            : landRecords.Take(limit);
 
         var landList = landRecords.ToList();
         AnsiConsole.MarkupLine($"Found [cyan]{landList.Count}[/] LAND record(s) to export");
@@ -262,8 +264,8 @@ internal static class ExportLandCommand
         {
             for (var x = 0; x < CellGridSize; x++)
             {
-                byte intensity = range > 0.001f ? (byte)((heights[x, y] - minHeight) / range * 255) : (byte)128;
-                pixels[(y * CellGridSize) + x] = intensity;
+                var intensity = range > 0.001f ? (byte)((heights[x, y] - minHeight) / range * 255) : (byte)128;
+                pixels[y * CellGridSize + x] = intensity;
             }
         }
 
@@ -283,8 +285,8 @@ internal static class ExportLandCommand
         {
             for (var x = 0; x < CellGridSize; x++)
             {
-                var srcIdx = ((y * CellGridSize) + x) * 3;
-                var dstIdx = ((y * CellGridSize) + x) * 3;
+                var srcIdx = (y * CellGridSize + x) * 3;
+                var dstIdx = (y * CellGridSize + x) * 3;
                 if (srcIdx + 2 < data.Length)
                 {
                     pixels[dstIdx + 0] = data[srcIdx + 0];

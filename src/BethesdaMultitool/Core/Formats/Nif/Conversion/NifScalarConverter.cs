@@ -15,6 +15,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
 /// </summary>
 internal static class NifScalarConverter
 {
+    // `bool` is a 32-bit int up to and including NIF 4.0.0.2, then an 8-bit byte from 4.1.0.1 on
+    // (see nif.xml <basic name="bool">). The schema stores the modern 1-byte size, which is correct
+    // for every Bethesda stream we convert (Oblivion 20.0.0.x, FO3/FNV/Skyrim 20.2.0.x) — only the
+    // Morrowind-era legacy-Gamebryo measure path (4.0.0.2) needs the widened 4-byte width.
+    private const uint BoolWidensAtOrBelowVersion = 0x04000002;
     private static readonly Logger Log = Logger.Instance;
 
     /// <summary>
@@ -27,14 +32,8 @@ internal static class NifScalarConverter
     /// </summary>
     private static readonly HashSet<string> BytePackedBitflagTypes = new(StringComparer.Ordinal)
     {
-        "BSPartFlag",
+        "BSPartFlag"
     };
-
-    // `bool` is a 32-bit int up to and including NIF 4.0.0.2, then an 8-bit byte from 4.1.0.1 on
-    // (see nif.xml <basic name="bool">). The schema stores the modern 1-byte size, which is correct
-    // for every Bethesda stream we convert (Oblivion 20.0.0.x, FO3/FNV/Skyrim 20.2.0.x) — only the
-    // Morrowind-era legacy-Gamebryo measure path (4.0.0.2) needs the widened 4-byte width.
-    private const uint BoolWidensAtOrBelowVersion = 0x04000002;
 
     /// <summary>
     ///     Returns the on-disk byte width of a basic type for the current NIF version. Identical to

@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -19,7 +18,8 @@ public sealed class WaterMsaaDepthPipelineSourceTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuRootSignature12.cs");
         var rangeStart = source.IndexOf("var bindlessDepthMsaa = new DescriptorRange1", StringComparison.Ordinal);
-        var tableEnd = source.IndexOf("var referenceInstanceSrv = new RootParameter1(", rangeStart, StringComparison.Ordinal);
+        var tableEnd = source.IndexOf("var referenceInstanceSrv = new RootParameter1(", rangeStart,
+            StringComparison.Ordinal);
 
         Assert.True(rangeStart >= 0);
         Assert.True(tableEnd > rangeStart);

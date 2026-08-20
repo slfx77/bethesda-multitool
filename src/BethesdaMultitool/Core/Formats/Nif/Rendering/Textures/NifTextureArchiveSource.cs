@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -37,7 +36,10 @@ internal sealed class NifTextureArchiveSource(
         }
     }
 
-    public bool Exists(string path) => FileIndex.ContainsKey(path);
+    public bool Exists(string path)
+    {
+        return FileIndex.ContainsKey(path);
+    }
 
     public byte[]? TryLoadRaw(string path)
     {

@@ -18,6 +18,6 @@ internal static class EffectConditionFailClosedPolicy
         Parameter1 = 0x00000007,
         Parameter2 = 0,
         RunOn = 0,
-        Reference = 0,
+        Reference = 0
     };
 }

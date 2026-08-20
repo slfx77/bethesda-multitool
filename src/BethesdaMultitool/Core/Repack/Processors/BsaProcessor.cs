@@ -1,15 +1,13 @@
 using System.Collections.Concurrent;
-using DDXConv;
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Ddx;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Xma;
 using BethesdaMultitool.Core.Orchestration;
-using BethesdaMultitool.Core.Utils;
+using DDXConv;
 
 namespace BethesdaMultitool.Core.Repack.Processors;
 
@@ -249,7 +247,7 @@ public sealed class BsaProcessor : IRepackProcessor
 
                     // Voice ships as Ogg, songs as MP3 (delivered loose — FNV cannot read MP3
                     // from a BSA), everything else as WAV.
-                    static async Task<Core.Formats.ConversionResult> ConvertAsync(
+                    static async Task<ConversionResult> ConvertAsync(
                         byte[] data, bool voice, bool song)
                     {
                         if (voice) return await XmaOggConverter.ConvertAsync(data);
@@ -423,57 +421,58 @@ public sealed class BsaProcessor : IRepackProcessor
             var convertedFiles = new ConcurrentDictionary<int, (string Path, byte[] Data)>();
 
             // Use more threads for NIF since it's CPU-bound in-process conversion
-            await ParallelWork.ForEachAsync("bsa-repack", nifFiles, ConcurrencyPolicy.CoresMinusOne, async (nifFile, _) =>
-            {
-                var (index, relativePath, nifData) = nifFile;
-                var fileName = Path.GetFileName(relativePath);
-
-                try
+            await ParallelWork.ForEachAsync("bsa-repack", nifFiles, ConcurrencyPolicy.CoresMinusOne,
+                async (nifFile, _) =>
                 {
-                    // Parse NIF to check if it's big-endian
-                    var nifInfo = NifParser.Parse(nifData);
-                    if (nifInfo != null && nifInfo.IsBigEndian)
-                    {
-                        // Convert big-endian NIF to little-endian
-                        var result = NifConverter.Convert(nifData);
+                    var (index, relativePath, nifData) = nifFile;
+                    var fileName = Path.GetFileName(relativePath);
 
-                        if (result.Success && result.OutputData != null)
+                    try
+                    {
+                        // Parse NIF to check if it's big-endian
+                        var nifInfo = NifParser.Parse(nifData);
+                        if (nifInfo != null && nifInfo.IsBigEndian)
                         {
-                            convertedFiles[index] = (relativePath, result.OutputData);
+                            // Convert big-endian NIF to little-endian
+                            var result = NifConverter.Convert(nifData);
+
+                            if (result.Success && result.OutputData != null)
+                            {
+                                convertedFiles[index] = (relativePath, result.OutputData);
+                            }
+                            else
+                            {
+                                // Keep original if conversion fails
+                                convertedFiles[index] = (relativePath, nifData);
+                            }
                         }
                         else
                         {
-                            // Keep original if conversion fails
+                            // Already little-endian or couldn't parse, keep as-is
                             convertedFiles[index] = (relativePath, nifData);
                         }
                     }
-                    else
+                    catch
                     {
-                        // Already little-endian or couldn't parse, keep as-is
+                        // Keep original on any error
                         convertedFiles[index] = (relativePath, nifData);
                     }
-                }
-                catch
-                {
-                    // Keep original on any error
-                    convertedFiles[index] = (relativePath, nifData);
-                }
 
-                var count = Interlocked.Increment(ref convertedCount);
+                    var count = Interlocked.Increment(ref convertedCount);
 
-                // Report progress every 100 files to avoid flooding
-                if (count % 100 == 0 || count == nifFiles.Count)
-                {
-                    progress.Report(new RepackerProgress
+                    // Report progress every 100 files to avoid flooding
+                    if (count % 100 == 0 || count == nifFiles.Count)
                     {
-                        Phase = RepackPhase.Bsa,
-                        CurrentItem = fileName,
-                        Message = $"{bsaName}: Meshes {count}/{nifFiles.Count}"
-                    });
-                }
+                        progress.Report(new RepackerProgress
+                        {
+                            Phase = RepackPhase.Bsa,
+                            CurrentItem = fileName,
+                            Message = $"{bsaName}: Meshes {count}/{nifFiles.Count}"
+                        });
+                    }
 
-                await Task.CompletedTask; // Satisfy async signature
-            }, cancellationToken: cancellationToken);
+                    await Task.CompletedTask; // Satisfy async signature
+                }, cancellationToken: cancellationToken);
 
             // Apply converted files
             foreach (var kvp in convertedFiles)

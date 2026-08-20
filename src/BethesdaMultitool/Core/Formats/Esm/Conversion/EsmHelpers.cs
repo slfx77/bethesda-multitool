@@ -245,4 +245,3 @@ public static class EsmHelpers
         return map;
     }
 }
-

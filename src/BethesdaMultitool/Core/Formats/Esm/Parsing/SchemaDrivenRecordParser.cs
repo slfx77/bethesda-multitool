@@ -6,7 +6,6 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
-using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -21,13 +20,26 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 /// </summary>
 internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IReadOnlyList<RecordDef> schema)
 {
-    private readonly RecordParserContext _context = context;
+    /// <summary>
+    ///     Per-cell child / placement record types: extremely high volume (REFR alone is ~90% of an
+    ///     Oblivion plugin — ~1.07M of 1.16M records) and not browsable base definitions. The Records tab
+    ///     lists base records, not the millions of placed instances, so decoding every one into a field
+    ///     tree is pure waste (the bulk of parse time and retained memory). Skipping them keeps the read
+    ///     fast and the browser usable; placement/world structure is out of scope for the schema read path.
+    /// </summary>
+    private static readonly HashSet<string> NonBrowsableChildTypes = new(StringComparer.Ordinal)
+    {
+        "REFR", "ACHR", "ACRE", "PGRD", "PGRE", "PMIS", "LAND", "NAVM", "ROAD",
+        "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PHZD", "PWAT"
+    };
+
     private readonly Dictionary<string, RecordDef> _byType = BuildIndex(schema);
+    private readonly RecordParserContext _context = context;
+    private readonly List<DialogueRecord> _infos = [];
 
     // Typed dialogue, built game-aware from DIAL/INFO so the Dialogue tab works (the shared
     // DialogueTreeBuilder consumes these). Populated as a side effect while decoding records.
     private readonly List<DialogTopicRecord> _topics = [];
-    private readonly List<DialogueRecord> _infos = [];
 
     // INFO FormID -> (parent topic FormID, ordering index within the topic), from the GRUP-based
     // TopicToInfoMap the analyzer already built (structural, game-agnostic).
@@ -93,19 +105,6 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
 
         return link;
     }
-
-    /// <summary>
-    ///     Per-cell child / placement record types: extremely high volume (REFR alone is ~90% of an
-    ///     Oblivion plugin — ~1.07M of 1.16M records) and not browsable base definitions. The Records tab
-    ///     lists base records, not the millions of placed instances, so decoding every one into a field
-    ///     tree is pure waste (the bulk of parse time and retained memory). Skipping them keeps the read
-    ///     fast and the browser usable; placement/world structure is out of scope for the schema read path.
-    /// </summary>
-    private static readonly HashSet<string> NonBrowsableChildTypes = new(StringComparer.Ordinal)
-    {
-        "REFR", "ACHR", "ACRE", "PGRD", "PGRE", "PMIS", "LAND", "NAVM", "ROAD",
-        "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PHZD", "PWAT"
-    };
 
     private GenericEsmRecord ParseRecord(DetectedMainRecord record, byte[] buffer)
     {
@@ -209,14 +208,18 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     }
 
     private DialogTopicRecord BuildTopic(
-        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian) =>
-        DialogueExtractors.For(_context.Game).BuildTopic(formId, editorId, subs, isBigEndian, _context);
+        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian)
+    {
+        return DialogueExtractors.For(_context.Game).BuildTopic(formId, editorId, subs, isBigEndian, _context);
+    }
 
     private DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topic, ushort index, IReadOnlyList<RawSubrecord> subs,
-        bool isBigEndian) =>
-        DialogueExtractors.For(_context.Game).BuildInfo(
+        bool isBigEndian)
+    {
+        return DialogueExtractors.For(_context.Game).BuildInfo(
             formId, editorId, topic, index, subs, isBigEndian, _context);
+    }
 
     private static Dictionary<string, RecordDef> BuildIndex(IReadOnlyList<RecordDef> schema)
     {

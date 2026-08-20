@@ -1,6 +1,4 @@
 using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
@@ -319,12 +317,13 @@ internal sealed class NifBrowserService : IDisposable
 
         foreach (var dir in dirGroups.Values)
         {
-            dir.Children.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
+            dir.Children.Sort((a, b) =>
+                string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
         }
 
-        return entries.OrderBy(e => !e.IsDirectory).ThenBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        return entries.OrderBy(e => !e.IsDirectory).ThenBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     #endregion
 }
-

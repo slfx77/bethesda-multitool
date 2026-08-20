@@ -352,15 +352,13 @@ internal static class RuntimeBuildOffsets
     ///     <c>scanResult.RuntimeLandFormEntries</c> holds the canonical (final-build) FormType
     ///     code. Entries that were remapped also have their original byte preserved on
     ///     <see cref="RuntimeEditorIdEntry.OriginalFormType" />.
-    ///
     ///     <para>
-    ///     Idempotent: if any entry already has a non-zero <c>OriginalFormType</c>,
-    ///     correction has already run and this call is a no-op. Safe to call multiple times.
+    ///         Idempotent: if any entry already has a non-zero <c>OriginalFormType</c>,
+    ///         correction has already run and this call is a no-op. Safe to call multiple times.
     ///     </para>
-    ///
     ///     <para>
-    ///     Called from <c>MinidumpAnalyzer.AnalyzeAsync</c> so all downstream code paths —
-    ///     including snippet extraction for tests — see consistent canonical FormType bytes.
+    ///         Called from <c>MinidumpAnalyzer.AnalyzeAsync</c> so all downstream code paths —
+    ///         including snippet extraction for tests — see consistent canonical FormType bytes.
     ///     </para>
     /// </summary>
     /// <returns>The remap dictionary that was applied, or null if no drift was detected.</returns>

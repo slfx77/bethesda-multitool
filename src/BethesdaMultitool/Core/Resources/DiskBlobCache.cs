@@ -29,18 +29,18 @@ namespace BethesdaMultitool.Core.Resources;
 internal abstract class DiskBlobCache : ITrackableResource
 {
     protected const int MaxKeyBytes = 64 * 1024;
-
-    private readonly long _maxCacheBytes;
-    private readonly byte[] _magic;
-    private readonly int _formatVersion;
     private readonly int _decoderVersion;
     private readonly string _fileExtension;
+    private readonly int _formatVersion;
+    private readonly byte[] _magic;
+
+    private readonly long _maxCacheBytes;
 
     private long _hits;
-    private long _misses;
-    private long _stores;
     private long _measuredDiskBytes;
     private long _measuredFileCount;
+    private long _misses;
+    private long _stores;
 
     /// <summary>Creates a disk blob cache with the given identity stamps.</summary>
     /// <param name="resourceName">Stable name for diagnostics and log lines.</param>
@@ -68,17 +68,6 @@ internal abstract class DiskBlobCache : ITrackableResource
         _fileExtension = fileExtension;
     }
 
-    /// <summary>
-    ///     Registers the cache with <paramref name="registry" />. Disk caches are process-lifetime,
-    ///     so the registration is intentionally never disposed.
-    /// </summary>
-    internal void RegisterWith(ResourceRegistry registry, string? instanceTag = null) =>
-        _ = registry.Register(this, instanceTag);
-
-    public string ResourceName { get; }
-
-    public ResourceCategory Category => ResourceCategory.DiskCache;
-
     internal string CacheDirectory { get; }
 
     internal long Hits => Interlocked.Read(ref _hits);
@@ -87,14 +76,30 @@ internal abstract class DiskBlobCache : ITrackableResource
 
     internal long Stores => Interlocked.Read(ref _stores);
 
-    public ResourceStats GetStats() => new()
+    public string ResourceName { get; }
+
+    public ResourceCategory Category => ResourceCategory.DiskCache;
+
+    public ResourceStats GetStats()
     {
-        EstimatedBytes = Interlocked.Read(ref _measuredDiskBytes),
-        EntryCount = Interlocked.Read(ref _measuredFileCount),
-        Hits = Hits,
-        Misses = Misses,
-        Processed = Stores,
-    };
+        return new ResourceStats
+        {
+            EstimatedBytes = Interlocked.Read(ref _measuredDiskBytes),
+            EntryCount = Interlocked.Read(ref _measuredFileCount),
+            Hits = Hits,
+            Misses = Misses,
+            Processed = Stores
+        };
+    }
+
+    /// <summary>
+    ///     Registers the cache with <paramref name="registry" />. Disk caches are process-lifetime,
+    ///     so the registration is intentionally never disposed.
+    /// </summary>
+    internal void RegisterWith(ResourceRegistry registry, string? instanceTag = null)
+    {
+        _ = registry.Register(this, instanceTag);
+    }
 
     /// <summary>
     ///     Loads the blob stored under <paramref name="keyText" />. Returns true on a cache hit —
@@ -190,7 +195,7 @@ internal abstract class DiskBlobCache : ITrackableResource
                 }
             }
 
-            File.Move(tempPath, path, overwrite: true);
+            File.Move(tempPath, path, true);
             Interlocked.Increment(ref _stores);
         }
         catch (Exception ex)
@@ -205,7 +210,10 @@ internal abstract class DiskBlobCache : ITrackableResource
     ///     exceeds the cap, deletes the oldest files (by last-write time) until under 80% of the cap.
     ///     Runs off-thread so it never blocks startup; failures are swallowed.
     /// </summary>
-    internal void SchedulePrune() => Task.Run(Prune);
+    internal void SchedulePrune()
+    {
+        Task.Run(Prune);
+    }
 
     internal void LogStatistics()
     {
@@ -285,11 +293,13 @@ internal abstract class DiskBlobCache : ITrackableResource
         }
     }
 
-    protected static bool IsDisabled(string? value) =>
-        string.Equals(value, "0", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, "off", StringComparison.OrdinalIgnoreCase);
+    protected static bool IsDisabled(string? value)
+    {
+        return string.Equals(value, "0", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "off", StringComparison.OrdinalIgnoreCase);
+    }
 
     protected static void TryDelete(string path)
     {

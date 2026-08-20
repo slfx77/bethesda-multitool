@@ -60,10 +60,15 @@ internal static class VfsPath
     public static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
 
     /// <summary>Normalizes separators to <c>\</c> and trims any leading separator.</summary>
-    public static string Normalize(string path) => path.Replace('/', '\\').TrimStart('\\');
+    public static string Normalize(string path)
+    {
+        return path.Replace('/', '\\').TrimStart('\\');
+    }
 
     /// <summary>Whether a normalized path starts with a normalized prefix (null/empty = match all).</summary>
-    public static bool MatchesPrefix(string normalizedPath, string? normalizedPrefix) =>
-        string.IsNullOrEmpty(normalizedPrefix)
-        || normalizedPath.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase);
+    public static bool MatchesPrefix(string normalizedPath, string? normalizedPrefix)
+    {
+        return string.IsNullOrEmpty(normalizedPrefix)
+               || normalizedPath.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase);
+    }
 }

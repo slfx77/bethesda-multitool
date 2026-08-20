@@ -1,5 +1,5 @@
 using System.Globalization;
-using BethesdaMultitool.Core;
+using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.SpeedTree;
 
@@ -34,8 +34,10 @@ public sealed record SptGeometryOptions
     /// </summary>
     public float? TargetHeight { get; init; }
 
-    /// <summary>Final-height tuning multiplier (env <c>FALLOUT_VIEWER_SPT_HEIGHT_SCALE</c>) — a host-side
-    /// nudge for the viewer, not a shape parameter.</summary>
+    /// <summary>
+    ///     Final-height tuning multiplier (env <c>FALLOUT_VIEWER_SPT_HEIGHT_SCALE</c>) — a host-side
+    ///     nudge for the viewer, not a shape parameter.
+    /// </summary>
     public float HeightScale { get; init; } = 1.0f;
 
     /// <summary>
@@ -44,8 +46,10 @@ public sealed record SptGeometryOptions
     /// </summary>
     public int MaxChildrenPerBranch { get; init; } = 64;
 
-    /// <summary>Emit each leaf as a crossed pair of perpendicular cards (volume from any angle) when not
-    /// camera-facing.</summary>
+    /// <summary>
+    ///     Emit each leaf as a crossed pair of perpendicular cards (volume from any angle) when not
+    ///     camera-facing.
+    /// </summary>
     public bool CrossedLeafCards { get; init; } = true;
 
     /// <summary>
@@ -64,7 +68,7 @@ public sealed record SptGeometryOptions
     ///     so a still shows the billboarded look; the live viewer needs a per-card leaf-billboard shader to
     ///     reproduce it at every angle (per-submesh <c>IsBillboard</c> would rotate the whole leaf cloud).
     /// </summary>
-    public System.Numerics.Vector3? LeafFaceDirection { get; init; }
+    public Vector3? LeafFaceDirection { get; init; }
 
     /// <summary>Alpha-test threshold (0-255) for leaf cards.</summary>
     public byte LeafAlphaThreshold { get; init; } = 84;
@@ -125,7 +129,7 @@ public sealed record SptGeometryOptions
         {
             TrunkHeight = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeHeight, Default.TrunkHeight, 1f, 100000f),
             HeightScale = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeHeightScale, Default.HeightScale, 0.05f, 20f),
-            RuntimeLod = SpeedTreeRuntimeLod.Enabled,
+            RuntimeLod = SpeedTreeRuntimeLod.Enabled
         };
     }
 

@@ -32,7 +32,7 @@ public sealed class MasterPgreCarryForwardTests
     [InlineData(CellMergeMode.LoadedReplacement)]
     public void Uncovered_Master_Pgre_Is_Carried_Into_Temporary_Bucket(CellMergeMode mode)
     {
-        var (persistent, vwd, temporary) = RunApply(mode, covered: false);
+        var (persistent, vwd, temporary) = RunApply(mode, false);
 
         Assert.Empty(persistent);
         Assert.Empty(vwd);
@@ -46,7 +46,7 @@ public sealed class MasterPgreCarryForwardTests
     [InlineData(CellMergeMode.LoadedReplacement)]
     public void Covered_Master_Pgre_Is_Not_Carried(CellMergeMode mode)
     {
-        var (persistent, vwd, temporary) = RunApply(mode, covered: true);
+        var (persistent, vwd, temporary) = RunApply(mode, true);
 
         Assert.Empty(persistent);
         Assert.Empty(vwd);

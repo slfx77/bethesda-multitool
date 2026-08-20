@@ -10,25 +10,25 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 ///     DATA (2 bytes): byte TopicType(0) + byte Flags(1) — raw bytes, no endian swap.
 ///     PNAM (4 bytes): float Priority — topic ordering weight, GECK default 50.
 ///     <para>
-///     <b>FormID-remap contract:</b> the encoder emits <c>dial.QuestFormId</c> (QSTI) and
-///     <c>dial.SpeakerFormId</c> (TNAM) verbatim — no defensive
-///     <c>FormIdReferenceResolver</c> call. It relies on
-///     <c>DialogGrupBuilder.SanitizeDialReferences</c> patching the model upstream so
-///     proto FormIDs are remapped to allocated ones before this method runs. Any new
-///     caller that bypasses the sanitizer would emit phantom-master FormIDs; the systemic
-///     regression guard in <c>PhantomMasterFormIdRegressionTests</c> catches that.
+///         <b>FormID-remap contract:</b> the encoder emits <c>dial.QuestFormId</c> (QSTI) and
+///         <c>dial.SpeakerFormId</c> (TNAM) verbatim — no defensive
+///         <c>FormIdReferenceResolver</c> call. It relies on
+///         <c>DialogGrupBuilder.SanitizeDialReferences</c> patching the model upstream so
+///         proto FormIDs are remapped to allocated ones before this method runs. Any new
+///         caller that bypasses the sanitizer would emit phantom-master FormIDs; the systemic
+///         regression guard in <c>PhantomMasterFormIdRegressionTests</c> catches that.
 ///     </para>
 /// </summary>
 public sealed class DialEncoder : IRecordEncoder
 {
-    public string RecordType => "DIAL";
-    public Type ModelType => typeof(DialogTopicRecord);
-
     /// <summary>
     ///     GECK default topic priority; PNAM is a REQUIRED subrecord per xEdit
     ///     (wbFloat(PNAM).SetDefaultNativeValue(50).SetRequired).
     /// </summary>
     private const float DefaultPriority = 50f;
+
+    public string RecordType => "DIAL";
+    public Type ModelType => typeof(DialogTopicRecord);
 
     /// <summary>
     ///     Encode a new DIAL record from scratch in the xEdit-canonical FNV order:

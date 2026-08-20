@@ -13,6 +13,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 /// </summary>
 internal static class LandSubrecordParser
 {
+    private const int LandVnmlSize = 33 * 33 * 3;
+
     /// <summary>
     ///     Parses all LAND subrecords carrying heightmap, vertex color, texture layer and
     ///     blend-entry data. Source provenance on the returned <see cref="LandVisualData" />
@@ -22,7 +24,10 @@ internal static class LandSubrecordParser
     /// <param name="recordData">LAND record's data section (post-record-header bytes).</param>
     /// <param name="dataSize">Valid byte count within <paramref name="recordData" />.</param>
     /// <param name="isBigEndian">True for Xbox 360 big-endian input; false for PC little-endian.</param>
-    /// <param name="recordHeaderOffset">Absolute file offset of the LAND record header; used to anchor sub-offsets for diagnostics.</param>
+    /// <param name="recordHeaderOffset">
+    ///     Absolute file offset of the LAND record header; used to anchor sub-offsets for
+    ///     diagnostics.
+    /// </param>
     public static LandSubrecordParseResult Parse(
         byte[] recordData,
         int dataSize,
@@ -187,8 +192,6 @@ internal static class LandSubrecordParser
             unattachedVtxtCount,
             unattachedVtxtByteCount);
     }
-
-    private const int LandVnmlSize = 33 * 33 * 3;
 
     /// <summary>
     ///     Convenience overload for callers that only need <see cref="LandVisualData" /> and

@@ -24,8 +24,10 @@ public record MainRecordHeader
     public uint DataSize { get; init; }
     public uint Flags { get; init; }
     public uint FormId { get; init; }
+
     /// <summary>xEdit's four-byte Version Control Info 1 field at offset 16.</summary>
     public uint Timestamp { get; init; }
+
     public ushort VcsInfo { get; init; }
     public ushort Version { get; init; }
 

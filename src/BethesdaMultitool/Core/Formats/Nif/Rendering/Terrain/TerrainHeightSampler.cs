@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
@@ -26,8 +27,8 @@ internal static class TerrainHeightSampler
         IReadOnlyDictionary<(int gx, int gy), CellRecord> cells,
         float worldX,
         float worldY,
-        global::BethesdaMultitool.WorldRenderCache? cache = null,
-        float cellSize = global::BethesdaMultitool.WorldGridConstants.CellSize)
+        WorldRenderCache? cache = null,
+        float cellSize = WorldGridConstants.CellSize)
     {
         var gx = (int)MathF.Floor(worldX / cellSize);
         var gy = (int)MathF.Floor(worldY / cellSize);

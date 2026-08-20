@@ -1,4 +1,5 @@
 using System.Buffers;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -10,7 +11,6 @@ using BethesdaMultitool.Core.Formats.Esm.RecordModel;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Tes3;
@@ -30,7 +30,10 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
     // subrecords) ballooning the Fields map; the remainder is summarized.
     private const int MaxFieldsPerRecord = 256;
 
+    private const float MorrowindCellWorldSize = 8192f;
+
     private readonly RecordParserContext _context = context;
+    private readonly List<Tes3DialogueExtractor.Tes3InfoDraft> _infoDrafts = [];
 
     // The registered TES3 record-layout schema (RecordModel/Generated/Tes3Schema). Drives the
     // SchemaRecordDecoder so Morrowind Records render the same DecodedTree the TES4 family does; the
@@ -42,7 +45,6 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
     // Dialogue tab works for Morrowind. INFO speakers are editor-id strings resolved to synthetic FormIDs
     // after the whole-file id index is built.
     private readonly List<DialogTopicRecord> _topics = [];
-    private readonly List<Tes3DialogueExtractor.Tes3InfoDraft> _infoDrafts = [];
 
     public RecordCollection ParseAll()
     {
@@ -193,8 +195,6 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         };
     }
 
-    private const float MorrowindCellWorldSize = 8192f;
-
     // Morrowind LTEX: NAME = editor id, INTV = land-texture index (VTEX references index+1),
     // DATA = the texture file name. We model each as a LandscapeTextureRecord whose TextureSetFormId
     // points at a synthetic TextureSetRecord carrying the diffuse path, so the existing land-texture
@@ -324,7 +324,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                         ? new PositionSubrecord(
                             r.DestX, r.DestY, r.DestZ,
                             r.DestRotX, r.DestRotY, r.DestRotZ,
-                            Offset: 0, IsBigEndian: false)
+                            0, false)
                         : null
                 });
             }
@@ -512,7 +512,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 RecordType = "REFR",
                 IsMapMarker = true,
                 MarkerName = name,
-                MarkerType = BethesdaMultitool.Core.Formats.Esm.Enums.MapMarkerType.Settlement,
+                MarkerType = MapMarkerType.Settlement,
                 X = (float)(agg.SumX / agg.Count),
                 Y = (float)(agg.SumY / agg.Count),
                 Z = 0f
@@ -553,12 +553,15 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
 
     // Morrowind references actors (NPC_/CREA) too; map them to ACHR/ACRE so the static-mesh viewer
     // skips them (it only renders REFR), exactly as it does for FNV/Skyrim placed actors.
-    private static string ReferenceRecordType(string? baseType) => baseType switch
+    private static string ReferenceRecordType(string? baseType)
     {
-        "NPC_" => "ACHR",
-        "CREA" => "ACRE",
-        _ => "REFR"
-    };
+        return baseType switch
+        {
+            "NPC_" => "ACHR",
+            "CREA" => "ACRE",
+            _ => "REFR"
+        };
+    }
 
     private static string CellEditorId(Tes3CellDraft draft)
     {

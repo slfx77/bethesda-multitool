@@ -20,6 +20,7 @@ using BethesdaMultitool.Core.Resources;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -166,7 +167,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly List<VisibleCell> _visibleScratch = new();
     private readonly List<VisibleCell> _missingVisibleScratch = new();
     private readonly HashSet<(int gx, int gy)> _missingVisibleKeys = new();
-    private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateScratch = new();
+    private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _candidateScratch = new();
     private GpuMeshUploader.GpuVertex[] _vertexScratch =
         new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
     private Vector4[] _blendWeightScratch =
@@ -187,8 +188,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private int _loadGeneration;
 
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
-    private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
-    private global::BethesdaMultitool.WorldRenderCache? _renderCache;
+    private global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? _spatialIndex;
+    private global::BethesdaMultitool.Core.WorldData.WorldRenderCache? _renderCache;
     private bool _showTextures = true;
     private bool _showVertexColors = true;
     private bool _disposed;
@@ -253,7 +254,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     public int CellCount => _spatialIndex?.CellCount ?? _cells?.Count ?? 0;
-    public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
+    public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
 
     // Concurrency ceiling used when streaming is unthrottled (the on-demand top-down overlay
@@ -319,8 +320,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
-        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
-        global::BethesdaMultitool.WorldRenderCache? renderCache)
+        global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex,
+        global::BethesdaMultitool.Core.WorldData.WorldRenderCache? renderCache)
     {
         _meshCache.Dispose();
         var capacity = Math.Max(MinCacheCapacity, cells.Count + CacheHeadroom);
@@ -347,9 +348,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _buildQueue.Clear();
         _queuedOrBuilding.Clear();
 
-        // 4-pre Item C — warm the per-cell texture-set cache so the cold-cell mesh-build
-        // burst (16 cells/frame budget) no longer pays the 4 neighbor lookups + per-quadrant
-        // layer-weight sort each time. Costs ~0.05 ms × cells.Count at LoadData (~250 ms
+        // Warm the per-cell texture-set cache up front so the cold-cell mesh-build burst
+        // (16 cells/frame budget) does not pay the 4 neighbor lookups + per-quadrant
+        // layer-weight sort per cell. Costs ~0.05 ms × cells.Count at LoadData (~250 ms
         // for a 5000-cell worldspace), folded into the existing ~1–2 s worldspace load.
         if (_renderCache is not null)
         {
@@ -694,10 +695,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         }
         unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
 
-        // Per-mode CB (b2): x = show diffuse textures (1/0), y = diffuse UV scale (formerly in the
-        // per-quadrant CB, now per-frame since every cell uses the same scale), z = apply VCLR tint
-        // (1/0), w = FNV terrain normals (1/0). Textures off + VCLR on reproduces the old VCLR-only
-        // debug look and also leaves the geometric LAND normal untouched.
+        // Per-mode CB (b2): x = show diffuse textures (1/0), y = diffuse UV scale (carried
+        // per-frame rather than per-quadrant because every cell shares one scale), z = apply VCLR
+        // tint (1/0), w = FNV terrain normals (1/0). Textures off + VCLR on gives a VCLR-only
+        // debug view and leaves the geometric LAND normal untouched.
         if (!_ringBuffer.TryAllocate(frameIndex, PerModeByteSize, out var perModeAlloc, GpuRingBuffer12.CbAlignment))
         {
             LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);

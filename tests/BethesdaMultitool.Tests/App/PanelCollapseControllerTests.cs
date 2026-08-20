@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Ui;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.App;
@@ -35,7 +36,7 @@ public sealed class PanelCollapseControllerTests
     {
         // A 0 minimum would let a surrounding layout squeeze the strip — and with it the only
         // expand affordance — out of existence, stranding the panel closed.
-        var state = new PanelCollapseState(stripWidth: 24);
+        var state = new PanelCollapseState(24);
 
         var collapsed = state.Collapse(new PanelColumnWidth(300, PanelColumnUnit.Pixel, 0));
 
@@ -125,6 +126,8 @@ public sealed class PanelCollapseControllerTests
     [InlineData(0d)]
     [InlineData(-8d)]
     [InlineData(double.NaN)]
-    public void RejectsNonPositiveStripWidth(double stripWidth) =>
+    public void RejectsNonPositiveStripWidth(double stripWidth)
+    {
         Assert.Throws<ArgumentOutOfRangeException>(() => new PanelCollapseState(stripWidth));
+    }
 }

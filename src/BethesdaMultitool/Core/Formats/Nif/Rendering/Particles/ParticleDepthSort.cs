@@ -11,25 +11,6 @@ internal static class ParticleDepthSort
 {
     public const int IndicesPerQuad = 6;
 
-    internal readonly record struct Entry(float DistanceSquared, int SourceIndex) : IComparable<Entry>
-    {
-        public int CompareTo(Entry other)
-        {
-            // Back-to-front. Preserve source order for equal depths so seeded captures remain
-            // deterministic and do not shimmer when two sprites share a plane.
-            var distanceOrder = other.DistanceSquared.CompareTo(DistanceSquared);
-            return distanceOrder != 0 ? distanceOrder : SourceIndex.CompareTo(other.SourceIndex);
-        }
-
-        public static bool operator <(Entry left, Entry right) => left.CompareTo(right) < 0;
-
-        public static bool operator <=(Entry left, Entry right) => left.CompareTo(right) <= 0;
-
-        public static bool operator >(Entry left, Entry right) => left.CompareTo(right) > 0;
-
-        public static bool operator >=(Entry left, Entry right) => left.CompareTo(right) >= 0;
-    }
-
     /// <summary>
     ///     Writes six R16 indices per quad in stable far-to-near order. Local centers are transformed
     ///     with the absolute placement matrix; camera position therefore remains in absolute space
@@ -46,10 +27,13 @@ internal static class ParticleDepthSort
         {
             throw new ArgumentException("Scratch span is smaller than the particle count.", nameof(scratch));
         }
+
         if (destination.Length < checked(localCenters.Length * IndicesPerQuad))
         {
-            throw new ArgumentException("Destination span is smaller than the particle index count.", nameof(destination));
+            throw new ArgumentException("Destination span is smaller than the particle index count.",
+                nameof(destination));
         }
+
         if (localCenters.Length > ushort.MaxValue / 4 + 1)
         {
             throw new ArgumentOutOfRangeException(nameof(localCenters), "Particle quads exceed the R16 vertex range.");
@@ -64,6 +48,7 @@ internal static class ParticleDepthSort
             {
                 distanceSquared = float.NegativeInfinity;
             }
+
             scratch[i] = new Entry(distanceSquared, i);
         }
 
@@ -78,6 +63,37 @@ internal static class ParticleDepthSort
             destination[output + 3] = checked((ushort)(baseVertex + 0));
             destination[output + 4] = checked((ushort)(baseVertex + 2));
             destination[output + 5] = checked((ushort)(baseVertex + 3));
+        }
+    }
+
+    internal readonly record struct Entry(float DistanceSquared, int SourceIndex) : IComparable<Entry>
+    {
+        public int CompareTo(Entry other)
+        {
+            // Back-to-front. Preserve source order for equal depths so seeded captures remain
+            // deterministic and do not shimmer when two sprites share a plane.
+            var distanceOrder = other.DistanceSquared.CompareTo(DistanceSquared);
+            return distanceOrder != 0 ? distanceOrder : SourceIndex.CompareTo(other.SourceIndex);
+        }
+
+        public static bool operator <(Entry left, Entry right)
+        {
+            return left.CompareTo(right) < 0;
+        }
+
+        public static bool operator <=(Entry left, Entry right)
+        {
+            return left.CompareTo(right) <= 0;
+        }
+
+        public static bool operator >(Entry left, Entry right)
+        {
+            return left.CompareTo(right) > 0;
+        }
+
+        public static bool operator >=(Entry left, Entry right)
+        {
+            return left.CompareTo(right) >= 0;
         }
     }
 }

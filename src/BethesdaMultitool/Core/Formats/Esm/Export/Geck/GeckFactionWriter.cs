@@ -231,4 +231,3 @@ internal static class GeckFactionWriter
         return sb.ToString();
     }
 }
-

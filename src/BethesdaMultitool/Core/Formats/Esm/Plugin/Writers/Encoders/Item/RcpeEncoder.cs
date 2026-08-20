@@ -17,7 +17,7 @@ public sealed class RcpeEncoder : IRecordEncoder
         ["Skill"] = m => m.RequiredSkill,
         ["Level"] = m => (uint)m.RequiredSkillLevel,
         ["Category"] = m => m.CategoryFormId,
-        ["SubCategory"] = m => m.SubcategoryFormId,
+        ["SubCategory"] = m => m.SubcategoryFormId
     };
 
     public string RecordType => "RCPE";

@@ -222,7 +222,7 @@ public class Ba2ParserTests
     {
         // Guard against keying the codec off the FIRST extra dword: that is Unknown1, and it reads 1
         // in every retail archive including all the v2 ones, so a v2 archive must stay Zip regardless.
-        var path = WriteHeaderOnlyBa2(2u, "DX10", compressionMethod: 0u, unknown1: 1u);
+        var path = WriteHeaderOnlyBa2(2u, "DX10", 0u, 1u);
         try
         {
             Assert.Equal(Ba2CompressionFormat.Zip, Ba2Parser.Parse(path).Header.CompressionFormat);
@@ -242,7 +242,7 @@ public class Ba2ParserTests
         uint version, string tag, uint compressionMethod, uint unknown1 = 1u)
     {
         var extraDwords = version switch { 2 => 2, 3 => 3, _ => 0 };
-        var headerSize = 24 + (extraDwords * 4);
+        var headerSize = 24 + extraDwords * 4;
         var dataStart = (ulong)(headerSize + 36);
         var nameTableOffset = dataStart + (ulong)PlainData.Length;
 

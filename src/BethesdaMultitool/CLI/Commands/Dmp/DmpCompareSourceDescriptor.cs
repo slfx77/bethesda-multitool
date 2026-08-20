@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 
 namespace BethesdaMultitool.CLI.Commands.Dmp;
 

@@ -33,7 +33,7 @@ public sealed class DeletedRefLinkStripperTests
             MakeBundle(temporary: [BuildRecord("REFR", DeletedRefId, DeletedFlag), pgre])
         };
 
-        DeletedRefLinkStripper.Apply(bundles, stats: null);
+        DeletedRefLinkStripper.Apply(bundles, null);
 
         var swept = bundles[0].TemporaryChildRecords[1];
         Assert.Equal("PGRE", Encoding.ASCII.GetString(swept, 0, 4));
@@ -54,7 +54,7 @@ public sealed class DeletedRefLinkStripperTests
             MakeBundle(temporary: [BuildRecord("REFR", DeletedRefId, DeletedFlag), pgre])
         };
 
-        DeletedRefLinkStripper.Apply(bundles, stats: null);
+        DeletedRefLinkStripper.Apply(bundles, null);
 
         Assert.Contains("XESP", ReadSubrecordSignatures(bundles[0].TemporaryChildRecords[1]));
     }
@@ -71,10 +71,10 @@ public sealed class DeletedRefLinkStripperTests
         var bundles = new List<CellOverrideBundle>
         {
             MakeBundle(temporary: [BuildRecord("REFR", DeletedRefId, DeletedFlag)]),
-            MakeBundle(cellFormId: CellId + 1, temporary: [linked])
+            MakeBundle(CellId + 1, [linked])
         };
 
-        DeletedRefLinkStripper.Apply(bundles, stats: null);
+        DeletedRefLinkStripper.Apply(bundles, null);
 
         var swept = bundles[1].TemporaryChildRecords[0];
         Assert.DoesNotContain("XLKR", ReadSubrecordSignatures(swept));

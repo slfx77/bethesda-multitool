@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
 using Xunit;
 
@@ -18,7 +19,7 @@ public class PluginEmissionCensusTests
     public void Census_Counts_Records_And_Grups_Excluding_Tes4()
     {
         var plugin = BuildPlugin(
-            Tes4(hedrRecordCount: 0),
+            Tes4(0),
             Grup("STAT",
                 Record("STAT", 0x01000800),
                 Record("STAT", 0x000A0001)),
@@ -38,8 +39,8 @@ public class PluginEmissionCensusTests
         var plugin = BuildPlugin(
             Tes4(0),
             Grup("STAT",
-                Record("STAT", 0x01000800),   // plugin range → new
-                Record("STAT", 0x01000801),   // plugin range → new
+                Record("STAT", 0x01000800), // plugin range → new
+                Record("STAT", 0x01000801), // plugin range → new
                 Record("STAT", 0x000A0001))); // master range → override
 
         var census = InvokeCount(plugin);
@@ -72,7 +73,7 @@ public class PluginEmissionCensusTests
     public void Validator_Flags_A_Hedr_Count_That_Disagrees_With_The_File()
     {
         var plugin = BuildPlugin(
-            Tes4(hedrRecordCount: 999),
+            Tes4(999),
             Grup("STAT", Record("STAT", 0x01000800)));
 
         var result = PluginSemanticValidator.Validate(plugin);
@@ -86,7 +87,7 @@ public class PluginEmissionCensusTests
     {
         // 1 record + 1 GRUP = 2.
         var plugin = BuildPlugin(
-            Tes4(hedrRecordCount: 2),
+            Tes4(2),
             Grup("STAT", Record("STAT", 0x01000800)));
 
         var result = PluginSemanticValidator.Validate(plugin);
@@ -100,7 +101,7 @@ public class PluginEmissionCensusTests
     private static (int Records, int Groups, int NewRecords, int OverrideRecords,
         IReadOnlyDictionary<string, int> ByType, int HedrRecordCount) InvokeCount(byte[] plugin)
     {
-        var census = BethesdaMultitool.Core.Formats.Esm.Plugin.Output.PluginEmissionCensus.Count(plugin);
+        var census = PluginEmissionCensus.Count(plugin);
         return (census.Records, census.Groups, census.NewRecords, census.OverrideRecords,
             census.ByType, census.HedrRecordCount);
     }

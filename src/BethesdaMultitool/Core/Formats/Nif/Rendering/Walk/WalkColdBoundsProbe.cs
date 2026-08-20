@@ -73,6 +73,8 @@ internal static class WalkColdBoundsProbe
         return tEnter <= tExit;
     }
 
-    private static bool IsFinite(Vector3 v) =>
-        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+    private static bool IsFinite(Vector3 v)
+    {
+        return float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+    }
 }

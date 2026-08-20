@@ -12,6 +12,16 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 /// </summary>
 public static class SptFile
 {
+    // Post-tree branch-LOD sub-section tokens (CTreeEngine::ParseLodInfo, 360 MemDebug 0x8298A5B0).
+    private const uint LodBranchEnd = 9006; // 0x232E section terminator
+    private const uint LodNumBranchLods = 9007; // 0x232F -> +0x70
+    private const uint LodBranchFar = 9008; // 0x2330 -> +0xdc
+    private const uint LodLeafSizeIncrease = 9010; // 0x2332 -> +0xe4 (0 is normalized to 0.1)
+    private const uint LodNumLeafLods = 9011; // 0x2333 -> +0xc0
+    private const uint LodBranchNear = 9012; // 0x2334 -> +0xe0 (LOD0)
+    private const uint LodBranchDemotion = 9013; // 0x2335 -> +0xe8 (BuildBranchLods demotion draw bound)
+    private const uint LodBranchGuarantee = 9014; // 0x2336 -> +0xec (guaranteed-keep threshold fraction)
+
     /// <summary>Parse a <c>.spt</c> buffer, returning null if it is not a valid "__IdvSpt_02_" tree.</summary>
     public static SptModel? TryParse(byte[] data)
     {
@@ -85,19 +95,9 @@ public static class SptFile
             LeafTable = leafTable,
             Wind = wind,
             Lod = lod,
-            Frond = frond,
+            Frond = frond
         };
     }
-
-    // Post-tree branch-LOD sub-section tokens (CTreeEngine::ParseLodInfo, 360 MemDebug 0x8298A5B0).
-    private const uint LodBranchEnd = 9006;       // 0x232E section terminator
-    private const uint LodNumBranchLods = 9007;   // 0x232F -> +0x70
-    private const uint LodBranchFar = 9008;       // 0x2330 -> +0xdc
-    private const uint LodLeafSizeIncrease = 9010;// 0x2332 -> +0xe4 (0 is normalized to 0.1)
-    private const uint LodNumLeafLods = 9011;     // 0x2333 -> +0xc0
-    private const uint LodBranchNear = 9012;      // 0x2334 -> +0xe0 (LOD0)
-    private const uint LodBranchDemotion = 9013;  // 0x2335 -> +0xe8 (BuildBranchLods demotion draw bound)
-    private const uint LodBranchGuarantee = 9014; // 0x2336 -> +0xec (guaranteed-keep threshold fraction)
 
     /// <summary>
     ///     Scan the post-tree region for the branch-LOD sub-section and recover the LOD0 keep fraction the
@@ -155,6 +155,7 @@ public static class SptFile
                         {
                             numLeafLods = (int)authoredLeafLods;
                         }
+
                         break;
                     case LodBranchNear:
                         near = BinaryUtils.ReadFloatLE(data, pos + 4);
@@ -183,7 +184,7 @@ public static class SptFile
                         ? defaults.LeafLodSizeIncrease
                         : leafSizeIncrease.Value,
                     BranchDemotionRandomness = demotion ?? defaults.BranchDemotionRandomness,
-                    BranchGuaranteeFraction = guarantee ?? defaults.BranchGuaranteeFraction,
+                    BranchGuaranteeFraction = guarantee ?? defaults.BranchGuaranteeFraction
                 };
             }
         }
@@ -231,7 +232,7 @@ public static class SptFile
                             enabled = c.ReadByte() != 0;
                             break;
                         case FrondInt13003 or FrondInt13004 or FrondInt13006 or FrondInt13009
-                            or FrondInt14007 or FrondInt14008 or (>= FrondFloat13010 and <= FrondFloat13013):
+                            or FrondInt14007 or FrondInt14008 or >= FrondFloat13010 and <= FrondFloat13013:
                             c.ReadToken();
                             break;
                         case FrondProfile:
@@ -367,10 +368,15 @@ public static class SptFile
         return (int)count;
     }
 
-    private static SptLeafTextureCoords ReadLeafTextureCoords(SptCursor c) =>
-        new(ReadUv(c), ReadUv(c), ReadUv(c), ReadUv(c));
+    private static SptLeafTextureCoords ReadLeafTextureCoords(SptCursor c)
+    {
+        return new SptLeafTextureCoords(ReadUv(c), ReadUv(c), ReadUv(c), ReadUv(c));
+    }
 
-    private static Vector2 ReadUv(SptCursor c) => new(c.ReadFloat(), c.ReadFloat());
+    private static Vector2 ReadUv(SptCursor c)
+    {
+        return new Vector2(c.ReadFloat(), c.ReadFloat());
+    }
 
     private static SptGeneralParams ParseGeneral(SptCursor c, List<SptBranch> branches)
     {
@@ -427,7 +433,7 @@ public static class SptFile
             Float2003 = f2003,
             Token2005 = t2005,
             Float2006 = f2006,
-            Float2007 = f2007,
+            Float2007 = f2007
         };
     }
 
@@ -517,7 +523,7 @@ public static class SptFile
             Float6013 = f6013,
             Float6014 = f6014,
             Bool6015 = b6015,
-            Bool6016 = b6016,
+            Bool6016 = b6016
         };
     }
 
@@ -600,7 +606,7 @@ public static class SptFile
                 Float3007 = f3007,
                 UInt3008 = u3008,
                 Byte3009 = b3009,
-                Float3010 = f3010,
+                Float3010 = f3010
             };
         }
     }
@@ -627,10 +633,10 @@ public static class SptFile
         c.Expect(BeginLeaf, "begin-leaf");
 
         byte type = 0;
-        var position = System.Numerics.Vector3.Zero;
-        var corner0 = System.Numerics.Vector3.Zero;
-        var corner1 = System.Numerics.Vector3.Zero;
-        var corner2 = System.Numerics.Vector3.Zero;
+        var position = Vector3.Zero;
+        var corner0 = Vector3.Zero;
+        var corner1 = Vector3.Zero;
+        var corner2 = Vector3.Zero;
         float size = 0, f4007 = 0;
         string? material = null;
 
@@ -680,17 +686,17 @@ public static class SptFile
             Corner0 = corner0,
             Corner1 = corner1,
             Corner2 = corner2,
-            Float4007 = f4007,
+            Float4007 = f4007
         };
     }
 
     private static SptWind ParseWind(SptCursor c)
     {
-        var v5000 = System.Numerics.Vector3.Zero;
-        var v5001 = System.Numerics.Vector3.Zero;
-        var v5002 = System.Numerics.Vector3.Zero;
-        var v5003 = System.Numerics.Vector3.Zero;
-        var v5004 = System.Numerics.Vector3.Zero;
+        var v5000 = Vector3.Zero;
+        var v5001 = Vector3.Zero;
+        var v5002 = Vector3.Zero;
+        var v5003 = Vector3.Zero;
+        var v5004 = Vector3.Zero;
         float f5005 = 0;
         byte b5006 = 0;
 
@@ -736,7 +742,7 @@ public static class SptFile
             Vec5003 = v5003,
             Vec5004 = v5004,
             Float5005 = f5005,
-            Byte5006 = b5006,
+            Byte5006 = b5006
         };
     }
 }

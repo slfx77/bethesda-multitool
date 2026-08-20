@@ -20,7 +20,7 @@ public enum PlannerXespParentStatus
     RuntimeState,
 
     /// <summary>No matching captured, master, or emitted parent is known.</summary>
-    Absent,
+    Absent
 }
 
 /// <summary>One captured XESP link and the evidence used to classify its parent.</summary>

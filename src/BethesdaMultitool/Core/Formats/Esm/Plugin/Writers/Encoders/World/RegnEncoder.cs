@@ -59,7 +59,7 @@ public sealed class RegnEncoder : IRecordEncoder
             for (var i = 0; i < area.Points.Count; i++)
             {
                 SubrecordEncoder.WriteFloat(rpld, i * 8, area.Points[i].X);
-                SubrecordEncoder.WriteFloat(rpld, (i * 8) + 4, area.Points[i].Y);
+                SubrecordEncoder.WriteFloat(rpld, i * 8 + 4, area.Points[i].Y);
             }
 
             subs.Add(new EncodedSubrecord("RPLD", rpld));

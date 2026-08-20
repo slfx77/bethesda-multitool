@@ -1,10 +1,9 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
 
@@ -418,4 +417,3 @@ internal static class NpcHeadPartAttacher
         }
     }
 }
-

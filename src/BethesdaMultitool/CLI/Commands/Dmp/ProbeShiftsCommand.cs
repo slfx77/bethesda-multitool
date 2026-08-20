@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
@@ -131,7 +130,7 @@ internal static class ProbeShiftsCommand
 
         // Run the full DMP analysis to populate EsmRecords + entries.
         var analysisResult = await analyzer.AnalyzeAsync(dmpFile, accessor, fileInfo.Length,
-            progress: null, includeMetadata: true, verbose: false, cancellationToken);
+            null, true, false, cancellationToken);
 
         if (analysisResult.EsmRecords == null || analysisResult.MinidumpInfo == null)
         {
@@ -352,17 +351,25 @@ internal static class ProbeShiftsCommand
         yield return Csv(generic?.Count(kv => kv.Value != 0) ?? 0);
     }
 
-    private static string Csv(int? value) =>
-        value?.ToString(CultureInfo.InvariantCulture) ?? "";
+    private static string Csv(int? value)
+    {
+        return value?.ToString(CultureInfo.InvariantCulture) ?? "";
+    }
 
-    private static string Csv(int value) =>
-        value.ToString(CultureInfo.InvariantCulture);
+    private static string Csv(int value)
+    {
+        return value.ToString(CultureInfo.InvariantCulture);
+    }
 
-    private static string Csv(bool? value) =>
-        value?.ToString().ToLowerInvariant() ?? "";
+    private static string Csv(bool? value)
+    {
+        return value?.ToString().ToLowerInvariant() ?? "";
+    }
 
-    private static string Csv(bool value) =>
-        value.ToString().ToLowerInvariant();
+    private static string Csv(bool value)
+    {
+        return value.ToString().ToLowerInvariant();
+    }
 
     private static string Csv(string? value)
     {
@@ -396,63 +403,63 @@ internal static class ProbeShiftsCommand
     {
         var p = row.Probes;
         sb.Append("  {\n");
-        AppendJsonField(sb, "DmpFile", row.DmpFile, indent: 4);
-        AppendJsonField(sb, "BuildType", row.BuildType, indent: 4);
-        AppendJsonField(sb, "IsEarlyBuild", row.IsEarlyBuild, indent: 4);
-        AppendJsonField(sb, "EntriesAll", row.EntriesAll, indent: 4);
-        AppendJsonField(sb, "EntriesNpc", row.EntriesNpc, indent: 4);
-        AppendJsonField(sb, "EntriesRefr", row.EntriesRefr, indent: 4);
-        AppendJsonField(sb, "EntriesWorld", row.EntriesWorld, indent: 4);
-        AppendJsonField(sb, "EntriesCell", row.EntriesCell, indent: 4);
-        AppendJsonField(sb, "EntriesLand", row.EntriesLand, indent: 4);
-        AppendJsonField(sb, "RefrScore", p.RefrScore, indent: 4);
-        AppendJsonField(sb, "RefrRunnerUp", p.RefrRunnerUp, indent: 4);
-        AppendJsonField(sb, "RefrMargin", p.RefrMargin, indent: 4);
-        AppendJsonField(sb, "RefrSamples", p.RefrSamples, indent: 4);
-        AppendJsonField(sb, "AmmoDataOffset", p.AmmoDataOffset, indent: 4);
-        AppendJsonField(sb, "AmmoScore", p.AmmoScore, indent: 4);
-        AppendJsonField(sb, "AmmoMargin", p.AmmoMargin, indent: 4);
-        AppendJsonField(sb, "AmmoSamples", p.AmmoSamples, indent: 4);
-        AppendJsonField(sb, "AspcLayout", p.AspcLayout, indent: 4);
-        AppendJsonField(sb, "AspcScore", p.AspcScore, indent: 4);
-        AppendJsonField(sb, "AspcMargin", p.AspcMargin, indent: 4);
-        AppendJsonField(sb, "AspcSamples", p.AspcSamples, indent: 4);
-        AppendJsonField(sb, "RaceShifts", p.RaceShifts, indent: 4);
-        AppendJsonField(sb, "RaceLabel", p.RaceLabel, indent: 4);
-        AppendJsonField(sb, "RaceScore", p.RaceScore, indent: 4);
-        AppendJsonField(sb, "RaceRunnerUp", p.RaceRunnerUp, indent: 4);
-        AppendJsonField(sb, "RaceMargin", p.RaceMargin, indent: 4);
-        AppendJsonField(sb, "RaceSamples", p.RaceSamples, indent: 4);
-        AppendJsonField(sb, "EffectShifts", p.EffectShifts, indent: 4);
-        AppendJsonField(sb, "EffectLabel", p.EffectLabel, indent: 4);
-        AppendJsonField(sb, "EffectScore", p.EffectScore, indent: 4);
-        AppendJsonField(sb, "EffectRunnerUp", p.EffectRunnerUp, indent: 4);
-        AppendJsonField(sb, "EffectMargin", p.EffectMargin, indent: 4);
-        AppendJsonField(sb, "EffectSamples", p.EffectSamples, indent: 4);
-        AppendJsonField(sb, "NpcCoreShift", p.NpcCoreShift, indent: 4);
-        AppendJsonField(sb, "NpcAppearanceShift", p.NpcAppearanceShift, indent: 4);
-        AppendJsonField(sb, "NpcLateAppearanceShift", p.NpcLateAppearanceShift, indent: 4);
-        AppendJsonField(sb, "NpcReadSize", p.NpcReadSize, indent: 4);
-        AppendJsonField(sb, "NpcFaceGenMode", p.NpcFaceGenMode, indent: 4);
-        AppendJsonField(sb, "NpcHighConfidence", p.NpcHighConfidence, indent: 4);
-        AppendJsonField(sb, "NpcScore", p.NpcScore, indent: 4);
-        AppendJsonField(sb, "NpcRunnerUp", p.NpcRunnerUp, indent: 4);
-        AppendJsonField(sb, "NpcMargin", p.NpcMargin, indent: 4);
-        AppendJsonField(sb, "NpcSamples", p.NpcSamples, indent: 4);
-        AppendJsonField(sb, "WorldShift", p.WorldShift, indent: 4);
-        AppendJsonField(sb, "CellShift", p.CellShift, indent: 4);
-        AppendJsonField(sb, "WorldCellHighConfidence", p.WorldCellHighConfidence, indent: 4);
-        AppendJsonField(sb, "WorldCellScore", p.WorldCellScore, indent: 4);
-        AppendJsonField(sb, "WorldCellRunnerUp", p.WorldCellRunnerUp, indent: 4);
-        AppendJsonField(sb, "WorldCellMargin", p.WorldCellMargin, indent: 4);
-        AppendJsonField(sb, "WorldCellSamples", p.WorldCellSamples, indent: 4);
-        AppendJsonField(sb, "WeaponSoundVariant", p.WeaponSoundVariant, indent: 4);
-        AppendJsonField(sb, "WeaponSoundHighConfidence", p.WeaponSoundHighConfidence, indent: 4);
-        AppendJsonField(sb, "WeaponSoundScore", p.WeaponSoundScore, indent: 4);
-        AppendJsonField(sb, "WeaponSoundRunnerUp", p.WeaponSoundRunnerUp, indent: 4);
-        AppendJsonField(sb, "WeaponSoundMargin", p.WeaponSoundMargin, indent: 4);
-        AppendJsonField(sb, "WeaponSoundSamples", p.WeaponSoundSamples, indent: 4);
-        AppendJsonFieldGenericShifts(sb, "GenericTypeShifts", p.GenericTypeShifts, indent: 4);
+        AppendJsonField(sb, "DmpFile", row.DmpFile, 4);
+        AppendJsonField(sb, "BuildType", row.BuildType, 4);
+        AppendJsonField(sb, "IsEarlyBuild", row.IsEarlyBuild, 4);
+        AppendJsonField(sb, "EntriesAll", row.EntriesAll, 4);
+        AppendJsonField(sb, "EntriesNpc", row.EntriesNpc, 4);
+        AppendJsonField(sb, "EntriesRefr", row.EntriesRefr, 4);
+        AppendJsonField(sb, "EntriesWorld", row.EntriesWorld, 4);
+        AppendJsonField(sb, "EntriesCell", row.EntriesCell, 4);
+        AppendJsonField(sb, "EntriesLand", row.EntriesLand, 4);
+        AppendJsonField(sb, "RefrScore", p.RefrScore, 4);
+        AppendJsonField(sb, "RefrRunnerUp", p.RefrRunnerUp, 4);
+        AppendJsonField(sb, "RefrMargin", p.RefrMargin, 4);
+        AppendJsonField(sb, "RefrSamples", p.RefrSamples, 4);
+        AppendJsonField(sb, "AmmoDataOffset", p.AmmoDataOffset, 4);
+        AppendJsonField(sb, "AmmoScore", p.AmmoScore, 4);
+        AppendJsonField(sb, "AmmoMargin", p.AmmoMargin, 4);
+        AppendJsonField(sb, "AmmoSamples", p.AmmoSamples, 4);
+        AppendJsonField(sb, "AspcLayout", p.AspcLayout, 4);
+        AppendJsonField(sb, "AspcScore", p.AspcScore, 4);
+        AppendJsonField(sb, "AspcMargin", p.AspcMargin, 4);
+        AppendJsonField(sb, "AspcSamples", p.AspcSamples, 4);
+        AppendJsonField(sb, "RaceShifts", p.RaceShifts, 4);
+        AppendJsonField(sb, "RaceLabel", p.RaceLabel, 4);
+        AppendJsonField(sb, "RaceScore", p.RaceScore, 4);
+        AppendJsonField(sb, "RaceRunnerUp", p.RaceRunnerUp, 4);
+        AppendJsonField(sb, "RaceMargin", p.RaceMargin, 4);
+        AppendJsonField(sb, "RaceSamples", p.RaceSamples, 4);
+        AppendJsonField(sb, "EffectShifts", p.EffectShifts, 4);
+        AppendJsonField(sb, "EffectLabel", p.EffectLabel, 4);
+        AppendJsonField(sb, "EffectScore", p.EffectScore, 4);
+        AppendJsonField(sb, "EffectRunnerUp", p.EffectRunnerUp, 4);
+        AppendJsonField(sb, "EffectMargin", p.EffectMargin, 4);
+        AppendJsonField(sb, "EffectSamples", p.EffectSamples, 4);
+        AppendJsonField(sb, "NpcCoreShift", p.NpcCoreShift, 4);
+        AppendJsonField(sb, "NpcAppearanceShift", p.NpcAppearanceShift, 4);
+        AppendJsonField(sb, "NpcLateAppearanceShift", p.NpcLateAppearanceShift, 4);
+        AppendJsonField(sb, "NpcReadSize", p.NpcReadSize, 4);
+        AppendJsonField(sb, "NpcFaceGenMode", p.NpcFaceGenMode, 4);
+        AppendJsonField(sb, "NpcHighConfidence", p.NpcHighConfidence, 4);
+        AppendJsonField(sb, "NpcScore", p.NpcScore, 4);
+        AppendJsonField(sb, "NpcRunnerUp", p.NpcRunnerUp, 4);
+        AppendJsonField(sb, "NpcMargin", p.NpcMargin, 4);
+        AppendJsonField(sb, "NpcSamples", p.NpcSamples, 4);
+        AppendJsonField(sb, "WorldShift", p.WorldShift, 4);
+        AppendJsonField(sb, "CellShift", p.CellShift, 4);
+        AppendJsonField(sb, "WorldCellHighConfidence", p.WorldCellHighConfidence, 4);
+        AppendJsonField(sb, "WorldCellScore", p.WorldCellScore, 4);
+        AppendJsonField(sb, "WorldCellRunnerUp", p.WorldCellRunnerUp, 4);
+        AppendJsonField(sb, "WorldCellMargin", p.WorldCellMargin, 4);
+        AppendJsonField(sb, "WorldCellSamples", p.WorldCellSamples, 4);
+        AppendJsonField(sb, "WeaponSoundVariant", p.WeaponSoundVariant, 4);
+        AppendJsonField(sb, "WeaponSoundHighConfidence", p.WeaponSoundHighConfidence, 4);
+        AppendJsonField(sb, "WeaponSoundScore", p.WeaponSoundScore, 4);
+        AppendJsonField(sb, "WeaponSoundRunnerUp", p.WeaponSoundRunnerUp, 4);
+        AppendJsonField(sb, "WeaponSoundMargin", p.WeaponSoundMargin, 4);
+        AppendJsonField(sb, "WeaponSoundSamples", p.WeaponSoundSamples, 4);
+        AppendJsonFieldGenericShifts(sb, "GenericTypeShifts", p.GenericTypeShifts, 4);
         // Strip trailing comma+newline from the last field.
         if (sb.Length >= 2 && sb[^2] == ',' && sb[^1] == '\n')
         {
@@ -706,6 +713,7 @@ internal static class ProbeShiftsCommand
         {
             color = distinct.Count == 1 ? "cyan" : "yellow";
         }
+
         var values_str = string.Join(", ", distinct.Select(v => v.ToString(CultureInfo.InvariantCulture)));
         AnsiConsole.MarkupLine(
             $"  [{color}]{Markup.Escape(label),-18}[/]  values={{ {values_str} }} ({present.Count}/{present.Count} samples)");

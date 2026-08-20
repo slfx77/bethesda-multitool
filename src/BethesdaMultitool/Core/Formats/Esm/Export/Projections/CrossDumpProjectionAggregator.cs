@@ -647,4 +647,3 @@ internal static class CrossDumpProjectionAggregator
         }
     }
 }
-

@@ -3,7 +3,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
-/// <summary>The scanned ESM record tables (NPCs, creatures, races, head parts, etc.) keyed by FormID that the appearance resolver looks up.</summary>
+/// <summary>
+///     The scanned ESM record tables (NPCs, creatures, races, head parts, etc.) keyed by FormID that the appearance
+///     resolver looks up.
+/// </summary>
 internal sealed class NpcAppearanceIndex
 {
     public Dictionary<uint, NpcScanEntry> Npcs { get; } =
@@ -54,4 +57,3 @@ internal sealed class NpcAppearanceIndex
     public Dictionary<uint, CstyEntry> CombatStyles { get; } =
         new();
 }
-

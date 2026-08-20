@@ -11,19 +11,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 /// </summary>
 public sealed class WorldspaceCatalog
 {
-    public sealed record WorldspaceCatalogEntry
-    {
-        public required uint WorldspaceFormId { get; init; }
-        public required WorldspaceCatalogSource Source { get; init; }
-        public WorldspaceRecord? DmpModel { get; init; }
-        public required IReadOnlyList<uint> CellFormIds { get; init; }
-    }
-
     public enum WorldspaceCatalogSource
     {
         MasterOnly,
         DmpOverride,
-        DmpNew,
+        DmpNew
     }
 
     /// <summary>
@@ -72,7 +64,7 @@ public sealed class WorldspaceCatalog
             {
                 (true, true) => WorldspaceCatalogSource.DmpOverride,
                 (true, false) => WorldspaceCatalogSource.MasterOnly,
-                (false, _) => WorldspaceCatalogSource.DmpNew,
+                (false, _) => WorldspaceCatalogSource.DmpNew
             };
 
             result.Add(new WorldspaceCatalogEntry
@@ -80,7 +72,7 @@ public sealed class WorldspaceCatalog
                 WorldspaceFormId = wrldId,
                 Source = source,
                 DmpModel = dmpRecord,
-                CellFormIds = cellIds,
+                CellFormIds = cellIds
             });
         }
 
@@ -95,5 +87,13 @@ public sealed class WorldspaceCatalog
         }
 
         return entry.DmpModel?.WorldspaceFormId;
+    }
+
+    public sealed record WorldspaceCatalogEntry
+    {
+        public required uint WorldspaceFormId { get; init; }
+        public required WorldspaceCatalogSource Source { get; init; }
+        public WorldspaceRecord? DmpModel { get; init; }
+        public required IReadOnlyList<uint> CellFormIds { get; init; }
     }
 }

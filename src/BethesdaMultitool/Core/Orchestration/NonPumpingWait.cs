@@ -20,7 +20,10 @@ namespace BethesdaMultitool.Core.Orchestration;
 public static class NonPumpingWait
 {
     /// <summary>Blocks until <paramref name="task" /> completes. Returns false on timeout.</summary>
-    public static bool Wait(Task task, TimeSpan? timeout = null) => WaitAll([task], timeout);
+    public static bool Wait(Task task, TimeSpan? timeout = null)
+    {
+        return WaitAll([task], timeout);
+    }
 
     /// <summary>Blocks until every task completes. Returns false on timeout.</summary>
     public static bool WaitAll(IReadOnlyList<Task> tasks, TimeSpan? timeout = null)
@@ -55,7 +58,7 @@ public static class NonPumpingWait
             {
                 // Non-alertable native sleep: guaranteed not to pump messages or run APCs.
                 // (Return value is only meaningful for alertable sleeps — safe to discard.)
-                _ = SleepEx(1, bAlertable: false);
+                _ = SleepEx(1, false);
             }
             else
             {

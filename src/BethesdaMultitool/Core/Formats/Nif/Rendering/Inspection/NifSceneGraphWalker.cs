@@ -1,7 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
@@ -79,7 +78,8 @@ internal static class NifSceneGraphWalker
 
             if (NodeTypes.Contains(block.TypeName))
             {
-                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, be,
+                    nif.HasInlineStrings);
                 if (children != null)
                 {
                     nodeChildren[i] = children;
@@ -160,7 +160,8 @@ internal static class NifSceneGraphWalker
 
                 // Skip gore shapes identified via BSDismemberSkinInstance partition data.
                 // Body part IDs 100-299 are gore caps (section caps + torso caps).
-                var skinRef = NifBlockParsers.ParseShapeSkinInstanceRef(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
+                var skinRef = NifBlockParsers.ParseShapeSkinInstanceRef(data, block, nif.BsVersion, nif.BinaryVersion,
+                    be, nif.HasInlineStrings);
                 if (skinRef >= 0 && skinRef < nif.Blocks.Count &&
                     nif.Blocks[skinRef].TypeName == "BSDismemberSkinInstance")
                 {
@@ -182,7 +183,8 @@ internal static class NifSceneGraphWalker
                     }
                 }
 
-                var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
+                var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, nif.BinaryVersion, be,
+                    nif.HasInlineStrings);
                 if (dataRef < 0 || dataRef >= nif.Blocks.Count)
                 {
                     continue; // no geometry data
@@ -190,7 +192,8 @@ internal static class NifSceneGraphWalker
 
                 if (shapePropertyMap != null)
                 {
-                    var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
+                    var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, nif.BinaryVersion,
+                        be, nif.HasInlineStrings);
 
                     // BSShaderProperty-era (FO3/FNV+) shapes with no texture-source property are non-visual
                     // helpers — furniture-marker / boundary / collision-viz placeholders the game never
@@ -233,7 +236,7 @@ internal static class NifSceneGraphWalker
         // moved properties onto the shape (BSLightingShaderProperty), so this pass is gated to legacy NIFs.
         // Covers Morrowind meshes whose render properties live on a parent NiNode rather than the shape.
         if (shapePropertyMap != null &&
-            Parser.NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
+            NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
         {
             PropagateInheritedProperties(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, be);
         }
@@ -483,7 +486,8 @@ internal static class NifSceneGraphWalker
                 continue;
             }
 
-            var skin = NifSkinningExtractor.ParseNiSkinInstance(data, nif.Blocks[skinRef], nif.IsBigEndian, nif.BinaryVersion);
+            var skin = NifSkinningExtractor.ParseNiSkinInstance(data, nif.Blocks[skinRef], nif.IsBigEndian,
+                nif.BinaryVersion);
             if (skin is null)
             {
                 continue;
@@ -571,7 +575,7 @@ internal static class NifSceneGraphWalker
             {
                 // This is a root node
                 WalkNode(data, nif, i, Matrix4x4.Identity, nodeChildren, worldTransforms, animOverrides,
-                    ignoreOwnTransform: treatRootsAsIdentity, billboardShapes: billboardShapes);
+                    treatRootsAsIdentity, billboardShapes);
             }
         }
 
@@ -682,8 +686,8 @@ internal static class NifSceneGraphWalker
                         data, nif.Blocks[childIdx], nif.BinaryVersion, nif.IsBigEndian,
                         nif.HasInlineStrings);
                     WalkNode(data, nif, childIdx, bbParent, nodeChildren, worldTransforms, animOverrides,
-                        ignoreOwnTransform: true, billboardShapes: billboardShapes,
-                        activeBillboardMode: mode);
+                        true, billboardShapes,
+                        mode);
                 }
                 else
                 {
@@ -734,7 +738,8 @@ internal static class NifSceneGraphWalker
             var block = nif.Blocks[i];
             if (NodeTypes.Contains(block.TypeName))
             {
-                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, be,
+                    nif.HasInlineStrings);
                 if (children != null)
                 {
                     nodeChildren[i] = children;

@@ -105,4 +105,3 @@ internal static class MeshGlbExporter
         GlbWriter.Write(scene, textureResolver, outputPath);
     }
 }
-

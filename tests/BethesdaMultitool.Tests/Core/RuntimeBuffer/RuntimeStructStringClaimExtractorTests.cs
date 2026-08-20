@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Tests.Core.RuntimeBuffer;
 public sealed class RuntimeStructStringClaimExtractorTests
 {
     [Theory]
-    [InlineData((byte)0x22, 20, 4, 88)]  // MSTT
+    [InlineData((byte)0x22, 20, 4, 88)] // MSTT
     [InlineData((byte)0x26, 12, 80, 92)] // FLOR
     public void ExtractClaims_RebasesObjectFieldsAndDeduplicatesPrecapturedFullName(
         byte formType,
@@ -131,7 +131,7 @@ public sealed class RuntimeStructStringClaimExtractorTests
             TesFormOffset = tesFormFileOffset,
             TesFormPointer = objectVa + 20,
             DisplayName = "Known name",
-            DisplayNameStringOffset = fullNameFileOffset,
+            DisplayNameStringOffset = fullNameFileOffset
         };
 
         var claim = Assert.Single(RuntimeStructStringClaimExtractor.ExtractClaims([entry], context));

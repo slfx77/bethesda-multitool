@@ -32,17 +32,21 @@ public sealed class ArchiveHandleRegistry
     private static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
-    /// <summary>The app-wide instance. Tests should construct their own registry.</summary>
-    public static ArchiveHandleRegistry Shared { get; } = new();
+    private readonly Dictionary<string, Entry> _entries;
 
     // _gate guards the map + keep-warm counter. Lock order: an entry's Lock may be held when
     // taking _gate, never the reverse — Acquire looks the entry up under _gate, releases it,
     // then locks the entry.
     private readonly object _gate = new();
-    private readonly Dictionary<string, Entry> _entries;
     private int _keepWarmScopes;
 
-    public ArchiveHandleRegistry() => _entries = new Dictionary<string, Entry>(PathComparer);
+    public ArchiveHandleRegistry()
+    {
+        _entries = new Dictionary<string, Entry>(PathComparer);
+    }
+
+    /// <summary>The app-wide instance. Tests should construct their own registry.</summary>
+    public static ArchiveHandleRegistry Shared { get; } = new();
 
     /// <summary>Number of archives currently held open (leased or parked). Diagnostics/tests.</summary>
     public int OpenHandleCount
@@ -267,7 +271,10 @@ public sealed class ArchiveHandleRegistry
     {
         private ArchiveHandleRegistry? _registry = registry;
 
-        public void Dispose() => Interlocked.Exchange(ref _registry, null)?.ReleaseKeepWarm();
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref _registry, null)?.ReleaseKeepWarm();
+        }
     }
 }
 

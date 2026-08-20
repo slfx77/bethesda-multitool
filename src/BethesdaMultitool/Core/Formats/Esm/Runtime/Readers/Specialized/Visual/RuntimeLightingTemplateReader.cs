@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Visual;
 
@@ -14,6 +13,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Visual;
 internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context)
 {
     private const byte LgtmFormType = 0x65;
+
     // INTERIOR_DATA is 44 bytes in the runtime struct, but only the first 40 bytes
     // match the ESM DATA subrecord schema (the last 4 bytes are runtime padding/extra).
     private const int EsmDataSize = 40;
@@ -39,7 +39,7 @@ internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context
         {
             var dataBytes = new byte[EsmDataSize];
             Array.Copy(view.Buffer, dataOff, dataBytes, 0, EsmDataSize);
-            lightingData = SubrecordSchemaView.TryRead("DATA", "LGTM", dataBytes, bigEndian: true)?.Raw;
+            lightingData = SubrecordSchemaView.TryRead("DATA", "LGTM", dataBytes, true)?.Raw;
         }
 
         return new LightingTemplateRecord
@@ -52,4 +52,3 @@ internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context
         };
     }
 }
-

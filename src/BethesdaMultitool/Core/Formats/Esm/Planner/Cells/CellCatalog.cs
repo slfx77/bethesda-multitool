@@ -57,7 +57,7 @@ public static class CellCatalog
                 Source = dmpMatch is null ? SourceKind.MasterOnly : SourceKind.DmpOverride,
                 MasterContext = context,
                 MasterRecord = masterRecord,
-                DmpModel = dmpMatch,
+                DmpModel = dmpMatch
             });
 
             if (dmpMatch is not null)
@@ -79,11 +79,10 @@ public static class CellCatalog
                 Source = SourceKind.DmpNew,
                 MasterContext = null,
                 MasterRecord = null,
-                DmpModel = dmp,
+                DmpModel = dmp
             });
         }
 
         return entries;
     }
 }
-

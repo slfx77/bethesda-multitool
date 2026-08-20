@@ -54,7 +54,7 @@ public class NifStarfieldStreamHeaderTests
         var nif = BuildNif(
             StarfieldBsVersion,
             StarfieldBlockTypes,
-            exportDataSf: [0x21, 0xF0, 0xD8, 0x95, 0x22, 0x02, 0x00]); // retail bytes' shape
+            [0x21, 0xF0, 0xD8, 0x95, 0x22, 0x02, 0x00]); // retail bytes' shape
 
         var info = NifParser.Parse(nif);
 
@@ -98,11 +98,11 @@ public class NifStarfieldStreamHeaderTests
         w.AddRange(BitConverter.GetBytes((uint)blockTypes.Length)); // block count
         w.AddRange(BitConverter.GetBytes(bsVersion));
 
-        AddExportString(w, "test");                                    // Author
-        if (bsVersion > 130) w.AddRange(BitConverter.GetBytes(3u));     // Unknown Int
-        if (bsVersion < 131) AddExportString(w, "proc");                // Process Script
-        AddExportString(w, "exp");                                      // Export Script
-        if (bsVersion is >= 103 and < 170) AddExportString(w, "C:\\x");  // Max Filepath
+        AddExportString(w, "test"); // Author
+        if (bsVersion > 130) w.AddRange(BitConverter.GetBytes(3u)); // Unknown Int
+        if (bsVersion < 131) AddExportString(w, "proc"); // Process Script
+        AddExportString(w, "exp"); // Export Script
+        if (bsVersion is >= 103 and < 170) AddExportString(w, "C:\\x"); // Max Filepath
         if (bsVersion >= 170)
         {
             // ExportDataSF: 1-byte length INCLUDING the terminator, then that many bytes.

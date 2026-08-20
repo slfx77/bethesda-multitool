@@ -533,4 +533,3 @@ internal static class EsmRecordScanner
 
     #endregion
 }
-

@@ -1,10 +1,9 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Script;
@@ -153,12 +152,17 @@ public static class EsmCoverageAnalyzer
             [("*", "MO3T")] = "Model texture hash blob; byte-preserved because PC hash contents are source-specific.",
             [("*", "MO4T")] = "Model texture hash blob; byte-preserved because PC hash contents are source-specific.",
             [("*", "DMDT")] = "Destruction model texture hash blob; byte-preserved with destruction model data.",
-            [("*", "FGGS")] = "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
-            [("*", "FGTS")] = "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
-            [("*", "FGGA")] = "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
-            [("LAND", "VNML")] = "LAND vertex normals; generated from modeled heightmaps for emitted LAND and byte-preserved otherwise.",
+            [("*", "FGGS")] =
+                "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
+            [("*", "FGTS")] =
+                "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
+            [("*", "FGGA")] =
+                "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
+            [("LAND", "VNML")] =
+                "LAND vertex normals; generated from modeled heightmaps for emitted LAND and byte-preserved otherwise.",
             [("PROJ", "NAM2")] = "Projectile model-info texture hash blob; byte-preserved like MODT-family hashes.",
-            [("*", "MODB")] = "Model bound-radius 'Unknown' bytes; xEdit wbByteArray('MODB','Unknown',cpIgnore) — opaque, engine-recomputed."
+            [("*", "MODB")] =
+                "Model bound-radius 'Unknown' bytes; xEdit wbByteArray('MODB','Unknown',cpIgnore) — opaque, engine-recomputed."
         };
 
     private static readonly Dictionary<(string RecordType, string Subrecord), string> CustomModeledSubrecordReasons =
@@ -221,14 +225,16 @@ public static class EsmCoverageAnalyzer
                 var subrecord = g.Key.Subrecord;
                 var dataLength = g.Key.DataLength;
                 var schema = GetSchema(recordType, subrecord, dataLength);
-                var isCustomModeled = TryGetCustomModeledReason(recordType, subrecord, dataLength, out var customReason);
+                var isCustomModeled =
+                    TryGetCustomModeledReason(recordType, subrecord, dataLength, out var customReason);
                 var rawReason = string.Empty;
                 var isIntentionalRaw = !isCustomModeled &&
-                    TryGetIntentionalRawReason(recordType, subrecord, out rawReason);
+                                       TryGetIntentionalRawReason(recordType, subrecord, out rawReason);
                 var schemaKind = isCustomModeled
                     ? "CustomProcessor"
                     : GetSchemaKind(schema, isIntentionalRaw);
-                var usesRaw = !isCustomModeled && (schema == null || ReferenceEquals(schema, SubrecordSchema.ByteArray));
+                var usesRaw = !isCustomModeled &&
+                              (schema == null || ReferenceEquals(schema, SubrecordSchema.ByteArray));
                 var classification = isIntentionalRaw
                     ? EsmCoverageClassification.IntentionallyOpaque
                     : ClassifyRecord(recordType);
@@ -300,7 +306,7 @@ public static class EsmCoverageAnalyzer
                 }
 
                 blockIndex++;
-                rows.Add(BuildScriptBytecodeRow(record, blockIndex, schr: null, sub, subs, index + 1,
+                rows.Add(BuildScriptBytecodeRow(record, blockIndex, null, sub, subs, index + 1,
                     FindScriptBlockEnd(subs, index + 1)));
             }
         }
@@ -471,7 +477,8 @@ public static class EsmCoverageAnalyzer
     {
         Directory.CreateDirectory(outputDirectory);
         File.WriteAllText(Path.Combine(outputDirectory, "record_coverage.csv"), BuildRecordCsv(result), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "subrecord_coverage.csv"), BuildSubrecordCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "subrecord_coverage.csv"), BuildSubrecordCsv(result),
+            Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "script_bytecode_coverage.csv"),
             BuildScriptBytecodeCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "script_source_coverage.csv"),
@@ -906,8 +913,10 @@ public static class EsmCoverageAnalyzer
         }
     }
 
-    private static bool IsStandaloneVariableCountMismatch(EsmScriptBytecodeCoverageRow row) =>
-        row.RecordType == "SCPT" && !row.VariableCountMatches;
+    private static bool IsStandaloneVariableCountMismatch(EsmScriptBytecodeCoverageRow row)
+    {
+        return row.RecordType == "SCPT" && !row.VariableCountMatches;
+    }
 
     private static void AppendScriptSourceSummary(StringBuilder sb, IReadOnlyList<EsmScriptSourceCoverageRow> rows)
     {
@@ -930,7 +939,8 @@ public static class EsmCoverageAnalyzer
         sb.AppendLine($"- Script blocks: {rows.Count:N0}");
         sb.AppendLine($"- Blocks with SCTX: {withSource:N0}/{rows.Count:N0}");
         sb.AppendLine($"- Executable SCTX: {rows.Count(static row => row.SourceClassification == "executable"):N0}");
-        sb.AppendLine($"- Declarations-only SCTX: {rows.Count(static row => row.SourceClassification == "declarations-only"):N0}");
+        sb.AppendLine(
+            $"- Declarations-only SCTX: {rows.Count(static row => row.SourceClassification == "declarations-only"):N0}");
         sb.AppendLine($"- SCTX/SCDA semantic comparisons: {comparisons:N0}");
         sb.AppendLine($"- Exact declaration/SLSD identities: {exactTables:N0}");
         sb.AppendLine($"- Hard source contradictions: {contradictions.Count:N0}");
@@ -958,4 +968,3 @@ public static class EsmCoverageAnalyzer
             : text;
     }
 }
-

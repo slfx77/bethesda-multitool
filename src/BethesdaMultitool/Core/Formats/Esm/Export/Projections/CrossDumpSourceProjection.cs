@@ -67,7 +67,10 @@ internal sealed record CrossDumpSourceProjection
     /// <summary>Per-dialogue metadata captured at projection time (quest/speaker/topic FormIDs + first prompt/response text).</summary>
     public required IReadOnlyDictionary<uint, DialogueObservation> DialogueObservations { get; init; }
 
-    /// <summary>Per-DialogTopic metadata + search text (search text is pre-built from <c>Dialogues</c> before the dialogue list is released).</summary>
+    /// <summary>
+    ///     Per-DialogTopic metadata + search text (search text is pre-built from <c>Dialogues</c> before the dialogue
+    ///     list is released).
+    /// </summary>
     public required IReadOnlyDictionary<uint, DialogTopicObservation> DialogTopicObservations { get; init; }
 
     /// <summary>Worldspace identity lookup for direct <c>BuildWorldspaceNameLookup</c> use (Resolver fallback if missing).</summary>
@@ -109,4 +112,3 @@ internal sealed record LateEnrichmentRecords
     public required IReadOnlyList<KeyRecord> Keys { get; init; }
     public required IReadOnlyList<ContainerRecord> Containers { get; init; }
 }
-

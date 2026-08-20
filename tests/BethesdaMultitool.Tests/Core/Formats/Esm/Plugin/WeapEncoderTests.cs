@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using Xunit;
@@ -46,7 +47,7 @@ public class WeapEncoderTests
         {
             FormId = 0x010060F1,
             EditorId = "WeapNVBabyLauncher",
-            AttackAnim = (BethesdaMultitool.Core.Formats.Esm.Enums.AttackAnimation)0 // uninitialized runtime state, not a valid enum member
+            AttackAnim = 0 // uninitialized runtime state, not a valid enum member
         };
 
         var encoded = WeapEncoder.EncodeNew(weap);
@@ -57,7 +58,7 @@ public class WeapEncoderTests
     }
 
     [Theory]
-    [InlineData(26)]  // AttackLeft
+    [InlineData(26)] // AttackLeft
     [InlineData(102)] // PlaceMine (FNV value)
     [InlineData(255)] // DEFAULT
     public void EncodeNew_KeepsValidAttackAnimBytes(byte valid)
@@ -66,7 +67,7 @@ public class WeapEncoderTests
         {
             FormId = 0x010060F2,
             EditorId = "ProtoWeap",
-            AttackAnim = (BethesdaMultitool.Core.Formats.Esm.Enums.AttackAnimation)valid
+            AttackAnim = (AttackAnimation)valid
         };
 
         var encoded = WeapEncoder.EncodeNew(weap);

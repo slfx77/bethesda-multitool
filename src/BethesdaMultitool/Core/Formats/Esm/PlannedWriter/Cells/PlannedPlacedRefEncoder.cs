@@ -1,13 +1,6 @@
-using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
-using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
-using BethesdaMultitool.Core.Formats.Esm.Plugin;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
@@ -23,6 +16,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 internal static class PlannedPlacedRefEncoder
 {
     internal const uint CompressedFlag = 0x00040000u;
+
+    /// <summary>Record-header flag: ref is persistent (must be set on Persistent Children GRUP members).</summary>
+    internal const uint PersistentFlag = 0x00000400u;
+
+    internal const uint InitiallyDisabledFlag = 0x00000800u;
+
+    /// <summary>Record-header flag: visible when distant (set on VWD Children GRUP members).</summary>
+    internal const uint VisibleWhenDistantFlag = 0x00008000u;
 
     /// <summary>
     ///     Encode one placed-ref child plan. Returns null when the ref is dropped by policy
@@ -58,25 +59,20 @@ internal static class PlannedPlacedRefEncoder
         return VerdictPlacedRefEncoder.Encode(child, placed, verdict, context, state, ref routeGroupType);
     }
 
-    /// <summary>Record-header flag: ref is persistent (must be set on Persistent Children GRUP members).</summary>
-    internal const uint PersistentFlag = 0x00000400u;
-    internal const uint InitiallyDisabledFlag = 0x00000800u;
-
-    /// <summary>Record-header flag: visible when distant (set on VWD Children GRUP members).</summary>
-    internal const uint VisibleWhenDistantFlag = 0x00008000u;
-
     /// <summary>
     ///     XEMI (emittance link) is eager-resolved when the plugin is ESM-flagged and was a
     ///     known fault source in the ESM-era builds; the carry-forward path strips it via
     ///     ReconstructRecordBytes, so the merge path must too or overrides re-import it.
     /// </summary>
-    internal static ParsedMainRecord StripXemi(ParsedMainRecord masterRecord) =>
-        masterRecord.Subrecords.Any(s => s.Signature == "XEMI")
+    internal static ParsedMainRecord StripXemi(ParsedMainRecord masterRecord)
+    {
+        return masterRecord.Subrecords.Any(s => s.Signature == "XEMI")
             ? masterRecord with
             {
                 Subrecords = masterRecord.Subrecords.Where(s => s.Signature != "XEMI").ToList()
             }
             : masterRecord;
+    }
 
     /// <summary>
     ///     Surface the optional-link sanitation performed inside <see cref="RefrEncoder" />.

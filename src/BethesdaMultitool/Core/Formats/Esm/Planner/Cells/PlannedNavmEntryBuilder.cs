@@ -104,7 +104,7 @@ internal static class PlannedNavmEntryBuilder
                 IsInterior = parentCell.IsInterior,
                 GridX = parentCell.IsInterior ? 0 : parentCell.GridX ?? 0,
                 GridY = parentCell.IsInterior ? 0 : parentCell.GridY ?? 0,
-                NvvxBytes = nvvxBytes,
+                NvvxBytes = nvvxBytes
             });
         }
 

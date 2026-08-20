@@ -449,4 +449,3 @@ internal static class EsmConverterOfstBuilder
 
     internal sealed record CellGrid(uint FormId, int GridX, int GridY);
 }
-

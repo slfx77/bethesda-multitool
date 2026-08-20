@@ -67,11 +67,11 @@ public class StarfieldMeshFileTests
     }
 
     [Theory]
-    [InlineData(3u)]  // version above the known maximum
+    [InlineData(3u)] // version above the known maximum
     [InlineData(99u)]
     public void Parse_RejectsUnknownVersion(uint version)
     {
-        Assert.Null(StarfieldMeshFile.Parse(BuildMesh(version: version)));
+        Assert.Null(StarfieldMeshFile.Parse(BuildMesh(version)));
     }
 
     [Fact]
@@ -130,11 +130,11 @@ public class StarfieldMeshFileTests
             w.AddRange(BitConverter.GetBytes((ushort)z));
         }
 
-        AddHalfPairs(w, vertexCount);  // UV0
-        AddHalfPairs(w, vertexCount);  // UV1
+        AddHalfPairs(w, vertexCount); // UV0
+        AddHalfPairs(w, vertexCount); // UV1
         w.AddRange(BitConverter.GetBytes(0u)); // no vertex colours
-        AddDec4(w, vertexCount, firstNormal);  // normals
-        AddDec4(w, vertexCount, null);         // tangents
+        AddDec4(w, vertexCount, firstNormal); // normals
+        AddDec4(w, vertexCount, null); // tangents
         w.AddRange(BitConverter.GetBytes(0u)); // no skin weights
         w.AddRange(BitConverter.GetBytes(0u)); // no LODs
 

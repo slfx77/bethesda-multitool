@@ -11,7 +11,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     them through the parent aliases selected below, so their captured disabled state
 ///     is required for daytime-off behavior. Only the 18 parentless refs retain the
 ///     v123 force-enable fallback.
-///
 ///     Keep this compatibility rule deliberately narrow: NEW REFRs in TheStripWorld
 ///     only. Opposite-state XESP children, the staged light network, actors, creatures,
 ///     and every other worldspace retain the capture verbatim.
@@ -32,11 +31,11 @@ internal static class StripStreetLightPolicy
         CellPlan cellPlan)
     {
         var isStripUndrivenScenery = child.Type == "REFR"
-            && cellPlan.Context.WorldspaceFormId == TheStripWorldFormId
-            && placed.IsInitiallyDisabled
-            && !IsProtoStreetLightParent(placed.FormId)
-            && !TryMapProtoStreetLightParent(placed.EnableParentFormId, out _)
-            && (placed.EnableParentFlags.GetValueOrDefault() & 0x01) == 0;
+                                     && cellPlan.Context.WorldspaceFormId == TheStripWorldFormId
+                                     && placed.IsInitiallyDisabled
+                                     && !IsProtoStreetLightParent(placed.FormId)
+                                     && !TryMapProtoStreetLightParent(placed.EnableParentFormId, out _)
+                                     && (placed.EnableParentFlags.GetValueOrDefault() & 0x01) == 0;
 
         return !isStripUndrivenScenery && placed.IsInitiallyDisabled;
     }
@@ -60,10 +59,12 @@ internal static class StripStreetLightPolicy
             : null;
     }
 
-    private static bool IsProtoStreetLightParent(uint formId) =>
-        formId is ProtoStreetLightSouthParent
+    private static bool IsProtoStreetLightParent(uint formId)
+    {
+        return formId is ProtoStreetLightSouthParent
             or ProtoStreetLightFirstParent
             or ProtoStreetLightNorthParent;
+    }
 
     private static bool TryMapProtoStreetLightParent(uint? sourceParent, out uint retailParent)
     {
@@ -72,7 +73,7 @@ internal static class StripStreetLightPolicy
             ProtoStreetLightFirstParent => RetailStreetLightOneParent,
             ProtoStreetLightSouthParent => RetailStreetLightTwoParent,
             ProtoStreetLightNorthParent => RetailStreetLightThreeParent,
-            _ => 0,
+            _ => 0
         };
         return retailParent != 0;
     }

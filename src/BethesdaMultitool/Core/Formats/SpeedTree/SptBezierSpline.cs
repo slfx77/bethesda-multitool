@@ -13,23 +13,31 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 /// </summary>
 public sealed record SptBezierSpline
 {
+    /// <summary>
+    ///     Size of the engine's precomputed curve LUT (<c>CIdvBezierSpline::CreateEvenlySpacedPoints</c>
+    ///     builds exactly 500 evenly-spaced points; <c>Evaluate</c>/<c>ScaledVariance</c> assert the count is 500).
+    /// </summary>
+    private const int LutSamples = 500;
+
+    /// <summary>
+    ///     Lazily-built, x-reparameterized 500-entry curve LUT (the engine's <c>+0x3c</c> array). Cached;
+    ///     safe as a mutable field because no <see cref="SptBezierSpline" /> equality / <c>with</c> is used anywhere.
+    /// </summary>
+    private float[]? _lut;
+
     /// <summary>The three header floats <c>(MIN, MAX, VARIANCE)</c> that scale the normalized control-point curve.</summary>
     public Vector3 Header { get; init; }
 
     public IReadOnlyList<SptSplineControlPoint> ControlPoints { get; init; } = [];
 
-    /// <summary>Size of the engine's precomputed curve LUT (<c>CIdvBezierSpline::CreateEvenlySpacedPoints</c>
-    /// builds exactly 500 evenly-spaced points; <c>Evaluate</c>/<c>ScaledVariance</c> assert the count is 500).</summary>
-    private const int LutSamples = 500;
-
-    /// <summary>Lazily-built, x-reparameterized 500-entry curve LUT (the engine's <c>+0x3c</c> array). Cached;
-    /// safe as a mutable field because no <see cref="SptBezierSpline" /> equality / <c>with</c> is used anywhere.</summary>
-    private float[]? _lut;
-
     /// <summary>
     ///     Evaluate the spline at <paramref name="param" /> (0..1) exactly as the SDK's
-    ///     <c>CIdvBezierSpline::Evaluate</c> does (decompiled, L131): <c>Header.X + lut(param)·(Header.Y −
-    ///     Header.X) + random(−Header.Z, +Header.Z)</c>, where <c>lut(param)</c> reads the 500-entry curve LUT
+    ///     <c>CIdvBezierSpline::Evaluate</c> does (decompiled, L131):
+    ///     <c>
+    ///         Header.X + lut(param)·(Header.Y −
+    ///         Header.X) + random(−Header.Z, +Header.Z)
+    ///     </c>
+    ///     , where <c>lut(param)</c> reads the 500-entry curve LUT
     ///     at a TRUNCATED index with linear interpolation (<see cref="LutInterp" />). The three header floats
     ///     are <c>(MIN, MAX, VARIANCE)</c>. <paramref name="random" /> is a <c>(min,max)→value</c> uniform RNG;
     ///     pass null to omit the variance term (deterministic mean).
@@ -64,13 +72,20 @@ public sealed record SptBezierSpline
         return random(-scaled, scaled);
     }
 
-    /// <summary>The normalized 0..1 control-point curve at <paramref name="param" /> — the
-    /// <see cref="Evaluate" />-style truncate+interp LUT read (kept for callers/tests that want the bare curve).</summary>
-    public float Curve(float param) => LutInterp(param);
+    /// <summary>
+    ///     The normalized 0..1 control-point curve at <paramref name="param" /> — the
+    ///     <see cref="Evaluate" />-style truncate+interp LUT read (kept for callers/tests that want the bare curve).
+    /// </summary>
+    public float Curve(float param)
+    {
+        return LutInterp(param);
+    }
 
-    /// <summary>Read the curve LUT at a TRUNCATED index with linear interpolation, matching
-    /// <c>CIdvBezierSpline::Evaluate</c> (L146-154): <c>i = (int)(param·499)</c>, lerp <c>lut[i]..lut[i+1]</c>
-    /// by the fractional part.</summary>
+    /// <summary>
+    ///     Read the curve LUT at a TRUNCATED index with linear interpolation, matching
+    ///     <c>CIdvBezierSpline::Evaluate</c> (L146-154): <c>i = (int)(param·499)</c>, lerp <c>lut[i]..lut[i+1]</c>
+    ///     by the fractional part.
+    /// </summary>
     private float LutInterp(float param)
     {
         var lut = Lut();
@@ -89,8 +104,10 @@ public sealed record SptBezierSpline
         return lut[i] + (lut[i + 1] - lut[i]) * (fp - i);
     }
 
-    /// <summary>Read the curve LUT at the NEAREST index (no interpolation), matching
-    /// <c>CIdvBezierSpline::ScaledVariance</c> (L481): <c>lut[(int)(param·499 + 0.5)]</c>.</summary>
+    /// <summary>
+    ///     Read the curve LUT at the NEAREST index (no interpolation), matching
+    ///     <c>CIdvBezierSpline::ScaledVariance</c> (L481): <c>lut[(int)(param·499 + 0.5)]</c>.
+    /// </summary>
     private float LutNearest(float param)
     {
         var lut = Lut();
@@ -177,8 +194,12 @@ public sealed record SptBezierSpline
     ///     The control point is a Hermite node: anchor <c>(Param, A)</c>, UNIT tangent direction
     ///     <c>(B, C)</c>, and handle length <c>D</c>. <c>CIdvBezierSpline::AddControlPoint</c> (L661-668)
     ///     derives the Bézier handles as <c>anchor ± tangent·D</c> — the outgoing handle of point k is
-    ///     <c>anchor_k + tangent_k·D_k</c>, the incoming handle of k+1 is <c>anchor_{k+1} −
-    ///     tangent_{k+1}·D_{k+1}</c>. (B,C) is a direction, NOT a handle position — using it raw flattens
+    ///     <c>anchor_k + tangent_k·D_k</c>, the incoming handle of k+1 is
+    ///     <c>
+    ///         anchor_{k+1} −
+    ///         tangent_{k+1}·D_{k+1}
+    ///     </c>
+    ///     . (B,C) is a direction, NOT a handle position — using it raw flattens
     ///     every shaped curve, e.g. collapsing the pine's tapering length curve into a uniform column.
     /// </summary>
     private static (float X, float Y) RawPoint(IReadOnlyList<SptSplineControlPoint> cps, int n, float t)

@@ -1,9 +1,9 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 
@@ -14,15 +14,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 /// </summary>
 internal sealed class PlannerXespParentClassifier
 {
-    internal sealed record Resolution(
-        uint FinalParentFormId,
-        PlannerXespParentStatus Status,
-        string Reason);
-
-    private readonly EmitPlan _plan;
+    private readonly IReadOnlyDictionary<uint, Resolution> _index;
     private readonly IReadOnlyDictionary<uint, ParsedMainRecord> _masterByFormId;
     private readonly IReadOnlySet<uint> _masterRefFormIds;
-    private readonly IReadOnlyDictionary<uint, Resolution> _index;
+
+    private readonly EmitPlan _plan;
 
     /// <summary>
     ///     Indexes every captured cell child once, then answers per-XESP queries from plan
@@ -200,11 +196,19 @@ internal sealed class PlannerXespParentClassifier
         }
     }
 
-    private static int Priority(PlannerXespParentStatus status) => status switch
+    private static int Priority(PlannerXespParentStatus status)
     {
-        PlannerXespParentStatus.LiveEmitted => 3,
-        PlannerXespParentStatus.CapturedDropped => 2,
-        PlannerXespParentStatus.LiveMaster => 1,
-        _ => 0,
-    };
+        return status switch
+        {
+            PlannerXespParentStatus.LiveEmitted => 3,
+            PlannerXespParentStatus.CapturedDropped => 2,
+            PlannerXespParentStatus.LiveMaster => 1,
+            _ => 0
+        };
+    }
+
+    internal sealed record Resolution(
+        uint FinalParentFormId,
+        PlannerXespParentStatus Status,
+        string Reason);
 }

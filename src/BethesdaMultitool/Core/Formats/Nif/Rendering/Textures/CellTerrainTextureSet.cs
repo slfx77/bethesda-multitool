@@ -8,7 +8,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 ///     <see cref="MaxSlots" /> diffuse textures per cell and reads <see cref="SlotVectors" />
 ///     Vector4s of weights per vertex; the fragment shader's job is
 ///     <c>color = Σ slot_i_weight × t_i.Sample(uv)</c> over the active slots.
-///
 ///     <para>
 ///         Slot cap: 16. The engine-accurate per-vertex weight list is variable-length (the 2D
 ///         per-pixel blit blends up to 16 unique FormIDs at the four bilinear-surrounding
@@ -22,13 +21,29 @@ public sealed class CellTerrainTextureSet
 {
     public const int MaxSlots = 16;
 
-    /// <summary>Number of <see cref="Vector4" />s needed to hold <see cref="MaxSlots" /> per-vertex
-    /// weights (4 weights per Vector4). The terrain mesh's slot-1 vertex stream is this many
-    /// float4s wide.</summary>
+    /// <summary>
+    ///     Number of <see cref="Vector4" />s needed to hold <see cref="MaxSlots" /> per-vertex
+    ///     weights (4 weights per Vector4). The terrain mesh's slot-1 vertex stream is this many
+    ///     float4s wide.
+    /// </summary>
     public const int SlotVectors = MaxSlots / 4;
 
     /// <summary>Per-cell vertex count for the default 33×33 grid (Morrowind cells are 65×65 = 4225).</summary>
     public const int VertexCount = CellLayerWeightTable.CellVertexCount * CellLayerWeightTable.CellVertexCount;
+
+    /// <summary>
+    ///     Default-grid (33×33) set. Retained for single-cell callers and tests; the renderer's
+    ///     <see cref="Project" /> sizes the set to the source table's actual grid (33×33 or 65×65).
+    /// </summary>
+    public CellTerrainTextureSet() : this(VertexCount)
+    {
+    }
+
+    private CellTerrainTextureSet(int cellVertexCount)
+    {
+        CellVertexCount = cellVertexCount;
+        VertexWeights = new Vector4[cellVertexCount * SlotVectors];
+    }
 
     /// <summary>
     ///     Per-cell vertex count of <b>this</b> set (the source <see cref="CellLayerWeightTable" />'s
@@ -54,18 +69,6 @@ public sealed class CellTerrainTextureSet
     ///     at vertices with any contribution; 0 at empty vertices.
     /// </summary>
     public Vector4[] VertexWeights { get; }
-
-    /// <summary>Default-grid (33×33) set. Retained for single-cell callers and tests; the renderer's
-    /// <see cref="Project" /> sizes the set to the source table's actual grid (33×33 or 65×65).</summary>
-    public CellTerrainTextureSet() : this(VertexCount)
-    {
-    }
-
-    private CellTerrainTextureSet(int cellVertexCount)
-    {
-        CellVertexCount = cellVertexCount;
-        VertexWeights = new Vector4[cellVertexCount * SlotVectors];
-    }
 
     /// <summary>
     ///     Project a <see cref="CellLayerWeightTable" /> onto the fixed-slot representation.
@@ -94,6 +97,7 @@ public sealed class CellTerrainTextureSet
                 for (var k = 0; k < n; k++) AddOrIncrement(totals, v.Overflow[k].FormId, v.Overflow[k].Weight);
             }
         }
+
         if (totals.Count == 0) return null;
 
         var sorted = new List<KeyValuePair<uint, float>>(totals);

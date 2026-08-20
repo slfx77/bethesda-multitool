@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -22,20 +21,28 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     Move rules, per exterior non-container cell (master grid cells, new-worldspace proto
 ///     grid cells, and parse-side orphan buckets alike):
 ///     <list type="number">
-///         <item>Map markers (any bucket, NEW or Override) always move — the engine only
-///         shows markers that live in the worldspace persistent cell.</item>
-///         <item>Persistent-bucket ACHR/ACRE move regardless of disposition, and Override
-///         ACHR/ACRE whose MASTER record carries the persistent flag move from any bucket
-///         (runtime captures don't always preserve the flag). Moving applies the captured
-///         placement — policy: an actor the DMP places elsewhere is MOVED via
-///         a container override, never duplicated with a NEW record, and actors absent from
-///         the DMP are left alone.</item>
-///         <item>NEW persistent-bucket REFRs move. Override non-marker REFRs
-///         stay — moving world-object runtime state is a separate policy question.</item>
-///         <item>Parse-side orphan buckets (cells flagged <see cref="CellRecord.IsVirtual" />,
-///         synthesized for refs whose runtime parent cell couldn't be resolved) get the same
-///         rescue, then the bucket plan itself is REMOVED — a synthesized cell with an
-///         invented EditorId must never reach the output ESM.</item>
+///         <item>
+///             Map markers (any bucket, NEW or Override) always move — the engine only
+///             shows markers that live in the worldspace persistent cell.
+///         </item>
+///         <item>
+///             Persistent-bucket ACHR/ACRE move regardless of disposition, and Override
+///             ACHR/ACRE whose MASTER record carries the persistent flag move from any bucket
+///             (runtime captures don't always preserve the flag). Moving applies the captured
+///             placement — policy: an actor the DMP places elsewhere is MOVED via
+///             a container override, never duplicated with a NEW record, and actors absent from
+///             the DMP are left alone.
+///         </item>
+///         <item>
+///             NEW persistent-bucket REFRs move. Override non-marker REFRs
+///             stay — moving world-object runtime state is a separate policy question.
+///         </item>
+///         <item>
+///             Parse-side orphan buckets (cells flagged <see cref="CellRecord.IsVirtual" />,
+///             synthesized for refs whose runtime parent cell couldn't be resolved) get the same
+///             rescue, then the bucket plan itself is REMOVED — a synthesized cell with an
+///             invented EditorId must never reach the output ESM.
+///         </item>
 ///     </list>
 ///     Container resolution per worldspace: the master's persistent cell; else the captured
 ///     PROTO persistent cell (new worldspaces like TheStripWorld don't exist in master — the
@@ -112,7 +119,7 @@ public static class PersistentCellReparenting
                 return master;
             }
 
-            return protoContainers.TryGetValue(ws, out var proto) ? proto : (uint?)null;
+            return protoContainers.TryGetValue(ws, out var proto) ? proto : null;
         }
 
         // Enable-parent targets: refs other captured refs gate on via XESP. If the parent
@@ -152,10 +159,12 @@ public static class PersistentCellReparenting
                 continue; // Interiors and the worldspace containers themselves donate nothing.
             }
 
-            bool MasterFilesPersistent(RecordPlan child) =>
-                child.Disposition == RecordDisposition.Override
-                && masterRecordsByFormId.TryGetValue(child.FormId, out var masterChild)
-                && (masterChild.Header.Flags & PersistentHeaderFlag) != 0;
+            bool MasterFilesPersistent(RecordPlan child)
+            {
+                return child.Disposition == RecordDisposition.Override
+                       && masterRecordsByFormId.TryGetValue(child.FormId, out var masterChild)
+                       && (masterChild.Header.Flags & PersistentHeaderFlag) != 0;
+            }
 
             // Master-home gate, USER RULING 2026-08-05 (playtest finding 2, option D). The
             // v141 gate required master to file the ref in a non-interior cell OF THE TARGET
@@ -204,20 +213,22 @@ public static class PersistentCellReparenting
             // Enable parents rescue as NEW refs from any bucket, or as Overrides only when
             // MASTER files them persistent (a master-temporary REFR override routed into the
             // container would violate the GRUP/flag agreement).
-            bool IsRescuableEnableParent(RecordPlan child) =>
-                child.Type == "REFR"
-                && enableParentTargets.Contains(child.SourceFormId ?? child.FormId)
-                && (child.Disposition == RecordDisposition.New || MasterFilesPersistent(child));
+            bool IsRescuableEnableParent(RecordPlan child)
+            {
+                return child.Type == "REFR"
+                       && enableParentTargets.Contains(child.SourceFormId ?? child.FormId)
+                       && (child.Disposition == RecordDisposition.New || MasterFilesPersistent(child));
+            }
 
             bool ShouldMove(RecordPlan child, bool fromPersistentBucket)
             {
                 var qualifies = child.Disposition != RecordDisposition.Skip
-                    && (child.Model is PlacedReference { IsMapMarker: true }
-                        || (fromPersistentBucket
-                            && (child.Type is "ACHR" or "ACRE"
-                                || (child.Disposition == RecordDisposition.New && child.Type == "REFR")))
-                        || (child.Type is "ACHR" or "ACRE" && MasterFilesPersistent(child))
-                        || IsRescuableEnableParent(child));
+                                && (child.Model is PlacedReference { IsMapMarker: true }
+                                    || (fromPersistentBucket
+                                        && (child.Type is "ACHR" or "ACRE"
+                                            || (child.Disposition == RecordDisposition.New && child.Type == "REFR")))
+                                    || (child.Type is "ACHR" or "ACRE" && MasterFilesPersistent(child))
+                                    || IsRescuableEnableParent(child));
                 if (!qualifies)
                 {
                     return false;
@@ -240,14 +251,14 @@ public static class PersistentCellReparenting
                     RecordType = child.Type,
                     FormId = child.FormId,
                     Message = $"{child.Type} 0x{child.FormId:X8} qualifies for container re-homing in " +
-                        $"worldspace 0x{cellWs:X8} but master homes it in interior cell 0x{masterHome:X8} " +
-                        "— blocked (interior-homed master override; the cow-crash class).",
+                              $"worldspace 0x{cellWs:X8} but master homes it in interior cell 0x{masterHome:X8} " +
+                              "— blocked (interior-homed master override; the cow-crash class).",
                     Metadata = new Dictionary<string, string?>
                     {
                         ["worldspace"] = $"0x{cellWs:X8}",
                         ["masterHomeCell"] = $"0x{masterHome:X8}",
-                        ["capturedCell"] = $"0x{cellFormId:X8}",
-                    },
+                        ["capturedCell"] = $"0x{cellFormId:X8}"
+                    }
                 });
                 return false;
             }
@@ -265,7 +276,7 @@ public static class PersistentCellReparenting
             {
                 PersistentChildren = persistent,
                 TemporaryChildren = temporary,
-                VwdChildren = vwd,
+                VwdChildren = vwd
             };
 
             if (!movesByWorldspace.TryGetValue(cellWs, out var list))
@@ -329,7 +340,7 @@ public static class PersistentCellReparenting
             {
                 result[containerFormId.Value] = existing with
                 {
-                    PersistentChildren = existing.PersistentChildren.AddRange(unique),
+                    PersistentChildren = existing.PersistentChildren.AddRange(unique)
                 };
                 continue;
             }
@@ -367,13 +378,13 @@ public static class PersistentCellReparenting
                         RecordType = child.Type,
                         FormId = child.FormId,
                         Message = $"{child.Type} 0x{child.FormId:X8} was captured in unresolved-parent " +
-                            $"bucket 0x{formId:X8} and did not qualify for container rescue — dropped " +
-                            "with the bucket.",
+                                  $"bucket 0x{formId:X8} and did not qualify for container rescue — dropped " +
+                                  "with the bucket.",
                         Metadata = new Dictionary<string, string?>
                         {
                             ["bucket"] = $"0x{formId:X8}",
-                            ["disposition"] = child.Disposition.ToString(),
-                        },
+                            ["disposition"] = child.Disposition.ToString()
+                        }
                     });
                 }
             }

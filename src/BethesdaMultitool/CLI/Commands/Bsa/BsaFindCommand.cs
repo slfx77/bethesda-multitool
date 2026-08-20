@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
@@ -45,7 +44,8 @@ internal static class BsaFindCommand
         var command = new Command("inspect", "Inspect a file's metadata and leading bytes in an archive");
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA or BA2 file" };
-        var filenameArg = new Argument<string>("filename") { Description = "File path within archive (substring match)" };
+        var filenameArg = new Argument<string>("filename")
+            { Description = "File path within archive (substring match)" };
 
         command.Arguments.Add(inputArg);
         command.Arguments.Add(filenameArg);

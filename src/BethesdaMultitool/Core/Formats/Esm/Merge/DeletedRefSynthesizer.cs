@@ -1,8 +1,8 @@
+using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.Plugin;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Merge;
@@ -34,6 +34,11 @@ public static class DeletedRefSynthesizer
     private const uint InitiallyDisabledFlag = 0x00000800;
     private const uint CompressedFlag = 0x00040000;
     private const uint PersistentFlag = 0x00000400;
+
+    private const uint DeletedRecordFlag = 0x00000020;
+
+    private static readonly IReadOnlySet<string> DisabledOverrideStripSubrecords =
+        new HashSet<string>(StringComparer.Ordinal) { "XEMI" };
 
     /// <summary>
     ///     Build a <see cref="DeletedRefBundle" /> for the given cell.
@@ -118,8 +123,6 @@ public static class DeletedRefSynthesizer
         return stream.ToArray();
     }
 
-    private const uint DeletedRecordFlag = 0x00000020;
-
     /// <summary>
     ///     Build a single "undeleted + initially disabled" override from its master source:
     ///     the full master record clone (XEMI stripped — the emittance link is eager-resolved
@@ -128,17 +131,13 @@ public static class DeletedRefSynthesizer
     /// </summary>
     private static byte[] BuildDeletedOverride(ParsedMainRecord masterRef)
     {
-        var bytes = Plugin.Cell.CellGrupBuilder.ReconstructRecordBytes(
+        var bytes = CellGrupBuilder.ReconstructRecordBytes(
             masterRef, DisabledOverrideStripSubrecords);
 
         // ReconstructRecordBytes already cleared the compressed flag; add Initially Disabled.
-        var flags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(
+        var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
+        BinaryPrimitives.WriteUInt32LittleEndian(
             bytes.AsSpan(8, 4), (flags & ~CompressedFlag) | InitiallyDisabledFlag);
         return bytes;
     }
-
-    private static readonly IReadOnlySet<string> DisabledOverrideStripSubrecords =
-        new HashSet<string>(StringComparer.Ordinal) { "XEMI" };
 }
-

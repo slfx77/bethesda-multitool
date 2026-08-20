@@ -2,7 +2,6 @@ using System.Runtime;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Projections;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Semantic;
 
@@ -558,4 +557,3 @@ internal static class CrossDumpComparisonPipeline
 
     private sealed record HeightmapEntry(uint FormId, LandHeightmap Heightmap, int X, int Y);
 }
-

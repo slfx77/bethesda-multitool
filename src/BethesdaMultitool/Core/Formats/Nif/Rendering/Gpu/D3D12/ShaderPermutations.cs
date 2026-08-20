@@ -1,6 +1,5 @@
 // ShaderMacro lives in Vortice.Direct3D (Vortice.DirectX), NOT Vortice.D3DCompiler.
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+
 using Vortice.Direct3D;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -66,7 +65,7 @@ internal static class ShaderPermutations
             "FO3/FNV grass (GRASS2002.pso: sun*shadow + ambient)"),
         new("reference_grass_fnv.frag.hlsl", "main", "ps_5_1",
             [new ShaderMacro("ALPHA_TO_COVERAGE", "1")],
-            "FO3/FNV grass MSAA A2C variant; aliases the plain PSO when SceneSampleCount == 1"),
+            "FO3/FNV grass MSAA A2C variant; aliases the plain PSO when SceneSampleCount == 1")
     ];
 
     /// <summary>
@@ -105,7 +104,7 @@ internal static class ShaderPermutations
         new("terrain.vert.hlsl", "main", "vs_5_1", None, "UNREFERENCED legacy terrain"),
         new("terrain.frag.hlsl", "main", "ps_5_1", None, "UNREFERENCED legacy terrain"),
         new("triangle.vert.hlsl", "main", "vs_5_1", None, "UNREFERENCED dev smoke triangle"),
-        new("triangle.frag.hlsl", "main", "ps_5_1", None, "UNREFERENCED dev smoke triangle"),
+        new("triangle.frag.hlsl", "main", "ps_5_1", None, "UNREFERENCED dev smoke triangle")
     ];
 
     /// <summary>Every permutation across every family.</summary>
@@ -118,7 +117,7 @@ internal static class ShaderPermutations
         {
             new("water.vert.hlsl", "main", "vs_5_1", None, "water surface"),
             new("water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1", None, "FNV noise prepass: scroll+blend"),
-            new("water_noise.comp.hlsl", "mainNormal", "cs_5_1", None, "FNV noise prepass: normal"),
+            new("water_noise.comp.hlsl", "mainNormal", "cs_5_1", None, "FNV noise prepass: normal")
         };
 
         // File axis (the game, per WaterProfile.PixelShaderFile) x occlusion axis (read-only DSV).
@@ -130,7 +129,7 @@ internal static class ShaderPermutations
             ("water_fnv.frag.hlsl", "FNV/FO3/Skyrim classic WATER000"),
             ("water_oblivion.frag.hlsl", "Oblivion WATER000: N.V body, single sun glint"),
             ("water_fo4.frag.hlsl", "FO4/FO76 BSWaterShader stand-in"),
-            ("water_morrowind.frag.hlsl", "Morrowind fixed-function animated plane"),
+            ("water_morrowind.frag.hlsl", "Morrowind fixed-function animated plane")
         ];
         foreach (var (file, purpose) in variants)
         {
@@ -164,7 +163,7 @@ internal static class ShaderPermutations
         {
             var macros = new List<ShaderMacro>
             {
-                new("FO4_WATER_ARCHITECTURAL", "1"),
+                new("FO4_WATER_ARCHITECTURAL", "1")
             };
             if (occlusion) macros.Add(new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
             list.Add(new ShaderPermutation(

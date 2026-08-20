@@ -9,8 +9,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 /// </summary>
 internal static class FnvWaterNoiseAnimation
 {
-    public static float TextureScale(float authoredScale) =>
-        MathF.Max(1f, MathF.Ceiling(authoredScale * 0.01f));
+    public static float TextureScale(float authoredScale)
+    {
+        return MathF.Max(1f, MathF.Ceiling(authoredScale * 0.01f));
+    }
 
     public static Vector2 Scroll(WaterNoiseLayer layer, float elapsedSeconds)
     {

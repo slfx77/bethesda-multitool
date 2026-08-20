@@ -60,6 +60,7 @@ public sealed class BgsmMaterial
 
     /// <summary>Whether U/V addressing is tiled rather than clamped (common-header flags bits 0/1).</summary>
     public bool TileU { get; private set; }
+
     public bool TileV { get; private set; }
 
     /// <summary>Alpha blending enabled.</summary>
@@ -101,8 +102,12 @@ public sealed class BgsmMaterial
 
     /// <summary>
     ///     Grayscale-to-palette texture path (slot 3), or null. When set, the engine REPLACES the
-    ///     diffuse RGB with a palette lookup: <c>palette.Sample(u: diffuse.G, v: GradientMapV ×
-    ///     vertexColor.R)</c> (fo76utils getDiffuseColor_sRGB_G) — rendering the raw diffuse instead
+    ///     diffuse RGB with a palette lookup:
+    ///     <c>
+    ///         palette.Sample(u: diffuse.G, v: GradientMapV ×
+    ///         vertexColor.R)
+    ///     </c>
+    ///     (fo76utils getDiffuseColor_sRGB_G) — rendering the raw diffuse instead
     ///     shows the authoring base (e.g. FO4's lavender bricks).
     /// </summary>
     public string? GradientMap => _paths[3];
@@ -179,7 +184,10 @@ public sealed class BgsmMaterial
     public float EmissiveScale { get; private set; }
 
     /// <summary>Texture path for an arbitrary slot (0–9), or null.</summary>
-    public string? GetTexturePath(int slot) => (uint)slot < SlotCount ? _paths[slot] : null;
+    public string? GetTexturePath(int slot)
+    {
+        return (uint)slot < SlotCount ? _paths[slot] : null;
+    }
 
     /// <summary>
     ///     Parses a BGSM/BGEM material's texture paths. Returns null if the buffer is not a recognized
@@ -438,15 +446,21 @@ public sealed class BgsmMaterial
         }
     }
 
-    private static float ReadClamped01(byte[] data, int pos) =>
-        Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), 0f, 1f);
+    private static float ReadClamped01(byte[] data, int pos)
+    {
+        return Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), 0f, 1f);
+    }
 
-    private static float ReadClamped(byte[] data, int pos, float min, float max) =>
-        Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), min, max);
+    private static float ReadClamped(byte[] data, int pos, float min, float max)
+    {
+        return Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), min, max);
+    }
 
     /// <summary>
-    ///     Reads the texture-path strings and returns the position just past the table. <paramref
-    ///     name="texturePathMap" /> packs the destination slot numbers four bits at a time (low nibble
+    ///     Reads the texture-path strings and returns the position just past the table.
+    ///     <paramref
+    ///         name="texturePathMap" />
+    ///     packs the destination slot numbers four bits at a time (low nibble
     ///     first); a nibble ≥ 10 means "present but unused" — its string is read and discarded. Each entry
     ///     is a u32 length followed by the path bytes.
     /// </summary>

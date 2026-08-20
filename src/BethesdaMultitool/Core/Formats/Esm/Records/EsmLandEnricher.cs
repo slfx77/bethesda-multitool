@@ -2,11 +2,10 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
@@ -334,9 +333,9 @@ internal static class EsmLandEnricher
         }
 
         var merged = LandVisualData.MergeForEmission(
-            primary: cell.LandVisualData,
-            runtimeVertexColors: null,
-            fallback: masterVisualData);
+            cell.LandVisualData,
+            null,
+            masterVisualData);
 
         if (merged is null || ReferenceEquals(merged, cell.LandVisualData))
         {
@@ -365,7 +364,6 @@ internal static class EsmLandEnricher
         var dataSize = recordBytes.Length - 24;
         var data = new byte[dataSize];
         Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
-        return LandSubrecordParser.ParseVisualOnly(data, dataSize, isBigEndian: false);
+        return LandSubrecordParser.ParseVisualOnly(data, dataSize, false);
     }
 }
-

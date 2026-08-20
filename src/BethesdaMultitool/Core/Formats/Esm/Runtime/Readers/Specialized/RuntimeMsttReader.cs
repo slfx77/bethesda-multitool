@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -9,7 +8,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Surfaces FullName, model path, and the two sound pointers (pRandomSound,
 ///     pSoundLoop) — the fields that connect MSTT base forms to the audio markers
 ///     placed in cells.
-///
 ///     MSTT uses an unusual multiple-inheritance order in BGSMovableStatic where
 ///     its TESForm subobject begins at +20 in the complete object. Thus the identity
 ///     fields are at complete-object offsets +24/+32, but a runtime form-map value is

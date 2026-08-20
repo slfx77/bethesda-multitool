@@ -25,7 +25,7 @@ public sealed class PlannedPerkEncoder : IPlannedRecordEncoder<PerkRecord>
                 model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
-                $"PlannedPerkEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedPerkEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

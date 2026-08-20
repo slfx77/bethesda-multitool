@@ -1,6 +1,5 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Spectre.Console;
@@ -35,7 +34,7 @@ internal static class LtexAuditCommand
     private static async Task ExecuteAsync(string filePath)
     {
         AnsiConsole.MarkupLine($"[cyan]Auditing LTEX -> texture chain for[/] {Path.GetFileName(filePath)}");
-        using var result = await UnifiedAnalyzer.AnalyzeAsync(filePath, null, default);
+        using var result = await UnifiedAnalyzer.AnalyzeAsync(filePath);
 
         var bsaPaths = BsaDiscovery.Discover(filePath).TexturesBsaPaths;
         AnsiConsole.MarkupLine($"[cyan]Discovered {bsaPaths.Length} texture BSA(s):[/]");
@@ -80,6 +79,7 @@ internal static class LtexAuditCommand
                 var ddxPath = string.Concat(normPath.AsSpan(0, normPath.Length - 4), ".ddx");
                 tex = NifTextureLoader.TryLoadFromSources(ddxPath, sources);
             }
+
             if (tex is null)
             {
                 loadFailures.Add((ltex.FormId, ltex.EditorId, diffusePath));
@@ -91,7 +91,8 @@ internal static class LtexAuditCommand
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[cyan]LTEX total:[/] {ltexes.Count}  [grey](resolver: TNAM->TXST or Oblivion ICON)[/]");
+        AnsiConsole.MarkupLine(
+            $"[cyan]LTEX total:[/] {ltexes.Count}  [grey](resolver: TNAM->TXST or Oblivion ICON)[/]");
         AnsiConsole.MarkupLine($"  Loaded OK: {loadedFormIds.Count}");
         AnsiConsole.MarkupLine($"  No diffuse path (neither TXST nor ICON): {noPath}");
         AnsiConsole.MarkupLine($"  Load failures (path not found in any BSA): {loadFailures.Count}");

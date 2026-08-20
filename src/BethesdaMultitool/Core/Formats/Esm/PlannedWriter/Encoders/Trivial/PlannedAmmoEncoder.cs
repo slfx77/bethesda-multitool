@@ -23,7 +23,7 @@ public sealed class PlannedAmmoEncoder : IPlannedRecordEncoder<AmmoRecord>
             RecordDisposition.New => AmmoEncoder.EncodeNew(model),
             RecordDisposition.Override => _legacy.Encode(model),
             _ => throw new InvalidOperationException(
-                $"PlannedAmmoEncoder called with disposition {plan.Disposition}; expected New or Override."),
+                $"PlannedAmmoEncoder called with disposition {plan.Disposition}; expected New or Override.")
         };
     }
 }

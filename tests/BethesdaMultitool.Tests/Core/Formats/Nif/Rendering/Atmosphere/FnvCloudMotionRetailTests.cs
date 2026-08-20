@@ -4,7 +4,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
 using BethesdaMultitool.Tests.Helpers;

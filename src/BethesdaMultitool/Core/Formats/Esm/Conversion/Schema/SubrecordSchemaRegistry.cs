@@ -155,27 +155,17 @@ public static class SubrecordSchemaRegistry
     ///     The <see cref="LeFieldKind" /> for a field type that is little-endian even on big-endian
     ///     Xbox 360, or null for the types that follow the record's endianness normally.
     /// </summary>
-    private static LeFieldKind? MapFixedLeKind(SubrecordFieldType type) => type switch
+    private static LeFieldKind? MapFixedLeKind(SubrecordFieldType type)
     {
-        SubrecordFieldType.FormIdLittleEndian => LeFieldKind.LittleEndian,
-        SubrecordFieldType.UInt16LittleEndian => LeFieldKind.LittleEndian,
-        SubrecordFieldType.Int32LittleEndian => LeFieldKind.LittleEndian,
-        SubrecordFieldType.UInt32WordSwapped => LeFieldKind.WordSwapped,
-        _ => null
-    };
-
-    /// <summary>One registered subrecord field that is stored little-endian on Xbox 360.</summary>
-    /// <param name="Signature">Subrecord signature.</param>
-    /// <param name="RecordType">Parent record type, or null when the schema applies to any record.</param>
-    /// <param name="DataLength">The registration's length key, or null when length-agnostic.</param>
-    /// <param name="Offset">Cumulative byte offset of the field within the subrecord.</param>
-    /// <param name="Width">Field width in bytes.</param>
-    /// <param name="Kind">How the field must be read on a big-endian record.</param>
-    /// <param name="Type">The underlying conversion field type.</param>
-    /// <param name="FieldName">The field's schema name.</param>
-    public readonly record struct FixedLeFieldInfo(
-        string Signature, string? RecordType, int? DataLength, int Offset, int Width, LeFieldKind Kind,
-        SubrecordFieldType Type, string FieldName);
+        return type switch
+        {
+            SubrecordFieldType.FormIdLittleEndian => LeFieldKind.LittleEndian,
+            SubrecordFieldType.UInt16LittleEndian => LeFieldKind.LittleEndian,
+            SubrecordFieldType.Int32LittleEndian => LeFieldKind.LittleEndian,
+            SubrecordFieldType.UInt32WordSwapped => LeFieldKind.WordSwapped,
+            _ => null
+        };
+    }
 
     /// <summary>
     ///     Enumerates every registered subrecord field that is stored little-endian on big-endian Xbox 360
@@ -368,6 +358,25 @@ public static class SubrecordSchemaRegistry
         };
     }
 
+    /// <summary>One registered subrecord field that is stored little-endian on Xbox 360.</summary>
+    /// <param name="Signature">Subrecord signature.</param>
+    /// <param name="RecordType">Parent record type, or null when the schema applies to any record.</param>
+    /// <param name="DataLength">The registration's length key, or null when length-agnostic.</param>
+    /// <param name="Offset">Cumulative byte offset of the field within the subrecord.</param>
+    /// <param name="Width">Field width in bytes.</param>
+    /// <param name="Kind">How the field must be read on a big-endian record.</param>
+    /// <param name="Type">The underlying conversion field type.</param>
+    /// <param name="FieldName">The field's schema name.</param>
+    public readonly record struct FixedLeFieldInfo(
+        string Signature,
+        string? RecordType,
+        int? DataLength,
+        int Offset,
+        int Width,
+        LeFieldKind Kind,
+        SubrecordFieldType Type,
+        string FieldName);
+
     /// <summary>
     ///     Schema key for lookup - combines signature, optional record type, and optional data length.
     /// </summary>
@@ -535,7 +544,8 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("XMRK", "REFR", 0)] = SubrecordSchema.Empty;
         schemas[new SchemaKey("XPPA", "REFR", 0)] = SubrecordSchema.Empty;
         schemas[new SchemaKey("ONAM", "REFR", 0)] = SubrecordSchema.Empty;
-        schemas[new SchemaKey("XMBP", "REFR", 0)] = SubrecordSchema.Empty; // xEdit FNV: wbEmpty 'MultiBound Primitive Marker'
+        schemas[new SchemaKey("XMBP", "REFR", 0)] =
+            SubrecordSchema.Empty; // xEdit FNV: wbEmpty 'MultiBound Primitive Marker'
 
         // Byte arrays - no conversion needed
         schemas[new SchemaKey("VNML")] = SubrecordSchema.ByteArray;

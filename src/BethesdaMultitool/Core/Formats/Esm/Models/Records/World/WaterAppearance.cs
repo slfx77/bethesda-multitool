@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
-
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>
@@ -124,28 +122,30 @@ public sealed record WaterSurfaceParams(
     float ModernUnknown4 = 0f,
     float ModernUnknown5 = 0f)
 {
-    /// <summary>Fallback when a record has no full 196-byte DNAM (proto/test water, or a worldspace whose
-    /// WATR didn't resolve). These are the engine's shipped <c>NVCleanWater</c> preset values (FormID
-    /// 0x001009CA, the most common FNV water), read straight from <c>FalloutNV.esm</c>'s DNAM — so an
-    /// unresolved water body still renders like real Fallout water rather than a tuned guess. NormalsUvScale
-    /// is the DNAM fUVScale (= the VS TexScale world tile); the three layers carry the real WindDir(°),
-    /// WindSpeed, and fAmplitude blend weights; NoiseScale is the fNoiseScale detail multiplier.</summary>
+    /// <summary>
+    ///     Fallback when a record has no full 196-byte DNAM (proto/test water, or a worldspace whose
+    ///     WATR didn't resolve). These are the engine's shipped <c>NVCleanWater</c> preset values (FormID
+    ///     0x001009CA, the most common FNV water), read straight from <c>FalloutNV.esm</c>'s DNAM — so an
+    ///     unresolved water body still renders like real Fallout water rather than a tuned guess. NormalsUvScale
+    ///     is the DNAM fUVScale (= the VS TexScale world tile); the three layers carry the real WindDir(°),
+    ///     WindSpeed, and fAmplitude blend weights; NoiseScale is the fNoiseScale detail multiplier.
+    /// </summary>
     public static readonly WaterSurfaceParams Default = new(
-        NormalsUvScale: 1000f,   // DNAM fUVScale @136 = noise world tile (TexScale)
-        FresnelAmount: 0.025f,   // DNAM fFresnelAmount @24 (engine default; clean water authors ~this)
-        ReflectivityAmount: 0.5f,
-        Shininess: 500f,         // DNAM fShininess @156 (sharp sun glint)
-        SunPower: 826f,          // DNAM fSunPower @16
-        DepthFalloffStart: 0f,
-        DepthFalloffEnd: 0.01f,  // DNAM DepthFalloffEnd @128 (NVCleanWater)
-        FogNear: -80f,           // DNAM Above Water FogNear @32 — the WATER003 alpha fog ramp
-        FogFar: 850f,            // DNAM Above Water FogFar @36 (ramp completes ~12 m down)
+        1000f, // DNAM fUVScale @136 = noise world tile (TexScale)
+        0.025f, // DNAM fFresnelAmount @24 (engine default; clean water authors ~this)
+        0.5f,
+        500f, // DNAM fShininess @156 (sharp sun glint)
+        826f, // DNAM fSunPower @16
+        0f,
+        0.01f, // DNAM DepthFalloffEnd @128 (NVCleanWater)
+        FogNear: -80f, // DNAM Above Water FogNear @32 — the WATER003 alpha fog ramp
+        FogFar: 850f, // DNAM Above Water FogFar @36 (ramp completes ~12 m down)
         // WaterNoiseLayer = (fHeightUVScale -> prepass fTexScale=max(1,ceil(x*.01)),
         // WindDirDeg, WindSpeed, AmpScale=fAmplitude).
         Layer1: new WaterNoiseLayer(0f, 180f, 0.065f, 0.300f),
         Layer2: new WaterNoiseLayer(0f, 10f, 0.033f, 0.525f),
         Layer3: new WaterNoiseLayer(0f, 67f, 0.029f, 0.138f),
-        NoiseScale: 13.41f,      // DNAM fNoiseScale @96
+        NoiseScale: 13.41f, // DNAM fNoiseScale @96
         AboveWaterFogAmount: 0.75f,
         UnderwaterFogAmount: 1f,
         UnderwaterFogNear: -2500f,
@@ -189,6 +189,11 @@ public sealed record WaterAppearance(
     // water00..31 normal sequence, so it must never enter NormalTextures as a compatibility fallback.
     string? SurfaceTexture = null)
 {
+    // Fallback molten palette for lava records whose DATA carries no colors — bright orange crust grading
+    // to dark red by depth (the shader's lava branch boosts + pulses these).
+    private static readonly (byte R, byte G, byte B) DefaultLavaShallow = (255, 100, 30);
+    private static readonly (byte R, byte G, byte B) DefaultLavaDeep = (140, 25, 10);
+
     /// <summary>
     ///     Builds appearance from a <see cref="WaterRecord" />. Returns null when the record is
     ///     missing or has no usable colors (caller falls back to a default tint). A missing
@@ -227,7 +232,7 @@ public sealed record WaterAppearance(
                 CausesDamage = causesDamage,
                 IsLava = isLava,
                 Surface = appearance.Surface with { Opacity = opacity },
-                SurfaceTexture = water.SurfaceTexture,
+                SurfaceTexture = water.SurfaceTexture
             };
         }
 
@@ -238,24 +243,23 @@ public sealed record WaterAppearance(
         // renderer gives it the emissive look. Ordinary color-less water returns null for caller fallback.
         return isLava
             ? new WaterAppearance(DefaultLavaShallow, DefaultLavaDeep, DefaultLavaShallow,
-                firstTexture, WaterSurfaceParams.Default, causesDamage, IsLava: true,
+                firstTexture, WaterSurfaceParams.Default, causesDamage, true,
                 NormalTextures: textures, SurfaceTexture: water.SurfaceTexture)
             : null;
     }
 
-    // Fallback molten palette for lava records whose DATA carries no colors — bright orange crust grading
-    // to dark red by depth (the shader's lava branch boosts + pulses these).
-    private static readonly (byte R, byte G, byte B) DefaultLavaShallow = (255, 100, 30);
-    private static readonly (byte R, byte G, byte B) DefaultLavaDeep = (140, 25, 10);
-
     // Name-based lava detection — game-agnostic and false-positive-free vs Fallout's damaging
     // (radioactive) water, which carries no "lava" token. Checks the identifying strings the record
     // carries (editor id, full name, noise/texture path).
-    private static bool LooksLikeLava(WaterRecord water) =>
-        ContainsLava(water.EditorId) || ContainsLava(water.FullName) || ContainsLava(water.NoiseTexture);
+    private static bool LooksLikeLava(WaterRecord water)
+    {
+        return ContainsLava(water.EditorId) || ContainsLava(water.FullName) || ContainsLava(water.NoiseTexture);
+    }
 
-    private static bool ContainsLava(string? s) =>
-        !string.IsNullOrEmpty(s) && s.Contains("lava", StringComparison.OrdinalIgnoreCase);
+    private static bool ContainsLava(string? s)
+    {
+        return !string.IsNullOrEmpty(s) && s.Contains("lava", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     ///     Builds appearance from a WATR DNAM properties dictionary + the NNAM path. Returns null
@@ -290,17 +294,17 @@ public sealed record WaterAppearance(
     {
         var def = WaterSurfaceParams.Default;
         return new WaterSurfaceParams(
-            NormalsUvScale: ExtractFloat(props, "NormalsUVScale", def.NormalsUvScale),
-            FresnelAmount: ExtractFloat(props, "FresnelAmount", def.FresnelAmount),
-            ReflectivityAmount: ExtractFloat(props, "ReflectivityAmount", def.ReflectivityAmount),
-            Shininess: ExtractFloat(props, "Shininess", def.Shininess),
-            SunPower: ExtractFloat(props, "SunPower", def.SunPower),
-            DepthFalloffStart: ExtractFloat(props, "DepthFalloffStart", def.DepthFalloffStart),
-            DepthFalloffEnd: ExtractFloat(props, "DepthFalloffEnd", def.DepthFalloffEnd),
-            Layer1: ExtractLayer(props, "NoiseLayer1", def.Layer1),
-            Layer2: ExtractLayer(props, "NoiseLayer2", def.Layer2),
-            Layer3: ExtractLayer(props, "NoiseLayer3", def.Layer3),
-            NoiseScale: ExtractFloat(props, "NoiseScale", def.NoiseScale),
+            ExtractFloat(props, "NormalsUVScale", def.NormalsUvScale),
+            ExtractFloat(props, "FresnelAmount", def.FresnelAmount),
+            ExtractFloat(props, "ReflectivityAmount", def.ReflectivityAmount),
+            ExtractFloat(props, "Shininess", def.Shininess),
+            ExtractFloat(props, "SunPower", def.SunPower),
+            ExtractFloat(props, "DepthFalloffStart", def.DepthFalloffStart),
+            ExtractFloat(props, "DepthFalloffEnd", def.DepthFalloffEnd),
+            ExtractLayer(props, "NoiseLayer1", def.Layer1),
+            ExtractLayer(props, "NoiseLayer2", def.Layer2),
+            ExtractLayer(props, "NoiseLayer3", def.Layer3),
+            ExtractFloat(props, "NoiseScale", def.NoiseScale),
             SunSpecularMagnitude: ExtractFloat(props, "SunSpecularMagnitude", def.SunSpecularMagnitude),
             SiltAmount: ExtractFloat(props, "SiltAmount", def.SiltAmount),
             ShallowAlpha: ExtractFloat(props, "ShallowAlpha", def.ShallowAlpha),
@@ -346,7 +350,8 @@ public sealed record WaterAppearance(
             SunSparklePower: ExtractFloat(props, "SunSparklePower", def.SunSparklePower),
             SunSparkleMagnitude: ExtractFloat(props, "SunSparkleMagnitude", def.SunSparkleMagnitude),
             InteriorSpecularRadius: ExtractFloat(props, "InteriorSpecularRadius", def.InteriorSpecularRadius),
-            InteriorSpecularBrightness: ExtractFloat(props, "InteriorSpecularBrightness", def.InteriorSpecularBrightness),
+            InteriorSpecularBrightness: ExtractFloat(props, "InteriorSpecularBrightness",
+                def.InteriorSpecularBrightness),
             InteriorSpecularPower: ExtractFloat(props, "InteriorSpecularPower", def.InteriorSpecularPower),
             ScreenSpaceReflections: ExtractBool(props, "ScreenSpaceReflections", def.ScreenSpaceReflections),
             HasAuthoredNoiseLayers: HasAnyNoiseLayer(props),
@@ -359,16 +364,20 @@ public sealed record WaterAppearance(
 
     private static WaterNoiseLayer ExtractLayer(
         IReadOnlyDictionary<string, object?> props, string prefix, WaterNoiseLayer fallback)
-        => new(
-            UvScale: ExtractFloat(props, prefix + "UVScale", fallback.UvScale),
-            WindDirDegrees: ExtractFloat(props, prefix + "WindDir", fallback.WindDirDegrees),
-            WindSpeed: ExtractFloat(props, prefix + "WindSpeed", fallback.WindSpeed),
-            AmpScale: ExtractFloat(props, prefix + "AmpScale", fallback.AmpScale),
-            Falloff: ExtractFloat(props, prefix + "Falloff", fallback.Falloff));
+    {
+        return new WaterNoiseLayer(
+            ExtractFloat(props, prefix + "UVScale", fallback.UvScale),
+            ExtractFloat(props, prefix + "WindDir", fallback.WindDirDegrees),
+            ExtractFloat(props, prefix + "WindSpeed", fallback.WindSpeed),
+            ExtractFloat(props, prefix + "AmpScale", fallback.AmpScale),
+            ExtractFloat(props, prefix + "Falloff", fallback.Falloff));
+    }
 
-    private static bool HasAnyNoiseLayer(IReadOnlyDictionary<string, object?> props) =>
-        props.ContainsKey("NoiseLayer1WindDir") || props.ContainsKey("NoiseLayer1WindSpeed") ||
-        props.ContainsKey("NoiseLayer1AmpScale") || props.ContainsKey("NoiseLayer1UVScale");
+    private static bool HasAnyNoiseLayer(IReadOnlyDictionary<string, object?> props)
+    {
+        return props.ContainsKey("NoiseLayer1WindDir") || props.ContainsKey("NoiseLayer1WindSpeed") ||
+               props.ContainsKey("NoiseLayer1AmpScale") || props.ContainsKey("NoiseLayer1UVScale");
+    }
 
     private static bool ExtractBool(
         IReadOnlyDictionary<string, object?> props, string key, bool fallback)
@@ -380,7 +389,7 @@ public sealed record WaterAppearance(
             byte b => b != 0,
             int i => i != 0,
             uint u => u != 0,
-            _ => fallback,
+            _ => fallback
         };
     }
 
@@ -403,8 +412,10 @@ public sealed record WaterAppearance(
         return ((byte)(packed & 0xFF), (byte)((packed >> 8) & 0xFF), (byte)((packed >> 16) & 0xFF));
     }
 
-    /// <summary>Reads a DNAM float scalar, accepting the boxed numeric forms the schema reader can
-    /// produce. Falls back to <paramref name="fallback" /> when absent or non-finite.</summary>
+    /// <summary>
+    ///     Reads a DNAM float scalar, accepting the boxed numeric forms the schema reader can
+    ///     produce. Falls back to <paramref name="fallback" /> when absent or non-finite.
+    /// </summary>
     private static float ExtractFloat(
         IReadOnlyDictionary<string, object?> props, string key, float fallback)
     {
@@ -430,22 +441,26 @@ public sealed record WaterAppearance(
         IReadOnlyDictionary<string, object?> props,
         string creationKey,
         string classicKey,
-        float fallback) =>
-        props.ContainsKey(creationKey)
+        float fallback)
+    {
+        return props.ContainsKey(creationKey)
             ? ExtractFloat(props, creationKey, fallback)
             : ExtractFloat(props, classicKey, fallback);
+    }
 
     private static bool HasAuthoredClassicRefractionInputs(
-        IReadOnlyDictionary<string, object?> props) =>
-        HasFiniteFloat(props, "FogNear") &&
-        HasFiniteFloat(props, "FogFar") &&
-        HasFiniteFloat(props, "DepthFalloffStart") &&
-        HasFiniteFloat(props, "DepthFalloffEnd") &&
-        HasFiniteFloat(props, "AboveWaterFogAmount") &&
-        HasFiniteAliasedFloat(props, "UnderwaterFogAmount", "UnderWaterFogAmount") &&
-        HasFiniteAliasedFloat(props, "UnderwaterFogNear", "UnderWaterFogNear") &&
-        HasFiniteAliasedFloat(props, "UnderwaterFogFar", "UnderWaterFogFar") &&
-        HasFiniteFloat(props, "DistortionAmount");
+        IReadOnlyDictionary<string, object?> props)
+    {
+        return HasFiniteFloat(props, "FogNear") &&
+               HasFiniteFloat(props, "FogFar") &&
+               HasFiniteFloat(props, "DepthFalloffStart") &&
+               HasFiniteFloat(props, "DepthFalloffEnd") &&
+               HasFiniteFloat(props, "AboveWaterFogAmount") &&
+               HasFiniteAliasedFloat(props, "UnderwaterFogAmount", "UnderWaterFogAmount") &&
+               HasFiniteAliasedFloat(props, "UnderwaterFogNear", "UnderWaterFogNear") &&
+               HasFiniteAliasedFloat(props, "UnderwaterFogFar", "UnderWaterFogFar") &&
+               HasFiniteFloat(props, "DistortionAmount");
+    }
 
     private static bool HasFiniteAliasedFloat(
         IReadOnlyDictionary<string, object?> props,
@@ -473,7 +488,7 @@ public sealed record WaterAppearance(
             double d => (float)d,
             int i => i,
             uint u => u,
-            _ => float.NaN,
+            _ => float.NaN
         };
         return float.IsFinite(numeric);
     }

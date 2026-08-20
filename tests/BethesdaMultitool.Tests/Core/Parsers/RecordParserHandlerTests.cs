@@ -632,7 +632,7 @@ public class RecordParserHandlerTests
             ("CTDA", secondEntryCondition),
             ("EPFT", [0x01]),
             ("EPFD", epfd),
-            ("PRKF", []),
+            ("PRKF", [])
         ];
         var recordBytes = BuildRecordBytes(0x00060001, "PERK", false, sourceSubrecords);
 

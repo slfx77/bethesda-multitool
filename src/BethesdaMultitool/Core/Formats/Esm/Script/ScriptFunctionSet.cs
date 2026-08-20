@@ -11,10 +11,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script;
 /// </summary>
 public sealed class ScriptFunctionSet
 {
-    private readonly IReadOnlyDictionary<ushort, ScriptFunctionDef> _functions;
     private readonly IReadOnlyDictionary<ushort, ScriptFunctionDef>? _conditionFunctions;
     private readonly IReadOnlyDictionary<ushort, ConditionParamKind?[]>? _conditionParamKinds;
     private readonly IReadOnlyDictionary<ushort, bool[]>? _conditionTypeOverrideEligibility;
+    private readonly IReadOnlyDictionary<ushort, ScriptFunctionDef> _functions;
     private readonly bool _useLegacyConditionOpcodeProjection;
 
     internal ScriptFunctionSet(
@@ -35,7 +35,12 @@ public sealed class ScriptFunctionSet
 
     public BethesdaGame Game { get; }
 
-    public ScriptFunctionDef? Get(ushort opcode) => _functions.GetValueOrDefault(opcode);
+    internal bool HasAuthoritativeConditionParamKinds => _conditionParamKinds is not null;
+
+    public ScriptFunctionDef? Get(ushort opcode)
+    {
+        return _functions.GetValueOrDefault(opcode);
+    }
 
     /// <summary>
     ///     Looks up the raw CTDA <paramref name="functionIndex" />. An explicit condition map is
@@ -56,15 +61,15 @@ public sealed class ScriptFunctionSet
             : null;
     }
 
-    internal bool HasAuthoritativeConditionParamKinds => _conditionParamKinds is not null;
-
-    internal bool IsConditionTypeOverrideEligible(ushort functionIndex, int paramIndex) =>
-        paramIndex >= 0 &&
-        _conditionTypeOverrideEligibility is not null &&
-        _conditionTypeOverrideEligibility.TryGetValue(
-            functionIndex, out var parameters) &&
-        paramIndex < parameters.Length &&
-        parameters[paramIndex];
+    internal bool IsConditionTypeOverrideEligible(ushort functionIndex, int paramIndex)
+    {
+        return paramIndex >= 0 &&
+               _conditionTypeOverrideEligibility is not null &&
+               _conditionTypeOverrideEligibility.TryGetValue(
+                   functionIndex, out var parameters) &&
+               paramIndex < parameters.Length &&
+               parameters[paramIndex];
+    }
 
     internal bool TryGetConditionParamKind(
         ushort functionIndex, int paramIndex, out ConditionParamKind kind)
@@ -81,6 +86,8 @@ public sealed class ScriptFunctionSet
         return true;
     }
 
-    public string GetName(ushort opcode) =>
-        _functions.TryGetValue(opcode, out var def) ? def.Name : $"UnknownFunc_0x{opcode:X4}";
+    public string GetName(ushort opcode)
+    {
+        return _functions.TryGetValue(opcode, out var def) ? def.Name : $"UnknownFunc_0x{opcode:X4}";
+    }
 }

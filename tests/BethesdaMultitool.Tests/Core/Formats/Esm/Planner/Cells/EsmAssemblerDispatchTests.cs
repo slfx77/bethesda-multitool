@@ -22,8 +22,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 /// </summary>
 public sealed class EsmAssemblerDispatchTests
 {
-
-
     [Fact]
     public void Planner_And_Legacy_Produce_Equal_Bytes_For_KeepMaster_Cell_With_Child()
     {
@@ -94,7 +92,8 @@ public sealed class EsmAssemblerDispatchTests
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
-            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()),
+            new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Equal(legacyBytes, plannerBytes);
     }

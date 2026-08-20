@@ -19,27 +19,28 @@ public sealed class MgefEncoder : IRecordEncoder
     // Schema field names diverge from model field names in several places — most notably
     // "Archtype" (schema spelling) vs Archetype (model). Extractor map keys must match the
     // schema verbatim; SchemaModelSerializer looks them up by exact string.
-    private static readonly Dictionary<string, Func<BaseEffectRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["Flags"] = m => m.Flags,
-        ["BaseCost"] = m => m.BaseCost,
-        ["AssocItem"] = m => m.AssociatedItem,
-        ["MagicSchool"] = m => m.MagicSchool,
-        ["ResistanceValue"] = m => m.ResistValue,
-        // "Unknown" (uint16) and padding not in model → zero-fill.
-        ["Light"] = m => m.LightFormId ?? 0u,
-        ["ProjectileSpeed"] = m => m.ProjectileSpeed ?? 0f,
-        ["EffectShader"] = m => m.EffectShaderFormId ?? 0u,
-        ["EnchantEffect"] = m => m.EnchantEffectFormId ?? 0u,
-        ["CastingSound"] = m => m.CastingSoundFormId ?? 0u,
-        ["BoltSound"] = m => m.BoltSoundFormId ?? 0u,
-        ["HitSound"] = m => m.HitSoundFormId ?? 0u,
-        ["AreaSound"] = m => m.AreaSoundFormId ?? 0u,
-        ["ConstantEffectEnchantmentFactor"] = m => m.CEEnchantFactor ?? 0f,
-        ["ConstantEffectBarterFactor"] = m => m.CEBarterFactor ?? 0f,
-        ["Archtype"] = m => (int)m.Archetype, // schema typo preserved
-        ["ActorValue"] = m => m.ActorValue,
-    };
+    private static readonly Dictionary<string, Func<BaseEffectRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Flags"] = m => m.Flags,
+            ["BaseCost"] = m => m.BaseCost,
+            ["AssocItem"] = m => m.AssociatedItem,
+            ["MagicSchool"] = m => m.MagicSchool,
+            ["ResistanceValue"] = m => m.ResistValue,
+            // "Unknown" (uint16) and padding not in model → zero-fill.
+            ["Light"] = m => m.LightFormId ?? 0u,
+            ["ProjectileSpeed"] = m => m.ProjectileSpeed ?? 0f,
+            ["EffectShader"] = m => m.EffectShaderFormId ?? 0u,
+            ["EnchantEffect"] = m => m.EnchantEffectFormId ?? 0u,
+            ["CastingSound"] = m => m.CastingSoundFormId ?? 0u,
+            ["BoltSound"] = m => m.BoltSoundFormId ?? 0u,
+            ["HitSound"] = m => m.HitSoundFormId ?? 0u,
+            ["AreaSound"] = m => m.AreaSoundFormId ?? 0u,
+            ["ConstantEffectEnchantmentFactor"] = m => m.CEEnchantFactor ?? 0f,
+            ["ConstantEffectBarterFactor"] = m => m.CEBarterFactor ?? 0f,
+            ["Archtype"] = m => (int)m.Archetype, // schema typo preserved
+            ["ActorValue"] = m => m.ActorValue
+        };
 
     public string RecordType => "MGEF";
     public Type ModelType => typeof(BaseEffectRecord);

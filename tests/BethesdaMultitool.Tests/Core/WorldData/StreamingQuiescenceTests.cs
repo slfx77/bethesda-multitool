@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.WorldData;
@@ -133,7 +134,11 @@ public sealed class StreamingQuiescenceTests
         // reset and settle only after three CONSECUTIVE quiesced polls (6,7,8).
         var calls = 0;
         var settled = await StreamingQuiescence.PollAsync(
-            () => { calls++; return calls == 2 || calls >= 6; },
+            () =>
+            {
+                calls++;
+                return calls == 2 || calls >= 6;
+            },
             TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10),
             ct: TestContext.Current.CancellationToken,
             consecutive: 3);

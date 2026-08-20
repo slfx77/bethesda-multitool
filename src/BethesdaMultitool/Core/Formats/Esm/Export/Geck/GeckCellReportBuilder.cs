@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+
 internal static class GeckCellReportBuilder
 {
     internal static RecordReport BuildCellReport(
@@ -718,4 +719,3 @@ internal static class GeckCellReportBuilder
         uint CellFormId,
         string Label);
 }
-

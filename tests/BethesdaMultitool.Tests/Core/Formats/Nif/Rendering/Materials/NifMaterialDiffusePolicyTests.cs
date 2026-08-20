@@ -53,7 +53,7 @@ public sealed class NifMaterialDiffusePolicyTests
     public void Carry_LegacyStream_KeepsTheAuthoredDiffuse(uint bsVersion)
     {
         var authored = (R: 0.1f, G: 0.2f, B: 0.3f);
-        Assert.Equal<(float R, float G, float B)?>(
+        Assert.Equal(
             authored, NifMaterialDiffusePolicy.Carry(bsVersion, authored));
         Assert.Null(NifMaterialDiffusePolicy.Carry(bsVersion, null));
     }

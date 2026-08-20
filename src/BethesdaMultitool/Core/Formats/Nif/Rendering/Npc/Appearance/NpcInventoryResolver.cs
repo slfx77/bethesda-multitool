@@ -77,4 +77,3 @@ internal sealed class NpcInventoryResolver
         return null;
     }
 }
-

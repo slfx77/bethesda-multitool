@@ -2,7 +2,7 @@ using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Pure result used by the renderer to distinguish the runtime Sky transition from an
@@ -48,14 +48,14 @@ internal static class WeatherTransitionSelectionResolver
         if (!isClimateDefaultSelection)
         {
             var explicitCurrent = selectedWeather ?? climateDefaultWeather;
-            return Atomic(explicitCurrent, "explicit", runtimeSnapshotIgnored: runtimeSnapshot is not null);
+            return Atomic(explicitCurrent, "explicit", runtimeSnapshot is not null);
         }
 
         if (runtimeSnapshot is null)
         {
             return deterministicRegionWeather is not null
-                ? Atomic(deterministicRegionWeather, "region-rdwt", runtimeSnapshotIgnored: false)
-                : Atomic(climateDefaultWeather, "climate-default", runtimeSnapshotIgnored: false);
+                ? Atomic(deterministicRegionWeather, "region-rdwt", false)
+                : Atomic(climateDefaultWeather, "climate-default", false);
         }
 
         var current = ResolveWeather(runtimeSnapshot.CurrentWeatherFormId, weathersByFormId);
@@ -96,14 +96,14 @@ internal static class WeatherTransitionSelectionResolver
             runtimeSnapshot.OutgoingWeatherFormId,
             runtimeSnapshot.CurrentWeatherWeight,
             runtimeSnapshot.ModifierElapsedSeconds,
-            UsesRuntimeTransition: true,
+            true,
             FormatTelemetry(
                 "runtime-sky",
                 current.FormId,
                 outgoing.FormId,
                 weight,
                 runtimeSnapshot,
-                reason: null));
+                null));
     }
 
     private static ResolvedWeatherTransition Atomic(
@@ -114,14 +114,14 @@ internal static class WeatherTransitionSelectionResolver
         var reason = runtimeSnapshotIgnored ? "explicit-selection-ignores-runtime" : null;
         return new ResolvedWeatherTransition(
             current,
-            OutgoingWeather: null,
-            CurrentWeatherWeight: 1f,
-            AuthoredCurrentWeatherFormId: current?.FormId,
-            AuthoredOutgoingWeatherFormId: null,
-            AuthoredCurrentWeatherWeight: 1f,
-            ModifierElapsedSeconds: null,
-            UsesRuntimeTransition: false,
-            Telemetry: FormatTelemetry(source, current?.FormId, null, 1f, null, reason));
+            null,
+            1f,
+            current?.FormId,
+            null,
+            1f,
+            null,
+            false,
+            FormatTelemetry(source, current?.FormId, null, 1f, null, reason));
     }
 
     private static ResolvedWeatherTransition RuntimeFallback(
@@ -131,14 +131,14 @@ internal static class WeatherTransitionSelectionResolver
     {
         return new ResolvedWeatherTransition(
             current,
-            OutgoingWeather: null,
-            CurrentWeatherWeight: 1f,
-            AuthoredCurrentWeatherFormId: snapshot.CurrentWeatherFormId,
-            AuthoredOutgoingWeatherFormId: snapshot.OutgoingWeatherFormId,
-            AuthoredCurrentWeatherWeight: snapshot.CurrentWeatherWeight,
-            ModifierElapsedSeconds: snapshot.ModifierElapsedSeconds,
-            UsesRuntimeTransition: true,
-            Telemetry: FormatTelemetry(
+            null,
+            1f,
+            snapshot.CurrentWeatherFormId,
+            snapshot.OutgoingWeatherFormId,
+            snapshot.CurrentWeatherWeight,
+            snapshot.ModifierElapsedSeconds,
+            true,
+            FormatTelemetry(
                 "runtime-sky-fallback",
                 current?.FormId,
                 null,
@@ -164,8 +164,15 @@ internal static class WeatherTransitionSelectionResolver
         WeatherTransitionSnapshot? snapshot,
         string? reason)
     {
-        static string Id(uint? value) => value is { } id ? $"{id:X8}" : "none";
-        static string Weight(float? value) => value?.ToString("0.###", CultureInfo.InvariantCulture) ?? "n/a";
+        static string Id(uint? value)
+        {
+            return value is { } id ? $"{id:X8}" : "none";
+        }
+
+        static string Weight(float? value)
+        {
+            return value?.ToString("0.###", CultureInfo.InvariantCulture) ?? "n/a";
+        }
 
         var elapsed = snapshot switch
         {

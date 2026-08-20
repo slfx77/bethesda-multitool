@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Games;
 
@@ -31,24 +32,34 @@ public static class MapMarkerCatalog
     private static readonly MapMarkerEntry[] Fallout4Table = BuildFallout4Table();
     private static readonly MapMarkerEntry[] Fallout76Table = BuildFallout76Table();
 
-    /// <summary>The full dense marker table for <paramref name="game" /> (index == raw value), or an
+    /// <summary>
+    ///     The full dense marker table for <paramref name="game" /> (index == raw value), or an
     ///     empty list for games whose table isn't wired yet (Starfield/Unknown) or that have no markers
-    ///     (Morrowind).</summary>
-    public static IReadOnlyList<MapMarkerEntry> For(BethesdaGame game) => game switch
+    ///     (Morrowind).
+    /// </summary>
+    public static IReadOnlyList<MapMarkerEntry> For(BethesdaGame game)
     {
-        BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => FalloutTable,
-        BethesdaGame.Oblivion => OblivionTable,
-        BethesdaGame.Skyrim => SkyrimTable,
-        BethesdaGame.Fallout4 => Fallout4Table,
-        BethesdaGame.Fallout76 => Fallout76Table,
-        _ => Empty
-    };
+        return game switch
+        {
+            BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => FalloutTable,
+            BethesdaGame.Oblivion => OblivionTable,
+            BethesdaGame.Skyrim => SkyrimTable,
+            BethesdaGame.Fallout4 => Fallout4Table,
+            BethesdaGame.Fallout76 => Fallout76Table,
+            _ => Empty
+        };
+    }
 
     /// <summary>True when a named per-type table exists for <paramref name="game" />.</summary>
-    public static bool HasMarkers(BethesdaGame game) => For(game).Count > 0;
+    public static bool HasMarkers(BethesdaGame game)
+    {
+        return For(game).Count > 0;
+    }
 
-    /// <summary>Resolves <paramref name="rawValue" /> for <paramref name="game" />; never null. Out-of-range
-    ///     values and games without a table return a deterministic type-distinct fallback entry.</summary>
+    /// <summary>
+    ///     Resolves <paramref name="rawValue" /> for <paramref name="game" />; never null. Out-of-range
+    ///     values and games without a table return a deterministic type-distinct fallback entry.
+    /// </summary>
     public static MapMarkerEntry Resolve(BethesdaGame game, int rawValue)
     {
         var table = For(game);
@@ -58,7 +69,7 @@ public static class MapMarkerCatalog
     // FO3 / FNV (0..14). Reuses the existing glyph/color source so the drawn dot is identical to today.
     private static MapMarkerEntry[] BuildFalloutTable()
     {
-        (MapMarkerType Type, string Name) [] rows =
+        (MapMarkerType Type, string Name)[] rows =
         [
             (MapMarkerType.None, "None"),
             (MapMarkerType.City, "City"),
@@ -100,21 +111,21 @@ public static class MapMarkerCatalog
     // Icons exist for types 1..11; None (0) and Door (12) fall to the glyph/color dot in each row.
     private static MapMarkerEntry[] BuildOblivionTable()
     {
-        (string Name, string IconKey, string Glyph, byte R, byte G, byte B) [] rows =
+        (string Name, string IconKey, string Glyph, byte R, byte G, byte B)[] rows =
         [
-            ("None",           "",              "", 200, 200, 200),
-            ("Camp",           "camp",          "", 180, 140,  60),
-            ("Cave",           "cave",          "", 120, 100,  80),
-            ("City",           "city",          "", 255, 215,   0),
-            ("Elven Ruin",     "elven_ruin",    "", 130, 200, 170),
-            ("Fort Ruin",      "fort_ruin",     "", 170, 140, 110),
-            ("Mine",           "mine",          "", 150, 140, 120),
-            ("Landmark",       "landmark",      "", 160, 180, 120),
-            ("Tavern",         "tavern",        "", 210, 160,  90),
-            ("Settlement",     "settlement",    "", 200, 170,  80),
-            ("Daedric Shrine", "daedric_shrine","", 170,  70, 190),
-            ("Oblivion Gate",  "oblivion_gate", "", 220,  70,  40),
-            ("Door",           "door",          "", 150, 150, 170)
+            ("None", "", "", 200, 200, 200),
+            ("Camp", "camp", "", 180, 140, 60),
+            ("Cave", "cave", "", 120, 100, 80),
+            ("City", "city", "", 255, 215, 0),
+            ("Elven Ruin", "elven_ruin", "", 130, 200, 170),
+            ("Fort Ruin", "fort_ruin", "", 170, 140, 110),
+            ("Mine", "mine", "", 150, 140, 120),
+            ("Landmark", "landmark", "", 160, 180, 120),
+            ("Tavern", "tavern", "", 210, 160, 90),
+            ("Settlement", "settlement", "", 200, 170, 80),
+            ("Daedric Shrine", "daedric_shrine", "", 170, 70, 190),
+            ("Oblivion Gate", "oblivion_gate", "", 220, 70, 40),
+            ("Door", "door", "", 150, 150, 170)
         ];
 
         var entries = new MapMarkerEntry[rows.Length];
@@ -153,7 +164,7 @@ public static class MapMarkerCatalog
         for (var raw = 0; raw < names.Length; raw++)
         {
             var iconKey = raw is >= 1 and <= 52 ? $"skyrim_marker_{raw:D2}" : "";
-            var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
+            var (r, g, b) = HsvToRgb(raw * 137.508 % 360.0, 0.45, 0.85);
             entries[raw] = new MapMarkerEntry(raw, names[raw], iconKey, new MapMarkerFallback("", r, g, b));
         }
 
@@ -189,7 +200,7 @@ public static class MapMarkerCatalog
         var entries = new MapMarkerEntry[names.Length];
         for (var raw = 0; raw < names.Length; raw++)
         {
-            var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
+            var (r, g, b) = HsvToRgb(raw * 137.508 % 360.0, 0.45, 0.85);
             entries[raw] = new MapMarkerEntry(
                 raw, names[raw], $"fo4_marker_{raw:D2}", new MapMarkerFallback("", r, g, b));
         }
@@ -242,7 +253,7 @@ public static class MapMarkerCatalog
         for (var raw = 0; raw < classes.Length; raw++)
         {
             var iconKey = raw < 100 && !noIcon.Contains(raw) ? $"fo76_marker_{raw:D3}" : "";
-            var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
+            var (r, g, b) = HsvToRgb(raw * 137.508 % 360.0, 0.45, 0.85);
             entries[raw] = new MapMarkerEntry(raw, Humanize(classes[raw]), iconKey, new MapMarkerFallback("", r, g, b));
         }
 
@@ -258,7 +269,7 @@ public static class MapMarkerCatalog
             : className;
         if (s.Length == 0) return className;
 
-        var sb = new System.Text.StringBuilder(s.Length + 8);
+        var sb = new StringBuilder(s.Length + 8);
         for (var i = 0; i < s.Length; i++)
         {
             var c = s[i];
@@ -266,8 +277,8 @@ public static class MapMarkerCatalog
             {
                 var p = s[i - 1];
                 var boundary = (char.IsUpper(c) && char.IsLower(p))
-                    || (char.IsDigit(c) && char.IsLetter(p))
-                    || (char.IsLetter(c) && char.IsDigit(p));
+                               || (char.IsDigit(c) && char.IsLetter(p))
+                               || (char.IsLetter(c) && char.IsDigit(p));
                 if (boundary) sb.Append(' ');
             }
 
@@ -277,31 +288,34 @@ public static class MapMarkerCatalog
         return sb.ToString();
     }
 
-    private static string EmbeddedIconStem(MapMarkerType type) => type switch
+    private static string EmbeddedIconStem(MapMarkerType type)
     {
-        MapMarkerType.City => "icon_map_city",
-        MapMarkerType.Settlement => "icon_map_settlement",
-        MapMarkerType.Encampment => "icon_map_encampment",
-        MapMarkerType.NaturalLandmark => "icon_map_natural_landmark",
-        MapMarkerType.Cave => "icon_map_cave",
-        MapMarkerType.Factory => "icon_map_factory",
-        MapMarkerType.Monument => "icon_map_monument",
-        MapMarkerType.Military => "icon_map_military",
-        MapMarkerType.Office => "icon_map_office",
-        MapMarkerType.RuinsTown => "icon_map_ruins_town",
-        MapMarkerType.RuinsUrban => "icon_map_ruins_urban",
-        MapMarkerType.RuinsSewer => "icon_map_ruins_sewer",
-        MapMarkerType.Metro => "icon_map_metro",
-        MapMarkerType.Vault => "icon_map_vault",
-        _ => ""
-    };
+        return type switch
+        {
+            MapMarkerType.City => "icon_map_city",
+            MapMarkerType.Settlement => "icon_map_settlement",
+            MapMarkerType.Encampment => "icon_map_encampment",
+            MapMarkerType.NaturalLandmark => "icon_map_natural_landmark",
+            MapMarkerType.Cave => "icon_map_cave",
+            MapMarkerType.Factory => "icon_map_factory",
+            MapMarkerType.Monument => "icon_map_monument",
+            MapMarkerType.Military => "icon_map_military",
+            MapMarkerType.Office => "icon_map_office",
+            MapMarkerType.RuinsTown => "icon_map_ruins_town",
+            MapMarkerType.RuinsUrban => "icon_map_ruins_urban",
+            MapMarkerType.RuinsSewer => "icon_map_ruins_sewer",
+            MapMarkerType.Metro => "icon_map_metro",
+            MapMarkerType.Vault => "icon_map_vault",
+            _ => ""
+        };
+    }
 
     // Deterministic, type-distinct dot for raw values with no named entry: golden-angle hue so adjacent
     // types get visibly different colors (used by atlas games until their table/art lands, and for any
     // out-of-range/modded value).
     private static MapMarkerEntry UnknownEntry(int rawValue)
     {
-        var hue = (rawValue * 137.508) % 360.0;
+        var hue = rawValue * 137.508 % 360.0;
         if (hue < 0) hue += 360.0;
         var (r, g, b) = HsvToRgb(hue, 0.55, 0.85);
         return new MapMarkerEntry(rawValue, $"Type {rawValue}", "", new MapMarkerFallback("", r, g, b));

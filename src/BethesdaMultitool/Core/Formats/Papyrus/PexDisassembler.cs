@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Papyrus;
@@ -143,13 +144,13 @@ public static class PexDisassembler
     }
 
     private static SortedDictionary<int, string> FindLabels(
-        System.Collections.Immutable.ImmutableArray<PexInstruction> instructions)
+        ImmutableArray<PexInstruction> instructions)
     {
         var targets = new SortedSet<int>();
         for (var ip = 0; ip < instructions.Length; ip++)
         {
             var instruction = instructions[ip];
-            PexIntegerValue? offset = instruction.OpCode switch
+            var offset = instruction.OpCode switch
             {
                 PexOpCode.Jump when instruction.Arguments[0] is PexIntegerValue jump => jump,
                 PexOpCode.JumpTrue or PexOpCode.JumpFalse
@@ -177,68 +178,78 @@ public static class PexDisassembler
     }
 
     private static string LabelFor(int target, IReadOnlyDictionary<int, string> labels)
-        => labels.GetValueOrDefault(target) ?? $"@{target}";
-
-    private static string FormatAssemblyValue(PexValue value) => value switch
     {
-        PexIdentifierValue identifier => identifier.Identifier.Value,
-        PexStringValue text => $"\"{PexDecompiler.EscapeString(text.String.Value)}\"",
-        _ => PexDecompiler.FormatValue(value)
-    };
+        return labels.GetValueOrDefault(target) ?? $"@{target}";
+    }
+
+    private static string FormatAssemblyValue(PexValue value)
+    {
+        return value switch
+        {
+            PexIdentifierValue identifier => identifier.Identifier.Value,
+            PexStringValue text => $"\"{PexDecompiler.EscapeString(text.String.Value)}\"",
+            _ => PexDecompiler.FormatValue(value)
+        };
+    }
 
     private static StringBuilder AppendIndent(StringBuilder output, int spaces)
-        => output.Append(' ', spaces);
-
-    private static string OpCodeName(PexOpCode opcode) => opcode switch
     {
-        PexOpCode.Nop => "NOOP",
-        PexOpCode.IAdd => "IADD",
-        PexOpCode.FAdd => "FADD",
-        PexOpCode.ISubtract => "ISUBTRACT",
-        PexOpCode.FSubtract => "FSUBTRACT",
-        PexOpCode.IMultiply => "IMULTIPLY",
-        PexOpCode.FMultiply => "FMULTIPLY",
-        PexOpCode.IDivide => "IDIVIDE",
-        PexOpCode.FDivide => "FDIVIDE",
-        PexOpCode.IMod => "IMOD",
-        PexOpCode.Not => "NOT",
-        PexOpCode.INegate => "INEGATE",
-        PexOpCode.FNegate => "FNEGATE",
-        PexOpCode.Assign => "ASSIGN",
-        PexOpCode.Cast => "CAST",
-        PexOpCode.CompareEqual => "COMPAREEQ",
-        PexOpCode.CompareLessThan => "COMPARELT",
-        PexOpCode.CompareLessThanOrEqual => "COMPARELTE",
-        PexOpCode.CompareGreaterThan => "COMPAREGT",
-        PexOpCode.CompareGreaterThanOrEqual => "COMPAREGTE",
-        PexOpCode.Jump => "JUMP",
-        PexOpCode.JumpTrue => "JUMPT",
-        PexOpCode.JumpFalse => "JUMPF",
-        PexOpCode.CallMethod => "CALLMETHOD",
-        PexOpCode.CallParent => "CALLPARENT",
-        PexOpCode.CallStatic => "CALLSTATIC",
-        PexOpCode.Return => "RETURN",
-        PexOpCode.StringConcat => "STRCAT",
-        PexOpCode.PropertyGet => "PROPGET",
-        PexOpCode.PropertySet => "PROPSET",
-        PexOpCode.ArrayCreate => "ARRAYCREATE",
-        PexOpCode.ArrayLength => "ARRAYLENGTH",
-        PexOpCode.ArrayGetElement => "ARRAYGETELEMENT",
-        PexOpCode.ArraySetElement => "ARRAYSETELEMENT",
-        PexOpCode.ArrayFindElement => "ARRAYFINDELEMENT",
-        PexOpCode.ArrayRFindElement => "ARRAYRFINDELEMENT",
-        PexOpCode.Is => "IS",
-        PexOpCode.StructCreate => "STRUCTCREATE",
-        PexOpCode.StructGet => "STRUCTGET",
-        PexOpCode.StructSet => "STRUCTSET",
-        PexOpCode.ArrayFindStruct => "ARRAYFINDSTRUCT",
-        PexOpCode.ArrayRFindStruct => "ARRAYRFINDSTRUCT",
-        PexOpCode.ArrayAdd => "ARRAYADDELEMENTS",
-        PexOpCode.ArrayInsert => "ARRAYINSERTELEMENT",
-        PexOpCode.ArrayRemoveLast => "ARRAYREMOVELASTELEMENT",
-        PexOpCode.ArrayRemove => "ARRAYREMOVEELEMENTS",
-        PexOpCode.ArrayClear => "ARRAYCLEARELEMENTS",
-        PexOpCode.ArrayGetAllMatchingStructs => "ARRAYGETALLMATCHINGSTRUCTS",
-        _ => opcode.ToString().ToUpperInvariant()
-    };
+        return output.Append(' ', spaces);
+    }
+
+    private static string OpCodeName(PexOpCode opcode)
+    {
+        return opcode switch
+        {
+            PexOpCode.Nop => "NOOP",
+            PexOpCode.IAdd => "IADD",
+            PexOpCode.FAdd => "FADD",
+            PexOpCode.ISubtract => "ISUBTRACT",
+            PexOpCode.FSubtract => "FSUBTRACT",
+            PexOpCode.IMultiply => "IMULTIPLY",
+            PexOpCode.FMultiply => "FMULTIPLY",
+            PexOpCode.IDivide => "IDIVIDE",
+            PexOpCode.FDivide => "FDIVIDE",
+            PexOpCode.IMod => "IMOD",
+            PexOpCode.Not => "NOT",
+            PexOpCode.INegate => "INEGATE",
+            PexOpCode.FNegate => "FNEGATE",
+            PexOpCode.Assign => "ASSIGN",
+            PexOpCode.Cast => "CAST",
+            PexOpCode.CompareEqual => "COMPAREEQ",
+            PexOpCode.CompareLessThan => "COMPARELT",
+            PexOpCode.CompareLessThanOrEqual => "COMPARELTE",
+            PexOpCode.CompareGreaterThan => "COMPAREGT",
+            PexOpCode.CompareGreaterThanOrEqual => "COMPAREGTE",
+            PexOpCode.Jump => "JUMP",
+            PexOpCode.JumpTrue => "JUMPT",
+            PexOpCode.JumpFalse => "JUMPF",
+            PexOpCode.CallMethod => "CALLMETHOD",
+            PexOpCode.CallParent => "CALLPARENT",
+            PexOpCode.CallStatic => "CALLSTATIC",
+            PexOpCode.Return => "RETURN",
+            PexOpCode.StringConcat => "STRCAT",
+            PexOpCode.PropertyGet => "PROPGET",
+            PexOpCode.PropertySet => "PROPSET",
+            PexOpCode.ArrayCreate => "ARRAYCREATE",
+            PexOpCode.ArrayLength => "ARRAYLENGTH",
+            PexOpCode.ArrayGetElement => "ARRAYGETELEMENT",
+            PexOpCode.ArraySetElement => "ARRAYSETELEMENT",
+            PexOpCode.ArrayFindElement => "ARRAYFINDELEMENT",
+            PexOpCode.ArrayRFindElement => "ARRAYRFINDELEMENT",
+            PexOpCode.Is => "IS",
+            PexOpCode.StructCreate => "STRUCTCREATE",
+            PexOpCode.StructGet => "STRUCTGET",
+            PexOpCode.StructSet => "STRUCTSET",
+            PexOpCode.ArrayFindStruct => "ARRAYFINDSTRUCT",
+            PexOpCode.ArrayRFindStruct => "ARRAYRFINDSTRUCT",
+            PexOpCode.ArrayAdd => "ARRAYADDELEMENTS",
+            PexOpCode.ArrayInsert => "ARRAYINSERTELEMENT",
+            PexOpCode.ArrayRemoveLast => "ARRAYREMOVELASTELEMENT",
+            PexOpCode.ArrayRemove => "ARRAYREMOVEELEMENTS",
+            PexOpCode.ArrayClear => "ARRAYCLEARELEMENTS",
+            PexOpCode.ArrayGetAllMatchingStructs => "ARRAYGETALLMATCHINGSTRUCTS",
+            _ => opcode.ToString().ToUpperInvariant()
+        };
+    }
 }

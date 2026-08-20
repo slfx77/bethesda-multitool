@@ -234,12 +234,14 @@ public class ConditionSanitizerTests
         var dropped = 0;
 
         var result = ConditionSanitizer.Filter(
-            [new DialogueCondition
-            {
-                FunctionIndex = (ushort)functionIndex,
-                RunOn = runOn,
-                Reference = rawStorage
-            }],
+            [
+                new DialogueCondition
+                {
+                    FunctionIndex = (ushort)functionIndex,
+                    RunOn = runOn,
+                    Reference = rawStorage
+                }
+            ],
             [emittedFormId],
             new Dictionary<uint, uint> { [rawStorage] = emittedFormId },
             ref remapped,

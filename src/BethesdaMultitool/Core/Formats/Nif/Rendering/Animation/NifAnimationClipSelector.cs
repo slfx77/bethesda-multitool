@@ -24,15 +24,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 /// </summary>
 internal static class NifAnimationClipSelector
 {
-    internal readonly record struct NifAnimClip(float Start, float Stop, bool Loops);
-
     internal static NifAnimClip? SelectClip(NifAnimTextKey[] textKeys, IReadOnlyList<NifNodeTrack?> tracks)
     {
         return SelectPlainIdleGroup(textKeys) ?? SelectFromKeyRanges(tracks);
     }
 
-    /// <summary>The plain "Idle" group's window (Loop Start/Stop preferred, else Start/Stop), or
-    /// null when absent or degenerate. Numbered variants ("Idle2") never match.</summary>
+    /// <summary>
+    ///     The plain "Idle" group's window (Loop Start/Stop preferred, else Start/Stop), or
+    ///     null when absent or degenerate. Numbered variants ("Idle2") never match.
+    /// </summary>
     private static NifAnimClip? SelectPlainIdleGroup(NifAnimTextKey[] textKeys)
     {
         float? start = null, stop = null, loopStart = null, loopStop = null;
@@ -56,12 +56,12 @@ internal static class NifAnimationClipSelector
 
         if (loopStart is { } ls && loopStop is { } le && le > ls + 1e-4f)
         {
-            return new NifAnimClip(ls, le, Loops: true);
+            return new NifAnimClip(ls, le, true);
         }
 
         if (start is { } s && stop is { } e && e > s + 1e-4f)
         {
-            return new NifAnimClip(s, e, Loops: true);
+            return new NifAnimClip(s, e, true);
         }
 
         return null;
@@ -83,7 +83,7 @@ internal static class NifAnimationClipSelector
             Expand(track.ScaleKeys.Length, i => track.ScaleKeys[i].Time, ref min, ref max);
         }
 
-        return max > min ? new NifAnimClip(min, max, Loops: true) : null;
+        return max > min ? new NifAnimClip(min, max, true) : null;
     }
 
     private static void Expand(int count, Func<int, float> timeAt, ref float min, ref float max)
@@ -96,4 +96,6 @@ internal static class NifAnimationClipSelector
         min = MathF.Min(min, timeAt(0));
         max = MathF.Max(max, timeAt(count - 1));
     }
+
+    internal readonly record struct NifAnimClip(float Start, float Stop, bool Loops);
 }

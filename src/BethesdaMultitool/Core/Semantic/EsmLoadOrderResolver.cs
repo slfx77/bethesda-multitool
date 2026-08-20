@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Semantic;
 
@@ -10,7 +9,10 @@ namespace BethesdaMultitool.Core.Semantic;
 /// </summary>
 internal static class EsmLoadOrderResolver
 {
-    /// <summary>Reads every .esm in a directory and topologically sorts them into load order from their MAST master dependencies.</summary>
+    /// <summary>
+    ///     Reads every .esm in a directory and topologically sorts them into load order from their MAST master
+    ///     dependencies.
+    /// </summary>
     internal static async Task<IReadOnlyList<EsmLoadOrderFile>> ResolveDirectoryAsync(
         string baseDirPath,
         CancellationToken cancellationToken = default)
@@ -129,19 +131,23 @@ internal static class EsmLoadOrderResolver
                     {
                         version = BinaryPrimitives.ReadSingleLittleEndian(payload);
                     }
+
                     if (payload.Length >= 40)
                     {
                         author = ReadFixedString(payload.Slice(8, 32));
                     }
+
                     if (payload.Length >= 296)
                     {
                         description = ReadFixedString(payload.Slice(40, 256));
                     }
+
                     break;
                 case "MAST":
                     masters.Add(ReadFixedString(payload));
                     break;
             }
+
             pos += (int)size;
         }
 
@@ -162,4 +168,3 @@ internal static class EsmLoadOrderResolver
         return Encoding.ASCII.GetString(nul >= 0 ? data[..nul] : data);
     }
 }
-

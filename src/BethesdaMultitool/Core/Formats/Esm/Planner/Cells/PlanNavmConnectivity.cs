@@ -10,17 +10,17 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     Each written navmesh's cross-navmesh connectivity — NVEX edge-link targets and NVDP
 ///     door portals — computed from the plan, for the NAVI record's NVCI arrays.
 ///     <para>
-///     This is the same answer <c>NavmConnectivityExtractor</c> reads back out of the finished
-///     NAVM bytes, derived instead from the captured subrecords plus the plan's remaps and
-///     valid sets. Doing it here is what lets NAVI stop trailing cell emission: NVCI and the
-///     navmesh's own links must describe one graph, and the engine walks NVCI during
-///     cross-cell A* setup, so a portal kept in one and dropped from the other is a crash.
+///         This is the same answer <c>NavmConnectivityExtractor</c> reads back out of the finished
+///         NAVM bytes, derived instead from the captured subrecords plus the plan's remaps and
+///         valid sets. Doing it here is what lets NAVI stop trailing cell emission: NVCI and the
+///         navmesh's own links must describe one graph, and the engine walks NVCI during
+///         cross-cell A* setup, so a portal kept in one and dropped from the other is a crash.
 ///     </para>
 ///     <para>
-///     The rules mirror the writer byte-for-byte: NVEX targets are remapped where the plan has
-///     an entry and then kept only when null or pointing at a live navmesh; NVDP door refs are
-///     remapped through the door-clone map and kept only when they land on a live door. NVCI
-///     itself lists each surviving non-null target once, in first-seen order.
+///         The rules mirror the writer byte-for-byte: NVEX targets are remapped where the plan has
+///         an entry and then kept only when null or pointing at a live navmesh; NVDP door refs are
+///         remapped through the door-clone map and kept only when they land on a live door. NVCI
+///         itself lists each surviving non-null target once, in first-seen order.
 ///     </para>
 /// </summary>
 internal static class PlanNavmConnectivity
@@ -136,6 +136,8 @@ internal static class PlanNavmConnectivity
         return new NavmConnectivity(standard, doors);
     }
 
-    private static uint Remap(uint formId, IReadOnlyDictionary<uint, uint> rewrites) =>
-        rewrites.TryGetValue(formId, out var replacement) ? replacement : formId;
+    private static uint Remap(uint formId, IReadOnlyDictionary<uint, uint> rewrites)
+    {
+        return rewrites.TryGetValue(formId, out var replacement) ? replacement : formId;
+    }
 }

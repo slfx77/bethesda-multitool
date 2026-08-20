@@ -77,7 +77,7 @@ public static class DuplicateActorPlacementMerge
             {
                 PersistentChildren = persistent,
                 TemporaryChildren = temporary,
-                VwdChildren = vwd,
+                VwdChildren = vwd
             };
         }
 
@@ -141,8 +141,8 @@ public static class DuplicateActorPlacementMerge
                     {
                         PolicyId = "DuplicateActorPlacementMerge",
                         Reason = "Extra proto placement of a master actor already covered by "
-                                 + $"another override of 0x{masterRefId:X8}; dropped (never duplicate).",
-                    },
+                                 + $"another override of 0x{masterRefId:X8}; dropped (never duplicate)."
+                    }
                 });
                 mutated = true;
                 continue;
@@ -158,8 +158,8 @@ public static class DuplicateActorPlacementMerge
                 {
                     PolicyId = "DuplicateActorPlacementMerge",
                     Reason = "Proto re-placed a master actor with its own ref; folded onto "
-                             + $"master's sole placement 0x{masterRefId:X8} (move, never duplicate).",
-                },
+                             + $"master's sole placement 0x{masterRefId:X8} (move, never duplicate)."
+                }
             });
             mutated = true;
         }

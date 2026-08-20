@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
@@ -8,43 +7,63 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// <summary>
 ///     Typed runtime reader for <c>TESObjectTREE</c> (TREE, FormType 0x25).
 ///     <para>
-///     TREE cannot come out of the generic PDB reader. Both of its REQUIRED subrecords live in
-///     embedded structs larger than 8 bytes, and <c>RuntimeGenericReader.ReadEmbeddedStruct</c>
-///     substitutes a literal placeholder string (<c>"[OBJ_TREE, 32B]"</c>) for anything that
-///     big rather than walking it — so SNAM and CNAM were unrecoverable and the record could
-///     never be emitted. Note the dumps contain NO carved ESM TREE bytes at all (census:
-///     <c>esm_record_dumps=0</c>), so the runtime struct is the only source.
+///         TREE cannot come out of the generic PDB reader. Both of its REQUIRED subrecords live in
+///         embedded structs larger than 8 bytes, and <c>RuntimeGenericReader.ReadEmbeddedStruct</c>
+///         substitutes a literal placeholder string (<c>"[OBJ_TREE, 32B]"</c>) for anything that
+///         big rather than walking it — so SNAM and CNAM were unrecoverable and the record could
+///         never be emitted. Note the dumps contain NO carved ESM TREE bytes at all (census:
+///         <c>esm_record_dumps=0</c>), so the runtime struct is the only source.
 ///     </para>
 ///     <para>
-///     Layout below is read directly out of <c>Fallout_Release_MemDebug.pdb</c> — the Xbox 360
-///     build's own PDB, so the offsets are 360-correct — and then confirmed against xex44.
-///     Nothing here is inferred from the PC/NVSE headers.
+///         Layout below is read directly out of <c>Fallout_Release_MemDebug.pdb</c> — the Xbox 360
+///         build's own PDB, so the offsets are 360-correct — and then confirmed against xex44.
+///         Nothing here is inferred from the PC/NVSE headers.
 ///     </para>
 ///     <para>
-///     <b><c>TESObjectTREE</c></b> (structSize 164): <c>SeedArray</c>@108, <c>Data</c>@124,
-///     <c>BillboardSize</c>@156. All three offsets come from the PDB layout table, so they are
-///     resolved by name through <see cref="PdbStructView" /> rather than hard-coded.
+///         <b>
+///             <c>TESObjectTREE</c>
+///         </b>
+///         (structSize 164): <c>SeedArray</c>@108, <c>Data</c>@124,
+///         <c>BillboardSize</c>@156. All three offsets come from the PDB layout table, so they are
+///         resolved by name through <see cref="PdbStructView" /> rather than hard-coded.
 ///     </para>
 ///     <para>
-///     <b><c>NiTPrimitiveArray&lt;unsigned int&gt;</c></b> (16 bytes) derives from
-///     <c>NiTArray&lt;unsigned int, NiTMallocInterface&lt;unsigned int&gt;&gt;</c>
-///     (PDB LF_FIELDLIST 0xf92c / LF_CLASS 0xf92d):
+///         <b>
+///             <c>NiTPrimitiveArray&lt;unsigned int&gt;</c>
+///         </b>
+///         (16 bytes) derives from
+///         <c>NiTArray&lt;unsigned int, NiTMallocInterface&lt;unsigned int&gt;&gt;</c>
+///         (PDB LF_FIELDLIST 0xf92c / LF_CLASS 0xf92d):
 ///     </para>
 ///     <list type="table">
-///         <item><description><c>+0</c> vfptr (LF_VFUNCTAB — the vtable IS present on the 360 build)</description></item>
-///         <item><description><c>+4</c> <c>unsigned int* m_pBase</c> — the seed payload</description></item>
-///         <item><description><c>+8</c> <c>uint16 m_usMaxSize</c> — allocated capacity (<c>GetAllocatedSize</c>)</description></item>
-///         <item><description><c>+10</c> <c>uint16 m_usSize</c> — element count (<c>GetSize</c>) ← authoritative</description></item>
-///         <item><description><c>+12</c> <c>uint16 m_usESize</c> — effective/non-null count (<c>GetEffectiveSize</c>)</description></item>
-///         <item><description><c>+14</c> <c>uint16 m_usGrowBy</c></description></item>
+///         <item>
+///             <description><c>+0</c> vfptr (LF_VFUNCTAB — the vtable IS present on the 360 build)</description>
+///         </item>
+///         <item>
+///             <description><c>+4</c> <c>unsigned int* m_pBase</c> — the seed payload</description>
+///         </item>
+///         <item>
+///             <description><c>+8</c> <c>uint16 m_usMaxSize</c> — allocated capacity (<c>GetAllocatedSize</c>)</description>
+///         </item>
+///         <item>
+///             <description><c>+10</c> <c>uint16 m_usSize</c> — element count (<c>GetSize</c>) ← authoritative</description>
+///         </item>
+///         <item>
+///             <description><c>+12</c> <c>uint16 m_usESize</c> — effective/non-null count (<c>GetEffectiveSize</c>)</description>
+///         </item>
+///         <item>
+///             <description>
+///                 <c>+14</c> <c>uint16 m_usGrowBy</c>
+///             </description>
+///         </item>
 ///     </list>
 ///     <para>
-///     Verified on xex44: <c>WhiteOak01 (0x0003C356)</c> reports maxSize/size/eSize = 5 and its
-///     payload at VA 0x5105B540 reads 301409, 363767, 554776, 603335, 844198 — byte-identical
-///     to the SNAM of the same record in <c>Sample/ESM/360_proto/FalloutNV.esm</c>. Every other
-///     TREE in the dump reports size 1. The bytes immediately following WhiteOak01's fifth seed
-///     are an unrelated heap string, so the count must be honoured exactly; over-reading yields
-///     garbage seeds, not zeros.
+///         Verified on xex44: <c>WhiteOak01 (0x0003C356)</c> reports maxSize/size/eSize = 5 and its
+///         payload at VA 0x5105B540 reads 301409, 363767, 554776, 603335, 844198 — byte-identical
+///         to the SNAM of the same record in <c>Sample/ESM/360_proto/FalloutNV.esm</c>. Every other
+///         TREE in the dump reports size 1. The bytes immediately following WhiteOak01's fifth seed
+///         are an unrelated heap string, so the count must be honoured exactly; over-reading yields
+///         garbage seeds, not zeros.
 ///     </para>
 /// </summary>
 internal sealed class RuntimeTreeReader(RuntimeMemoryContext context)
@@ -53,6 +72,7 @@ internal sealed class RuntimeTreeReader(RuntimeMemoryContext context)
 
     /// <summary>Field offsets within <c>NiTArray</c>, per the PDB field list.</summary>
     private const int ArrayBasePointer = 4;
+
     private const int ArraySizeField = 10;
 
     /// <summary>

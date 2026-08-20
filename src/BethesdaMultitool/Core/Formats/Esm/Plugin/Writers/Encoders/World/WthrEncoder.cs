@@ -17,7 +17,7 @@ public sealed class WthrEncoder : IRecordEncoder
     private static readonly Dictionary<string, Func<WeatherSound, object?>> SnamExtractors = new(StringComparer.Ordinal)
     {
         ["Sound"] = m => m.SoundFormId,
-        ["Type"] = m => m.Type,
+        ["Type"] = m => m.Type
     };
 
     public string RecordType => "WTHR";

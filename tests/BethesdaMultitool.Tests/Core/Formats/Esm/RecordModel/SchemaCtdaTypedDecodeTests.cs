@@ -236,7 +236,7 @@ public class SchemaCtdaTypedDecodeTests
         var globBytes = BuildBigEndianFallout4Ctda(0x04, 0f, 0x00E, 0, 0);
         BinaryPrimitives.WriteUInt32BigEndian(globBytes.AsSpan(4), globalFormId);
 
-        var condition = DecodeFallout4Condition(globBytes, bigEndian: true);
+        var condition = DecodeFallout4Condition(globBytes, true);
         var comparison = Param(condition, "Comparison Value");
 
         Assert.Equal(globalFormId, comparison.FormId);
@@ -341,11 +341,11 @@ public class SchemaCtdaTypedDecodeTests
     {
         // With Run On = Quest Alias, Type.UseAliases describes physical Param3; param1 stays PACK.
         var exception = DecodeFallout4Condition(
-            BuildFallout4Ctda(0x02, 1f, 0x0A1, 0x00123456, 0, runOn: 5));
+            BuildFallout4Ctda(0x02, 1f, 0x0A1, 0x00123456, 0, 5));
         Assert.Equal(0x00123456u, Param(exception, "Parameter #1").FormId);
 
         var ordinary = DecodeFallout4Condition(
-            BuildFallout4Ctda(0x02, 1f, 0x0A1, 42, 0, runOn: 0));
+            BuildFallout4Ctda(0x02, 1f, 0x0A1, 42, 0, 0));
         Assert.Null(Param(ordinary, "Parameter #1").FormId);
         Assert.Equal("42", Param(ordinary, "Parameter #1").Value);
 
@@ -357,8 +357,8 @@ public class SchemaCtdaTypedDecodeTests
         Assert.Equal(0x00123456u, Convert.ToUInt32(Param(raw, "Parameter #1").RawValue));
 
         var bigEndian = DecodeFallout4Condition(
-            BuildBigEndianFallout4Ctda(0x02, 1f, 0x0A1, 0x00123456, 0, runOn: 5),
-            bigEndian: true);
+            BuildBigEndianFallout4Ctda(0x02, 1f, 0x0A1, 0x00123456, 0, 5),
+            true);
         Assert.Equal(0x00123456u, Param(bigEndian, "Parameter #1").FormId);
     }
 
@@ -406,7 +406,7 @@ public class SchemaCtdaTypedDecodeTests
             BuildBigEndianFallout4Ctda(0, 1f, 407, 0, 0x81A2B3C4),
             BethesdaGame.Skyrim,
             BethesdaGame.Skyrim,
-            bigEndian: true);
+            true);
         Assert.Equal(0x81A2B3C4u, Param(bigEndianWeapon, "Parameter #2").FormId);
     }
 
@@ -442,7 +442,7 @@ public class SchemaCtdaTypedDecodeTests
         Assert.Equal(0x00123456u, Param(ineligible, "Parameter #1").FormId);
 
         var exception = DecodeCondition(
-            BuildFallout4Ctda(0x02, 1f, 0x0A1, 0x00123456, 0, runOn: 5),
+            BuildFallout4Ctda(0x02, 1f, 0x0A1, 0x00123456, 0, 5),
             BethesdaGame.Fallout76,
             BethesdaGame.Fallout76);
         Assert.Equal(0x00123456u, Param(exception, "Parameter #1").FormId);
@@ -451,7 +451,7 @@ public class SchemaCtdaTypedDecodeTests
             BuildBigEndianFallout4Ctda(0, 1f, 5004, 0x81A2B3C4, 0),
             BethesdaGame.Fallout76,
             BethesdaGame.Fallout76,
-            bigEndian: true);
+            true);
         Assert.Equal(0x81A2B3C4u, Param(bigEndianHigh, "Parameter #1").FormId);
     }
 
@@ -464,7 +464,7 @@ public class SchemaCtdaTypedDecodeTests
     {
         const uint reference = 0x01A2B3C4;
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn: 2, reference, length), game, game);
+            BuildReferenceCtda(0x048, 2, reference, length), game, game);
 
         var referenceNode = Param(condition, "Reference");
         Assert.Equal(reference, referenceNode.FormId);
@@ -478,10 +478,10 @@ public class SchemaCtdaTypedDecodeTests
     {
         const uint reference = 0x81A2B3C4;
         var condition = DecodeCondition(
-            BuildReferenceCtda(0xFFFF, runOn: 2, reference, bigEndian: true),
+            BuildReferenceCtda(0xFFFF, 2, reference, bigEndian: true),
             game,
             game,
-            bigEndian: true);
+            true);
 
         Assert.Equal(0x10203040u, Convert.ToUInt32(Param(condition, "Parameter #1").RawValue));
         Assert.Equal(0x50607080u, Convert.ToUInt32(Param(condition, "Parameter #2").RawValue));
@@ -491,7 +491,7 @@ public class SchemaCtdaTypedDecodeTests
     [Fact]
     public void ReferenceUnion_PartialParamTailIsPreservedWithoutOverread()
     {
-        var ctda = BuildReferenceCtda(0x048, runOn: 2, reference: 0x81A2B3C4, length: 20)[..18];
+        var ctda = BuildReferenceCtda(0x048, 2, 0x81A2B3C4, 20)[..18];
         var condition = DecodeCondition(ctda, BethesdaGame.Skyrim, BethesdaGame.Unknown);
 
         Assert.Equal(0x10203040u, Convert.ToUInt32(Param(condition, "Parameter #1").RawValue));
@@ -525,7 +525,7 @@ public class SchemaCtdaTypedDecodeTests
     public void ReferenceUnion_FnvExceptionsStayRawButFallout3IsSemantic(int functionIndex)
     {
         const uint storage = 0x00C0FFEE;
-        var ctda = BuildReferenceCtda((ushort)functionIndex, runOn: 2, storage, length: 28);
+        var ctda = BuildReferenceCtda((ushort)functionIndex, 2, storage, 28);
 
         var fnvNode = Param(
             DecodeCondition(ctda, BethesdaGame.FalloutNewVegas, BethesdaGame.FalloutNewVegas),
@@ -548,7 +548,7 @@ public class SchemaCtdaTypedDecodeTests
     {
         const uint reference = 0x00123456;
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn: 2, reference, length),
+            BuildReferenceCtda(0x048, 2, reference, length),
             BethesdaGame.Fallout4,
             BethesdaGame.Fallout4);
         var referenceNode = FindNode(condition.Children ?? [], "Reference");
@@ -569,10 +569,10 @@ public class SchemaCtdaTypedDecodeTests
     {
         const uint reference = 0x01ABCDEF;
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn: 2, reference, length: 28, bigEndian: true),
+            BuildReferenceCtda(0x048, 2, reference, 28, true),
             BethesdaGame.Fallout4,
             BethesdaGame.Fallout4,
-            bigEndian: true);
+            true);
 
         Assert.Equal(reference, Param(condition, "Reference").FormId);
     }
@@ -582,7 +582,7 @@ public class SchemaCtdaTypedDecodeTests
     {
         const uint storage = 0x89ABCDEF;
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn: 2, storage),
+            BuildReferenceCtda(0x048, 2, storage),
             BethesdaGame.Fallout4,
             BethesdaGame.Unknown);
 
@@ -600,7 +600,7 @@ public class SchemaCtdaTypedDecodeTests
         int functionIndex, uint runOn, string expected)
     {
         var condition = DecodeCondition(
-            BuildReferenceCtda((ushort)functionIndex, runOn, reference: 0, length: 28),
+            BuildReferenceCtda((ushort)functionIndex, runOn, 0, 28),
             BethesdaGame.FalloutNewVegas,
             BethesdaGame.FalloutNewVegas);
 
@@ -613,19 +613,19 @@ public class SchemaCtdaTypedDecodeTests
     public void RunOnUnion_FnvPolicyHonorsEndianOrdinaryControlAndLegacyTargetBit()
     {
         var bigEndian = DecodeCondition(
-            BuildReferenceCtda(0x006A, runOn: 21, reference: 0, length: 28, bigEndian: true),
+            BuildReferenceCtda(0x006A, 21, 0, 28, true),
             BethesdaGame.FalloutNewVegas,
             BethesdaGame.FalloutNewVegas,
-            bigEndian: true);
+            true);
         Assert.Equal("Upper Body (21)", Param(bigEndian, "Run On").Value);
 
         var ordinary = DecodeCondition(
-            BuildReferenceCtda(0x0048, runOn: 2, reference: 0, length: 28),
+            BuildReferenceCtda(0x0048, 2, 0, 28),
             BethesdaGame.FalloutNewVegas,
             BethesdaGame.FalloutNewVegas);
         Assert.Equal("Reference (2)", Param(ordinary, "Run On").Value);
 
-        var legacyTarget = BuildReferenceCtda(0x0048, runOn: 0, reference: 0, length: 28);
+        var legacyTarget = BuildReferenceCtda(0x0048, 0, 0, 28);
         legacyTarget[0] = 0x02;
         var migrated = DecodeCondition(
             legacyTarget,
@@ -645,7 +645,7 @@ public class SchemaCtdaTypedDecodeTests
         BethesdaGame game, uint runOn, string selectedLabel)
     {
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn, reference: 0, parameter3: -17),
+            BuildReferenceCtda(0x048, runOn, 0, parameter3: -17),
             game,
             game);
 
@@ -659,10 +659,10 @@ public class SchemaCtdaTypedDecodeTests
     public void Param3Union_BigEndianAndUnknownContextStillUseTheGeneratedSchema()
     {
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn: 5, reference: 0, bigEndian: true, parameter3: -123456),
+            BuildReferenceCtda(0x048, 5, 0, bigEndian: true, parameter3: -123456),
             BethesdaGame.Skyrim,
             BethesdaGame.Unknown,
-            bigEndian: true);
+            true);
 
         var param3 = Param(condition, "Parameter #3");
         Assert.Equal("Parameter #3 (Quest Alias)", param3.Label);
@@ -676,7 +676,7 @@ public class SchemaCtdaTypedDecodeTests
         BethesdaGame game, uint runOn)
     {
         var condition = DecodeCondition(
-            BuildReferenceCtda(0x048, runOn, reference: 0, parameter3: -9),
+            BuildReferenceCtda(0x048, runOn, 0, parameter3: -9),
             game,
             game);
 
@@ -689,7 +689,7 @@ public class SchemaCtdaTypedDecodeTests
     [Fact]
     public void Param3Union_TruncatedTailStaysRawWithoutOverread()
     {
-        var ctda = BuildReferenceCtda(0x048, runOn: 5, reference: 0, parameter3: -1)[..30];
+        var ctda = BuildReferenceCtda(0x048, 5, 0, parameter3: -1)[..30];
         var condition = DecodeCondition(ctda, BethesdaGame.Skyrim, BethesdaGame.Skyrim);
 
         var param3 = Param(condition, "Parameter #3");

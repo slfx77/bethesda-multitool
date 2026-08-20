@@ -6,8 +6,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 /// <summary>
 ///     Decodes a <c>MODS</c> ("Alternate Textures") subrecord payload into its
-///     <see cref="AlternateTextureEntry" /> list. Wire format (xEdit <c>wbArrayS(MODS, …,
-///     wbAlternateTexture, -1)</c>): a <c>u32</c> count, then per entry a length-prefixed
+///     <see cref="AlternateTextureEntry" /> list. Wire format (xEdit
+///     <c>
+///         wbArrayS(MODS, …,
+///         wbAlternateTexture, -1)
+///     </c>
+///     ): a <c>u32</c> count, then per entry a length-prefixed
 ///     3D name (<c>u32 length</c> + ASCII bytes), a <c>u32</c> TXST FormID, and an <c>s32</c>
 ///     3D index. Integers are read with the record's endianness (Xbox 360 ESM is big-endian).
 ///     <para>
@@ -68,8 +72,10 @@ public static class AlternateTextureParser
         return result;
     }
 
-    private static uint ReadUInt32(ReadOnlySpan<byte> span, bool isBigEndian) =>
-        isBigEndian
+    private static uint ReadUInt32(ReadOnlySpan<byte> span, bool isBigEndian)
+    {
+        return isBigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(span)
             : BinaryPrimitives.ReadUInt32LittleEndian(span);
+    }
 }

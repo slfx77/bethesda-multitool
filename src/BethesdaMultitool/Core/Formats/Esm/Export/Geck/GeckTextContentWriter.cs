@@ -333,4 +333,3 @@ internal static class GeckTextContentWriter
         return sb.ToString();
     }
 }
-

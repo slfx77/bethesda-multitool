@@ -81,7 +81,7 @@ public sealed class NpcReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.IndexedMember("SNAM", i, "Faction"),
-                FormId = npc.Factions[i].FactionFormId,
+                FormId = npc.Factions[i].FactionFormId
             };
         }
 
@@ -90,7 +90,7 @@ public sealed class NpcReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("SPLO", i),
-                FormId = npc.Spells[i],
+                FormId = npc.Spells[i]
             };
         }
 
@@ -100,14 +100,14 @@ public sealed class NpcReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.IndexedMember("CNTO", i, "Item"),
-                FormId = item.ItemFormId,
+                FormId = item.ItemFormId
             };
             if (item.OwnerFormId is uint owner && owner != 0)
             {
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.IndexedMember("COED", i, "Owner"),
-                    FormId = owner,
+                    FormId = owner
                 };
             }
         }
@@ -117,7 +117,7 @@ public sealed class NpcReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("PKID", i),
-                FormId = npc.Packages[i],
+                FormId = npc.Packages[i]
             };
         }
 
@@ -128,7 +128,7 @@ public sealed class NpcReferenceWalker : IRecordReferenceWalker
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.Indexed("PNAM", i),
-                    FormId = headParts[i],
+                    FormId = headParts[i]
                 };
             }
         }
@@ -141,7 +141,7 @@ public sealed class NpcReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Subrecord(signature),
-                FormId = id,
+                FormId = id
             };
         }
     }

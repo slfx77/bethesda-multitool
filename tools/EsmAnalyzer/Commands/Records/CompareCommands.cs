@@ -9,10 +9,18 @@ namespace EsmAnalyzer.Commands.Records;
 /// </summary>
 public static class CompareCommands
 {
-    public static Command CreateCompareHeightmapsCommand() => CreateCompareHeightmapsCommandCore("compare-heightmaps", "Compare terrain heightmaps between two ESM files and generate teleport commands");
+    public static Command CreateCompareHeightmapsCommand()
+    {
+        return CreateCompareHeightmapsCommandCore("compare-heightmaps",
+            "Compare terrain heightmaps between two ESM files and generate teleport commands");
+    }
 
     /// <summary>Creates a compare-heightmaps command named "heightmaps" for use as a subcommand.</summary>
-    public static Command CreateHeightmapsCommand() => CreateCompareHeightmapsCommandCore("heightmaps", "Compare terrain heightmaps between two ESM files and generate teleport commands");
+    public static Command CreateHeightmapsCommand()
+    {
+        return CreateCompareHeightmapsCommandCore("heightmaps",
+            "Compare terrain heightmaps between two ESM files and generate teleport commands");
+    }
 
     private static Command CreateCompareHeightmapsCommandCore(string name, string description)
     {
@@ -21,18 +29,21 @@ public static class CompareCommands
         var file1Arg = new Argument<string>("file1") { Description = "Path to the first ESM file (e.g., proto)" };
         var file2Arg = new Argument<string>("file2") { Description = "Path to the second ESM file (e.g., final)" };
         var worldspaceOption = new Option<string?>("-w", "--worldspace")
-        { Description = "Worldspace EditorID or FormID, matched against the file (default: WastelandNV, else Wasteland)" };
+        {
+            Description =
+                "Worldspace EditorID or FormID, matched against the file (default: WastelandNV, else Wasteland)"
+        };
         var outputOption = new Option<string>("-o", "--output")
         {
             Description = "Output file path for teleport commands",
             DefaultValueFactory = _ => "terrain_differences.txt"
         };
         var thresholdOption = new Option<int>("-t", "--threshold")
-        { Description = "Minimum height difference to report (world units)", DefaultValueFactory = _ => 100 };
+            { Description = "Minimum height difference to report (world units)", DefaultValueFactory = _ => 100 };
         var maxOption = new Option<int>("-m", "--max")
-        { Description = "Maximum results to show (0 = all)", DefaultValueFactory = _ => 50 };
+            { Description = "Maximum results to show (0 = all)", DefaultValueFactory = _ => 50 };
         var statsOption = new Option<bool>("-s", "--stats")
-        { Description = "Show detailed statistics" };
+            { Description = "Show detailed statistics" };
 
         command.Arguments.Add(file1Arg);
         command.Arguments.Add(file2Arg);
@@ -54,10 +65,16 @@ public static class CompareCommands
         return command;
     }
 
-    public static Command CreateCompareLandCommand() => CreateCompareLandCommandCore("compare-land", "Compare LAND records between Xbox 360 and PC ESM files");
+    public static Command CreateCompareLandCommand()
+    {
+        return CreateCompareLandCommandCore("compare-land", "Compare LAND records between Xbox 360 and PC ESM files");
+    }
 
     /// <summary>Creates a compare-land command named "land" for use as a subcommand.</summary>
-    public static Command CreateLandCommand() => CreateCompareLandCommandCore("land", "Compare LAND records between Xbox 360 and PC ESM files");
+    public static Command CreateLandCommand()
+    {
+        return CreateCompareLandCommandCore("land", "Compare LAND records between Xbox 360 and PC ESM files");
+    }
 
     private static Command CreateCompareLandCommandCore(string name, string description)
     {
@@ -66,7 +83,7 @@ public static class CompareCommands
         var xbox360Arg = new Argument<string>("xbox360") { Description = "Path to the Xbox 360 ESM file" };
         var pcArg = new Argument<string>("pc") { Description = "Path to the PC ESM file" };
         var formIdOption = new Option<string?>("-f", "--formid")
-        { Description = "Specific FormID to compare (hex, e.g., 0x00123456)" };
+            { Description = "Specific FormID to compare (hex, e.g., 0x00123456)" };
         var allOption = new Option<bool>("-a", "--all") { Description = "Compare all LAND records (samples 10)" };
 
         command.Arguments.Add(xbox360Arg);
@@ -83,10 +100,16 @@ public static class CompareCommands
         return command;
     }
 
-    public static Command CreateCompareCellsCommand() => CreateCompareCellsCommandCore("compare-cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+    public static Command CreateCompareCellsCommand()
+    {
+        return CreateCompareCellsCommandCore("compare-cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+    }
 
     /// <summary>Creates a compare-cells command named "cells" for use as a subcommand.</summary>
-    public static Command CreateCellsCommand() => CreateCompareCellsCommandCore("cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+    public static Command CreateCellsCommand()
+    {
+        return CreateCompareCellsCommandCore("cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+    }
 
     private static Command CreateCompareCellsCommandCore(string name, string description)
     {

@@ -21,6 +21,8 @@ internal static class AnalyticOverlayLineMetrics
             viewportHeightPx / ValidScaleOrOne(compositionScaleY));
     }
 
-    private static float ValidScaleOrOne(float scale) =>
-        float.IsFinite(scale) && scale > 0f ? scale : 1f;
+    private static float ValidScaleOrOne(float scale)
+    {
+        return float.IsFinite(scale) && scale > 0f ? scale : 1f;
+    }
 }

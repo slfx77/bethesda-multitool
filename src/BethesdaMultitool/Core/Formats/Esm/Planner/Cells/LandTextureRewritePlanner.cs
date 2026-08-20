@@ -28,7 +28,7 @@ public static class LandTextureRewritePlanner
         {
             CellsByFormId = cells,
             Records = records,
-            Diagnostics = plan.Diagnostics.AddRange(diagnostics),
+            Diagnostics = plan.Diagnostics.AddRange(diagnostics)
         };
     }
 
@@ -46,7 +46,7 @@ public static class LandTextureRewritePlanner
             {
                 var child = temporary[i];
                 if (child.Type != "LAND" || child.Model is not CellLandDecision land
-                    || land.VisualData is null)
+                                         || land.VisualData is null)
                 {
                     continue;
                 }
@@ -80,7 +80,7 @@ public static class LandTextureRewritePlanner
         {
             var record = records[i];
             if (record.Type != "LTEX" || record.Model is not LandscapeTextureRecord ltex
-                || record.Disposition == RecordDisposition.Skip)
+                                      || record.Disposition == RecordDisposition.Skip)
             {
                 continue;
             }
@@ -154,7 +154,7 @@ public static class LandTextureRewritePlanner
                 layer.TextureFormId, "LTEX"));
         }
 
-        uint[]? indices = visual.TextureIndices;
+        var indices = visual.TextureIndices;
         if (indices is { Length: > 0 })
         {
             var rewritten = new uint[indices.Length];
@@ -215,13 +215,17 @@ public static class LandTextureRewritePlanner
         string recordType,
         uint formId,
         uint target,
-        string targetType) => new()
+        string targetType)
     {
-        Kind = PlanDiagnosticKind.Warning,
-        Phase = "LandTextureRewrite",
-        Code = code,
-        RecordType = recordType,
-        FormId = formId,
-        Message = $"Dropped dangling prototype {targetType} reference 0x{target:X8} from {recordType} 0x{formId:X8}.",
-    };
+        return new PlanDiagnostic
+        {
+            Kind = PlanDiagnosticKind.Warning,
+            Phase = "LandTextureRewrite",
+            Code = code,
+            RecordType = recordType,
+            FormId = formId,
+            Message =
+                $"Dropped dangling prototype {targetType} reference 0x{target:X8} from {recordType} 0x{formId:X8}."
+        };
+    }
 }

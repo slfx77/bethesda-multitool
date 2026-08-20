@@ -21,8 +21,10 @@ public sealed class Ba2Extractor : IDisposable
     // Four bounds the simultaneous packed + decoded + file-write buffers for large DX10 entries.
     // Keep this aligned with BsaExtractionEngine's established archive-extraction fan-out.
     internal const int MaxConcurrentBulkExtractions = 4;
+    private readonly Ba2CompressionFormat _compression;
 
     private readonly MemoryMappedFile _mappedFile;
+    private readonly uint _version;
 
     // ONE read-only view over the whole file, reused for every region read. Creating a view accessor is a
     // real MapViewOfFile (page-aligned, allocates a SafeHandle + view) — the old per-chunk accessor made a
@@ -30,8 +32,6 @@ public sealed class Ba2Extractor : IDisposable
     // is safe for concurrent ReadArray from the resolve-queue workers (each reads into its own buffer at an
     // explicit absolute position; no shared mutable state).
     private readonly MemoryMappedViewAccessor _view;
-    private readonly Ba2CompressionFormat _compression;
-    private readonly uint _version;
     private bool _disposed;
 
     /// <summary>Open an extractor for a BA2 archive file.</summary>
@@ -101,7 +101,7 @@ public sealed class Ba2Extractor : IDisposable
                   ?? throw new InvalidDataException($"DX10 entry '{file.FullPath}' has no texture metadata.");
 
         var header = Ba2DdsHeaderWriter.BuildHeader(tex, _version);
-        var surfaceBytes = tex.Chunks.Sum(c => (long)c.FullSize);
+        var surfaceBytes = tex.Chunks.Sum(c => c.FullSize);
 
         // Assemble straight into one pre-sized result buffer (header + decompressed mip chunks): the old
         // MemoryStream + ToArray() made a second full copy of the whole texture on every extract.

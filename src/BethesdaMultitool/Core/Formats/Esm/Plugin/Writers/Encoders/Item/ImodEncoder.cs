@@ -11,11 +11,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// </summary>
 public sealed class ImodEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<WeaponModRecord, object?>> DataExtractors = new(StringComparer.Ordinal)
-    {
-        ["Value"] = m => m.Value,
-        ["Weight"] = m => m.Weight,
-    };
+    private static readonly Dictionary<string, Func<WeaponModRecord, object?>> DataExtractors =
+        new(StringComparer.Ordinal)
+        {
+            ["Value"] = m => m.Value,
+            ["Weight"] = m => m.Weight
+        };
 
     public string RecordType => "IMOD";
     public Type ModelType => typeof(WeaponModRecord);

@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Script;
 
 /// <summary>
@@ -13,7 +15,7 @@ internal sealed class ScriptExpressionDecoder
     public ScriptExpressionDecoder(ScriptVariableReader varReader, ScriptFunctionSet? functions = null)
     {
         _varReader = varReader;
-        _functions = functions ?? ScriptFunctionTables.For(Games.BethesdaGame.FalloutNewVegas);
+        _functions = functions ?? ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas);
     }
 
     /// <summary>

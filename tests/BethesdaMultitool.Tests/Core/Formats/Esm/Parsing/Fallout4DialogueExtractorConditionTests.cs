@@ -62,18 +62,18 @@ public sealed class Fallout4DialogueExtractorConditionTests
     public void BuildInfo_PreservesRawRunOnReferenceStorageAndParameter3(BethesdaGame game)
     {
         var questAlias = BuildCtda(
-            type: 0x02,
-            functionIndex: 0x0A1,
-            param1: 0x00123456,
-            runOn: 5,
-            referenceStorage: 0xDEADBEEF,
-            parameter3: -17);
+            0x02,
+            0x0A1,
+            0x00123456,
+            5,
+            0xDEADBEEF,
+            -17);
         var explicitReference = BuildCtda(
-            type: 0,
-            functionIndex: 0x001,
-            param1: 0x00000007,
-            runOn: 2,
-            referenceStorage: 0x00ABCDEF);
+            0,
+            0x001,
+            0x00000007,
+            2,
+            0x00ABCDEF);
 
         var context = new RecordParserContext(
             new EsmRecordScanResult { Game = game });
@@ -105,18 +105,18 @@ public sealed class Fallout4DialogueExtractorConditionTests
     public void SkyrimBuildInfo_PreservesSemanticReferenceAndIgnoredStorage()
     {
         var explicitReference = BuildCtda(
-            type: 0,
-            functionIndex: 0x001,
-            param1: 0x00000007,
-            runOn: 2,
-            referenceStorage: 0x00ABCDEF);
+            0,
+            0x001,
+            0x00000007,
+            2,
+            0x00ABCDEF);
         var subjectStorage = BuildCtda(
-            type: 0,
-            functionIndex: 0x048,
-            param1: 0x00123456,
-            runOn: 0,
-            referenceStorage: 0xDEADBEEF,
-            parameter3: int.MinValue);
+            0,
+            0x048,
+            0x00123456,
+            0,
+            0xDEADBEEF,
+            int.MinValue);
 
         var context = new RecordParserContext(
             new EsmRecordScanResult { Game = BethesdaGame.Skyrim });

@@ -172,14 +172,22 @@ internal sealed class WeaponProfile : IRecordProfile
     }
 
     // A FormID that is dropped when zero (typed "set only when non-zero" fields: Projectile, mod variants).
-    private static uint? FormIdOf(DecodedNode? node) => node?.RawValue as uint? is { } v and not 0 ? v : null;
+    private static uint? FormIdOf(DecodedNode? node)
+    {
+        return node?.RawValue as uint? is { } v and not 0 ? v : null;
+    }
 
     // A FormID kept even when zero (typed fields assigned straight from ReadFormID: ammo, sounds, crit effect).
-    private static uint? KeepZero(DecodedNode? node) => node?.RawValue as uint?;
+    private static uint? KeepZero(DecodedNode? node)
+    {
+        return node?.RawValue as uint?;
+    }
 
     // A null-terminated string read from a top-level raw node (ICON/MICO are not modeled by the schema).
-    private static string? RawString(DecodedNode? node) =>
-        Bytes(node) is { Length: > 0 } b ? EsmStringUtils.ReadNullTermString(b) : null;
+    private static string? RawString(DecodedNode? node)
+    {
+        return Bytes(node) is { Length: > 0 } b ? EsmStringUtils.ReadNullTermString(b) : null;
+    }
 
     // Reproduce BuildModelVariants' presence rule + CombinationName join: a Base entry when WNAM > 0, then one
     // entry per mod combination that has a 1st-person object (WNM, non-zero) or a 3rd-person mesh (MWD).

@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Map;
 
@@ -46,23 +46,23 @@ internal static class MapMarkerArchiveAssetCatalog
         new Dictionary<BethesdaGame, MapMarkerArchiveAssetPlan>
         {
             [BethesdaGame.Fallout3] = new(
-                "Fallout - Textures.bsa", [FalloutIconPattern], HasDirectPerIconAssets: true),
+                "Fallout - Textures.bsa", [FalloutIconPattern], true),
             [BethesdaGame.FalloutNewVegas] = new(
-                "Fallout - Textures2.bsa", [FalloutIconPattern], HasDirectPerIconAssets: true),
+                "Fallout - Textures2.bsa", [FalloutIconPattern], true),
             [BethesdaGame.Oblivion] = new(
                 "Oblivion - Textures - Compressed.bsa",
                 [@"textures\menus\map\world\world_map_*.dds"],
-                HasDirectPerIconAssets: true),
+                true),
             [BethesdaGame.Skyrim] = new(
-                "Skyrim - Interface.bsa", [@"interface\map.swf"], HasDirectPerIconAssets: false),
+                "Skyrim - Interface.bsa", [@"interface\map.swf"], false),
             [BethesdaGame.Fallout4] = new(
                 "Fallout4 - Interface.ba2",
                 [@"Interface\MapMarkers.swf", @"Interface\Pipboy_MapPage.swf"],
-                HasDirectPerIconAssets: false),
+                false),
             [BethesdaGame.Fallout76] = new(
                 "SeventySix - Interface.ba2",
                 [@"interface\mapmarkerslibrary.swf"],
-                HasDirectPerIconAssets: false)
+                false)
         };
 
     private static readonly Dictionary<int, string> OblivionIconPaths =
@@ -82,18 +82,23 @@ internal static class MapMarkerArchiveAssetCatalog
             [11] = @"textures\menus\map\world\world_map_icon_daedric_shrine.dds"
         };
 
-    internal static MapMarkerArchiveAssetPlan? For(BethesdaGame game) =>
-        Plans.GetValueOrDefault(game);
+    internal static MapMarkerArchiveAssetPlan? For(BethesdaGame game)
+    {
+        return Plans.GetValueOrDefault(game);
+    }
 
     /// <summary>Returns a directly decodable DDS path for this catalog entry, or null for SWF-only art.</summary>
-    internal static string? DirectIconPath(BethesdaGame game, MapMarkerEntry entry) => game switch
+    internal static string? DirectIconPath(BethesdaGame game, MapMarkerEntry entry)
     {
-        BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
-            when entry.IconKey.StartsWith("icon_map_", StringComparison.OrdinalIgnoreCase) =>
-            $@"textures\interface\icons\world map\{entry.IconKey}.dds",
-        BethesdaGame.Oblivion when OblivionIconPaths.TryGetValue(entry.RawValue, out var path) => path,
-        _ => null
-    };
+        return game switch
+        {
+            BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
+                when entry.IconKey.StartsWith("icon_map_", StringComparison.OrdinalIgnoreCase) =>
+                $@"textures\interface\icons\world map\{entry.IconKey}.dds",
+            BethesdaGame.Oblivion when OblivionIconPaths.TryGetValue(entry.RawValue, out var path) => path,
+            _ => null
+        };
+    }
 
     /// <summary>
     ///     Builds one exact archive candidate beside each primary/load-order data file. No directory glob
@@ -160,12 +165,12 @@ internal static class MapMarkerArchiveAssetCatalog
 /// </summary>
 internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
 {
+    private readonly Dictionary<int, MapMarkerIconPayload?> _archiveCache = new();
+    private readonly ArchiveLease? _archiveLease;
+    private readonly Dictionary<int, MapMarkerIconPayload?> _embeddedCache = new();
     private readonly BethesdaGame _game;
     private readonly Func<string, byte[]?>? _readArchiveFile;
     private readonly Func<string, byte[]?> _readEmbeddedPng;
-    private readonly Dictionary<int, MapMarkerIconPayload?> _archiveCache = new();
-    private readonly Dictionary<int, MapMarkerIconPayload?> _embeddedCache = new();
-    private readonly Vfs.ArchiveLease? _archiveLease;
 
     internal ArchiveFirstMapMarkerIconProvider(
         BethesdaGame game,
@@ -183,7 +188,7 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
         {
             // Shared handle: icon sets rebuild repeatedly against the same Interface/Textures
             // archive, which the viewer often holds open too — the registry dedups the parse.
-            _archiveLease = Vfs.ArchiveHandleRegistry.Shared.Acquire(ArchivePath);
+            _archiveLease = ArchiveHandleRegistry.Shared.Acquire(ArchivePath);
             _readArchiveFile = _archiveLease.Reader.ReadFile;
         }
         catch
@@ -206,6 +211,13 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
 
     internal string? ArchivePath { get; }
 
+    public void Dispose()
+    {
+        _archiveLease?.Dispose();
+        _archiveCache.Clear();
+        _embeddedCache.Clear();
+    }
+
     /// <summary>
     ///     Materializes the archive candidate first. Returning null from <paramref name="materialize" />
     ///     (for example, an unsupported/corrupt DDS) activates the embedded PNG fallback.
@@ -227,13 +239,6 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
 
         var embedded = GetEmbeddedFallback(entry);
         return embedded is null ? null : materialize(embedded);
-    }
-
-    public void Dispose()
-    {
-        _archiveLease?.Dispose();
-        _archiveCache.Clear();
-        _embeddedCache.Clear();
     }
 
     private MapMarkerIconPayload? GetArchiveIcon(MapMarkerEntry entry)

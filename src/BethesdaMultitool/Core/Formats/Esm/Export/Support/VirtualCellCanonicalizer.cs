@@ -385,4 +385,3 @@ internal readonly record struct RealCellCandidate(
     string? EditorId,
     string? DisplayName,
     bool IsSyntheticVirtual);
-

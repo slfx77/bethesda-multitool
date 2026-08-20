@@ -1,6 +1,7 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Terrain;
@@ -85,7 +86,7 @@ internal static class TerrainCellCommand
         var winner = candidates[0];
         for (var i = 1; i < candidates.Count; i++)
         {
-            if (global::BethesdaMultitool.WorldSpatialIndex.PreferGridLookupCell(candidates[i], winner))
+            if (WorldSpatialIndex.PreferGridLookupCell(candidates[i], winner))
             {
                 winner = candidates[i];
             }
@@ -159,7 +160,7 @@ internal static class TerrainCellCommand
         var neighbor = neighborCandidates[0];
         for (var i = 1; i < neighborCandidates.Count; i++)
         {
-            if (global::BethesdaMultitool.WorldSpatialIndex.PreferGridLookupCell(neighborCandidates[i], neighbor))
+            if (WorldSpatialIndex.PreferGridLookupCell(neighborCandidates[i], neighbor))
             {
                 neighbor = neighborCandidates[i];
             }
@@ -187,7 +188,7 @@ internal static class TerrainCellCommand
                 "N" => (own[32, i], other[0, i]),
                 "S" => (own[0, i], other[32, i]),
                 "E" => (own[i, 32], other[i, 0]),
-                _ => (own[i, 0], other[i, 32]),
+                _ => (own[i, 0], other[i, 32])
             };
             var diff = Math.Abs(a - b);
             maxDiff = Math.Max(maxDiff, diff);

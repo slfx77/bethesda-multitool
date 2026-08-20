@@ -35,7 +35,7 @@ public sealed class ScriptReferenceWalker : IRecordReferenceWalker
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("SCRO", i),
-                FormId = formId,
+                FormId = formId
             };
         }
     }

@@ -14,13 +14,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 /// </summary>
 internal static class ScriptReferenceSafetyPlanner
 {
-    internal sealed record Result(
-        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
-        ImmutableDictionary<uint, uint> SourceToEmitted,
-        ImmutableHashSet<uint> EmittedFormIds,
-        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> References,
-        ImmutableArray<PlanDiagnostic> Diagnostics);
-
     public static Result Apply(
         IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> decisions,
         ImmutableDictionary<uint, uint> sourceToEmitted,
@@ -99,8 +92,8 @@ internal static class ScriptReferenceSafetyPlanner
                         : "ScriptReferenceSafetyPlanner.UnsafeReferenceTable",
                     Reason = isUnemittable
                         ? $"New SCPT cannot be serialized: {issueText}."
-                        : $"New SCPT reference table is not loadable: {issueText}.",
-                },
+                        : $"New SCPT reference table is not loadable: {issueText}."
+                }
             });
             diagnostics.Add(new PlanDiagnostic
             {
@@ -115,7 +108,7 @@ internal static class ScriptReferenceSafetyPlanner
                     ? $"Suppressed new SCPT {identity} before emission: {issueText}."
                     : $"Suppressed new SCPT {identity}: {issueText}.",
                 Metadata = ScriptSuppressionDiagnosticFormatter.Metadata(
-                    entry.Model as ScriptRecord, entry.DmpFormId, emitted, issues),
+                    entry.Model as ScriptRecord, entry.DmpFormId, emitted, issues)
             });
         }
 
@@ -152,7 +145,7 @@ internal static class ScriptReferenceSafetyPlanner
                                     || reference.FinalFormId is null or 0u))
             .Select(reference => new ScriptSuppressionDiagnosticFormatter.Issue(
                 $"{ScriptSuppressionDiagnosticFormatter.ReferenceIdentity(reference)} unresolved",
-                Reference: reference))
+                reference))
             .ToList();
         var variableIds = script.Variables.Select(variable => variable.Index).ToHashSet();
         for (var i = 0; i < script.ReferencedObjects.Count; i++)
@@ -176,4 +169,11 @@ internal static class ScriptReferenceSafetyPlanner
 
         return issues;
     }
+
+    internal sealed record Result(
+        IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> Decisions,
+        ImmutableDictionary<uint, uint> SourceToEmitted,
+        ImmutableHashSet<uint> EmittedFormIds,
+        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> References,
+        ImmutableArray<PlanDiagnostic> Diagnostics);
 }

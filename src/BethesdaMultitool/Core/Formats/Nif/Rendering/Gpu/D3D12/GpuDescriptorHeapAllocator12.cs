@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Diagnostics;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -26,31 +27,28 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         renderer's CBVs / SRVs land here and the bound table covers both regions.
 ///     </para>
 /// </summary>
-internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResource, IDisposable
+internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDisposable
 {
-    private readonly ID3D12DescriptorHeap _heap;
     private readonly uint _descriptorSize;
-    private Diagnostics.ResourceRegistration? _registration;
-    private readonly uint _persistentCapacity;
-    private readonly uint _perFrameRegionStart;
-    private readonly uint _perFrameCapacity;
     private readonly int _framesInFlight;
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+    private readonly uint _perFrameRegionStart;
+
     // Reclaimed persistent slots, available for reuse before the bump pointer advances. This is
     // what bounds the bindless texture heap: without it, every streamed texture consumed a slot
     // forever and the heap exhausted after sustained streaming (the ~5-minute walk-mode crash).
     private readonly Stack<uint> _persistentFreeList = new();
+
     // Diagnostic mirror of the free-list (same membership) so double-frees — which would put the
     // same slot into two owners' hands and let one owner's descriptor write clobber the other's —
     // are caught at the Free call instead of surfacing as timing-dependent wrong-texture sampling.
     private readonly HashSet<uint> _persistentFreeSet = new();
-    private uint _persistentBump;
-    private uint _persistentPeak;
     private uint _bumpOffset;
-    private uint _currentFrameStart;
-    private uint _currentFramePeak;
     private int _currentFrame;
-    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+    private uint _currentFrameStart;
     private bool _disposed;
+    private uint _persistentBump;
+    private ResourceRegistration? _registration;
 
     public GpuDescriptorHeapAllocator12(
         GpuDevice12 gpu,
@@ -66,6 +64,7 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
                 "Shader-visible heaps must be CBV/SRV/UAV or Sampler. RTV/DSV heaps stay in the swap-chain surface.",
                 nameof(type));
         }
+
         if (capacity == 0 || framesInFlight <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity),
                 "Heap capacity must be > 0 and framesInFlight must be > 0.");
@@ -78,69 +77,42 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
             throw new ArgumentException(
                 "(capacity - persistentCapacity) must be divisible by framesInFlight for clean per-frame partitioning.");
 
-        _heap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+        Heap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = type,
             DescriptorCount = capacity,
             Flags = DescriptorHeapFlags.ShaderVisible
         });
         _descriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(type);
-        _persistentCapacity = persistentCapacity;
+        PersistentCapacity = persistentCapacity;
         _perFrameRegionStart = persistentCapacity;
         _framesInFlight = framesInFlight;
-        _perFrameCapacity = remaining / (uint)framesInFlight;
+        PerFrameCapacity = remaining / (uint)framesInFlight;
         _persistentBump = 0;
-        _persistentPeak = 0;
+        PersistentPeak = 0;
         _bumpOffset = _perFrameRegionStart;
         _currentFrameStart = _perFrameRegionStart;
-        _currentFramePeak = 0;
+        CurrentFramePeak = 0;
         _currentFrame = 0;
     }
 
-    public string ResourceName => nameof(GpuDescriptorHeapAllocator12);
-
-    public Diagnostics.ResourceCategory Category => Diagnostics.ResourceCategory.GpuMeta;
-
-    /// <summary>
-    ///     Tracking-only conformance: live persistent (bindless) slot count — the
-    ///     heap-exhaustion early-warning signal. Slots are owned by live texture entries and never
-    ///     trimmed; reclamation flows through the texture cache's refcount eviction.
-    /// </summary>
-    public Diagnostics.ResourceStats GetStats() => new()
-    {
-        EntryCount = PersistentCount,
-        Processed = PersistentPeak,
-    };
-
-    /// <summary>
-    ///     Registers the allocator with <paramref name="registry" /> (unregistered again on
-    ///     <see cref="Dispose" />). Returns the allocator for fluent construction.
-    /// </summary>
-    public GpuDescriptorHeapAllocator12 RegisterWith(
-        Diagnostics.ResourceRegistry registry, string? instanceTag = null)
-    {
-        _registration?.Dispose();
-        _registration = registry.Register(this, instanceTag);
-        return this;
-    }
-
     /// <summary>The raw heap — pass to <c>ID3D12GraphicsCommandList.SetDescriptorHeaps</c>.</summary>
-    public ID3D12DescriptorHeap Heap => _heap;
+    public ID3D12DescriptorHeap Heap { get; }
 
-    public uint PerFrameCapacity => _perFrameCapacity;
+    public uint PerFrameCapacity { get; }
 
     public uint CurrentFrameUsed => _bumpOffset - _currentFrameStart;
 
-    public uint CurrentFramePeak => _currentFramePeak;
+    public uint CurrentFramePeak { get; private set; }
 
     /// <summary>Bindless: total persistent slots reserved at construction.</summary>
-    public uint PersistentCapacity => _persistentCapacity;
+    public uint PersistentCapacity { get; }
 
     /// <summary>Bindless: persistent slots currently live (bump pointer minus reclaimed free slots).</summary>
     public uint PersistentCount => _persistentBump - (uint)_persistentFreeList.Count;
 
     /// <summary>Bindless: high-water mark of the bump pointer (slots ever simultaneously reserved).</summary>
-    public uint PersistentPeak => _persistentPeak;
+    public uint PersistentPeak { get; private set; }
 
     /// <summary>
     ///     Bindless: GPU handle to slot 0 of the heap — the root descriptor table at
@@ -149,7 +121,46 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     ///     direct view of the heap.
     /// </summary>
     public GpuDescriptorHandle BindlessHeapStartGpu =>
-        new(_heap.GetGPUDescriptorHandleForHeapStart(), 0, _descriptorSize);
+        new(Heap.GetGPUDescriptorHandleForHeapStart(), 0, _descriptorSize);
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _registration?.Dispose();
+        _registration = null;
+        Heap.Dispose();
+    }
+
+    public string ResourceName => nameof(GpuDescriptorHeapAllocator12);
+
+    public ResourceCategory Category => ResourceCategory.GpuMeta;
+
+    /// <summary>
+    ///     Tracking-only conformance: live persistent (bindless) slot count — the
+    ///     heap-exhaustion early-warning signal. Slots are owned by live texture entries and never
+    ///     trimmed; reclamation flows through the texture cache's refcount eviction.
+    /// </summary>
+    public ResourceStats GetStats()
+    {
+        return new ResourceStats
+        {
+            EntryCount = PersistentCount,
+            Processed = PersistentPeak
+        };
+    }
+
+    /// <summary>
+    ///     Registers the allocator with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the allocator for fluent construction.
+    /// </summary>
+    public GpuDescriptorHeapAllocator12 RegisterWith(
+        ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
+    }
 
     /// <summary>
     ///     Allocates a single persistent slot at LoadData / texture-upload time. Returns
@@ -162,10 +173,11 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     {
         if (Environment.CurrentManagedThreadId != _ownerThreadId)
         {
-            Core.Diagnostics.Logger.Instance.Warn(
+            Logger.Instance.Warn(
                 "GpuDescriptorHeapAllocator12.AllocatePersistent from thread {0} (owner {1}):\n{2}",
                 Environment.CurrentManagedThreadId, _ownerThreadId, Environment.StackTrace);
         }
+
         uint index;
         if (_persistentFreeList.Count > 0)
         {
@@ -175,19 +187,19 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
         }
         else
         {
-            if (_persistentBump >= _persistentCapacity)
+            if (_persistentBump >= PersistentCapacity)
             {
                 throw new InvalidOperationException(
-                    $"GpuDescriptorHeapAllocator12 persistent region exhausted ({_persistentBump}/{_persistentCapacity}). " +
+                    $"GpuDescriptorHeapAllocator12 persistent region exhausted ({_persistentBump}/{PersistentCapacity}). " +
                     "Increase persistentCapacity at construction.");
             }
 
             index = _persistentBump;
             _persistentBump++;
-            _persistentPeak = Math.Max(_persistentPeak, _persistentBump);
+            PersistentPeak = Math.Max(PersistentPeak, _persistentBump);
         }
 
-        var cpu = new CpuDescriptorHandle(_heap.GetCPUDescriptorHandleForHeapStart(), (int)index, _descriptorSize);
+        var cpu = new CpuDescriptorHandle(Heap.GetCPUDescriptorHandleForHeapStart(), (int)index, _descriptorSize);
         return new PersistentAllocation(cpu, index);
     }
 
@@ -201,11 +213,12 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     {
         if (Environment.CurrentManagedThreadId != _ownerThreadId)
         {
-            Core.Diagnostics.Logger.Instance.Warn(
+            Logger.Instance.Warn(
                 "GpuDescriptorHeapAllocator12.FreePersistent({0}) from thread {1} (owner {2}):\n{3}",
                 index, Environment.CurrentManagedThreadId, _ownerThreadId, Environment.StackTrace);
         }
-        if (index >= _persistentCapacity)
+
+        if (index >= PersistentCapacity)
             throw new ArgumentOutOfRangeException(nameof(index), index, "Slot index is outside the persistent region.");
         if (!_persistentFreeSet.Add(index))
         {
@@ -214,6 +227,7 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
                 "same bindless slot to two owners; the second owner's descriptor write silently clobbers the " +
                 "first's and the shader samples the wrong resource (timing-dependent).");
         }
+
         _persistentFreeList.Push(index);
     }
 
@@ -223,7 +237,7 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     /// </summary>
     public DescriptorAllocation Allocate(uint count)
     {
-        var frameEnd = _perFrameRegionStart + (uint)(_currentFrame + 1) * _perFrameCapacity;
+        var frameEnd = _perFrameRegionStart + (uint)(_currentFrame + 1) * PerFrameCapacity;
         if (_bumpOffset + count > frameEnd)
         {
             throw new InvalidOperationException(
@@ -231,10 +245,10 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
                 $"slot ends at +{frameEnd}). Increase capacity at construction.");
         }
 
-        var cpu = new CpuDescriptorHandle(_heap.GetCPUDescriptorHandleForHeapStart(), (int)_bumpOffset, _descriptorSize);
-        var gpu = new GpuDescriptorHandle(_heap.GetGPUDescriptorHandleForHeapStart(), (int)_bumpOffset, _descriptorSize);
+        var cpu = new CpuDescriptorHandle(Heap.GetCPUDescriptorHandleForHeapStart(), (int)_bumpOffset, _descriptorSize);
+        var gpu = new GpuDescriptorHandle(Heap.GetGPUDescriptorHandleForHeapStart(), (int)_bumpOffset, _descriptorSize);
         _bumpOffset += count;
-        _currentFramePeak = Math.Max(_currentFramePeak, CurrentFrameUsed);
+        CurrentFramePeak = Math.Max(CurrentFramePeak, CurrentFrameUsed);
         return new DescriptorAllocation(cpu, gpu, _descriptorSize);
     }
 
@@ -249,24 +263,17 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
         if ((uint)frameIndex >= (uint)_framesInFlight)
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
         _currentFrame = frameIndex;
-        _currentFrameStart = _perFrameRegionStart + (uint)frameIndex * _perFrameCapacity;
+        _currentFrameStart = _perFrameRegionStart + (uint)frameIndex * PerFrameCapacity;
         _bumpOffset = _currentFrameStart;
-        _currentFramePeak = 0;
+        CurrentFramePeak = 0;
     }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        _heap.Dispose();
-    }
-
-    /// <summary>Result of a single <see cref="Allocate" /> call. CPU handle is for writes
-    /// (CreateShaderResourceView / CreateConstantBufferView); GPU handle is for binding
-    /// (SetGraphicsRootDescriptorTable). DescriptorSize lets the caller index into the
-    /// contiguous run.</summary>
+    /// <summary>
+    ///     Result of a single <see cref="Allocate" /> call. CPU handle is for writes
+    ///     (CreateShaderResourceView / CreateConstantBufferView); GPU handle is for binding
+    ///     (SetGraphicsRootDescriptorTable). DescriptorSize lets the caller index into the
+    ///     contiguous run.
+    /// </summary>
     public readonly record struct DescriptorAllocation(
         CpuDescriptorHandle Cpu,
         GpuDescriptorHandle Gpu,

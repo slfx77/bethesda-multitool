@@ -17,7 +17,7 @@ internal enum HourScheduleTargetKind
     ///     <c>RefVar.Enable</c> where <c>RefVar</c> was assigned from <c>GetLinkedRef</c> — the
     ///     XLKR linked reference of each placed instance of the scripted base.
     /// </summary>
-    LinkedReference,
+    LinkedReference
 }
 
 /// <summary>One Enable/Disable statement with its guard, as authored in a GameMode block.</summary>
@@ -36,23 +36,26 @@ internal readonly record struct HourScheduleAction(
 /// </summary>
 internal interface IHourGuardNode
 {
-    HourTruth Evaluate(float hour);
-
     bool ContainsHourComparison { get; }
+    HourTruth Evaluate(float hour);
 }
 
 internal enum HourTruth
 {
     False,
     Unknown,
-    True,
+    True
 }
 
 internal sealed record HourGuardUnknown : IHourGuardNode
 {
     internal static readonly HourGuardUnknown Instance = new();
 
-    public HourTruth Evaluate(float hour) => HourTruth.Unknown;
+    public HourTruth Evaluate(float hour)
+    {
+        return HourTruth.Unknown;
+    }
+
     public bool ContainsHourComparison => false;
 }
 
@@ -69,7 +72,7 @@ internal sealed record HourGuardComparison(string Operator, float Bound, bool Ho
             "<=" => left <= right,
             ">" => left > right,
             ">=" => left >= right,
-            _ => false,
+            _ => false
         };
         return result ? HourTruth.True : HourTruth.False;
     }
@@ -79,12 +82,15 @@ internal sealed record HourGuardComparison(string Operator, float Bound, bool Ho
 
 internal sealed record HourGuardNot(IHourGuardNode Inner) : IHourGuardNode
 {
-    public HourTruth Evaluate(float hour) => Inner.Evaluate(hour) switch
+    public HourTruth Evaluate(float hour)
     {
-        HourTruth.True => HourTruth.False,
-        HourTruth.False => HourTruth.True,
-        _ => HourTruth.Unknown,
-    };
+        return Inner.Evaluate(hour) switch
+        {
+            HourTruth.True => HourTruth.False,
+            HourTruth.False => HourTruth.True,
+            _ => HourTruth.Unknown
+        };
+    }
 
     public bool ContainsHourComparison => Inner.ContainsHourComparison;
 }
@@ -439,12 +445,12 @@ internal static class HourScheduleScriptParser
         var rightHour = IsHourOperand(rightTokens, hourAliases);
         if (leftHour && TryParseNumber(rightTokens, out var rightValue))
         {
-            return new HourGuardComparison(op, rightValue, HourOnLeft: true);
+            return new HourGuardComparison(op, rightValue, true);
         }
 
         if (rightHour && TryParseNumber(leftTokens, out var leftValue))
         {
-            return new HourGuardComparison(op, leftValue, HourOnLeft: false);
+            return new HourGuardComparison(op, leftValue, false);
         }
 
         return HourGuardUnknown.Instance;
@@ -484,11 +490,13 @@ internal static class HourScheduleScriptParser
         return operand;
     }
 
-    private static bool IsHourOperand(List<string> operand, HashSet<string> hourAliases) =>
-        operand.Count == 1 &&
-        (operand[0].Equals("GetCurrentTime", StringComparison.OrdinalIgnoreCase) ||
-         operand[0].Equals("GameHour", StringComparison.OrdinalIgnoreCase) ||
-         hourAliases.Contains(operand[0]));
+    private static bool IsHourOperand(List<string> operand, HashSet<string> hourAliases)
+    {
+        return operand.Count == 1 &&
+               (operand[0].Equals("GetCurrentTime", StringComparison.OrdinalIgnoreCase) ||
+                operand[0].Equals("GameHour", StringComparison.OrdinalIgnoreCase) ||
+                hourAliases.Contains(operand[0]));
+    }
 
     private static bool TryParseNumber(List<string> operand, out float value)
     {

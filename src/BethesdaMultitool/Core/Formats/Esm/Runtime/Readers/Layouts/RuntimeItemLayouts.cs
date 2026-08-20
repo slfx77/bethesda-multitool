@@ -12,17 +12,16 @@ internal sealed class RuntimeItemLayouts
     ///     Selected weapon sound layout variant.
     ///     V2 = FNV-era builds (14 sound fields). V1 = early FO3-derived builds (7 sound
     ///     fields, no Distant / AttackLoop / MeleeBlock / Idle / ModSilenced).
-    ///
     ///     <para>
-    ///     NOT migrated to <c>PdbStructView</c> (Phase 1B.24 decision). The MemDebug PDB
-    ///     describes only the V2 layout; V1 offsets aren't PDB-named, so view.FormIdPointer
-    ///     can't be used uniformly. Variant disambiguation has to stay in
-    ///     <see cref="RuntimeWeaponSoundProbe" /> regardless. The
-    ///     <c>IsV1 ? offsetA : offsetB</c> ternaries here are the right pattern.
-    ///     The empirical audit at
-    ///     <c>WEAP_sound_slot_pointer_shape</c> (RuntimeOffsetCrossReferenceTests.cs)
-    ///     proves all 7 shared sound-slot offsets are correct across the 5 sampled
-    ///     snippets (all V2 in the current corpus, 100% pointer-shape).
+    ///         NOT migrated to <c>PdbStructView</c> (Phase 1B.24 decision). The MemDebug PDB
+    ///         describes only the V2 layout; V1 offsets aren't PDB-named, so view.FormIdPointer
+    ///         can't be used uniformly. Variant disambiguation has to stay in
+    ///         <see cref="RuntimeWeaponSoundProbe" /> regardless. The
+    ///         <c>IsV1 ? offsetA : offsetB</c> ternaries here are the right pattern.
+    ///         The empirical audit at
+    ///         <c>WEAP_sound_slot_pointer_shape</c> (RuntimeOffsetCrossReferenceTests.cs)
+    ///         proves all 7 shared sound-slot offsets are correct across the 5 sampled
+    ///         snippets (all V2 in the current corpus, 100% pointer-shape).
     ///     </para>
     /// </summary>
     private readonly RuntimeWeaponSoundLayoutVariant _weapSoundVariant;
@@ -115,9 +114,9 @@ internal sealed class RuntimeItemLayouts
     // dump (32/32 sampled) reads 8 bytes earlier — the previous RuntimeWeaponCritProbe
     // always produced -8 with high confidence. That -8 is now baked into these constants
     // and the probe was deleted.
-    internal int WeapCritDamageOffset => 440 + _s;     // PDB 464 OBJ_WEAP_CRITICAL.sDamage      (-8 baked)
-    internal int WeapCritChanceOffset => 444 + _s;     // PDB 468 OBJ_WEAP_CRITICAL.fMultiplier  (-8 baked)
-    internal int WeapCritEffectPtrOffset => 452 + _s;  // PDB 476 OBJ_WEAP_CRITICAL.pEffect      (-8 baked)
+    internal int WeapCritDamageOffset => 440 + _s; // PDB 464 OBJ_WEAP_CRITICAL.sDamage      (-8 baked)
+    internal int WeapCritChanceOffset => 444 + _s; // PDB 468 OBJ_WEAP_CRITICAL.fMultiplier  (-8 baked)
+    internal int WeapCritEffectPtrOffset => 452 + _s; // PDB 476 OBJ_WEAP_CRITICAL.pEffect      (-8 baked)
 
     // Pickup/Putdown sounds — BGSPickupPutdownSounds, before the variable-size data block.
     // Stable across all observed builds.
@@ -217,7 +216,9 @@ internal sealed class RuntimeItemLayouts
     internal int AmmoInventoryIconPathOffset => 96 + _s; // TESTexture.TextureName (PDB 112), BSStringT
     internal int AmmoMessageIconPathOffset => 108 + _s; // BGSMessageIcon.Icon (PDB 124), TESIcon→BSStringT
     internal int AmmoValueOffset => 124 + _s;
+
     internal int AmmoClipRoundsOffset => 132 + _s; // TESAmmo.cClipRounds (uint8)
+
     // Fallback AMMO_DATA start (fSpeed) used only when RuntimeAmmoDataProbe finds no confident per-DMP
     // offset — the block drifts per build (172/184/188 observed), so the reader normally uses the probed
     // start and derives iFlags at +4 and pProjectile (AMMO_DATA_NV) at +8 from it.

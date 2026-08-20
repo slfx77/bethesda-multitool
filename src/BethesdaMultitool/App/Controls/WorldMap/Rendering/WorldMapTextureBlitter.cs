@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
@@ -15,9 +16,11 @@ internal static class WorldMapTextureBlitter
 {
     private const int HmGridSize = 33;
 
-    /// <summary>Darkest factor the hillshade may apply when MODULATING terrain textures. Lifts the
-    /// hillshade's 0.15-ambient floor so steep slopes ease the diffuse toward this instead of crushing it
-    /// to near-black (the standalone Slope layer keeps the full-contrast hillshade).</summary>
+    /// <summary>
+    ///     Darkest factor the hillshade may apply when MODULATING terrain textures. Lifts the
+    ///     hillshade's 0.15-ambient floor so steep slopes ease the diffuse toward this instead of crushing it
+    ///     to near-black (the standalone Slope layer keeps the full-contrast hillshade).
+    /// </summary>
     private const float HillshadeMultiplyFloor = 0.5f;
 
     /// <summary>
@@ -27,6 +30,48 @@ internal static class WorldMapTextureBlitter
     ///     jarring. With a normal install the engine-default sample is used instead.
     /// </summary>
     private const byte DefaultTerrainR = 145, DefaultTerrainG = 122, DefaultTerrainB = 90;
+
+    /// <summary>
+    ///     Per-worker scratch <see cref="CellLayerWeightTable" /> reused across the streaming
+    ///     parallel-foreach. Allocating a fresh 33×33 vertex grid per cell was the largest
+    ///     source of transient SOH pressure during a viewport rebuild (~15 MB for 290 cells);
+    ///     reusing one instance per worker thread brings that to zero. Follows the existing
+    ///     <c>t_xScratch</c> + <see cref="ThreadStaticAttribute" /> convention used by the
+    ///     other world-map renderers (see <c>WorldMapOverviewRenderer.t_refScratch</c>).
+    /// </summary>
+    [ThreadStatic] private static CellLayerWeightTable? t_weightTableScratch;
+
+    /// <summary>
+    ///     Synthetic "all four quadrants are engine-default" layer set, used to represent a
+    ///     neighbor cell that's part of the worldspace but has no LAND texture layers. The
+    ///     <see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" /> in each layer
+    ///     routes through the same engine-default sampling path as missing-BTXT quadrants in
+    ///     real cells, so the cross-cell blend treats "neighbor with no texture data" exactly
+    ///     the way the renderer paints that neighbor.
+    /// </summary>
+    private static readonly IReadOnlyList<LandTextureLayer> s_engineDefaultSyntheticLayers =
+    [
+        new LandTextureLayer
+        {
+            Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId,
+            Quadrant = 0
+        },
+        new LandTextureLayer
+        {
+            Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId,
+            Quadrant = 1
+        },
+        new LandTextureLayer
+        {
+            Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId,
+            Quadrant = 2
+        },
+        new LandTextureLayer
+        {
+            Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId,
+            Quadrant = 3
+        }
+    ];
 
     /// <summary>
     ///     Renders the terrain-textures layer for a single cell. Output is
@@ -69,7 +114,7 @@ internal static class WorldMapTextureBlitter
         // step from "neighbor's blended edge" to "this cell's solid default."
         var hasOwnLayers = layers is { Count: > 0 };
         var hasRealNeighbor = IsRealLayerList(eastN) || IsRealLayerList(westN)
-                           || IsRealLayerList(northN) || IsRealLayerList(southN);
+                                                     || IsRealLayerList(northN) || IsRealLayerList(southN);
 
         CellLayerWeightTable? table = null;
         // Morrowind (TES3) ground texturing is the flat 16×16 VTEX grid (resolved to LTEX FormIds),
@@ -108,7 +153,9 @@ internal static class WorldMapTextureBlitter
         {
             ApplyTerrainShading(rgba, pixelsPerCell, shading, cell, cache, cellByGrid);
         }
-        WorldMapWaterRenderer.ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, pixelsPerCell, cache, cellByGrid, waterPalette);
+
+        WorldMapWaterRenderer.ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, pixelsPerCell, cache,
+            cellByGrid, waterPalette);
         return rgba;
     }
 
@@ -125,13 +172,14 @@ internal static class WorldMapTextureBlitter
     {
         // Both modulations are independent and multiply together. VCLR absent → no tint; no terrain →
         // no hillshade. Either grid being null just drops that factor (raw diffuse if both null).
-        byte[]? vc = null;        // 33×33×3 VCLR (LAND vertex order, north-up flip applied on read)
+        byte[]? vc = null; // 33×33×3 VCLR (LAND vertex order, north-up flip applied on read)
         byte[]? shadeGray = null; // 33×33 hillshade gray (image order, row 0 = north)
         if (shading.VertexColors)
         {
             // Normalize handles Morrowind's native 65×65 VCLR by downsampling to 33×33.
             vc = WorldMapCellBlitter.NormalizeVertexColorsTo33(cell.LandVisualData?.VertexColors);
         }
+
         if (shading.HillShade)
         {
             var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
@@ -141,6 +189,7 @@ internal static class WorldMapTextureBlitter
                     cell, terrain, cellByGrid, cache, shading.LightDir, shading.ZScale);
             }
         }
+
         if (vc is null && shadeGray is null) return; // nothing to apply
 
         var pixelToVertex = (float)(HmGridSize - 1) / (pixelsPerCell - 1);
@@ -163,6 +212,7 @@ internal static class WorldMapTextureBlitter
                 {
                     (mr, mg, mb) = BilinearVc(vc, vx0, vy0, fx, fy);
                 }
+
                 if (shadeGray is not null)
                 {
                     // Soften the hillshade when it MODULATES textures: lift the darkest factor toward
@@ -183,8 +233,10 @@ internal static class WorldMapTextureBlitter
         }
     }
 
-    /// <summary>Bilinearly samples the VCLR grid at image-vertex (vx0+fx, vy0+fy), returning RGB in
-    /// 0..1. VCLR is stored in LAND vertex order, so the image row maps to source row 32 - vy.</summary>
+    /// <summary>
+    ///     Bilinearly samples the VCLR grid at image-vertex (vx0+fx, vy0+fy), returning RGB in
+    ///     0..1. VCLR is stored in LAND vertex order, so the image row maps to source row 32 - vy.
+    /// </summary>
     private static (float r, float g, float b) BilinearVc(byte[] vc, int vx0, int vy0, float fx, float fy)
     {
         var (r00, g00, b00) = VcAt(vc, vx0, vy0);
@@ -216,7 +268,7 @@ internal static class WorldMapTextureBlitter
         var g01 = gray[(vy0 + 1) * HmGridSize + vx0];
         var g11 = gray[(vy0 + 1) * HmGridSize + vx0 + 1];
         return (g00 * (1f - fx) * (1f - fy) + g10 * fx * (1f - fy)
-                + g01 * (1f - fx) * fy + g11 * fx * fy) / 255f;
+                                            + g01 * (1f - fx) * fy + g11 * fx * fy) / 255f;
     }
 
     private static IReadOnlyList<LandTextureLayer>? NeighborLayers(
@@ -235,33 +287,6 @@ internal static class WorldMapTextureBlitter
         if (layers is not { Count: > 0 }) return s_engineDefaultSyntheticLayers;
         return layers;
     }
-
-    /// <summary>
-    ///     Per-worker scratch <see cref="CellLayerWeightTable" /> reused across the streaming
-    ///     parallel-foreach. Allocating a fresh 33×33 vertex grid per cell was the largest
-    ///     source of transient SOH pressure during a viewport rebuild (~15 MB for 290 cells);
-    ///     reusing one instance per worker thread brings that to zero. Follows the existing
-    ///     <c>t_xScratch</c> + <see cref="ThreadStaticAttribute" /> convention used by the
-    ///     other world-map renderers (see <c>WorldMapOverviewRenderer.t_refScratch</c>).
-    /// </summary>
-    [ThreadStatic]
-    private static CellLayerWeightTable? t_weightTableScratch;
-
-    /// <summary>
-    ///     Synthetic "all four quadrants are engine-default" layer set, used to represent a
-    ///     neighbor cell that's part of the worldspace but has no LAND texture layers. The
-    ///     <see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" /> in each layer
-    ///     routes through the same engine-default sampling path as missing-BTXT quadrants in
-    ///     real cells, so the cross-cell blend treats "neighbor with no texture data" exactly
-    ///     the way the renderer paints that neighbor.
-    /// </summary>
-    private static readonly IReadOnlyList<LandTextureLayer> s_engineDefaultSyntheticLayers =
-    [
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 0 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 1 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 2 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 3 },
-    ];
 
     /// <summary>
     ///     "Real" = a neighbor that actually has authored LAND texture layers, NOT the
@@ -329,7 +354,7 @@ internal static class WorldMapTextureBlitter
 
         for (var py = 0; py < pixelsPerCell; py++)
         {
-            var vyFloat = py * pixelToVertex;  // 0..(HmGridSize-1)
+            var vyFloat = py * pixelToVertex; // 0..(HmGridSize-1)
             var vy0 = (int)vyFloat;
             if (vy0 > HmGridSize - 2) vy0 = HmGridSize - 2;
             var fy = vyFloat - vy0;
@@ -443,8 +468,9 @@ internal static class WorldMapTextureBlitter
         {
             return palette.SampleEngineDefault(tileFracX, tileFracY, mipLevel);
         }
+
         return palette.Sample(formId, tileFracX, tileFracY, mipLevel)
-            ?? palette.SampleEngineDefault(tileFracX, tileFracY, mipLevel);
+               ?? palette.SampleEngineDefault(tileFracX, tileFracY, mipLevel);
     }
 
     /// <summary>
@@ -485,6 +511,7 @@ internal static class WorldMapTextureBlitter
                 return;
             }
         }
+
         if (count < combined.Length)
         {
             combined[count++] = new LayerWeight(formId, weight);

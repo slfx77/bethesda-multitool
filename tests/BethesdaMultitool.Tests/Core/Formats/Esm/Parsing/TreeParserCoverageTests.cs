@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
@@ -26,7 +27,7 @@ public class TreeParserCoverageTests
             ("MODL", NullTermString(@"\WhiteOak01.spt")),
             ("ICON", NullTermString(@"Landscape\Trees\WhiteOakBillboard.dds")),
             ("SNAM", SeedBytes(false, 301409, 363767)),
-            ("CNAM", CnamBytes(false, shadowRadius: 512)),
+            ("CNAM", CnamBytes(false, 512)),
             ("BNAM", BnamBytes(false, 1521.7f, 821.3f)));
 
         var tree = ParseSingle(bytes, false);
@@ -49,7 +50,7 @@ public class TreeParserCoverageTests
         var bytes = BuildTree(true,
             ("EDID", NullTermString("OasisElm01")),
             ("SNAM", SeedBytes(true, 844198)),
-            ("CNAM", CnamBytes(true, shadowRadius: 128)),
+            ("CNAM", CnamBytes(true, 128)),
             ("BNAM", BnamBytes(true, 100f, 200f)));
 
         var tree = ParseSingle(bytes, true);
@@ -99,7 +100,7 @@ public class TreeParserCoverageTests
         Assert.Null(tree.Seeds);
     }
 
-    private static BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.TreeRecord ParseSingle(
+    private static TreeRecord ParseSingle(
         byte[] recordBytes, bool bigEndian)
     {
         var mainRecord = new DetectedMainRecord(
@@ -141,11 +142,11 @@ public class TreeParserCoverageTests
     private static byte[] CnamBytes(bool bigEndian, int shadowRadius)
     {
         var bytes = new byte[32];
-        WriteFloat(bytes, 0, 2.5f, bigEndian);   // LeafCurvature
-        WriteFloat(bytes, 4, 5.0f, bigEndian);   // MinLeafAngle
-        WriteFloat(bytes, 8, 85.0f, bigEndian);  // MaxLeafAngle
-        WriteFloat(bytes, 12, 0.2f, bigEndian);  // BranchDimmingValue
-        WriteFloat(bytes, 16, 0.2f, bigEndian);  // LeafDimmingValue
+        WriteFloat(bytes, 0, 2.5f, bigEndian); // LeafCurvature
+        WriteFloat(bytes, 4, 5.0f, bigEndian); // MinLeafAngle
+        WriteFloat(bytes, 8, 85.0f, bigEndian); // MaxLeafAngle
+        WriteFloat(bytes, 12, 0.2f, bigEndian); // BranchDimmingValue
+        WriteFloat(bytes, 16, 0.2f, bigEndian); // LeafDimmingValue
         if (bigEndian)
         {
             BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(20, 4), shadowRadius);
@@ -155,8 +156,8 @@ public class TreeParserCoverageTests
             BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(20, 4), shadowRadius);
         }
 
-        WriteFloat(bytes, 24, 1.0f, bigEndian);  // RockSpeed
-        WriteFloat(bytes, 28, 1.0f, bigEndian);  // RustleSpeed
+        WriteFloat(bytes, 24, 1.0f, bigEndian); // RockSpeed
+        WriteFloat(bytes, 28, 1.0f, bigEndian); // RustleSpeed
         return bytes;
     }
 

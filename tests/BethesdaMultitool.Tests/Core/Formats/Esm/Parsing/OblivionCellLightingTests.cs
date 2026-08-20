@@ -28,18 +28,18 @@ public sealed class OblivionCellLightingTests
     {
         var bytes = new byte[withFogPow ? Fallout3PlusLength : Tes4Length];
         var s = bytes.AsSpan();
-        BinaryPrimitives.WriteUInt32LittleEndian(s[0..], 0x00201510u);   // AmbientColor
-        BinaryPrimitives.WriteUInt32LittleEndian(s[4..], 0x00403020u);   // DirectionalColor
-        BinaryPrimitives.WriteUInt32LittleEndian(s[8..], 0x00605040u);   // FogColor
-        BinaryPrimitives.WriteSingleLittleEndian(s[12..], 100f);         // FogNear
-        BinaryPrimitives.WriteSingleLittleEndian(s[16..], 4000f);        // FogFar
-        BinaryPrimitives.WriteInt32LittleEndian(s[20..], 30);            // DirectionalRotationXY
-        BinaryPrimitives.WriteInt32LittleEndian(s[24..], 60);            // DirectionalRotationZ
-        BinaryPrimitives.WriteSingleLittleEndian(s[28..], 0.5f);         // DirectionalFade
-        BinaryPrimitives.WriteSingleLittleEndian(s[32..], 12000f);       // FogClipDistance
+        BinaryPrimitives.WriteUInt32LittleEndian(s[..], 0x00201510u); // AmbientColor
+        BinaryPrimitives.WriteUInt32LittleEndian(s[4..], 0x00403020u); // DirectionalColor
+        BinaryPrimitives.WriteUInt32LittleEndian(s[8..], 0x00605040u); // FogColor
+        BinaryPrimitives.WriteSingleLittleEndian(s[12..], 100f); // FogNear
+        BinaryPrimitives.WriteSingleLittleEndian(s[16..], 4000f); // FogFar
+        BinaryPrimitives.WriteInt32LittleEndian(s[20..], 30); // DirectionalRotationXY
+        BinaryPrimitives.WriteInt32LittleEndian(s[24..], 60); // DirectionalRotationZ
+        BinaryPrimitives.WriteSingleLittleEndian(s[28..], 0.5f); // DirectionalFade
+        BinaryPrimitives.WriteSingleLittleEndian(s[32..], 12000f); // FogClipDistance
         if (withFogPow)
         {
-            BinaryPrimitives.WriteSingleLittleEndian(s[36..], 1.5f);     // FogPow (FO3/FNV only)
+            BinaryPrimitives.WriteSingleLittleEndian(s[36..], 1.5f); // FogPow (FO3/FNV only)
         }
 
         return bytes;
@@ -51,7 +51,7 @@ public sealed class OblivionCellLightingTests
         var schema = SubrecordSchemaRegistry.GetSchema("XCLL", "CELL", Tes4Length);
         Assert.NotNull(schema);
 
-        var view = SubrecordSchemaView.TryRead("XCLL", "CELL", BuildXcll(withFogPow: false), false);
+        var view = SubrecordSchemaView.TryRead("XCLL", "CELL", BuildXcll(false), false);
         Assert.NotNull(view);
         var raw = view!.Raw;
         // The nine TES4 fields must all decode…
@@ -69,7 +69,7 @@ public sealed class OblivionCellLightingTests
     {
         // The 40-byte path must stay byte-identical — this fix widens Oblivion in, it does not
         // change FO3/FNV.
-        var view = SubrecordSchemaView.TryRead("XCLL", "CELL", BuildXcll(withFogPow: true), false);
+        var view = SubrecordSchemaView.TryRead("XCLL", "CELL", BuildXcll(true), false);
         Assert.NotNull(view);
         Assert.Equal(1.5f, Assert.IsType<float>(view!.Raw["FogPow"]));
         Assert.Equal(12000f, Assert.IsType<float>(view.Raw["FogClipDistance"]));
@@ -96,7 +96,7 @@ public sealed class OblivionCellLightingTests
     public void Tes4Xcll_HandlerToEncoder_PreservesExactThirtySixBytePayload()
     {
         const uint cellFormId = 0x01001000;
-        var originalXcll = BuildXcll(withFogPow: false);
+        var originalXcll = BuildXcll(false);
         var recordBytes = BuildRecordBytes(
             cellFormId,
             "CELL",

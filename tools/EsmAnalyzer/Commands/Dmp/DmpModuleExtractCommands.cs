@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Spectre.Console;
 using BethesdaMultitool.Core.Minidump;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.Dmp;
 
@@ -89,7 +89,7 @@ public static class DmpModuleExtractCommands
         using (var inputStream = File.OpenRead(dmpPath))
         using (var outputStream = File.Create(outputPath))
         {
-            long currentVa = baseAddress;
+            var currentVa = baseAddress;
 
             foreach (var region in regions.OrderBy(r => r.VirtualAddress))
             {
@@ -134,7 +134,8 @@ public static class DmpModuleExtractCommands
         var coverage = (double)capturedBytes / moduleSize * 100;
 
         AnsiConsole.MarkupLine($"\nExtracted: [green]{outputPath}[/]");
-        AnsiConsole.MarkupLine($"Coverage:  [yellow]{coverage:F1}%[/] ({capturedBytes:N0} / {moduleSize:N0} bytes captured)");
+        AnsiConsole.MarkupLine(
+            $"Coverage:  [yellow]{coverage:F1}%[/] ({capturedBytes:N0} / {moduleSize:N0} bytes captured)");
 
         if (gapCount > 0)
         {
@@ -168,8 +169,8 @@ public static class DmpModuleExtractCommands
         AnsiConsole.MarkupLine($"Info:      [green]{infoPath}[/]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[grey]Ghidra import:[/]");
-        AnsiConsole.MarkupLine($"  Format:   Raw Binary");
-        AnsiConsole.MarkupLine($"  Language: PowerPC:BE:64:Xenon");
+        AnsiConsole.MarkupLine("  Format:   Raw Binary");
+        AnsiConsole.MarkupLine("  Language: PowerPC:BE:64:Xenon");
         AnsiConsole.MarkupLine($"  Base:     0x{baseAddress32:X8}");
     }
 

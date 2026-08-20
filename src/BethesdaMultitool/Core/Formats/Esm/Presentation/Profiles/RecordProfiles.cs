@@ -19,9 +19,14 @@ internal static class RecordProfiles
             .ToDictionary(p => p.RecordType, p => p, StringComparer.Ordinal);
 
     /// <summary>The profile for <paramref name="recordType" />, or null when none is registered.</summary>
-    public static IRecordProfile? Get(string recordType) =>
-        ByType.GetValueOrDefault(recordType);
+    public static IRecordProfile? Get(string recordType)
+    {
+        return ByType.GetValueOrDefault(recordType);
+    }
 
     /// <summary>Whether a profile exists for the record type.</summary>
-    public static bool Has(string recordType) => ByType.ContainsKey(recordType);
+    public static bool Has(string recordType)
+    {
+        return ByType.ContainsKey(recordType);
+    }
 }

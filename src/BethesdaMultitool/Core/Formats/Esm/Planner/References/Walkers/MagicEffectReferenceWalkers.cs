@@ -15,10 +15,15 @@ internal static class MagicEffectReferencePath
     internal const string Parameter1 = "Parameter1";
     internal const string Parameter2 = "Parameter2";
 
-    internal static string EffectFormId(int effectIndex) => FieldPath.Indexed("EFID", effectIndex);
+    internal static string EffectFormId(int effectIndex)
+    {
+        return FieldPath.Indexed("EFID", effectIndex);
+    }
 
-    internal static string ConditionMember(int effectIndex, int conditionIndex, string memberName) =>
-        $"{EffectFormId(effectIndex)}.{FieldPath.IndexedMember("CTDA", conditionIndex, memberName)}";
+    internal static string ConditionMember(int effectIndex, int conditionIndex, string memberName)
+    {
+        return $"{EffectFormId(effectIndex)}.{FieldPath.IndexedMember("CTDA", conditionIndex, memberName)}";
+    }
 }
 
 internal enum MagicEffectReferenceMember
@@ -27,7 +32,7 @@ internal enum MagicEffectReferenceMember
     ComparisonGlobal,
     Reference,
     Parameter1,
-    Parameter2,
+    Parameter2
 }
 
 internal readonly record struct MagicEffectReferenceSlot(
@@ -96,7 +101,7 @@ internal static class MagicEffectReferencePolicy
 
         if (condition.Parameter1String is null
             && condition.Parameter1 != 0
-            && PerkConditionParameterResolver.IsFormParameter(condition.FunctionIndex, parameterIndex: 0))
+            && PerkConditionParameterResolver.IsFormParameter(condition.FunctionIndex, 0))
         {
             yield return ConditionSlot(
                 effectIndex,
@@ -108,7 +113,7 @@ internal static class MagicEffectReferencePolicy
 
         if (condition.Parameter2String is null
             && condition.Parameter2 != 0
-            && PerkConditionParameterResolver.IsFormParameter(condition.FunctionIndex, parameterIndex: 1))
+            && PerkConditionParameterResolver.IsFormParameter(condition.FunctionIndex, 1))
         {
             yield return ConditionSlot(
                 effectIndex,
@@ -124,13 +129,15 @@ internal static class MagicEffectReferencePolicy
         int conditionIndex,
         MagicEffectReferenceMember member,
         string memberName,
-        uint formId) =>
-        new(
+        uint formId)
+    {
+        return new MagicEffectReferenceSlot(
             MagicEffectReferencePath.ConditionMember(effectIndex, conditionIndex, memberName),
             effectIndex,
             conditionIndex,
             member,
             formId);
+    }
 }
 
 /// <summary>Walks every emitted FormID on an FNV ALCH, including repeated effect conditions.</summary>
@@ -204,10 +211,12 @@ public sealed class EnchantmentReferenceWalker : IRecordReferenceWalker
     public string RecordType => "ENCH";
     public Type ModelType => typeof(EnchantmentRecord);
 
-    public IEnumerable<RawReference> Walk(object model) =>
-        model is EnchantmentRecord enchantment
+    public IEnumerable<RawReference> Walk(object model)
+    {
+        return model is EnchantmentRecord enchantment
             ? ConsumableReferenceWalker.MagicEffects(enchantment.Effects)
             : [];
+    }
 }
 
 /// <summary>Walks EFID and condition FormIDs on an FNV SPEL.</summary>
@@ -216,8 +225,10 @@ public sealed class SpellReferenceWalker : IRecordReferenceWalker
     public string RecordType => "SPEL";
     public Type ModelType => typeof(SpellRecord);
 
-    public IEnumerable<RawReference> Walk(object model) =>
-        model is SpellRecord spell
+    public IEnumerable<RawReference> Walk(object model)
+    {
+        return model is SpellRecord spell
             ? ConsumableReferenceWalker.MagicEffects(spell.Effects)
             : [];
+    }
 }

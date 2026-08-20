@@ -365,4 +365,3 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 }
-

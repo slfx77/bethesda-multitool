@@ -124,8 +124,10 @@ internal static class NifAnimationRigBuilder
         return depth;
     }
 
-    /// <summary>Decomposes a row-vector local transform into translation + rotation + uniform scale
-    /// (NIF node transforms are rotation×scale + translation; scale is uniform by format).</summary>
+    /// <summary>
+    ///     Decomposes a row-vector local transform into translation + rotation + uniform scale
+    ///     (NIF node transforms are rotation×scale + translation; scale is uniform by format).
+    /// </summary>
     private static (Vector3 Translation, Quaternion Rotation, float Scale) Decompose(Matrix4x4 local)
     {
         var translation = local.Translation;

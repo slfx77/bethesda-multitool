@@ -5,36 +5,35 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 /// <summary>
 ///     Rebuilds the per-triangle neighbor (edge) links of an NVTR array from the triangle
 ///     geometry itself, replacing whatever adjacency the runtime capture serialized.
-///
 ///     <para>
-///     Why: a runtime-captured navmesh records the engine's live neighbor indices, which are
-///     mutated mid-flight (<c>NavMesh::FlipTriangle</c>, obstacle insert/remove splitting and
-///     re-linking triangles, door-portal disabling). The serialized indices end up inconsistent
-///     with the actual triangle mesh — links to triangles that no longer share an edge, and
-///     missing links between triangles that do. FNV's load-time validator logs
-///     <c>PATHFINDING: … Triangle X and Y have opposite normals but are linked</c>,
-///     <c>… should have a link to Triangle Z, but doesn't</c>, and
-///     <c>… Triangles X and Y are linked, but their vertices do not match</c>, then dereferences
-///     a bad neighbor inside <c>NavMeshSearchClosePoint</c> when an NPC paths across the seam
-///     (the Gomorrah01 entry crash).
+///         Why: a runtime-captured navmesh records the engine's live neighbor indices, which are
+///         mutated mid-flight (<c>NavMesh::FlipTriangle</c>, obstacle insert/remove splitting and
+///         re-linking triangles, door-portal disabling). The serialized indices end up inconsistent
+///         with the actual triangle mesh — links to triangles that no longer share an edge, and
+///         missing links between triangles that do. FNV's load-time validator logs
+///         <c>PATHFINDING: … Triangle X and Y have opposite normals but are linked</c>,
+///         <c>… should have a link to Triangle Z, but doesn't</c>, and
+///         <c>… Triangles X and Y are linked, but their vertices do not match</c>, then dereferences
+///         a bad neighbor inside <c>NavMeshSearchClosePoint</c> when an NPC paths across the seam
+///         (the Gomorrah01 entry crash).
 ///     </para>
-///
 ///     <para>
-///     Adjacency is matched by vertex <b>position</b>, not by raw vertex index: runtime
-///     obstacle-splitting appends duplicate vertices (the same point under a new index), so two
-///     triangles can share a physical edge while using different indices for its endpoints. The
-///     engine matches by position (hence "their vertices do not match"), so we weld vertices at
-///     the same position to a canonical id first, then match edges on canonical ids. Two
-///     triangles are neighbors across an edge iff they share that edge's two canonical vertices;
-///     manifold edge (exactly two owners) → reciprocal link, everything else (boundary edges,
-///     non-manifold edges shared by 3+) → "no neighbor" (-1). Output is always reciprocal and
-///     matches the geometry, so the engine's validator finds nothing to complain about.
+///         Adjacency is matched by vertex <b>position</b>, not by raw vertex index: runtime
+///         obstacle-splitting appends duplicate vertices (the same point under a new index), so two
+///         triangles can share a physical edge while using different indices for its endpoints. The
+///         engine matches by position (hence "their vertices do not match"), so we weld vertices at
+///         the same position to a canonical id first, then match edges on canonical ids. Two
+///         triangles are neighbors across an edge iff they share that edge's two canonical vertices;
+///         manifold edge (exactly two owners) → reciprocal link, everything else (boundary edges,
+///         non-manifold edges shared by 3+) → "no neighbor" (-1). Output is always reciprocal and
+///         matches the geometry, so the engine's validator finds nothing to complain about.
 ///     </para>
-///
-///     <para>NVTR entry (16 bytes): Vertex0/1/2 (uint16, +0/+2/+4), Edge01/12/20 (int16,
-///     +6/+8/+10), Flags (uint32, +12). NVVX vertex = NiPoint3 = 3 little-endian floats (12
-///     bytes). Edge01 is the neighbor across edge V0-V1, Edge12 across V1-V2, Edge20 across
-///     V2-V0.</para>
+///     <para>
+///         NVTR entry (16 bytes): Vertex0/1/2 (uint16, +0/+2/+4), Edge01/12/20 (int16,
+///         +6/+8/+10), Flags (uint32, +12). NVVX vertex = NiPoint3 = 3 little-endian floats (12
+///         bytes). Edge01 is the neighbor across edge V0-V1, Edge12 across V1-V2, Edge20 across
+///         V2-V0.
+///     </para>
 /// </summary>
 internal static class NavMeshAdjacencyRebuild
 {
@@ -185,7 +184,9 @@ internal static class NavMeshAdjacencyRebuild
     }
 
     private static int Canon(int[]? canonical, int rawIndex)
-        => canonical is not null && rawIndex < canonical.Length ? canonical[rawIndex] : rawIndex;
+    {
+        return canonical is not null && rawIndex < canonical.Length ? canonical[rawIndex] : rawIndex;
+    }
 
     private static void AddEdge(
         Dictionary<long, List<(int, int)>> edgeOwners,

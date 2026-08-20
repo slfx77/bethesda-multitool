@@ -61,7 +61,10 @@ internal sealed class NpcAppearanceResolver
         return results;
     }
 
-    /// <summary>Builds an appearance from a runtime NPC record captured in a DMP, layering in any live weapon/equipment selection.</summary>
+    /// <summary>
+    ///     Builds an appearance from a runtime NPC record captured in a DMP, layering in any live weapon/equipment
+    ///     selection.
+    /// </summary>
     public NpcAppearance ResolveFromDmpRecord(
         NpcRecord npcRecord,
         string pluginName,

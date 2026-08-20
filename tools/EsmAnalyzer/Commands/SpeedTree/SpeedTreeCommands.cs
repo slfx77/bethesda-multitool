@@ -24,15 +24,17 @@ public static class SpeedTreeCommands
 
     private static Command CreateDumpCommand()
     {
-        var command = new Command("dump", "Parse a .spt file and dump its general params, branch splines, and leaf cards");
-        var fileArg = new Argument<string>("file") { Description = "Path to the .spt file (or BSA-internal path with --bsa)" };
+        var command = new Command("dump",
+            "Parse a .spt file and dump its general params, branch splines, and leaf cards");
+        var fileArg = new Argument<string>("file")
+            { Description = "Path to the .spt file (or BSA-internal path with --bsa)" };
         var splinesOption = new Option<bool>("--splines")
         {
-            Description = "Print every branch spline's control points (verbose)",
+            Description = "Print every branch spline's control points (verbose)"
         };
         var bsaOption = new Option<string?>("--bsa")
         {
-            Description = "Read <file> from this BSA archive instead of disk (e.g. an Oblivion Meshes BSA)",
+            Description = "Read <file> from this BSA archive instead of disk (e.g. an Oblivion Meshes BSA)"
         };
         command.Arguments.Add(fileArg);
         command.Options.Add(splinesOption);
@@ -70,7 +72,8 @@ public static class SpeedTreeCommands
         Console.WriteLine($"  BarkTexture : {model.General.BarkTexturePath ?? "(none)"}");
         Console.WriteLine(string.Create(ci,
             $"  Floats      : 2001={model.General.Float2001} 2003={model.General.Float2003} 2006={model.General.Float2006} 2007={model.General.Float2007}"));
-        Console.WriteLine(string.Create(ci, $"  Byte2002    : {model.General.Byte2002}   Token2005: {model.General.Token2005}"));
+        Console.WriteLine(string.Create(ci,
+            $"  Byte2002    : {model.General.Byte2002}   Token2005: {model.General.Token2005}"));
         Console.WriteLine(string.Create(ci, $"  LeafSize    : {model.LeafSize}"));
         if (model.LeafTable is { } lt)
         {
@@ -106,7 +109,8 @@ public static class SpeedTreeCommands
             }
         }
 
-        Console.WriteLine($"[Leaves] count={model.Leaves.Count}  LeafTextureCoords(10002)={model.LeafTextureCoords.Count}");
+        Console.WriteLine(
+            $"[Leaves] count={model.Leaves.Count}  LeafTextureCoords(10002)={model.LeafTextureCoords.Count}");
         for (var i = 0; i < model.Leaves.Count; i++)
         {
             var l = model.Leaves[i];

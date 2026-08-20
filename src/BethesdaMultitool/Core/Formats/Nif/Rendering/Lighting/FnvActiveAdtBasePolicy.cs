@@ -7,7 +7,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 /// <summary>
 ///     Bounded CPU policy for FNV's active retail pass 193 (<c>BSSM_ADT</c>) base route: one
 ///     directional light, no placed lights, projected sun shadow, or fog, and an ordinary opaque
-///     standard/type-1 static material. <see cref="FnvClassicBasicShaderMode" /> is reused only as the strict decoded-material
+///     standard/type-1 static material. <see cref="FnvClassicBasicShaderMode" /> is reused only as the strict
+///     decoded-material
 ///     classifier and vertex-color discriminator; this policy does not activate or count the dormant
 ///     SLS1009/SLS1013 pass family.
 /// </summary>
@@ -152,8 +153,10 @@ internal static class FnvActiveAdtBasePolicy
             rgb);
     }
 
-    private static bool IsClassifiedOrdinaryMaterial(FnvClassicBasicShaderMode mode) =>
-        mode is FnvClassicBasicShaderMode.Sls1009 or FnvClassicBasicShaderMode.Sls1013VertexColor;
+    private static bool IsClassifiedOrdinaryMaterial(FnvClassicBasicShaderMode mode)
+    {
+        return mode is FnvClassicBasicShaderMode.Sls1009 or FnvClassicBasicShaderMode.Sls1013VertexColor;
+    }
 }
 
 internal readonly record struct FnvActiveAdtBaseEligibility(

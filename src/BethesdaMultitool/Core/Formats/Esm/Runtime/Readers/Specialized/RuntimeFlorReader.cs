@@ -1,13 +1,11 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
 /// <summary>
 ///     Typed runtime reader for TESFlora (FLOR, FormType 0x26). Harvestable plants:
 ///     xander roots, broc flowers, mutfruit, etc.
-///
 ///     FLOR is a multiple-inheritance class whose TESForm subobject begins at +12 in
 ///     the complete object. Its identity therefore sits at complete-object offsets
 ///     +16/+24, while the TESForm pointer stored in runtime maps reads the same fields at

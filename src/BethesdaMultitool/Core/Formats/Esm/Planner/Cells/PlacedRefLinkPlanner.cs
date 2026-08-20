@@ -16,8 +16,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     obeys it — it no longer validates FormIDs, consults remap tables, or re-derives door
 ///     validity while serializing.
 ///     <para>
-///     The two emission paths carry deliberately different resolution policies and this
-///     planner reproduces both exactly rather than unifying them:
+///         The two emission paths carry deliberately different resolution policies and this
+///         planner reproduces both exactly rather than unifying them:
 ///     </para>
 ///     <list type="bullet">
 ///         <item>
@@ -33,17 +33,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///         </item>
 ///     </list>
 ///     <para>
-///     Runs after <see cref="CellChildVerdictPlanner" /> (a link may point at a ref whose
-///     emit verdict decides its liveness) and after <see cref="NavmDoorLinkPlanner" /> (XTEL
-///     validity is a door-set membership test).
+///         Runs after <see cref="CellChildVerdictPlanner" /> (a link may point at a ref whose
+///         emit verdict decides its liveness) and after <see cref="NavmDoorLinkPlanner" /> (XTEL
+///         validity is a door-set membership test).
 ///     </para>
 /// </summary>
 internal static class PlacedRefLinkPlanner
 {
-    /// <summary>Signatures the override sanitation walk resolves; others pass through.</summary>
-    private static readonly HashSet<string> OverrideLinkSignatures =
-        new(StringComparer.Ordinal) { "NAME", "XTEL", "XESP", "XLKR", "XOWN", "XEZN", "XNDP" };
-
     private const string DanglingReason = "refr.override-subrecord-dangling";
     private const string NamePreservedReason = "refr.override-name-preserved-master";
     private const string XtelNotDoorReason = "refr.xtel-target-not-door";
@@ -54,6 +50,10 @@ internal static class PlacedRefLinkPlanner
     ///     unrelated population jump; this keeps the two paths separately countable.
     /// </summary>
     private const string NewDanglingReason = "refr.new-link-dangling";
+
+    /// <summary>Signatures the override sanitation walk resolves; others pass through.</summary>
+    private static readonly HashSet<string> OverrideLinkSignatures =
+        new(StringComparer.Ordinal) { "NAME", "XTEL", "XESP", "XLKR", "XOWN", "XEZN", "XNDP" };
 
     public static ImmutableDictionary<uint, CellPlan> Apply(
         ImmutableDictionary<uint, CellPlan> cells,
@@ -85,7 +85,7 @@ internal static class PlacedRefLinkPlanner
             {
                 PersistentChildren = persistent ?? cell.PersistentChildren,
                 VwdChildren = vwd ?? cell.VwdChildren,
-                TemporaryChildren = temporary ?? cell.TemporaryChildren,
+                TemporaryChildren = temporary ?? cell.TemporaryChildren
             };
         }
 
@@ -231,7 +231,7 @@ internal static class PlacedRefLinkPlanner
                     FieldPath = path,
                     OriginalFormId = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(slot * 4, 4)),
                     Action = ResolvedRefAction.DropSubrecord,
-                    Reason = dropReason,
+                    Reason = dropReason
                 });
                 continue;
             }
@@ -241,7 +241,7 @@ internal static class PlacedRefLinkPlanner
                 FieldPath = path,
                 OriginalFormId = slots[slot].Original,
                 Action = ResolvedRefAction.Resolved,
-                FinalFormId = slots[slot].Final,
+                FinalFormId = slots[slot].Final
             });
         }
     }
@@ -290,7 +290,7 @@ internal static class PlacedRefLinkPlanner
                 OriginalFormId = door,
                 Action = isDoor ? ResolvedRefAction.Resolved : ResolvedRefAction.DropSubrecord,
                 FinalFormId = isDoor ? resolved : null,
-                Reason = reason,
+                Reason = reason
             });
         }
 
@@ -305,7 +305,7 @@ internal static class PlacedRefLinkPlanner
                 OriginalFormId = anchor,
                 Action = resolved is null ? ResolvedRefAction.NullRef : ResolvedRefAction.Resolved,
                 FinalFormId = resolved,
-                Reason = resolved is null ? "refr.xrdo-anchor-dangling" : null,
+                Reason = resolved is null ? "refr.xrdo-anchor-dangling" : null
             });
         }
 
@@ -330,11 +330,14 @@ internal static class PlacedRefLinkPlanner
             OriginalFormId = formId,
             Action = resolved is null ? ResolvedRefAction.DropSubrecord : ResolvedRefAction.Resolved,
             FinalFormId = resolved,
-            Reason = resolved is null ? NewDanglingReason : null,
+            Reason = resolved is null ? NewDanglingReason : null
         });
     }
 
-    private static string SlotName(int slot) => slot == 0 ? "Slot0" : "Slot1";
+    private static string SlotName(int slot)
+    {
+        return slot == 0 ? "Slot0" : "Slot1";
+    }
 
     private sealed class LinkContext(
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
@@ -347,11 +350,13 @@ internal static class PlacedRefLinkPlanner
         public IReadOnlySet<uint> ValidDoorRefFormIds { get; } = validDoorRefFormIds;
 
         /// <summary>Override-path resolvability, including the engine/low-FormID escapes.</summary>
-        public bool IsResolvable(uint formId) =>
-            formId == 0
-            || valid.Contains(formId)
-            || formId < 0x800u
-            || RuntimeStateRecordPolicy.EngineFormIds.Contains(formId);
+        public bool IsResolvable(uint formId)
+        {
+            return formId == 0
+                   || valid.Contains(formId)
+                   || formId < 0x800u
+                   || RuntimeStateRecordPolicy.EngineFormIds.Contains(formId);
+        }
 
         /// <summary>
         ///     New-path resolution: remap wins only when the remapped value is live. Null

@@ -16,16 +16,16 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 ///     pointer, and reports the pointee's FormType + EditorID alongside the PDB's own name for
 ///     that offset.
 ///     <para>
-///     This is how per-build layout drift gets established before a probe is written: the PDB
-///     ships July-2010 offsets while the captured dumps span Nov 2009 - Apr 2010, so a field can
-///     sit several bytes away from where the PDB says. Reading the pointee types straight out of
-///     the dump is decisive where a shift probe is not — a run of adjacent same-type pointers
-///     scores identically under several shifts, but the *identity* of what each slot points at
-///     does not.
+///         This is how per-build layout drift gets established before a probe is written: the PDB
+///         ships July-2010 offsets while the captured dumps span Nov 2009 - Apr 2010, so a field can
+///         sit several bytes away from where the PDB says. Reading the pointee types straight out of
+///         the dump is decisive where a shift probe is not — a run of adjacent same-type pointers
+///         scores identically under several shifts, but the *identity* of what each slot points at
+///         does not.
 ///     </para>
 ///     <para>
-///     Generalized from <c>weapon-sound-layout</c> (which remains as a preset for the weapon sound
-///     block); that command mapped the WEAP V1/V2 sound-block drift the same way.
+///         Generalized from <c>weapon-sound-layout</c> (which remains as a preset for the weapon sound
+///         block); that command mapped the WEAP V1/V2 sound-block drift the same way.
 ///     </para>
 /// </summary>
 internal static class StructLayoutCommand
@@ -38,7 +38,8 @@ internal static class StructLayoutCommand
         var dumpArg = new Argument<string>("dump") { Description = "Path to the Xbox 360 minidump file" };
         var formIdOpt = new Option<string?>("-f", "--formid")
         {
-            Description = "FormID of the record to inspect (hex). Omit to inspect the first --count records of --form-type."
+            Description =
+                "FormID of the record to inspect (hex). Omit to inspect the first --count records of --form-type."
         };
         var formTypeOpt = new Option<string?>("-t", "--form-type")
         {

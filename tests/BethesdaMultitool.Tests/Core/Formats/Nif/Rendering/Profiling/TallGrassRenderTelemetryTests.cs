@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

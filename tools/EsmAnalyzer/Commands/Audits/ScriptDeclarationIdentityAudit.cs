@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-
 namespace EsmAnalyzer.Commands.Audits;
 
 internal sealed record ScriptDeclarationIdentityResult(
@@ -97,7 +95,8 @@ internal static class ScriptDeclarationIdentityAudit
             }
         }
 
-        return problems.Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal).ToList();
+        return problems.Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static List<SourceDeclaration> Parse(string? source, out int malformedCount)
@@ -162,22 +161,30 @@ internal static class ScriptDeclarationIdentityAudit
         return false;
     }
 
-    private static bool StorageMatches(string declarationKind, byte slsdType) =>
-        declarationKind == "integer" ? slsdType != 0 : slsdType == 0;
+    private static bool StorageMatches(string declarationKind, byte slsdType)
+    {
+        return declarationKind == "integer" ? slsdType != 0 : slsdType == 0;
+    }
 
-    private static string StorageKind(byte type) => type == 0 ? "float-or-reference" : "integer";
+    private static string StorageKind(byte type)
+    {
+        return type == 0 ? "float-or-reference" : "integer";
+    }
 
     private static ScriptDeclarationIdentityResult Result(
         string verdict,
         IReadOnlyCollection<SourceDeclaration> declarations,
         string declarationIdentities,
         string slsdIdentities,
-        string details) => new(
-        verdict,
-        declarations.Count,
-        declarationIdentities,
-        slsdIdentities,
-        details);
+        string details)
+    {
+        return new ScriptDeclarationIdentityResult(
+            verdict,
+            declarations.Count,
+            declarationIdentities,
+            slsdIdentities,
+            details);
+    }
 
     private sealed record SourceDeclaration(string Name, string Kind);
 }

@@ -35,18 +35,25 @@ public sealed class SunShadowCasterReachTests
     private static readonly Vector3 MorningSun = Vector3.Normalize(new Vector3(0.62f, 0.34f, 0.71f));
 
     private static float ClipDepth(Matrix4x4 viewProj, Vector3 worldPos)
-        => Vector4.Transform(new Vector4(worldPos, 1f), viewProj).Z;
+    {
+        return Vector4.Transform(new Vector4(worldPos, 1f), viewProj).Z;
+    }
 
-    /// <summary>A depth the rasterizer keeps: outside (0,1) the primitive is clipped away, and
-    /// TryCascadeShadow rejects the same range on the receiving side.</summary>
-    private static bool WithinDepthRange(float clipZ) => clipZ > 0f && clipZ < 1f;
+    /// <summary>
+    ///     A depth the rasterizer keeps: outside (0,1) the primitive is clipped away, and
+    ///     TryCascadeShadow rejects the same range on the receiving side.
+    /// </summary>
+    private static bool WithinDepthRange(float clipZ)
+    {
+        return clipZ > 0f && clipZ < 1f;
+    }
 
     [Fact]
     public void CasterReach_ExceedsTheBoxDepth_WhenTheSceneIsTallerThanTheCascade()
     {
         // A WastelandNV-scale vertical span. The old symmetric box gave cascade 0 only
         // 1.25 * 2048 = 2560 units up-sun, which a 9,000-unit-tall scene overruns immediately.
-        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 9000f);
+        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 9000f);
 
         Assert.True(reach > Cascade0Radius * SunShadowMath.CascadeDepthExtentFactor,
             $"a scene taller than the cascade must widen the up-sun reach; got {reach}");
@@ -59,7 +66,7 @@ public sealed class SunShadowCasterReachTests
         // default path stays exactly what it was.
         Assert.Equal(
             Cascade0Radius * SunShadowMath.CascadeDepthExtentFactor,
-            SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 0f),
+            SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 0f),
             3);
     }
 
@@ -68,13 +75,13 @@ public sealed class SunShadowCasterReachTests
     {
         // Zenith: the up-sun axis IS world up, so the reach is the scene's height.
         var zenith = SunShadowMath.CascadeCasterReach(
-            new Vector3(0f, 0f, 1f), Cascade0Radius, sceneZSpan: 9000f);
+            new Vector3(0f, 0f, 1f), Cascade0Radius, 9000f);
         Assert.Equal(9000f, zenith, 1);
 
         // Horizon: height contributes nothing along the light axis; the bound is the lateral limit,
         // which is the farthest a caster can be and still land its shadow in the footprint.
         var horizon = SunShadowMath.CascadeCasterReach(
-            new Vector3(1f, 0f, 0f), Cascade0Radius, sceneZSpan: 9000f);
+            new Vector3(1f, 0f, 0f), Cascade0Radius, 9000f);
         Assert.Equal(Cascade0Radius * SunShadowMath.CascadeLateralReachFactor, horizon, 1);
     }
 
@@ -86,7 +93,7 @@ public sealed class SunShadowCasterReachTests
         // ceiling gave cascade 0 a ~104,000-unit depth range — every real caster squashed into the
         // bottom 5% of a reversed-Z float buffer, where precision is worst, plus a long tail of
         // casters that can never reach the near field.
-        var polluted = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 173_000f);
+        var polluted = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 173_000f);
 
         Assert.Equal(Cascade0Radius * SunShadowMath.CascadeCasterReachRadiiCeiling, polluted, 1);
         // Still far wider than the box that caused the defect — the ceiling must not undo the fix.
@@ -102,7 +109,7 @@ public sealed class SunShadowCasterReachTests
         var a = SunShadowMath.BuildLightFrustum(
             MorningSun, center, Vector3.Zero, Cascade0Radius, Resolution);
         var b = SunShadowMath.BuildLightFrustum(
-            MorningSun, center, Vector3.Zero, Cascade0Radius, Resolution, casterReach: 0f);
+            MorningSun, center, Vector3.Zero, Cascade0Radius, Resolution, 0f);
 
         Assert.Equal(a.ViewProj, b.ViewProj);
         Assert.Equal(a.TexelWorldSize, b.TexelWorldSize);
@@ -116,14 +123,14 @@ public sealed class SunShadowCasterReachTests
         // ridge or a tall building above a camera looking down at terrain — whose shadow lands
         // inside cascade 0's footprint.
         var anchor = new Vector3(91009.9f, 21443f, 7608.6f);
-        var caster = anchor + (MorningSun * 4000f);
+        var caster = anchor + MorningSun * 4000f;
 
         var symmetric = SunShadowMath.BuildLightFrustum(
             MorningSun, anchor, Vector3.Zero, Cascade0Radius, Resolution);
         Assert.False(WithinDepthRange(ClipDepth(symmetric.ViewProj, caster)),
             "the symmetric box is expected to clip this caster — that IS the bug being fixed");
 
-        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 9000f);
+        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 9000f);
         var extended = SunShadowMath.BuildLightFrustum(
             MorningSun, anchor, Vector3.Zero, Cascade0Radius, Resolution, reach);
         Assert.True(WithinDepthRange(ClipDepth(extended.ViewProj, caster)),
@@ -136,8 +143,8 @@ public sealed class SunShadowCasterReachTests
         // Extending the near plane must NOT extend the far plane: the down-sun side only has to hold
         // receivers, and spending depth range there would cost precision for nothing.
         var anchor = new Vector3(91009.9f, 21443f, 7608.6f);
-        var behind = anchor - (MorningSun * 4000f);
-        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 9000f);
+        var behind = anchor - MorningSun * 4000f;
+        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 9000f);
         var extended = SunShadowMath.BuildLightFrustum(
             MorningSun, anchor, Vector3.Zero, Cascade0Radius, Resolution, reach);
 
@@ -148,7 +155,7 @@ public sealed class SunShadowCasterReachTests
     [Fact]
     public void CascadeContains_IsAsymmetric_AcceptingUpSunAndRejectingDownSun()
     {
-        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 9000f);
+        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 9000f);
         var upSun = MorningSun * 4000f;
         var downSun = -MorningSun * 4000f;
 
@@ -165,7 +172,7 @@ public sealed class SunShadowCasterReachTests
     {
         // The lateral test is where "can this reach the footprint" is actually decided, and the
         // up-sun extension must not weaken it — otherwise every fix is paid for in draw calls.
-        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, sceneZSpan: 9000f);
+        var reach = SunShadowMath.CascadeCasterReach(MorningSun, Cascade0Radius, 9000f);
         var lateralAxis = Vector3.Normalize(Vector3.Cross(MorningSun, Vector3.UnitZ));
         var farLaterally = lateralAxis * (Cascade0Radius * 8f);
 
@@ -203,7 +210,7 @@ public sealed class SunShadowCasterReachTests
                 {
                     var delta = direction * distance;
                     if (!SunShadowMath.CascadeContains(
-                            delta, MorningSun, Cascade0Radius, sphereRadius: 0f, slack: 0f, reach))
+                            delta, MorningSun, Cascade0Radius, 0f, 0f, reach))
                     {
                         continue;
                     }

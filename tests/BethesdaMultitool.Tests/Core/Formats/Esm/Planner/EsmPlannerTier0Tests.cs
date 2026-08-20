@@ -1,9 +1,9 @@
+using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -97,9 +97,9 @@ public sealed class EsmPlannerTier0Tests
             new HashSet<string> { "CELL" },
             new HashSet<uint>(),
             "test.esm",
-            masterCellContexts: new Dictionary<uint, PcEsmCellContext>(),
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord>(),
-            cellChildAllocator: allocator,
+            new Dictionary<uint, PcEsmCellContext>(),
+            new Dictionary<uint, ParsedMainRecord>(),
+            allocator,
             masterRefFormIds: new HashSet<uint>(),
             cellVerdictInputs: new CellVerdictInputs { MasterIndex = masterIndex });
 

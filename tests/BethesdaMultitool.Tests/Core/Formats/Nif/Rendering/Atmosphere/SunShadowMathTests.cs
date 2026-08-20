@@ -216,11 +216,11 @@ public sealed class SunShadowMathTests
     /// </summary>
     [Theory]
     [InlineData(false, false, false, false)] // reference replay could not run
-    [InlineData(false, false, true, false)]  // terrain flag is meaningless while terrain is hidden
-    [InlineData(false, true, true, false)]   // terrain ran, reference did not — still not authoritative
-    [InlineData(true, true, false, false)]   // terrain ring allocation failed — retry, do not cache
-    [InlineData(true, false, false, true)]   // authoritative EMPTY, terrain hidden: MUST settle
-    [InlineData(true, true, true, true)]     // both authoritative (drew, or genuinely empty)
+    [InlineData(false, false, true, false)] // terrain flag is meaningless while terrain is hidden
+    [InlineData(false, true, true, false)] // terrain ran, reference did not — still not authoritative
+    [InlineData(true, true, false, false)] // terrain ring allocation failed — retry, do not cache
+    [InlineData(true, false, false, true)] // authoritative EMPTY, terrain hidden: MUST settle
+    [InlineData(true, true, true, true)] // both authoritative (drew, or genuinely empty)
     public void CascadeStateCommitsOnlyOnAnAuthoritativeResult(
         bool referenceReplayCompleted, bool terrainCasts, bool terrainReplayCompleted, bool expected)
     {
