@@ -248,9 +248,9 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 IsBigEndian = record.IsBigEndian
             });
 
-        // PWAT was previously routed through the generic-record path, which cannot recover
-        // its parent WATR: the reference lives inside an 8-byte embedded struct that the
-        // generic reader hex-dumps rather than walks. RuntimePlaceableWaterReader follows it.
+        // PWAT needs its own reader to recover the parent WATR: the reference lives inside an
+        // 8-byte embedded struct, which the generic record path hex-dumps rather than walks.
+        // RuntimePlaceableWaterReader follows it.
         Context.MergeRuntimeOverlayRecords(
             waters,
             [0x23],
@@ -296,10 +296,9 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 IsBigEndian = record.IsBigEndian
             });
 
-        // TREE was previously routed through the generic-record path, which cannot recover
-        // SNAM or CNAM: both live in embedded structs larger than the 8-byte limit above which
-        // the generic reader emits a placeholder string instead of walking. RuntimeTreeReader
-        // decodes them from the PDB-declared layout.
+        // TREE needs its own reader to recover SNAM and CNAM: both live in embedded structs
+        // larger than the 8-byte limit above which the generic record path emits a placeholder
+        // string instead of walking. RuntimeTreeReader decodes them from the PDB-declared layout.
         Context.MergeRuntimeOverlayRecords(
             trees,
             [0x25],

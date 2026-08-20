@@ -102,12 +102,11 @@ public sealed class MinidumpAnalyzer
             MinidumpFileScanner.SortCarvedFilesByOffset(result);
         }
 
-        // Apply FormType drift correction in-place so every consumer of
-        // result.EsmRecords sees canonical (final-build) FormType bytes. Previously this
-        // ran inside RecordParserContext, which meant any consumer that read
-        // result.EsmRecords.RuntimeEditorIds directly (snippet extraction, NPC browser,
-        // etc.) saw uncorrected entries and had to remap themselves. Centralizing here
-        // makes the contract uniform: AnalysisResult.EsmRecords is always drift-corrected.
+        // Apply FormType drift correction here rather than down inside RecordParserContext, so
+        // the contract is uniform: AnalysisResult.EsmRecords is always drift-corrected and every
+        // consumer sees canonical (final-build) FormType bytes. Correcting deeper down leaves
+        // anything reading result.EsmRecords.RuntimeEditorIds directly — snippet extraction, the
+        // NPC browser — holding uncorrected entries and remapping them itself.
         if (result.EsmRecords is { } scanResult)
         {
             RuntimeBuildOffsets.ApplyDriftCorrection(scanResult);
