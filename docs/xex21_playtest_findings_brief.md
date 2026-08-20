@@ -88,6 +88,74 @@ Three findings, all root-caused and adversarially re-verified. Headline: **nothi
 
 *Follow-up diagnostics, no decision:* NVULfountain REFR 0x001199A6 needs a targeted semantic-loader trace to name its drop point (it's one ref, pre-v141, mechanism unconfirmed).
 
+### ⚠ RESOLVED 2026-08-18 — option D's predicted failure happened, and is now guarded
+
+Option D's stated risk landed exactly as written: *"if the proto filed these in an uncaptured interior,
+this fabricates an exterior utility complex."* With position inference ON (USER RULING 2026-08-05), the
+463 Utl* placements stopped being skipped and instead **fabricated an exterior Hoover Dam interior
+inside TheStripWorld** — user-reported 2026-08-18 as *"a large chunk of one of the Hoover Dam interior
+cells accidentally assigned to TheStripWorld worldspace."*
+
+**Measured on xex21** (`dmp cell-inventory`, `TestOutput/xex21-cellinv/`):
+
+| | Cell | Placements | Z range |
+|---|---|---|---|
+| Fabricated | `[1,-3]` `0xFE900001` (bounds inference) | 204 | 10368 – 12416 |
+| Fabricated | `[Virtual 1,-2 TheStripWorld]` `0xFE80004E` (persistent redistribution) | 259 | 10368 – 12416 |
+| Real | TheStripWorld's 40 captured cells | 1,344 | **942 – 2,667** |
+
+Contents are unambiguous: `NVHooverDamGenerator` plus the `Utl*` utility-corridor tileset — interior
+content floating ~7,700 units above the highest real Strip object, with **zero overlap** between the two
+Z ranges. Note **two** passes fabricated it independently: `ReattachUnresolvedByBoundsInference` and
+`PersistentRefRedistributionPass` (the latter by re-homing persistent refs by X/Y).
+
+**FIX:** `WorldspaceVerticalBand` (`Core/Formats/Esm/Analysis/Cells/`) measures each worldspace's
+captured Z band from CAPTURED cells only (virtual / unresolved / previously-inferred cells are not
+evidence, so a fabricated cell can never widen the band that should reject the next one), measured
+BEFORE either pass runs. Both passes now require a candidate's Z to fall inside that band ±4096 (one
+FNV cell edge of slack, so a tower or flyover is never rejected). A worldspace with no captured
+placements yields no band and no rejection — absence of evidence is not evidence.
+
+Position inference stays **ON**; this only narrows it from "X/Y containment" to "X/Y containment AND a
+plausible elevation." Rejected refs stay in their unresolved bucket / persistent container exactly as
+they did before the ruling. Tests: `WorldspaceVerticalBandTests` (9 cases, pinned to the real measured
+numbers above).
+
+### ✅ RESOLVED 2026-08-19 — the Utl* block is attributed to its REAL interior (user-directed)
+
+User ruling 2026-08-19: *"We should make an effort to tie the Hoover Dam pieces to the real interior
+they belong to."* Done — **the 467 orphans belong to CELL `0x001206D8`, Feb-2010 EditorID
+`HooverDamIntPowerPlant`, "Hoover Dam Power Plant"** — proven from xex21's own bytes (no external
+cross-referencing for the core attribution):
+
+- **What the orphan run actually is.** File 0x19F520A–0x19FC68A is NOT runtime TESObjectREFR structs —
+  it is a page-truncated **disk-format ESM cache page** (reversed 4CC signatures `RFER`/`EMAN`/`ATAD`,
+  all other fields big-endian) holding one cell's temporary-children GRUP: 467 complete REFR records,
+  FormID band 0x001352C6–0x001354A2, cut mid-record at both page edges — the owning CELL/GRUP header
+  fell outside the captured pages, which is why parentage was lost. Confirmed no runtime instances of
+  these FormIDs exist anywhere in the dump.
+- **The proof.** The band has 10 gap FormIDs; one, `0x00135320` = **VHDPPToLLDoor03REF**
+  ("PP to LL" = PowerPlant→LowerLevel), IS captured as a runtime REFR (file 0xB431850) — allocated in
+  the same authoring band, positioned inside the orphan XYZ envelope at (5024,-5664,10368) — and its
+  parent-cell pointer (+0x50) → VA 0x40D46EC0 → TESObjectCELL FormID **0x001206D8** (EditorID string
+  `HooverDamIntPowerPlant`, FULL "Hoover Dam Power Plant", interior flags, has water). The dump's own
+  FormID→object map (file 0x11F94C8) confirms 0x001206D8 → 0x40D46EC0. The three `NVHooverDamGenerator`
+  orphans are the generator-hall turbines at (6048, −6432/−7968/−9504, 10880).
+- **Why no ESM of any era has these refs.** xex22 (Mar 10) shows the same FormID renamed
+  `HooverDamIntPowerPlantNorth` after a North/South split (South = 0x0013EC23, new); by July the plant
+  is PP01–PP04 and the temp refs were re-created under new FormIDs. Feb's single-cell layout survives
+  only in xex21's cache page. (Retail reuses 0x001206D8 as `HooverDamIntPowerPlant01`.)
+- **Mechanism.** 467 hand-curated `references` entries (ref → 0x001206D8) seeded into
+  `data/cell_worldspace_authority.json` — the documented channel for user-attributed cells; `dmp
+  build-cell-authority` preserves seeds on rebuild (seed wins). The applier's refToCell pass runs
+  BEFORE bounds inference, so the refs attach to the captured runtime cell (which supplies the Feb
+  name) in the viewer, reports, and `dmp to-esm`. FormID-keyed entries cannot misfire on other builds:
+  the band is proven absent from every ESM and every sibling dump. Pinned by
+  `CellWorldspaceAuthorityHooverSeedTests` (band→cell exact, 467 count, gaps excluded).
+- **Verified:** `dmp cell-inventory` xex21 now reports them under `## Worldspace: Interior →
+  HooverDamIntPowerPlant — "Hoover Dam Power Plant" 0x001206D8` (463 in the STAT/MSTT/SCOL/DOOR/FURN
+  filter view = exactly the original census), zero `[Unresolved …]` buckets, TheStripWorld clean.
+
 ---
 
 ## What I'd need from you

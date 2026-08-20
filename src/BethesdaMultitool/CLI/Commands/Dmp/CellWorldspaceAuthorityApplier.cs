@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -225,9 +226,17 @@ internal static class CellWorldspaceAuthorityApplier
                 MaxX: g.Max(c => c.GridX!.Value), MaxY: g.Max(c => c.GridY!.Value)))
             .ToList();
 
+        // Elevation plausibility for the X/Y containment test below, measured from CAPTURED cells only
+        // and BEFORE this pass fabricates anything. Without it, an uncaptured interior's refs (interior-
+        // LOCAL coordinates) get fabricated into whichever exterior worldspace's grid span happens to
+        // contain them — confirmed on xex21, where 463 Hoover Dam interior placements at Z 10368-12416
+        // landed in TheStripWorld, whose real captured content tops out at Z 2667.
+        var verticalBand = WorldspaceVerticalBand.Measure(records.Cells);
+
         var cellIndexByFormId = BuildCellIndex(records.Cells);
         var moved = 0;
         var createdCells = 0;
+        var rejectedByElevation = 0;
         var nextSyntheticFormId = NextAvailableSyntheticCellFormId(records, 0xFE900001u);
 
         for (var i = 0; i < records.Cells.Count; i++)
@@ -272,6 +281,16 @@ internal static class CellWorldspaceAuthorityApplier
                     }
                 }
 
+                // X/Y put the ref in this worldspace; Z has to agree. An interior tileset's local
+                // coordinates satisfy the containment test but sit nowhere near the worldspace's
+                // terrain, and fabricating an exterior copy of an interior is worse than leaving the
+                // ref unresolved.
+                if (!verticalBand.IsPlausibleElevation(worldspaceFormId, placed.Z))
+                {
+                    rejectedByElevation++;
+                    continue;
+                }
+
                 var targetIndex = GetOrCreateBoundsInferenceCell(
                     records, cellIndexByFormId, worldspaceFormId, gx, gy, placed.IsBigEndian,
                     ref nextSyntheticFormId, out var created);
@@ -300,6 +319,15 @@ internal static class CellWorldspaceAuthorityApplier
                         .ToList()
                 };
             }
+        }
+
+        if (rejectedByElevation > 0)
+        {
+            Logger.Instance.Debug(
+                "  [CellAuthority] Bounds inference rejected {0} placement(s) whose Z lies outside the " +
+                "target worldspace's captured elevation band (likely refs of an uncaptured INTERIOR); " +
+                "they stay in their unresolved bucket.",
+                rejectedByElevation);
         }
 
         if (moved == 0)
