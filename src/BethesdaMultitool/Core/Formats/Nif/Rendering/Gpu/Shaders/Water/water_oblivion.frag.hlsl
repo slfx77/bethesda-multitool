@@ -1,9 +1,11 @@
-// Oblivion water pixel shader — WATER000.pso math where it genuinely diverges from the shared
-// FNV WATER000 port (tools/GhidraProject/oblivion_water_pixel_shader_decompiled.txt): the body
-// color blends Deep→Shallow by the VIEW ANGLE (N·V), not the depth column, and the specular is a
-// single sun glint (no sky-glint term). Everything else (Schlick fresnel with F0 = WATR Fresnel
-// Amount, ReflectionColor→reflection-target interpolation, distance fog) is shared with the
-// recovered WATER000 family — see water_fnv.frag.hlsl for the shared-path derivation notes.
+// Oblivion water pixel shader — rebuilt 2026-08-17 against the regenerated permutation dumps
+// (tools/GhidraProject/oblivion_water_shaders/*.asm, both decoders agreeing): the body color
+// blends Deep→Shallow by the VIEW ANGLE (N·V), the reflection is the engine's RT-free
+// WATER003/WATER013 additive composition (body + Schlick·Reflectivity·mix — NO sky term; the
+// full crossfade belongs to the planar-RT variants only), and the specular is a single
+// saturated sun glint. The normal path follows the machine-bound near variant WATER007
+// (surface animation at worldXY/1365.33, ×atten² far flattening at 8192); past the ripple
+// envelope the math converges to WATER013's LOD sheet (N=(0,0,1), no textures) by construction.
 // Selected by WaterProfile.PixelShaderFile for BethesdaGame.Oblivion.
 
 #include "water_common.hlsli"
@@ -18,19 +20,17 @@ float4 main(PSInput input) : SV_Target
     float3 sunCol = lit ? uSunColorLighting.rgb : kSunColor;
     float sunGate = lit ? max(uSunDirIntensity.w, 0.0) : 1.0;
     uint noiseIndex = uNoiseParams.x;
-    // RE-recovered scales (the 256² NNAM tiles at TexScale). The recovered VS does v7=(worldXY+QPos)/TexScale,
-    // and TexScale = DNAM fUVScale (@136, ~1000 world units) — fNoiseScale (@96, ~13) is far too small to be a
-    // world tile, so it is the ISNOISENORMALMAP normal-DETAIL scale, not the macro tile. The engine has BOTH:
-    // a big macro tile (fUVScale) AND fine normal detail (fNoiseScale finer). We span that with 3 octaves —
-    // macro (1/fUVScale → ~1000u features, far-apart repeat) down to detail (fNoiseScale/fUVScale → ~75u fine
-    // ripple). Tiling everything at the 75u detail scale was the "too small + repetitive" bug.
+    // Surface tile: uSurface0.x is game-resolved by WaterRenderer12.ResolveSurfaceUvScale — for
+    // Oblivion the WATER007 VS interpolant t7.zw = worldXY · (3/4096), i.e. a 4096/3 ≈ 1365.33
+    // world-unit tile hard-wired in the water VS (oblivion_water_shaders asm; the ini's
+    // fSurfaceTileSize=2048 feeds the mesh UV, which WATER007 hands to the DisplacementMap).
+    // fNoiseScale remains the ISNOISENORMALMAP normal-DETAIL scale used by the procedural fallback.
     float fUVScale = max(uSurface0.x, 1.0);
     float fNoiseScale = max(asfloat(uNoiseParams.z), 1.0);
-    float fMacro = 1.0 / fUVScale;               // macro world tile = TexScale (fUVScale ~1000): broad structure
-    float fDetail = fNoiseScale / fUVScale;      // fine normal-detail scale (fUVScale/fNoiseScale ~75): dense ripple
-    float F0 = saturate(uSurface0.y);            // FNV FresnelRI.x
-    float reflectivity = saturate(uSurface0.z);  // FNV FresnelRI.w (reflection multiplier)
-    float specExp = max(uSurface0.w, 1.0);       // FNV VarAmounts.x (sun-specular exponent)
+    float fMacro = 1.0 / fUVScale;               // surface world tile → UV cycles
+    float fDetail = fNoiseScale / fUVScale;      // fine normal-detail scale (procedural fallback)
+    float F0 = saturate(uSurface0.y);            // WATR FresnelAmount (TES4 FresnelRI.x)
+    float reflectivity = saturate(uSurface0.z);  // WATR ReflectivityAmount (TES4 VarAmounts.y)
 
     float3 eye = uCamPosTime.xyz - input.vWorldPos; // surface -> camera (FNV EyePos - worldPos)
     float distXY = length(eye.xy);
@@ -147,37 +147,62 @@ float4 main(PSInput input) : SV_Target
     // body sun modulation (sun enters via the specular only).
     float3 body = lerp(uDeep.rgb, uShallow.rgb, ndotv);
 
-    // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
+    // Reflected view vector — used for the sun specular below.
     float3 R = reflect(-V, N);
 
-    // The viewer has no planar-reflection or refraction targets. FNV therefore follows the recovered
-    // WATER003 no-RT permutation, which stays on the authored DNAM ReflectionColor. Replacing it with
-    // the atmosphere gradient made daytime water flat gray and made the remaining night signal
-    // disappear with a dark sky. Oblivion's distinct recovered shader still interpolates its authored
-    // color toward the sky-gradient stand-in below.
-    float3 reflectedSky = uSkyTopSkyEnabled.w > 0.5
-        ? lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(R.z))
-        : uReflection.rgb;
-    // Engine: lerp(ReflectionColor, planarReflectionRT, Reflectivity). The viewer's sky-gradient
-    // reflection is the RT-free stand-in for that RT, so the authored color remains the base term.
-    float3 refl = lerp(uReflection.rgb, reflectedSky, reflectivity);
-
-    // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount. Reflection over body.
+    // Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = WATR FresnelAmount (FresnelRI.x).
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
     // VarAmounts.z — the engine's runtime fresnel FLOOR (max(VarAmounts.z, Schlick), WATER000
     // asm 139). DECOMPILE-RESOLVED (Oblivion.exe FUN_00499570 fills the global; FUN_004ed660 is
     // the getter; the console "set water opacity" handler FUN_0050d8e0 writes the same slot):
     // VarAmounts.z = WATR ANAM Opacity / 100 — per water type. Vanilla: DefaultWater 100 (fully
     // floored/opaque), dungeon/sewer/oil waters 85. The recovered max feeds alpha only; applying
-    // it to the RGB Fresnel interpolation was the washed-out TES4 mismatch fixed here.
+    // it to the RGB Fresnel interpolation was the washed-out TES4 mismatch fixed earlier.
     float alphaFresnel = max(asfloat(uNoiseParams.w), saturate(F));
-    float fresneled = saturate(F);
-    float3 color = lerp(body, refl, fresneled);
 
-    // Oblivion single specular: pow(dot(reflect(-V,N), SunDir), Sun Power) × SunColor — no
-    // sky-glint term in WATER000.pso.
-    float sunSpec = pow(saturate(dot(R, sunDir)), max(uSurface1.x, 1.0));
-    color += sunSpec * sunCol * sunGate;
+    // Two engine-faithful reflection arms, selected by whether a mirrored-SCENE reflection target
+    // is bound (Video settings "Water reflections" ON renders one; uReflectionParams.x = 1):
+    //
+    //  ON  — WATER007 (the machine-bound planar-RT permutation, oblivion_water_pkg013.asm
+    //        586-701): perturb the surface position in WORLD units by the distance-proportional
+    //        wobble N.xy · (saturate(d·0.0002)·2496 + 4) (def c13 = 2496/4, c4.z = 0.0002),
+    //        project through the mirror view-projection, texldp-style divide, then
+    //          refl  = lerp(ReflectionColor, rt, Reflectivity)   (asm 677-680)
+    //          color = lerp(body, refl, SchlickF)                (asm 687 — the FULL crossfade)
+    //        The crossfade is correct ONLY because the RT holds the mirrored SCENE — feeding it a
+    //        sky-only stand-in was the "huge reflections dominating" defect.
+    //
+    //  OFF — WATER003/WATER013 RT-free composition (003 near / 013 LOD, IDENTICAL sequence):
+    //          color = body + F · Reflectivity · lerp(body, ReflectionColor, 1 − Reflectivity)
+    //        an ADDITIVE term bounded by the authored ReflectionColor with NO sky term —
+    //        body-dominated up close, brightening only toward grazing.
+    float3 color;
+    if (uWaterReflection.x != 0xFFFFFFFFu && uReflectionParams.x != 0u)
+    {
+        float wobble = saturate(distXY * 0.0002) * 2496.0 + 4.0;
+        float3 reflPos = float3(input.vWorldPos.xy + N.xy * wobble, input.vWorldPos.z);
+        float4 reflClip = mul(uReflectionViewProj, float4(reflPos - uRenderOrigin.xyz, 1.0));
+        float2 reflUv = reflClip.xy / max(reflClip.w, 1e-4);
+        reflUv = float2(reflUv.x * 0.5 + 0.5, reflUv.y * -0.5 + 0.5);
+        float3 rt = gWaterTextures[NonUniformResourceIndex(uWaterReflection.x)]
+            .SampleLevel(gWaterClampSampler, saturate(reflUv), 0).rgb;
+        float3 refl = lerp(uReflection.rgb, rt, reflectivity);
+        color = lerp(body, refl, F);
+        // WATER007 adds the sun glint UNsaturated (asm 691 is a plain mad) — the HDR target
+        // carries the headroom the RT variant was authored against.
+        float sunSpec7 = pow(saturate(dot(R, sunDir)), max(uSurface1.x, 1.0));
+        color += sunSpec7 * sunCol * sunGate;
+    }
+    else
+    {
+        color = body + F * reflectivity * lerp(body, uReflection.rgb, 1.0 - reflectivity);
+
+        // Oblivion single specular: pow(dot(reflect(-V,N), SunDir), Sun Power) × SunColor ×
+        // sat(SunDir.w) — no sky-glint term. WATER003/013 add it SATURATED (mad_sat), clamping the
+        // composite before the detail lerp and fog; ps_2_1 has no HDR headroom here.
+        float sunSpec = pow(saturate(dot(R, sunDir)), max(uSurface1.x, 1.0));
+        color = saturate(color + sunSpec * sunCol * sunGate);
+    }
 
     // WATER000.pso asm 116-121/166: WATR TNAM is the separate DetailMap (s2), sampled at the
     // scrolling normal UV plus N.xy*0.1. Its exact blend factor is the UNSQUARED distance term

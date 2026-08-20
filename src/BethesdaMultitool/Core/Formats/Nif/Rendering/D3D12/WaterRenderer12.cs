@@ -43,8 +43,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // existing offset: 448 bytes / 28 registers.
     private const uint UniformsByteSize = ModernWaterPipeline.FrameUniformByteSize;
     private const uint FnvWater001UniformByteSize = 2 * 16;
-    // Planar sky-reflection register (uWaterReflection), appended after the WATER001 tail.
-    private const uint WaterReflectionUniformByteSize = 1 * 16;
+    // Planar sky-reflection register (uWaterReflection), appended after the WATER001 tail, plus
+    // the mirror pass's view-projection matrix + scene-content flag register (uReflectionViewProj
+    // + uReflectionParams) for the Oblivion WATER007 projective arm.
+    private const uint WaterReflectionUniformByteSize = 1 * 16 + 64 + 16;
     private const uint WaterFrameUniformsByteSize =
         UniformsByteSize + FnvWater001UniformByteSize + WaterReflectionUniformByteSize;
     private const uint FnvNoiseDimension = 256;
@@ -662,6 +664,62 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     /// <summary>
+    ///     The mirror plane for the water-reflection pass: the exact surface height with the
+    ///     LARGEST visible-cell coverage inside the cylinder (dominant plane), tie-broken toward
+    ///     the surface nearest below the camera. False — callers keep sky-only reflection content —
+    ///     when no cell water is visible or the camera is at/under every candidate surface (a
+    ///     submerged camera has no above-water mirror). Exact float equality groups cells of one
+    ///     authored body correctly (a lake's height repeats bit-identically); placed-NIF pools are
+    ///     not counted and simply sample the dominant plane (documented v1 approximation).
+    /// </summary>
+    public bool TryGetDominantVisibleWaterPlaneHeight(
+        in VisibilityCylinder cylinder, float cameraZ, out float height)
+    {
+        height = 0f;
+        var radiusCells = cylinder.Radius / WorldGridConstants.CellSize;
+        var camGx = cylinder.Position.X / WorldGridConstants.CellSize;
+        var camGy = cylinder.Position.Y / WorldGridConstants.CellSize;
+        Dictionary<float, int>? counts = null;
+        foreach (var (key, cellHeight) in _waterHeightByGrid)
+        {
+            if (cellHeight >= cameraZ) continue; // mirror only exists above the surface
+            var dx = key.gx + 0.5f - camGx;
+            var dy = key.gy + 0.5f - camGy;
+            if ((dx * dx) + (dy * dy) > radiusCells * radiusCells) continue;
+            counts ??= new Dictionary<float, int>();
+            counts[cellHeight] = counts.GetValueOrDefault(cellHeight) + 1;
+        }
+
+        foreach (var water in _irregularWaterCells)
+        {
+            if (water.Height >= cameraZ || !float.IsFinite(water.Height)) continue;
+            var cx = water.OriginXY.X + (water.FootprintSize * 0.5f);
+            var cy = water.OriginXY.Y + (water.FootprintSize * 0.5f);
+            var dx = cx - cylinder.Position.X;
+            var dy = cy - cylinder.Position.Y;
+            if ((dx * dx) + (dy * dy) > cylinder.Radius * cylinder.Radius) continue;
+            counts ??= new Dictionary<float, int>();
+            counts[water.Height] = counts.GetValueOrDefault(water.Height) + 1;
+        }
+
+        if (counts is null) return false;
+
+        var bestCount = -1;
+        foreach (var (candidate, count) in counts)
+        {
+            // Dominant coverage wins; on a tie the surface NEAREST BELOW the camera (largest
+            // height) is the one the player is standing beside.
+            if (count > bestCount || (count == bestCount && candidate > height))
+            {
+                bestCount = count;
+                height = candidate;
+            }
+        }
+
+        return bestCount > 0;
+    }
+
+    /// <summary>
     ///     Rebinds only the WATR-derived material and its normal maps. Cell geometry, the spatial
     ///     index, and instance capacity remain untouched, so camera-cell XCWT changes do not rebuild
     ///     every visible water tile.
@@ -856,14 +914,24 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     ///         target may be rendered at any resolution. Pass <c>null</c> to fall back to the gradient.
     ///     </para>
     /// </summary>
-    public void SetWaterReflection(uint? bindlessIndex, uint sceneWidth, uint sceneHeight)
+    public void SetWaterReflection(
+        uint? bindlessIndex, uint sceneWidth, uint sceneHeight,
+        Matrix4x4? reflectionViewProj = null)
     {
         _reflectionBindlessIndex = bindlessIndex is { } index && sceneWidth > 0 && sceneHeight > 0
             ? index
             : NoNormalMap;
         _reflectionSceneWidth = sceneWidth;
         _reflectionSceneHeight = sceneHeight;
+        // Non-null marks SCENE content rendered with this mirrored view-projection (origin-
+        // relative) — the Oblivion shader then takes its projective WATER007 arm instead of the
+        // screen-UV sky lookup. Null keeps today's sky-only semantics for every variant.
+        _reflectionViewProj = reflectionViewProj ?? Matrix4x4.Identity;
+        _reflectionIsScene = reflectionViewProj is not null && _reflectionBindlessIndex != NoNormalMap;
     }
+
+    private Matrix4x4 _reflectionViewProj = Matrix4x4.Identity;
+    private bool _reflectionIsScene;
 
     public void SetModernCubeMap(uint? cubeMapBindlessIndex) =>
         _modernCubeBindlessIndex = cubeMapBindlessIndex ?? NoNormalMap;
@@ -893,6 +961,31 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     /// </summary>
     public void SetLegacyAnimatedFrames(uint[]? frameBindlessIndices) =>
         _legacyAnimatedFrames = frameBindlessIndices;
+
+    /// <summary>
+    ///     Video-settings "Water ripples" toggle (retail <c>bUseWaterDisplacements:Water</c>; the
+    ///     viewer maps it to the animated surface normal FIELD per the 2026-08-18 user ruling).
+    ///     False substitutes the flat-normal placeholder for every ripple source — the surface
+    ///     becomes a calm sheet with N=(0,0,1) — while the scroll/detail/lava clocks keep running.
+    ///     Read per frame; changing it needs no rebuild.
+    /// </summary>
+    public bool RipplesEnabled { get; set; } = true;
+
+    /// <summary>
+    ///     Bindless index of the host texture cache's flat-normal placeholder (encoded (0,0,1)),
+    ///     consumed only while <see cref="RipplesEnabled" /> is off. <see cref="NoNormalMap" />
+    ///     until the host plumbs it; then ripples-off falls back to the procedural-ripple sentinel
+    ///     being replaced, so the toggle can never black out the surface.
+    /// </summary>
+    public uint FlatNormalBindlessIndex { get; set; } = NoNormalMap;
+
+    /// <summary>
+    ///     The frame's ripple-source index after the video toggle: the resolved animated/NNAM
+    ///     index while ripples are on, else the flat normal. Shared by the generic per-frame path
+    ///     and the FNV per-material path so both obey the toggle identically.
+    /// </summary>
+    private uint ApplyRippleToggle(uint noiseIndex) =>
+        RipplesEnabled || FlatNormalBindlessIndex == NoNormalMap ? noiseIndex : FlatNormalBindlessIndex;
 
     /// <summary>
     ///     Supplies TES4 WATR TNAM as WATER000's DetailMap. It is intentionally separate from the
@@ -1784,6 +1877,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             LastStats.WaterAnimationFrame = animationFrame;
             noiseIndex = animatedFrames[animationFrame];
         }
+        // Video-settings "Water ripples": off flattens the ripple source to the flat normal.
+        // Morrowind is exempt — its legacy frames are the DIFFUSE surface, not a ripple field.
+        if (_waterProfile.ShaderVariant != WaterShaderVariant.MorrowindWater)
+        {
+            noiseIndex = ApplyRippleToggle(noiseIndex);
+        }
         var usedFnvNoisePrepass = false;
         if (_useFnvNoisePrepass && noiseIndex != NoNormalMap &&
             // The generic path draws every surface from ONE camera-level appearance, so it owns a
@@ -1928,6 +2027,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 WaterReflectionSceneWidth = _reflectionSceneWidth,
                 WaterReflectionSceneHeight = _reflectionSceneHeight,
                 WaterReflectionDistortion = ReflectionDistortionScale,
+                ReflectionViewProj = _reflectionViewProj,
+                ReflectionSceneFlag = _reflectionIsScene ? 1u : 0u,
             };
         }
 
@@ -2365,7 +2466,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         var cmd = args.Cmd;
         var appearance = material.Appearance;
         var surface = appearance?.Surface ?? WaterSurfaceParams.Default;
-        var noiseIndex = material.NoiseIndex;
+        // Same video-settings "Water ripples" gate as the generic per-frame path — the FNV
+        // per-material path must obey the toggle identically (a flat normal through the scroll
+        // prepass composes to a flat normal, so the substitution is order-independent here).
+        var noiseIndex = ApplyRippleToggle(material.NoiseIndex);
         var usedNoisePrepass = false;
         if (_useFnvNoisePrepass && noiseIndex != NoNormalMap &&
             TryAcquireFnvNoiseSlot(
@@ -2448,6 +2552,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             WaterReflectionSceneWidth = _reflectionSceneWidth,
             WaterReflectionSceneHeight = _reflectionSceneHeight,
             WaterReflectionDistortion = ReflectionDistortionScale,
+            ReflectionViewProj = _reflectionViewProj,
+            ReflectionSceneFlag = _reflectionIsScene ? 1u : 0u,
         };
 
         _frameMaterialCb[(material.WaterFormId, water001)] = perFrame.GpuAddress;
@@ -3149,14 +3255,18 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         GpuShaderCompiler12.Compile(name, entryPoint, profile, defines);
 
     /// <summary>
-    ///     TES4's global surface animation tiles at ini <c>[Water] fSurfaceTileSize = 2048</c> world
-    ///     units (Oblivion authors no per-WATR NormalsUVScale — the parsed value is FNV's default
-    ///     1000, which tiled the surface almost twice too densely). Ini-derived; other variants keep
-    ///     the authored/parsed scale.
+    ///     TES4 surface-animation tile. The machine-bound near-field permutation WATER007 samples
+    ///     the NormalMap at <c>t7.zw = (worldXY + QPosAdjust) · (3/4096)</c> — a 4096/3 ≈ 1365.33
+    ///     world-unit tile hard-wired in the water VS (oblivion_water_shaders asm, regenerated
+    ///     2026-08-08; the 2026-08-08 adversarial review explicitly inverted the earlier
+    ///     "do not use 1365.33" note for this variant). The ini's <c>fSurfaceTileSize = 2048</c>
+    ///     feeds the mesh UV (t6), which WATER007 gives to the DisplacementMap — a sim input the
+    ///     viewer reproduces for no game. Oblivion authors no per-WATR NormalsUVScale (the parsed
+    ///     value is FNV's default 1000); other variants keep the authored/parsed scale.
     /// </summary>
     private float ResolveSurfaceUvScale(WaterSurfaceParams surface) =>
         _waterProfile.ShaderVariant == WaterShaderVariant.OblivionWater000
-            ? 2048f
+            ? 4096f / 3f
             : surface.NormalsUvScale;
 
     private static Vector4 ColorToVector4((byte R, byte G, byte B)? color, Vector3 fallback)
@@ -3484,6 +3594,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         public uint WaterReflectionSceneWidth;
         public uint WaterReflectionSceneHeight;
         public float WaterReflectionDistortion;
+        // Appended: the mirror pass's view-projection (origin-relative) + the scene-content flag
+        // (x = 1 ⇒ the RT holds mirrored SCENE content and Oblivion's projective WATER007 arm
+        // applies; 0 ⇒ sky-only screen-UV semantics). See uReflectionViewProj / uReflectionParams.
+        public Matrix4x4 ReflectionViewProj;
+        public uint ReflectionSceneFlag;
+        public uint ReflectionPad0;
+        public uint ReflectionPad1;
+        public uint ReflectionPad2;
     }
 }
 
