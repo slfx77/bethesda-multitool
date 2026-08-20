@@ -9,15 +9,53 @@ using BethesdaMultitool.Core.Vfs;
 namespace BethesdaMultitool.Core.Formats.Esm.Land;
 
 /// <summary>
+///     Result of <see cref="BtdTerrainInjector.Inject" />. Owns the kept-open lazy
+///     <see cref="BtdHeightSource" />s that back the injected cells'
+///     <c>LandHeightmap.ExactHeightsProvider</c> delegates, so it must be disposed only when the
+///     parsed cells' heightmaps are done being read — the load result
+///     (<c>UnifiedAnalysisResult</c>, or the GUI session that adopts it) carries it.
+/// </summary>
+public sealed class BtdTerrainInjection : IDisposable
+{
+    private readonly List<IDisposable> _heightSources = [];
+
+    /// <summary>Number of cells that received BTD terrain (heightmap and/or texture layers).</summary>
+    public int PopulatedCells { get; private set; }
+
+    /// <summary>True when at least one lazy height source is being kept open.</summary>
+    public bool HasOpenSources => _heightSources.Count > 0;
+
+    internal void Add(int populated, IDisposable? source)
+    {
+        PopulatedCells += populated;
+        if (source is not null)
+        {
+            _heightSources.Add(source);
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var source in _heightSources)
+        {
+            source.Dispose();
+        }
+
+        _heightSources.Clear();
+    }
+}
+
+/// <summary>
 ///     Attaches external-BTD terrain heights to parsed exterior cells for the games that have no
 ///     in-record VHGT — Fallout 76 and Starfield (see <see cref="GameProfile.HasExternalBtdTerrain" />).
 ///     Their worldspaces have CELL records, but the heightmap lives in a Bethesda Terrain Data
-///     (<c>.btd</c>) file named after the worldspace editor ID. This injector decodes the BTD and fills
-///     each exterior cell's <see cref="LandHeightmap.ExactHeights" /> (the same float-grid path the
-///     runtime-mesh and Morrowind importers use), so both the 2D world map and the 3D terrain renderer
-///     light up with zero changes to either renderer — they read heights through the shared
-///     <c>DecodedTerrainCell.Decode</c> abstraction (the 2D map downsamples; the 3D
-///     <c>TerrainMeshBuilder</c> renders the native grid directly).
+///     (<c>.btd</c>) file named after the worldspace editor ID. This injector gives each exterior cell
+///     a <see cref="LandHeightmap" /> whose <see cref="LandHeightmap.ExactHeights" /> resolve through
+///     the same float-grid path the runtime-mesh and Morrowind importers use — eagerly decoded for
+///     small worldspaces, lazily via a kept-open <see cref="BtdHeightSource" /> for large ones — so
+///     both the 2D world map and the 3D terrain renderer light up with zero changes to either
+///     renderer: they read heights through the shared <c>DecodedTerrainCell.Decode</c> abstraction
+///     (the 2D map downsamples; the 3D <c>TerrainMeshBuilder</c> renders the native grid directly).
 ///     <para>
 ///         Two lookup routes, in precedence order: a loose <c>Data\Terrain\&lt;editorId&gt;.btd</c>
 ///         (Fallout 76's <c>Appalachia.btd</c>) and an archived <c>terrain\&lt;editorId&gt;.btd</c>
@@ -38,10 +76,12 @@ public static class BtdTerrainInjector
 {
     // Native BTD resolution: LOD0 = 128 samples per cell edge. Full fidelity (the 3D viewer renders
     // the native grid via the variable-resolution TerrainMeshBuilder; the 2D map downsamples 129->33
-    // by an exact step of 4). 40k-cell worldspaces (APPALACHIA) cost ~2.7 GB resident at this size.
+    // by an exact step of 4). Heights are NOT materialized here: a 40k-cell worldspace (APPALACHIA)
+    // would cost ~2.7 GB resident — instead each cell gets a lazy provider over a kept-open
+    // BtdHeightSource, so only the cells a consumer actually reads are ever decoded (bounded LRU).
     private const int SourceLod = 0;
     private const int CellSamples = 128 >> SourceLod; // 128
-    private const int GridSize = CellSamples + 1;      // 129: own 128 samples + the neighbor's shared edge
+    internal const int HeightGridSize = CellSamples + 1; // 129: own 128 samples + the neighbor's shared edge
 
     // LandHeightmap requires HeightDeltas, but ExactHeights takes precedence in CalculateHeights(),
     // so the deltas are never read — share one empty array (matching the Morrowind importer).
@@ -50,31 +90,51 @@ public static class BtdTerrainInjector
     /// <summary>
     ///     Populates exterior-cell heightmaps for every worldspace whose <c>.btd</c> can be found next
     ///     to <paramref name="esmPath" /> — loose first, then this game's terrain archives. No-op for
-    ///     games without <see cref="GameProfile.HasExternalBtdTerrain" />. Returns the number of cells
-    ///     populated.
+    ///     games without <see cref="GameProfile.HasExternalBtdTerrain" />. The returned
+    ///     <see cref="BtdTerrainInjection" /> owns any kept-open lazy height sources and must live as
+    ///     long as the parsed cells' heightmaps are read (the load result owns it).
     /// </summary>
-    public static int Inject(RecordCollection records, string esmPath)
+    public static BtdTerrainInjection Inject(RecordCollection records, string esmPath)
     {
         ArgumentNullException.ThrowIfNull(records);
+        var injection = new BtdTerrainInjection();
         if (string.IsNullOrEmpty(esmPath))
         {
-            return 0;
+            return injection;
         }
 
         var profile = GameDetector.DetectFromFile(esmPath);
         if (!profile.HasExternalBtdTerrain)
         {
-            return 0;
+            return injection;
         }
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(esmPath));
         if (dir is null)
         {
-            return 0;
+            return injection;
         }
 
         using var resolver = new BtdSourceResolver(dir, profile);
-        var populated = 0;
+        try
+        {
+            InjectWorldspaces(records, resolver, profile, injection);
+        }
+        catch
+        {
+            // An unfiltered exception must not strand already-opened lazy sources (each holds a
+            // memory map): close them before propagating. Cells keep any providers already
+            // attached, but those degrade to flat grids post-dispose rather than throwing.
+            injection.Dispose();
+            throw;
+        }
+
+        return injection;
+    }
+
+    private static void InjectWorldspaces(
+        RecordCollection records, BtdSourceResolver resolver, GameProfile profile, BtdTerrainInjection injection)
+    {
         foreach (var worldspace in records.Worldspaces)
         {
             if (string.IsNullOrEmpty(worldspace.EditorId))
@@ -92,29 +152,41 @@ public static class BtdTerrainInjector
                 continue;
             }
 
+            BtdFile? btd = null;
             try
             {
-                using var btd = resolver.TryOpen(worldspace.EditorId!);
+                btd = resolver.TryOpen(worldspace.EditorId!);
                 if (btd is null)
                 {
                     continue;
                 }
 
                 // Hold several 8×8-cell tiles resident: a cell's own tile plus the east/north/NE
-                // neighbor tiles its shared edge reads from, so a tile-ordered sweep decompresses
-                // each tile's LOD pyramid once instead of thrashing.
+                // neighbor tiles its shared edge reads from, so both the eager texture-layer sweep
+                // and later lazy height reads decompress each tile's LOD pyramid once instead of
+                // thrashing.
                 btd.SetTileCacheSize(16);
-                populated += InjectWorldspace(candidates, btd, blendEdge: profile.Game == BethesdaGame.Starfield
+                var (populated, source) = InjectWorldspace(candidates, btd, blendEdge: profile.Game == BethesdaGame.Starfield
                     ? NativeBlendGridEdge
                     : QuadVertexEdge);
+                injection.Add(populated, source);
+                if (source is not null)
+                {
+                    btd = null; // ownership moved into the height source (disposed with the injection)
+                }
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
             {
                 // Corrupt / unsupported BTD (e.g. LZ4-frame) — leave the worldspace's cells flat.
+                // Reaching here in the lazy route means no providers were attached (they are only
+                // attached after every BTD read for the worldspace has succeeded), so no cell can
+                // hold a reference to the file being closed below.
+            }
+            finally
+            {
+                btd?.Dispose();
             }
         }
-
-        return populated;
     }
 
     /// <summary>
@@ -142,7 +214,8 @@ public static class BtdTerrainInjector
         return candidates;
     }
 
-    private static int InjectWorldspace(List<CellRecord> candidates, BtdFile btd, int blendEdge)
+    private static (int Populated, BtdHeightSource? Source) InjectWorldspace(
+        List<CellRecord> candidates, BtdFile btd, int blendEdge)
     {
         var targets = new List<CellRecord>(candidates.Count);
         foreach (var cell in candidates)
@@ -157,20 +230,38 @@ public static class BtdTerrainInjector
             targets.Add(cell);
         }
 
+        if (targets.Count == 0)
+        {
+            return (0, null);
+        }
+
         // Decode in BTD tile order (8×8-cell tiles). Arbitrary cell order would reload — and
         // re-decompress — the same tile repeatedly as the sweep and its neighbor-edge reads jump
         // around the grid; tile-grouping keeps each tile's decompressed LOD pyramid hot in the cache.
         targets.Sort(CompareByTile);
 
+        // Heights go LAZY when keeping the file open is cheaper than materializing every grid:
+        // always for a memory-mapped loose file (pageable, ~free — FO76's Appalachia route, where
+        // eager 40k × 129² floats ≈ 2.7 GB), and for an archived byte[] only when the held bytes
+        // undercut the decoded grids (Starfield's small worldspaces usually stay eager, exactly the
+        // pre-lazy behavior). Texture layers stay eager either way: they are far smaller than
+        // heights, and the 3D viewer's LoadData warms ALL cells' texture sets up front, which under
+        // a lazy route would funnel the whole worldspace through the decode lock at 3D-open time.
+        var decodedGridBytes = (long)targets.Count * HeightGridSize * HeightGridSize * sizeof(float);
+        var lazyHeights = btd.IsMemoryMapped || btd.SourceLength < decodedGridBytes;
+
         foreach (var cell in targets)
         {
             var gx = cell.GridX!.Value;
             var gy = cell.GridY!.Value;
-            cell.Heightmap = new LandHeightmap
+            if (!lazyHeights)
             {
-                HeightDeltas = UnusedDeltas,
-                ExactHeights = BuildExactHeights(btd, gx, gy)
-            };
+                cell.Heightmap = new LandHeightmap
+                {
+                    HeightDeltas = UnusedDeltas,
+                    ExactHeights = BuildExactHeights(btd, gx, gy)
+                };
+            }
 
             // Attach the cell's land textures so it shows its real blended ground instead of the single
             // engine default. FO76/Starfield have no in-CELL BTXT/ATXT — the textures live in the BTD —
@@ -199,7 +290,27 @@ public static class BtdTerrainInjector
             }
         }
 
-        return targets.Count;
+        if (!lazyHeights)
+        {
+            return (targets.Count, null);
+        }
+
+        // Provider attachment runs only after every BTD read above succeeded, and cannot itself
+        // throw — so a corrupt BTD can never leave cells holding providers over a file the caller
+        // is about to close.
+        var source = new BtdHeightSource(btd);
+        foreach (var cell in targets)
+        {
+            var gx = cell.GridX!.Value;
+            var gy = cell.GridY!.Value;
+            cell.Heightmap = new LandHeightmap
+            {
+                HeightDeltas = UnusedDeltas,
+                ExactHeightsProvider = () => source.GetExactHeights(gx, gy)
+            };
+        }
+
+        return (targets.Count, source);
     }
 
     // FO76 land-texture grid size for VtexTextureFormIds (16×16, row-major south→north / west→east —
@@ -417,10 +528,10 @@ public static class BtdTerrainInjector
     ///     row/column (index 128) is the shared edge taken from the north/east neighbor's sample 0,
     ///     clamped to this cell's own outermost sample at the worldspace boundary.
     /// </summary>
-    private static float[,] BuildExactHeights(BtdFile btd, int cellX, int cellY)
+    internal static float[,] BuildExactHeights(BtdFile btd, int cellX, int cellY)
     {
         var self = btd.GetCellHeightGrid(cellX, cellY, SourceLod); // float[CellSamples²], south-to-north
-        var exact = new float[GridSize, GridSize];
+        var exact = new float[HeightGridSize, HeightGridSize];
 
         // Interior: this cell's own samples.
         for (var j = 0; j < CellSamples; j++)

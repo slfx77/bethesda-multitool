@@ -247,6 +247,16 @@ public sealed class BtdFile : IDisposable
     /// <summary>True if this is a Starfield-style BTD (no vertex color / ground cover).</summary>
     public bool IsStarfield { get; }
 
+    /// <summary>
+    ///     True when the source is a memory-mapped loose file — pageable, so keeping it open for
+    ///     lazy per-cell decode costs no managed heap. False for the archive route, where the whole
+    ///     payload is held as a heap array for as long as this instance lives.
+    /// </summary>
+    public bool IsMemoryMapped => _source is MappedBtdBytes;
+
+    /// <summary>Length of the underlying BTD payload in bytes.</summary>
+    public long SourceLength => _fileSize;
+
     public void Dispose()
     {
         if (_disposed)

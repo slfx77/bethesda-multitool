@@ -42,7 +42,8 @@ public class BtdTerrainInjectorTests
         var path = WriteTempEsm(BuildTes4Header(1.34f)); // New Vegas version
         try
         {
-            Assert.Equal(0, BtdTerrainInjector.Inject(new RecordCollection(), path));
+            using var injection = BtdTerrainInjector.Inject(new RecordCollection(), path);
+            Assert.Equal(0, injection.PopulatedCells);
         }
         finally
         {
@@ -60,7 +61,8 @@ public class BtdTerrainInjectorTests
         File.WriteAllBytes(path, BuildTes4Header(263.0f));
         try
         {
-            Assert.Equal(0, BtdTerrainInjector.Inject(new RecordCollection(), path));
+            using var injection = BtdTerrainInjector.Inject(new RecordCollection(), path);
+            Assert.Equal(0, injection.PopulatedCells);
         }
         finally
         {
@@ -103,7 +105,12 @@ public class BtdTerrainInjectorTests
 
         try
         {
-            Assert.Equal(2, BtdTerrainInjector.Inject(records, esmPath));
+            // The loose (memory-mapped) route decodes heights LAZILY over a kept-open source, so the
+            // grids below materialize on first property read and the injection must stay alive for
+            // them — it is disposed (closing the mapped .btd) before the directory delete.
+            using var injection = BtdTerrainInjector.Inject(records, esmPath);
+            Assert.Equal(2, injection.PopulatedCells);
+            Assert.True(injection.HasOpenSources, "loose-file route should keep a lazy height source open");
 
             var wh = westCell.Heightmap!.ExactHeights!;
             var eh = eastCell.Heightmap!.ExactHeights!;
@@ -161,11 +168,12 @@ public class BtdTerrainInjectorTests
 
         try
         {
-            Assert.Equal(2, BtdTerrainInjector.Inject(records, esmPath));
+            using var injection = BtdTerrainInjector.Inject(records, esmPath);
+            Assert.Equal(2, injection.PopulatedCells);
             Assert.Equal(129, westCell.Heightmap!.ExactHeights!.GetLength(0));
 
             // Same seam contract as the loose path: west's east edge comes from the east neighbor.
-            Assert.Equal(eastCell.Heightmap!.ExactHeights![50, 0], westCell.Heightmap.ExactHeights[50, 128], 0.5f);
+            Assert.Equal(eastCell.Heightmap!.ExactHeights![50, 0], westCell.Heightmap.ExactHeights![50, 128], 0.5f);
         }
         finally
         {
@@ -206,7 +214,8 @@ public class BtdTerrainInjectorTests
 
         try
         {
-            Assert.Equal(0, BtdTerrainInjector.Inject(records, esmPath));
+            using var injection = BtdTerrainInjector.Inject(records, esmPath);
+            Assert.Equal(0, injection.PopulatedCells);
         }
         finally
         {
