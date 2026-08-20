@@ -12,11 +12,18 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
     private readonly EsmInfoMerger _infoMerger = new(input, stats);
     private readonly byte[] _input = input;
     private readonly EsmConversionStats _stats = stats;
+    private EsmScriptParamFixer? _scriptParamFixer;
 
     /// <summary>Supplies the TOFT INFO index used by the INFO merger to locate split INFO fragments.</summary>
     public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
     {
         _infoMerger.SetToftInfoIndex(toftInfoOffsetsByFormId);
+    }
+
+    /// <summary>Supplies the fixer that rewrites inline-string IsPlayerInRegion params in SCPT bytecode.</summary>
+    public void SetScriptParamFixer(EsmScriptParamFixer scriptParamFixer)
+    {
+        _scriptParamFixer = scriptParamFixer;
     }
 
     /// <summary>
@@ -113,6 +120,19 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
             if (reordered != null)
             {
                 convertedData = reordered;
+            }
+        }
+
+        // SCPT: rewrite inline-string IsPlayerInRegion params as SCRO refs. Runs AFTER normal
+        // subrecord conversion, so the fixer sees little-endian SCDA/SCRO data. Compressed records
+        // are excluded because convertedData holds recompressed bytes there (Xbox SCPTs are stored
+        // uncompressed; the end-to-end site count is verified against the known total).
+        if (signature == "SCPT" && convertedData != null && !isCompressed && _scriptParamFixer != null)
+        {
+            var fixedData = _scriptParamFixer.FixScriptRegionParams(convertedData);
+            if (fixedData != null)
+            {
+                convertedData = fixedData;
             }
         }
 

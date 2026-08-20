@@ -134,7 +134,11 @@ public record ExtractedRefrRecord
     public uint? LinkedRefFormId { get; init; }
 
     /// <summary>Runtime-linked child refs from ExtraLinkedRefChildren when present.</summary>
-    public List<uint> LinkedRefChildrenFormIds { get; init; } = [];
+    /// <summary>
+    ///     Runtime-linked child refs (DMP ExtraLinkedRefChildren; never populated by the ESM
+    ///     descriptor scanner). <c>IReadOnlyList</c> so the empty default costs no allocation.
+    /// </summary>
+    public IReadOnlyList<uint> LinkedRefChildrenFormIds { get; init; } = [];
 
     /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
     public PlacedReferenceStructuralData? StructuralData { get; init; }

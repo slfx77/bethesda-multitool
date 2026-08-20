@@ -17,6 +17,9 @@ public sealed class EsmConversionStats
     public int ToftTrailingBytesSkipped { get; set; }
     public int OfstStripped { get; set; }
     public long OfstBytesStripped { get; set; }
+    public int ScriptRegionSitesRewritten { get; set; }
+    public int ScriptRegionScrosAppended { get; set; }
+    public int ScriptRegionScriptsTouched { get; set; }
 
     public Dictionary<string, int> RecordTypeCounts { get; } = [];
     public Dictionary<string, int> SubrecordTypeCounts { get; } = [];
@@ -91,6 +94,7 @@ public sealed class EsmConversionStats
 
         AppendToftStats(sb);
         AppendOfstStats(sb);
+        AppendScriptRegionStats(sb);
         AppendSkippedStats(sb);
 
         if (verbose)
@@ -127,6 +131,20 @@ public sealed class EsmConversionStats
         sb.AppendLine($"  WRLD offset tables: {OfstStripped:N0} subrecords ({OfstBytesStripped:N0} bytes)");
         sb.AppendLine(
             "  (File offsets to cells become invalid after conversion; game scans for cells instead)");
+    }
+
+    private void AppendScriptRegionStats(StringBuilder sb)
+    {
+        if (ScriptRegionSitesRewritten <= 0)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Script IsPlayerInRegion parameter fixups:");
+        sb.AppendLine($"  Call sites rewritten: {ScriptRegionSitesRewritten:N0} " +
+                      $"(in {ScriptRegionScriptsTouched:N0} scripts, {ScriptRegionScrosAppended:N0} SCRO entries appended)");
+        sb.AppendLine("  (July-era compiler stored the Region param as an inline string; PC engines require SCRO refs)");
     }
 
     private void AppendSkippedStats(StringBuilder sb)

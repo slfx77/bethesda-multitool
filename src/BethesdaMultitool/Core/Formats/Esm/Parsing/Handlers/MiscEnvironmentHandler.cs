@@ -124,18 +124,32 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         ? BinaryPrimitives.ReadUInt16BigEndian(subData)
                         : BinaryPrimitives.ReadUInt16LittleEndian(subData);
                     break;
-                // Oblivion stores its water visual data in DATA (a ~102-byte struct), not the FNV DNAM.
-                // Game-gated rather than length-gated because FNV's WATR also has a large DATA variant
-                // (the DNAM-or-DATA visual union, ~186 bytes) with a different field layout. Without this
-                // every Oblivion water renders with the default tint (all 23 Oblivion WATR have no DNAM).
-                case "DATA" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 100:
+                // Oblivion stores its water visual data in DATA — a SIZE-VERSIONED union (xEdit
+                // wbDefinitionsTES4 sizes 102/86/62/42/2; the short forms are OLDER layouts, NOT
+                // truncations of the 102-byte one — see ReadOblivionWaterData). Game-gated rather
+                // than length-gated because FNV's WATR also has a large DATA variant (the
+                // DNAM-or-DATA visual union, ~186 bytes) with a different field layout. The old
+                // ≥ 100 gate silently dropped the authored colors of 6/23 shipped waters
+                // (SwampWater, MS31Water, OblivionOil01, Blood, both CamoranLavas) to FNV fallback
+                // tints — the 2026-08-08 adversarial review's confirmed finding #5. Damage trails
+                // every version in its last two bytes (byte-verified: CamoranLava02@40=50,
+                // OblivionOil01@60, OblivionLavaTest01@100=50).
+                case "DATA" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 42:
                 {
                     visualProps = ReadOblivionWaterData(subData, record.IsBigEndian);
-                    if (sub.DataLength >= 102)
+                    var damageOffset = sub.DataLength switch
+                    {
+                        >= 102 => 100,
+                        86 => 84,
+                        62 => 60,
+                        42 => 40,
+                        _ => -1, // non-retail length — no trustworthy damage position
+                    };
+                    if (damageOffset >= 0)
                     {
                         damage = record.IsBigEndian
-                            ? BinaryPrimitives.ReadUInt16BigEndian(subData.Slice(100, 2))
-                            : BinaryPrimitives.ReadUInt16LittleEndian(subData.Slice(100, 2));
+                            ? BinaryPrimitives.ReadUInt16BigEndian(subData.Slice(damageOffset, 2))
+                            : BinaryPrimitives.ReadUInt16LittleEndian(subData.Slice(damageOffset, 2));
                     }
                     break;
                 }
@@ -240,12 +254,24 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // + the key surface scalars are surfaced under the SAME dictionary keys WaterAppearance reads from the
     // FNV DNAM, so the shared color/surface decoder handles Oblivion unchanged. Colors are a byte sequence
     // (R,G,B,A) packed R|G<<8|B<<16 (endian-independent); the scalars are endian-aware floats.
+    // TES4 WATR DATA is a SIZE-VERSIONED union (xEdit wbDefinitionsTES4 sizes 102/86/62/42/2).
+    // The short forms are OLDER layouts, NOT byte prefixes of the 102-byte one — adversarially
+    // byte-verified against retail Oblivion.esm 2026-08-18:
+    //   42: seven floats (wind/wave/sun/reflectivity/fresnel) @0..27, then the THREE COLORS at
+    //       @28/32/36 and damage u16 @40 (Blood 0x00090DDC decodes thematic blood-red there;
+    //       CamoranLava02 0x0003AFD4 damage=50 matches its full-size sibling's @100).
+    //   62: eleven floats (+scroll+fog) @0..43, colors @44/48/52, TextureBlend @56, damage @60
+    //       (OblivionOil01 0x0003AB07).
+    //  86: the 62-form through @56, then THREE-float Rain @60/64/68 and THREE-float Displacement
+    //       @72/76/80 (no Dampener/StartingSize in this vintage), damage @84 (SwampWater,
+    //       MS31Water — reading the full layout here misattributes the sim floats).
+    //  102: five-float Rain @60..79 and Displacement @80..99, damage @100.
     internal static Dictionary<string, object?> ReadOblivionWaterData(ReadOnlySpan<byte> d, bool isBigEndian)
     {
         static uint Color(ReadOnlySpan<byte> d, int off) =>
             (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
 
-        return new Dictionary<string, object?>
+        var props = new Dictionary<string, object?>
         {
             ["WindVelocity"] = ReadFloat(d, 0, isBigEndian),
             ["WindDirection"] = ReadFloat(d, 4, isBigEndian),
@@ -254,25 +280,51 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ["SunPower"] = ReadFloat(d, 16, isBigEndian),
             ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
             ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
-            ["ScrollXSpeed"] = ReadFloat(d, 28, isBigEndian),
-            ["ScrollYSpeed"] = ReadFloat(d, 32, isBigEndian),
-            ["FogNear"] = ReadFloat(d, 36, isBigEndian),
-            ["FogFar"] = ReadFloat(d, 40, isBigEndian),
-            ["ShallowColor"] = Color(d, 44),
-            ["DeepColor"] = Color(d, 48),
-            ["ReflectionColor"] = Color(d, 52),
-            ["TextureBlend"] = d[56] / 100f,
-            ["RainForce"] = ReadFloat(d, 60, isBigEndian),
-            ["RainVelocity"] = ReadFloat(d, 64, isBigEndian),
-            ["RainFalloff"] = ReadFloat(d, 68, isBigEndian),
-            ["RainDampener"] = ReadFloat(d, 72, isBigEndian),
-            ["RainStartingSize"] = ReadFloat(d, 76, isBigEndian),
-            ["DisplacementForce"] = ReadFloat(d, 80, isBigEndian),
-            ["DisplacementVelocity"] = ReadFloat(d, 84, isBigEndian),
-            ["DisplacementFalloff"] = ReadFloat(d, 88, isBigEndian),
-            ["DisplacementDampener"] = ReadFloat(d, 92, isBigEndian),
-            ["DisplacementStartingSize"] = ReadFloat(d, 96, isBigEndian),
         };
+
+        if (d.Length < 62)
+        {
+            // 42-byte vintage: the colors immediately follow the seven floats.
+            props["ShallowColor"] = Color(d, 28);
+            props["DeepColor"] = Color(d, 32);
+            props["ReflectionColor"] = Color(d, 36);
+            return props;
+        }
+
+        props["ScrollXSpeed"] = ReadFloat(d, 28, isBigEndian);
+        props["ScrollYSpeed"] = ReadFloat(d, 32, isBigEndian);
+        props["FogNear"] = ReadFloat(d, 36, isBigEndian);
+        props["FogFar"] = ReadFloat(d, 40, isBigEndian);
+        props["ShallowColor"] = Color(d, 44);
+        props["DeepColor"] = Color(d, 48);
+        props["ReflectionColor"] = Color(d, 52);
+        props["TextureBlend"] = d[56] / 100f;
+
+        if (d.Length >= 102)
+        {
+            props["RainForce"] = ReadFloat(d, 60, isBigEndian);
+            props["RainVelocity"] = ReadFloat(d, 64, isBigEndian);
+            props["RainFalloff"] = ReadFloat(d, 68, isBigEndian);
+            props["RainDampener"] = ReadFloat(d, 72, isBigEndian);
+            props["RainStartingSize"] = ReadFloat(d, 76, isBigEndian);
+            props["DisplacementForce"] = ReadFloat(d, 80, isBigEndian);
+            props["DisplacementVelocity"] = ReadFloat(d, 84, isBigEndian);
+            props["DisplacementFalloff"] = ReadFloat(d, 88, isBigEndian);
+            props["DisplacementDampener"] = ReadFloat(d, 92, isBigEndian);
+            props["DisplacementStartingSize"] = ReadFloat(d, 96, isBigEndian);
+        }
+        else if (d.Length >= 86)
+        {
+            // Three-float sim vintage: Force/Velocity/Falloff only, displacement directly after.
+            props["RainForce"] = ReadFloat(d, 60, isBigEndian);
+            props["RainVelocity"] = ReadFloat(d, 64, isBigEndian);
+            props["RainFalloff"] = ReadFloat(d, 68, isBigEndian);
+            props["DisplacementForce"] = ReadFloat(d, 72, isBigEndian);
+            props["DisplacementVelocity"] = ReadFloat(d, 76, isBigEndian);
+            props["DisplacementFalloff"] = ReadFloat(d, 80, isBigEndian);
+        }
+
+        return props;
     }
 
     // Skyrim WATR DNAM struct (xEdit wbDefinitionsTES5, little-endian). Leading: 4 unused wind/wave

@@ -69,6 +69,18 @@ public sealed class EsmConverter : IDisposable
             }
         }
 
+        // Pre-scan REGN EDIDs so the SCPT pass can resolve inline-string IsPlayerInRegion
+        // parameters (July-era compiler artifact) to SCRO references.
+        var regionFormIdsByEdid = EsmScriptParamFixer.BuildRegionEdidIndex(_input);
+        if (regionFormIdsByEdid.Count > 0)
+        {
+            _recordWriter.SetScriptParamFixer(new EsmScriptParamFixer(regionFormIdsByEdid, _stats));
+            if (_verbose)
+            {
+                Log($"REGN: indexed {regionFormIdsByEdid.Count:N0} region EDIDs for script param fixup");
+            }
+        }
+
         if (_verbose)
         {
             var exteriorCells = index.ExteriorCellsByWorld.Sum(kvp => kvp.Value.Count);

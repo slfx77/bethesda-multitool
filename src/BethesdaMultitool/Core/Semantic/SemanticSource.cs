@@ -18,6 +18,15 @@ internal sealed record SemanticSource
     public AnalysisResult? RawResult { get; init; }
     public MinidumpInfo? MinidumpInfo { get; init; }
 
+    /// <summary>
+    ///     The lazy BTD terrain sources backing this source's cells (FO76/Starfield), detached from
+    ///     the disposed load session so heights keep decoding for as long as <see cref="Records" />
+    ///     lives. Never explicitly disposed on this path — the cells' providers strongly reference
+    ///     the sources, so the memory maps are reclaimed by GC together with the record graph
+    ///     (matching how the detached-source world already manages every other resource).
+    /// </summary>
+    public Formats.Esm.Land.BtdTerrainInjection? TerrainInjection { get; init; }
+
     public string DisplayName => Path.GetFileName(FilePath);
 }
 

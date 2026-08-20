@@ -30,6 +30,17 @@ public sealed class RecordParserContext
     private readonly bool _recoverPartialCompressed;
 
     /// <summary>
+    ///     Base-object bounds index (FormID → OBND), set by <c>RecordParser</c> before cell parsing so
+    ///     <c>CellLinkageHandler.ToPlacedReference</c> constructs each <c>PlacedReference</c> already
+    ///     enriched — the post-parse enrichment sweep used to <c>with</c>-clone essentially every
+    ///     placed ref (5.1M clones on Fallout 76). Null until the base-object parses have run.
+    /// </summary>
+    internal Dictionary<uint, Models.ObjectBounds>? PlacedObjectBoundsIndex { get; set; }
+
+    /// <summary>Base-object model-path index (FormID → MODL); see <see cref="PlacedObjectBoundsIndex" />.</summary>
+    internal Dictionary<uint, string>? PlacedObjectModelIndex { get; set; }
+
+    /// <summary>
     ///     Creates the parser context over a scan result, optionally backed by a memory-mapped
     ///     view and a DMP for runtime struct reads and localized-string resolution.
     /// </summary>

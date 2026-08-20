@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData.DayNight;
 
 namespace BethesdaMultitool;
 
@@ -103,8 +104,12 @@ internal sealed class WorldViewData
     /// <summary>Lookup from FormID to CellRecord for navigation.</summary>
     public required Dictionary<uint, CellRecord> CellByFormId { get; init; }
 
-    /// <summary>Reverse lookup: placed reference FormID → parent CellRecord.</summary>
-    public required Dictionary<uint, CellRecord> RefrToCellIndex { get; init; }
+    /// <summary>
+    ///     Shared placement index (FormID → placement + parent cell), consolidating the old separate
+    ///     ref→cell and ref→position dictionaries and the XESP/day-night resolvers' transient byId
+    ///     maps into one build (5.1M entries each on FO76).
+    /// </summary>
+    public required PlacedRefIndex PlacedRefs { get; init; }
 
     /// <summary>Exterior cells with grid coordinates that aren't linked to any worldspace (common in DMP files).</summary>
     public required List<CellRecord> UnlinkedExteriorCells { get; init; }
@@ -169,9 +174,6 @@ internal sealed class WorldViewData
 
     /// <summary>GECK-style reverse usage index for scripts, lists, containers, and packages.</summary>
     public FormUsageIndex? UsageIndex { get; init; }
-
-    /// <summary>Reference FormID → world position for drawing AI package overlays.</summary>
-    public Dictionary<uint, (float X, float Y)>? RefPositionIndex { get; init; }
 
     /// <summary>Additional placed references from save file overlay (changed form positions).</summary>
     public List<PlacedReference>? SaveOverlayMarkers { get; set; }
@@ -289,6 +291,14 @@ internal sealed class WorldViewData
     ///     own flag is set are filtered regardless and need not appear here.
     /// </summary>
     public IReadOnlyCollection<uint> XespDisabledRefs { get; init; } = new HashSet<uint>();
+
+    /// <summary>
+    ///     Scanned day/night reference schedule: which placed refs are toggled by hour-of-day
+    ///     scripts (street lights, glow FX, fire barrels) and their on-windows. Null when the
+    ///     plugin has no qualifying scripts. Consumed per-frame through
+    ///     <c>DayNightRefStateStore</c> so scripted lights follow the viewer's game hour.
+    /// </summary>
+    internal DayNightRefSchedule? DayNightSchedule { get; init; }
 
     /// <summary>All weather records, sorted by EditorId — populates the 3D viewer's weather dropdown
     /// (the user can preview any weather, not just the current climate's candidates).</summary>

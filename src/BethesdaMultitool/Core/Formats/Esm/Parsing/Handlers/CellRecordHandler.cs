@@ -41,11 +41,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var cellToRefrMap = Context.ScanResult.CellToRefrMap;
         var runtimeCellMapEntries = BuildRuntimeCellMapIndex();
 
-        // Pre-build REFR FormID -> ExtractedRefrRecord lookup for O(1) access
-        // Use GroupBy to handle duplicates (same REFR can appear in multiple memory regions in dumps)
-        var refrByFormId = refrRecords
-            .GroupBy(r => r.Header.FormId)
-            .ToDictionary(g => g.Key, g => g.First());
+        // Pre-build REFR FormID -> ExtractedRefrRecord lookup for O(1) access. First-wins TryAdd
+        // handles duplicates (same REFR can appear in multiple memory regions in dumps) with the
+        // exact semantics the previous GroupBy(...).First() had — but without materializing a
+        // Lookup of one Grouping + element array per REFR, which on Fallout 76's 5.1M refs was
+        // ~500 MB of transient garbage before the dictionary even existed.
+        var refrByFormId = new Dictionary<uint, ExtractedRefrRecord>(refrRecords.Count);
+        foreach (var refr in refrRecords)
+        {
+            refrByFormId.TryAdd(refr.Header.FormId, refr);
+        }
         var hasGrupMapping = cellToRefrMap.Count > 0;
 
         // Pre-sort REFR records by offset for O(log N) binary search in DMP fallback
@@ -159,15 +164,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     runtimeCellMapEntries.GetValueOrDefault(record.FormId), cellWs);
                 if (cell != null)
                 {
-                    if (cellWs > 0)
-                    {
-                        cell = cell with
-                        {
-                            WorldspaceFormId = cellWs,
-                            WorldspaceAssignmentSource = "CellGrup"
-                        };
-                    }
-
+                    // WorldspaceFormId + "CellGrup" assignment source are set at construction from
+                    // the same cellWs — the old post-construction `with` re-stamped identical values
+                    // at the cost of one full CellRecord clone per cell.
                     cells.Add(cell);
                 }
             }
@@ -189,15 +188,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         runtimeCellMapEntries.GetValueOrDefault(record.FormId));
                     if (cell != null)
                     {
-                        if (cellWs > 0)
-                        {
-                            cell = cell with
-                            {
-                                WorldspaceFormId = cellWs,
-                                WorldspaceAssignmentSource = "CellGrup"
-                            };
-                        }
-
+                        // Same as the scan-result path above: construction already stamped the
+                        // worldspace fields from cellWs.
                         cells.Add(cell);
                     }
                 }
@@ -232,57 +224,68 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal static void ResolveDoorLinks(List<CellRecord> cells)
     {
-        // Build reverse map: door REFR FormID -> parent Cell FormID
-        var refrToCell = new Dictionary<uint, uint>();
+        // Pass 1: the door-teleport TARGET FormIDs. Only those need a reverse ref→cell entry —
+        // the old shape indexed EVERY placed ref (5.1M entries ≈ 150 MB on Fallout 76) to answer
+        // lookups for the tiny XTEL-door subset.
+        var targetFormIds = new HashSet<uint>();
         foreach (var cell in cells)
         {
             foreach (var obj in cell.PlacedObjects)
             {
-                refrToCell.TryAdd(obj.FormId, cell.FormId);
+                if (obj.DestinationDoorFormId is > 0 and var target)
+                {
+                    targetFormIds.Add(target);
+                }
             }
         }
 
-        // For each cell, find destination cells via door teleports and annotate doors
-        for (var i = 0; i < cells.Count; i++)
+        // Pass 2: reverse map restricted to those targets (first-wins, matching the old TryAdd).
+        var refrToCell = new Dictionary<uint, uint>(targetFormIds.Count);
+        if (targetFormIds.Count > 0)
         {
-            var linkedCells = new HashSet<uint>();
-            var updatedObjects = new List<PlacedReference>(cells[i].PlacedObjects.Count);
-            var anyChanged = false;
-
-#pragma warning disable S3267 // Loop body has conditional + TryGetValue that makes LINQ impractical
-            foreach (var obj in cells[i].PlacedObjects)
-#pragma warning restore S3267
+            foreach (var cell in cells)
             {
+                foreach (var obj in cell.PlacedObjects)
+                {
+                    if (targetFormIds.Contains(obj.FormId))
+                    {
+                        refrToCell.TryAdd(obj.FormId, cell.FormId);
+                    }
+                }
+            }
+        }
+
+        // Pass 3: annotate doors + linked cells IN PLACE. Worldspace cell lists alias the same
+        // CellRecord instances, so `cells[i] = cell with {...}` (the old shape) would fork the
+        // graph; per-slot assignment and list-content mutation keep both views consistent, and
+        // the unconditional per-cell list rebuild (5.1M pointer copies) is gone.
+        foreach (var cell in cells)
+        {
+            HashSet<uint>? linkedCells = null;
+            var placed = cell.PlacedObjects;
+            for (var j = 0; j < placed.Count; j++)
+            {
+                var obj = placed[j];
                 uint? resolvedDestinationCellFormId = null;
                 if (obj.DestinationDoorFormId is > 0 &&
                     refrToCell.TryGetValue(obj.DestinationDoorFormId.Value, out var destCellFormId) &&
-                    destCellFormId != cells[i].FormId) // Exclude self-links
+                    destCellFormId != cell.FormId) // Exclude self-links
                 {
                     resolvedDestinationCellFormId = destCellFormId;
-                    linkedCells.Add(destCellFormId);
+                    (linkedCells ??= []).Add(destCellFormId);
                 }
 
                 if (obj.DestinationCellFormId != resolvedDestinationCellFormId)
                 {
-                    updatedObjects.Add(obj with { DestinationCellFormId = resolvedDestinationCellFormId });
-                    anyChanged = true;
-                }
-                else
-                {
-                    updatedObjects.Add(obj);
+                    placed[j] = obj with { DestinationCellFormId = resolvedDestinationCellFormId };
                 }
             }
 
-            var linkedCellList = linkedCells.Order().ToList();
-            var linkedCellsChanged = !cells[i].LinkedCellFormIds.SequenceEqual(linkedCellList);
-
-            if (anyChanged || linkedCellsChanged)
+            List<uint> linkedCellList = linkedCells is null ? [] : [.. linkedCells.Order()];
+            if (!cell.LinkedCellFormIds.SequenceEqual(linkedCellList))
             {
-                cells[i] = cells[i] with
-                {
-                    PlacedObjects = anyChanged ? updatedObjects : cells[i].PlacedObjects,
-                    LinkedCellFormIds = linkedCellList
-                };
+                cell.LinkedCellFormIds.Clear();
+                cell.LinkedCellFormIds.AddRange(linkedCellList);
             }
         }
     }
@@ -713,10 +716,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             }
         }
 
-        for (var i = 0; i < cells.Count; i++)
+        foreach (var cell in cells)
         {
-            cells[i] = AttachTerrainData(
-                cells[i],
+            AttachTerrainData(
+                cell,
                 heightmapByCellFormId,
                 capturedHeightmapByCellFormId,
                 visualDataByCellFormId,
@@ -811,10 +814,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             }
         }
 
-        for (var i = 0; i < cells.Count; i++)
+        foreach (var cell in cells)
         {
-            cells[i] = AttachTerrainData(
-                cells[i],
+            AttachTerrainData(
+                cell,
                 heightmapByCellFormId,
                 capturedHeightmapByCellFormId,
                 visualDataByCellFormId,
@@ -993,13 +996,15 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     }
 
     private List<PlacedReference> ResolvePlacedReferencesByFormIds(
-        IEnumerable<uint> formIds,
+        IReadOnlyCollection<uint> formIds,
         Dictionary<uint, ExtractedRefrRecord> refrByFormId,
         string assignmentSource)
     {
-        var seen = new HashSet<uint>();
-        var sourceRefs = new List<ExtractedRefrRecord>();
-
+        // Fused single loop: the old shape collected an intermediate ExtractedRefrRecord list and
+        // then LINQ-projected it — one extra list + enumerator + closure per cell, ~5.1M pointer
+        // copies across Fallout 76's cells.
+        var seen = new HashSet<uint>(formIds.Count);
+        var result = new List<PlacedReference>(formIds.Count);
         foreach (var formId in formIds)
         {
             if (formId == 0 || !seen.Add(formId))
@@ -1009,20 +1014,24 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
             if (refrByFormId.TryGetValue(formId, out var refr))
             {
-                sourceRefs.Add(refr);
+                result.Add(CellLinkageHandler.ToPlacedReference(refr, Context, assignmentSource));
             }
         }
 
-        return ToPlacedReferences(sourceRefs, assignmentSource);
+        return result;
     }
 
     private List<PlacedReference> ToPlacedReferences(
-        IEnumerable<ExtractedRefrRecord> sourceRefs,
+        List<ExtractedRefrRecord> sourceRefs,
         string assignmentSource)
     {
-        return sourceRefs
-            .Select(r => CellLinkageHandler.ToPlacedReference(r, Context, assignmentSource))
-            .ToList();
+        var result = new List<PlacedReference>(sourceRefs.Count);
+        foreach (var refr in sourceRefs)
+        {
+            result.Add(CellLinkageHandler.ToPlacedReference(refr, Context, assignmentSource));
+        }
+
+        return result;
     }
 
     private static bool ShouldUseRuntimePlacedObjects(CellRecord existing, CellRecord runtime)
@@ -1069,7 +1078,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         }
     }
 
-    private static CellRecord AttachTerrainData(
+    // Mutates the settable terrain slots in place (the same contract BtdTerrainInjector uses).
+    // The old `cell with {}` return cloned every gridded cell — and with worldspace cell lists
+    // aliasing the same instances, replacing cells[i] forked the two views.
+    private static void AttachTerrainData(
         CellRecord cell,
         Dictionary<uint, LandHeightmap> heightmapByCellFormId,
         Dictionary<uint, LandHeightmap> capturedHeightmapByCellFormId,
@@ -1082,7 +1094,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     {
         if (!cell.GridX.HasValue || !cell.GridY.HasValue)
         {
-            return cell;
+            return;
         }
 
         var heightmap = cell.Heightmap;
@@ -1132,18 +1144,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             terrainMeshByGrid.TryGetValue(key, out terrainMesh);
         }
 
-        if (heightmap == null && capturedHeightmap == null && visualData == null && terrainMesh == null)
-        {
-            return cell;
-        }
-
-        return cell with
-        {
-            Heightmap = heightmap ?? cell.Heightmap,
-            CapturedLandHeightmap = capturedHeightmap ?? cell.CapturedLandHeightmap,
-            LandVisualData = visualData ?? cell.LandVisualData,
-            RuntimeTerrainMesh = terrainMesh ?? cell.RuntimeTerrainMesh
-        };
+        cell.Heightmap = heightmap;
+        cell.CapturedLandHeightmap = capturedHeightmap;
+        cell.LandVisualData = visualData;
+        cell.RuntimeTerrainMesh = terrainMesh;
     }
 
     #endregion

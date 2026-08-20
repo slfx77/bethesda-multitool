@@ -138,7 +138,9 @@ public record CellRecord
     public LandVisualData? LandVisualData { get; set; }
 
     /// <summary>Runtime terrain mesh extracted from LoadedLandData heap pointers (if available).</summary>
-    public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
+    // Settable like its three terrain siblings above, so AttachTerrainData can assign in place
+    // instead of cloning every gridded cell (and forking the aliased worldspace cell lists).
+    public RuntimeTerrainMesh? RuntimeTerrainMesh { get; set; }
 
     /// <summary>
     ///     True when this cell contains persistent references whose world positions may be

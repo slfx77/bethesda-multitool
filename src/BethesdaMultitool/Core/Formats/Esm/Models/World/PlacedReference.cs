@@ -186,8 +186,13 @@ public record PlacedReference
     /// <summary>XLKR - Linked reference FormID for spawn resolution (PLDT type 12).</summary>
     public uint? LinkedRefFormId { get; init; }
 
-    /// <summary>Runtime-linked child refs derived from ExtraLinkedRefChildren.</summary>
-    public List<uint> LinkedRefChildrenFormIds { get; init; } = [];
+    /// <summary>
+    ///     Runtime-linked child refs derived from ExtraLinkedRefChildren (DMP-only; never populated
+    ///     for ESM-parsed refs). <c>IReadOnlyList</c> so the empty default is the shared
+    ///     <c>Array.Empty</c> — a per-instance <c>new List</c> here cost one allocation per placed
+    ///     ref (5.1M on Fallout 76) for a list that is virtually always empty.
+    /// </summary>
+    public IReadOnlyList<uint> LinkedRefChildrenFormIds { get; init; } = [];
 
     /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
     public PlacedReferenceStructuralData? StructuralData { get; init; }

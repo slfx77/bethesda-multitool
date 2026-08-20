@@ -21,11 +21,27 @@ public record LandHeightmap
     /// </summary>
     internal uint? SourceParentCellFormId { get; set; }
 
+    private readonly float[,]? _exactHeights;
+
     /// <summary>
-    ///     Optional exact height grid (from runtime mesh data).
-    ///     When set, CalculateHeights() returns this directly, bypassing lossy delta decoding.
+    ///     Optional exact height grid (from runtime mesh data, or decoded on demand from an external
+    ///     BTD via <see cref="ExactHeightsProvider" />). When present, CalculateHeights() returns this
+    ///     directly, bypassing lossy delta decoding.
     /// </summary>
-    public float[,]? ExactHeights { get; init; }
+    public float[,]? ExactHeights
+    {
+        get => _exactHeights ?? ExactHeightsProvider?.Invoke();
+        init => _exactHeights = value;
+    }
+
+    /// <summary>
+    ///     Lazy source for <see cref="ExactHeights" /> — FO76/Starfield BTD terrain attaches a
+    ///     per-cell decoder here instead of materializing every cell's grid at load (Appalachia's
+    ///     ~40k cells ≈ 2.7 GB eager). The provider is expected to cache: repeated gets are cheap,
+    ///     and callers may not hold the returned array across frames. Ignored when
+    ///     <see cref="ExactHeights" /> was set directly.
+    /// </summary>
+    internal Func<float[,]>? ExactHeightsProvider { get; init; }
 
     /// <summary>Maximum absolute height error after encoding this heightmap to VHGT deltas and decoding it back.</summary>
     public float EncodedRoundTripMaxError { get; init; }
@@ -36,9 +52,9 @@ public record LandHeightmap
     /// </summary>
     public float[,] CalculateHeights()
     {
-        if (ExactHeights != null)
+        if (ExactHeights is { } exact)
         {
-            return ExactHeights;
+            return exact;
         }
 
         var heights = new float[33, 33];

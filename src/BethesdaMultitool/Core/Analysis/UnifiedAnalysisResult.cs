@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Core.Analysis;
 public sealed class UnifiedAnalysisResult : IDisposable
 {
     private MemoryMappedFile? _mmf;
+    private Formats.Esm.Land.BtdTerrainInjection? _terrainInjection;
 
     /// <summary>The detected file type.</summary>
     public AnalysisFileType FileType { get; init; }
@@ -33,6 +34,8 @@ public sealed class UnifiedAnalysisResult : IDisposable
     {
         Accessor?.Dispose();
         _mmf?.Dispose();
+        _terrainInjection?.Dispose();
+        _terrainInjection = null;
     }
 
     internal void SetDisposables(MemoryMappedFile mmf, MemoryMappedViewAccessor accessor)
@@ -41,13 +44,39 @@ public sealed class UnifiedAnalysisResult : IDisposable
         Accessor = accessor;
     }
 
-    internal (MemoryMappedFile? MappedFile, MemoryMappedViewAccessor? Accessor) DetachDisposables()
+    /// <summary>
+    ///     Attaches the BTD terrain injection whose lazy height sources back this result's cells.
+    ///     It must outlive every heightmap read, so it is disposed with the result — or handed to
+    ///     whoever <see cref="DetachDisposables" />es the file mapping (the GUI session).
+    /// </summary>
+    internal void SetTerrainInjection(Formats.Esm.Land.BtdTerrainInjection? terrainInjection)
+    {
+        _terrainInjection = terrainInjection;
+    }
+
+    /// <summary>
+    ///     Hands ownership of the BTD terrain injection to a caller whose record graph outlives this
+    ///     result — the detached-source path (<c>SemanticSourceSetBuilder.LoadSourceAsync</c>), which
+    ///     deliberately disposes the result to close the ESM mapping but keeps <see cref="Records" />.
+    ///     Without this, disposal would close the lazy height sources under cells that escaped.
+    /// </summary>
+    internal Formats.Esm.Land.BtdTerrainInjection? DetachTerrainInjection()
+    {
+        var terrain = _terrainInjection;
+        _terrainInjection = null;
+        return terrain;
+    }
+
+    internal (MemoryMappedFile? MappedFile, MemoryMappedViewAccessor? Accessor, Formats.Esm.Land.BtdTerrainInjection? TerrainInjection)
+        DetachDisposables()
     {
         var mappedFile = _mmf;
         var accessor = Accessor;
+        var terrain = _terrainInjection;
         _mmf = null;
         Accessor = null;
-        return (mappedFile, accessor);
+        _terrainInjection = null;
+        return (mappedFile, accessor, terrain);
     }
 }
 

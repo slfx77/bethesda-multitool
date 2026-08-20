@@ -10,26 +10,25 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class PlacedReferenceEnableStateResolver
 {
-    internal static HashSet<uint> ResolveXespDisabledRefs(IReadOnlyList<CellRecord> cells)
-    {
-        var byId = new Dictionary<uint, PlacedReference>();
-        var linked = new List<PlacedReference>();
-        foreach (var cell in cells)
-        {
-            foreach (var placement in cell.PlacedObjects)
-            {
-                byId.TryAdd(placement.FormId, placement);
-                if (placement.EnableParentFormId is > 0)
-                {
-                    linked.Add(placement);
-                }
-            }
-        }
+    /// <summary>Convenience wrapper for callers without a prebuilt index (tests, small worlds).</summary>
+    internal static HashSet<uint> ResolveXespDisabledRefs(IReadOnlyList<CellRecord> cells) =>
+        ResolveXespDisabledRefs(PlacedRefIndex.Build(cells));
 
+    /// <summary>
+    ///     Index-driven resolve: the shared <see cref="PlacedRefIndex" /> replaces the private
+    ///     full-population byId dictionary this used to build per call (5.1M entries on FO76).
+    ///     Duplicate placement FormIDs collapse first-wins in the index; the result keys by FormID,
+    ///     so a duplicate could never be distinguished downstream anyway.
+    /// </summary>
+    internal static HashSet<uint> ResolveXespDisabledRefs(PlacedRefIndex placedRefs)
+    {
         var result = new HashSet<uint>();
-        foreach (var placement in linked)
+        foreach (var entry in placedRefs.Entries)
         {
-            if (!placement.IsInitiallyDisabled && ResolveDisabled(placement, byId))
+            var placement = entry.Ref;
+            if (placement.EnableParentFormId is > 0 &&
+                !placement.IsInitiallyDisabled &&
+                ResolveDisabled(placement, placedRefs))
             {
                 result.Add(placement.FormId);
             }
@@ -40,7 +39,7 @@ internal static class PlacedReferenceEnableStateResolver
 
     private static bool ResolveDisabled(
         PlacedReference placement,
-        Dictionary<uint, PlacedReference> byId)
+        PlacedRefIndex placedRefs)
     {
         var visited = new HashSet<uint>();
         var invert = false;
@@ -55,7 +54,7 @@ internal static class PlacedReferenceEnableStateResolver
             }
 
             if (current.EnableParentFormId is not { } parentId || parentId == 0 ||
-                !byId.TryGetValue(parentId, out var parent))
+                !placedRefs.TryGetRef(parentId, out var parent))
             {
                 return invert ? !current.IsInitiallyDisabled : current.IsInitiallyDisabled;
             }

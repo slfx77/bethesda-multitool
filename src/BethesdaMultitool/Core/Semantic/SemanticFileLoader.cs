@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Minidump;
@@ -169,22 +170,56 @@ internal static class SemanticFileLoader
         // Fallout 76 and Starfield store terrain heights in external .btd files, not in-record VHGT
         // (Starfield has no LAND record at all). Attach them to exterior cells so the 2D/3D terrain
         // renderers (which read through the shared height abstraction) light up. No-op for every
-        // other game.
+        // other game. Large worldspaces (Appalachia) get LAZY per-cell height providers over a
+        // kept-open BTD — the injection object owns those sources and rides on the result, disposed
+        // with it (the same lifetime the ESM's own memory map already has).
+        Formats.Esm.Land.BtdTerrainInjection? terrain = null;
         if (fileType == AnalysisFileType.EsmFile)
         {
-            Formats.Esm.Land.BtdTerrainInjector.Inject(records, filePath);
+            ReleaseEsmScanIntermediates(analysisResult.EsmRecords);
+            terrain = Formats.Esm.Land.BtdTerrainInjector.Inject(records, filePath);
         }
 
-        var resolver = records.CreateResolver(analysisResult.FormIdMap);
-
-        return new UnifiedAnalysisResult
+        try
         {
-            FileType = fileType,
-            Records = records,
-            Resolver = resolver,
-            RawResult = analysisResult,
-            FilePath = filePath
-        };
+            var resolver = records.CreateResolver(analysisResult.FormIdMap);
+
+            var result = new UnifiedAnalysisResult
+            {
+                FileType = fileType,
+                Records = records,
+                Resolver = resolver,
+                RawResult = analysisResult,
+                FilePath = filePath
+            };
+            result.SetTerrainInjection(terrain);
+            return result;
+        }
+        catch
+        {
+            terrain?.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    ///     Releases ESM scan-time intermediates the record parser has fully consumed into the semantic
+    ///     <c>RecordCollection</c>: <c>RefrRecords</c> (the per-REFR <c>ExtractedRefrRecord</c>s plus
+    ///     the <c>PositionSubrecord</c>s they uniquely own) and <c>NameReferences</c>. Neither has any
+    ///     reader after <c>RecordParser.ParseAll</c> returns on a plain ESM load — the last in-parse
+    ///     reader is <c>WorldRecordHandler.ExtractMapMarkers</c>, so this must run AFTER ParseAll, never
+    ///     inside it. For Fallout 76's SeventySix.esm (5.1M REFRs) this frees ~2 GB / ~10M objects and
+    ///     shortens every later GC pause (pause time scales with live-object count). ESM-only: DMP
+    ///     runtime extraction has post-parse consumers of both lists. KEPT alive: MainRecords
+    ///     (hex-viewer overlay), LandRecords (heightmap viewer), the GRUP maps, Positions
+    ///     (dangling-ref attribution), and the runtime lists. Idempotent.
+    /// </summary>
+    private static void ReleaseEsmScanIntermediates(EsmRecordScanResult scan)
+    {
+        scan.RefrRecords.Clear();
+        scan.RefrRecords.TrimExcess();
+        scan.NameReferences.Clear();
+        scan.NameReferences.TrimExcess();
     }
 
     private static async Task<AnalysisResult> AnalyzeAsync(

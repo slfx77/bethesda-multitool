@@ -890,8 +890,27 @@ internal static class CellLinkageHandler
     internal static PlacedReference ToPlacedReference(
         ExtractedRefrRecord r, RecordParserContext context, string? assignmentSource = null)
     {
+        // Construction-time Bounds/ModelPath enrichment: RecordParser builds the base-object
+        // indexes BEFORE cell parsing and stashes them on the context, so the ref is born enriched
+        // instead of being with-cloned by a post-parse sweep (5.1M clones on Fallout 76). Null
+        // indexes (direct-parser callers, tests) just leave both fields null — the old pre-sweep
+        // state.
+        Models.ObjectBounds? bounds = null;
+        if (context.PlacedObjectBoundsIndex is { } boundsIndex)
+        {
+            boundsIndex.TryGetValue(r.BaseFormId, out bounds);
+        }
+
+        string? modelPath = null;
+        if (context.PlacedObjectModelIndex is { } modelIndex)
+        {
+            modelIndex.TryGetValue(r.BaseFormId, out modelPath);
+        }
+
         return new PlacedReference
         {
+            Bounds = bounds,
+            ModelPath = modelPath,
             FormId = r.Header.FormId,
             BaseFormId = r.BaseFormId,
             BaseEditorId = r.BaseEditorId ?? context.GetEditorId(r.BaseFormId),

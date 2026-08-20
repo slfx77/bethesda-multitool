@@ -98,6 +98,76 @@ public sealed class OblivionWaterDataTests
         Assert.Equal(0x00_90_80_70u, Assert.IsType<uint>(props["ReflectionColor"]));
     }
 
+    // TES4 WATR DATA is a SIZE-VERSIONED union (xEdit wbDefinitionsTES4: 102/86/62/42/2) whose
+    // short forms are OLDER LAYOUTS, not byte prefixes — byte-verified against retail Oblivion.esm
+    // (2026-08-18 adversarial pass): Blood/CamoranLava02 (42) put the colors at @28/32/36 with
+    // damage @40; SwampWater/MS31Water (86) store THREE-float rain@60../displacement@72.. sims with
+    // damage @84; OblivionOil01 (62) ends colors+blend with damage @60. The pre-fix ≥100 gate
+    // dropped all six to FNV fallback tints; a naive "truncated prefix" reading misattributes the
+    // 86-form's sim floats and misses the 42-form entirely.
+
+    [Fact]
+    public void ReadOblivionWaterData_42ByteVintage_ColorsFollowTheSevenFloats()
+    {
+        var d = new byte[42];
+        WriteFloat(d, 16, 50f, false);    // SunPower
+        WriteFloat(d, 20, 0.5f, false);   // Reflectivity
+        WriteFloat(d, 24, 0.025f, false); // Fresnel
+        d[28] = 60; d[29] = 0; d[30] = 0; d[31] = 0xFF;    // Shallow (Blood's authored red)
+        d[32] = 150; d[33] = 0; d[34] = 0; d[35] = 0xFF;   // Deep
+        d[36] = 255; d[37] = 102; d[38] = 102; d[39] = 0xFF; // Reflection
+        var props = MiscEnvironmentHandler.ReadOblivionWaterData(d, isBigEndian: false);
+
+        Assert.Equal(0x00_00_00_3Cu, Assert.IsType<uint>(props["ShallowColor"]));
+        Assert.Equal(0x00_00_00_96u, Assert.IsType<uint>(props["DeepColor"]));
+        Assert.Equal(0x00_66_66_FFu, Assert.IsType<uint>(props["ReflectionColor"]));
+        Assert.Equal(0.5f, Assert.IsType<float>(props["ReflectivityAmount"]), 4);
+        // This vintage carries no scroll/fog/blend/sim fields — they must stay absent, not garbage.
+        Assert.False(props.ContainsKey("ScrollXSpeed"));
+        Assert.False(props.ContainsKey("FogNear"));
+        Assert.False(props.ContainsKey("TextureBlend"));
+        Assert.False(props.ContainsKey("RainForce"));
+    }
+
+    [Fact]
+    public void ReadOblivionWaterData_62ByteVintage_EndsAtTheTextureBlend()
+    {
+        var props = MiscEnvironmentHandler.ReadOblivionWaterData(
+            BuildOblivionData(bigEndian: false).AsSpan(0, 62), isBigEndian: false);
+
+        Assert.Equal(0x00_30_20_10u, Assert.IsType<uint>(props["ShallowColor"]));
+        Assert.Equal(0x00_60_50_40u, Assert.IsType<uint>(props["DeepColor"]));
+        Assert.Equal(0x00_90_80_70u, Assert.IsType<uint>(props["ReflectionColor"]));
+        Assert.Equal(0.73f, Assert.IsType<float>(props["TextureBlend"]), 4);
+        Assert.False(props.ContainsKey("RainForce"));
+        Assert.False(props.ContainsKey("DisplacementForce"));
+    }
+
+    [Fact]
+    public void ReadOblivionWaterData_86ByteVintage_ReadsThreeFloatSims()
+    {
+        var d = new byte[86];
+        BuildOblivionData(bigEndian: false).AsSpan(0, 60).CopyTo(d);
+        WriteFloat(d, 60, 0.1f, false);   // Rain Force
+        WriteFloat(d, 64, 0.6f, false);   // Rain Velocity
+        WriteFloat(d, 68, 0.985f, false); // Rain Falloff
+        WriteFloat(d, 72, 0.4f, false);   // Displacement Force — @72 is RainDampener in the 102-form
+        WriteFloat(d, 76, 0.6f, false);   // Displacement Velocity
+        WriteFloat(d, 80, 0.985f, false); // Displacement Falloff
+        var props = MiscEnvironmentHandler.ReadOblivionWaterData(d, isBigEndian: false);
+
+        Assert.Equal(0x00_30_20_10u, Assert.IsType<uint>(props["ShallowColor"]));
+        Assert.Equal(0.1f, Assert.IsType<float>(props["RainForce"]), 4);
+        Assert.Equal(0.985f, Assert.IsType<float>(props["RainFalloff"]), 4);
+        Assert.Equal(0.4f, Assert.IsType<float>(props["DisplacementForce"]), 4);
+        Assert.Equal(0.985f, Assert.IsType<float>(props["DisplacementFalloff"]), 4);
+        // The five-float-era fields do not exist in this vintage.
+        Assert.False(props.ContainsKey("RainDampener"));
+        Assert.False(props.ContainsKey("RainStartingSize"));
+        Assert.False(props.ContainsKey("DisplacementDampener"));
+        Assert.False(props.ContainsKey("DisplacementStartingSize"));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -68,7 +68,7 @@ public sealed class WastelandNvExplicitWaterHeightTests(SampleFileFixture sample
             MarkersByWorldspace = [],
             AllCells = [],
             CellByFormId = [],
-            RefrToCellIndex = [],
+            PlacedRefs = PlacedRefIndex.Empty,
             UnlinkedExteriorCells = [],
             UnlinkedMapMarkers = []
         };

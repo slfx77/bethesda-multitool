@@ -33,7 +33,11 @@ internal static class SemanticSourceSetBuilder
             Records = loaded.Records,
             Resolver = loaded.Resolver,
             RawResult = loaded.RawResult,
-            MinidumpInfo = loaded.RawResult.MinidumpInfo
+            MinidumpInfo = loaded.RawResult.MinidumpInfo,
+            // The using-dispose below closes the ESM mapping on purpose, but the records escape
+            // with this source — detach the lazy BTD terrain sources so their heights keep
+            // decoding for the record graph's lifetime instead of going flat.
+            TerrainInjection = loaded.DetachTerrainInjection()
         };
     }
 

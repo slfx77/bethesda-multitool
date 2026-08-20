@@ -336,6 +336,70 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] Abilities: {phaseSw.Elapsed} (Perks: {perks.Count}, Spells: {spells.Count})");
 
+        // === Base-object parses hoisted ABOVE cell parsing ===
+        // These record types feed the bounds/model indexes. Parsing them first lets
+        // ToPlacedReference construct each PlacedReference already enriched, instead of a
+        // post-parse sweep that with-cloned essentially every placed ref (5.1M on Fallout 76).
+        // All are parameterless context-only reads with no dependency on cells; the runtime
+        // generic merge is a no-op on plain ESM loads (RuntimeReader == null).
+        progressReporter?.ReportPhase(58, "Parsing world objects...");
+        phaseSw.Restart();
+        var weaponMods = _miscItems.ParseWeaponMods();
+        var lights = _miscWorldObjects.ParseLights();
+        var statics = _miscStaticObjects.ParseStatics();
+        var staticCollections = _miscStaticObjects.ParseStaticCollections();
+        var placeableWaters = _miscStaticObjects.ParsePlaceableWaters();
+        var trees = _miscStaticObjects.ParseTrees();
+        var sounds = _miscEnvironment.ParseSounds();
+        var genericTypes = new[]
+        {
+            "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
+            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN",
+            "IDLM",
+            // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
+            // PWAT likewise via ParsePlaceableWaters() — the generic path cannot recover its
+            // parent WATR, which sits behind a pointer inside an embedded 8-byte struct.
+            // TREE likewise via ParseTrees(): its required SNAM (NiTPrimitiveArray) and CNAM
+            // (OBJ_TREE) are embedded structs larger than 8 bytes, which the generic reader
+            // renders as a placeholder string rather than walking.
+            // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).
+            // Small PDB-defined types with no parity-relevant fields beyond identity.
+            "IMGS", "GRAS", "AMEF",
+            // FLOR (Flora): harvestable plants. ESM-side coverage so flora carries through
+            // (EDID/FULL/MODL/OBND + PFIG ingredient, SNAM sound, SCRI script via schema/fallback)
+            // even when no DMP is supplied.
+            "FLOR"
+        };
+        var genericRecords = new List<GenericEsmRecord>();
+        foreach (var type in genericTypes)
+        {
+            genericRecords.AddRange(_misc.ParseGenericRecords(type));
+        }
+
+        // Merge runtime-only records using PDB-derived struct layouts for types without
+        // specialized readers. Runs before the index build so runtime-merged base objects
+        // enrich placed refs too (no-op on plain ESM loads).
+        var allEsmFormIds = new HashSet<uint>(_context.RecordsByFormId.Keys);
+        foreach (var gr in genericRecords)
+        {
+            allEsmFormIds.Add(gr.FormId);
+        }
+
+        _context.MergeRuntimeGenericRecords(genericRecords, allEsmFormIds);
+
+        // === Build the bounds/model indexes and hand them to cell parsing ===
+        var modelIndex = new Dictionary<uint, string>();
+        var boundsIndex = ObjectIndexBuilder.BuildIndexes(
+            statics, activators, doors, lights, furniture,
+            staticCollections, placeableWaters, trees,
+            weapons, armor, ammo, consumables, miscItems, books,
+            containers, keys, notes, weaponMods, sounds, genericRecords,
+            modelIndex);
+        _context.PlacedObjectBoundsIndex = boundsIndex;
+        _context.PlacedObjectModelIndex = modelIndex;
+        Logger.Instance.Debug(
+            $"  [Semantic] Object indexes: {phaseSw.Elapsed} (Bounds: {boundsIndex.Count}, Models: {modelIndex.Count}, Generic: {genericRecords.Count})");
+
         progressReporter?.ReportPhase(60, "Parsing world data...");
         phaseSw.Restart();
         var cells = _world.ParseCells();
@@ -367,16 +431,22 @@ public sealed class RecordParser
 
         // PGRE telemetry: captured mines are rare and virtual/unresolved cells die in the
         // planner, so record which cell each one parented to — a silent orphan here IS the loss.
-        foreach (var cell in cells)
+        // Sweep only when a PGRE can exist at all: on a PGRE-less master (Fallout 76's 5.1M placed
+        // refs) this was 5.1M string comparisons per load for guaranteed-zero output. DMPs always
+        // sweep — runtime-merged placements can carry PGREs that never hit the typed record scan.
+        if (_context.MinidumpInfo is not null || _context.GetRecordListByType("PGRE").Count > 0)
         {
-            foreach (var placed in cell.PlacedObjects)
+            foreach (var cell in cells)
             {
-                if (placed.RecordType == "PGRE")
+                foreach (var placed in cell.PlacedObjects)
                 {
-                    Logger.Instance.Info(
-                        "[PGRE] 0x{0:X8} parented to cell 0x{1:X8} ({2}{3})",
-                        placed.FormId, cell.FormId, cell.EditorId ?? "no-edid",
-                        cell.IsVirtual ? ", VIRTUAL — dies in planner" : string.Empty);
+                    if (placed.RecordType == "PGRE")
+                    {
+                        Logger.Instance.Info(
+                            "[PGRE] 0x{0:X8} parented to cell 0x{1:X8} ({2}{3})",
+                            placed.FormId, cell.FormId, cell.EditorId ?? "no-edid",
+                            cell.IsVirtual ? ", VIRTUAL — dies in planner" : string.Empty);
+                    }
                 }
             }
         }
@@ -408,7 +478,15 @@ public sealed class RecordParser
                 $"  [Semantic] Deduplicated {deduplicated} runtime-shared ref copy(s) across grid cells");
         }
 
-        var globallyDeduplicated = PersistentRefRedistributor.DeduplicatePlacedRefsToBestCell(cells);
+        // Cross-cell duplicate sweep: only reachable ways to produce a duplicate are DMP
+        // runtime-cell attachment and the persistent redistribution above (which MOVES, but guard
+        // anyway when it ran). A GRUP-mapped ESM assigns each REFR to exactly one cell and
+        // ResolvePlacedReferencesByFormIds de-dupes within a cell — on Fallout 76 this sweep built
+        // a 5.1M-entry occurrence table (~1.5-2 GB, the CPU hotspot of the whole load) to find
+        // nothing, so a clean ESM load skips it.
+        var globallyDeduplicated = _context.MinidumpInfo is null && redistributed == 0
+            ? 0
+            : PersistentRefRedistributor.DeduplicatePlacedRefsToBestCell(cells);
         if (globallyDeduplicated > 0)
         {
             Logger.Instance.Debug(
@@ -450,7 +528,7 @@ public sealed class RecordParser
         var globals = _miscBasicTypes.ParseGlobals();
         var enchantments = _effects.ParseEnchantments();
         var baseEffects = _effects.ParseBaseEffects();
-        var weaponMods = _miscItems.ParseWeaponMods();
+        // weaponMods hoisted above cell parsing (bounds/model index source).
         var recipes = _miscItems.ParseRecipes();
         var recipeCategories = _miscBasicTypes.ParseRecipeCategories();
         var constructibleObjects = _miscItems.ParseConstructibleObjects();
@@ -467,58 +545,13 @@ public sealed class RecordParser
         var voiceTypes = _miscBasicTypes.ParseVoiceTypes();
         var menuIcons = _miscBasicTypes.ParseMenuIcons();
         var formLists = _miscCollections.ParseFormLists();
-        // activators, doors, furniture already parsed above (before script cross-ref chains)
-        var lights = _miscWorldObjects.ParseLights();
-        var statics = _miscStaticObjects.ParseStatics();
-        var staticCollections = _miscStaticObjects.ParseStaticCollections();
-        var placeableWaters = _miscStaticObjects.ParsePlaceableWaters();
-        var trees = _miscStaticObjects.ParseTrees();
+        // activators, doors, furniture parsed before script cross-ref chains; lights, statics,
+        // staticCollections, placeableWaters, trees, sounds, generic records hoisted above cell
+        // parsing (bounds/model index sources).
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
-
-        progressReporter?.ReportPhase(85, "Parsing generic records...");
-        phaseSw.Restart();
-        var genericTypes = new[]
-        {
-            "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
-            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN",
-            "IDLM",
-            // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
-            // PWAT likewise via ParsePlaceableWaters() — the generic path cannot recover its
-            // parent WATR, which sits behind a pointer inside an embedded 8-byte struct.
-            // TREE likewise via ParseTrees(): its required SNAM (NiTPrimitiveArray) and CNAM
-            // (OBJ_TREE) are embedded structs larger than 8 bytes, which the generic reader
-            // renders as a placeholder string rather than walking.
-            // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).
-            // Small PDB-defined types with no parity-relevant fields beyond identity.
-            "IMGS", "GRAS", "AMEF",
-            // FLOR (Flora): harvestable plants. ESM-side coverage so flora carries through
-            // (EDID/FULL/MODL/OBND + PFIG ingredient, SNAM sound, SCRI script via schema/fallback)
-            // even when no DMP is supplied.
-            "FLOR"
-        };
-        var genericRecords = new List<GenericEsmRecord>();
-        foreach (var type in genericTypes)
-        {
-            genericRecords.AddRange(_misc.ParseGenericRecords(type));
-        }
-
-        Logger.Instance.Debug(
-            $"  [Semantic] Generic records: {phaseSw.Elapsed} ({genericRecords.Count} across {genericTypes.Length} types)");
-
-        // Merge runtime-only records using PDB-derived struct layouts for types without specialized readers
-        phaseSw.Restart();
-        var allEsmFormIds = new HashSet<uint>(_context.RecordsByFormId.Keys);
-        foreach (var gr in genericRecords)
-        {
-            allEsmFormIds.Add(gr.FormId);
-        }
-
-        _context.MergeRuntimeGenericRecords(genericRecords, allEsmFormIds);
-        Logger.Instance.Debug($"  [Semantic] PDB generic runtime merge: {phaseSw.Elapsed}");
 
         progressReporter?.ReportPhase(88, "Parsing specialized records...");
         phaseSw.Restart();
-        var sounds = _miscEnvironment.ParseSounds();
         var musicTypes = _miscEnvironment.ParseMusicTypes();
         var textureSets = _miscEnvironment.ParseTextureSets();
         MergeRuntimeLandTextureSets(textureSets);
@@ -562,14 +595,14 @@ public sealed class RecordParser
             $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
             $"NAVM: {navMeshes.Count}, ECZN: {encounterZones.Count}, WTHR: {weather.Count})");
 
-        // === Build object bounds/model indexes and enrich placed references ===
-        var modelIndex = new Dictionary<uint, string>();
-        ObjectIndexBuilder.BuildAndEnrich(
-            statics, activators, doors, lights, furniture,
-            staticCollections, placeableWaters, trees,
-            weapons, armor, ammo, consumables, miscItems, books,
-            containers, keys, notes, weaponMods, sounds, genericRecords,
-            cells, worldspaces, modelIndex, phaseSw);
+        // === Placed-ref enrichment post-pass — DMP only ===
+        // Refs built through ToPlacedReference were born enriched (the indexes were handed to cell
+        // parsing via the context above). The runtime merge can append placements outside that
+        // path, so DMP loads keep a full sweep; a plain ESM load needs none.
+        if (_context.RuntimeReader != null)
+        {
+            ObjectIndexBuilder.EnrichAllCellViews(cells, worldspaces, boundsIndex, modelIndex);
+        }
 
         // Harvest MODS across every model-bearing base type in one pass (game-keyed payload:
         // FO3/FNV/Skyrim alternate-texture entries vs the FO4-family default MSWP FormID). Reuses

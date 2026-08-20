@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -9,16 +7,17 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Builds object bounds and model path indexes from parsed records, then enriches
-///     placed references (REFR/ACHR/ACRE) with base object data.
-///     Extracted from RecordParser.ParseAll.
+///     Builds object bounds and model path indexes from parsed base-object records. The indexes are
+///     built BEFORE cell parsing and handed to <c>CellLinkageHandler.ToPlacedReference</c> via
+///     <c>RecordParserContext</c>, so each <c>PlacedReference</c> is BORN with its Bounds/ModelPath —
+///     the previous post-parse enrichment sweep <c>with</c>-cloned essentially every placed ref
+///     (5.1M clones on Fallout 76). A post-pass remains only for DMP loads, whose runtime merge can
+///     append refs the construction-time path never saw.
 /// </summary>
 internal static class ObjectIndexBuilder
 {
-    /// <summary>
-    ///     Build bounds/model indexes from all parsed record types and enrich placed references.
-    /// </summary>
-    public static void BuildAndEnrich(
+    /// <summary>Build bounds/model indexes from all parsed base-object record types.</summary>
+    public static Dictionary<uint, ObjectBounds> BuildIndexes(
         List<StaticRecord> statics,
         List<ActivatorRecord> activators,
         List<DoorRecord> doors,
@@ -39,12 +38,8 @@ internal static class ObjectIndexBuilder
         List<WeaponModRecord> weaponMods,
         List<SoundRecord> sounds,
         List<GenericEsmRecord> genericRecords,
-        List<CellRecord> cells,
-        List<WorldspaceRecord> worldspaces,
-        Dictionary<uint, string> modelIndex,
-        Stopwatch phaseSw)
+        Dictionary<uint, string> modelIndex)
     {
-        phaseSw.Restart();
         var boundsIndex = new Dictionary<uint, ObjectBounds>();
         AddToIndexes(statics, s => s.FormId, s => s.Bounds, s => s.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(activators, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
@@ -77,14 +72,47 @@ internal static class ObjectIndexBuilder
         AddToIndexes(sounds, s => s.FormId, s => s.Bounds, s => null, boundsIndex, modelIndex);
         AddToIndexes(genericRecords, g => g.FormId, g => g.Bounds, g => g.ModelPath, boundsIndex, modelIndex);
 
+        return boundsIndex;
+    }
+
+    /// <summary>
+    ///     DMP-only post-pass: enrich every cell view with the indexes. Construction-time enrichment
+    ///     covers all refs built through <c>ToPlacedReference</c>; this catches runtime-merged
+    ///     placements added outside that path. Enrichment mutates in place, and worldspace cell lists
+    ///     alias the SAME <c>CellRecord</c> instances as the top-level list (LinkCellsToWorldspaces),
+    ///     so only worldspace cells NOT aliased into the top-level list (runtime-cell-map worldspaces)
+    ///     need a second sweep — re-enriching an aliased cell would just re-clone its refs.
+    /// </summary>
+    public static void EnrichAllCellViews(
+        List<CellRecord> cells,
+        List<WorldspaceRecord> worldspaces,
+        Dictionary<uint, ObjectBounds> boundsIndex,
+        Dictionary<uint, string> modelIndex)
+    {
         WorldRecordHandler.EnrichPlacedReferences(cells, boundsIndex, modelIndex);
-        foreach (var ws in worldspaces)
+
+        var aliased = new HashSet<CellRecord>(ReferenceEqualityComparer.Instance);
+        foreach (var cell in cells)
         {
-            WorldRecordHandler.EnrichPlacedReferences(ws.Cells, boundsIndex, modelIndex);
+            aliased.Add(cell);
         }
 
-        Logger.Instance.Debug(
-            $"  [Semantic] Enrichment: {phaseSw.Elapsed} (Bounds: {boundsIndex.Count}, Models: {modelIndex.Count})");
+        List<CellRecord>? unaliased = null;
+        foreach (var ws in worldspaces)
+        {
+            foreach (var cell in ws.Cells)
+            {
+                if (!aliased.Contains(cell))
+                {
+                    (unaliased ??= []).Add(cell);
+                }
+            }
+        }
+
+        if (unaliased is not null)
+        {
+            WorldRecordHandler.EnrichPlacedReferences(unaliased, boundsIndex, modelIndex);
+        }
     }
 
     private static void AddToIndexes<T>(

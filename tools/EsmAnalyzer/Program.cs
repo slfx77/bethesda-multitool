@@ -60,6 +60,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(WaterLayoutCommand.Create());
         rootCommand.Subcommands.Add(TerrainCellCommand.Create());
         rootCommand.Subcommands.Add(PathgridSummaryCommand.Create());
+        rootCommand.Subcommands.Add(MemProbeCommand.Create());
         rootCommand.Subcommands.Add(LightAuditCommand.Create());
         rootCommand.Subcommands.Add(HashCommands.CreateHashCommand());
         rootCommand.Subcommands.Add(HashCommands.CreateHashCompareCommand());

@@ -82,6 +82,14 @@ internal static class PersistentRefRedistributionPass
         var syntheticCellsAdded = 0;
         var moved = 0;
         var syntheticUsed = 0;
+        var rejectedByElevation = 0;
+
+        // Destination selection below is purely X/Y, which cannot tell an exterior ref from the refs
+        // of an uncaptured INTERIOR (whose interior-LOCAL coordinates land in some worldspace's grid
+        // span anyway). Measure each worldspace's captured elevation band FIRST — before any tile is
+        // synthesized — and refuse to redistribute a ref that sits nowhere near it. On xex21 this is
+        // what kept Hoover Dam's Utl* interior (Z 10368-12416) out of TheStripWorld (captured Z ≤ 2667).
+        var verticalBand = WorldspaceVerticalBand.Measure(existingCells);
 
         for (var i = 0; i < existingCells.Count; i++)
         {
@@ -103,12 +111,17 @@ internal static class PersistentRefRedistributionPass
                 gridToCellByWorldspace[wsId.Value] = gridMap;
             }
 
-            var keep = new List<PlacedReference>(pcell.PlacedObjects.Count);
-            foreach (var pref in pcell.PlacedObjects)
+            // Materialized only when a ref actually MOVES: on FNV-scale masters most persistent
+            // cells redistribute something, but on huge GRUP-mapped loads the common case is
+            // "nothing moves" and the old unconditional pre-sized copy was pure garbage.
+            List<PlacedReference>? keep = null;
+            var placed = pcell.PlacedObjects;
+            for (var j = 0; j < placed.Count; j++)
             {
+                var pref = placed[j];
                 if (!ShouldRedistributePersistentRef(pcell, pref))
                 {
-                    keep.Add(pref);
+                    keep?.Add(pref);
                     continue;
                 }
 
@@ -117,7 +130,16 @@ internal static class PersistentRefRedistributionPass
                 var hasPosition = MathF.Abs(pref.X) > 1f || MathF.Abs(pref.Y) > 1f;
                 if (!hasPosition)
                 {
-                    keep.Add(pref);
+                    keep?.Add(pref);
+                    continue;
+                }
+
+                // X/Y say "this tile of this worldspace"; Z has to agree, or the ref is not exterior
+                // content of this worldspace at all and must stay on its persistent container.
+                if (!verticalBand.IsPlausibleElevation(wsId.Value, pref.Z))
+                {
+                    rejectedByElevation++;
+                    keep?.Add(pref);
                     continue;
                 }
 
@@ -129,7 +151,7 @@ internal static class PersistentRefRedistributionPass
                 {
                     if (existing.FormId == pcell.FormId)
                     {
-                        keep.Add(pref);
+                        keep?.Add(pref);
                         continue;
                     }
 
@@ -146,7 +168,7 @@ internal static class PersistentRefRedistributionPass
                     // (0,0) tile produces a phantom virtual cell. Keep the ref on its persistent container.
                     if (context.MinidumpInfo is null)
                     {
-                        keep.Add(pref);
+                        keep?.Add(pref);
                         continue;
                     }
 
@@ -169,6 +191,16 @@ internal static class PersistentRefRedistributionPass
                     syntheticCellsAdded++;
                 }
 
+                // First MOVED ref: materialize `keep` with everything kept so far.
+                if (keep is null)
+                {
+                    keep = new List<PlacedReference>(placed.Count);
+                    for (var k = 0; k < j; k++)
+                    {
+                        keep.Add(placed[k]);
+                    }
+                }
+
                 destCell.PlacedObjects.Add(pref with
                 {
                     OriginCellFormId = pcell.FormId,
@@ -182,10 +214,13 @@ internal static class PersistentRefRedistributionPass
                 }
             }
 
-            if (keep.Count != pcell.PlacedObjects.Count)
+            if (keep is not null)
             {
-                existingCells[i] = pcell with { PlacedObjects = keep };
-                cellByFormId[pcell.FormId] = existingCells[i];
+                // In-place content swap, NOT `pcell with { PlacedObjects = keep }`: worldspace cell
+                // lists alias the same CellRecord instances, and replacing the element would leave
+                // the worldspace view holding the un-redistributed cell.
+                placed.Clear();
+                placed.AddRange(keep);
             }
         }
 
@@ -194,6 +229,14 @@ internal static class PersistentRefRedistributionPass
             Logger.Instance.Debug(
                 $"  [Semantic] CreateVirtualCells: synthesized {syntheticCellsAdded} virtual exterior tile(s) " +
                 $"for persistent ref redistribution ({syntheticUsed} refs placed via synthesis)");
+        }
+
+        if (rejectedByElevation > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Persistent redistribution kept {rejectedByElevation} ref(s) on their " +
+                "container: their Z lies outside the target worldspace's captured elevation band " +
+                "(likely refs of an uncaptured INTERIOR)");
         }
 
         return moved;

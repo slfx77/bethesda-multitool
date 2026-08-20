@@ -300,7 +300,11 @@ internal static class PersistentRefRedistributor
             return 0;
         }
 
-        var occurrencesByRef = new Dictionary<uint, List<RefOccurrence>>();
+        // First-seen map + a duplicates-only overflow table. The old shape allocated one
+        // List<RefOccurrence> (plus backing array) per DISTINCT FormID even though >99.99% of them
+        // occur exactly once — O(total refs) garbage to find O(duplicates) work.
+        var firstSeen = new Dictionary<uint, RefOccurrence>();
+        Dictionary<uint, List<RefOccurrence>>? duplicatesByRef = null;
         for (var cellIndex = 0; cellIndex < existingCells.Count; cellIndex++)
         {
             var cell = existingCells[cellIndex];
@@ -312,25 +316,33 @@ internal static class PersistentRefRedistributor
                     continue;
                 }
 
-                if (!occurrencesByRef.TryGetValue(pref.FormId, out var occurrences))
+                var occurrence = new RefOccurrence(cellIndex, objectIndex, cell, pref);
+                if (firstSeen.TryAdd(pref.FormId, occurrence))
                 {
-                    occurrences = [];
-                    occurrencesByRef[pref.FormId] = occurrences;
+                    continue;
                 }
 
-                occurrences.Add(new RefOccurrence(cellIndex, objectIndex, cell, pref));
+                duplicatesByRef ??= [];
+                if (!duplicatesByRef.TryGetValue(pref.FormId, out var occurrences))
+                {
+                    // Seed with the first sighting so encounter order matches the old shape.
+                    occurrences = [firstSeen[pref.FormId]];
+                    duplicatesByRef[pref.FormId] = occurrences;
+                }
+
+                occurrences.Add(occurrence);
             }
+        }
+
+        if (duplicatesByRef is null)
+        {
+            return 0;
         }
 
         var removalsByCell = new Dictionary<int, HashSet<int>>();
         var removed = 0;
-        foreach (var occurrences in occurrencesByRef.Values)
+        foreach (var occurrences in duplicatesByRef.Values)
         {
-            if (occurrences.Count <= 1)
-            {
-                continue;
-            }
-
             var best = occurrences
                 .OrderByDescending(o => PlacedRefScoring.ScoreRefOccurrence(o.Cell, o.Ref))
                 .ThenBy(o => o.CellIndex)
@@ -365,17 +377,21 @@ internal static class PersistentRefRedistributor
 
         foreach (var (cellIndex, removals) in removalsByCell)
         {
-            var cell = existingCells[cellIndex];
-            var kept = new List<PlacedReference>(cell.PlacedObjects.Count - removals.Count);
-            for (var objectIndex = 0; objectIndex < cell.PlacedObjects.Count; objectIndex++)
+            // In-place list surgery, NOT `cell with { PlacedObjects = kept }`: worldspace cell
+            // lists alias the same CellRecord instances, and replacing the element would fork the
+            // graph (the worldspace view would keep the un-deduplicated cell).
+            var placed = existingCells[cellIndex].PlacedObjects;
+            var kept = new List<PlacedReference>(placed.Count - removals.Count);
+            for (var objectIndex = 0; objectIndex < placed.Count; objectIndex++)
             {
                 if (!removals.Contains(objectIndex))
                 {
-                    kept.Add(cell.PlacedObjects[objectIndex]);
+                    kept.Add(placed[objectIndex]);
                 }
             }
 
-            existingCells[cellIndex] = cell with { PlacedObjects = kept };
+            placed.Clear();
+            placed.AddRange(kept);
         }
 
         return removed;

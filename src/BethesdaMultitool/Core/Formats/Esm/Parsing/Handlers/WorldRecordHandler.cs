@@ -94,31 +94,39 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
     /// <summary>
     ///     Enrich placed references in cells with base object bounds and model paths.
     ///     Joins PlacedReference.BaseFormId to pre-built indexes from parsed base objects.
+    ///     <para>
+    ///         Mutates IN PLACE (per-slot assignment into the existing <c>PlacedObjects</c> list; the
+    ///         house style — see SpawnPositionResolver). The previous shape rebuilt every cell's list
+    ///         and cloned the cell — and because <c>LinkCellsToWorldspaces</c> aliases the SAME
+    ///         <c>CellRecord</c> instances into <c>WorldspaceRecord.Cells</c>, replacing
+    ///         <c>cells[i]</c> silently FORKED the graph: the worldspace lists kept the stale
+    ///         pre-enrichment cells, which a second full enrichment pass then cloned AGAIN (~10.2M
+    ///         clones ≈ 2.5 GB of garbage on Fallout 76). In-place mutation keeps the aliasing intact,
+    ///         so one pass enriches both views and the divergence class is gone.
+    ///     </para>
     /// </summary>
     internal static void EnrichPlacedReferences(
         List<CellRecord> cells,
         Dictionary<uint, ObjectBounds> boundsIndex,
         Dictionary<uint, string> modelIndex)
     {
-        for (var i = 0; i < cells.Count; i++)
+        foreach (var cell in cells)
         {
-            var cell = cells[i];
-            if (!cell.PlacedObjects.Any(obj =>
-                    boundsIndex.ContainsKey(obj.BaseFormId) || modelIndex.ContainsKey(obj.BaseFormId)))
+            var placed = cell.PlacedObjects;
+            for (var j = 0; j < placed.Count; j++)
             {
-                continue;
-            }
-
-            var enriched = cell.PlacedObjects.Select(obj =>
-            {
+                var obj = placed[j];
                 boundsIndex.TryGetValue(obj.BaseFormId, out var bounds);
                 modelIndex.TryGetValue(obj.BaseFormId, out var modelPath);
-                return bounds != null || modelPath != null
-                    ? obj with { Bounds = bounds ?? obj.Bounds, ModelPath = modelPath ?? obj.ModelPath }
-                    : obj;
-            }).ToList();
-
-            cells[i] = cell with { PlacedObjects = enriched };
+                if (bounds != null || modelPath != null)
+                {
+                    placed[j] = obj with
+                    {
+                        Bounds = bounds ?? obj.Bounds,
+                        ModelPath = modelPath ?? obj.ModelPath
+                    };
+                }
+            }
         }
     }
 

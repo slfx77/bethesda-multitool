@@ -166,13 +166,19 @@ internal static class SubrecordDialogueSchemas
         //
         // Type uint16 values: 0=Object, 1=Quest, 0x100=Effect.
         // Flags uint16 values: 0x0001 = Enabled.
+        //
+        // Type and Flags are stored LITTLE-ENDIAN in the Xbox 360 ESM (verified: the
+        // 4-byte SCHR tails across all 2,487 SCPTs are exactly {00 00 01 00}=Object/Enabled,
+        // {01 00 01 00}=Quest/Enabled, {00 01 01 00}=Effect/Enabled — byte-identical to PC
+        // final). Swapping them corrupts Flags 0x0001→0x0100 (Enabled cleared on every
+        // script) and flips Quest↔Effect types. Pass through unswapped.
         schemas[new SubrecordSchemaRegistry.SchemaKey("SCHR", null, 20)] = new SubrecordSchema(
             F.Padding(4),
             F.UInt32("RefCount"),
             F.UInt32("CompiledSize"),
             F.UInt32("VariableCount"),
-            F.UInt16("Type"),
-            F.UInt16("Flags"))
+            F.UInt16LittleEndian("Type"),
+            F.UInt16LittleEndian("Flags"))
         {
             Description = "Script Header (canonical ESM SCHR per fopdoc)"
         };
