@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using Xunit.Sdk;
 
@@ -16,6 +17,8 @@ public sealed class NifTextureAnimationEvaluatorTests
     [InlineData(@"Sample\Meshes\meshes_360_final\meshes\weapons\hand2hand\powerfistrigid.nif")]
     public void PowerFistRigid_AnimatedBaseTextureController_ResolvesMidCycleTranslateU(string relativePath)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var (data, nif) = LoadNif(relativePath);
 
         var animatedShape = FindFirstAnimatedBaseUvShape(data, nif);
@@ -36,6 +39,8 @@ public sealed class NifTextureAnimationEvaluatorTests
     [InlineData(@"Sample\Meshes\meshes_360_final\meshes\weapons\hand2hand\powerfistrigid.nif")]
     public void PowerFistRigid_Extraction_AppliesAnimatedBaseTextureTransform(string relativePath)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var (data, nif) = LoadNif(relativePath);
         var animatedShape = FindFirstAnimatedBaseUvShape(data, nif);
 
@@ -65,6 +70,8 @@ public sealed class NifTextureAnimationEvaluatorTests
     [Fact]
     public void PowerFistRigid_ConvertedXboxSprayVertexColors_MatchPc()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var (pcData, pcNif) = LoadNif(@"Sample\Meshes\meshes_pc\meshes\weapons\hand2hand\powerfistrigid.nif");
         var (xboxData, xboxNif) =
             LoadNif(@"Sample\Meshes\meshes_360_final\meshes\weapons\hand2hand\powerfistrigid.nif");

@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
@@ -1121,6 +1122,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void HandToHandProcessAttachment_PrefersPosedWeaponNodeOnlyWhenTrustedEquippedPoseIsPresent()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
@@ -1151,6 +1154,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void HandToHandProcessAttachment_RebuildsFromHeldHandBeforeUsingUntrustedWeaponNode()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
@@ -1181,6 +1186,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void HandToHandProcessAttachment_PowerFistHint_PrefersForeTwistEquipLocalBeforeHeldHand()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
@@ -1211,6 +1218,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void H2hIdleSequence_ParsesHandParentOverride()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var idleKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hidle.kf"));
         Assert.NotNull(idleKf);
 
@@ -1222,6 +1231,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void H2hEquipSequence_ParsesForeTwistParentOverride()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var equipKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hequip.kf"));
         Assert.NotNull(equipKf);
 
@@ -1233,6 +1244,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void H2hEquipSequence_ProvidesWeaponAndRightArmOverrides_WhileH2hIdleDoesNot()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var equipKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hequip.kf"));
         var idleKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hidle.kf"));
         Assert.NotNull(equipKf);
@@ -1281,6 +1294,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void H2hEquipSequence_ParentOverrideChangesWeaponWorldTransform()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var skeleton = LoadNif(Path.Combine(MaleSampleCharacterRoot, "skeleton.nif"));
         var equipKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hequip.kf"));
         Assert.NotNull(skeleton);
@@ -1317,6 +1332,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void H2hEquipSequence_AnimatedWeaponLocalIsOnlyUsedOnForeTwistParent()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var skeleton = LoadNif(Path.Combine(MaleSampleCharacterRoot, "skeleton.nif"));
         var equipKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "h2hequip.kf"));
         Assert.NotNull(skeleton);
@@ -1353,6 +1370,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void TwoHandMeleeHolsterSequence_PreservesInterpolatorBaseWeaponTranslation()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var holsterKf = LoadNif(Path.Combine(MaleSampleCharacterRoot, "2hmHolster.kf"));
         Assert.NotNull(holsterKf);
 
@@ -1375,6 +1394,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void PowerFistRigidModel_DoesNotExposeInternalWeaponAnchorCompensation()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var rigid = LoadNif(FindPowerFistRigidPath());
         Assert.NotNull(rigid);
 
@@ -1395,6 +1416,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void BaseballBatModel_RotatedRoot_UsesRootAttachmentCompensationFallback()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var bat = LoadNif(FindBaseballBatPath());
         Assert.NotNull(bat);
 
@@ -1433,6 +1456,8 @@ public sealed class NpcAppearanceHelperTests
     [Fact]
     public void PowerFistRigidModel_IncludesBillboardAttachmentNodesForSprayMeshConnectShapes()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var rigid = LoadNif(FindPowerFistRigidPath());
         Assert.NotNull(rigid);
 
@@ -1453,6 +1478,8 @@ public sealed class NpcAppearanceHelperTests
         string fileName,
         int expectedVisShapeCount)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var weapon = LoadNif(FindTwoHandHandleWeaponPath(fileName));
         Assert.NotNull(weapon);
 

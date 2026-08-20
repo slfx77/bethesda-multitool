@@ -18,7 +18,20 @@ internal static class SourceContract
     /// <summary>Read a source file addressed by path segments relative to the repo root.</summary>
     public static string ReadSource(params string[] relativePath)
     {
-        return File.ReadAllText(Path.Combine(RepoRoot, Path.Combine(relativePath)));
+        return ReadNormalized(Path.Combine(RepoRoot, Path.Combine(relativePath)));
+    }
+
+    /// <summary>
+    ///     Read a source file with line endings normalized to LF. Markers in these tests are C#
+    ///     string literals containing bare <c>\n</c>, but the checked-out line endings are not
+    ///     fixed: this repo's working tree holds LF while the GitHub Windows runner image sets
+    ///     <c>core.autocrlf=true</c> and checks the same files out as CRLF. Comparing raw file text
+    ///     against an LF marker therefore passes locally and fails only in CI. Normalizing on read
+    ///     makes every multi-line marker platform-stable; single-line markers are unaffected.
+    /// </summary>
+    private static string ReadNormalized(string path)
+    {
+        return File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     /// <summary>The embedded-shader source tree (Gpu/Shaders).</summary>
@@ -34,7 +47,7 @@ internal static class SourceContract
         Directory.EnumerateFiles(ShadersRoot, fileName, SearchOption.AllDirectories).Single();
 
     /// <summary>Read a shader's source text by bare file name.</summary>
-    public static string ReadShaderSource(string fileName) => File.ReadAllText(ShaderPath(fileName));
+    public static string ReadShaderSource(string fileName) => ReadNormalized(ShaderPath(fileName));
 
     /// <summary>The WinUI application source tree (src/BethesdaMultitool/App).</summary>
     public static string AppRoot => Path.Combine(RepoRoot, "src", "BethesdaMultitool", "App");
@@ -46,7 +59,7 @@ internal static class SourceContract
     ///     <see cref="ReadShaderSource" />).
     /// </summary>
     public static string ReadAppSource(string fileName) =>
-        File.ReadAllText(Directory.EnumerateFiles(AppRoot, fileName, SearchOption.AllDirectories).Single());
+        ReadNormalized(Directory.EnumerateFiles(AppRoot, fileName, SearchOption.AllDirectories).Single());
 
     /// <summary>Assert each value appears in <paramref name="source" /> after the previous one.</summary>
     public static void AssertOrder(string source, params string[] values)
