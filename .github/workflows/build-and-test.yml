@@ -146,10 +146,16 @@ jobs:
       with:
         dotnet-version: '10.0.x'
     
+    # -p:BuildTestsOnly=true, not just --framework. The project cross-targets
+    # net10.0;net10.0-windows10.0.19041.0, and --framework does not stop MSBuild evaluating the
+    # Windows TFM, which fails on Linux with NETSDK1100 ("To build a project targeting Windows on
+    # this operating system, set the EnableWindowsTargeting property"). BuildTestsOnly collapses
+    # TargetFrameworks to net10.0 outright, which is exactly the CLI surface this job verifies.
     - name: Build CLI (Linux)
       run: |
         dotnet build src/BethesdaMultitool/BethesdaMultitool.csproj \
           --configuration Release \
+          -p:BuildTestsOnly=true \
           --framework net10.0
     
     - name: Verify CLI builds on Linux
