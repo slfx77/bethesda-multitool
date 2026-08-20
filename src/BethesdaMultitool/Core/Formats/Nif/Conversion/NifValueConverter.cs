@@ -598,8 +598,31 @@ internal sealed class NifValueConverter
             return false;
         }
 
-        // Some structs with fixed size (like HavokFilter) are packed bitfields that should
-        // be swapped as a single unit rather than field-by-field.
+        // HavokFilter (byte Layer, byte Flags/PartNumber, ushort Group) has TWO on-disk
+        // conventions in Xbox 360 NIFs and neither matches a per-field walk:
+        //  - NiStream-serialized sites (the bhkWorldObject-level filter on every
+        //    bhkRigidBody/T and phantom, bhkNiTriStripsShape.Filters, hkSubPartData) store
+        //    the whole filter as ONE big-endian uint32. Per-field conversion left Layer=0 /
+        //    Flags=0 and byte-swapped garbage into Group on all 13,402 collision-bearing
+        //    meshes — ragdolls lost FOL_BIPED (undraggable), clutter lost FOL_CLUTTER
+        //    (props launched when touched).
+        //  - The copy inside bhkRigidBodyCInfo* is raw little-endian on 360 (Bethesda's
+        //    console baker never swapped it) and must pass through verbatim.
+        if (typeName == "HavokFilter")
+        {
+            var inCinfo = ctx.StructStack.Count > 0 &&
+                          ctx.StructStack.Peek().StartsWith("bhkRigidBodyCInfo", StringComparison.Ordinal);
+            if (!_measure && !inCinfo)
+            {
+                NifEndianUtils.SwapUInt32InPlace(ctx.Buffer, ctx.Position);
+            }
+
+            ctx.Position += 4;
+            return true;
+        }
+
+        // Some structs with fixed size are packed bitfields that should be swapped as a
+        // single unit rather than field-by-field.
         if (NifScalarConverter.TryBulkSwapFixedSizeStruct(_schema, _measure, ctx, structDef))
         {
             return true;

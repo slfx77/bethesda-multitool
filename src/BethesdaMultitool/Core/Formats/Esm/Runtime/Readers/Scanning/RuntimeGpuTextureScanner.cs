@@ -313,7 +313,7 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
     ///     Apply reverse GPU transforms to convert GPU-prepared texture data to linear, little-endian format.
     ///     Uses DDXConv's proven untiling algorithms.
     /// </summary>
-    private static byte[] ReverseGpuTransform(byte[] data, int width, int height, uint gpuFormat, bool isTiled)
+    internal static byte[] ReverseGpuTransform(byte[] data, int width, int height, uint gpuFormat, bool isTiled)
     {
         // For non-block-compressed formats (A8R8G8B8, R5G6B5), just endian swap
         if (gpuFormat is 0x06 or 0x04)
@@ -321,8 +321,13 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
 
         if (isTiled)
         {
-            // Tiled: use Morton/Z-order untiling + endian swap in one pass
-            return TextureUtilities.UnswizzleMortonDxt(data, width, height, gpuFormat);
+            // Tiled: aligned-extent untile + endian swap in one pass. The plain logical-dims
+            // untile reads the wrong blocks for any surface whose stored layout differs from
+            // the logical one (either axis below one 32-block macro tile, over-tile unaligned,
+            // or a packed-tail origin) — the same defect class DDXConv's round-2 decode fixes
+            // closed. The aligned wrapper is a no-op for aligned surfaces and self-guards
+            // short dump reads (missing source blocks stay zero instead of misreading).
+            return TextureUtilities.UnswizzleMortonDxtAligned(data, width, height, gpuFormat);
         }
 
         // Untiled (linear): just endian swap for compressed formats

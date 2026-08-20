@@ -232,22 +232,52 @@ The primary tiling algorithm for 3XDO format textures. Operations are performed 
 **Algorithm** (from Xenia `texture_conversion.cc`, used in DDXConv):
 
 ```
-TiledOffset2DRow(y, width, log2Bpp):
-  macro = ((y >> 5) * ((width >> 5) << log2Bpp)) << 11
-  micro = ((y & 6) >> 1) << log2Bpp << 7
-  return macro + ((micro + ((y & 8) << (7 + log2Bpp))) ^ ((y & 1) << 4))
+TiledOffset2DRow(y, pitch, log2Bpp):
+  # pitch is rounded UP to a whole 32-block macro tile, per the decompiled
+  # XGAddress2DTiledOffset ((pitch + 0x1F) >> 5). Xenia's published form divides
+  # by 32 directly because it is handed an already-rounded pitch; porting that
+  # spelling with an unrounded pitch halves the macro row stride for any
+  # non-32-multiple pitch and reads the wrong tile for every row band past y=31.
+  macro = ((y / 32) * ((pitch + 31) / 32)) << (log2Bpp + 7)
+  micro = ((y & 6) << 2) << log2Bpp
+  return macro + ((micro & ~0xF) << 1) + (micro & 0xF)
+       + ((y & 8) << (3 + log2Bpp)) + ((y & 1) << 4)
 
 TiledOffset2DColumn(x, y, log2Bpp, rowOffset):
-  macro = (x >> 5) << log2Bpp << 11
-  micro = ((x & 7) + ((x & 8) << 1)) << log2Bpp
-  offset = macro + (micro ^ (((y & 8) << 3) + ((y & 1) << 4)))
-  return ((rowOffset + offset) << log2Bpp) >> log2Bpp
+  macro = (x / 32) << (log2Bpp + 7)
+  micro = (x & 7) << log2Bpp
+  offset = rowOffset + macro + ((micro & ~0xF) << 1) + (micro & 0xF)
+  return ((offset & ~0x1FF) << 3) + ((offset & 0x1C0) << 2) + (offset & 0x3F)
+       + ((y & 16) << 7) + (((((y & 8) >> 2) + (x >> 3)) & 3) << 6)
+  # byte offset; shift right by log2Bpp for the element index
 ```
 
-Where `log2Bpp` is derived from the DXT block size:
+Where `log2Bpp` is the log2 of the DXT block size in bytes:
 
-- 8-byte blocks (DXT1, BC4): `log2Bpp = 2`
-- 16-byte blocks (DXT5, BC5): `log2Bpp = 3`
+- 8-byte blocks (DXT1, ATI1/BC4): `log2Bpp = 3`
+- 16-byte blocks (DXT3/DXT5, ATI2/BC5): `log2Bpp = 4`
+
+The authoritative reference is the decompiled `XGAddress2DTiledOffset` in
+`tools/GhidraProject/texture_upload_decompiled_xenon.txt` (~line 11475); the production port
+is verified pointwise against it (and against the independent `Get2DTiledExtents` spelling)
+by `DDXConv.Tests/Support/XgReferenceModel.cs`.
+
+### Stored surface extent and the XG mip tail
+
+The stored mip-0 surface is the **tile-aligned GPU footprint**, not the logical size: each
+block-grid axis rounds up to a multiple of 32 blocks independently. A 512×16 DXT1 (128×4
+logical blocks) is stored as 128×32 blocks — decoding at the logical dims reads the wrong
+blocks for every surface whose stored layout differs from the logical one.
+
+When the XG mip tail base level is 0 — `max(0, ceil(log2(min(w,h))) - 4) == 0`, i.e. min
+texel dim ≤ 16 — the entire mip chain shares ONE tile-aligned surface and level 0 is NOT at
+the origin: it sits at `D3D__GetMipTailLevelOffsetCoords(0, …)`, 16 texels (4 blocks) along
+one axis. Reading level 0 from (0,0) lands on deeper mips and never-written slots — the
+"black rectangle" artifact class. The shared tail surface spans multiple macro tiles when
+the tail base's aspect ratio exceeds 8 (e.g. a 512×32's tail base 256×16 is 64×32 blocks).
+
+Mip levels ≥ 1 of non-tail textures follow as sequential independently-tiled surfaces, each
+at its own 32-block-aligned extent, with the packed tail terminating the chain.
 
 ### 2×2 Macro Block Tiling (3XDR)
 
@@ -470,6 +500,24 @@ The full conversion pipeline implemented by DDXConv:
 - **MIP regeneration**: Re-encoded MIPs don't match the original Xbox encoder's output exactly
 - **Atlas dimension heuristics**: Some unusual texture sizes may require manual atlas dimension specification
 - **CTX1 format**: Xbox 360-exclusive 2-channel compressed format with no direct DDS equivalent; must be transcoded
+- **Micro interface strips (~10 files, OPEN)**: 1×1 to 2×32 DXT1 UI strips
+  (`interface\shared\line\glow_line_horizontal`, `line_fade_v`, …) carry payloads of exactly
+  half the 32×32-block tail extent whose populated slots do not match the XG tail model with
+  8-byte elements — the layout is coherent when interpreted as 16-byte elements (paired DXT1
+  blocks), suggesting a distinct packing for these strips. Decoded honestly (counted skips,
+  visible in the verify harness's loss counters and MAE report) rather than guessed.
+
+**Resolved 2026-08-17** (round-2 decode fixes; adversarially reviewed): the historical
+zero-fill/black-rectangle class is gone. Root causes were (1) decompression buffers sized
+from the linear mip-0 size instead of the tile-aligned footprint plus the sequential mip
+chain — the LZX decompressor silently stops writing at the buffer, so this truncated ~2,400
+files' mip chains and one-axis surfaces; (2) a floor-vs-ceil macro pitch in the row tiling
+function; (3) the XG mip-tail origin (level 0 not at the surface origin for min dim ≤ 16);
+(4) routing — one-axis-sub-tile files never reached the correct decode path (an AND-guard
+shape check plus a hardcoded 192×256 "horizontal split" whose match condition was vacuously
+true). Verification is MAE-vs-PC-reference per mip (RGB and alpha) via the harness's
+`--pc-ref` oracle; all-zero-block counting is NOT a valid loss metric (the Xbox encoder
+legitimately emits all-zero DXT1 blocks for opaque black).
 
 ## References
 

@@ -168,8 +168,11 @@ internal static class NifScalarConverter
 
         // Only bulk-swap structs where all fields are single bytes (packed uint32/uint64 values
         // like UDecVector4, ByteColor4). Structs with multi-byte sub-fields (e.g., BodyPartList
-        // = 2 × ushort, HalfTexCoord = 2 × hfloat, HavokFilter = byte+byte+ushort) need
-        // per-field endian conversion — bulk swap cross-contaminates adjacent fields.
+        // = 2 × ushort, HalfTexCoord = 2 × hfloat) need per-field endian conversion — bulk
+        // swap cross-contaminates adjacent fields. HavokFilter never reaches here: it is
+        // special-cased upstream in NifValueConverter.TryConvertStructType because its 360
+        // on-disk convention is site-dependent (whole BE uint32 at NiStream sites, raw LE
+        // inside bhkRigidBodyCInfo).
         foreach (var field in structDef.Fields)
         {
             var fieldSize = schema.GetTypeSize(field.Type) ?? 0;

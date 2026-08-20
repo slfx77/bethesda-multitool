@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using DDXConv;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
@@ -200,134 +199,136 @@ public sealed class BsaProcessor : IRepackProcessor
             }
         }
 
-        // Phase 2a: Convert XMA files using batch mode (single FFmpeg script)
-        if (xmaFiles.Count > 0 && XmaWavConverter.IsAvailable)
+        // Phase 2a: Convert XMA audio in memory, per file, in parallel.
+        //
+        // This used to shell out to Windows PowerShell 5.1 with a `ForEach-Object -Parallel`
+        // script — a PowerShell 7+ feature. The script failed instantly (AmbiguousParameterSet),
+        // produced zero .wav files, and the read-back loop silently kept every original .xma.
+        // That is exactly how the shipped Sound.bsa and Voices1-4.bsa ended up 100% XMA2 —
+        // total in-game silence. FFmpeg absence is now a hard error instead of a silent keep.
+        if (xmaFiles.Count > 0)
         {
+            if (!XmaWavConverter.IsAvailable)
+            {
+                var error = $"FFmpeg is required to convert the {xmaFiles.Count} XMA audio files in {bsaName}. " +
+                            "Install ffmpeg and make sure it is on PATH — repacking without it would ship a silent archive.";
+                progress.Report(new RepackerProgress
+                {
+                    Phase = RepackPhase.Bsa,
+                    Message = $"{bsaName}: FFmpeg not found",
+                    Error = error
+                });
+                throw new InvalidOperationException(error);
+            }
+
             progress.Report(new RepackerProgress
             {
                 Phase = RepackPhase.Bsa,
                 Message = $"{bsaName}: Converting {xmaFiles.Count} audio files..."
             });
 
-            // Create temp directories for batch conversion
-            var tempId = Guid.NewGuid().ToString("N")[..8];
-            var tempInputDir = Path.Combine(Path.GetTempPath(), $"bsa_xma_in_{tempId}");
-            var tempOutputDir = Path.Combine(Path.GetTempPath(), $"bsa_xma_out_{tempId}");
-            Directory.CreateDirectory(tempInputDir);
-            Directory.CreateDirectory(tempOutputDir);
+            var convertedCount = 0;
+            var failedCount = 0;
+            var convertedAudio = new ConcurrentDictionary<int, (string Path, byte[] Data)>();
+            var looseSongs = new ConcurrentDictionary<int, (string Path, byte[] Data)>();
 
-            try
-            {
-                // Build mapping from temp file path to (index, original relative path)
-                var fileMapping = new Dictionary<string, (int Index, string RelativePath)>();
-
-                // Write all XMA files to temp input directory
-                foreach (var (index, relativePath, xmaData) in xmaFiles)
+            await ParallelWork.ForEachAsync("bsa-xma-convert", xmaFiles,
+                ConcurrencyPolicy.Fixed(AudioEncodingThreads), async (xmaFile, _) =>
                 {
-                    // Use a flat structure with unique names
-                    var tempFileName = $"{index:D6}_{Path.GetFileName(relativePath)}";
-                    var tempInputPath = Path.Combine(tempInputDir, tempFileName);
-                    await File.WriteAllBytesAsync(tempInputPath, xmaData, cancellationToken);
-                    fileMapping[tempInputPath] = (index, relativePath);
-                }
+                    var (index, relativePath, xmaData) = xmaFile;
 
-                // Run batch FFmpeg conversion using PowerShell
-                var ffmpegPath = FfmpegLocator.FfmpegPath!;
-                var convertedCount = 0;
+                    // Retail conventions: voice BSAs ship OGG Vorbis dialogue; sound fx are WAV
+                    // (the engine always probes .wav first for one-shots). Radio songs are
+                    // NEITHER: the ESM's MUSC records reference them as "songs\...\x.mp3", FNV
+                    // cannot read MP3 out of a BSA, and retail ships them as loose files under
+                    // Data\sound\songs\. They also weigh ~1.8 GB as PCM, which pushed Sound.bsa
+                    // past the 4 GiB u32 offset limit. So: transcode to MP3, deliver loose,
+                    // exclude from the archive.
+                    var isVoice = relativePath.StartsWith(@"sound\voice\", StringComparison.OrdinalIgnoreCase);
+                    var isSong = relativePath.StartsWith(@"sound\songs\", StringComparison.OrdinalIgnoreCase);
 
-                // Process files using parallel FFmpeg invocations via shell
-                // This is faster than .NET Process overhead per file
-                var scriptPath = Path.Combine(tempInputDir, "convert.ps1");
-                var script = $@"
-$inputDir = '{tempInputDir.Replace("'", "''")}'
-$outputDir = '{tempOutputDir.Replace("'", "''")}'
-$ffmpeg = '{ffmpegPath.Replace("'", "''")}'
-Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
-    $in = $_.FullName
-    $out = Join-Path '{tempOutputDir.Replace("'", "''")}' ($_.BaseName + '.wav')
-    & '{ffmpegPath.Replace("'", "''")}' -y -hide_banner -loglevel error -i $in -c:a pcm_s16le $out 2>$null
-    Write-Output $_.Name
-}} -ThrottleLimit {AudioEncodingThreads}
-";
-                await File.WriteAllTextAsync(scriptPath, script, cancellationToken);
-
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "powershell",
-                    Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-
-                using var process = new Process { StartInfo = psi };
-                process.OutputDataReceived += (_, e) =>
-                {
-                    if (!string.IsNullOrEmpty(e.Data))
+                    // Voice ships as Ogg, songs as MP3 (delivered loose — FNV cannot read MP3
+                    // from a BSA), everything else as WAV.
+                    static async Task<Core.Formats.ConversionResult> ConvertAsync(
+                        byte[] data, bool voice, bool song)
                     {
-                        var count = Interlocked.Increment(ref convertedCount);
-                        if (count % 100 == 0 || count == xmaFiles.Count)
+                        if (voice) return await XmaOggConverter.ConvertAsync(data);
+                        if (song) return await XmaMp3Converter.ConvertAsync(data);
+                        return await XmaWavConverter.ConvertAsync(data);
+                    }
+
+                    static string ExtensionFor(bool voice, bool song)
+                    {
+                        if (voice) return ".ogg";
+                        return song ? ".mp3" : ".wav";
+                    }
+
+                    try
+                    {
+                        var result = await ConvertAsync(xmaData, isVoice, isSong);
+
+                        if (result is { Success: true, OutputData.Length: > 0 })
                         {
-                            progress.Report(new RepackerProgress
+                            var ext = ExtensionFor(isVoice, isSong);
+                            var newPath = BuildConvertedAudioPath(relativePath, ext);
+                            if (isSong)
                             {
-                                Phase = RepackPhase.Bsa,
-                                CurrentItem = e.Data,
-                                Message = $"{bsaName}: Audio {count}/{xmaFiles.Count}"
-                            });
+                                looseSongs[index] = (newPath, result.OutputData);
+                            }
+                            else
+                            {
+                                convertedAudio[index] = (newPath, result.OutputData);
+                            }
                         }
-                    }
-                };
-
-                process.Start();
-                process.BeginOutputReadLine();
-                await process.WaitForExitAsync(cancellationToken);
-
-                // Read back converted files
-                foreach (var (tempInputPath, (index, relativePath)) in fileMapping)
-                {
-                    var tempFileName = Path.GetFileNameWithoutExtension(Path.GetFileName(tempInputPath));
-                    var tempOutputPath = Path.Combine(tempOutputDir, tempFileName + ".wav");
-
-                    if (File.Exists(tempOutputPath))
-                    {
-                        var wavData = await File.ReadAllBytesAsync(tempOutputPath, cancellationToken);
-                        if (wavData.Length > 0)
+                        else
                         {
-                            var newPath = Path.ChangeExtension(relativePath, ".wav");
-                            allFiles[index] = (newPath, wavData);
-                            continue;
+                            // Keep the original .xma entry: unreachable in-game but preserves data.
+                            Interlocked.Increment(ref failedCount);
+                            convertedAudio[index] = (relativePath, xmaData);
                         }
                     }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        Interlocked.Increment(ref failedCount);
+                        convertedAudio[index] = (relativePath, xmaData);
+                    }
 
-                    // Keep original if conversion failed
-                    var original = xmaFiles.First(f => f.Index == index);
-                    allFiles[index] = (relativePath, original.Data);
-                }
-            }
-            finally
+                    var count = Interlocked.Increment(ref convertedCount);
+                    if (count % 100 == 0 || count == xmaFiles.Count)
+                    {
+                        progress.Report(new RepackerProgress
+                        {
+                            Phase = RepackPhase.Bsa,
+                            CurrentItem = Path.GetFileName(relativePath),
+                            Message = $"{bsaName}: Audio {count}/{xmaFiles.Count}"
+                        });
+                    }
+                }, cancellationToken: cancellationToken);
+
+            foreach (var kvp in convertedAudio)
             {
-                // Clean up temp directories
-                try
-                {
-                    if (Directory.Exists(tempInputDir))
-                        Directory.Delete(tempInputDir, true);
-                    if (Directory.Exists(tempOutputDir))
-                        Directory.Delete(tempOutputDir, true);
-                }
-                catch
-                {
-                    /* Best effort cleanup */
-                }
+                allFiles[kvp.Key] = kvp.Value;
             }
-        }
-        else if (xmaFiles.Count > 0)
-        {
-            // FFmpeg not available, keep originals
-            foreach (var (index, relativePath, data) in xmaFiles)
+
+            // Write loose songs to the output Data folder and mark their archive slots for
+            // removal (empty path sentinel, filtered before the BSA write).
+            var outputDataDir = Path.GetDirectoryName(destBsaPath)!;
+            foreach (var (index, (relPath, data)) in looseSongs)
             {
-                allFiles[index] = (relativePath, data);
+                cancellationToken.ThrowIfCancellationRequested();
+                var loosePath = Path.Combine(outputDataDir, relPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(loosePath)!);
+                await File.WriteAllBytesAsync(loosePath, data, cancellationToken);
+                allFiles[index] = (string.Empty, []);
             }
+
+            progress.Report(new RepackerProgress
+            {
+                Phase = RepackPhase.Bsa,
+                Message = $"{bsaName}: Audio {xmaFiles.Count - failedCount - looseSongs.Count} converted in archive, " +
+                          $"{looseSongs.Count} songs delivered loose (MP3)" +
+                          (failedCount > 0 ? $", {failedCount} failed (kept as .xma)" : "")
+            });
         }
 
         // Phase 2b: Convert DDX files in memory.
@@ -481,17 +482,20 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             }
         }
 
-        // Phase 3: Write output BSA
+        // Phase 3: Write output BSA. Empty-path entries are slots whose content was
+        // delivered loose instead (radio songs) — they must not enter the archive.
+        var archiveFiles = allFiles.Where(f => f.RelativePath.Length > 0).ToList();
+
         progress.Report(new RepackerProgress
         {
             Phase = RepackPhase.Bsa,
-            Message = $"{bsaName}: Writing {allFiles.Count} files..."
+            Message = $"{bsaName}: Writing {archiveFiles.Count} files..."
         });
 
-        using var writer = BsaWriter.CreateWithAutoFlags(allFiles.Select(f => f.RelativePath));
+        using var writer = BsaWriter.CreateWithAutoFlags(archiveFiles.Select(f => f.RelativePath));
 
         var writeIndex = 0;
-        foreach (var (relativePath, data) in allFiles)
+        foreach (var (relativePath, data) in archiveFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -499,13 +503,13 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             writeIndex++;
 
             // Report write progress every 1000 files
-            if (writeIndex % 1000 == 0 || writeIndex == allFiles.Count)
+            if (writeIndex % 1000 == 0 || writeIndex == archiveFiles.Count)
             {
                 progress.Report(new RepackerProgress
                 {
                     Phase = RepackPhase.Bsa,
-                    CurrentItem = $"{writeIndex}/{allFiles.Count}",
-                    Message = $"{bsaName}: Writing {writeIndex}/{allFiles.Count}"
+                    CurrentItem = $"{writeIndex}/{archiveFiles.Count}",
+                    Message = $"{bsaName}: Writing {writeIndex}/{archiveFiles.Count}"
                 });
             }
         }
@@ -515,8 +519,21 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
         progress.Report(new RepackerProgress
         {
             Phase = RepackPhase.Bsa,
-            Message = $"{bsaName}: Done ({allFiles.Count} files)"
+            Message = $"{bsaName}: Done ({archiveFiles.Count} files in archive)"
         });
+    }
+
+    /// <summary>
+    ///     Builds the renamed archive path for a converted audio entry. Trims trailing whitespace
+    ///     from the basename: ~25 source entries carry a trailing space before the extension
+    ///     ("..._2 .xma"), and the engine could never request "..._2 .ogg".
+    /// </summary>
+    private static string BuildConvertedAudioPath(string relativePath, string newExtension)
+    {
+        var directory = Path.GetDirectoryName(relativePath) ?? string.Empty;
+        var baseName = Path.GetFileNameWithoutExtension(relativePath).TrimEnd();
+        var newName = baseName + newExtension;
+        return directory.Length > 0 ? Path.Combine(directory, newName) : newName;
     }
 
     /// <summary>
