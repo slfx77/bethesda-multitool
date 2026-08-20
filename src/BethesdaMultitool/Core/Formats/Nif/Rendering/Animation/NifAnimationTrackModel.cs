@@ -38,14 +38,25 @@ internal sealed record NifNodeTrack(
     NifKeyInterpolation TranslationInterpolation,
     NifVec3Key[] TranslationKeys,
     NifKeyInterpolation ScaleInterpolation,
-    NifFloatKey[] ScaleKeys)
+    NifFloatKey[] ScaleKeys,
+    // XYZ-Euler rotation (KeyType 4): three per-axis angle KeyGroups instead of quaternion keys
+    // (the Goodsprings saloon sign's swing is authored this way). Null when the rotation channel
+    // is quaternion-keyed or absent; an axis without keys holds angle 0.
+    NifFloatKey[]? EulerXKeys = null,
+    NifFloatKey[]? EulerYKeys = null,
+    NifFloatKey[]? EulerZKeys = null)
 {
+    public bool HasEulerRotation =>
+        EulerXKeys is { Length: > 0 } || EulerYKeys is { Length: > 0 } || EulerZKeys is { Length: > 0 };
+
     public bool HasAnyKeys =>
-        RotationKeys.Length > 0 || TranslationKeys.Length > 0 || ScaleKeys.Length > 0;
+        RotationKeys.Length > 0 || TranslationKeys.Length > 0 || ScaleKeys.Length > 0 ||
+        HasEulerRotation;
 
     /// <summary>True when any channel carries at least two keys — i.e. the track actually moves.</summary>
     public bool HasMotion =>
-        RotationKeys.Length > 1 || TranslationKeys.Length > 1 || ScaleKeys.Length > 1;
+        RotationKeys.Length > 1 || TranslationKeys.Length > 1 || ScaleKeys.Length > 1 ||
+        EulerXKeys is { Length: > 1 } || EulerYKeys is { Length: > 1 } || EulerZKeys is { Length: > 1 };
 }
 
 /// <summary>

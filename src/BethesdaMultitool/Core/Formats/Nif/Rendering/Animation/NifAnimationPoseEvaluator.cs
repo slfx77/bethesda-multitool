@@ -42,6 +42,10 @@ internal static class NifAnimationPoseEvaluator
                 {
                     rotation = NifTrackSampler.SampleRotation(track.RotationKeys, trackTime);
                 }
+                else if (track.HasEulerRotation)
+                {
+                    rotation = NifTrackSampler.SampleEulerRotation(track, trackTime);
+                }
 
                 if (track.TranslationKeys.Length > 0)
                 {

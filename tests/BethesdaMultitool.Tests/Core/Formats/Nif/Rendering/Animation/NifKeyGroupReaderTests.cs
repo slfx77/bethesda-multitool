@@ -29,7 +29,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys, out _));
 
         Assert.Equal(NifKeyInterpolation.Linear, interp);
         Assert.Equal(2, keys.Length);
@@ -54,7 +54,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys, out _));
 
         Assert.Equal(NifKeyInterpolation.Quadratic, interp);
         Assert.Equal(2, keys.Length);
@@ -75,7 +75,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys, out _));
 
         Assert.Equal(NifKeyInterpolation.Tbc, interp);
         Assert.Equal(2, keys.Length);
@@ -106,7 +106,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys, out _));
 
         Assert.Equal(NifKeyInterpolation.XyzEuler, interp);
         Assert.Empty(keys);

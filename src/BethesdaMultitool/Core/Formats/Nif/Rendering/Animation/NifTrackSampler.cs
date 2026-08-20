@@ -65,6 +65,26 @@ internal static class NifTrackSampler
     }
 
     /// <summary>
+    ///     Samples an XYZ-Euler rotation track: each axis's angle KeyGroup is lerped independently
+    ///     (an axis without keys holds angle 0 — the authored Euler channels ARE the rotation, per
+    ///     the same replaces-rest channel rule the evaluator applies) and composed in Z→Y→X order
+    ///     under the row-vector convention used throughout (v × Rz × Ry × Rx). Order verified
+    ///     empirically on nv_gs-saloon-sign.nif: the clip's t=0 pose reproduces the authored node
+    ///     rest rotation only in this composition (the X→Y→Z alternative leaves a ~180° residual —
+    ///     see FnvRigidNodeAnimationRetailTests).
+    /// </summary>
+    internal static Quaternion SampleEulerRotation(NifNodeTrack track, float time)
+    {
+        var x = track.EulerXKeys is { Length: > 0 } xKeys ? SampleScale(xKeys, time) : 0f;
+        var y = track.EulerYKeys is { Length: > 0 } yKeys ? SampleScale(yKeys, time) : 0f;
+        var z = track.EulerZKeys is { Length: > 0 } zKeys ? SampleScale(zKeys, time) : 0f;
+        return Quaternion.Normalize(
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, z) *
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, y) *
+            Quaternion.CreateFromAxisAngle(Vector3.UnitX, x));
+    }
+
+    /// <summary>
     ///     Binary-searches the bracketing key pair for <paramref name="time" />. Clamps before the
     ///     first / after the last key (lo == hi). Assumes at least one key and ascending times.
     /// </summary>

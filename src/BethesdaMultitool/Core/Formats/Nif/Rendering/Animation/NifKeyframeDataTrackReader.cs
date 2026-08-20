@@ -48,7 +48,8 @@ internal static class NifKeyframeDataTrackReader
         var end = block.DataOffset + block.Size;
 
         if (!NifKeyGroupReader.TryReadQuatKeys(
-                data, ref pos, end, be, nif.BinaryVersion, out var rotInterp, out var rotKeys) ||
+                data, ref pos, end, be, nif.BinaryVersion, out var rotInterp, out var rotKeys,
+                out var eulerKeys) ||
             !NifKeyGroupReader.TryReadVector3Keys(
                 data, ref pos, end, be, out var transInterp, out var transKeys) ||
             !NifKeyGroupReader.TryReadFloatKeys(
@@ -65,7 +66,10 @@ internal static class NifKeyframeDataTrackReader
             phase,
             rotInterp, rotKeys,
             transInterp, transKeys,
-            scaleInterp, scaleKeys);
+            scaleInterp, scaleKeys,
+            EulerXKeys: eulerKeys?.X,
+            EulerYKeys: eulerKeys?.Y,
+            EulerZKeys: eulerKeys?.Z);
     }
 
     /// <summary>

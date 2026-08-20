@@ -24,15 +24,17 @@ internal static class NifKeyGroupReader
 
     /// <summary>
     ///     Reads a rotation key block (count + type + keys). XYZ-Euler rotations (type 4) are three
-    ///     per-axis float KeyGroups — they're skipped structurally (cursor stays in sync) and reported
-    ///     as <see cref="NifKeyInterpolation.XyzEuler" /> with no quaternion keys.
+    ///     per-axis float KeyGroups — reported through <paramref name="eulerKeys" /> (the
+    ///     Goodsprings saloon sign's swing is authored this way) with no quaternion keys.
     /// </summary>
     internal static bool TryReadQuatKeys(
         byte[] data, ref int pos, int end, bool be, uint binaryVersion,
-        out NifKeyInterpolation interpolation, out NifQuatKey[] keys)
+        out NifKeyInterpolation interpolation, out NifQuatKey[] keys,
+        out (NifFloatKey[] X, NifFloatKey[] Y, NifFloatKey[] Z)? eulerKeys)
     {
         interpolation = NifKeyInterpolation.Linear;
         keys = [];
+        eulerKeys = null;
         if (pos + 4 > end)
         {
             return false;
@@ -67,15 +69,19 @@ internal static class NifKeyGroupReader
                 pos += 4;
             }
 
+            var axes = new NifFloatKey[3][];
             for (var axis = 0; axis < 3; axis++)
             {
-                if (!TryReadFloatKeys(data, ref pos, end, be, out _, out _))
+                if (!TryReadFloatKeys(data, ref pos, end, be, out _, out var axisKeys))
                 {
                     return false;
                 }
+
+                axes[axis] = axisKeys;
             }
 
-            return true; // structurally consumed; no quaternion keys to report
+            eulerKeys = (axes[0], axes[1], axes[2]);
+            return true;
         }
 
         var stride = interpolation switch
