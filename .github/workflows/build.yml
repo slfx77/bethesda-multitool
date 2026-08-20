@@ -16,12 +16,12 @@ jobs:
     name: Windows GUI (x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -34,7 +34,7 @@ jobs:
           Copy-Item THIRD_PARTY_LICENSES publish/win-gui/
 
       - name: Upload Windows GUI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: BethesdaMultitool-Windows-GUI-x64
           path: publish/win-gui/
@@ -44,12 +44,12 @@ jobs:
     name: Windows CLI (x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -62,7 +62,7 @@ jobs:
           Copy-Item THIRD_PARTY_LICENSES publish/win-cli/
 
       - name: Upload Windows CLI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: BethesdaMultitool-Windows-CLI-x64
           path: publish/win-cli/
@@ -72,12 +72,12 @@ jobs:
     name: Linux CLI (x64)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -90,7 +90,7 @@ jobs:
           cp THIRD_PARTY_LICENSES publish/linux-cli/
 
       - name: Upload Linux CLI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: BethesdaMultitool-Linux-CLI-x64
           path: publish/linux-cli/
@@ -100,12 +100,12 @@ jobs:
     name: Audio Transcriber (Windows x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -118,7 +118,7 @@ jobs:
           Copy-Item THIRD_PARTY_LICENSES publish/audio-transcriber/
 
       - name: Upload Audio Transcriber artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: BethesdaAudioTranscriber-Windows-x64
           path: publish/audio-transcriber/
@@ -133,7 +133,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 
