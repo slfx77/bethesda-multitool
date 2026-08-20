@@ -16,12 +16,16 @@ jobs:
       with:
         submodules: recursive
     
+    # Deliberately no `dotnet-quality: preview`. It was correct while .NET 10 was pre-GA, but it
+    # now resolves 10.0.x to a release candidate (10.0.100-rc.2) rather than the GA SDK developers
+    # build with (10.0.4xx). That drift is not cosmetic — `dotnet test` argument parsing differs
+    # between the two, so a command can pass on the RC and fail on every developer machine, or the
+    # reverse. CI must run the SDK the project actually ships on.
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-        dotnet-quality: 'preview'
-    
+
     - name: Restore dependencies
       run: dotnet restore
     
@@ -46,30 +50,39 @@ jobs:
         dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj `
           --configuration Release `
           --no-build `
+          --results-directory ./TestResults `
           -- `
           --report-xunit-trx `
           --report-xunit-trx-filename test-results.trx `
-          --results-directory ./TestResults `
           --minimum-expected-tests 6000
 
     # These test projects are intentionally not members of BethesdaMultitool.slnx, so neither the
     # solution build nor the main test command above discovers them. Run them explicitly instead of
     # letting healthy local suites silently have zero CI coverage.
+    # `--results-directory` must precede the `--` separator. Passed after it, the GA SDK's
+    # `dotnet test` rejects the whole command with "Specifying a directory for 'dotnet test'
+    # should be via '--project' or '--solution'". These projects also need an explicit build:
+    # they are outside the solution, so the Build step above never produces their output and
+    # `--no-build` would otherwise fail.
     - name: Run Auxiliary Tool Tests
       run: |
+        dotnet build tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj --configuration Release
         dotnet test --project tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj `
           --configuration Release `
+          --no-build `
+          --results-directory ./TestResults `
           -- `
           --report-xunit-trx `
           --report-xunit-trx-filename esm-schema-gen-test-results.trx `
-          --results-directory ./TestResults `
           --minimum-expected-tests 15
+        dotnet build src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj --configuration Release
         dotnet test --project src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj `
           --configuration Release `
+          --no-build `
+          --results-directory ./TestResults `
           -- `
           --report-xunit-trx `
           --report-xunit-trx-filename ddxconv-test-results.trx `
-          --results-directory ./TestResults `
           --minimum-expected-tests 216
 
     - name: Upload Test Results
@@ -98,7 +111,6 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-        dotnet-quality: 'preview'
 
     - name: Install coverlet
       run: dotnet tool install --global coverlet.console
@@ -127,7 +139,6 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-        dotnet-quality: 'preview'
     
     - name: Build CLI (Linux)
       run: |
