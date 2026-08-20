@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Work since `3.0.0-alpha.1`. Highlights: the ESM reader/writer went multi-game (Morrowind through
+## [3.0.0-alpha.2] - 2026-08-19
+
+Work since `3.0.0-alpha.1` (588 commits). Highlights: the ESM reader/writer went multi-game (Morrowind through
 Fallout 76), the DMP→ESP converter was renamed **DMP→ESM** and grew a plan-time pipeline, the 3D
 worldspace viewer gained an engine-grounded lighting/atmosphere/effects stack, and script
 decompilation added Papyrus.
@@ -79,6 +81,13 @@ decompilation added Papyrus.
   world-specific vertical extent when the new scene has no finite Z census, and grid alpha composes
   source-over instead of overwriting transparent-export coverage. Many features are env-flag gated
   (`FALLOUT_VIEWER_*`).
+- **Reflections & environment mapping**: the TES3/TES4-era authored sphere-map pass
+  (`NiTextureEffect` ENVIRONMENT_MAP + SPHERE_MAP) and mirrored-scene water reflections for Oblivion,
+  which re-issue the frame's captured instanced-opaque draws through a winding-flipped PSO twin. The
+  exact runtime reflection multiplier is still unrecovered — `NiTextureEffect` authors no scale field,
+  so the pass ships a neutral 1 rather than a guessed value.
+- **Placed-light day/night gating** and **rigid-node NIF animation baking** (XYZ-Euler rotation
+  ordering), plus a **FormID heatmap overlay** for spotting record-origin clustering in a worldspace.
 
 #### Script decompilation
 
@@ -107,10 +116,31 @@ decompilation added Papyrus.
 
 - **Format-agnostic `archive` command group** (BSA and BA2 auto-detected by magic; `bsa`/`ba2` remain
   aliases). Read support for the **BA2 (`BTDX`)** archive format used by Fallout 4/76/Starfield.
+- **Layered game VFS** with lock-free BSA reads, so loose files and archives resolve through one
+  filesystem view in load order.
+- **DDX decode correctness (DDXConv)**: the LZX decompressor stopped writing when its output buffer
+  filled and still reported success, so the old mip-0-linear-size hint silently truncated any texture
+  whose tiled extents exceeded it — roughly 4,700 of 22,616 converted textures carried black
+  rectangles while a golden-hash harness reported every one stable. The buffer is now sized from real
+  tiled extents, with pitch rounding and ceil-log2 tail-base fixes, shape-keyed heuristics deleted,
+  and a mean-absolute-error oracle plus `DecodeDiagnostics` replacing hash-only validation.
+- **Xbox 360 repacking**: console menus are unpacked from `final_master_xml.dat`, `_n`/`_s` specular
+  maps are merged in memory, and MP3 music is delivered loose because FNV cannot read MP3 from a BSA
+  (Fallout 3 can). Six console menus that the retail PC executable cannot run — HUD, Stats, Inventory,
+  Container, Barter, Recipe — are sourced from a PC donor instead; every other console menu ships
+  as-is.
 
 #### Tooling
 
 - **`tools/ShaderProbe`**: extracts and probes the FNV `shaderpackage.sdp` for renderer-parity work.
+- **Profiler apps** (`BethesdaRendererProfiler`, `BethesdaMap2DProfiler`): headless and live scenario
+  harnesses with JSONL traces, camera-motion automation, and frame capture, used to verify sky,
+  weather, water, and 2D-map behavior without driving the GUI by hand.
+- **Audio transcriber**: playlist review panel with suggestions and filtering, seek-while-stopped
+  playback, and a timestamp converter.
+- **GUI**: searchable worldspace browser for the 2D map and 3D viewer, a 2D map export panel, a
+  reorganized viewer settings panel, and a diagnostics tab surfacing resource stats and recoverable
+  DMP gaps.
 
 ### Changed
 
@@ -460,7 +490,8 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
-[Unreleased]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v3.0.0-alpha.1...HEAD
+[Unreleased]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v3.0.0-alpha.2...HEAD
+[3.0.0-alpha.2]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v3.0.0-alpha.1...v3.0.0-alpha.2
 [3.0.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.4.0...v3.0.0-alpha.1
 [2.4.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.2.0-pre1...v2.3.0
