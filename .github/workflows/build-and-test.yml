@@ -70,7 +70,7 @@ jobs:
           --report-xunit-trx `
           --report-xunit-trx-filename ddxconv-test-results.trx `
           --results-directory ./TestResults `
-          --minimum-expected-tests 65
+          --minimum-expected-tests 216
 
     - name: Upload Test Results
       uses: actions/upload-artifact@v4

@@ -611,6 +611,11 @@ internal static class DmpCellInventoryCommand
         var unresolvedGridCells = new Dictionary<(int GridX, int GridY), CellRecord>();
         var nextBoundedVirtualFormId = 0xFF100001u;
         var nextUnresolvedGridFormId = 0xFE110001u;
+        // Same elevation guard the converter's recovery passes apply: grid containment alone cannot
+        // distinguish exterior content from the refs of an uncaptured INTERIOR, so a placement whose Z
+        // is nowhere near the worldspace's captured band is reported under its own unresolved grid
+        // instead of being shown as part of that worldspace (xex21's Hoover Dam Utl* block).
+        var verticalBand = WorldspaceVerticalBand.Measure(allCells);
 
         foreach (var (sourceCell, placed) in unresolvedPlacements)
         {
@@ -628,8 +633,9 @@ internal static class DmpCellInventoryCommand
                 continue;
             }
 
-            if (TryResolveUniqueWorldspaceBounds(capturedWorldspaceBounds, gridX, gridY, out var worldspaceFormId) ||
-                TryResolveUniqueWorldspaceBounds(worldspaceBounds, gridX, gridY, out worldspaceFormId))
+            if ((TryResolveUniqueWorldspaceBounds(capturedWorldspaceBounds, gridX, gridY, out var worldspaceFormId) ||
+                 TryResolveUniqueWorldspaceBounds(worldspaceBounds, gridX, gridY, out worldspaceFormId)) &&
+                verticalBand.IsPlausibleElevation(worldspaceFormId, placed.Z))
             {
                 var key = (worldspaceFormId, gridX, gridY);
                 if (!boundedVirtualCells.TryGetValue(key, out var virtualCell))
