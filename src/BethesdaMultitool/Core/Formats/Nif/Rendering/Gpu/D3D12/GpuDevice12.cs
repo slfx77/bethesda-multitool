@@ -42,7 +42,8 @@ internal sealed class GpuDevice12 : IDisposable
         FeatureLevel featureLevel,
         ID3D12InfoQueue? infoQueue,
         bool dredEnabled,
-        int sceneSampleCount)
+        int sceneSampleCount,
+        bool isSoftwareAdapter)
     {
         Device = device;
         DirectQueue = directQueue;
@@ -52,6 +53,7 @@ internal sealed class GpuDevice12 : IDisposable
         _infoQueue = infoQueue;
         DredEnabled = dredEnabled;
         SceneSampleCount = sceneSampleCount;
+        IsSoftwareAdapter = isSoftwareAdapter;
     }
 
     /// <summary>The underlying D3D12 device (resource + descriptor factory).</summary>
@@ -74,6 +76,14 @@ internal sealed class GpuDevice12 : IDisposable
 
     /// <summary>Highest feature level the device was created at (≥ 12_0).</summary>
     public FeatureLevel FeatureLevel { get; }
+
+    /// <summary>
+    ///     True when the device was created on the WARP software rasterizer because no hardware
+    ///     adapter reached feature level 12_0 (only possible under
+    ///     <see cref="GpuAdapterPolicy.PreferHardwareThenWarp" /> / <see cref="GpuAdapterPolicy.WarpOnly" />).
+    ///     Callers surface this to the user — WARP renders correctly but slowly.
+    /// </summary>
+    public bool IsSoftwareAdapter { get; }
 
     /// <summary>
     ///     True when DRED (Device Removed Extended Data) was force-enabled at device
@@ -320,13 +330,26 @@ internal sealed class GpuDevice12 : IDisposable
     ///     no D3D12 backend is available (non-Windows, no compatible adapter, or D3D12 not
     ///     enabled in the OS feature set).
     ///     <para>
-    ///         Feature levels probed in descending order: 12_2, 12_1, 12_0. We require 12_0
-    ///         minimum — bindless SRVs (Resource Binding Tier 2), ExecuteIndirect, and root
-    ///         signatures all land at 12_0. 12_1 adds conservative rasterization (not used);
-    ///         12_2 adds mesh shaders (Pass 4 Step 4 candidate).
+    ///         Feature levels probed in descending order: 12_2, 12_1, 12_0 — the whole 12.x
+    ///         family. We require 12_0 minimum — bindless SRVs (Resource Binding Tier 2),
+    ///         ExecuteIndirect, and root signatures all land at 12_0. 12_1 adds conservative
+    ///         rasterization (not used); 12_2 adds mesh shaders (Pass 4 Step 4 candidate).
+    ///         Older Windows 10 runtimes that do not know the 12_2 enum reject it with
+    ///         E_INVALIDARG, which falls through the ladder like any other failure.
+    ///     </para>
+    ///     <para>
+    ///         Hardware adapters are enumerated explicitly, best-first (IDXGIFactory6
+    ///         performance ordering when the OS has it, plain DXGI order otherwise) — a plain
+    ///         <c>D3D12CreateDevice(null, …)</c> only ever probes the DEFAULT adapter, which on
+    ///         hybrid-graphics machines is routinely an iGPU below 12_0 even though a capable
+    ///         discrete GPU is present. Under
+    ///         <see cref="GpuAdapterPolicy.PreferHardwareThenWarp" /> the WARP software
+    ///         rasterizer is the last resort so those machines still render.
     ///     </para>
     /// </summary>
-    public static GpuDevice12? Create(bool enableDebugLayer = false)
+    public static GpuDevice12? Create(
+        bool enableDebugLayer = false,
+        GpuAdapterPolicy adapterPolicy = GpuAdapterPolicy.HardwareOnly)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -429,18 +452,169 @@ internal sealed class GpuDevice12 : IDisposable
             FeatureLevel.Level_12_0
         ];
 
+        IDXGIFactory4? dxgiFactory = null;
+        try
+        {
+            dxgiFactory = DXGI.CreateDXGIFactory1<IDXGIFactory4>();
+        }
+        catch (SharpGenException ex)
+        {
+            Log.Warn("GpuDevice12: DXGI factory creation failed ({0}) — probing the default adapter only.",
+                ex.Message);
+        }
+
+        var probed = new List<string>();
+        try
+        {
+            if (dxgiFactory is null)
+            {
+                // No DXGI factory (broken graphics stack): the legacy default-adapter probe is
+                // all that is left.
+                if (adapterPolicy != GpuAdapterPolicy.WarpOnly)
+                {
+                    var created = TryCreateOnAdapter(
+                        null, adapterName: null, featureLevels, enableDebugLayer, enableDred,
+                        isSoftwareAdapter: false, probed);
+                    if (created is not null) return created;
+                }
+            }
+            else
+            {
+                if (adapterPolicy != GpuAdapterPolicy.WarpOnly)
+                {
+                    // Every enumerated adapter is disposed in the finally, including the ones
+                    // after an early return — D3D12CreateDevice AddRefs what it keeps, so
+                    // releasing our enumeration references here is correct either way.
+                    var hardwareAdapters = CollectHardwareAdapters(dxgiFactory, probed);
+                    try
+                    {
+                        foreach (var adapter in hardwareAdapters)
+                        {
+                            var created = TryCreateOnAdapter(
+                                adapter, adapter.Description1.Description, featureLevels, enableDebugLayer,
+                                enableDred, isSoftwareAdapter: false, probed);
+                            if (created is not null) return created;
+                        }
+                    }
+                    finally
+                    {
+                        foreach (var adapter in hardwareAdapters) adapter.Dispose();
+                    }
+                }
+
+                if (adapterPolicy != GpuAdapterPolicy.HardwareOnly)
+                {
+                    // Last resort: the WARP software rasterizer (feature level 12_1 on every
+                    // supported Windows 10 build). Slow but correct — and visibly reported, so
+                    // "renderer never shows up" becomes "renders slowly, says why" on machines
+                    // with no 12_0-capable GPU.
+                    try
+                    {
+                        using var warpAdapter = dxgiFactory.EnumWarpAdapter<IDXGIAdapter1>();
+                        var created = TryCreateOnAdapter(
+                            warpAdapter, warpAdapter.Description1.Description, featureLevels, enableDebugLayer,
+                            enableDred, isSoftwareAdapter: true, probed);
+                        if (created is not null) return created;
+                    }
+                    catch (SharpGenException ex)
+                    {
+                        Log.Warn("GpuDevice12: WARP adapter unavailable: {0}", ex.Message);
+                        probed.Add("WARP: unavailable");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            dxgiFactory?.Dispose();
+        }
+
+        Log.Warn("GpuDevice12: no D3D12 device available at feature level 12_0 or higher. Adapters probed: {0}",
+            probed.Count == 0 ? "(none found)" : string.Join("; ", probed));
+        return null;
+    }
+
+    /// <summary>
+    ///     Hardware adapters in preference order: IDXGIFactory6's performance ordering when the
+    ///     OS provides it (Windows 10 1803+), plain DXGI enumeration order otherwise. Software
+    ///     adapters (Microsoft Basic Render Driver) are filtered out here — WARP participation
+    ///     is an explicit policy decision, not an enumeration accident. Caller disposes the
+    ///     returned adapters.
+    /// </summary>
+    private static List<IDXGIAdapter1> CollectHardwareAdapters(IDXGIFactory4 factory, List<string> probed)
+    {
+        var adapters = new List<IDXGIAdapter1>();
+        using (var factory6 = factory.QueryInterfaceOrNull<IDXGIFactory6>())
+        {
+            if (factory6 is not null)
+            {
+                // uint, not var: EnumAdapterByGpuPreference takes a uint index, and `var` would
+                // infer int and fail to bind.
+                for (uint index = 0;
+                     factory6.EnumAdapterByGpuPreference(index, GpuPreference.HighPerformance,
+                         out IDXGIAdapter1? adapter).Success && adapter is not null;
+                     index++)
+                {
+                    adapters.Add(adapter);
+                }
+            }
+        }
+
+        if (adapters.Count == 0)
+        {
+            // uint, not var: EnumAdapters1 takes a uint index (see above).
+            for (uint index = 0;
+                 factory.EnumAdapters1(index, out var adapter).Success && adapter is not null;
+                 index++)
+            {
+                adapters.Add(adapter);
+            }
+        }
+
+        var hardware = new List<IDXGIAdapter1>(adapters.Count);
+        foreach (var adapter in adapters)
+        {
+            var description = adapter.Description1;
+            if ((description.Flags & AdapterFlags.Software) != 0)
+            {
+                probed.Add($"{description.Description}: software adapter — skipped in hardware pass");
+                adapter.Dispose();
+                continue;
+            }
+
+            hardware.Add(adapter);
+        }
+
+        return hardware;
+    }
+
+    /// <summary>
+    ///     Walks the 12.x feature-level ladder on one adapter (null = the runtime's default) and
+    ///     builds the full device bundle on the first level that takes. Returns null after
+    ///     recording the failure in <paramref name="probed" />.
+    /// </summary>
+    private static GpuDevice12? TryCreateOnAdapter(
+        IDXGIAdapter1? adapter,
+        string? adapterName,
+        FeatureLevel[] featureLevels,
+        bool enableDebugLayer,
+        bool enableDred,
+        bool isSoftwareAdapter,
+        List<string> probed)
+    {
         foreach (var minLevel in featureLevels)
         {
             try
             {
                 var result = Vortice.Direct3D12.D3D12.D3D12CreateDevice(
-                    null,
+                    adapter,
                     minLevel,
                     out ID3D12Device? device);
 
                 if (result.Failure || device is null)
                 {
-                    Log.Debug("GpuDevice12: D3D12CreateDevice failed at feature level {0}: {1}", minLevel, result);
+                    Log.Debug("GpuDevice12: D3D12CreateDevice({0}) failed at feature level {1}: {2}",
+                        adapterName ?? "default adapter", minLevel, result);
                     device?.Dispose();
                     continue;
                 }
@@ -474,12 +648,13 @@ internal sealed class GpuDevice12 : IDisposable
                         }
                     }
 
-                    var deviceName = QueryAdapterDescription(device);
+                    var deviceName = adapterName ?? QueryAdapterDescription(device);
                     var sceneSampleCount = ProbeSceneSampleCount(device);
-                    Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1}); scene MSAA = {2}x",
-                        minLevel, deviceName, sceneSampleCount);
-                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred,
+                    Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1}{2}); scene MSAA = {3}x",
+                        minLevel, deviceName, isSoftwareAdapter ? ", WARP software rasterizer" : "",
                         sceneSampleCount);
+                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred,
+                        sceneSampleCount, isSoftwareAdapter);
                 }
                 catch
                 {
@@ -491,11 +666,12 @@ internal sealed class GpuDevice12 : IDisposable
             }
             catch (SharpGenException ex)
             {
-                Log.Warn("GpuDevice12: device init threw at feature level {0}: {1}", minLevel, ex.Message);
+                Log.Warn("GpuDevice12: device init threw at feature level {0} on {1}: {2}",
+                    minLevel, adapterName ?? "default adapter", ex.Message);
             }
         }
 
-        Log.Warn("GpuDevice12: no D3D12 device available at feature level 12_0 or higher");
+        probed.Add($"{adapterName ?? "default adapter"}: no 12_2/12_1/12_0 feature level accepted");
         return null;
     }
 

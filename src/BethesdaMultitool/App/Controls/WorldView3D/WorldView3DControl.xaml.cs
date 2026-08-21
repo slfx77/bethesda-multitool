@@ -209,6 +209,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
     // straight into the D3D12 concrete impls; no D3D11 fallback fields remain.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12? _gpu12;
+
+    /// <summary>
+    ///     Set when backend init failed AFTER the device was successfully created (root
+    ///     signature, shader compile, PSO build). The failure handler disposes and nulls
+    ///     <see cref="_gpu12" />, so this is the only surviving evidence of how far init got —
+    ///     without it every failure reads as "no D3D12 device", which is what masked the
+    ///     Windows 10 root-signature blocker.
+    /// </summary>
+    private bool _backendFailedAfterDeviceCreation;
+
     private GpuTimestampProfiler12? _gpuTimestampProfiler12;
     private bool _gpuTimestampsAutoEnabled;
     private bool _grassShadowsEnabled = true;

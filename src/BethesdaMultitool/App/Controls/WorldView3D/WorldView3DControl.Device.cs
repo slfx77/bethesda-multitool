@@ -43,7 +43,11 @@ public sealed partial class WorldView3DControl
             // the runtime would otherwise silently corrupt or hard-crash on. ~30% CPU overhead
             // per draw on validation alone — leave off in normal use.
             var debugLayer = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug);
-            _gpu12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12.Create(debugLayer);
+            // PreferHardwareThenWarp: a machine with no 12_0-capable GPU gets the WARP software
+            // rasterizer (slow, visibly reported via IsSoftwareAdapter) instead of a blank panel.
+            _gpu12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12.Create(
+                debugLayer,
+                BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuAdapterPolicy.PreferHardwareThenWarp);
             if (_gpu12 is null) return false;
 
             _commandRecorder12 =
@@ -165,6 +169,9 @@ public sealed partial class WorldView3DControl
             // alone discarded exactly the text needed to diagnose it. The caller
             // (Lifecycle.cs OnLoaded) surfaces "3D view unavailable" to the user.
             Log.Error("WorldView3DControl: D3D12 backend init failed: {0}", ex);
+            // Record how far init got BEFORE disposal nulls _gpu12 — the caller uses this to
+            // tell "no device could be created" apart from "device fine, later stage failed".
+            _backendFailedAfterDeviceCreation = _gpu12 is not null;
             DisposeD3D12Backend();
             return false;
         }

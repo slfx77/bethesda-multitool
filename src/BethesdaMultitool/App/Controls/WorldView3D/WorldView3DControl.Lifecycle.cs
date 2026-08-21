@@ -17,11 +17,26 @@ public sealed partial class WorldView3DControl
         {
             if (!TryInitD3D12Backend())
             {
-                ShowStatus("3D view unavailable: D3D12 init failed (see logs).");
+                // Distinguish "no device at all" from "device fine, something after it failed"
+                // (root signature, shader compile, PSO build). Reporting every backend failure
+                // as an adapter problem sends diagnosis down the wrong path — it is what masked
+                // the SM 6.6 root-signature flag that blanked the view on all of Windows 10.
+                ShowStatus(_backendFailedAfterDeviceCreation
+                    ? "3D view unavailable: the Direct3D 12 backend failed to initialize after the " +
+                      "device was created (shader, root signature, or pipeline setup). See the log."
+                    : "3D view unavailable: no Direct3D 12 device could be created " +
+                      "(needs a GPU or WARP at feature level 12_0+). The log lists every adapter probed.");
                 return;
             }
 
             Log.Info("WorldView3DControl: D3D12 backend active.");
+            if (_gpu12 is not null && _gpu12.IsSoftwareAdapter)
+            {
+                ShowStatus(
+                    "No Direct3D 12 capable GPU found — rendering on the WARP software adapter. " +
+                    "Performance will be limited.",
+                    autoDismiss: true);
+            }
         }
 
         // (Re)subscribe input handlers — OnUnloaded unconditionally unsubscribes them, so this never

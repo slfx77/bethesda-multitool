@@ -31,8 +31,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         frequently-updated uniforms — no indirection.
 ///     </para>
 ///     <para>
-///         v3 Pass 4 Step 4a — SRV table is now UNBOUNDED (`numDescriptors = uint.MaxValue`)
-///         and the root signature carries <c>CbvSrvUavHeapDirectlyIndexed</c>. Textures live
+///         v3 Pass 4 Step 4a — SRV table is now UNBOUNDED (`numDescriptors = uint.MaxValue`),
+///         which needs only Resource Binding Tier 2 (feature level 12_0). Textures live
 ///         at stable slot indices in a shader-visible persistent SRV heap; shaders sample
 ///         via <c>Texture2D textures[] : register(t0, space1)</c> + <c>NonUniformResourceIndex</c>
 ///         lookup keyed by a per-instance/per-cell <c>TexIndices</c> uint passed through
@@ -334,13 +334,22 @@ internal sealed class GpuRootSignature12 : IDisposable
         // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the
         // D3D12SerializeVersionedRootSignature + CreateRootSignature pair internally — no
         // manual blob marshaling.
-        // CbvSrvUavHeapDirectlyIndexed enables the bindless access pattern: shaders
-        // declare `Texture2D textures[] : register(t0, space1)` and sample via
-        // `textures[NonUniformResourceIndex(idx)]`, with the heap bound once per frame at
-        // the table head. Without this flag the runtime rejects unbounded resource arrays.
+        // Do NOT set CbvSrvUavHeapDirectlyIndexed here. That flag exists solely to enable the
+        // Shader Model 6.6 dynamic-resources syntax (`ResourceDescriptorHeap[]` /
+        // `SamplerDescriptorHeap[]`), which nothing in this renderer uses — every shader is
+        // vs_5_1/ps_5_1/cs_5_1 built with FXC, which cannot even express it. The unbounded
+        // arrays below (`Texture2D textures[] : register(t0, space1)` sampled through
+        // NonUniformResourceIndex) are ordinary unbounded descriptor RANGES: they need only
+        // Resource Binding Tier 2, guaranteed at feature level 12_0, plus the
+        // D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES flag GpuShaderCompiler12 already
+        // applies to every shader.
+        //
+        // Setting it made CreateRootSignature fail with E_INVALIDARG on EVERY Windows 10 build
+        // (their in-box D3D12 runtime caps at SM 6.5 and we ship no Agility SDK), and on
+        // Windows 11 with pre-2021 drivers — at any feature level, on any GPU. The device,
+        // queue and fence all created fine first, so the failure surfaced as a blank 3D view.
         var desc = new RootSignatureDescription1(
-            RootSignatureFlags.AllowInputAssemblerInputLayout |
-            RootSignatureFlags.ConstantBufferViewShaderResourceViewUnorderedAccessViewHeapDirectlyIndexed,
+            RootSignatureFlags.AllowInputAssemblerInputLayout,
             new[]
             {
                 perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv,
