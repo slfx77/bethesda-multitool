@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.WorldData;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 /// <summary>
-///     v3 Phase 2a culling primitive — a 2D footprint in the XY (ground) plane, used by the
+///     A 2D footprint in the XY (ground) plane, used by the
 ///     terrain / water / wireframe renderers in place of a 3D view frustum.
 ///     <para>
 ///         The footprint is a <b>square</b> (axis-aligned box) of half-extent <see cref="Radius" />

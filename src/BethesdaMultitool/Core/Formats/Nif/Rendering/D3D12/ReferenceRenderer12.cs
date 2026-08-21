@@ -603,7 +603,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private int _cullCacheCandidates;
     private int _cullCacheCulled;
 
-    // 4-pre Item B — per-frame memoization: MeshId → resolved CachedNifMesh12 (or null
+    // Per-frame memoization: MeshId → resolved CachedNifMesh12 (or null
     // when the cache hasn't uploaded it yet this frame). Cleared at the top of each
     // Render() so per-frame inserts (which may evict older entries) only affect entries
     // we haven't yet read. Cuts the cull loop's per-REFR string-key dict lookup
@@ -2371,7 +2371,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         for (var si = 0; si < survivorsToResolve; si++)
         {
             var r = _cachedCullSurvivors[si];
-            // 4-pre Item B — per-frame memoized resolve. First sighting of a MeshId
+            // Per-frame memoized resolve. First sighting of a MeshId
             // pays one string-keyed _meshCache.GetOrUpload (+ potential mid-frame Insert
             // + LRU touch); every later REFR with the same MeshId hits this map
             // directly (uint-keyed). At 5K REFRs / ~300 unique meshes that drops the

@@ -17,7 +17,7 @@ namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
 ///     Per-loaded-world render cache. Keeps decoded LAND/runtime terrain, derived texture
-///     grids, and the v3 Phase 3 per-cell baked placement lists scoped to one
+///     grids, and the per-cell baked placement lists scoped to one
 ///     <see cref="WorldViewData" /> instance.
 /// </summary>
 internal sealed class WorldRenderCache : ITrackableResource
@@ -34,7 +34,7 @@ internal sealed class WorldRenderCache : ITrackableResource
     private readonly ConcurrentDictionary<CellRecord, DecodedTerrainCell> _terrain =
         new(ReferenceEqualityComparer.Instance);
 
-    // 4-pre Item C — bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
+    // Bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
     // at LoadData (or lazily on first build). Inputs are worldspace-static (cell LAND +
     // cardinal neighbors' LAND); see TerrainRenderer12.BuildCellTextureSet. Moves
     // ~0.05 ms per cell out of TryBuildAndCache, smoothing the 16-cell-per-frame mesh
@@ -215,7 +215,7 @@ internal sealed class WorldRenderCache : ITrackableResource
     }
 
     /// <summary>
-    ///     4-pre Item C — returns the cached <see cref="CellTerrainTextureSet" /> for this
+    ///     Returns the cached <see cref="CellTerrainTextureSet" /> for this
     ///     cell, building it on first miss via <paramref name="builder" /> (which must call
     ///     <c>TerrainRenderer12.BuildCellTextureSet</c> or equivalent — the cache itself
     ///     doesn't know how to walk neighbor LAND records). Subsequent calls return the
@@ -233,7 +233,7 @@ internal sealed class WorldRenderCache : ITrackableResource
     }
 
     /// <summary>
-    ///     v3 Phase 3 — returns this cell's static-mesh placements with world transforms and
+    ///     Returns this cell's static-mesh placements with world transforms and
     ///     bounding spheres pre-computed. Filters out ACHR/ACRE (skinned actors, deferred to v4)
     ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
     ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.

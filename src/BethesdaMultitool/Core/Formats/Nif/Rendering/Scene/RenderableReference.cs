@@ -7,7 +7,7 @@ using BethesdaMultitool.Core.Games;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 
 /// <summary>
-///     v3 Phase 3 — a single placed-object draw item, baked once per <c>LoadData</c> from a
+///     A single placed-object draw item, baked once per <c>LoadData</c> from a
 ///     <see cref="PlacedReference" />. The render loop reuses these every frame instead of
 ///     recomposing the world matrix and re-resolving the filter conditions per cell visit.
 ///     <para>
@@ -132,7 +132,7 @@ internal readonly record struct RenderableReference(
     }
 
     /// <summary>
-    ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
+    ///     Computes the stable per-process MeshId from a ModelPath. Used to
     ///     dedupe the per-REFR mesh-cache lookup in the cull loop: instead of doing a
     ///     case-insensitive string hash + dict lookup per REFR (~80 ns × 5000 REFRs), the
     ///     cull loop reads from a per-frame <c>Dictionary&lt;uint, CachedNifMesh12?&gt;</c>

@@ -61,7 +61,7 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     v3 Phase 3 placed-object pipeline init. Mirrors the terrain pipeline init in
+    ///     Placed-object pipeline init. Mirrors the terrain pipeline init in
     ///     <see cref="LoadData" /> but lives in its own method since it needs the Meshes BSA
     ///     discovery in addition to the textures BSAs. Soft-fails when no Meshes BSA is found
     ///     (REFRs simply don't render — terrain still does).
