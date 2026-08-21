@@ -85,12 +85,14 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
     private const int NiTMapHashSizeOffset = 4;
     private const int NiTMapBucketArrayOffset = 8;
 
-    private const int NiTMapItemNextOffset = 0;
+    // NiTMapItem layout: +0 pNext, +4 key, +8 value, size 12. The chain pointer at +0 is reached
+    // through the bucket entry itself, so only key and value need named offsets.
     private const int NiTMapItemKeyOffset = 4;
     private const int NiTMapItemValueOffset = 8;
     private const int NiTMapItemSize = 12;
 
-    private const int NavMeshInfoFormIdOffset = 0;
+    // NavMeshInfo layout: +0 FormID, +4 parent space, +84 BSNavMesh pointer, size 92. Discovery
+    // keys off the parent space and the navmesh pointer; the FormID at +0 is not read here.
     private const int NavMeshInfoParentSpaceOffset = 4;
     private const int NavMeshInfoNavMeshPointerOffset = 84;
     private const int NavMeshInfoSize = 92;

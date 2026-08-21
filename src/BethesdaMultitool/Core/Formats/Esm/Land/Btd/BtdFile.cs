@@ -404,7 +404,9 @@ public sealed class BtdFile : IDisposable
                 {
                     // gcvrMask is intentionally NOT reset here: like the reference, it accumulates the
                     // union of ground-cover presence across the cell's quadrants as they are scanned.
-                    var inner = (y << 1 | (uint)(yc >> (m - 1))) * (NCellsX << 1)
+                    // (uint)y, not y: mixing an int with the uint quadrant bit promotes to long and
+                    // sign-extends. y is a grid index (cellY - CellMinY), so it is never negative.
+                    var inner = ((uint)y << 1 | (uint)(yc >> (m - 1))) * (NCellsX << 1)
                                 + ((x << 1) | (xc >> (m - 1)));
                     var offs = (inner << 3) + _gcvrMapOffs;
                     for (var i = 7; i >= 0; i--, offs++)
@@ -453,7 +455,8 @@ public sealed class BtdFile : IDisposable
         var y = cellY - CellMinY;
         for (var q = 0; q < 4; q++)
         {
-            var offs = ((y << 1 | (uint)(q >> 1)) * (NCellsX << 1) + ((x << 1) | (q & 1))) << 3;
+            // (uint)y as above — the int/uint mix would otherwise sign-extend through the multiply.
+            var offs = (((uint)y << 1 | (uint)(q >> 1)) * (NCellsX << 1) + ((x << 1) | (q & 1))) << 3;
             var t = q << 4;
             for (var i = 0; i < 8; i++)
             {

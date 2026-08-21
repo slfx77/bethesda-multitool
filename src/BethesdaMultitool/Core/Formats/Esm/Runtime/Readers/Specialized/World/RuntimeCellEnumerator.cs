@@ -77,8 +77,8 @@ internal sealed class RuntimeCellEnumerator
     private const int NiTMapBucketArrayOffset = 8;
     private const int NiTMapHeaderSize = 16;
 
-    // NiTMapItem<uint, TESForm*> layout
-    private const int NiTMapItemNextOffset = 0;
+    // NiTMapItem<uint, TESForm*> layout: +0 pNext, +4 key, +8 value, size 12. The chain pointer at
+    // +0 is reached through the bucket entry itself, so only key and value need named offsets.
     private const int NiTMapItemKeyOffset = 4;
     private const int NiTMapItemValueOffset = 8;
     private const int NiTMapItemSize = 12;

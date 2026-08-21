@@ -198,9 +198,11 @@ internal static class NpcBoundaryVertexStitcher
         var iy = (int)MathF.Floor(y / CellSize);
         var iz = (int)MathF.Floor(z / CellSize);
         // Pack three 21-bit integers into a 64-bit key
+        // Each component is cast after masking: without it the third operand stays int and
+        // sign-extends into the upper 43 bits, colliding cells whose iz is negative.
         return ((long)(ix & 0x1FFFFF) << 42) |
                ((long)(iy & 0x1FFFFF) << 21) |
-               iz & 0x1FFFFF;
+               (long)(iz & 0x1FFFFF);
     }
 
     private static void ClearBindPoseData(List<RenderableSubmesh> submeshes)
