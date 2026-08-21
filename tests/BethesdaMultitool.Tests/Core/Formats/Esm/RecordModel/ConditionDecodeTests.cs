@@ -15,14 +15,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 public class ConditionDecodeTests
 {
     [Theory]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion.esm")]
-    public async Task Conditions_DecodeStructurally(string esm)
+    [InlineData("Oblivion", @"Data\Oblivion.esm")]
+    public async Task Conditions_DecodeStructurally(string gameFolder, string relativePath)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        Assert.SkipUnless(File.Exists(esm), $"Not found: {esm}");
+        var esm = RealAssetPaths.SteamGameFile(gameFolder, relativePath);
+        Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage(Path.GetFileName(relativePath)));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm, TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         // A condition node has the signature CTDA and the structural members; collect them across every
         // record type that carries conditions (INFO, QUST, ...).

@@ -91,8 +91,8 @@ public sealed class PexFallout76RetailArchiveTests
             }
         }
 
-        const string installed =
-            @"D:\SteamLibrary\steamapps\common\Fallout76\Data\SeventySix - MiscClient.ba2";
+        var installed =
+            RealAssetPaths.SteamGameFile("Fallout76", @"Data\SeventySix - MiscClient.ba2");
         return File.Exists(installed) ? installed : null;
     }
 }

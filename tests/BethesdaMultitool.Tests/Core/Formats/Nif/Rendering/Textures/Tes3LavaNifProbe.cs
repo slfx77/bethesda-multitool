@@ -18,7 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Textures;
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3LavaNifProbe
 {
-    private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+    private static readonly string? Bsa = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
     private const string MeshPath = @"meshes\i\in_lava_1024.nif";
 
     [Fact]

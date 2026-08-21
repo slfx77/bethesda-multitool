@@ -27,7 +27,12 @@ public class OblivionHavokCollisionIntegrationTests
             return root;
         }
 
-        const string steam = @"E:\SteamLibrary\SteamApps\common\Oblivion\Data";
+        var steam = RealAssetPaths.SteamGameDirectory("Oblivion", @"Data");
+        if (steam is null)
+        {
+            return null;
+        }
+
         return File.Exists(Path.Combine(steam, "Oblivion - Meshes.bsa")) ? steam : null;
     }
 

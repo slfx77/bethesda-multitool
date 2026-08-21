@@ -15,15 +15,16 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 public class LocalizedBaseNameResolutionTests
 {
     [Theory]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim.esm")]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Fallout4.esm")]
-    public async Task LocalizedDisplayNames_ResolveCleanly(string esm)
+    [InlineData("Skyrim", @"Data\Skyrim.esm")]
+    [InlineData("Fallout 4", @"Data\Fallout4.esm")]
+    public async Task LocalizedDisplayNames_ResolveCleanly(string gameFolder, string relativePath)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        Assert.SkipUnless(File.Exists(esm), $"Localized plugin not found: {esm}");
+        var esm = RealAssetPaths.SteamGameFile(gameFolder, relativePath);
+        Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage(Path.GetFileName(relativePath)));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm, TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var total = 0;
         var rawIndex = 0;

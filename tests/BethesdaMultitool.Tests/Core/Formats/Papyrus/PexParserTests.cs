@@ -337,15 +337,17 @@ public sealed class PexParserTests
     }
 
     [Theory]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Skyrim Special Edition\Data\Scripts\actor.pex", PexGameId.Skyrim)]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Scripts\Actor.pex", PexGameId.Fallout4)]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Scripts\ObjectReference.pex", PexGameId.Fallout4)]
-    public void Parse_InstalledBethesdaFixture_ConsumesCompleteFile(string path, PexGameId expectedGame)
+    [InlineData("Skyrim Special Edition", @"Data\Scripts\actor.pex", PexGameId.Skyrim)]
+    [InlineData("Fallout 4", @"Data\Scripts\Actor.pex", PexGameId.Fallout4)]
+    [InlineData("Fallout 4", @"Data\Scripts\ObjectReference.pex", PexGameId.Fallout4)]
+    public void Parse_InstalledBethesdaFixture_ConsumesCompleteFile(
+        string gameFolder, string relativePath, PexGameId expectedGame)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        Assert.SkipUnless(File.Exists(path), $"Installed PEX fixture not available: {path}");
+        var path = RealAssetPaths.SteamGameFile(gameFolder, relativePath);
+        Assert.SkipWhen(path is null, RealAssetPaths.SkipMessage($"{gameFolder} {relativePath}"));
 
-        var file = PexParser.Parse(path);
+        var file = PexParser.Parse(path!);
 
         Assert.Equal(expectedGame, file.Header.GameId);
         Assert.EndsWith(".psc", file.Header.SourceFileName, StringComparison.OrdinalIgnoreCase);
@@ -355,12 +357,14 @@ public sealed class PexParserTests
     }
 
     [Theory]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Skyrim Special Edition\Data\Scripts", PexGameId.Skyrim)]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Scripts", PexGameId.Fallout4)]
-    public void Parse_AllInstalledLooseBethesdaScripts(string directory, PexGameId expectedGame)
+    [InlineData("Skyrim Special Edition", @"Data\Scripts", PexGameId.Skyrim)]
+    [InlineData("Fallout 4", @"Data\Scripts", PexGameId.Fallout4)]
+    public void Parse_AllInstalledLooseBethesdaScripts(
+        string gameFolder, string relativePath, PexGameId expectedGame)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        Assert.SkipUnless(Directory.Exists(directory), $"Installed script directory not available: {directory}");
+        var directory = RealAssetPaths.SteamGameDirectory(gameFolder, relativePath);
+        Assert.SkipWhen(directory is null, RealAssetPaths.SkipMessage($"{gameFolder} {relativePath}"));
         var paths = Directory.GetFiles(directory, "*.pex", SearchOption.AllDirectories);
         Assert.SkipWhen(paths.Length == 0, $"No installed PEX fixtures found under: {directory}");
 

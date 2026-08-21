@@ -99,7 +99,7 @@ public class SubrecordCompletenessTests
             return Path.Combine(root, "Skyrim.esm");
         }
 
-        const string steam = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim.esm";
+        var steam = RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim.esm");
         return File.Exists(steam) ? steam : null;
     }
 

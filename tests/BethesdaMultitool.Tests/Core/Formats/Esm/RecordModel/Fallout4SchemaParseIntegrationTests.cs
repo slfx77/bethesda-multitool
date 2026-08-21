@@ -27,10 +27,10 @@ public class Fallout4SchemaParseIntegrationTests
             return Path.Combine(root, "Fallout4.esm");
         }
 
-        string[] candidates =
+        string?[] candidates =
         [
-            @"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Fallout4.esm",
-            @"D:\SteamLibrary\SteamApps\common\Fallout 4\Data\Fallout4.esm"
+            RealAssetPaths.SteamGameFile("Fallout 4", @"Data\Fallout4.esm"),
+            RealAssetPaths.SteamGameFile("Fallout 4", @"Data\Fallout4.esm")
         ];
         return candidates.FirstOrDefault(File.Exists);
     }

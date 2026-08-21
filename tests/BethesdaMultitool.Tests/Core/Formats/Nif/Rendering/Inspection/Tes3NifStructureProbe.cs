@@ -18,7 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Inspection;
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3NifStructureProbe
 {
-    private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+    private static readonly string? Bsa = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
     private const string MeshPath = @"meshes\f\flora_treestump_wg_01.nif";
 
     [Fact]

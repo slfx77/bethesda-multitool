@@ -10,7 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimEffectRetailTests
 {
-    private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
+    private static readonly string? ArchivePath = RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
 
     private static readonly float[] ExpectedBlowingSnowMaterialAlphas = [0.6f, 0.4f, 0.4f, 0.6f];
 

@@ -14,8 +14,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class Fo4NukaBottleRetailTests
 {
-    private const string DefaultDataDirectory =
-        @"E:\SteamLibrary\SteamApps\common\Fallout 4\Data";
+    private static readonly string? DefaultDataDirectory =
+        RealAssetPaths.SteamGameDirectory("Fallout 4", @"Data");
 
     [Fact]
     [Trait("Category", BucketBTestGuard.Category)]
@@ -23,8 +23,11 @@ public sealed class Fo4NukaBottleRetailTests
     {
         BucketBTestGuard.SkipUnlessEnabled();
         var dataDirectory = Environment.GetEnvironmentVariable("FALLOUT4_DATA_DIR") ?? DefaultDataDirectory;
-        var meshesPath = Path.Combine(dataDirectory, "Fallout4 - Meshes.ba2");
-        var materialsPath = Path.Combine(dataDirectory, "Fallout4 - Materials.ba2");
+        Assert.SkipWhen(
+            dataDirectory is null,
+            "Fallout 4 Data directory not found (set FALLOUT4_DATA_DIR to run this probe).");
+        var meshesPath = Path.Combine(dataDirectory!, "Fallout4 - Meshes.ba2");
+        var materialsPath = Path.Combine(dataDirectory!, "Fallout4 - Materials.ba2");
         Assert.SkipUnless(
             File.Exists(meshesPath) && File.Exists(materialsPath),
             "Fallout 4 meshes/materials BA2s not installed (set FALLOUT4_DATA_DIR to run this probe).");

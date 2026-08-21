@@ -15,13 +15,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class Tes3PlacedWaterRetailTests
 {
-    private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+    private static readonly string? Bsa = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
 
-    private static readonly string[] RetailBsas =
+    private static readonly string?[] RetailBsas =
     [
         Bsa,
-        @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Tribunal.bsa",
-        @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Bloodmoon.bsa"
+        RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Tribunal.bsa"),
+        RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Bloodmoon.bsa")
     ];
 
     [Fact]
@@ -51,7 +51,9 @@ public sealed class Tes3PlacedWaterRetailTests
         Assert.SkipUnless(File.Exists(Bsa), "Morrowind.bsa not present (dev-machine-only asset).");
 
         var matches = new List<(string Archive, string Mesh)>();
-        foreach (var archivePath in RetailBsas.Where(File.Exists))
+        // OfType<string> drops the entries the locator could not resolve, so the loop body works
+        // with a non-null path rather than relying on File.Exists(null) happening to be false.
+        foreach (var archivePath in RetailBsas.OfType<string>().Where(File.Exists))
         {
             using var extractor = new BsaExtractor(archivePath);
             var archive = BsaParser.Parse(archivePath);
@@ -73,8 +75,9 @@ public sealed class Tes3PlacedWaterRetailTests
 
     private static NifRenderableModel ExtractModel(string meshPath)
     {
-        using var extractor = new BsaExtractor(Bsa);
-        var archive = BsaParser.Parse(Bsa);
+        // Every caller is gated behind a File.Exists(Bsa) skip, so the archive is resolved here.
+        using var extractor = new BsaExtractor(Bsa!);
+        var archive = BsaParser.Parse(Bsa!);
         var file = archive.AllFiles.First(record =>
             string.Equals(record.FullPath, meshPath, StringComparison.OrdinalIgnoreCase));
         var data = extractor.ExtractFile(file);

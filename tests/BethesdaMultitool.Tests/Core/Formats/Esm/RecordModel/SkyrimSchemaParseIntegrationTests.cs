@@ -23,10 +23,10 @@ public class SkyrimSchemaParseIntegrationTests
         }
 
         // Prefer the original (LE) install — the build we hold symbols for — then Special Edition.
-        string[] candidates =
+        string?[] candidates =
         [
-            @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim.esm",
-            @"E:\SteamLibrary\SteamApps\common\Skyrim Special Edition\Data\Skyrim.esm"
+            RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim.esm"),
+            RealAssetPaths.SteamGameFile("Skyrim Special Edition", @"Data\Skyrim.esm")
         ];
         return candidates.FirstOrDefault(File.Exists);
     }

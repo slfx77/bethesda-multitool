@@ -9,8 +9,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Atmosphere;
 
 public sealed class SkyrimSkyCloudBindingTests
 {
-    private const string DefaultArchivePath =
-        @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
+    private static readonly string? DefaultArchivePath =
+        RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
 
     [Fact]
     public void SparseTextureSlotsResolveToMatchingSourceShapes()

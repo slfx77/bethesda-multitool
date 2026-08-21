@@ -83,7 +83,7 @@ internal static class TestPaths
             return fromEnv;
         }
 
-        const string defaultPath = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.esm";
+        const string defaultPath = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm");
         return File.Exists(defaultPath) ? defaultPath : null;
     }
 }

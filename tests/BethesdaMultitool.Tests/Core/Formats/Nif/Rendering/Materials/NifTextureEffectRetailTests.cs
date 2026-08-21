@@ -21,11 +21,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifTextureEffectRetailTests
 {
-    private const string MorrowindBsa =
-        @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+    private static readonly string? MorrowindBsa =
+        RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
 
-    private const string OblivionMeshesBsa =
-        @"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion - Meshes.bsa";
+    private static readonly string? OblivionMeshesBsa =
+        RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
 
     private const string GlassBootsPath = @"meshes\a\a_glass_boots_gnd.nif";
 

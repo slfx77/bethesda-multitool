@@ -23,10 +23,10 @@ public class Fallout76SchemaParseIntegrationTests
             return Path.Combine(root, "SeventySix.esm");
         }
 
-        string[] candidates =
+        string?[] candidates =
         [
-            @"D:\SteamLibrary\SteamApps\common\Fallout76\Data\SeventySix.esm",
-            @"E:\SteamLibrary\SteamApps\common\Fallout76\Data\SeventySix.esm"
+            RealAssetPaths.SteamGameFile("Fallout76", @"Data\SeventySix.esm"),
+            RealAssetPaths.SteamGameFile("Fallout76", @"Data\SeventySix.esm")
         ];
         return candidates.FirstOrDefault(File.Exists);
     }

@@ -14,14 +14,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 public class LeveledListDecodeTests
 {
     [Theory]
-    [InlineData(@"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion.esm")]
-    public async Task LeveledLists_DecodeEntriesStructurally(string esm)
+    [InlineData("Oblivion", @"Data\Oblivion.esm")]
+    public async Task LeveledLists_DecodeEntriesStructurally(string gameFolder, string relativePath)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        Assert.SkipUnless(File.Exists(esm), $"Not found: {esm}");
+        var esm = RealAssetPaths.SteamGameFile(gameFolder, relativePath);
+        Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage(Path.GetFileName(relativePath)));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm, TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var leveled = result.Records.GenericRecords
             .Where(r => r.RecordType is "LVLI" or "LVLC" or "LVSP")

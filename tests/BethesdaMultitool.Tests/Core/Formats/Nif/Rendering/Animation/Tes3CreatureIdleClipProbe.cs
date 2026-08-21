@@ -17,7 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3CreatureIdleClipProbe
 {
-    private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+    private static readonly string? Bsa = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
 
     [Fact]
     public void Guar_ClipIsThePlainIdleLoop_NotTheFullTimeline()

@@ -21,7 +21,7 @@ public class OblivionSchemaParseIntegrationTests
             return Path.Combine(root, "Oblivion.esm");
         }
 
-        const string steam = @"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion.esm";
+        var steam = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion.esm");
         return File.Exists(steam) ? steam : null;
     }
 

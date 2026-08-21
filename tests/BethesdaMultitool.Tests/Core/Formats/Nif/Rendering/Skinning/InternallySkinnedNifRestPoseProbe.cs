@@ -17,7 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Skinning;
 [Collection(SequentialIntegrationGroup.Name)]
 public class InternallySkinnedNifRestPoseProbe
 {
-    private const string MorrowindBsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
+    private static readonly string? MorrowindBsa = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
     private static readonly string FnvMeshesBsa = SampleBsaLocator.ResolveFnvMeshesBsa();
 
     [Fact]
@@ -68,13 +68,16 @@ public class InternallySkinnedNifRestPoseProbe
         Assert.All(model.Submeshes, s => Assert.False(string.IsNullOrEmpty(s.DiffuseTexturePath)));
     }
 
-    private static (byte[] data, NifInfo nif) Load(string bsaPath, string meshPath)
+    // Nullable: an unresolved archive is the normal case off a dev machine, and it skips here
+    // rather than forcing every caller to guard before it can even name the file.
+    private static (byte[] data, NifInfo nif) Load(string? bsaPath, string meshPath)
     {
         BucketBTestGuard.SkipUnlessEnabled();
+        Assert.SkipWhen(bsaPath is null, RealAssetPaths.SkipMessage("the archive under test"));
         Assert.SkipUnless(File.Exists(bsaPath), $"{Path.GetFileName(bsaPath)} not present (dev-machine-only asset).");
 
-        using var extractor = new BsaExtractor(bsaPath);
-        var archive = BsaParser.Parse(bsaPath);
+        using var extractor = new BsaExtractor(bsaPath!);
+        var archive = BsaParser.Parse(bsaPath!);
         var file = archive.AllFiles.First(f => string.Equals(f.FullPath, meshPath, StringComparison.OrdinalIgnoreCase));
         var data = extractor.ExtractFile(file);
 

@@ -23,10 +23,10 @@ public class Tes3SchemaParseIntegrationTests
             return Path.Combine(root, "Morrowind.esm");
         }
 
-        string[] candidates =
+        string?[] candidates =
         [
-            @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.esm",
-            @"D:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.esm"
+            RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm"),
+            RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm")
         ];
         return candidates.FirstOrDefault(File.Exists);
     }

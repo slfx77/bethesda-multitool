@@ -27,10 +27,10 @@ public class DialogTopicProfileParityTests
             return Path.Combine(root, "FalloutNV.esm");
         }
 
-        string[] candidates =
+        string?[] candidates =
         [
             @"Sample\ESM\pc_final\FalloutNV.esm",
-            @"E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\FalloutNV.esm"
+            RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\FalloutNV.esm")
         ];
         return candidates.FirstOrDefault(File.Exists);
     }

@@ -315,7 +315,7 @@ public sealed class WalkHorizontalCollisionTests
                 "Fallout - Meshes.bsa"),
             Path.GetFullPath(Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)",
                 "Data", "Fallout - Meshes.bsa")),
-            @"E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\Fallout - Meshes.bsa"
+            RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\Fallout - Meshes.bsa")
         };
 
         return candidates.FirstOrDefault(File.Exists);

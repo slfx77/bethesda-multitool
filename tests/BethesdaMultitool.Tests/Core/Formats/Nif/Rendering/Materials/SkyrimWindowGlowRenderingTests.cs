@@ -16,7 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimWindowGlowRenderingTests
 {
-    private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
+    private static readonly string? ArchivePath = RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
 
     private const string AssetPath =
         @"meshes\architecture\whiterun\wrbuildings\wrlodwindowglow01.nif";
