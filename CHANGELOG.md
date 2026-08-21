@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **3D renderer failed to start on Windows 10.** Device creation probed a single default adapter at
+  a fixed feature level, which fails on that OS for two independent reasons: older Windows 10
+  runtimes do not know the `12_2` enum and reject it outright with `E_INVALIDARG`, and
+  `D3D12CreateDevice(null, …)` only ever probes the DEFAULT adapter — routinely an iGPU below
+  feature level 12_0 on hybrid-graphics machines, even when a capable discrete GPU is installed.
+  Either one left the viewer with no device and a blank panel.
+
+  Creation now walks the whole 12.x ladder (12_2 → 12_1 → 12_0), so an unknown feature level falls
+  through like any other failure, and enumerates hardware adapters explicitly in best-first order
+  (`IDXGIFactory6` performance ordering where the OS provides it, plain DXGI order otherwise). A new
+  `GpuAdapterPolicy` decides how far the search goes; under `PreferHardwareThenWarp` the WARP
+  software rasterizer is the last resort — feature level 12_1 on every supported Windows 10 build —
+  so a machine with no 12_0-capable GPU renders slowly instead of not at all.
+  `GpuDevice12.IsSoftwareAdapter` is surfaced in the viewer so a WARP session reads as "slow, and
+  here is why" rather than as a fault. Every adapter probed is recorded and logged when nothing
+  works, replacing a bare "D3D12 init failed" with the list of what was tried and why each was
+  rejected.
+
+### Changed
+
+- **CI no longer measures coverage.** The job invoked `tools/scripts/coverage.ps1`, which
+  `.gitignore` deliberately excludes as dev tooling, so it could never have worked. Coverage stays
+  opt-in and local, matching what CLAUDE.md already documented.
+- **Repository renamed** to `slfx77/bethesda-multitool`; the clone instructions and comparison links
+  follow it. The old URLs still redirect.
+
 ## [3.0.0-alpha.2] - 2026-08-19
 
 Work since `3.0.0-alpha.1` (588 commits). Highlights: the ESM reader/writer went multi-game (Morrowind through
