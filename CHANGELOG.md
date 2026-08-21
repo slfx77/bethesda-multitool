@@ -490,11 +490,11 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
-[Unreleased]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v3.0.0-alpha.2...HEAD
-[3.0.0-alpha.2]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v3.0.0-alpha.1...v3.0.0-alpha.2
-[3.0.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.4.0...v3.0.0-alpha.1
-[2.4.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.3.0...v2.4.0
-[2.3.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.2.0-pre1...v2.3.0
-[1.0.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.2.0-alpha.1...v1.0.0
-[0.2.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
-[0.1.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/releases/tag/v0.1.0-alpha.1
+[Unreleased]: https://github.com/slfx77/bethesda-multitool/compare/v3.0.0-alpha.2...HEAD
+[3.0.0-alpha.2]: https://github.com/slfx77/bethesda-multitool/compare/v3.0.0-alpha.1...v3.0.0-alpha.2
+[3.0.0-alpha.1]: https://github.com/slfx77/bethesda-multitool/compare/v2.4.0...v3.0.0-alpha.1
+[2.4.0]: https://github.com/slfx77/bethesda-multitool/compare/v2.3.0...v2.4.0
+[2.3.0]: https://github.com/slfx77/bethesda-multitool/compare/v2.2.0-pre1...v2.3.0
+[1.0.0]: https://github.com/slfx77/bethesda-multitool/compare/v0.2.0-alpha.1...v1.0.0
+[0.2.0-alpha.1]: https://github.com/slfx77/bethesda-multitool/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
+[0.1.0-alpha.1]: https://github.com/slfx77/bethesda-multitool/releases/tag/v0.1.0-alpha.1

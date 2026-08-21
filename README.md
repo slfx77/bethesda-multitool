@@ -62,7 +62,7 @@ A standalone companion app for transcribing Fallout: New Vegas voice files using
 
 ### Pre-built Releases
 
-Download from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases):
+Download from [Releases](https://github.com/slfx77/bethesda-multitool/releases):
 
 | Platform | Download |
 | --- | --- |
@@ -77,8 +77,8 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/slfx77/fallout-xbox-360-utils.git
-cd fallout-xbox-360-utils
+git clone --recursive https://github.com/slfx77/bethesda-multitool.git
+cd bethesda-multitool
 
 # Build the projects in BethesdaMultitool.slnx
 dotnet build -c Release
@@ -136,7 +136,7 @@ BethesdaMultitool --no-gui dump.dmp -o output
 
 ## Audio Transcriber
 
-The **Bethesda Audio Transcriber** is a standalone WinUI 3 application for browsing and transcribing Fallout: New Vegas voice files. It is provided as a precompiled download in [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases).
+The **Bethesda Audio Transcriber** is a standalone WinUI 3 application for browsing and transcribing Fallout: New Vegas voice files. It is provided as a precompiled download in [Releases](https://github.com/slfx77/bethesda-multitool/releases).
 
 ### What it does
 
@@ -148,7 +148,7 @@ The **Bethesda Audio Transcriber** is a standalone WinUI 3 application for brows
 
 ### Getting started
 
-1. Download and extract `BethesdaAudioTranscriber-Windows-x64.zip` from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases)
+1. Download and extract `BethesdaAudioTranscriber-Windows-x64.zip` from [Releases](https://github.com/slfx77/bethesda-multitool/releases)
 2. Launch `BethesdaAudioTranscriber.exe`
 3. Point it at a Fallout: New Vegas `Data` directory containing voice BSA files (e.g., `Fallout - Voices1.bsa`)
 4. The app parses all voice BSAs, cross-references with `FalloutNV.esm` if present, and presents a browsable playlist

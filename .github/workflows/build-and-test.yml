@@ -34,9 +34,7 @@ jobs:
     
     # The test project runs on the Microsoft.Testing.Platform runner (xunit.v3);
     # report/filter options are MTP-style and must come after the `--` separator.
-    # Coverage is kept out of this blocking job. The separate non-blocking job below uses coverlet's
-    # static IL instrumentation; Microsoft's dynamic-instrumentation engines deadlock on this assembly
-    # (see CLAUDE.md, "Code coverage").
+    # CI does not measure coverage at all — see the note above build-cli-cross-platform.
     - name: Run Tests
       # RUN_SHADER_COMPILE_TESTS=1 is set here and nowhere else in CI. Without it every test behind
       # ShaderCompileTestGuard is SKIPPED, and the only HLSL CI ever fed to FXC was
@@ -121,38 +119,9 @@ jobs:
         path: ./TestResults
         retention-days: 30
 
-  # Non-blocking coverage measurement (coverlet static IL — the only engine that works on
-  # this codebase; the Microsoft dynamic-instrumentation engine deadlocks, see CLAUDE.md).
-  coverage:
-    runs-on: windows-latest
-    needs: build-and-test
-    continue-on-error: true
-    timeout-minutes: 25
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v5
-      with:
-        submodules: recursive
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: '10.0.x'
-
-    - name: Install coverlet
-      run: dotnet tool install --global coverlet.console
-
-    - name: Run coverage
-      run: pwsh tools/scripts/coverage.ps1
-
-    - name: Upload Coverage Report
-      uses: actions/upload-artifact@v5
-      with:
-        name: coverage-report
-        path: TestResults/coverage
-        retention-days: 30
-
+  # No coverage job here by design. Coverage is opt-in and local, via tools/scripts/coverage.ps1,
+  # which .gitignore deliberately keeps out of the repo along with the rest of the dev tooling —
+  # so a CI job invoking it could never work. See CLAUDE.md, "Code Coverage".
   build-cli-cross-platform:
     runs-on: ubuntu-latest
     needs: build-and-test
