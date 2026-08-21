@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-alpha.3] - 2026-08-21
+
+Sixteen commits since `3.0.0-alpha.2`. The user-facing headline is the 3D renderer failing to start
+on Windows 10; the rest is repository hygiene that had been overdue — the test suite no longer
+depends on one machine's drive layout, and continuous integration works again after months of red.
+
 ### Fixed
 
 - **3D renderer failed to start on Windows 10.** Device creation probed a single default adapter at
@@ -27,13 +33,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   works, replacing a bare "D3D12 init failed" with the list of what was tried and why each was
   rejected.
 
+- **Continuous integration was failing, and had been since April.** Four independent faults were
+  stacked, each only visible once the one ahead of it cleared: real-asset tests running ungated;
+  source-contract pins comparing LF marker strings against a CRLF checkout (so they passed locally
+  and could only ever fail in CI); `dotnet-quality: preview` resolving the SDK to a release
+  candidate that parses `dotnet test` arguments differently from the GA SDK developers build with;
+  and `--minimum-expected-tests` set to an exact local total rather than a floor CI could meet.
+  The Linux CLI job, skipped behind the failure for months, then failed on its own for evaluating
+  the Windows target framework.
+- **CI could report a green run having built nothing.** A pwsh `run:` block reports only its last
+  command's exit code, so a failing build was swallowed, the test host never started, and
+  `--minimum-expected-tests` did not catch the resulting zero-test run — the floor is enforced by a
+  host that has to launch first. Every command in that step is now exit-code checked.
+- **A vertex-cell hash sign-extended.** `NpcBoundaryVertexStitcher` packs three 21-bit integers into
+  a 64-bit key but cast only two of them; the third stayed `int` and sign-extended through the upper
+  bits, colliding cells with a negative Z.
+
 ### Changed
 
+- **Retail game assets are located rather than hardcoded.** 53 paths across 41 test files pointed at
+  one machine's `E:\SteamLibrary`. Everywhere else the files simply did not exist, so the tests
+  skipped and a run reported "no assets installed" rather than "these can never run for you". A
+  shared locator now probes `BETHESDA_TEST_DATA_ROOT`, then repo-relative `Sample/`, then every
+  fixed drive's Steam library — which also finds libraries the old literals missed.
+- **Real-asset tests are gated.** Sixteen NIF tests that load retail archives now sit behind
+  `RUN_BUCKET_B` with the rest of the real-asset suite, instead of failing on any machine without
+  the game installed.
 - **CI no longer measures coverage.** The job invoked `tools/scripts/coverage.ps1`, which
   `.gitignore` deliberately excludes as dev tooling, so it could never have worked. Coverage stays
   opt-in and local, matching what CLAUDE.md already documented.
 - **Repository renamed** to `slfx77/bethesda-multitool`; the clone instructions and comparison links
   follow it. The old URLs still redirect.
+- **Comments state why code is shaped as it is**, not what it changed from. Narration of past edits
+  ("previously routed through…") and internal milestone tags ("v3 Phase 3", "4-pre Item C") are
+  gone; they date an edit rather than explain the code, and the milestone labels referenced work
+  items nothing in the repo records.
 
 ## [3.0.0-alpha.2] - 2026-08-19
 
@@ -518,7 +552,8 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
-[Unreleased]: https://github.com/slfx77/bethesda-multitool/compare/v3.0.0-alpha.2...HEAD
+[Unreleased]: https://github.com/slfx77/bethesda-multitool/compare/v3.0.0-alpha.3...HEAD
+[3.0.0-alpha.3]: https://github.com/slfx77/bethesda-multitool/compare/v3.0.0-alpha.2...v3.0.0-alpha.3
 [3.0.0-alpha.2]: https://github.com/slfx77/bethesda-multitool/compare/v3.0.0-alpha.1...v3.0.0-alpha.2
 [3.0.0-alpha.1]: https://github.com/slfx77/bethesda-multitool/compare/v2.4.0...v3.0.0-alpha.1
 [2.4.0]: https://github.com/slfx77/bethesda-multitool/compare/v2.3.0...v2.4.0
