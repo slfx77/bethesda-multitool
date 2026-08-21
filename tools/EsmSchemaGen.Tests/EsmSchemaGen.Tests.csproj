@@ -21,4 +21,12 @@
     <ProjectReference Include="..\EsmSchemaGen\EsmSchemaGen.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Linked, not referenced: this project sits outside BethesdaMultitool.slnx and has no
+         dependency on the main test project, but it locates retail masters the same way. Sharing
+         the one locator keeps a second copy of the drive-probing logic from drifting. -->
+    <Compile Include="..\..\tests\BethesdaMultitool.Tests\Helpers\RealAssetPaths.cs"
+             Link="Helpers\RealAssetPaths.cs" />
+  </ItemGroup>
+
 </Project>

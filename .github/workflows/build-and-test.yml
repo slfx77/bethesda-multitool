@@ -70,26 +70,48 @@ jobs:
     # DDXConv's was 216 of 217, which only ever held on a machine with Sample/ present; on CI
     # its 38 real-asset cases skip correctly, 179 run, and the policy failed the step with
     # exit code 9. 150 keeps the not-discovered alarm while leaving room for more gated cases.
+    # Every command is exit-code checked. A pwsh `run:` block reports only its LAST command's
+    # status, so without these guards a failing build here is swallowed: the test module never
+    # gets built, `dotnet test` reports "Zero tests ran", the next project succeeds, and the step
+    # goes green having run nothing. --minimum-expected-tests does NOT save you — the floor is
+    # evaluated by a test host that never started.
     - name: Run Auxiliary Tool Tests
       run: |
-        dotnet build tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj --configuration Release
-        dotnet test --project tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj `
-          --configuration Release `
-          --no-build `
-          --results-directory ./TestResults `
-          -- `
-          --report-xunit-trx `
-          --report-xunit-trx-filename esm-schema-gen-test-results.trx `
-          --minimum-expected-tests 15
-        dotnet build src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj --configuration Release
-        dotnet test --project src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj `
-          --configuration Release `
-          --no-build `
-          --results-directory ./TestResults `
-          -- `
-          --report-xunit-trx `
-          --report-xunit-trx-filename ddxconv-test-results.trx `
-          --minimum-expected-tests 150
+        function Invoke-Checked {
+          param([string] $What, [scriptblock] $Command)
+          & $Command
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::$What failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+        }
+
+        Invoke-Checked "EsmSchemaGen.Tests build" {
+          dotnet build tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj --configuration Release
+        }
+        Invoke-Checked "EsmSchemaGen.Tests" {
+          dotnet test --project tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj `
+            --configuration Release `
+            --no-build `
+            --results-directory ./TestResults `
+            -- `
+            --report-xunit-trx `
+            --report-xunit-trx-filename esm-schema-gen-test-results.trx `
+            --minimum-expected-tests 15
+        }
+        Invoke-Checked "DDXConv.Tests build" {
+          dotnet build src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj --configuration Release
+        }
+        Invoke-Checked "DDXConv.Tests" {
+          dotnet test --project src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj `
+            --configuration Release `
+            --no-build `
+            --results-directory ./TestResults `
+            -- `
+            --report-xunit-trx `
+            --report-xunit-trx-filename ddxconv-test-results.trx `
+            --minimum-expected-tests 150
+        }
 
     - name: Upload Test Results
       uses: actions/upload-artifact@v5

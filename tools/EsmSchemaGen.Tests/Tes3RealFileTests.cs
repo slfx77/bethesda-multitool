@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using EsmSchemaGen;
 using Xunit;
 
@@ -83,7 +84,6 @@ internal static class TestPaths
             return fromEnv;
         }
 
-        const string defaultPath = RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm");
-        return File.Exists(defaultPath) ? defaultPath : null;
+        return RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm");
     }
 }

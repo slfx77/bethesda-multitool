@@ -1,7 +1,8 @@
 namespace BethesdaMultitool.Tests.Helpers;
 
 /// <summary>
-///     Locates retail game files for the opt-in real-asset suites (see <see cref="BucketBTestGuard" />).
+///     Locates retail game files for the opt-in real-asset suites (the ones behind
+///     <c>BucketBTestGuard</c> / <c>RUN_BUCKET_B</c>).
 ///     Tests must not hardcode an install path: the drive letter and library folder differ per machine,
 ///     so a literal like <c>E:\SteamLibrary\...</c> resolves only on the machine it was written on. The
 ///     failure is silent — everywhere else the file simply does not exist, the test skips, and the run
@@ -52,12 +53,15 @@ internal static class RealAssetPaths
             }
         }
 
-        foreach (var candidate in repoRelativeCandidates)
+        if (RepoRoot is { } repoRoot)
         {
-            var full = Path.Combine(RepoRoot, candidate);
-            if (File.Exists(full))
+            foreach (var candidate in repoRelativeCandidates)
             {
-                return full;
+                var full = Path.Combine(repoRoot, candidate);
+                if (File.Exists(full))
+                {
+                    return full;
+                }
             }
         }
 
@@ -123,5 +127,21 @@ internal static class RealAssetPaths
         }
     }
 
-    private static string RepoRoot => SourceContract.RepoRoot;
+    // Self-contained on purpose: this file is also linked into tools/EsmSchemaGen.Tests, which is
+    // outside the solution and cannot see the rest of this project. Probing upward for
+    // Directory.Build.props walks out of the nested bin/ output. Null (no root found) is not an
+    // error — it just means the repo-relative candidates are skipped.
+    private static readonly Lazy<string?> LazyRepoRoot = new(() =>
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null &&
+               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName;
+    });
+
+    private static string? RepoRoot => LazyRepoRoot.Value;
 }
