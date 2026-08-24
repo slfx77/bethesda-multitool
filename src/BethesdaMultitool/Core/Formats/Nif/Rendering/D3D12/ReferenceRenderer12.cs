@@ -925,6 +925,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     public int ReferencesDrawnLastFrame { get; private set; }
     public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
+
+    /// <summary>
+    ///     Model paths whose mesh resolved to nothing in the last resolve pass — the names behind
+    ///     <c>ReferenceMeshMissing</c>. While streaming is in flight this also contains
+    ///     still-decoding paths; sampled AFTER quiescence it is exactly the terminally-unresolvable
+    ///     set, which is what capture harnesses report.
+    /// </summary>
+    public IReadOnlyList<string> LastFrameMissingMeshPaths => _lastFrameMissingMeshPaths;
+
+    private readonly List<string> _lastFrameMissingMeshPaths = [];
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
     private int _placedLightCount;
@@ -1675,6 +1685,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private int _lastBuildEvictionGen;
     private int _lastBuildDrawn;
     private int _lastBuildMissing;
+
+    /// <summary>
+    ///     Consecutive completed builds whose unresolved-mesh count matched the one before it. Reaching
+    ///     <see cref="MissingStallStreakBuilds" /> means the remainder is permanently unresolvable
+    ///     rather than still streaming in, which lets batch reuse resume (see the MeshesMissing clause).
+    /// </summary>
+    private int _missingStallStreak;
+
+    /// <summary>
+    ///     Builds with an unchanged miss count before the remainder counts as stalled. Two consecutive
+    ///     repeats (not one) so a single frame landing between two decode waves cannot freeze a build
+    ///     that is still filling in.
+    /// </summary>
+    private const int MissingStallStreakBuilds = 2;
     private int _lastBuildTexturePending;
 
     // True while the CURRENT batch content came from a widened (tolerant) cull — the draw pass
@@ -1934,8 +1958,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var viewIsStatic = !tolerant
                            && _cullCacheViewProj == cullFrustumSource
                            && _cullCacheCylinder == cylinder;
+        // The debounce holds only WHILE streaming is in flight — that is the thrash it exists to
+        // kill (every streaming frame resolves something and would re-cull). Once the pipes drain,
+        // a pending bounds delta vetoes immediately: the placeholder radii are not reliably larger
+        // than the real bounds (a re-cull after drain admitted 1,547 candidates where the
+        // placeholder cull had admitted 1,360), so deferring the refresh past drain leaves refs
+        // MISSING from a frame that simultaneously reports streaming-quiescent — one-shot capture
+        // consumers then trust a "settled" image that a later pass would disown. At drain the
+        // re-cull costs one pass and cannot recur.
+        var streamingDrained = LastStats.ReferenceQueuedDecodes == 0 &&
+                               LastStats.ReferenceActiveDecodes == 0 &&
+                               LastStats.ReferenceGpuUploads == 0;
         var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
-                                || ((tolerant || viewIsStatic) && _framesSinceCull < CullStreamingRefreshFrames);
+                                || ((tolerant || viewIsStatic) && !streamingDrained &&
+                                    _framesSinceCull < CullStreamingRefreshFrames);
 #pragma warning disable S1244 // cull-cache identity: exact compare of a cached snapshot detects change, not proximity
 #pragma warning disable S3358 // the veto chain below IS the gate order; flattening it loses the priority it encodes
         var cullCacheValid =
@@ -2022,16 +2058,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 return BatchReuseBlocker.CullEpoch;
             }
 
-            // Never freeze a build that was still missing meshes. Reuse frames skip the resolve pass
-            // wholesale, and the resolve pass is the ONLY thing that calls GetOrUpload — i.e. the only
-            // thing that requests decodes. On the on-demand top-down path that is a hard deadlock, not
-            // just a delay: the very first (cold) pass builds with everything missing, the second pass
-            // reuses it, no decodes are ever requested, streaming therefore reports quiesced, the
-            // overlay declares itself complete and stops re-rendering — a permanently EMPTY overlay
-            // (reproduced the moment the cull cache started hitting: drawn=0 at pass 2, settled=True).
-            // The live 60fps path never showed it because its camera moves, which misses the cull
-            // cache and forces a rebuild anyway.
-            if (_lastBuildMissing > 0)
+            // Never freeze a build whose missing meshes are still ARRIVING. Reuse frames skip the
+            // resolve pass wholesale, and the resolve pass is the ONLY thing that calls GetOrUpload —
+            // i.e. the only thing that requests decodes. On the on-demand top-down path that is a hard
+            // deadlock, not just a delay: the very first (cold) pass builds with everything missing, the
+            // second pass reuses it, no decodes are ever requested, streaming therefore reports
+            // quiesced, the overlay declares itself complete and stops re-rendering — a permanently
+            // EMPTY overlay (reproduced the moment the cull cache started hitting: drawn=0 at pass 2,
+            // settled=True). The live 60fps path never showed it because its camera moves, which misses
+            // the cull cache and forces a rebuild anyway.
+            //
+            // The test is PROGRESS, not an absolute count. A dense worldspace holds thousands of
+            // permanently unresolvable meshes (Appalachia sits at miss ≈ 22,000, FO4 downtown at
+            // 10-20k) that never reach zero, so an absolute test vetoes reuse on literally every frame
+            // forever — measured 2026-08-18 on Fallout 76: blocker 10 on 100 of 104 frames, re-running
+            // the ~250 ms resolve+batch pass (93k survivors, an 82k-instance sort) each time. That is
+            // the ~97-100% veto rate the note above asked to have identified. Once the miss count has
+            // repeated unchanged across builds with no decode queued or running, nothing is in flight
+            // that another resolve pass could advance, so freezing is safe — and any camera move,
+            // eviction or cull-epoch change still forces a rebuild through the clauses around this one.
+            if (_lastBuildMissing > 0 && !MissingMeshesStalled())
             {
                 return BatchReuseBlocker.MeshesMissing;
             }
@@ -2053,6 +2099,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             return BatchReuseBlocker.None;
         }
+
+        // True once the unresolved-mesh population has repeated unchanged across consecutive builds
+        // with nothing queued or decoding — i.e. no resolve pass could change it, so it is the
+        // worldspace's permanently unresolvable remainder rather than a stream still landing.
+        // PendingDecodeCount is the queue's real depth. FrameQueuedDecodes counts only first-time
+        // queue entries this frame, so a steady backlog reports zero — trusting it here would freeze
+        // the batches mid-stream, and because reuse frames never call GetOrUpload, nothing would ever
+        // request another decode: the world would stop filling in and the miss count would sit
+        // frozen, looking exactly like the "permanently unresolvable" population it is not.
+        bool MissingMeshesStalled() =>
+            _missingStallStreak >= MissingStallStreakBuilds &&
+            _meshCache.PendingDecodeCount == 0 &&
+            _meshCache.FrameActiveDecodes == 0;
 
         var reuseBlocker = ResolveReuseBlocker();
         var reuseBatches = reuseBlocker == BatchReuseBlocker.None;
@@ -2265,7 +2324,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 EnsureCullPartitions(partitionCount);
                 var perPartition = (cellCount + partitionCount - 1) / partitionCount;
-                System.Threading.Tasks.Parallel.For(0, partitionCount, p =>
+                // NOT Parallel.For: this runs inside CompositionTarget.Rendering on the STA UI
+                // thread, and Parallel.For blocks the caller through ManualResetEventSlim.Wait —
+                // a COM PUMPING wait. The pump dispatches input back into XAML mid-callback and
+                // CXcpDispatcher::CheckReentrancy fail-fasts the process (0xc000027b). That is the
+                // crash this line caused on 2026-08-07/08-11/08-14/08-23; the dump's faulting stack
+                // was Monitor.Wait <- Parallel.For <- Render <- OnRendering. NonPumpingParallel
+                // keeps the identical partitioning (and still runs partition 0 on this thread) but
+                // joins with a non-alertable sleep that cannot pump.
+                Core.Orchestration.NonPumpingParallel.For(0, partitionCount, p =>
                 {
                     var state = _cullPartitions![p];
                     state.Reset();
@@ -2367,6 +2434,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             texturePending = _lastBuildTexturePending;
             RefreshBlendedDraws(frameCameraPosition, frameCameraForward, renderOrigin);
         }
+        // Rebuilt per resolve pass; carried over on batch-reuse frames exactly like the
+        // _lastBuildMissing counter, so the two always describe the same frame.
+        if (!reuseBatches)
+        {
+            _lastFrameMissingMeshPaths.Clear();
+        }
+
         var survivorsToResolve = reuseBatches ? 0 : _cachedCullSurvivors.Count;
         for (var si = 0; si < survivorsToResolve; si++)
         {
@@ -2412,6 +2486,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             if (mesh is null)
             {
                 missingMeshes++;
+                // Diagnostic trail for "N meshes missing": the count alone cannot say WHICH paths
+                // failed to resolve, and that question comes up whenever a capture is missing
+                // furniture. During streaming this list also holds still-decoding paths; read it
+                // after quiescence, where null means terminally unresolved. Contains() is fine —
+                // the list is as long as the missing-mesh count, single digits in practice.
+                if (!_lastFrameMissingMeshPaths.Contains(r.ModelPath))
+                {
+                    _lastFrameMissingMeshPaths.Add(r.ModelPath);
+                }
+
                 continue;
             }
             // Placed water geometry needs no textures — register it as soon as the mesh resolves, once
@@ -2753,6 +2837,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _lastBuildQuiesced = _quietBuildStreak >= QuietBuildStreakFrames;
             _lastBuildStreamActive = _transparencyStreamActive;
             _lastBuildDrawn = referencesWithReadyMesh;
+            _missingStallStreak = missingMeshes == _lastBuildMissing ? _missingStallStreak + 1 : 0;
             _lastBuildMissing = missingMeshes;
             _lastBuildTexturePending = texturePending;
             _batchesWidened = tolerant;

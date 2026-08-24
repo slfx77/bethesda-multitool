@@ -68,16 +68,17 @@ public sealed partial class DiagnosticsTab : UserControl
 
     private void Refresh()
     {
-        var registry = ResourceRegistry.Instance;
-        var snapshot = registry.GetSnapshot();
+        // One walk per tick: the rows and the category totals come from the same snapshot. Taking
+        // them separately called every ITrackableResource.GetStats() twice a second.
+        var snapshot = ResourceRegistry.Instance.Snapshot();
 
-        UpdateProcessStats(registry);
+        UpdateProcessStats(snapshot);
 
         // Reconcile in place: update existing rows' values, add new rows into their (sorted) group,
         // remove vanished rows (and their group when it empties). No ItemsSource replacement, so the
         // scroll position is preserved even as transient ParallelWork rows come and go.
         var seen = new HashSet<string>(_rows.Count, StringComparer.Ordinal);
-        foreach (var record in snapshot)
+        foreach (var record in snapshot.Rows)
         {
             seen.Add(record.DisplayName);
             if (_rows.TryGetValue(record.DisplayName, out var row))
@@ -93,12 +94,13 @@ public sealed partial class DiagnosticsTab : UserControl
             }
         }
 
-        if (_rows.Count != seen.Count)
+        // Sweep unconditionally. This used to be guarded by `_rows.Count != seen.Count`, which fails
+        // on the routine case of one resource registering while another unregisters in the same tick
+        // (transient ParallelWork rows churn constantly): the counts stay equal, the sweep is
+        // skipped, and the dead row never leaves — it sits there showing frozen values forever.
+        foreach (var name in _rows.Keys.Where(k => !seen.Contains(k)).ToList())
         {
-            foreach (var name in _rows.Keys.Where(k => !seen.Contains(k)).ToList())
-            {
-                RemoveRow(name);
-            }
+            RemoveRow(name);
         }
     }
 
@@ -158,7 +160,7 @@ public sealed partial class DiagnosticsTab : UserControl
         }
     }
 
-    private void UpdateProcessStats(ResourceRegistry registry)
+    private void UpdateProcessStats(RegistrySnapshot snapshot)
     {
         using var process = System.Diagnostics.Process.GetCurrentProcess();
         var gcInfo = GC.GetGCMemoryInfo();
@@ -167,8 +169,9 @@ public sealed partial class DiagnosticsTab : UserControl
         GcCollectionsText.Text = string.Create(
             CultureInfo.InvariantCulture,
             $"{GC.CollectionCount(0)} / {GC.CollectionCount(1)} / {GC.CollectionCount(2)}");
+        // Totals ride along on the snapshot already taken by Refresh — no second registry walk.
         TrackedTotalText.Text = CliResourceStatsReporter.FormatBytes(
-            registry.TotalTrackedBytes(ResourceCategory.CpuCache));
+            snapshot.TotalBytes(ResourceCategory.CpuCache));
     }
 
 #pragma warning disable S2325 // XAML Click handlers must be instance methods for classic event wiring.

@@ -171,14 +171,27 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         Capacity = capacity;
         DecodedMeshCacheByteBudget = decodedCacheByteBudget;
         _autoSizeMeshCapacity = autoSizeMeshCapacity;
-        // No sizeOf: GPU bytes are already tracked by GpuGeometryArena12["reference"] — sizing
-        // this cache too would double-count them in the registry.
+        // Sized in real arena bytes, but categorised GpuAttributed: the bytes are physically the
+        // geometry arena's (already reported under GpuGeometryArena12["reference"]), and
+        // GpuAttributed is excluded from category totals so nothing double-counts. Reporting 0 —
+        // or the old 1-byte-per-entry default — would leave the largest reference pool
+        // ungovernable, because a byte budget cannot be enforced on a size nobody knows.
+        //
+        // Segment is NonLocal, not Local: the arena allocates UPLOAD-heap blocks, so this geometry
+        // lives in system RAM and is read over PCIe. Counting it as VRAM is what made the old
+        // GpuResident total meaningless on a discrete adapter.
+        //
+        // sizeOf runs at Set time, when the node's Mesh is still null and the size is 0; the real
+        // size is published via _meshLru.UpdateSize once the async decode completes and the mesh is
+        // assigned in place.
         _meshLru = new LruCache<string, Node>(
                 "ReferenceMeshLru",
-                ResourceCategory.GpuResident,
+                ResourceCategory.GpuAttributed,
                 maxEntries: capacity,
+                sizeOf: static (_, node) => node.Mesh?.Geometry.Allocation.AlignedSize ?? 0,
                 onEvicted: OnMeshNodeEvicted,
                 comparer: StringComparer.OrdinalIgnoreCase)
+            .WithSegment(Core.Diagnostics.GpuMemorySegment.NonLocal)
             .RegisterWith(ResourceRegistry.Instance, "reference-meshes");
         _decodedLru = new LruCache<string, DecodedCacheValue>(
                 "ReferenceDecodedMeshCache",
@@ -456,6 +469,16 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public int FrameQueuedDecodes { get; private set; }
     public int FrameDecodeStarts { get; private set; }
     public int FrameActiveDecodes => Volatile.Read(ref _activeDecodeTasks);
+
+    /// <summary>
+    ///     Meshes still waiting to be decoded — the queue's true depth, not a per-frame delta.
+    ///     <see cref="FrameQueuedDecodes" /> counts only keys queued for the FIRST time this frame
+    ///     (a re-offer of an already-queued key returns early without incrementing it), so on a
+    ///     steady-state backlog it reads zero while thousands remain outstanding. Anything deciding
+    ///     "is streaming finished?" must consult this instead, or it will conclude the world is
+    ///     complete while the queue is still full.
+    /// </summary>
+    public int PendingDecodeCount => _decodeQueue.Count;
     public int FrameCpuDecodedCacheHits { get; private set; }
     public int FrameCpuDecodedCacheMisses { get; private set; }
     public int FrameCpuDecodedNegativeHits { get; private set; }
@@ -718,6 +741,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return;
         }
 
+        // This method runs on the STA UI thread via the render tick, where a blocking read would be
+        // a COM pumping wait (see UiThreadPumpingWaitGuardTests) — but `task` was pattern-matched
+        // non-pumping: `{ IsCompleted: true }` at the top of this method, with an early return
+        // otherwise, so reading Result here can neither block nor pump.
         var decoded = task.Result;
         if (decoded is null)
         {
@@ -840,6 +867,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         node.Mesh = mesh;
+        // Publish the node's real arena footprint now that it has one. The LRU sized this node at 0
+        // when Set inserted it (nodes are populated in place after an async decode, so sizeOf could
+        // only ever observe an empty node), and UpdateSize is deliberately non-evicting — it must
+        // not run the dispose cascade on the mesh being published right here.
+        // NOTE: `modelPath` is this method's parameter name, but every caller passes the LRU cache
+        // key (path + optional "#variant"), which is what UpdateSize needs.
+        _meshLru.UpdateSize(modelPath, mesh.Geometry.Allocation.AlignedSize);
         return true;
     }
 

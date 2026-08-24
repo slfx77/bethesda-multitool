@@ -87,12 +87,20 @@ float3 ApplyFog(float3 color, float3 worldPos)
 Texture2D gWaterTextures[] : register(t0, space1);
 // space3 aliases the same bindless heap slots for R32_FLOAT Texture2DMS scene-depth descriptors.
 // uRenderOrigin.w selects this declaration only when the host supplied sampleCount > 1.
-// Explicitly bounded to the heap's persistent region (16384; depth SRVs are persistent slots):
-// the UNBOUNDED `[]` form miscompiled/misresolved on the deployed driver — sampleinfo/ldms
-// through the unbounded 2DMS array intermittently returned unrelated low heap slots (the live
-// view's depth) instead of the indexed slot, while the space1 unbounded Texture2D array resolved
-// the same indices correctly. A bounded declaration emits different (reliable) DXBC indexing.
-Texture2DMS<float> gWaterDepthTexturesMsaa[16384] : register(t0, space3);
+// Explicitly bounded rather than `[]`: the UNBOUNDED form miscompiled/misresolved on the deployed
+// driver — sampleinfo/ldms through the unbounded 2DMS array intermittently returned unrelated low
+// heap slots (the live view's depth) instead of the indexed slot, while the space1 unbounded
+// Texture2D array resolved the same indices correctly. A bounded declaration emits different
+// (reliable) DXBC indexing.
+//
+// ⚠ The bound MUST be >= the descriptor heap's persistent capacity (WorldView3DControl.Device.cs,
+// `persistentCapacity`). Depth SRVs are persistent slots, the root-signature range is UNBOUNDED
+// (GpuRootSignature12: NumDescriptors = uint.MaxValue), so this literal is the ONLY thing bounding
+// the array — indexing past it is an out-of-bounds descriptor read (wrong texture, or device
+// removal), not a compile error. It read 16384 while the persistent region was widened to 49152,
+// and stayed correct only because depth SRVs happen to be allocated early in the bump region.
+// `WaterDepthArrayBoundTests` pins the two together so they cannot drift again.
+Texture2DMS<float> gWaterDepthTexturesMsaa[49152] : register(t0, space3);
 SamplerState gWaterSampler : register(s0);
 // WATER001's opaque-scene snapshot and FO4's generated LUT/cubemap paths both use the root
 // signature's clamp sampler. Keep it outside the FO4 guard so the FNV permutation can bind it.

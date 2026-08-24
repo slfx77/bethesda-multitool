@@ -74,6 +74,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 
     private ID3D12Resource? _combinedVertexBuffer;
     private ID3D12Resource? _combinedIndexBuffer;
+    private IDisposable? _combinedFootprint;
     private uint _combinedIndexCount;
     private int _combinedCellCount;
 
@@ -208,6 +209,8 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         if (_combinedIndexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedIndexBuffer);
         _combinedVertexBuffer = null;
         _combinedIndexBuffer = null;
+        _combinedFootprint?.Dispose();
+        _combinedFootprint = null;
         _combinedIndexCount = 0;
         _combinedCellCount = 0;
         _lastVisibleKeys.Clear();
@@ -318,18 +321,13 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 
     private void RebuildCombinedBuffers(ID3D12GraphicsCommandList cmd)
     {
-        _lastVisibleKeys.Clear();
+        // The shared release helper also clears _lastVisibleKeys, so it must run BEFORE the
+        // key snapshot below (this replaced an inlined copy of the same block).
+        ReleaseCombinedBuffers();
         foreach (var key in _visibleKeyScratch)
         {
             _lastVisibleKeys.Add(key);
         }
-
-        if (_combinedVertexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedVertexBuffer);
-        if (_combinedIndexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedIndexBuffer);
-        _combinedVertexBuffer = null;
-        _combinedIndexBuffer = null;
-        _combinedIndexCount = 0;
-        _combinedCellCount = 0;
 
         _combineVertexScratch.Clear();
         _combineIndexScratch.Clear();
@@ -361,6 +359,11 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_combineIndexScratch),
             ResourceStates.IndexBuffer);
         _combinedIndexCount = (uint)_combineIndexScratch.Count;
+        // Rebuilt whenever the visible key set changes; ≤ ~24 MB VB at the vertex cap.
+        _combinedFootprint = Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
+            "navmesh-combined",
+            Gpu.GpuResourceFootprint.CommittedBufferBytes(
+                (long)_combinedVertexBuffer.Description.Width, (long)_combinedIndexBuffer.Description.Width));
     }
 
     private void GatherVisible(VisibilityCylinder cylinder)

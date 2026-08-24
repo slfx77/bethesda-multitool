@@ -34,8 +34,8 @@ internal static class TerrainCellCpuBuilder
         int gridSize,
         int generation)
     {
-        var vertices = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCountFor(gridSize)];
-        if (!TerrainMeshBuilder.TryBuildVertices(cell, vertices, renderCache))
+        var vertices = new TerrainVertex[TerrainMeshBuilder.VertexCountFor(gridSize)];
+        if (!TerrainMeshBuilder.TryBuildVertices(cell, vertices, renderCache, out var grid))
         {
             return BuiltCellCpuData.Failed(generation);
         }
@@ -46,7 +46,7 @@ internal static class TerrainCellCpuBuilder
 
         var blendWeights = new Vector4[TerrainMeshBuilder.VertexCountFor(gridSize) * CellTerrainTextureSet.SlotVectors];
         PopulateBlendWeights(textureSet, blendWeights, gridSize);
-        return new BuiltCellCpuData(vertices, blendWeights, textureSet, Unusable: false, generation);
+        return new BuiltCellCpuData(vertices, blendWeights, textureSet, grid, Unusable: false, generation);
     }
 
     /// <summary>

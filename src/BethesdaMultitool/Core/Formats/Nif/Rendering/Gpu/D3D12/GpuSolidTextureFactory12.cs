@@ -141,6 +141,9 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 GpuNormalDecodeMode.None,
                 true,
                 null); // pinned singleton (fallbacks + synthesized frames) — never evicted.
+            // Pinned entries never pass through the streaming path that stamps ByteSize, so they
+            // used to report 0 and the cache's resident total silently excluded every one of them.
+            entry.SetPinnedFootprint((long)_gpu.Device.GetResourceAllocationInfo(0, desc).SizeInBytes);
             texture = null;
             return entry;
         }

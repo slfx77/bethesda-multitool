@@ -189,6 +189,147 @@ public sealed class LruCacheTests
     }
 
     [Fact]
+    public void UpdateSize_adjusts_the_byte_total_without_evicting()
+    {
+        // The resident-mesh pattern: a node is inserted empty and populated after an async decode,
+        // so sizeOf at Set time can only ever see 0. UpdateSize must be able to push the cache OVER
+        // its budget without firing onEvicted — evicting here would dispose the very value the
+        // caller is midway through publishing.
+        var evicted = new List<string>();
+        var cache = CreateCache(maxBytes: 100, sizeOf: static (_, value) => long.Parse(value),
+            onEvicted: (key, _) => evicted.Add(key));
+
+        cache.Set("a", "10");
+        Assert.Equal(10, cache.EstimatedBytes);
+
+        Assert.True(cache.UpdateSize("a", 4096)); // far over the 100-byte budget
+        Assert.Equal(4096, cache.EstimatedBytes);
+        Assert.Empty(evicted);
+        Assert.True(cache.ContainsKey("a"));
+    }
+
+    [Fact]
+    public void UpdateSize_returns_false_for_an_absent_key()
+    {
+        var cache = CreateCache();
+        Assert.False(cache.UpdateSize("never-inserted", 512));
+        Assert.Equal(0, cache.EstimatedBytes);
+    }
+
+    [Fact]
+    public void TrimToBytes_with_a_pin_predicate_skips_pinned_entries()
+    {
+        var evicted = new List<string>();
+        var cache = CreateCache(sizeOf: static (_, value) => long.Parse(value),
+            onEvicted: (key, _) => evicted.Add(key));
+        cache.Set("pinned", "10");
+        cache.Set("loose", "20");
+        cache.Set("alsoLoose", "30"); // 60 resident; recency tail -> head: pinned, loose, alsoLoose
+
+        // Target 45 is reachable by evicting exactly one entry, so this pins BOTH behaviours:
+        // the pinned LRU tail is passed over, and the walk stops as soon as the target is met
+        // rather than draining every unpinned entry.
+        var released = cache.TrimToBytes(45, (key, _) => key == "pinned");
+
+        Assert.Equal(20, released);
+        Assert.Equal(["loose"], evicted);
+        Assert.True(cache.ContainsKey("pinned"));
+        Assert.True(cache.ContainsKey("alsoLoose"));
+    }
+
+    [Fact]
+    public void TrimToBytes_terminates_when_every_entry_is_pinned()
+    {
+        // A condition-loop formulation ("while over target") spins forever here because the tail is
+        // never removable. The single tail->head pass is what guarantees termination.
+        var cache = CreateCache(sizeOf: static (_, value) => long.Parse(value));
+        cache.Set("a", "100");
+        cache.Set("b", "100");
+
+        var released = cache.TrimToBytes(1, static (_, _) => true);
+
+        Assert.Equal(0, released); // falling short is a legitimate outcome, not a retry signal
+        Assert.Equal(200, cache.EstimatedBytes);
+        Assert.Equal(2, cache.Count);
+    }
+
+    [Fact]
+    public void SetMaxBytes_evicts_down_to_the_new_budget_and_raising_evicts_nothing()
+    {
+        var evicted = new List<string>();
+        var cache = CreateCache(sizeOf: static (_, value) => long.Parse(value),
+            onEvicted: (key, _) => evicted.Add(key));
+        cache.Set("a", "10");
+        cache.Set("b", "20");
+        cache.Set("c", "30");
+
+        cache.SetMaxBytes(50); // 60 resident -> evicts "a", the LRU
+        Assert.Equal(["a"], evicted);
+        Assert.Equal(50, cache.EstimatedBytes);
+
+        cache.SetMaxBytes(4096); // raising is eviction-free
+        Assert.Equal(["a"], evicted);
+        Assert.Equal(2, cache.Count);
+    }
+
+    [Fact]
+    public void SetMaxBytes_rejects_a_non_positive_budget()
+    {
+        var cache = CreateCache();
+        Assert.Throws<ArgumentOutOfRangeException>(() => cache.SetMaxBytes(0));
+    }
+
+    [Fact]
+    public void Evict_removes_one_specific_entry_through_the_hook()
+    {
+        // Policy-ordered eviction (the terrain sweep evicts farthest-first, not LRU-first) needs to
+        // drop a CHOSEN key through onEvicted — Remove hands ownership to the caller instead and
+        // would leak the GPU buffers.
+        var evicted = new List<string>();
+        var cache = CreateCache(sizeOf: static (_, value) => long.Parse(value),
+            onEvicted: (key, _) => evicted.Add(key));
+        cache.Set("lru", "10");
+        cache.Set("middle", "20");
+        cache.Set("mru", "30");
+
+        var released = cache.Evict("mru"); // the MOST recently used — LRU order would never pick it
+
+        Assert.Equal(30, released);
+        Assert.Equal(["mru"], evicted);
+        Assert.Equal(30, cache.EstimatedBytes);
+        Assert.Equal(2, cache.Count);
+        Assert.Equal(0, cache.Evict("never-inserted"));
+    }
+
+    [Fact]
+    public void SnapshotKeys_is_a_copy_safe_to_evict_while_iterating()
+    {
+        var cache = CreateCache();
+        cache.Set("a", "1");
+        cache.Set("b", "2");
+        cache.Set("c", "3");
+
+        var keys = cache.SnapshotKeys();
+        foreach (var key in keys)
+        {
+            cache.Evict(key); // would throw mid-enumeration against the live dictionary
+        }
+
+        Assert.Equal(3, keys.Length);
+        Assert.Equal(0, cache.Count);
+    }
+
+    [Fact]
+    public void WithSegment_is_reported_in_stats()
+    {
+        // A GpuResident row whose bytes are UPLOAD-heap must say so, or a VRAM total silently
+        // absorbs system RAM.
+        var cache = CreateCache().WithSegment(GpuMemorySegment.NonLocal);
+        Assert.Equal(GpuMemorySegment.NonLocal, cache.GetStats().Segment);
+        Assert.Equal(GpuMemorySegment.Unspecified, CreateCache().GetStats().Segment);
+    }
+
+    [Fact]
     public void Registers_and_unregisters_with_the_registry()
     {
         var registry = new ResourceRegistry();

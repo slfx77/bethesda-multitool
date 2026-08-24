@@ -181,6 +181,100 @@ public sealed class ResourceRegistryTests
         Assert.Equal(0.75, new ResourceStats { Hits = 3, Misses = 1 }.HitRate);
     }
 
+    [Fact]
+    public void Concurrently_registered_duplicates_get_distinct_display_names()
+    {
+        // Diagnostics surfaces key rows by display name, so duplicates used to collapse into one row
+        // and hide every instance but the last-enumerated. Several types register untagged from many
+        // construction sites, so this has to degrade to an ugly name, never a lost row.
+        var registry = new ResourceRegistry();
+        registry.Register(new FakeResource("Resolver"));
+        registry.Register(new FakeResource("Resolver"));
+        registry.Register(new FakeResource("Resolver"));
+
+        Assert.Equal(
+            ["Resolver", "Resolver#2", "Resolver#3"],
+            registry.GetSnapshot().Select(static r => r.DisplayName));
+    }
+
+    [Fact]
+    public void A_freed_display_name_is_reused_rather_than_climbing()
+    {
+        var registry = new ResourceRegistry();
+        var first = registry.Register(new FakeResource("Resolver"));
+        registry.Register(new FakeResource("Resolver")); // -> Resolver#2
+
+        first.Dispose(); // frees the un-suffixed name
+        registry.Register(new FakeResource("Resolver"));
+
+        Assert.Equal(
+            ["Resolver#2", "Resolver"],
+            registry.GetSnapshot().Select(static r => r.DisplayName));
+    }
+
+    [Fact]
+    public void Snapshot_totals_are_accumulated_in_the_same_walk_as_the_rows()
+    {
+        var registry = new ResourceRegistry();
+        var cpu = new FakeResource("Cpu");
+        cpu.Mutate(128);
+        var gpu = new FakeResource("Gpu", ResourceCategory.GpuResident);
+        gpu.Mutate(128);
+        registry.Register(cpu);
+        registry.Register(gpu);
+
+        var snapshot = registry.Snapshot();
+
+        Assert.Equal(2, snapshot.Rows.Count);
+        Assert.Equal(128, snapshot.TotalBytes(ResourceCategory.CpuCache));
+        Assert.Equal(128, snapshot.TotalBytes(ResourceCategory.GpuResident));
+        Assert.Equal(0, snapshot.TotalBytes(ResourceCategory.DiskCache));
+    }
+
+    [Fact]
+    public void GpuAttributed_bytes_are_excluded_from_the_GpuResident_total()
+    {
+        // Attribution rows re-state bytes that another owner already reports. They exist so a pool
+        // knows its own size (and is therefore trimmable) without inflating the physical total.
+        var registry = new ResourceRegistry();
+        var arena = new FakeResource("Arena", ResourceCategory.GpuResident);
+        arena.Mutate(128);
+        var attributed = new FakeResource("MeshLru", ResourceCategory.GpuAttributed);
+        attributed.Mutate(128);
+        registry.Register(arena);
+        registry.Register(attributed);
+
+        var snapshot = registry.Snapshot();
+
+        Assert.Equal(128, snapshot.TotalBytes(ResourceCategory.GpuResident));
+        Assert.Equal(128, snapshot.TotalBytes(ResourceCategory.GpuAttributed));
+    }
+
+    [Fact]
+    public void Snapshot_totals_can_be_restricted_to_one_gpu_segment()
+    {
+        // An UPLOAD-heap pool is system RAM on a discrete adapter; summing it with device-local
+        // bytes produces a number that matches neither pool.
+        var registry = new ResourceRegistry();
+        registry.Register(new SegmentedResource("Local", 700, GpuMemorySegment.Local));
+        registry.Register(new SegmentedResource("NonLocal", 300, GpuMemorySegment.NonLocal));
+
+        var snapshot = registry.Snapshot();
+
+        Assert.Equal(1000, snapshot.TotalBytes(ResourceCategory.GpuResident));
+        Assert.Equal(700, snapshot.TotalBytes(ResourceCategory.GpuResident, GpuMemorySegment.Local));
+        Assert.Equal(300, snapshot.TotalBytes(ResourceCategory.GpuResident, GpuMemorySegment.NonLocal));
+    }
+
+    private sealed class SegmentedResource(string name, long bytes, GpuMemorySegment segment) : ITrackableResource
+    {
+        public string ResourceName { get; } = name;
+
+        public ResourceCategory Category => ResourceCategory.GpuResident;
+
+        public ResourceStats GetStats() => new() { EstimatedBytes = bytes, Segment = segment };
+    }
+
     private sealed class FakeResource(string name, ResourceCategory category = ResourceCategory.CpuCache)
         : ITrackableResource
     {

@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Resources;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Terrain;
@@ -15,13 +16,18 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Terrain;
 ///     bottleneck behind reported stutter; the assertions are advisory ceilings (not strict),
 ///     since timings vary per machine.
 ///     <para>
-///         Defaults to a silent pass when <c>PROFILE_TERRAIN</c> is unset so CI stays quick.
+///         These are benchmarks, not correctness gates — they measure wall-clock and allocation
+///         rates, so they are tagged <c>Category=Benchmark</c> and must never be read as a
+///         regression guard. When <c>PROFILE_TERRAIN</c> is unset they report <em>skipped</em>
+///         (not passed): a benchmark that never ran must not look like a green assertion.
 ///         Output goes to xUnit's <see cref="ITestOutputHelper" /> — run with
 ///         <c>--xunit-info on --show-live-output on</c> (or read the binary log) to see it.
 ///     </para>
 /// </summary>
 public sealed class TerrainPerfProfileTests
 {
+    private const string ProfileSkipReason = "Set PROFILE_TERRAIN=1 to run the terrain perf profiles.";
+
     /// <summary>Approximate exterior-cell count of WastelandNV — drives a realistic mesh-build batch size.</summary>
     private const int WorldspaceCellCountTarget = 4000;
 
@@ -33,13 +39,10 @@ public sealed class TerrainPerfProfileTests
     }
 
     [Fact]
+    [Trait("Category", TestCategories.Benchmark)]
     public void Profile_TerrainMeshBuilder_BulkBuildTime()
     {
-        if (!IsProfileEnabled())
-        {
-            _output.WriteLine("Skipped — set PROFILE_TERRAIN=1 to run this profile.");
-            return;
-        }
+        Assert.SkipUnless(IsProfileEnabled(), ProfileSkipReason);
 
         var cells = BuildSyntheticWorldspace(WorldspaceCellCountTarget);
 
@@ -76,21 +79,18 @@ public sealed class TerrainPerfProfileTests
     }
 
     [Fact]
+    [Trait("Category", TestCategories.Benchmark)]
     public void Profile_TerrainMeshBuilder_AllocationCost_BuildVsTryBuild()
     {
-        if (!IsProfileEnabled())
-        {
-            _output.WriteLine("Skipped — set PROFILE_TERRAIN=1 to run this profile.");
-            return;
-        }
+        Assert.SkipUnless(IsProfileEnabled(), ProfileSkipReason);
 
         var cells = BuildSyntheticWorldspace(WorldspaceCellCountTarget);
 
         // Warmup
         for (var i = 0; i < 32; i++) TerrainMeshBuilder.Build(cells[i]);
-        var vertScratch = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
+        var vertScratch = new TerrainVertex[TerrainMeshBuilder.VertexCount];
         var idxScratch = new ushort[TerrainMeshBuilder.IndexCount];
-        for (var i = 0; i < 32; i++) TerrainMeshBuilder.TryBuild(cells[i], vertScratch, idxScratch);
+        for (var i = 0; i < 32; i++) TerrainMeshBuilder.TryBuild(cells[i], vertScratch, idxScratch, out _);
 
         // Measure Build (allocates per cell)
         GC.Collect(2, GCCollectionMode.Forced, true, true);
@@ -104,7 +104,7 @@ public sealed class TerrainPerfProfileTests
         GC.Collect(2, GCCollectionMode.Forced, true, true);
         GC.WaitForPendingFinalizers();
         var beforeTry = GC.GetTotalAllocatedBytes(true);
-        foreach (var cell in cells) _ = TerrainMeshBuilder.TryBuild(cell, vertScratch, idxScratch);
+        foreach (var cell in cells) _ = TerrainMeshBuilder.TryBuild(cell, vertScratch, idxScratch, out _);
         var afterTry = GC.GetTotalAllocatedBytes(true);
         var tryBytes = afterTry - beforeTry;
 
@@ -125,13 +125,10 @@ public sealed class TerrainPerfProfileTests
     }
 
     [Fact]
+    [Trait("Category", TestCategories.Benchmark)]
     public void Profile_CellMeshLruCache_BulkInsertAndGet()
     {
-        if (!IsProfileEnabled())
-        {
-            _output.WriteLine("Skipped — set PROFILE_TERRAIN=1 to run this profile.");
-            return;
-        }
+        Assert.SkipUnless(IsProfileEnabled(), ProfileSkipReason);
 
         const int N = WorldspaceCellCountTarget;
         var entries = new TestEntry[N];

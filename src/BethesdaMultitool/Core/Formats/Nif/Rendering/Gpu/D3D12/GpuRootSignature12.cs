@@ -227,6 +227,16 @@ internal sealed class GpuRootSignature12 : IDisposable
             new RootDescriptorTable1(waterNoiseUavRange),
             ShaderVisibility.All);
 
+        // Slot 11: four 32-bit root constants at b4 — the terrain cell's grid (origin.xy, spacing,
+        // gridSize). ROOT CONSTANTS, not a ring CBV, because the shadow and depth-only terrain passes
+        // deliberately bind no per-cell constant buffer: giving them one would put a ring allocation
+        // back on every cell of every cascade, which is the streaming pressure that path was written
+        // to avoid. Four DWORDs written straight into the command list cost nothing by comparison.
+        // Vertex-only: no pixel shader reads the grid.
+        var terrainCellGrid = new RootParameter1(
+            new RootConstants(4, 0, TerrainCellGridConstantCount),
+            ShaderVisibility.Vertex);
+
         var staticSamplers = new[]
         {
             new StaticSamplerDescription(
@@ -353,7 +363,8 @@ internal sealed class GpuRootSignature12 : IDisposable
             new[]
             {
                 perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv,
-                atmosphere, pointLights, waterNoiseUav, bindlessCubeTable, bindlessDepthMsaaTable
+                atmosphere, pointLights, waterNoiseUav, bindlessCubeTable, bindlessDepthMsaaTable,
+                terrainCellGrid
             },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);
@@ -404,5 +415,22 @@ internal sealed class GpuRootSignature12 : IDisposable
         ///     <see cref="BindlessCubeSrvTable" />. Bind alongside <see cref="BindlessSrvTable" />.
         /// </summary>
         public const int BindlessDepthMsaaSrvTable = 10;
+
+        /// <summary>
+        ///     Four 32-bit root constants at <c>b4</c> (VS only) — the terrain cell's
+        ///     <c>origin.x, origin.y, spacing, gridSize</c>, from which the vertex shader rebuilds
+        ///     each vertex's world X and Y using <c>SV_VertexID</c>. Set per cell with
+        ///     <c>SetGraphicsRoot32BitConstants</c>; see
+        ///     <see cref="TerrainCellGridConstantCount" /> and the parameter's construction comment
+        ///     for why these are root constants rather than a per-cell CBV.
+        /// </summary>
+        public const int TerrainCellGridConstants = 11;
     }
+
+    /// <summary>
+    ///     DWORDs in the <see cref="Slots.TerrainCellGridConstants" /> block: <c>origin.x</c>,
+    ///     <c>origin.y</c>, <c>spacing</c>, <c>gridSize</c>. Root constants cost one DWORD each of
+    ///     the 64-DWORD root-signature budget, of which this signature now uses 21.
+    /// </summary>
+    public const int TerrainCellGridConstantCount = 4;
 }

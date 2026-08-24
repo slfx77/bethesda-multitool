@@ -2,14 +2,13 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 /// <summary>
 ///     Converts a single <see cref="CellRecord" />'s heightmap into the
-///     <see cref="GpuMeshUploader.GpuVertex" /> layout used by the rest of the GPU pipeline.
+///     <see cref="TerrainVertex" /> layout used by the rest of the GPU pipeline.
 ///     Pure CPU; no graphics-API dependency, so the path can be exercised by ordinary unit tests
 ///     on the cross-platform TFM.
 ///     <para>
@@ -31,9 +30,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 ///     </para>
 ///     <para>
 ///         Hot-path callers (<c>TerrainRenderer</c>) should use <see cref="TryBuild" />
-///         with scratch arrays they reuse across cells — building 16 cells/frame at ~94 KB
-///         allocated per cell would otherwise produce ~85 MB/sec of garbage and trigger
-///         a Gen 2 collection roughly every second.
+///         with scratch arrays they reuse across cells — per-cell allocation here would produce
+///         tens of MB/sec of garbage during a fill and trigger Gen 2 collections roughly every
+///         second. The narrowing of the vertex to <see cref="TerrainVertex" /> cut that pressure by
+///         a further 3.6× (a 33-grid cell's vertex block went from ~77 KB to ~21 KB), but the
+///         scratch-array discipline is what keeps it off the heap at all.
 ///     </para>
 /// </summary>
 internal static class TerrainMeshBuilder
@@ -41,13 +42,15 @@ internal static class TerrainMeshBuilder
     /// <summary>
     ///     33×33 grid (1089 vertices) per cell. Mirrors <see cref="TerrainConstants.LandGridSize" />.
     ///     This is the default for Fallout/Oblivion/Skyrim and the runtime DMP path; Morrowind is 65×65.
+    ///     (Named for the size rather than "Grid" so it cannot be confused with — or shadowed by —
+    ///     <see cref="TerrainCellGrid" />, which is a cell's actual layout.)
     /// </summary>
-    private const int Grid = TerrainConstants.LandGridSize;
+    private const int DefaultGridSize = TerrainConstants.LandGridSize;
 
-    private const int LastIndex = Grid - 1;
+    private const int LastIndex = DefaultGridSize - 1;
 
     /// <summary>Vertex count for one 33×33 cell mesh: 33×33 = 1089 (the default-grid value).</summary>
-    public const int VertexCount = Grid * Grid;
+    public const int VertexCount = DefaultGridSize * DefaultGridSize;
 
     /// <summary>Index count for one 33×33 cell mesh: 32×32 quads × 6 indices = 6144 (default grid).</summary>
     public const int IndexCount = LastIndex * LastIndex * 6;
@@ -62,6 +65,9 @@ internal static class TerrainMeshBuilder
 
     /// <summary>Spacing between adjacent grid vertices in world units for the default grid (4096 / 32 = 128).</summary>
     private const float VertexSpacing = TerrainConstants.LandVertexSpacing;
+
+    /// <summary>Untinted vertex colour for a cell with no <c>VCLR</c> — the packed form of <c>Vector4.One</c>.</summary>
+    private const uint OpaqueWhite = 0xFFFFFFFF;
 
     /// <summary>Vertex count for an <paramref name="gridSize" />×<paramref name="gridSize" /> cell mesh.</summary>
     public static int VertexCountFor(int gridSize)
@@ -83,7 +89,7 @@ internal static class TerrainMeshBuilder
     /// </summary>
     public static int ResolveGridSize(CellRecord cell)
     {
-        return cell.Heightmap?.ExactHeights?.GetLength(0) ?? Grid;
+        return cell.Heightmap?.ExactHeights?.GetLength(0) ?? DefaultGridSize;
     }
 
     /// <summary>
@@ -94,9 +100,9 @@ internal static class TerrainMeshBuilder
     public static TerrainMesh? Build(CellRecord cell)
     {
         var n = ResolveGridSize(cell);
-        var vertices = new GpuMeshUploader.GpuVertex[VertexCountFor(n)];
+        var vertices = new TerrainVertex[VertexCountFor(n)];
         var indices = new ushort[IndexCountFor(n)];
-        return TryBuild(cell, vertices, indices) ? new TerrainMesh(vertices, indices) : null;
+        return TryBuild(cell, vertices, indices, out var grid) ? new TerrainMesh(vertices, indices, grid) : null;
     }
 
     /// <summary>
@@ -105,7 +111,7 @@ internal static class TerrainMeshBuilder
     /// </summary>
     public static ushort[] BuildSharedIndexBufferData()
     {
-        return BuildSharedIndexBufferData(Grid);
+        return BuildSharedIndexBufferData(DefaultGridSize);
     }
 
     /// <summary>
@@ -136,9 +142,10 @@ internal static class TerrainMeshBuilder
     ///     must be at least <see cref="VertexCountFor" /> / <see cref="IndexCountFor" /> long for the
     ///     cell's grid size (33×33 for Fallout-family, 65×65 for Morrowind).
     /// </summary>
-    public static bool TryBuild(CellRecord cell, Span<GpuMeshUploader.GpuVertex> vertices, Span<ushort> indices)
+    public static bool TryBuild(
+        CellRecord cell, Span<TerrainVertex> vertices, Span<ushort> indices, out TerrainCellGrid grid)
     {
-        if (!TryBuildVertices(cell, vertices)) return false;
+        if (!TryBuildVertices(cell, vertices, null, out grid)) return false;
         FillIndices(indices, ResolveGridSize(cell));
         return true;
     }
@@ -148,20 +155,29 @@ internal static class TerrainMeshBuilder
     ///     is cell-invariant per grid size; hot-path renderers should use
     ///     <see cref="BuildSharedIndexBufferData(int)" /> once and call this method for each uploaded cell.
     /// </summary>
-    public static bool TryBuildVertices(CellRecord cell, Span<GpuMeshUploader.GpuVertex> vertices)
+    public static bool TryBuildVertices(CellRecord cell, Span<TerrainVertex> vertices, out TerrainCellGrid grid)
     {
-        return TryBuildVertices(cell, vertices, null);
+        return TryBuildVertices(cell, vertices, null, out grid);
     }
 
     /// <summary>
     ///     Builds the per-cell terrain vertices into <paramref name="vertices" />, optionally pulling decoded
     ///     heightmap/blend data from <paramref name="cache" />. Returns false when the cell has no grid coordinates.
+    ///     <para>
+    ///         <paramref name="grid" /> reports the layout the heights were written against. The
+    ///         renderer must carry it to the draw call rather than re-deriving it: the vertices hold
+    ///         no X or Y, so this is the only thing that says where the cell is, and a second copy of
+    ///         the cell-size fallback rule at the draw site is how the geometry and the renderer
+    ///         drift apart.
+    ///     </para>
     /// </summary>
     public static bool TryBuildVertices(
         CellRecord cell,
-        Span<GpuMeshUploader.GpuVertex> vertices,
-        WorldRenderCache? cache)
+        Span<TerrainVertex> vertices,
+        WorldRenderCache? cache,
+        out TerrainCellGrid grid)
     {
+        grid = default;
         if (cell.GridX is not int gx || cell.GridY is not int gy) return false;
 
         // Most games use the engine-default 4096-unit cell; Morrowind exterior cells are 8192. The
@@ -175,7 +191,7 @@ internal static class TerrainMeshBuilder
         // so it can only serve cells whose native grid IS 33×33 (Fallout/Oblivion/Skyrim + runtime
         // DMP). Morrowind's native 65×65 LAND bypasses the cache and builds from the float[,] heights
         // directly, so the 3D viewer renders it at full resolution instead of the cache's downsample.
-        if (ResolveGridSize(cell) == Grid)
+        if (ResolveGridSize(cell) == DefaultGridSize)
         {
             var terrain = cache?.GetTerrain(cell);
             if (terrain is not null)
@@ -186,11 +202,10 @@ internal static class TerrainMeshBuilder
 
                 FillVertices(
                     terrain.Heights,
-                    originX,
-                    originY,
                     cell.LandVisualData?.VertexColors,
                     cell.LandVisualData?.VertexNormals,
                     vertices);
+                grid = new TerrainCellGrid(originX, originY, VertexSpacing, DefaultGridSize);
                 return true;
             }
         }
@@ -206,13 +221,12 @@ internal static class TerrainMeshBuilder
         var spacing = cellSize / (n - 1);
         FillVertices(
             heights,
-            originX,
-            originY,
             spacing,
             cell.LandVisualData?.VertexColors,
             cell.LandVisualData?.VertexNormals,
             vertices,
             n);
+        grid = new TerrainCellGrid(originX, originY, spacing, n);
         return true;
     }
 
@@ -225,15 +239,12 @@ internal static class TerrainMeshBuilder
 
     private static void FillVertices(
         float[,] heights,
-        float originX,
-        float originY,
         float spacing,
         byte[]? vertexColors,
         byte[]? vertexNormals,
-        Span<GpuMeshUploader.GpuVertex> vertices,
+        Span<TerrainVertex> vertices,
         int n)
     {
-        var lastIndex = n - 1;
         var hasColors = vertexColors is { } c && c.Length >= n * n * 3;
         var hasNormals = vertexNormals is { } vn && vn.Length >= n * n * 3;
 
@@ -242,58 +253,38 @@ internal static class TerrainMeshBuilder
             for (var i = 0; i < n; i++)
             {
                 var idx = j * n + i;
-                var position = new Vector3(
-                    originX + i * spacing,
-                    originY + j * spacing,
-                    heights[j, i]);
-
-                vertices[idx] = new GpuMeshUploader.GpuVertex
-                {
-                    Position = position,
-                    Normal = hasNormals
+                // X/Y are deliberately not stored: TerrainCellGrid + SV_VertexID rebuild them on the
+                // GPU, exactly (every intermediate is an integer-valued float).
+                vertices[idx] = new TerrainVertex(
+                    heights[j, i],
+                    hasNormals
                         ? ReadVertexNormal(vertexNormals!, idx)
                         : ComputeNormal(heights, i, j, spacing, n),
-                    TexCoord = new Vector2(i / (float)lastIndex, j / (float)lastIndex),
-                    VertexColor = hasColors ? ReadVertexColor(vertexColors!, idx) : Vector4.One,
-                    Tangent = Vector3.Zero,
-                    Bitangent = Vector3.Zero
-                };
+                    hasColors ? ReadVertexColor(vertexColors!, idx) : OpaqueWhite);
             }
         }
     }
 
     private static void FillVertices(
         float[] heights,
-        float originX,
-        float originY,
         byte[]? vertexColors,
         byte[]? vertexNormals,
-        Span<GpuMeshUploader.GpuVertex> vertices)
+        Span<TerrainVertex> vertices)
     {
         var hasColors = vertexColors is { Length: >= VertexCount * 3 };
         var hasNormals = vertexNormals is { Length: >= VertexCount * 3 };
 
-        for (var j = 0; j < Grid; j++)
+        for (var j = 0; j < DefaultGridSize; j++)
         {
-            for (var i = 0; i < Grid; i++)
+            for (var i = 0; i < DefaultGridSize; i++)
             {
-                var idx = j * Grid + i;
-                var position = new Vector3(
-                    originX + i * VertexSpacing,
-                    originY + j * VertexSpacing,
-                    heights[idx]);
-
-                vertices[idx] = new GpuMeshUploader.GpuVertex
-                {
-                    Position = position,
-                    Normal = hasNormals
+                var idx = j * DefaultGridSize + i;
+                vertices[idx] = new TerrainVertex(
+                    heights[idx],
+                    hasNormals
                         ? ReadVertexNormal(vertexNormals!, idx)
                         : ComputeNormal(heights, i, j),
-                    TexCoord = new Vector2(i / (float)LastIndex, j / (float)LastIndex),
-                    VertexColor = hasColors ? ReadVertexColor(vertexColors!, idx) : Vector4.One,
-                    Tangent = Vector3.Zero,
-                    Bitangent = Vector3.Zero
-                };
+                    hasColors ? ReadVertexColor(vertexColors!, idx) : OpaqueWhite);
             }
         }
     }
@@ -323,10 +314,10 @@ internal static class TerrainMeshBuilder
 
     private static Vector3 ComputeNormal(float[] heights, int i, int j)
     {
-        var hxMinus = i > 0 ? heights[j * Grid + i - 1] : heights[j * Grid + i];
-        var hxPlus = i < LastIndex ? heights[j * Grid + i + 1] : heights[j * Grid + i];
-        var hyMinus = j > 0 ? heights[(j - 1) * Grid + i] : heights[j * Grid + i];
-        var hyPlus = j < LastIndex ? heights[(j + 1) * Grid + i] : heights[j * Grid + i];
+        var hxMinus = i > 0 ? heights[j * DefaultGridSize + i - 1] : heights[j * DefaultGridSize + i];
+        var hxPlus = i < LastIndex ? heights[j * DefaultGridSize + i + 1] : heights[j * DefaultGridSize + i];
+        var hyMinus = j > 0 ? heights[(j - 1) * DefaultGridSize + i] : heights[j * DefaultGridSize + i];
+        var hyPlus = j < LastIndex ? heights[(j + 1) * DefaultGridSize + i] : heights[j * DefaultGridSize + i];
 
         var xSpan = i > 0 && i < LastIndex ? 2f * VertexSpacing : VertexSpacing;
         var ySpan = j > 0 && j < LastIndex ? 2f * VertexSpacing : VertexSpacing;
@@ -339,14 +330,14 @@ internal static class TerrainMeshBuilder
         return length > 0 ? normal / length : Vector3.UnitZ;
     }
 
-    private static Vector4 ReadVertexColor(byte[] colors, int vertexIndex)
+    /// <summary>
+    ///     Straight from the three <c>VCLR</c> bytes to the packed vertex colour — no float in
+    ///     between, so the value on the GPU is the value in the record.
+    /// </summary>
+    private static uint ReadVertexColor(byte[] colors, int vertexIndex)
     {
         var offset = vertexIndex * 3;
-        return new Vector4(
-            colors[offset] / 255f,
-            colors[offset + 1] / 255f,
-            colors[offset + 2] / 255f,
-            1f);
+        return TerrainVertex.PackColor(colors[offset], colors[offset + 1], colors[offset + 2]);
     }
 
     private static Vector3 ReadVertexNormal(byte[] normals, int vertexIndex)
@@ -417,6 +408,14 @@ internal static class TerrainMeshBuilder
         }
     }
 
-    /// <summary>A built terrain cell mesh: its GPU vertices and triangle index buffer.</summary>
-    public readonly record struct TerrainMesh(GpuMeshUploader.GpuVertex[] Vertices, ushort[] Indices);
+    /// <summary>
+    ///     A built terrain cell mesh: its GPU vertices, triangle index buffer, and the grid the
+    ///     vertices were laid out on. The grid is not optional bookkeeping — the vertices carry only
+    ///     heights, so without it nothing can say where in the world this cell sits.
+    /// </summary>
+    public readonly record struct TerrainMesh(TerrainVertex[] Vertices, ushort[] Indices, TerrainCellGrid Grid)
+    {
+        /// <summary>World position of vertex <paramref name="index" />, as the vertex shader rebuilds it.</summary>
+        public Vector3 PositionOf(int index) => Grid.PositionOf(index, Vertices[index].Height);
+    }
 }

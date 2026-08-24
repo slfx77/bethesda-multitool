@@ -27,6 +27,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     private readonly IntPtr[] _cpuPointers;
     private readonly int _framesInFlight;
     private readonly ulong[] _gpuAddresses;
+    private readonly IDisposable _footprint;
     private bool _disposed;
 
     public GpuRingBuffer12(GpuDevice12 gpu, int framesInFlight, uint bytesPerFrame)
@@ -61,6 +62,12 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
             _cpuPointers[i] = (IntPtr)mapped;
             _gpuAddresses[i] = _buffers[i].GPUVirtualAddress;
         }
+
+        // UPLOAD heap = system RAM the GPU reads over the bus, hence the NonLocal tracker: at the
+        // big-RAM default this ring is 512 MB × slots of committed memory that used to appear in no
+        // accounting at all.
+        _footprint = GpuFixedFootprintTracker12.NonLocalInstance.Add(
+            "upload-ring", (long)bytesPerFrame * framesInFlight);
     }
 
     /// <summary>Total bytes available in each frame slot. Allocations beyond this throw.</summary>
@@ -82,6 +89,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _footprint.Dispose();
         for (var i = 0; i < _framesInFlight; i++)
         {
             // Unmap is optional for committed resources (they're released on Dispose) but

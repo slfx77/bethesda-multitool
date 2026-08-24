@@ -54,16 +54,60 @@ internal sealed class ResourceRegistry
     public ResourceRegistration Register(ITrackableResource resource, string? instanceTag = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        var displayName = string.IsNullOrEmpty(instanceTag)
+        var baseName = string.IsNullOrEmpty(instanceTag)
             ? resource.ResourceName
             : $"{resource.ResourceName}[{instanceTag}]";
-        var registration = new ResourceRegistration(this, resource, displayName);
         lock (_gate)
         {
+            var registration = new ResourceRegistration(this, resource, MakeUniqueName(baseName));
             _registrations.Add(registration);
+            return registration;
+        }
+    }
+
+    /// <summary>
+    ///     Appends <c>#2</c>, <c>#3</c>, … when <paramref name="baseName" /> is already live, so
+    ///     concurrently-registered instances of one type stay distinguishable.
+    ///     <para>
+    ///         Not cosmetic: diagnostics surfaces key their rows by display name, so duplicates used
+    ///         to COLLAPSE into a single row showing whichever instance happened to be enumerated
+    ///         last. Several types register untagged from many construction sites (the NIF texture
+    ///         resolvers at ~16 and ~2 sites, both decoded-blob disk caches), and each was silently
+    ///         hiding every instance but one. Tagging those call sites is the real fix; this makes a
+    ///         future missed tag degrade to an ugly name rather than a lost row.
+    ///     </para>
+    ///     Caller must hold <see cref="_gate" />.
+    /// </summary>
+    private string MakeUniqueName(string baseName)
+    {
+        if (!IsNameLive(baseName))
+        {
+            return baseName;
         }
 
-        return registration;
+        for (var suffix = 2; suffix < int.MaxValue; suffix++)
+        {
+            var candidate = $"{baseName}#{suffix}";
+            if (!IsNameLive(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return baseName;
+    }
+
+    private bool IsNameLive(string name)
+    {
+        foreach (var existing in _registrations)
+        {
+            if (string.Equals(existing.DisplayName, name, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -72,7 +116,19 @@ internal sealed class ResourceRegistry
     ///     throws yields a row whose <see cref="ResourceStats.LastError" /> carries the message
     ///     instead of poisoning the whole snapshot.
     /// </summary>
-    public IReadOnlyList<ResourceSnapshotRecord> GetSnapshot()
+    public IReadOnlyList<ResourceSnapshotRecord> GetSnapshot() => Snapshot().Rows;
+
+    /// <summary>
+    ///     One walk of the registry producing both the rows and the per-category byte totals.
+    ///     <para>
+    ///         Every consumer needs both, and each used to take them separately: the Diagnostics tab
+    ///         called <c>GetSnapshot</c> then <c>TotalTrackedBytes</c> (which snapshotted again) at 1 Hz
+    ///         — two full walks per second — and the CLI reporter took three. Each walk calls every
+    ///         <see cref="ITrackableResource.GetStats" /> in the process, so a resource whose stats are
+    ///         expensive paid that cost N times per tick.
+    ///     </para>
+    /// </summary>
+    public RegistrySnapshot Snapshot()
     {
         ResourceRegistration[] registrations;
         lock (_gate)
@@ -81,6 +137,7 @@ internal sealed class ResourceRegistry
         }
 
         var rows = new List<ResourceSnapshotRecord>(registrations.Length);
+        var totals = new long[RegistrySnapshot.CategoryCount];
         foreach (var registration in registrations)
         {
             ResourceStats stats;
@@ -93,26 +150,16 @@ internal sealed class ResourceRegistry
                 stats = new ResourceStats { LastError = $"GetStats threw: {ex.Message}" };
             }
 
-            rows.Add(new ResourceSnapshotRecord(registration.DisplayName, registration.Resource.Category, stats));
+            var category = registration.Resource.Category;
+            rows.Add(new ResourceSnapshotRecord(registration.DisplayName, category, stats));
+            totals[(int)category] += stats.EstimatedBytes;
         }
 
-        return rows;
+        return new RegistrySnapshot(rows, totals);
     }
 
     /// <summary>Sum of <see cref="ResourceStats.EstimatedBytes" /> across resources in <paramref name="category" />.</summary>
-    public long TotalTrackedBytes(ResourceCategory category)
-    {
-        long total = 0;
-        foreach (var row in GetSnapshot())
-        {
-            if (row.Category == category)
-            {
-                total += row.Stats.EstimatedBytes;
-            }
-        }
-
-        return total;
-    }
+    public long TotalTrackedBytes(ResourceCategory category) => Snapshot().TotalBytes(category);
 
     /// <summary>Logs a one-line-per-resource snapshot via <see cref="Logger.Instance" />.</summary>
     public void LogSnapshot()

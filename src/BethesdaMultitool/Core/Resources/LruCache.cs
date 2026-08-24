@@ -24,7 +24,6 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     where TKey : notnull
 {
     private readonly Dictionary<TKey, Node> _entries;
-    private readonly long? _maxBytes;
     private readonly Action<TKey, TValue>? _onEvicted;
     private readonly LinkedList<TKey> _order = new();
     private readonly Func<TKey, TValue, long>? _sizeOf;
@@ -32,9 +31,11 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     private long _estimatedBytes;
     private long _evictions;
     private long _hits;
+    private long? _maxBytes;
     private int? _maxEntries;
     private long _misses;
     private ResourceRegistration? _registration;
+    private GpuMemorySegment _segment;
 
     /// <summary>Creates an LRU cache with the given budgets and hooks.</summary>
     /// <param name="resourceName">Stable name for diagnostics (e.g. <c>"TerrainCellMeshes"</c>).</param>
@@ -100,8 +101,19 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
             EntryCount = _entries.Count,
             Hits = Volatile.Read(ref _hits),
             Misses = Volatile.Read(ref _misses),
-            Evictions = Volatile.Read(ref _evictions)
+            Evictions = Volatile.Read(ref _evictions),
+            Segment = _segment
         };
+    }
+
+    /// <summary>
+    ///     Declares which physical GPU pool this cache's bytes occupy, for GPU-backed values. Fluent
+    ///     rather than a constructor parameter to stay inside the repo's ctor-parameter limit.
+    /// </summary>
+    public LruCache<TKey, TValue> WithSegment(GpuMemorySegment segment)
+    {
+        _segment = segment;
+        return this;
     }
 
     /// <summary>
@@ -186,6 +198,35 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     }
 
     /// <summary>
+    ///     Snapshot of the current keys, for callers that must rank entries by something the cache
+    ///     cannot know (the terrain sweep ranks by camera distance). O(n) copy on purpose: the
+    ///     caller is about to evict while iterating, and enumerating the live dictionary during
+    ///     removal is undefined. Single-threaded contract, like every other member.
+    /// </summary>
+    public TKey[] SnapshotKeys() => [.. _entries.Keys];
+
+    /// <summary>
+    ///     Evicts one specific entry THROUGH <c>onEvicted</c> (the dispose cascade) — unlike
+    ///     <see cref="Remove" />, which hands ownership to the caller. Exists for policy-ordered
+    ///     eviction (distance, cost-to-rebuild) where LRU order is the wrong order. Returns the
+    ///     entry's recorded byte size, 0 when absent.
+    /// </summary>
+    public long Evict(TKey key)
+    {
+        if (!_entries.TryGetValue(key, out var node))
+        {
+            return 0;
+        }
+
+        _order.Remove(node.OrderNode);
+        _entries.Remove(key);
+        _estimatedBytes -= node.Size;
+        _evictions++;
+        _onEvicted?.Invoke(key, node.Value);
+        return node.Size;
+    }
+
+    /// <summary>
     ///     Removes an entry WITHOUT invoking <c>onEvicted</c> — the caller takes ownership of the
     ///     value (and is responsible for disposing it, where applicable).
     /// </summary>
@@ -210,6 +251,46 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     {
         var before = _estimatedBytes;
         EvictWhile(() => _estimatedBytes > targetBytes && _entries.Count > 0);
+        return before - _estimatedBytes;
+    }
+
+    /// <summary>
+    ///     Evicts least-recently-used entries until at most <paramref name="targetBytes" /> remain,
+    ///     skipping any entry <paramref name="isPinned" /> rejects. Returns bytes released.
+    ///     <para>
+    ///         This walks the recency list exactly once, tail (LRU) toward head (MRU), so it always
+    ///         terminates — including the case where every remaining entry is pinned, which a
+    ///         condition-loop formulation would spin on forever. Falling short of the target is a
+    ///         legitimate outcome: the caller asked for bytes that are not currently releasable and
+    ///         must escalate elsewhere rather than evict something it declared pinned.
+    ///     </para>
+    /// </summary>
+    public long TrimToBytes(long targetBytes, Func<TKey, TValue, bool>? isPinned)
+    {
+        if (isPinned is null)
+        {
+            return TrimToBytes(targetBytes);
+        }
+
+        var before = _estimatedBytes;
+        var node = _order.Last;
+        while (node is not null && _estimatedBytes > targetBytes)
+        {
+            // Captured before the removal below detaches the node from its neighbours.
+            var previous = node.Previous;
+            var key = node.Value;
+            if (_entries.TryGetValue(key, out var entry) && !isPinned(key, entry.Value))
+            {
+                _order.Remove(node);
+                _entries.Remove(key);
+                _estimatedBytes -= entry.Size;
+                _evictions++;
+                _onEvicted?.Invoke(key, entry.Value);
+            }
+
+            node = previous;
+        }
+
         return before - _estimatedBytes;
     }
 
@@ -243,6 +324,51 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
             _entries.Count > 1 &&
             ((_maxEntries.HasValue && _entries.Count > _maxEntries.Value) ||
              (_maxBytes.HasValue && _estimatedBytes > _maxBytes.Value)));
+    }
+
+    /// <summary>
+    ///     Adjusts the byte cap, then evicts least-recently-used entries down to it — the byte-budget
+    ///     twin of <see cref="SetMaxEntries" />, reusing the identical predicate so a runtime budget
+    ///     change behaves exactly like the cascade a <see cref="Set" /> would have run.
+    /// </summary>
+    public void SetMaxBytes(long newMax)
+    {
+        if (newMax <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(newMax), "Byte budget must be greater than zero.");
+        }
+
+        _maxBytes = newMax;
+        EvictWhile(() =>
+            _entries.Count > 1 &&
+            ((_maxEntries.HasValue && _entries.Count > _maxEntries.Value) ||
+             (_maxBytes.HasValue && _estimatedBytes > _maxBytes.Value)));
+    }
+
+    /// <summary>
+    ///     Re-states an existing entry's footprint, adjusting the running byte total in O(1). Returns
+    ///     false when the key is absent (already evicted).
+    ///     <para>
+    ///         <b>Deliberately does not evict</b>, even if the new size puts the cache over budget.
+    ///         The caller for this is a cache whose values are populated AFTER insertion — the
+    ///         resident-mesh cache inserts a placeholder node, decodes asynchronously, then assigns
+    ///         the mesh in place — so <c>sizeOf</c> at <see cref="Set" /> time can only ever observe
+    ///         an empty node. Evicting here would run <c>onEvicted</c> (typically Dispose) on the very
+    ///         value the caller is midway through publishing. Budget enforcement resumes at the next
+    ///         <see cref="Set" />, <see cref="SetMaxBytes" />, or explicit trim.
+    ///     </para>
+    /// </summary>
+    public bool UpdateSize(TKey key, long newSize)
+    {
+        if (!_entries.TryGetValue(key, out var node))
+        {
+            return false;
+        }
+
+        var clamped = Math.Max(0, newSize);
+        _estimatedBytes += clamped - node.Size;
+        _entries[key] = node with { Size = clamped };
+        return true;
     }
 
     /// <summary>Evicts every entry (each through <c>onEvicted</c>) and resets the cache to empty.</summary>

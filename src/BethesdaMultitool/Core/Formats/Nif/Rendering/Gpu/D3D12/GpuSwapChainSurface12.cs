@@ -76,6 +76,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private bool _opaqueDepthSnapshotUnavailable;
     private readonly GpuTonemapPass12 _tonemap;
     private readonly bool _tonemapEnabled;
+    // Fixed-footprint accounting row, re-derived by RefreshFootprint after every resource transition.
+    private IDisposable? _footprint;
     private uint _width;
     private uint _height;
 
@@ -116,7 +118,36 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                           && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
         _width = width;
         _height = height;
+        RefreshFootprint();
     }
+
+    /// <summary>
+    ///     Re-derives the fixed-footprint accounting row from whatever size-dependent resources
+    ///     currently exist (back buffers, depth, MSAA colour, HDR resolve, the two lazy snapshot
+    ///     copies). Called after every create/release transition rather than keeping paired
+    ///     add/remove bookkeeping per site — the Resize failure arm and the lazy snapshot caches
+    ///     have five distinct release paths, and one missed arm would silently corrupt the total.
+    /// </summary>
+    private void RefreshFootprint()
+    {
+        _footprint?.Dispose();
+        _footprint = null;
+        long total = 0;
+        foreach (var buffer in _backBuffers)
+        {
+            total += AllocationBytes(buffer);
+        }
+
+        total += AllocationBytes(_depthTexture) + AllocationBytes(_msaaColor) + AllocationBytes(_hdrResolve) +
+                 AllocationBytes(_waterOpaqueCopy) + AllocationBytes(_opaqueDepthCopy);
+        if (total > 0)
+        {
+            _footprint = GpuFixedFootprintTracker12.LocalInstance.Add("swap-chain", total);
+        }
+    }
+
+    private long AllocationBytes(ID3D12Resource? resource) =>
+        resource is null ? 0 : (long)_device.GetResourceAllocationInfo(0, resource.Description).SizeInBytes;
 
     public uint Width => _width;
     public uint Height => _height;
@@ -151,6 +182,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         try
         {
             _waterOpaqueCopy = CreateWaterOpaqueCopy(_device, _width, _height, _sampleCount);
+            RefreshFootprint();
             return _waterOpaqueCopy is not null;
         }
         catch (Exception ex)
@@ -186,6 +218,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
 
         _waterOpaqueCopy.Dispose();
         _waterOpaqueCopy = null;
+        RefreshFootprint();
         return true;
     }
 
@@ -219,6 +252,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                 IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest,
                 optimizedClearValue: null);
             _opaqueDepthCopy.Name = "Scene Depth Post-Opaque Snapshot";
+            RefreshFootprint();
             return true;
         }
         catch (Exception ex)
@@ -360,6 +394,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _opaqueDepthCopy?.Dispose();
         _opaqueDepthCopy = null;
         _opaqueDepthSnapshotPrepared = false;
+        _footprint?.Dispose();
+        _footprint = null;
         _tonemap.Dispose();
         _dsvHeap.Dispose();
         _rtvHeap.Dispose();
@@ -530,6 +566,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
 
             _width = width;
             _height = height;
+            RefreshFootprint();
         }
         catch (SharpGenException ex)
         {
@@ -552,6 +589,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                 _backBuffers[i]?.Dispose();
                 _backBuffers[i] = null!; // Dispose tolerates cleared slots (see its comment)
             }
+            RefreshFootprint(); // everything released — the accounting row must say so
             throw;
         }
     }

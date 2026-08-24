@@ -5,6 +5,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
 
+[Trait("Category", TestCategories.ShaderCompile)]
 public sealed class RenderingShaderCompilationTests
 {
     [Fact]
@@ -222,12 +223,14 @@ public sealed class RenderingShaderCompilationTests
         Assert.Contains(
             "return anyBehind ? nearestBehindNdc : waterNdc;", helper, StringComparison.Ordinal);
 
-        // Bounded to the heap's persistent region: the unbounded `[]` Texture2DMS alias
-        // misresolved late-written descriptor slots on shipped drivers (see water_common.hlsli).
-        Assert.Contains(
-            "Texture2DMS<float> gWaterDepthTexturesMsaa[16384] : register(t0, space3);",
-            common,
-            StringComparison.Ordinal);
+        // Bounded (not `[]`): the unbounded Texture2DMS alias misresolved late-written descriptor
+        // slots on shipped drivers (see water_common.hlsli). Pin the PROPERTY, not the number —
+        // the bound must track the descriptor heap's persistent capacity, and hardcoding it here
+        // meant widening that capacity silently left the shader indexing a stale, smaller array.
+        // WaterDepthArrayBoundTests owns the "bound >= persistentCapacity" relationship.
+        Assert.Matches(
+            @"Texture2DMS<float> gWaterDepthTexturesMsaa\[\d+\] : register\(t0, space3\);",
+            common);
         var source = ReadEmbeddedShader("water_fnv.frag.hlsl");
         Assert.Contains("uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);",
             source,

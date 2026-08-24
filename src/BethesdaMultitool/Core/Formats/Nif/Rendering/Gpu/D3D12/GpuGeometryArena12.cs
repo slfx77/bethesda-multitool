@@ -79,13 +79,26 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     ///     Tracking-only conformance: bytes = committed UPLOAD-heap blocks; entries = block count.
     ///     The arena is never trimmed — allocations are owned by live meshes and reclaimed through
     ///     the mesh LRU's eviction cascade.
+    ///     <para>
+    ///         Reported as <see cref="GpuMemorySegment.NonLocal" />: these blocks are UPLOAD heap, so
+    ///         on a discrete adapter they are SYSTEM RAM read over PCIe, not device-local VRAM. The
+    ///         category says GpuResident and the bytes are genuinely GPU-owned, but summing them into
+    ///         a VRAM figure would overstate it by the whole arena — and shedding them would relieve
+    ///         the wrong pool.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="_committedBytes" /> is a monotonic high-water mark (blocks are never
+    ///         released), so this is the worst instantaneous demand of the session rather than the
+    ///         live total. <c>GeometryArenaAllocator.AllocatedBytes</c> holds the live figure.
+    ///     </para>
     /// </summary>
     public ResourceStats GetStats()
     {
         return new ResourceStats
         {
             EstimatedBytes = _committedBytes,
-            EntryCount = _blockResources.Count
+            EntryCount = _blockResources.Count,
+            Segment = GpuMemorySegment.NonLocal
         };
     }
 

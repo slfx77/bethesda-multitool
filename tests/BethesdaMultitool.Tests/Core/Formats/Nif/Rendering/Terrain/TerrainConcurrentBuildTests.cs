@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Terrain;
 
 /// <summary>
 ///     Guards the load-bearing A3 (terrain async build) correctness constraint: the per-cell vertex
-///     build <see cref="TerrainMeshBuilder.TryBuildVertices(CellRecord, System.Span{GpuMeshUploader.GpuVertex})" />
+///     build <see cref="TerrainMeshBuilder.TryBuildVertices(CellRecord, System.Span{TerrainVertex})" />
 ///     is pure and safe to run concurrently
 ///     as long as each task owns its OWN vertex array. The async build path in TerrainRenderer12
 ///     depends on this — sharing one scratch array across background tasks would corrupt meshes
@@ -55,11 +55,11 @@ public sealed class TerrainConcurrentBuildTests
         }
 
         // Reference: build each cell single-threaded into its own array.
-        var reference = new GpuMeshUploader.GpuVertex[cellCount][];
+        var reference = new TerrainVertex[cellCount][];
         for (var n = 0; n < cellCount; n++)
         {
-            var arr = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
-            Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, null));
+            var arr = new TerrainVertex[TerrainMeshBuilder.VertexCount];
+            Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, null, out _));
             reference[n] = arr;
         }
 
@@ -67,11 +67,11 @@ public sealed class TerrainConcurrentBuildTests
         // invariant). Several rounds widen the race window.
         for (var round = 0; round < 8; round++)
         {
-            var concurrent = new GpuMeshUploader.GpuVertex[cellCount][];
+            var concurrent = new TerrainVertex[cellCount][];
             Parallel.For(0, cellCount, n =>
             {
-                var arr = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
-                Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, null));
+                var arr = new TerrainVertex[TerrainMeshBuilder.VertexCount];
+                Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, null, out _));
                 concurrent[n] = arr;
             });
 
@@ -80,7 +80,7 @@ public sealed class TerrainConcurrentBuildTests
                 Assert.Equal(reference[n].Length, concurrent[n].Length);
                 for (var v = 0; v < reference[n].Length; v++)
                 {
-                    Assert.Equal(reference[n][v].Position, concurrent[n][v].Position);
+                    Assert.Equal(reference[n][v].Height, concurrent[n][v].Height);
                     Assert.Equal(reference[n][v].Normal, concurrent[n][v].Normal);
                     Assert.Equal(reference[n][v].VertexColor, concurrent[n][v].VertexColor);
                 }

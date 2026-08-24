@@ -1,6 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
@@ -14,12 +14,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///     LoadData.
 /// </summary>
 internal sealed record BuiltCellCpuData(
-    GpuMeshUploader.GpuVertex[]? Vertices,
+    TerrainVertex[]? Vertices,
     Vector4[]? BlendWeights,
     CellTerrainTextureSet? TextureSet,
+    TerrainCellGrid Grid,
     bool Unusable,
     int Generation)
 {
-    public static BuiltCellCpuData Failed(int generation) => new(null, null, null, true, generation);
+    public static BuiltCellCpuData Failed(int generation) => new(null, null, null, default, true, generation);
 }
 #endif

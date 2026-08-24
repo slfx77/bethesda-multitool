@@ -21,9 +21,10 @@ internal static class CliResourceStatsReporter
     /// </summary>
     internal static void WriteIfAnyRegistered(ResourceRegistry registry)
     {
-        var live = registry.GetSnapshot();
+        // One walk for both the rows and the totals printed below.
+        var liveSnapshot = registry.Snapshot();
         var retired = registry.GetRetiredSnapshot();
-        var snapshot = live
+        var snapshot = liveSnapshot.Rows
             .Concat(retired.Select(static r => r with
             {
                 DisplayName = r.RunCount > 1
@@ -44,7 +45,9 @@ internal static class CliResourceStatsReporter
         table.AddColumn(new TableColumn("Entries").RightAligned());
         table.AddColumn(new TableColumn("Hit %").RightAligned());
         table.AddColumn(new TableColumn("Evict").RightAligned());
-        table.AddColumn(new TableColumn("Depth").RightAligned());
+        // "depth / in-flight" matches the GUI. In-flight used to be dropped here entirely, so a
+        // ParallelWork run reported "Depth 0" while its actual concurrency was invisible.
+        table.AddColumn(new TableColumn("Depth / active").RightAligned());
         table.AddColumn(new TableColumn("Processed").RightAligned());
 
         foreach (var row in snapshot.OrderBy(static r => r.Category)
@@ -59,7 +62,9 @@ internal static class CliResourceStatsReporter
                 isQueue ? "" : s.EntryCount.ToString("N0", CultureInfo.InvariantCulture),
                 s.HitRate is { } rate ? (rate * 100).ToString("F1", CultureInfo.InvariantCulture) : "",
                 isQueue ? "" : s.Evictions.ToString("N0", CultureInfo.InvariantCulture),
-                isQueue ? s.QueueDepth.ToString("N0", CultureInfo.InvariantCulture) : "",
+                isQueue
+                    ? string.Create(CultureInfo.InvariantCulture, $"{s.QueueDepth:N0} / {s.InFlight:N0}")
+                    : "",
                 isQueue ? s.Processed.ToString("N0", CultureInfo.InvariantCulture) : "");
         }
 
@@ -72,7 +77,7 @@ internal static class CliResourceStatsReporter
             FormatBytes(process.WorkingSet64),
             FormatBytes(gcInfo.HeapSizeBytes),
             GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2),
-            FormatBytes(registry.TotalTrackedBytes(ResourceCategory.CpuCache)));
+            FormatBytes(liveSnapshot.TotalBytes(ResourceCategory.CpuCache)));
     }
 
     internal static string CategoryLabel(ResourceCategory category)
@@ -81,6 +86,8 @@ internal static class CliResourceStatsReporter
         {
             ResourceCategory.CpuCache => "CPU cache",
             ResourceCategory.GpuResident => "GPU",
+            // Bytes already counted under a GpuResident owner — shown as a breakdown, never summed.
+            ResourceCategory.GpuAttributed => "GPU (attributed)",
             ResourceCategory.GpuMeta => "GPU meta",
             ResourceCategory.DiskCache => "Disk cache",
             ResourceCategory.MappedFile => "Mapped file",

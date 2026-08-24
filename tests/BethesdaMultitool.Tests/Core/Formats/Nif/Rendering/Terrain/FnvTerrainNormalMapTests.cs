@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Terrain;
 ///     renderer is Windows-only, so executable CPU vectors independently reproduce the recovered
 ///     decode/blend equations while source and shader-compilation checks protect the D3D12 wiring.
 /// </summary>
+[Trait("Category", TestCategories.ShaderCompile)]
 public sealed class FnvTerrainNormalMapTests
 {
     public enum BrokenNormalChain
@@ -434,8 +435,10 @@ public sealed class FnvTerrainNormalMapTests
             StringComparison.Ordinal);
         Assert.Contains("var entry = _solidTextureFactory.CreatePlaceholder(fallback, cacheKey);", cacheRoute,
             StringComparison.Ordinal);
+        // The initializer routes through CreatePinnedSolid (which counts pinned bytes into the
+        // resident total) — the pinned fact is the flat-normal COLOUR (128,128,255 = +Z identity).
         Assert.Contains(
-            "public Entry FlatNormal => _flatNormal ??= _solidTextureFactory.CreateSolid(128, 128, 255, 255);",
+            "public Entry FlatNormal => _flatNormal ??= CreatePinnedSolid(128, 128, 255, 255);",
             textureCache,
             StringComparison.Ordinal);
     }

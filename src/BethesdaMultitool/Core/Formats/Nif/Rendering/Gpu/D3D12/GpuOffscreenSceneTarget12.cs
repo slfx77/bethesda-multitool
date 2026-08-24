@@ -69,6 +69,12 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     // _hdrResolveTex, whose size/format/sample layout already matches WATER001's sampling contract.
     private ID3D12Resource? _waterOpaqueCopy;
 
+    // Fixed-footprint accounting: ctor-created targets under one handle; the lazily created
+    // water-copy / resolved-depth textures get their own so create/release cycles stay balanced.
+    private readonly IDisposable _footprint;
+    private IDisposable? _waterOpaqueFootprint;
+    private IDisposable? _resolvedDepthFootprint;
+
     public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
     {
         _gpu = gpu;
@@ -151,7 +157,19 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         device.CreateDepthStencilView(DepthResource, dsvDesc, _dsvHandle);
         dsvDesc.Flags = DepthStencilViewFlags.ReadOnlyDepth;
         device.CreateDepthStencilView(DepthResource, dsvDesc, _readOnlyDsvHandle);
+
+        // Color + depth (+ MSAA resolve) + LDR output: window-sized, device-local, alive for the
+        // target's life. The water reflection target and every capture surface goes through this
+        // class, so this one line is what puts those in the VRAM accounting.
+        _footprint = GpuFixedFootprintTracker12.LocalInstance.Add(
+            "offscreen-target",
+            AllocationBytes(device, _colorTex) + AllocationBytes(device, DepthResource) +
+            (_hdrResolveTex is null ? 0 : AllocationBytes(device, _hdrResolveTex)) +
+            AllocationBytes(device, _ldrOutputTex));
     }
+
+    private static long AllocationBytes(ID3D12Device device, ID3D12Resource resource) =>
+        (long)device.GetResourceAllocationInfo(0, resource.Description).SizeInBytes;
 
     /// <summary>
     ///     Tonemap operator + parameters for this target. Defaults to gamma-corrected ACES; world-aware
@@ -213,6 +231,9 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         if (_disposed) return;
         _disposed = true;
         IsWaterOpaqueSnapshotPrepared = false;
+        _footprint.Dispose();
+        _waterOpaqueFootprint?.Dispose();
+        _resolvedDepthFootprint?.Dispose();
         _readback?.Dispose();
         _tonemap.Dispose();
         _dsvHeap.Dispose();
@@ -242,12 +263,16 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
                 ResourceDescription.Texture2D(ColorFormat, (uint)Width, (uint)Height,
                     arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0),
                 ResourceStates.CopyDest);
+            _waterOpaqueFootprint = GpuFixedFootprintTracker12.LocalInstance.Add(
+                "offscreen-water-copy", AllocationBytes(_gpu.Device, _waterOpaqueCopy));
             return true;
         }
         catch (Exception ex)
         {
             _waterOpaqueCopy?.Dispose();
             _waterOpaqueCopy = null;
+            _waterOpaqueFootprint?.Dispose();
+            _waterOpaqueFootprint = null;
             Log.Warn("GpuOffscreenSceneTarget12: WATER001 opaque snapshot allocation failed: {0}", ex.Message);
             return false;
         }
@@ -273,6 +298,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 
         _waterOpaqueCopy.Dispose();
         _waterOpaqueCopy = null;
+        _waterOpaqueFootprint?.Dispose();
+        _waterOpaqueFootprint = null;
         return true;
     }
 
@@ -303,6 +330,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
                     1, 1),
                 IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest);
             _resolvedDepthTex.Name = "Capture Depth MAX Resolve";
+            _resolvedDepthFootprint = GpuFixedFootprintTracker12.LocalInstance.Add(
+                "offscreen-resolved-depth", AllocationBytes(_gpu.Device, _resolvedDepthTex));
             return true;
         }
         catch (Exception ex)

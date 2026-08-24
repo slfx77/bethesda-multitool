@@ -140,6 +140,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     /// </summary>
     private const int FnvNoiseMaterialSlots = 8;
     private readonly FnvNoiseTileSet[] _fnvNoiseTiles;
+    private readonly IDisposable _noiseFootprint;
     private bool _useFnvNoisePrepass;
 
     // Legacy water animation: bindless indices of textures\water\water00-31.dds, resolved by the
@@ -209,6 +210,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // whenever streaming shifted the packet array. Resized when the visible water cell count
     // exceeds capacity; stays mapped for its lifetime — UPLOAD-heap resources can.
     private ID3D12Resource? _instanceBuffer;
+    private IDisposable? _instanceFootprint;
     private IntPtr _instanceMapped;
     private int _instanceCapacity;
     private WaterInstance[] _instanceScratch = [];
@@ -381,6 +383,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 blendTexture, normalTexture, blendSrv.BindlessIndex, normalSrv.BindlessIndex,
                 mipSrvIndices);
         }
+
+        // ~4.7 MB of fixed device-local noise tiles, alive for the renderer's life.
+        _noiseFootprint = Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
+            "water-noise-tiles",
+            FnvNoiseMaterialSlots *
+            ((long)gpu.Device.GetResourceAllocationInfo(0, noiseTextureDescription).SizeInBytes +
+             (long)gpu.Device.GetResourceAllocationInfo(0, noiseNormalTextureDescription).SizeInBytes));
 
         var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
         // Per-game water is a per-FILE axis (WaterProfile.PixelShaderFile); the only remaining
@@ -2823,6 +2832,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     {
         if (_disposed) return;
         _disposed = true;
+        _noiseFootprint.Dispose();
+        _instanceFootprint?.Dispose();
+        _instanceFootprint = null;
         if (_instanceBuffer is not null)
         {
             _instanceBuffer.Unmap(0, null);
@@ -3238,6 +3250,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _instanceBuffer.Map(0, &cpuPtr).CheckError();
         _instanceMapped = (IntPtr)cpuPtr;
         _instanceCapacity = capacity;
+        // Grow-only UPLOAD buffer (system RAM): refresh the accounting row on each regrow so the
+        // session high-water it represents stays honest.
+        _instanceFootprint?.Dispose();
+        _instanceFootprint = Gpu.D3D12.GpuFixedFootprintTracker12.NonLocalInstance.Add(
+            "water-instances", (long)byteWidth);
     }
 
     private long StartTiming() => DetailedProfilingEnabled ? Stopwatch.GetTimestamp() : 0;

@@ -16,8 +16,9 @@ namespace BethesdaMultitool.Core.Diagnostics;
 ///         When a budget IS set, it watches the total bytes registered under
 ///         <see cref="ResourceCategory.CpuCache" /> and asks <see cref="IMemoryPressureParticipant" />s
 ///         to trim, priority-ordered, when that budget is exceeded. The budget applies to CPU caches
-///         only — GPU residency is structurally bounded by refcounts/LRU caps, mapped files are
-///         file-backed, and disk caches enforce their own caps. The CpuCache budget is the sole
+///         only — mapped files are file-backed, disk caches enforce their own caps, and GPU residency
+///         is governed on the render thread instead (this coordinator runs on a timer thread, and the
+///         GPU LRUs are single-threaded by contract). The CpuCache budget is the sole
 ///         trigger; the system GC memory-load ratio only escalates an over-budget pass from
 ///         <see cref="TrimLevel.Gentle" /> to <see cref="TrimLevel.Aggressive" /> (it is machine-wide
 ///         and chronically &gt;0.9 on a workstation, so triggering on it alone would perpetually wipe

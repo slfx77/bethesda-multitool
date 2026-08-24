@@ -75,6 +75,16 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private const int MinCacheCapacity = 1024;
     private const int CacheHeadroom = 256;
 
+    /// <summary>
+    ///     Retain radius the byte-budget PLAN sizes its floor for. Deliberately modest: the plan
+    ///     floor is a sizing aid, not the correctness guarantee — the per-frame sweep pins the LIVE
+    ///     retain + shadow rings whatever their size, and when the live ring outgrows the plan the
+    ///     sweep simply stops short of its target (over budget, logged) rather than evict anything
+    ///     visible. Planning for the largest configurable radius instead would let the floor
+    ///     swallow the whole budget and the bound would never engage.
+    /// </summary>
+    private const int PlanRetainRadiusCells = 10;
+
     public const float DefaultDiffuseUvScale = 1f / 512f;
 
     /// <summary>
@@ -97,26 +107,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Input layout matching the engine-accurate terrain shader: slot 0 is the shared
-    ///     <see cref="GpuMeshUploader.GpuVertex" /> (6 attributes, TEXCOORD0..5); slot 1 is
-    ///     the per-cell <see cref="CellTerrainTextureSet" /> blend-weight stream — four float4s
-    ///     per vertex (16 layer weights, TEXCOORD6..9), uploaded as an independent buffer per
-    ///     cached cell. Sixteen weights match the 2D blit's per-pixel layer ceiling, so the 3D
-    ///     terrain blend is now non-lossy.
+    ///     Input layout matching the engine-accurate terrain shader. Defined in
+    ///     <see cref="TerrainVertexLayout" /> rather than here so the cross-platform TFM can reach
+    ///     it: the offsets are an ABI shared with <see cref="TerrainVertex" /> and the shader's
+    ///     <c>VSInput</c>, and a mismatch mis-decodes geometry rather than failing to bind, so it
+    ///     needs a test that reflects the compiled shader — not a source pin.
     /// </summary>
-    private static readonly InputElementDescription[] TerrainInputElements =
-    [
-        new("TEXCOORD", 0, Format.R32G32B32_Float,    0, 0), // aPosition
-        new("TEXCOORD", 1, Format.R32G32B32_Float,   12, 0), // aNormal
-        new("TEXCOORD", 2, Format.R32G32_Float,      24, 0), // aTexCoord (unused on this shader)
-        new("TEXCOORD", 3, Format.R32G32B32A32_Float, 32, 0), // aVertexColor
-        new("TEXCOORD", 4, Format.R32G32B32_Float,   48, 0), // aTangent (unused)
-        new("TEXCOORD", 5, Format.R32G32B32_Float,   60, 0), // aBitangent (unused)
-        new("TEXCOORD", 6, Format.R32G32B32A32_Float,  0, 1), // aLayerWeights0 (slot 1, slots 0..3)
-        new("TEXCOORD", 7, Format.R32G32B32A32_Float, 16, 1), // aLayerWeights1 (slots 4..7)
-        new("TEXCOORD", 8, Format.R32G32B32A32_Float, 32, 1), // aLayerWeights2 (slots 8..11)
-        new("TEXCOORD", 9, Format.R32G32B32A32_Float, 48, 1)  // aLayerWeights3 (slots 12..15)
-    ];
+    private static readonly InputElementDescription[] TerrainInputElements = TerrainVertexLayout.Elements;
 
     private static readonly Comparison<VisibleCell> ByDistanceAscending =
         (a, b) => a.DistSq.CompareTo(b.DistSq);
@@ -149,6 +146,26 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private int _indexCount = TerrainMeshBuilder.IndexCount;
     private ushort[] _sharedIndexData;
     private ID3D12Resource? _sharedIndexBuffer;
+    private IDisposable? _sharedIndexFootprint;
+
+    // Per-cell geometry lives here rather than in two committed buffers per cell: D3D12's 64 KiB
+    // committed-buffer rounding is 43% of a 33-grid cell, and the arena pays it once per 16 MiB
+    // block instead. DEFAULT heap (device-local) because terrain is re-read by the IA in the colour,
+    // depth-only, shadow and mirror passes every frame.
+    private readonly GpuTerrainArena12 _terrainArena;
+
+    // Planned terrain byte budget (0 = no bound: VRAM unknown), enforced by EnforceCellByteBudget.
+    private long _cellByteBudget;
+    // Caster ring of the most recent shadow replay (+1 cell margin) — pinned by the sweep because
+    // shadow draws deliberately never bump recency.
+    private VisibilityCylinder? _shadowPinCylinder;
+    // True while the budget sweep evicts, so onEvicted defers its ContentVersion bump to one
+    // per-burst increment instead of laddering the shadow re-render per cell.
+    private bool _suppressEvictionContentBump;
+    // Scratch for the sweep's farthest-first ranking (render-thread only, reused across frames).
+    private readonly List<((int gx, int gy) Key, int Distance)> _evictScratch = [];
+    // One log line per worldspace when the visible set alone exceeds the budget.
+    private bool _budgetUnreachableWarned;
     private IndexBufferView _sharedIbv;
 
     private LruCache<(int gx, int gy), CachedCellMesh12> _meshCache;
@@ -168,8 +185,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly List<VisibleCell> _missingVisibleScratch = new();
     private readonly HashSet<(int gx, int gy)> _missingVisibleKeys = new();
     private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _candidateScratch = new();
-    private GpuMeshUploader.GpuVertex[] _vertexScratch =
-        new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
+    private TerrainVertex[] _vertexScratch =
+        new TerrainVertex[TerrainMeshBuilder.VertexCount];
     private Vector4[] _blendWeightScratch =
         new Vector4[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.SlotVectors];
 
@@ -219,7 +236,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             gpu, rootSignature, vsBytecode, TerrainInputElements);
 
         _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
-        _meshCache = CreateMeshCache(MinCacheCapacity);
+        _terrainArena = new GpuTerrainArena12(gpu)
+            .RegisterWith(ResourceRegistry.Instance, "terrain-geometry");
+        _meshCache = CreateMeshCache(MinCacheCapacity, byteBudget: 0); // re-created with a plan at LoadData
     }
 
     public void Dispose()
@@ -236,6 +255,11 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             _deletionQueue.EnqueueDispose(_sharedIndexBuffer);
         }
+        _sharedIndexFootprint?.Dispose();
+        _sharedIndexFootprint = null;
+        // After _meshCache.Dispose() above: eviction enqueues each cell's deferred arena free, so
+        // the arena must outlive that cascade. Its blocks are released here regardless.
+        _terrainArena.Dispose();
         _shadowDepthPso.Dispose();
         _depthOnlyPso.Dispose();
         _pso.Dispose();
@@ -300,19 +324,40 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     ///     CellMeshLruCache): evicted/replaced entries are disposed, and the cache reports its
     ///     entry counts to the resource registry under the "terrain-cells" tag.
     /// </summary>
-    private LruCache<(int gx, int gy), CachedCellMesh12> CreateMeshCache(int capacity) =>
+    private LruCache<(int gx, int gy), CachedCellMesh12> CreateMeshCache(int capacity, long byteBudget) =>
         new LruCache<(int gx, int gy), CachedCellMesh12>(
                 "CellMeshLru",
                 ResourceCategory.GpuResident,
                 maxEntries: capacity,
+                // The LRU's own byte cap is a BACKSTOP at 1.25× the plan, not the enforcer. The
+                // per-frame distance sweep (EnforceCellByteBudget) is the enforcer: it knows camera
+                // distance and pins the retain + shadow-caster rings, whereas this cascade is blind
+                // LRU order — and shadow draws deliberately TryPeek (no recency bump), so an active
+                // up-sun caster can sit at the LRU tail. With the headroom, the cascade fires only
+                // if the sweep somehow failed to keep us under plan.
+                maxBytes: byteBudget > 0
+                    ? (long)(byteBudget * TerrainCellResidencyPolicy.BackstopHeadroom)
+                    : null,
+                // Real bytes, not the 1-byte-per-entry default. This cache owns its two committed
+                // DEFAULT-heap buffers outright — nothing else accounts for them — so the size is
+                // reported rather than attributed, and it is what the byte budget is enforced
+                // against. Known at Set time (unlike the reference-mesh cache, whose nodes are
+                // populated after an async decode), so no UpdateSize is needed here.
+                sizeOf: static (_, mesh) => mesh.ByteSize,
                 onEvicted: (_, mesh) =>
                 {
                     mesh.Dispose();
                     // A cell leaving residency changes what the shadow pass can draw: bump the
                     // content version so the throttled shadow re-render heals the vanished
-                    // caster instead of the published cascades keeping its stale depth.
-                    unchecked { ContentVersion++; }
+                    // caster instead of the published cascades keeping its stale depth. The
+                    // budget sweep suppresses this and bumps ONCE per burst — hundreds of
+                    // per-evict bumps in one frame would ladder the cascade re-render storm.
+                    if (!_suppressEvictionContentBump)
+                    {
+                        unchecked { ContentVersion++; }
+                    }
                 })
+            .WithSegment(Core.Diagnostics.GpuMemorySegment.Local)
             .RegisterWith(ResourceRegistry.Instance, "terrain-cells");
 
     public void LoadData(Dictionary<(int gx, int gy), CellRecord> cells)
@@ -324,18 +369,37 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         global::BethesdaMultitool.Core.WorldData.WorldRenderCache? renderCache)
     {
         _meshCache.Dispose();
-        var capacity = Math.Max(MinCacheCapacity, cells.Count + CacheHeadroom);
-        _meshCache = CreateMeshCache(capacity);
-        _knownUnusableCells.Clear();
-        _cellBuildFailures.Clear();
         _cells = cells;
         _spatialIndex = spatialIndex;
         _renderCache = renderCache;
 
-        // Adopt this worldspace's LAND grid resolution (33×33 Fallout-family, 65×65 Morrowind). When
-        // it changes, rebuild the shared index buffer + per-cell scratch so the index/vertex/blend
-        // stream lengths all match the new grid. All cells of one worldspace share a single grid size.
+        // Adopt this worldspace's LAND grid resolution (33×33 Fallout-family, 65×65 Morrowind,
+        // 129×129 FO76/Starfield) BEFORE sizing the cache: the byte budget is a function of the
+        // per-cell GPU cost, which is a function of the grid. When it changes, rebuild the shared
+        // index buffer + per-cell scratch so the index/vertex/blend stream lengths all match the
+        // new grid. All cells of one worldspace share a single grid size.
         EnsureGridSize(cells);
+
+        // Plan the terrain byte budget from the adapter's REAL local budget. 0 (unknown VRAM —
+        // WARP/iGPU, failed query) means no byte bound, i.e. exactly the pre-budget behaviour;
+        // treating an unknown budget as zero would evict everything on the machines least able to
+        // afford the rebuild churn. Entry capacity alone bounds nothing: it is sized at or above
+        // the worldspace's cell count, which on Appalachia makes ~90 GiB of terrain eligible.
+        _cellByteBudget = _gpu.TryQueryLocalVideoMemoryMb(out _, out var vramBudgetMb) && vramBudgetMb > 0
+            ? TerrainCellResidencyPolicy.PlanBudgetBytes(
+                vramBudgetMb * 1024L * 1024L, _gridSize, cells.Count, PlanRetainRadiusCells)
+            : 0;
+        if (_cellByteBudget > 0)
+        {
+            Log.Info(
+                "TerrainRenderer12: cell byte budget {0:N0} MB for {1:N0} cells at grid {2} (VRAM budget {3:N0} MB)",
+                _cellByteBudget / (1024 * 1024), cells.Count, _gridSize, vramBudgetMb);
+        }
+
+        var capacity = Math.Max(MinCacheCapacity, cells.Count + CacheHeadroom);
+        _meshCache = CreateMeshCache(capacity, _cellByteBudget);
+        _knownUnusableCells.Clear();
+        _cellBuildFailures.Clear();
 
         // Bump the build generation so any in-flight task started against the previous worldspace
         // drops its result instead of inserting a cell built from the old _cells/_meshCache. Clear
@@ -352,18 +416,38 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // (16 cells/frame budget) does not pay the 4 neighbor lookups + per-quadrant
         // layer-weight sort per cell. Costs ~0.05 ms × cells.Count at LoadData (~250 ms
         // for a 5000-cell worldspace), folded into the existing ~1–2 s worldspace load.
-        if (_renderCache is not null)
+        // Only when the resulting resident set fits the budget — see TerrainTextureSetWarmPolicy;
+        // a 129-grid worldspace the size of Appalachia would want ~42 GB of it.
+        if (_renderCache is not null && !TerrainTextureSetWarmPolicy.ShouldWarm(_gridSize, cells.Count))
+        {
+            Log.Info(
+                "TerrainRenderer12: texture-set warm skipped for {0:N0} cells at grid {1} " +
+                "({2:N0} MB > {3:N0} MB budget) — sets build on demand.",
+                cells.Count, _gridSize,
+                TerrainTextureSetWarmPolicy.EstimateWarmBytes(_gridSize, cells.Count) / (1024 * 1024),
+                TerrainTextureSetWarmPolicy.MaxWarmBytes / (1024 * 1024));
+        }
+        else if (_renderCache is not null)
         {
             if (cells.Count >= 512)
             {
                 var gridSize = _gridSize;
-                Parallel.ForEach(cells, pair =>
-                {
-                    var captured = pair;
-                    _renderCache.GetOrBuildTerrainTextureSet(
-                        captured.Value,
-                        () => TerrainCellCpuBuilder.BuildCellTextureSet(captured.Key, captured.Value, cells, gridSize));
-                });
+                // NOT Parallel.ForEach: LoadData runs on the STA UI thread during a worldspace
+                // switch, and Parallel blocks the caller through a COM PUMPING wait that can
+                // fail-fast the process via XAML reentrancy (0xc000027b) — the same mechanism that
+                // crashed the per-frame reference cull. Bounded worker count also stops the warm
+                // from claiming every core while the UI thread is trying to paint.
+                Core.Orchestration.NonPumpingParallel.ForEach(
+                    [.. cells],
+                    Core.Orchestration.ConcurrencyPolicy.CoresMinusOne.Resolve(),
+                    pair =>
+                    {
+                        var captured = pair;
+                        _renderCache.GetOrBuildTerrainTextureSet(
+                            captured.Value,
+                            () => TerrainCellCpuBuilder.BuildCellTextureSet(
+                                captured.Key, captured.Value, cells, gridSize));
+                    });
             }
             else
             {
@@ -415,12 +499,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             _deletionQueue.EnqueueDispose(_sharedIndexBuffer);
             _sharedIndexBuffer = null;
+            _sharedIndexFootprint?.Dispose();
+            _sharedIndexFootprint = null;
         }
 
         if (gridChanged)
         {
             var vertexCount = TerrainMeshBuilder.VertexCountFor(gridSize);
-            _vertexScratch = new GpuMeshUploader.GpuVertex[vertexCount];
+            _vertexScratch = new TerrainVertex[vertexCount];
             _blendWeightScratch = new Vector4[vertexCount * CellTerrainTextureSet.SlotVectors];
         }
     }
@@ -476,6 +562,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     public int RenderShadowDepth(Matrix4x4 lightViewProj, VisibilityCylinder cylinder)
     {
         LastShadowReplayCompleted = false;
+        // Record the caster ring (plus a one-cell margin) so the byte-budget sweep pins it. Shadow
+        // draws deliberately never bump recency — without this pin, actively-shadowing up-sun cells
+        // outside the camera cylinder would be the sweep's FIRST victims, and an evicted caster
+        // cannot rebuild until the camera turns toward it (build admission is camera-strict).
+        _shadowPinCylinder = new VisibilityCylinder(
+            cylinder.Position, cylinder.Radius + WorldGridConstants.CellSize);
         if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
             (_cells is null || _cells.Count == 0))
         {
@@ -507,8 +599,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
 
-        var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
-        const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
+        const uint vertexStride = TerrainVertex.SizeInBytes;
+        const uint blendWeightStride = TerrainVertexLayout.BlendWeightStride;
         var drawn = 0;
         foreach (var key in EnumerateCellKeysInCylinder(cylinder))
         {
@@ -517,18 +609,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 continue;
             }
 
-            cmd.IASetVertexBuffers(0, new VertexBufferView
-            {
-                BufferLocation = entry.VertexBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)entry.VertexBuffer.Description.Width,
-                StrideInBytes = vertexStride,
-            });
-            cmd.IASetVertexBuffers(1, new VertexBufferView
-            {
-                BufferLocation = entry.BlendWeightBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)entry.BlendWeightBuffer.Description.Width,
-                StrideInBytes = blendWeightStride,
-            });
+            cmd.IASetVertexBuffers(0, entry.VertexView(vertexStride));
+            cmd.IASetVertexBuffers(1, entry.BlendWeightView(blendWeightStride));
+            BindCellGrid(cmd, entry);
             // No per-draw CB: b1 carries the PS's texture indices and this PSO has no PS — skipping
             // it saves one ring allocation per cell per cascade (the old streaming path's real ring
             // pressure) and keeps LastStats untouched.
@@ -582,8 +665,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
 
-        var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
-        const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
+        const uint vertexStride = TerrainVertex.SizeInBytes;
+        const uint blendWeightStride = TerrainVertexLayout.BlendWeightStride;
         var drawn = 0;
         foreach (var key in EnumerateCellKeysInCylinder(cylinder))
         {
@@ -605,18 +688,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             }
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
 
-            cmd.IASetVertexBuffers(0, new VertexBufferView
-            {
-                BufferLocation = entry.VertexBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)entry.VertexBuffer.Description.Width,
-                StrideInBytes = vertexStride,
-            });
-            cmd.IASetVertexBuffers(1, new VertexBufferView
-            {
-                BufferLocation = entry.BlendWeightBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)entry.BlendWeightBuffer.Description.Width,
-                StrideInBytes = blendWeightStride,
-            });
+            cmd.IASetVertexBuffers(0, entry.VertexView(vertexStride));
+            cmd.IASetVertexBuffers(1, entry.BlendWeightView(blendWeightStride));
+            BindCellGrid(cmd, entry);
             cmd.DrawIndexedInstanced((uint)_indexCount, 1, 0, 0, 0);
             drawn++;
         }
@@ -784,6 +858,11 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         LastStats.VisibleCandidates = _visibleScratch.Count;
         LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
 
+        // Enforce the planned byte budget now that this frame's retain state is fresh. Runs BEFORE
+        // this frame's builds, so residency can exceed the plan by at most one frame of uploads —
+        // well inside the LRU cascade's 1.25× backstop headroom.
+        EnforceCellByteBudget();
+
         segmentStarted = StartTiming();
         foreach (var vc in _visibleScratch)
         {
@@ -814,8 +893,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // _frameBudgetScale): a fixed 3ms inside a 100ms whole-map frame was a 3% duty cycle,
         // throttling the fill hardest exactly when the frame is busiest.
         var uploadTimeBudget = new FrameTimeBudget(MaxMeshBuildMillisecondsPerFrame * _frameBudgetScale);
-        var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
-        const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
+        const uint vertexStride = TerrainVertex.SizeInBytes;
+        const uint blendWeightStride = TerrainVertexLayout.BlendWeightStride;
         var drawn = 0;
         if (_missingVisibleScratch.Count > 0)
         {
@@ -876,24 +955,33 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             // Slot 0 = shared GpuVertex; slot 1 = per-cell blend weights for the engine-
             // accurate weighted sum. Vortice doesn't expose a 2-buffer IASetVertexBuffers
             // overload directly; the per-slot calls below are cheap and stay readable.
-            cmd.IASetVertexBuffers(0, new VertexBufferView
-            {
-                BufferLocation = entry.VertexBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)entry.VertexBuffer.Description.Width,
-                StrideInBytes = vertexStride,
-            });
-            cmd.IASetVertexBuffers(1, new VertexBufferView
-            {
-                BufferLocation = entry.BlendWeightBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)entry.BlendWeightBuffer.Description.Width,
-                StrideInBytes = blendWeightStride,
-            });
+            cmd.IASetVertexBuffers(0, entry.VertexView(vertexStride));
+            cmd.IASetVertexBuffers(1, entry.BlendWeightView(blendWeightStride));
+            BindCellGrid(cmd, entry);
 
             var cellDrawStarted = StartTiming();
             DrawCell(cmd, entry);
             LastStats.QuadrantDrawMilliseconds += ElapsedMilliseconds(cellDrawStarted);
             drawn++;
         }
+    }
+
+    /// <summary>
+    ///     Hands the cell's grid to the vertex shader as root constants at <c>b4</c>. Mandatory on
+    ///     EVERY terrain draw, in every pass: <see cref="TerrainVertex" /> carries no X or Y, so a
+    ///     draw that skipped this would place the cell on whatever grid the previous draw left in the
+    ///     root arguments — silently, and most visibly as two cells stacked on the same ground.
+    /// </summary>
+    private static void BindCellGrid(ID3D12GraphicsCommandList cmd, CachedCellMesh12 entry)
+    {
+        Span<uint> constants =
+        [
+            BitConverter.SingleToUInt32Bits(entry.Grid.OriginX),
+            BitConverter.SingleToUInt32Bits(entry.Grid.OriginY),
+            BitConverter.SingleToUInt32Bits(entry.Grid.Spacing),
+            (uint)entry.Grid.GridSize
+        ];
+        cmd.SetGraphicsRoot32BitConstants(GpuRootSignature12.Slots.TerrainCellGridConstants, constants, 0);
     }
 
     private void EnsureSharedIndexBuffer(ID3D12GraphicsCommandList cmd)
@@ -910,6 +998,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             _sharedIndexData,
             ResourceStates.IndexBuffer);
         _sharedIbv = GpuMeshBufferFactory12.IndexBufferViewOf(_sharedIndexBuffer);
+        // One per worldspace (replaced on grid-size change); small but device-local and previously
+        // uncounted like every other fixed allocation.
+        _sharedIndexFootprint?.Dispose();
+        _sharedIndexFootprint = Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
+            "terrain-shared-ib",
+            Gpu.GpuResourceFootprint.CommittedBufferBytes((long)_sharedIndexBuffer.Description.Width));
     }
 
     /// <summary>
@@ -1022,8 +1116,123 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     private bool WithinRetainMargin((int gx, int gy) key) =>
-        Math.Max(Math.Abs(key.gx - _retainCameraCell.gx), Math.Abs(key.gy - _retainCameraCell.gy))
-            <= _retainRadiusCells;
+        ChebyshevFromCamera(key) <= _retainRadiusCells;
+
+    private int ChebyshevFromCamera((int gx, int gy) key) =>
+        Math.Max(Math.Abs(key.gx - _retainCameraCell.gx), Math.Abs(key.gy - _retainCameraCell.gy));
+
+    /// <summary>
+    ///     True when <paramref name="key" /> is inside the most recent shadow replay's caster ring.
+    ///     Those cells cast into the published cascades but are read via <c>TryPeek</c> (no recency
+    ///     bump by design — shadow reads of far cells must not push the camera's own cells toward
+    ///     eviction), so LRU order alone would rank an actively-shadowing caster as coldest.
+    /// </summary>
+    private bool WithinShadowPin((int gx, int gy) key)
+    {
+        if (_shadowPinCylinder is not { } cylinder)
+        {
+            return false;
+        }
+
+        var centerX = (key.gx + 0.5f) * WorldGridConstants.CellSize;
+        var centerY = (key.gy + 0.5f) * WorldGridConstants.CellSize;
+        var half = WorldGridConstants.CellSize * 0.5f;
+        // Same closest-point Chebyshev test the gather uses (canvas Y is negated world Y).
+        var closestX = Math.Clamp(cylinder.Position.X, centerX - half, centerX + half);
+        var closestY = Math.Clamp(-cylinder.Position.Y, centerY - half, centerY + half);
+        return MathF.Abs(cylinder.Position.X - closestX) < cylinder.Radius &&
+               MathF.Abs(-cylinder.Position.Y - closestY) < cylinder.Radius;
+    }
+
+    /// <summary>
+    ///     Evicts resident cells FARTHEST-FIRST until the planned byte budget is met, never touching
+    ///     a cell inside the retain ring or the shadow-caster ring.
+    ///     <para>
+    ///         Distance rather than LRU because recency is only a proxy for "will be needed again",
+    ///         and it fails on the most ordinary motion there is: face one way for a while, then turn
+    ///         around — the cells you are about to look at are precisely the LRU tail. Chebyshev
+    ///         distance from the camera cell is the actual predictor for terrain.
+    ///     </para>
+    ///     <para>
+    ///         Falling short of the target is a legitimate outcome: if everything left is pinned, the
+    ///         visible world is simply larger than the budget, and under a no-LOD policy the answer
+    ///         is to run over budget (logged once per worldspace) rather than punch a hole in what
+    ///         the camera can see.
+    ///     </para>
+    /// </summary>
+    private void EnforceCellByteBudget()
+    {
+        if (_cellByteBudget <= 0 || _meshCache.EstimatedBytes <= _cellByteBudget)
+        {
+            return;
+        }
+
+        _evictScratch.Clear();
+        foreach (var key in _meshCache.SnapshotKeys())
+        {
+            if (WithinRetainMargin(key) || WithinShadowPin(key))
+            {
+                continue; // pinned: visible, or casting into the published cascades
+            }
+
+            _evictScratch.Add((key, ChebyshevFromCamera(key)));
+        }
+
+        if (_evictScratch.Count == 0)
+        {
+            WarnBudgetUnreachable();
+            return;
+        }
+
+        _evictScratch.Sort(static (a, b) => b.Distance.CompareTo(a.Distance)); // farthest first
+        var evicted = 0;
+        _suppressEvictionContentBump = true;
+        try
+        {
+            foreach (var (key, _) in _evictScratch)
+            {
+                if (_meshCache.EstimatedBytes <= _cellByteBudget)
+                {
+                    break;
+                }
+
+                _meshCache.Evict(key);
+                evicted++;
+            }
+        }
+        finally
+        {
+            _suppressEvictionContentBump = false;
+        }
+
+        if (evicted > 0)
+        {
+            // ONE bump for the whole burst: the published cascades need re-rendering once, and a
+            // per-cell bump would ladder the throttled shadow re-render into a storm.
+            unchecked { ContentVersion++; }
+            LastStats.CellsEvictedForBudget += evicted;
+        }
+
+        if (_meshCache.EstimatedBytes > _cellByteBudget)
+        {
+            WarnBudgetUnreachable();
+        }
+    }
+
+    private void WarnBudgetUnreachable()
+    {
+        if (_budgetUnreachableWarned)
+        {
+            return;
+        }
+
+        _budgetUnreachableWarned = true;
+        Log.Info(
+            "TerrainRenderer12: visible terrain ({0:N0} MB resident) exceeds the {1:N0} MB budget — " +
+            "every remaining cell is inside the retain or shadow-caster ring. Running over budget " +
+            "rather than evicting visible terrain.",
+            _meshCache.EstimatedBytes / (1024 * 1024), _cellByteBudget / (1024 * 1024));
+    }
 
     private void StartQueuedBuilds()
     {
@@ -1161,25 +1370,20 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var success = false;
         try
         {
-            var vb = GpuMeshBufferFactory12.CreateDefaultBuffer(
-                _gpu,
+            var geometry = _terrainArena.Upload(
                 _recorder.CommandList,
                 _deletionQueue,
-                cpu.Vertices!,
-                ResourceStates.VertexAndConstantBuffer);
-            var blendBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer(
-                _gpu,
-                _recorder.CommandList,
-                _deletionQueue,
-                cpu.BlendWeights!,
-                ResourceStates.VertexAndConstantBuffer);
+                MemoryMarshal.AsBytes<TerrainVertex>(cpu.Vertices!),
+                MemoryMarshal.AsBytes<Vector4>(cpu.BlendWeights!),
+                debugTag: null);
 
             var textureIndices = ResolveSlotTextureIndices(cpu.TextureSet, out var normalTextureEntries);
 
             var entry = new CachedCellMesh12
             {
-                VertexBuffer = vb,
-                BlendWeightBuffer = blendBuffer,
+                Geometry = geometry,
+                Grid = cpu.Grid,
+                Arena = _terrainArena,
                 TextureIndices = textureIndices,
                 NormalTextureEntries = normalTextureEntries,
                 DeletionQueue = _deletionQueue,
@@ -1218,36 +1422,32 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var success = false;
         try
         {
-            if (!TerrainMeshBuilder.TryBuildVertices(cell, _vertexScratch, _renderCache))
+            if (!TerrainMeshBuilder.TryBuildVertices(cell, _vertexScratch, _renderCache, out var grid))
             {
                 _knownUnusableCells.Add(key);
                 return null;
             }
 
-            var vb = GpuMeshBufferFactory12.CreateDefaultBuffer(
-                _gpu,
-                _recorder.CommandList,
-                _deletionQueue,
-                _vertexScratch,
-                ResourceStates.VertexAndConstantBuffer);
-
             var textureSet = _renderCache is not null
                 ? _renderCache.GetOrBuildTerrainTextureSet(cell, () => TerrainCellCpuBuilder.BuildCellTextureSet(key, cell, _cells, _gridSize))
                 : TerrainCellCpuBuilder.BuildCellTextureSet(key, cell, _cells, _gridSize);
             TerrainCellCpuBuilder.PopulateBlendWeights(textureSet, _blendWeightScratch, _gridSize);
-            var blendBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer(
-                _gpu,
+            // One arena range for both streams — so the blend weights must be populated BEFORE the
+            // upload (the old code created the vertex buffer first, then built the weights).
+            var geometry = _terrainArena.Upload(
                 _recorder.CommandList,
                 _deletionQueue,
-                _blendWeightScratch,
-                ResourceStates.VertexAndConstantBuffer);
+                MemoryMarshal.AsBytes<TerrainVertex>(_vertexScratch),
+                MemoryMarshal.AsBytes<Vector4>(_blendWeightScratch),
+                debugTag: null);
 
             var textureIndices = ResolveSlotTextureIndices(textureSet, out var normalTextureEntries);
 
             var entry = new CachedCellMesh12
             {
-                VertexBuffer = vb,
-                BlendWeightBuffer = blendBuffer,
+                Geometry = geometry,
+                Grid = grid,
+                Arena = _terrainArena,
                 TextureIndices = textureIndices,
                 NormalTextureEntries = normalTextureEntries,
                 DeletionQueue = _deletionQueue,

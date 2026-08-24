@@ -56,6 +56,7 @@ internal sealed class ShadowMapRenderer12 : IDisposable
     // wrong translation into the older cascades' sampling matrices and slide their shadows.
     private readonly Vector3[] _renderedOrigins = new Vector3[CascadeCount];
     private readonly bool[] _cascadePublished = new bool[CascadeCount];
+    private readonly IDisposable _footprint;
     private bool _disposed;
 
     /// <summary>Per-cascade map dimension in texels (square). Defaults are VRAM-SCALED from the
@@ -107,6 +108,11 @@ internal sealed class ShadowMapRenderer12 : IDisposable
             };
             gpu.Device.CreateShaderResourceView(_depthTex[i], srvDesc, _srvs[i].Cpu);
         }
+
+        // 4 × res² × 4 B of D32 targets — 256 MB at the 4096 tier. Device-local and fixed for the
+        // renderer's life, so it belongs in the fixed-footprint row rather than any cache's.
+        _footprint = GpuFixedFootprintTracker12.LocalInstance.Add(
+            "shadow-cascades", (long)CascadeCount * Resolution * Resolution * 4);
     }
 
     /// <summary>
@@ -321,6 +327,7 @@ internal sealed class ShadowMapRenderer12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _footprint.Dispose();
         // The persistent SRV slots live in the shared heap; they die with the heap (same pattern
         // as the live/capture depth SRVs — see DisposeD3D12Backend).
         _dsvHeap.Dispose();

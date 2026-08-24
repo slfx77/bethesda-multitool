@@ -93,10 +93,13 @@ internal static class GpuShaderCompiler12
         string source, string sourceName, string entryPoint, string profile, params ShaderMacro[] macros)
     {
         var started = Stopwatch.GetTimestamp();
+        // Owned by this call and disposed with it — see EmbeddedShaderInclude for why a shared
+        // instance cannot be used from more than one thread.
+        using var include = new EmbeddedShaderInclude();
         var result = Compiler.Compile(
             source,
             macros,
-            EmbeddedShaderInclude.Instance,
+            include,
             entryPoint,
             sourceName,
             profile,

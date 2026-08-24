@@ -67,16 +67,16 @@ public sealed class TerrainNativeGridSizeTests
         const float spacing = CellSize / (N - 1); // 128
 
         // SW corner at the cell's absolute world origin.
-        Assert.Equal(new Vector3(3 * CellSize, 4 * CellSize, 500f), verts[0].Position);
+        Assert.Equal(new Vector3(3 * CellSize, 4 * CellSize, 500f), mesh.Value.PositionOf(0));
 
         // NE corner one full (8192-unit) cell away.
         var last = N * N - 1;
-        Assert.Equal(new Vector3(4 * CellSize, 5 * CellSize, 500f), verts[last].Position);
+        Assert.Equal(new Vector3(4 * CellSize, 5 * CellSize, 500f), mesh.Value.PositionOf(last));
 
         // A native interior vertex that does NOT exist on the 33×33 grid (odd column/row) — proves the
         // mesh is built at native resolution, not the downsampled grid.
         var idx = 1 * N + 1;
-        Assert.Equal(new Vector3(3 * CellSize + spacing, 4 * CellSize + spacing, 500f), verts[idx].Position);
+        Assert.Equal(new Vector3(3 * CellSize + spacing, 4 * CellSize + spacing, 500f), mesh.Value.PositionOf(idx));
 
         // Flat surface → +Z normals everywhere.
         foreach (var v in verts)

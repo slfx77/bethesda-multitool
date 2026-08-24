@@ -102,6 +102,10 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     // conformance; this cache is refcount-pinned and never trimmed). Snapshot readers tolerate
     // slightly stale values per the ITrackableResource threading contract.
     private ResourceRegistration? _registration;
+    // Fallback singletons + synthesized frames: created once, never released before Dispose, and
+    // outside the refcounted add/release pair that maintains _residentBytes. Counted separately so
+    // the resident total includes them without touching the release-path symmetry.
+    private long _pinnedBytes;
     private long _residentBytes;
     private string _traceCacheTag = "unregistered";
     private bool _traceSummaryEmitted;
@@ -135,10 +139,10 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     }
 
     /// <summary>1x1 opaque white texture used as the fallback diffuse.</summary>
-    public Entry WhitePixel => _whitePixel ??= _solidTextureFactory.CreateSolid(255, 255, 255, 255);
+    public Entry WhitePixel => _whitePixel ??= CreatePinnedSolid(255, 255, 255, 255);
 
     /// <summary>1x1 flat normal map used as the fallback normal.</summary>
-    public Entry FlatNormal => _flatNormal ??= _solidTextureFactory.CreateSolid(128, 128, 255, 255);
+    public Entry FlatNormal => _flatNormal ??= CreatePinnedSolid(128, 128, 255, 255);
 
     /// <summary>
     ///     1×1 translucent water-blue tile used as the diffuse for placed water-shader geometry
@@ -147,7 +151,18 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     ///     the opaque-white fallback. RGB ≈ (0.15, 0.32, 0.42); combined with forced alpha-blend it
     ///     reads as a translucent water plane.
     /// </summary>
-    public Entry WaterSurface => _waterSurface ??= _solidTextureFactory.CreateSolid(38, 82, 107, 255);
+    public Entry WaterSurface => _waterSurface ??= CreatePinnedSolid(38, 82, 107, 255);
+
+    /// <summary>
+    ///     Creates a pinned fallback singleton AND counts it: pinned entries never pass through the
+    ///     refcounted add/release pair, so before this they were invisible to the resident total.
+    /// </summary>
+    private Entry CreatePinnedSolid(byte r, byte g, byte b, byte a)
+    {
+        var entry = _solidTextureFactory.CreateSolid(r, g, b, a);
+        _pinnedBytes += entry.ByteSize;
+        return entry;
+    }
 
     public int MaxUploadsPerFrame { get; init; } = DefaultMaxUploadsPerFrame;
 
@@ -237,17 +252,29 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     public ResourceCategory Category => ResourceCategory.GpuResident;
 
+    /// <summary>
+    ///     Textures are DEFAULT-heap, so these bytes are genuinely device-local VRAM
+    ///     (<see cref="GpuMemorySegment.Local" />) — unlike the geometry arena's UPLOAD blocks.
+    ///     <para>
+    ///         <see cref="_residentBytes" /> carries the D3D12 ALLOCATION footprint of streamed
+    ///         textures (stamped at upload from <c>GetResourceAllocationInfo</c>, so placement
+    ///         rounding is included), and <see cref="_pinnedBytes" /> the never-released fallback
+    ///         singletons + synthesized frames. Their sum is what a VRAM budget can honestly be
+    ///         compared against.
+    ///     </para>
+    /// </summary>
     public ResourceStats GetStats()
     {
         return new ResourceStats
         {
-            EstimatedBytes = Volatile.Read(ref _residentBytes),
+            EstimatedBytes = Volatile.Read(ref _residentBytes) + Volatile.Read(ref _pinnedBytes),
             EntryCount = _cache.Count,
             Hits = Volatile.Read(ref _hits),
             Misses = Volatile.Read(ref _misses),
             Evictions = Volatile.Read(ref _evictions),
             QueueDepth = _uploadDispatcher.PendingCount,
-            InFlight = _resolveQueue.ActiveCount
+            InFlight = _resolveQueue.ActiveCount,
+            Segment = GpuMemorySegment.Local
         };
     }
 
@@ -279,6 +306,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         var entry = _solidTextureFactory.CreateFromRgba(width, height, rgba, true);
         _syntheticEntries[key] = entry;
+        _pinnedBytes += entry.ByteSize;
         return entry;
     }
 
@@ -619,8 +647,13 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 ResourceStates.Common,
                 ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource);
             _gpu.Device.CreateShaderResourceView(c.Texture, c.SrvDesc, node.Entry.PersistentSrv);
-            node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode, c.ByteSize);
-            _residentBytes += c.ByteSize;
+            // The entry carries the ALLOCATION footprint, so the symmetric release at Release()
+            // (_residentBytes -= entry.ByteSize) automatically balances what is added here.
+            // FrameUploadBytes below deliberately stays on the payload byte count — it feeds the
+            // per-frame streaming pacer, and inflating it by the footprint padding would silently
+            // throttle streaming in every game.
+            node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode, c.AllocationBytes);
+            _residentBytes += c.AllocationBytes;
             node.Dispatched = false;
             // Drop the decoded payload's mip bytes now that the texture is resident on the GPU.
             // The node is the second strong ref (alongside the resolver cache, released on the
@@ -706,6 +739,10 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             var desc = ResourceDescription.Texture2D(
                 dxgiFormat, width, height,
                 arraySize, mipCount);
+            // What the resource ACTUALLY charges (64 KiB placement rounding + internal layout), as
+            // opposed to the decoded payload's byte count — the two diverge by the padding, and
+            // _residentBytes exists to be compared against a real VRAM budget.
+            var allocationBytes = (long)_gpu.Device.GetResourceAllocationInfo(0, desc).SizeInBytes;
 
             // COMMON initial state: a copy queue implicitly promotes COMMON→COPY_DEST for the copy
             // and the resource decays back to COMMON on copy-list completion. The render thread then
@@ -786,7 +823,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 : GpuTextureFormatHelpers12.MakeSrvDesc(mipCount, dxgiFormat);
             _completedUploads.Enqueue(new CompletedUpload(
                 cacheKey, texture, srvDesc, payload.Format, payload.NormalDecodeMode,
-                payload.ByteSize, payload.IsCompressed, copyFenceValue));
+                payload.ByteSize, allocationBytes, payload.IsCompressed, copyFenceValue));
             // The decoded CPU payload is now in the GPU staging buffer — release its mip bytes from
             // the resolver cache so they don't accumulate in managed memory (the dominant heap /
             // GC-stall source under heavy streaming). The path is never re-requested (the Entry is
@@ -1107,12 +1144,13 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         GpuTexturePayloadFormat Format,
         GpuNormalDecodeMode NormalDecodeMode,
         long ByteSize,
+        long AllocationBytes,
         bool IsCompressed,
         ulong CopyFenceValue)
     {
         internal static CompletedUpload Failure(string cacheKey)
         {
-            return new CompletedUpload(cacheKey, null, default, default, default, 0, false, 0);
+            return new CompletedUpload(cacheKey, null, default, default, default, 0, 0, false, 0);
         }
     }
 
@@ -1211,6 +1249,18 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         internal void MarkUnavailable()
         {
             IsReady = true;
+        }
+
+        /// <summary>
+        ///     Stamps the allocation footprint on a PINNED entry (fallback singletons, synthesized
+        ///     frames), whose texture is created outside the streaming upload path and therefore
+        ///     never passes through <see cref="ReplaceTexture" />. Placeholders that alias a
+        ///     fallback's texture must NOT be stamped — the bytes belong to the fallback and are
+        ///     counted once.
+        /// </summary>
+        internal void SetPinnedFootprint(long byteSize)
+        {
+            ByteSize = byteSize;
         }
     }
 }

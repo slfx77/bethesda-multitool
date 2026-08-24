@@ -52,6 +52,15 @@ public sealed partial class WorldView3DControl
 
             _commandRecorder12 =
                 new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12(_gpu12);
+            // Force the fixed-footprint trackers' static init HERE, on the UI thread, before any
+            // renderer worker exists. CLR type-init lock contention on an STA thread goes through
+            // Thread::DoAppropriateWait → CoWaitForMultipleHandles and therefore PUMPS: if a worker
+            // ever won the race to first-touch these while the UI thread sat inside a XAML callback,
+            // that would be another instance of the 0xc000027b reentrancy fail-fast. Today every
+            // touch happens to be on this thread; this makes the ordering deterministic rather than
+            // incidental.
+            _ = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance;
+            _ = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuFixedFootprintTracker12.NonLocalInstance;
             // Ring size per frame slot (env-overridable; default SCALES WITH SYSTEM RAM — upload
             // heaps are system-memory-backed). Shared by every renderer's per-draw CBs and the
             // reference instance uploads. A whole-map perspective view (max render distance, most
@@ -68,22 +77,27 @@ public sealed partial class WorldView3DControl
                 _gpu12,
                 BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight,
                 bytesPerFrame: (uint)ringMegabytes * 1024 * 1024);
-            // CBV/SRV/UAV heap layout (4a — bindless): persistent region 0..16383 holds
-            // every texture's bindless SRV (stable index over a worldspace session); the
-            // remaining 114688 slots ring across N frames for per-frame transient SRVs
-            // (the reference renderer's per-frame instance structured-buffer SRV, water's
-            // per-frame instance-SRV copy, etc.). 16K persistent comfortably accommodates
-            // FNV's ~5K unique texture set with 3× headroom for DLC + cross-worldspace
-            // browsing. Per-frame ring is sized for the legacy per-batch SRV pattern; once
-            // 4a's bindless lookups land for reference + terrain, per-frame usage shrinks
-            // by an order of magnitude.
+            // CBV/SRV/UAV heap layout (4a — bindless): the persistent region holds every texture's
+            // bindless SRV (stable index over a worldspace session); the remainder rings across N
+            // frames for per-frame transient SRVs (the reference renderer's per-frame instance
+            // structured-buffer SRV, water's per-frame instance-SRV copy, etc.).
+            //
+            // The persistent/per-frame split is pure bookkeeping over one heap that is committed at
+            // `capacity` regardless, so widening the persistent share costs NOTHING. It was 16384,
+            // which was sized for FNV's ~5K unique textures and is a hard failure for dense
+            // worldspaces — AllocatePersistent THROWS on exhaustion rather than degrading, and
+            // persistent slots are consumed by both texture caches, the shadow cascades, the ~80
+            // water noise tiles and the reflection/depth SRVs. 49152 matches the resident-mesh LRU
+            // ceiling (ReferenceMeshCapacityPlanner.CeilingCapacity) so slot supply tracks the mesh
+            // population that consumes it, and still leaves 40960 per-frame slots — ample, since
+            // bindless lookups made the legacy per-batch SRV pattern the exception.
             _cbvSrvUavHeap12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12(
                     _gpu12,
                     Vortice.Direct3D12.DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
                     capacity: 131072,
                     framesInFlight: BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12
                         .FramesInFlight,
-                    persistentCapacity: 16384)
+                    persistentCapacity: 49152)
                 .RegisterWith(BethesdaMultitool.Core.Diagnostics.ResourceRegistry.Instance, "viewer");
             _rootSignature12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRootSignature12.Create(_gpu12);
             _deletionQueue12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12(

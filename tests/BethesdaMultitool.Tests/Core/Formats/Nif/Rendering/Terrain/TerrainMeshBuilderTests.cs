@@ -37,15 +37,18 @@ public sealed class TerrainMeshBuilderTests
 
         var verts = mesh.Value.Vertices;
 
+        // Positions are now the grid plus the stored height, exactly as the vertex shader rebuilds
+        // them — the vertex itself carries no X or Y. Expected values are the world coordinates,
+        // unchanged from when they were stored per-vertex.
         // (0, 0) → cell origin at world (gx*4096, gy*4096) at Z = HeightOffset*8.
-        Assert.Equal(new Vector3(5 * 4096f, 7 * 4096f, 800f), verts[0].Position);
+        Assert.Equal(new Vector3(5 * 4096f, 7 * 4096f, 800f), mesh.Value.PositionOf(0));
 
         // (32, 32) → opposite corner at world ((gx+1)*4096, (gy+1)*4096).
         var lastIdx = 33 * 33 - 1;
-        Assert.Equal(new Vector3(6 * 4096f, 8 * 4096f, 800f), verts[lastIdx].Position);
+        Assert.Equal(new Vector3(6 * 4096f, 8 * 4096f, 800f), mesh.Value.PositionOf(lastIdx));
 
         // Mid-edge sanity: (16, 0) → +x midpoint of south edge.
-        Assert.Equal(new Vector3(5 * 4096f + 16 * 128f, 7 * 4096f, 800f), verts[16].Position);
+        Assert.Equal(new Vector3(5 * 4096f + 16 * 128f, 7 * 4096f, 800f), mesh.Value.PositionOf(16));
 
         // All normals point ≈ +Z on a flat surface.
         foreach (var v in verts)
@@ -58,11 +61,10 @@ public sealed class TerrainMeshBuilderTests
         // Default vertex color is white when LandVisualData is null.
         Assert.Equal(Vector4.One, verts[0].VertexColor);
 
-        // UV spans 0..1 across the 33-wide grid.
-        Assert.Equal(0f, verts[0].TexCoord.X, 5);
-        Assert.Equal(0f, verts[0].TexCoord.Y, 5);
-        Assert.Equal(1f, verts[lastIdx].TexCoord.X, 5);
-        Assert.Equal(1f, verts[lastIdx].TexCoord.Y, 5);
+        // The per-vertex UV this used to assert is gone with the texture coordinate itself: the
+        // terrain shader derives its UV from the reconstructed world XY (× a per-frame scale) so
+        // tiling is continuous across cells, which a 0..1-per-cell coordinate could not express.
+        // The positions asserted above ARE that input, so nothing went untested.
     }
 
     [Fact]
@@ -92,7 +94,7 @@ public sealed class TerrainMeshBuilderTests
 
         // Spike vertex itself: z = 100, but its own normal stays +Z (symmetric tent — neighbors slope down equally on both sides).
         var spike = verts[10 * 33 + 10];
-        Assert.Equal(100f, spike.Position.Z, 5);
+        Assert.Equal(100f, spike.Height, 5);
         Assert.Equal(0f, spike.Normal.X, 5);
         Assert.Equal(0f, spike.Normal.Y, 5);
         Assert.Equal(1f, spike.Normal.Z, 5);
@@ -115,7 +117,7 @@ public sealed class TerrainMeshBuilderTests
 
         // Vertex away from the spike is unaffected.
         var faraway = verts[0];
-        Assert.Equal(0f, faraway.Position.Z, 5);
+        Assert.Equal(0f, faraway.Height, 5);
         Assert.Equal(Vector3.UnitZ, faraway.Normal);
     }
 
@@ -179,10 +181,17 @@ public sealed class TerrainMeshBuilderTests
         var mesh = TerrainMeshBuilder.Build(cell);
 
         Assert.NotNull(mesh);
+        // The stored normal is octahedral SNORM16, so the exact float no longer survives — compare
+        // by ANGLE against a bound far tighter than the VNML byte lattice this normal came from
+        // (~0.45° between adjacent representable directions). Asserting component equality to 5
+        // decimals would be asserting the packing does not exist. TerrainNormalPackingTests owns
+        // the precision claim itself.
         var expected = Vector3.Normalize(new Vector3(1f, -1f, 1f));
-        Assert.Equal(expected.X, mesh.Value.Vertices[0].Normal.X, 5);
-        Assert.Equal(expected.Y, mesh.Value.Vertices[0].Normal.Y, 5);
-        Assert.Equal(expected.Z, mesh.Value.Vertices[0].Normal.Z, 5);
+        var actual = mesh.Value.Vertices[0].Normal;
+        // AngleDegrees, not acos(dot): in single precision the latter cannot resolve anything below
+        // ~0.03°, which is an order of magnitude coarser than the drift being bounded here.
+        var degrees = TerrainNormalPacking.AngleDegrees(expected, actual);
+        Assert.True(degrees < 0.01, $"authored normal drifted {degrees:F5}° (expected {expected}, got {actual})");
     }
 
     [Fact]
@@ -264,11 +273,13 @@ public sealed class TerrainMeshBuilderTests
         var verts = mesh.Value.Vertices;
 
         // Triangle 1 of quad (0, 0): indices[0..2].
-        var t1 = TriangleNormal(verts[indices[0]].Position, verts[indices[1]].Position, verts[indices[2]].Position);
+        var t1 = TriangleNormal(
+            mesh.Value.PositionOf(indices[0]), mesh.Value.PositionOf(indices[1]), mesh.Value.PositionOf(indices[2]));
         Assert.True(t1.Z > 0, $"triangle 1 should face +Z, got {t1}");
 
         // Triangle 2 of quad (0, 0): indices[3..5].
-        var t2 = TriangleNormal(verts[indices[3]].Position, verts[indices[4]].Position, verts[indices[5]].Position);
+        var t2 = TriangleNormal(
+            mesh.Value.PositionOf(indices[3]), mesh.Value.PositionOf(indices[4]), mesh.Value.PositionOf(indices[5]));
         Assert.True(t2.Z > 0, $"triangle 2 should face +Z, got {t2}");
     }
 
