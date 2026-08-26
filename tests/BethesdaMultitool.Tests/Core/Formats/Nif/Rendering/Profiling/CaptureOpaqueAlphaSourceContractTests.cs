@@ -18,7 +18,7 @@ public sealed class CaptureOpaqueAlphaSourceContractTests
     public void PerspectiveCaptureForcesReadbackAlphaOpaque()
     {
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
-        var body = Extract(capture, "internal async Task<byte[]?> Profiler_CaptureSceneAsync(",
+        var body = SourceContract.Extract(capture, "internal async Task<byte[]?> Profiler_CaptureSceneAsync(",
             "private RendererProfilerScenarioSnapshot BuildProfilerScenarioSnapshot(");
 
         SourceContract.AssertOrder(
@@ -26,14 +26,5 @@ public sealed class CaptureOpaqueAlphaSourceContractTests
             "var bgra = target.ReadbackToBytes();",
             "for (var i = 3; i < bgra.Length; i += 4) bgra[i] = 255;",
             "return bgra;");
-    }
-
-    private static string Extract(string source, string startMarker, string endMarker)
-    {
-        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Missing start marker `{startMarker}`.");
-        var end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
-        Assert.True(end > start, $"Missing end marker `{endMarker}` after `{startMarker}`.");
-        return source[start..end];
     }
 }

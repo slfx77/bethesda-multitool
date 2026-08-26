@@ -13,6 +13,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 ///     lives in the texture, BaseColorScale is 2, and LightingInfluence blends toward the external
 ///     XEMI emittance color. The available Lit permutation is gated off by retail's unwritten static.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimWindowGlowRenderingTests
 {

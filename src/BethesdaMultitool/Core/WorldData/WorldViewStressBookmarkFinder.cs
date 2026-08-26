@@ -33,7 +33,7 @@ internal static class WorldViewStressBookmarkFinder
             var score = 0;
             foreach (var cell in nearbyCells)
             {
-                score += renderCache.GetPlacementList(cell.Cell).Count;
+                score += renderCache.GetPlacementList(cell.Cell).Length;
             }
 
             if (score > bestScore)

@@ -60,13 +60,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // 4..8): terrain builds are the binding constraint on whole-map fills (~4 workers × 100-250ms
     // per cell), so high-core machines get a bit more parallelism while staying GC-guarded. Tune
     // via env (down on GC-bound machines, up to 16).
-    private static readonly int MaxConcurrentBuildTasks = ParsePositiveIntEnvironment(
-        EnvironmentVariables.Viewer.TerrainBuildConcurrency,
-        defaultValue: Math.Clamp(Environment.ProcessorCount / 4, 4, 8),
-        min: 1,
-        max: 16);
+    private static readonly int MaxConcurrentBuildTasks =
+        Core.Orchestration.ConcurrencyPolicy
+            .Fixed(Core.Orchestration.CpuBudget.Interactive()
+                .Claim(Core.Orchestration.CpuWorkload.TerrainCellBuild))
+            .WithEnvironmentOverride(EnvironmentVariables.Viewer.TerrainBuildConcurrency, 1, 16)
+            .Resolve();
 
-    private static readonly int MaxBuildStartsPerFrame = ParsePositiveIntEnvironment(
+    private static readonly int MaxBuildStartsPerFrame = EnvironmentVariables.GetClampedInt(
         EnvironmentVariables.Viewer.TerrainBuildStartsPerFrame,
         defaultValue: MaxConcurrentBuildTasks,
         min: 1,
@@ -106,15 +107,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         }
     }
 
-    /// <summary>
-    ///     Input layout matching the engine-accurate terrain shader. Defined in
-    ///     <see cref="TerrainVertexLayout" /> rather than here so the cross-platform TFM can reach
-    ///     it: the offsets are an ABI shared with <see cref="TerrainVertex" /> and the shader's
-    ///     <c>VSInput</c>, and a mismatch mis-decodes geometry rather than failing to bind, so it
-    ///     needs a test that reflects the compiled shader — not a source pin.
-    /// </summary>
-    private static readonly InputElementDescription[] TerrainInputElements = TerrainVertexLayout.Elements;
-
     private static readonly Comparison<VisibleCell> ByDistanceAscending =
         (a, b) => a.DistSq.CompareTo(b.DistSq);
 
@@ -126,18 +118,28 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly TerrainTextureResolver12 _textureResolver;
-    private readonly ID3D12PipelineState _pso;
-    // Depth-only variant of _pso (same VS + depth state, no pixel shader, no render targets). Used
-    // by the 2D map's top-down overlay to lay down terrain depth so placed references are occluded
-    // by the ground without painting terrain color over the 2D map's own terrain layer.
+    private readonly GpuRootSignature12 _rootSignature;
+    // Colour PSOs indexed by the cell's blend-quad count (1..MaxBlendQuads; slot 0 stays null). A
+    // cell uploads only the layer-weight quads its slot count reaches, and the vertex shader has to
+    // declare exactly that many inputs, so the permutation is a property of the CELL rather than of
+    // the pass. Created on demand — a worldspace typically uses one or two widths, and building all
+    // four up front would put three or four unnecessary shader compiles into every startup.
+    private readonly ID3D12PipelineState?[] _colorPsoByQuads =
+        new ID3D12PipelineState?[TerrainVertexLayout.MaxBlendQuads + 1];
+    // Mirror-winding twins of the above for the water-reflection pass (a mirrored viewProj flips
+    // screen-space winding; without the twin every terrain triangle would back-face cull).
+    private readonly ID3D12PipelineState?[] _mirrorPsoByQuads =
+        new ID3D12PipelineState?[TerrainVertexLayout.MaxBlendQuads + 1];
+    // Depth-only variant (same VS path + depth state, no pixel shader, no render targets). Used by
+    // the 2D map's top-down overlay to lay down terrain depth so placed references are occluded by
+    // the ground without painting terrain color over the 2D map's own terrain layer. Built from the
+    // ZERO-quad permutation: it discards the layer weights, so it now fetches none.
     private readonly ID3D12PipelineState _depthOnlyPso;
     // Sun-shadow variant: depth-only like above but single-sample (the shadow map is never MSAA),
     // no culling (back faces of grazing slopes must still occlude), and negatively depth-biased
-    // for the reversed-Z acne fix — matching the reference renderer's shadow PSOs.
+    // for the reversed-Z acne fix — matching the reference renderer's shadow PSOs. Zero-quad too,
+    // which matters most here: the cascades redraw the caster ring several times a frame.
     private readonly ID3D12PipelineState _shadowDepthPso;
-    // Mirror-winding twin of _pso for the water-reflection pass (a mirrored viewProj flips
-    // screen-space winding; without the twin every terrain triangle would back-face cull).
-    private readonly ID3D12PipelineState _mirrorPso;
     // Per-worldspace LAND grid resolution. Defaults to 33×33 (Fallout/Oblivion/Skyrim + runtime DMP);
     // a Morrowind worldspace load bumps this to 65×65. The shared index buffer + scratch arrays are
     // rebuilt in LoadData when the grid size changes, and DrawCell issues _indexCount per cell.
@@ -187,8 +189,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _candidateScratch = new();
     private TerrainVertex[] _vertexScratch =
         new TerrainVertex[TerrainMeshBuilder.VertexCount];
-    private Vector4[] _blendWeightScratch =
-        new Vector4[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.SlotVectors];
+    // UNORM16 layer weights, MaxSlots per vertex — the wire format, which the input assembler
+    // presents to the shader as four float4s. Not Vector4[]: that is the CPU-side authoring model.
+    private ushort[] _blendWeightScratch =
+        new ushort[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.MaxSlots];
 
     // Async cell-build bookkeeping. _buildQueue / _queuedOrBuilding / _frameBuildStarts and the
     // whole upload path are touched ONLY on the render thread (LoadData and Render run on the same
@@ -226,14 +230,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _cbvSrvUavHeap = cbvSrvUavHeap;
         _deletionQueue = deletionQueue;
         _textureResolver = textureResolver;
+        _rootSignature = rootSignature;
 
-        var vsBytecode = TerrainPipelineFactory12.CompileEmbeddedShader("terrain_textured.vert.hlsl", "main", "vs_5_1");
-        var psBytecode = TerrainPipelineFactory12.CompileEmbeddedShader("terrain_textured.frag.hlsl", "main", "ps_5_1");
-
-        (_pso, _depthOnlyPso, _mirrorPso) = TerrainPipelineFactory12.BuildPipelineStates(
-            gpu, rootSignature, vsBytecode, psBytecode, TerrainInputElements);
+        // The two depth passes are the only PSOs built eagerly: they are quad-count 0, so one vertex
+        // shader covers every cell no matter how many layers it paints, and both are wanted before
+        // the first cell exists. The colour and mirror PSOs arrive with their first cell.
+        var depthVsBytecode = TerrainPipelineFactory12.CompileVertexShader(0);
+        var depthElements = TerrainVertexLayout.ElementsFor(0);
+        _depthOnlyPso = TerrainPipelineFactory12.BuildDepthOnlyPipelineState(
+            gpu, rootSignature, depthVsBytecode, depthElements);
         _shadowDepthPso = TerrainPipelineFactory12.BuildShadowPipelineState(
-            gpu, rootSignature, vsBytecode, TerrainInputElements);
+            gpu, rootSignature, depthVsBytecode, depthElements);
 
         _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
         _terrainArena = new GpuTerrainArena12(gpu)
@@ -262,7 +269,46 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _terrainArena.Dispose();
         _shadowDepthPso.Dispose();
         _depthOnlyPso.Dispose();
-        _pso.Dispose();
+        for (var quads = 0; quads < _colorPsoByQuads.Length; quads++)
+        {
+            _colorPsoByQuads[quads]?.Dispose();
+            _mirrorPsoByQuads[quads]?.Dispose();
+            _colorPsoByQuads[quads] = null;
+            _mirrorPsoByQuads[quads] = null;
+        }
+    }
+
+    /// <summary>
+    ///     The colour PSO for a cell of <paramref name="blendQuadCount" /> layer-weight quads,
+    ///     building it (and its mirror twin) on first use.
+    ///     <para>
+    ///         Reached from cell upload rather than from the draw loop, so the compile lands on the
+    ///         path that is already time-budgeted and never mid-draw. The FXC compile itself has
+    ///         usually already happened on the background build task that produced the cell — see
+    ///         <see cref="TerrainPipelineFactory12.PrecompileBlendPermutation" /> — leaving only
+    ///         <c>CreateGraphicsPipelineState</c> here.
+    ///     </para>
+    /// </summary>
+    private ID3D12PipelineState EnsureBlendPipelines(int blendQuadCount)
+    {
+        var quads = Math.Clamp(blendQuadCount, 1, TerrainVertexLayout.MaxBlendQuads);
+        if (_colorPsoByQuads[quads] is { } existing)
+        {
+            return existing;
+        }
+
+        var elements = TerrainVertexLayout.ElementsFor(quads);
+        var (pso, mirrorPso) = TerrainPipelineFactory12.BuildColorPipelineStates(
+            _gpu,
+            _rootSignature,
+            TerrainPipelineFactory12.CompileVertexShader(quads),
+            TerrainPipelineFactory12.CompilePixelShader(quads),
+            elements);
+        _colorPsoByQuads[quads] = pso;
+        _mirrorPsoByQuads[quads] = mirrorPso;
+        Log.Info("TerrainRenderer12: built terrain pipeline for {0}-quad cells ({1} layer weights).",
+            quads, quads * TerrainBlendWeightPacking.SlotsPerQuad);
+        return pso;
     }
 
     private void DrainBuildTasksForDispose()
@@ -283,7 +329,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     // Concurrency ceiling used when streaming is unthrottled (the on-demand top-down overlay
     // depth pre-pass, which has no framerate target).
-    private static readonly int UnthrottledMaxConcurrentBuildTasks = Math.Clamp(Environment.ProcessorCount, 4, 16);
+    private static readonly int UnthrottledMaxConcurrentBuildTasks =
+        Core.Orchestration.CpuBudget.Bulk().Claim(Core.Orchestration.CpuWorkload.TerrainCellBuild);
 
     /// <summary>
     ///     When <c>false</c>, the per-frame cell build/upload budget (count + time + build starts +
@@ -507,12 +554,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             var vertexCount = TerrainMeshBuilder.VertexCountFor(gridSize);
             _vertexScratch = new TerrainVertex[vertexCount];
-            _blendWeightScratch = new Vector4[vertexCount * CellTerrainTextureSet.SlotVectors];
+            _blendWeightScratch = new ushort[vertexCount * CellTerrainTextureSet.MaxSlots];
         }
     }
 
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
-        => RenderInternal(viewProj, cylinder, _pso);
+        => RenderInternal(viewProj, cylinder, colorPass: true);
 
     /// <summary>
     ///     Depth-only render: lays terrain depth into the bound depth buffer without writing color.
@@ -522,7 +569,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     ///     <see cref="Render" />.
     /// </summary>
     public int RenderDepthOnly(Matrix4x4 viewProj, VisibilityCylinder cylinder)
-        => RenderInternal(viewProj, cylinder, _depthOnlyPso);
+        => RenderInternal(viewProj, cylinder, colorPass: false);
 
     /// <summary>Bumped whenever a terrain cell mesh becomes newly GPU-resident — part of the sun
     /// shadow map's cache key, so streamed-in hills re-render the map (terrain CASTS shadows).</summary>
@@ -599,8 +646,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
 
-        const uint vertexStride = TerrainVertex.SizeInBytes;
-        const uint blendWeightStride = TerrainVertexLayout.BlendWeightStride;
         var drawn = 0;
         foreach (var key in EnumerateCellKeysInCylinder(cylinder))
         {
@@ -609,8 +654,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 continue;
             }
 
-            cmd.IASetVertexBuffers(0, entry.VertexView(vertexStride));
-            cmd.IASetVertexBuffers(1, entry.BlendWeightView(blendWeightStride));
+            // Slot 1 stays unbound: this PSO's zero-quad vertex shader declares no layer weights.
+            // The cascades redraw the caster ring several times a frame, so the weights this pass
+            // used to fetch and discard were the largest single piece of wasted IA bandwidth here.
+            cmd.IASetVertexBuffers(0, entry.VertexView());
             BindCellGrid(cmd, entry);
             // No per-draw CB: b1 carries the PS's texture indices and this PSO has no PS — skipping
             // it saves one ring allocation per cell per cascade (the old streaming path's real ring
@@ -658,15 +705,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             *(Vector4*)perModeAlloc.CpuPtr = new Vector4(1f, DiffuseUvScale, 1f, 0f);
         }
 
-        cmd.SetPipelineState(_mirrorPso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         EnsureSharedIndexBuffer(cmd);
         cmd.IASetIndexBuffer(_sharedIbv);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
 
-        const uint vertexStride = TerrainVertex.SizeInBytes;
-        const uint blendWeightStride = TerrainVertexLayout.BlendWeightStride;
+        var boundQuads = -1;
         var drawn = 0;
         foreach (var key in EnumerateCellKeysInCylinder(cylinder))
         {
@@ -688,8 +733,19 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             }
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
 
-            cmd.IASetVertexBuffers(0, entry.VertexView(vertexStride));
-            cmd.IASetVertexBuffers(1, entry.BlendWeightView(blendWeightStride));
+            // Mirror PSOs are built alongside their colour twins, so a cell that has been drawn in
+            // colour already has one; EnsureBlendPipelines covers the case where the mirror pass
+            // reaches a cell first (a reflection can see terrain the camera cannot).
+            if (boundQuads != entry.BlendQuadCount)
+            {
+                boundQuads = entry.BlendQuadCount;
+                EnsureBlendPipelines(boundQuads);
+                cmd.SetPipelineState(_mirrorPsoByQuads[Math.Clamp(
+                    boundQuads, 1, TerrainVertexLayout.MaxBlendQuads)]!);
+            }
+
+            cmd.IASetVertexBuffers(0, entry.VertexView());
+            cmd.IASetVertexBuffers(1, entry.BlendWeightView());
             BindCellGrid(cmd, entry);
             cmd.DrawIndexedInstanced((uint)_indexCount, 1, 0, 0, 0);
             drawn++;
@@ -723,7 +779,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         }
     }
 
-    private int RenderInternal(Matrix4x4 viewProj, VisibilityCylinder cylinder, ID3D12PipelineState pso)
+    private int RenderInternal(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool colorPass)
     {
         if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
             (_cells is null || _cells.Count == 0))
@@ -787,7 +843,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 _textureResolver.LandscapeNormalMappingEnabled ? 1f : 0f);
         }
 
-        cmd.SetPipelineState(pso);
+        // The depth-only pass runs one zero-quad PSO for every cell. The colour pass cannot: each
+        // cell's PSO is chosen by its own blend-quad count, inside the draw loop below.
+        if (!colorPass)
+        {
+            cmd.SetPipelineState(_depthOnlyPso);
+        }
+
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         EnsureSharedIndexBuffer(cmd);
         cmd.IASetIndexBuffer(_sharedIbv);
@@ -893,8 +955,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // _frameBudgetScale): a fixed 3ms inside a 100ms whole-map frame was a 3% duty cycle,
         // throttling the fill hardest exactly when the frame is busiest.
         var uploadTimeBudget = new FrameTimeBudget(MaxMeshBuildMillisecondsPerFrame * _frameBudgetScale);
-        const uint vertexStride = TerrainVertex.SizeInBytes;
-        const uint blendWeightStride = TerrainVertexLayout.BlendWeightStride;
+        // Last blend-quad width bound on this pass, so a run of same-width cells (the normal case —
+        // neighbouring cells paint the same land textures) costs one SetPipelineState, not one each.
+        var boundQuads = -1;
         var drawn = 0;
         if (_missingVisibleScratch.Count > 0)
         {
@@ -952,11 +1015,22 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             var entry = GetOrUploadMesh(vc.Key, vc.Cell, ref uploadBudget);
             if (entry is null) return;
 
-            // Slot 0 = shared GpuVertex; slot 1 = per-cell blend weights for the engine-
-            // accurate weighted sum. Vortice doesn't expose a 2-buffer IASetVertexBuffers
-            // overload directly; the per-slot calls below are cheap and stay readable.
-            cmd.IASetVertexBuffers(0, entry.VertexView(vertexStride));
-            cmd.IASetVertexBuffers(1, entry.BlendWeightView(blendWeightStride));
+            // Slot 0 = TerrainVertex; slot 1 = per-cell blend weights for the engine-accurate
+            // weighted sum. Vortice doesn't expose a 2-buffer IASetVertexBuffers overload directly;
+            // the per-slot calls below are cheap and stay readable. The depth-only pass reads no
+            // weights at all, so it binds neither slot 1 nor a per-width PSO.
+            if (colorPass && boundQuads != entry.BlendQuadCount)
+            {
+                boundQuads = entry.BlendQuadCount;
+                cmd.SetPipelineState(EnsureBlendPipelines(boundQuads));
+            }
+
+            cmd.IASetVertexBuffers(0, entry.VertexView());
+            if (colorPass)
+            {
+                cmd.IASetVertexBuffers(1, entry.BlendWeightView());
+            }
+
             BindCellGrid(cmd, entry);
 
             var cellDrawStarted = StartTiming();
@@ -1284,7 +1358,16 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             try
             {
-                StoreBuildResult(key, TerrainCellCpuBuilder.BuildCellCpu(key, cell, cells, renderCache, gridSize, generation));
+                var built = TerrainCellCpuBuilder.BuildCellCpu(key, cell, cells, renderCache, gridSize, generation);
+                if (!built.Unusable)
+                {
+                    // Warm the bytecode for this cell's blend width here, off the render thread. The
+                    // render thread then only has to create the pipeline object when the cell
+                    // uploads, instead of running FXC inside a frame.
+                    TerrainPipelineFactory12.PrecompileBlendPermutation(built.BlendQuadCount);
+                }
+
+                StoreBuildResult(key, built);
             }
             catch (Exception ex)
             {
@@ -1370,11 +1453,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var success = false;
         try
         {
+            // Before the arena range exists, so a PSO failure cannot strand an allocation — and
+            // because a cell must never enter the cache without the pipeline its width needs.
+            EnsureBlendPipelines(cpu.BlendQuadCount);
             var geometry = _terrainArena.Upload(
                 _recorder.CommandList,
                 _deletionQueue,
                 MemoryMarshal.AsBytes<TerrainVertex>(cpu.Vertices!),
-                MemoryMarshal.AsBytes<Vector4>(cpu.BlendWeights!),
+                MemoryMarshal.AsBytes<ushort>(cpu.BlendWeights!),
                 debugTag: null);
 
             var textureIndices = ResolveSlotTextureIndices(cpu.TextureSet, out var normalTextureEntries);
@@ -1383,6 +1469,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             {
                 Geometry = geometry,
                 Grid = cpu.Grid,
+                BlendQuadCount = cpu.BlendQuadCount,
                 Arena = _terrainArena,
                 TextureIndices = textureIndices,
                 NormalTextureEntries = normalTextureEntries,
@@ -1431,14 +1518,19 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             var textureSet = _renderCache is not null
                 ? _renderCache.GetOrBuildTerrainTextureSet(cell, () => TerrainCellCpuBuilder.BuildCellTextureSet(key, cell, _cells, _gridSize))
                 : TerrainCellCpuBuilder.BuildCellTextureSet(key, cell, _cells, _gridSize);
-            TerrainCellCpuBuilder.PopulateBlendWeights(textureSet, _blendWeightScratch, _gridSize);
+            // The scratch array is sized for the widest cell; this cell uploads only the prefix its
+            // own quad count occupies, so the tail from a previously-built wider cell is not sent.
+            var blendQuadCount = TerrainBlendWeightPacking.QuadCountFor(textureSet?.ActiveSlotCount ?? 0);
+            var blendUshorts = _vertexScratch.Length * blendQuadCount * TerrainBlendWeightPacking.SlotsPerQuad;
+            TerrainCellCpuBuilder.PopulateBlendWeights(textureSet, _blendWeightScratch, _gridSize, blendQuadCount);
+            EnsureBlendPipelines(blendQuadCount);
             // One arena range for both streams — so the blend weights must be populated BEFORE the
             // upload (the old code created the vertex buffer first, then built the weights).
             var geometry = _terrainArena.Upload(
                 _recorder.CommandList,
                 _deletionQueue,
                 MemoryMarshal.AsBytes<TerrainVertex>(_vertexScratch),
-                MemoryMarshal.AsBytes<Vector4>(_blendWeightScratch),
+                MemoryMarshal.AsBytes<ushort>(_blendWeightScratch.AsSpan(0, blendUshorts)),
                 debugTag: null);
 
             var textureIndices = ResolveSlotTextureIndices(textureSet, out var normalTextureEntries);
@@ -1447,6 +1539,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             {
                 Geometry = geometry,
                 Grid = grid,
+                BlendQuadCount = blendQuadCount,
                 Arena = _terrainArena,
                 TextureIndices = textureIndices,
                 NormalTextureEntries = normalTextureEntries,
@@ -1543,16 +1636,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
-    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
-    {
-        var raw = EnvironmentVariables.Get(name);
-        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-        {
-            return defaultValue;
-        }
-
-        return Math.Clamp(value, min, max);
-    }
 
     private readonly record struct VisibleCell((int gx, int gy) Key, CellRecord Cell, float DistSq);
 }

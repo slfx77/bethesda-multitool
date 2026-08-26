@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -26,8 +27,11 @@ public sealed class ProjectionControlsSourceContractTests
         var hud = SourceContract.ReadAppSource("WorldView3DControl.Hud.cs");
         Assert.Contains("? \"drag pan   Shift+drag rotate", hud, StringComparison.Ordinal);
 
-        var shortcuts = SourceContract.ReadAppSource("KeyboardShortcutsDialog.xaml.cs");
-        Assert.Contains("\"Shift+Mouse drag\", \"Rotate a projection view\"", shortcuts,
-            StringComparison.Ordinal);
+        // The shortcut rows moved to Core as KeyboardShortcutRegistry, so this is now a value
+        // assertion rather than a grep over the dialog's source.
+        Assert.Contains(
+            KeyboardShortcutRegistry.ForGroup(KeyboardShortcutRegistry.WorldViewer3DGroup),
+            shortcut => shortcut.Keys == "Shift+Mouse drag"
+                        && shortcut.Action == "Rotate a projection view");
     }
 }

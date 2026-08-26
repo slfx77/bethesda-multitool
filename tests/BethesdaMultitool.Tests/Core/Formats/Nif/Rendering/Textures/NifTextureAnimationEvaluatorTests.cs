@@ -10,6 +10,7 @@ using Xunit.Sdk;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Textures;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class NifTextureAnimationEvaluatorTests
 {
     [Theory]

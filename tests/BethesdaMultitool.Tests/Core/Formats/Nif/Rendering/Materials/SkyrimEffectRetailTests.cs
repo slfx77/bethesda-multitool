@@ -7,6 +7,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>Installed Skyrim LE effect regressions for the named snow and fire assets.</summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimEffectRetailTests
 {

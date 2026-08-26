@@ -20,6 +20,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Particles;
 ///     human eyeballing. The test passes whenever the census completes (asserts only that parsing
 ///     yielded at least one particle system). Sample-gated: Bucket B + FO3 meshes BSA present.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class Fo3EmitterActiveCensusTests
 {

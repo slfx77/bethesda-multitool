@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     This probe pins the production extraction path to emit plate triangles whose geometric winding
 ///     agrees with the authored +Y normals.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class VaultSignWindingProbe
 {

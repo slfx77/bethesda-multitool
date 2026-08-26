@@ -48,8 +48,11 @@ public sealed class FormIdHeatmapCellSelectionAndKeyContractTests
             StringComparison.Ordinal);
         Assert.Contains("MathF.Round(Math.Clamp(", toolbar, StringComparison.Ordinal);
 
+        // The whole-cell tooltip format moved to FormIdHeatmapRangeScale.FormatCells and is asserted
+        // by value in SliderTooltipFormattingTests; the converter just delegates now.
         var converter = SourceContract.ReadAppSource("HeatmapRangeTooltipConverter.cs");
-        Assert.Contains("\"{0:0} c\"", converter, StringComparison.Ordinal);
+        Assert.Contains("FormIdHeatmapRangeScale.FormatCells(sliderValue)", converter,
+            StringComparison.Ordinal);
     }
 
     [Fact]

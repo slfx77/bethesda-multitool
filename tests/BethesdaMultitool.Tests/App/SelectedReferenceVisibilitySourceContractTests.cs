@@ -39,15 +39,13 @@ public sealed class SelectedReferenceVisibilitySourceContractTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("PlacedObjectCategory.", update, StringComparison.Ordinal);
 
+        // The eligibility RULE now lives in Core as ReferencePreviewEligibility and is covered by
+        // value in ReferencePreviewEligibilityTests. All that stays pinned here is that the control
+        // still routes through it rather than growing a second, divergent copy.
         var state = SourceContract.ReadAppSource("WorldView3DControl.ActivatorState.cs");
-        var eligibility = SourceContract.Extract(
-            state,
-            "internal bool CanPreviewReferenceVisibility",
-            "public event EventHandler? ReferenceEnabledOverridesReset");
-        Assert.Contains("RenderableReference.TryBuild(", eligibility, StringComparison.Ordinal);
-        Assert.Contains("PlacedLight.TryBuild(", eligibility, StringComparison.Ordinal);
-        Assert.Contains("is { HasEmission: true }", eligibility, StringComparison.Ordinal);
-        Assert.Contains("reference.FormId == 0", eligibility, StringComparison.Ordinal);
+        Assert.Contains("ReferencePreviewEligibility.CanPreview(reference, _data)", state,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("RenderableReference.TryBuild(", state, StringComparison.Ordinal);
 
         Assert.Contains(
             "AutomationProperties.LiveSetting=\"Polite\"",

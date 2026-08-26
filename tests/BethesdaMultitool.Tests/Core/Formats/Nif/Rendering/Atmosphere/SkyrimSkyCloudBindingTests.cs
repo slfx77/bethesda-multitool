@@ -7,6 +7,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Atmosphere;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class SkyrimSkyCloudBindingTests
 {
     private static readonly string? DefaultArchivePath =

@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -33,7 +34,9 @@ public sealed partial class WorldView3DControl
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
         IReadOnlyCollection<PlacedObjectCategory> hiddenCategories,
-        bool enableLighting, float gameHour, uint? interiorCellFormId, CancellationToken ct)
+        bool enableLighting, float gameHour, uint? interiorCellFormId, bool includeTerrainColor,
+        TopDownProjection projection, (float Min, float Max)? contentWorldZ,
+        float trimetricYawDegrees, CancellationToken ct)
     {
         if (!CanRenderTopDownCore) return null;
         if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return null;
@@ -66,23 +69,62 @@ public sealed partial class WorldView3DControl
             _topDownInteriorCeilingZ = null;
         }
 
-        var finalW = Math.Clamp(pixelWidth, 1, MaxTopDownFinalDimension);
-        var finalH = Math.Clamp(pixelHeight, 1, MaxTopDownFinalDimension);
+        var finalW = Math.Clamp(pixelWidth, 1, TopDownMaxFinalDimension);
+        var finalH = Math.Clamp(pixelHeight, 1, TopDownMaxFinalDimension);
         // When scene MSAA is active the offscreen target is multisampled (GpuOffscreenSceneTarget12
         // reads GpuDevice12.SceneSampleCount), so MSAA provides the edge AA and we skip the
         // supersample multiply — keeping the target memory-neutral (4x MSAA at NxN == 1 sample at
         // 2Nx2N) and the terrain/reference PSOs (SampleDesc = SceneSampleCount) matching the target.
-        var supersample = _gpu12!.SceneSampleCount > 1 ? 1 : TopDownSupersample;
+        var supersample = _gpu12!.SceneSampleCount > 1 ||
+                          Math.Max(finalW, finalH) >= SupersampleDropDimension
+            ? 1
+            : TopDownSupersample;
         var ssWidth = finalW * supersample;
         var ssHeight = finalH * supersample;
 
-        // Orthographic top-down viewProj + covering cylinder (see TopDownViewProjBuilder for the
-        // orientation contract — east→right, north→top, no readback flip). The renderers treat
-        // viewProj as an opaque matrix, so this bypasses the perspective CameraState.
-        var viewProj = TopDownViewProjBuilder.BuildViewProj(
-            worldMinX, worldMaxX, worldMinY, worldMaxY, ceilingClipZ);
-        var cylinder = TopDownViewProjBuilder.BuildCoverCylinder(
-            worldMinX, worldMaxX, worldMinY, worldMaxY, _cellSize);
+        // Orthographic viewProj + covering cylinder. Straight-down keeps the world-axis-aligned
+        // contract (see TopDownViewProjBuilder — east→right, north→top, no readback flip); trimetric
+        // tilts the camera and frames in view space. The renderers treat viewProj as an opaque
+        // matrix, so both bypass the perspective CameraState.
+        //
+        // billboardRight/Up are the camera axes SpeedTree leaf cards must face. Straight-down uses
+        // world X/Y (leaves laid flat in the ground plane, else canopies are edge-on and vanish);
+        // trimetric uses its own basis for the same reason.
+        Matrix4x4 viewProj;
+        VisibilityCylinder cylinder;
+        System.Numerics.Vector3 billboardRight, billboardUp, sceneCameraForward;
+        if (projection == TopDownProjection.Trimetric)
+        {
+            var (contentMinZ, contentMaxZ) = contentWorldZ ?? (0f, 0f);
+            // NO ceiling clip under a tilted camera. The clip is implemented by pulling in the NEAR
+            // PLANE, which is perpendicular to the view axis — that is a horizontal slice only when
+            // the camera looks straight down. Tilted, it cuts diagonally through the scene and
+            // shears off whatever is nearest the camera: near-side walls, floor edges and props all
+            // came back sliced flat.
+            //
+            // It is also unnecessary. Interior shells are modelled with inward-facing normals, so
+            // viewed from outside the roof is back-facing and the rasterizer culls it — the room is
+            // visible without removing anything.
+            var tri = TrimetricViewProjBuilder.Build(
+                worldMinX, worldMaxX, worldMinY, worldMaxY, contentMinZ, contentMaxZ,
+                clipWorldZMax: null, yawDegrees: trimetricYawDegrees);
+            viewProj = tri.ViewProj;
+            cylinder = TrimetricViewProjBuilder.BuildCoverCylinder(
+                worldMinX, worldMaxX, worldMinY, worldMaxY, _cellSize);
+            billboardRight = tri.Right;
+            billboardUp = tri.Up;
+            sceneCameraForward = tri.Forward;
+        }
+        else
+        {
+            viewProj = TopDownViewProjBuilder.BuildViewProj(
+                worldMinX, worldMaxX, worldMinY, worldMaxY, ceilingClipZ);
+            cylinder = TopDownViewProjBuilder.BuildCoverCylinder(
+                worldMinX, worldMaxX, worldMinY, worldMaxY, _cellSize);
+            billboardRight = System.Numerics.Vector3.UnitX;
+            billboardUp = System.Numerics.Vector3.UnitY;
+            sceneCameraForward = -System.Numerics.Vector3.UnitZ;
+        }
 
         // Reuse the offscreen target across requests; recreate only when the supersampled size
         // changes. Avoids per-request allocation of two committed textures + RTV/DSV heaps + a
@@ -128,9 +170,13 @@ public sealed partial class WorldView3DControl
         // terrain, so geometry authored beneath the surface (vault/cave shells, foundation blocks)
         // can show as specks. Interiors always keep the pre-pass — their ceiling clip is what makes
         // the floor plan readable, and a single interior cell is never an overview.
+        //
+        // includeTerrainColor overrides the gate entirely: the gate's premise is that a terrain
+        // layer already exists underneath this render, which is false for a standalone capture.
         var worldUnitsPerPixel = (worldMaxX - worldMinX) / MathF.Max(ssWidth, 1);
         var pixelsPerCell = _cellSize / MathF.Max(worldUnitsPerPixel, 1e-6f);
-        var terrainDepthEnabled = interiorCellFormId is not null
+        var terrainDepthEnabled = includeTerrainColor
+                                  || interiorCellFormId is not null
                                   || pixelsPerCell >= TopDownTerrainDepthMinPixelsPerCell;
 
         ulong fenceValue;
@@ -158,6 +204,10 @@ public sealed partial class WorldView3DControl
             {
                 var cmd = recorder.CommandList;
                 _deletionQueue12!.Tick();
+                // Sampled here too, not just in the live loop: this path turns streaming throttling
+                // OFF to fill cells in bulk, so it is where residency climbs fastest and where a
+                // signal that stopped updating would be most misleading.
+                _gpu12!.VideoMemory.Tick();
                 _ringBuffer12!.ResetFrame();
                 _cbvSrvUavHeap12!.BeginFrame(recorder.FrameIndex);
                 _gpu12!.PumpDebugMessages();
@@ -181,7 +231,14 @@ public sealed partial class WorldView3DControl
                 target.Bind(cmd);
                 if (terrainDepthEnabled)
                 {
-                    _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
+                    if (includeTerrainColor)
+                    {
+                        _terrain!.Render(viewProj, cylinder); // colour + depth: self-contained image
+                    }
+                    else
+                    {
+                        _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
+                    }
                 }
 
                 // SpeedTree leaf cards re-face the billboard basis; the live frame sets it from the
@@ -191,7 +248,7 @@ public sealed partial class WorldView3DControl
                 // the overlay). Pin wind strength/time for a clean deterministic pose. In FNV,
                 // weather strength zero intentionally retains GRASS2000's five-unit minimum bend;
                 // only the Animations switch requests the undeformed rest pose.
-                _references.SetLeafBillboardBasis(System.Numerics.Vector3.UnitX, System.Numerics.Vector3.UnitY);
+                _references.SetLeafBillboardBasis(billboardRight, billboardUp);
                 // MUST be the CAPTURE seam, never SetWind: the leaf basis above is re-supplied by the
                 // live frame every tick, but the wind rig INTEGRATES history — SetWind(dir, 0, 0) writes
                 // the live rig's lastTime = 0 and foldStrength = 0, so the next live frame's
@@ -206,7 +263,7 @@ public sealed partial class WorldView3DControl
                     cylinder,
                     deferBlended: false,
                     cameraPosition: cylinder.Position,
-                    cameraForward: -System.Numerics.Vector3.UnitZ); // textured objects, depth-tested
+                    cameraForward: sceneCameraForward); // textured objects, depth-tested
                 if (showWater && _water is not null)
                 {
                     // Height-correct water for the overlay: the offscreen DSV already holds the terrain +
@@ -259,8 +316,12 @@ public sealed partial class WorldView3DControl
             // walls/furniture). If the clip changed materially from what THIS render used, request one
             // more pass so the displayed overlay is the clipped one. Converges in 1–2 extra renders as
             // meshes stream in; exteriors never set a clip.
+            // Trimetric takes no ceiling clip (see the projection branch above), so it must not run
+            // the clip's convergence loop either — that would spend extra passes computing a value
+            // nothing consumes and hold IsComplete false while doing it.
             var ceilingNeedsAnotherPass = false;
             if (interiorCellFormId is not null &&
+                projection != TopDownProjection.Trimetric &&
                 _references!.GetRenderedSceneWorldZExtent() is { } zext)
             {
                 var span = MathF.Max(zext.Max - zext.Min, 0f);

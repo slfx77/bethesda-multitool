@@ -9,8 +9,6 @@ namespace BethesdaMultitool;
 
 internal static class NifConverterWorkflowService
 {
-    private const string Xbox360FormatDescription = "Xbox 360 (BE)";
-
     internal static Task<NifFileEntry[]> ScanNifEntriesAsync(
         string directory,
         IProgress<NifScanProgress> progress,
@@ -39,7 +37,7 @@ internal static class NifConverterWorkflowService
                     var filePath = nifFiles[index];
                     var relativePath = Path.GetRelativePath(directory, filePath);
                     var (fileSize, formatDesc) = ReadNifFileHeader(filePath);
-                    var isXbox360 = formatDesc == Xbox360FormatDescription;
+                    var isXbox360 = formatDesc == NifHeaderFormat.Xbox360;
 
                     entries[index] = new NifFileEntry
                     {
@@ -264,38 +262,17 @@ internal static class NifConverterWorkflowService
             var fileInfo = new FileInfo(filePath);
             var fileSize = fileInfo.Length;
 
-            Span<byte> headerBytes = stackalloc byte[50];
+            Span<byte> headerBytes = stackalloc byte[NifHeaderFormat.RequiredHeaderBytes];
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64);
             var bytesRead = fs.Read(headerBytes);
 
-            var formatDesc = DetermineNifFormat(headerBytes[..bytesRead]);
+            var formatDesc = NifHeaderFormat.Describe(headerBytes[..bytesRead]);
             return (fileSize, formatDesc);
         }
         catch
         {
-            return (0, "Error");
+            return (0, NifHeaderFormat.Error);
         }
-    }
-
-    private static string DetermineNifFormat(ReadOnlySpan<byte> headerBytes)
-    {
-        if (headerBytes.Length < 50)
-        {
-            return "Invalid";
-        }
-
-        var newlinePos = headerBytes[..50].IndexOf((byte)0x0A);
-        if (newlinePos <= 0 || newlinePos + 5 >= 50)
-        {
-            return "Invalid";
-        }
-
-        return headerBytes[newlinePos + 5] switch
-        {
-            0 => Xbox360FormatDescription,
-            1 => "PC (LE)",
-            _ => "Unknown"
-        };
     }
 
     private static string BuildOutputPath(NifFileEntry file, NifConversionOptions options)

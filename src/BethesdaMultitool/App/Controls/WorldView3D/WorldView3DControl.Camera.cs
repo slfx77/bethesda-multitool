@@ -247,7 +247,7 @@ public sealed partial class WorldView3DControl
         // origins when the cell has not been baked yet. Radii are read for the extent only.
         var origins = new List<Vector3>();
         var placements = _data?.RenderCache?.GetPlacementList(interior);
-        if (placements is { Count: > 0 })
+        if (placements is { Length: > 0 })
         {
             foreach (var placement in placements)
             {

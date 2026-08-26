@@ -35,7 +35,6 @@ public sealed partial class WorldView3DControl
     // Extra strict-settle wait allowed AFTER a tile reports loose-complete (nothing actively loading).
     // Well beyond the "frame or two" the copy-queue upload window needs, but far below the 20s box the
     // permanently-missing-texture case would otherwise burn per tile. See RunProjectionExportAsync.
-    private static readonly TimeSpan LooseCompleteSettleGrace = TimeSpan.FromSeconds(1.5);
 
     private async Task RunProjectionExportAsync(
         Export3DPlan plan, Export3DOptions opts, string basePath, float zSpan, bool tiledOutput,
@@ -150,19 +149,11 @@ public sealed partial class WorldView3DControl
                         // In particular, a mature loose grace captures only if the current render remains
                         // complete; if loading resumes, the renderer skips readback and we reset the grace.
                         var looseGraceElapsed =
-                            looseCompleteSince?.Elapsed >= LooseCompleteSettleGrace;
+                            looseCompleteSince?.Elapsed >= ExportTileCaptureDecision.LooseCompleteSettleGrace;
                         var settleTimedOut =
                             settleTimer.Elapsed >= StreamingQuiescence.DefaultSettleTimeout;
-                        var capturePolicy = ExportTileCapturePolicy.FullySettledOnly;
-                        if (looseGraceElapsed)
-                        {
-                            capturePolicy = ExportTileCapturePolicy.CompleteOrFullySettled;
-                        }
-
-                        if (settleTimedOut)
-                        {
-                            capturePolicy = ExportTileCapturePolicy.Always;
-                        }
+                        var capturePolicy = ExportTileCaptureDecision.ResolveCapturePolicy(
+                            looseGraceElapsed, settleTimedOut);
 
                         var result = await RenderProjectionTileAsync(
                             viewProj, cylinder, basisRight, basisUp, shadingEye,
@@ -171,11 +162,9 @@ public sealed partial class WorldView3DControl
                         if (result.Readback is { } readback)
                         {
                             tile = readback;
-                            // Preserve the old decision order: a complete frame whose loose grace matured
-                            // exits silently even if the global timeout matured at the same instant. Anything
-                            // captured only by the hard timeout retains the partial-streaming warning.
-                            var capturedByGrace = looseGraceElapsed && result.IsComplete;
-                            if (!result.IsFullySettled && settleTimedOut && !capturedByGrace)
+                            if (ExportTileCaptureDecision.ShouldWarnPartialStreaming(
+                                    result.IsFullySettled, result.IsComplete,
+                                    looseGraceElapsed, settleTimedOut))
                             {
                                 Log.Warn(
                                     "3D export: tile {0}/{1} saved before streaming fully settled " +

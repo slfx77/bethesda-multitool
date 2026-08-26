@@ -92,18 +92,7 @@ public sealed class ResetViewKeybindSourceContractTests
             StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void BothResetsAppearInTheF1ShortcutList()
-    {
-        var dialog = SourceContract.ReadAppSource("KeyboardShortcutsDialog.xaml.cs");
-
-        Assert.Contains(
-            "new(\"World Viewer — 3D\", \"R\", \"Reset view (re-frame the worldspace or interior)\")",
-            dialog,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "new(\"World Viewer — 2D Map\", \"R\", \"Reset view (re-frame the worldspace or interior)\")",
-            dialog,
-            StringComparison.Ordinal);
-    }
+    // "Both resets appear in the F1 list" is now asserted by value in
+    // KeyboardShortcutRegistryTests.ResetViewChord_IsDocumentedForBothViewers, which also checks
+    // that the 3D handler actually handles every letter chord the dialog advertises.
 }

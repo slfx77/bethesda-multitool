@@ -6,6 +6,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
 
+[Trait("Category", TestCategories.BucketB)]
 public class SptFileTests
 {
     private static readonly string?[] ShrubCandidates =

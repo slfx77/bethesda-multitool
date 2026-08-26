@@ -14,6 +14,16 @@
 // Slot 1 vertex stream: per-vertex aLayerWeights (float4), built per-cell from the engine-
 // accurate per-vertex weight table and uploaded as an independent GPU buffer per cell.
 
+// Layer-weight quads this variant reads, one float4 each (four slots). A cell declares only
+// ceil(ActiveSlotCount / 4) — typically 1 or 2, since a cell paints 2-6 land textures — and the
+// remaining quads are all-zero at every vertex of that cell, so leaving them out is exact rather
+// than lossy. 0 is the depth-only and shadow-cascade variant: those passes bind no pixel shader and
+// discard the weights, so they fetch none at all. 4 is the pre-3d format and the default here, which
+// keeps the file compilable (and testable) with no macros supplied.
+#ifndef TERRAIN_BLEND_QUADS
+#define TERRAIN_BLEND_QUADS 4
+#endif
+
 cbuffer PerFrame : register(b0)
 {
     float4x4 uViewProj;
@@ -63,11 +73,21 @@ struct VSInput
     float  aHeight       : TEXCOORD0;  // R32_FLOAT — world Z; X/Y come from uVertexId
     float2 aNormalOct    : TEXCOORD1;  // R16G16_SNORM octahedral
     float4 aVertexColor  : TEXCOORD2;  // R8G8B8A8_UNORM
-    // Slot 1 — 16 per-vertex layer weights as four float4s (slots 0..3, 4..7, 8..11, 12..15).
+    // Slot 1 — per-vertex layer weights as float4s (slots 0..3, 4..7, 8..11, 12..15). Declaring
+    // fewer than the layout supplies is legal; declaring MORE is the one mismatch D3D12 rejects, so
+    // TerrainVertexLayout.ElementsFor and this count must be chosen together.
+#if TERRAIN_BLEND_QUADS >= 1
     float4 aLayerWeights0 : TEXCOORD3;
+#endif
+#if TERRAIN_BLEND_QUADS >= 2
     float4 aLayerWeights1 : TEXCOORD4;
+#endif
+#if TERRAIN_BLEND_QUADS >= 3
     float4 aLayerWeights2 : TEXCOORD5;
+#endif
+#if TERRAIN_BLEND_QUADS >= 4
     float4 aLayerWeights3 : TEXCOORD6;
+#endif
     // Not a vertex buffer: the index buffer value, which for the shared LAND index buffer IS
     // j * gridSize + i. Every terrain draw is DrawIndexedInstanced with BaseVertexLocation 0.
     uint   aVertexId      : SV_VertexID;
@@ -79,10 +99,18 @@ struct VSOutput
     float3 vWorldNormal  : TEXCOORD0;
     float4 vVertexColor  : TEXCOORD1;
     float2 vWorldUv      : TEXCOORD2;
+#if TERRAIN_BLEND_QUADS >= 1
     float4 vLayerWeights0 : TEXCOORD3;
+#endif
+#if TERRAIN_BLEND_QUADS >= 2
     float4 vLayerWeights1 : TEXCOORD4;
+#endif
+#if TERRAIN_BLEND_QUADS >= 3
     float4 vLayerWeights2 : TEXCOORD5;
+#endif
+#if TERRAIN_BLEND_QUADS >= 4
     float4 vLayerWeights3 : TEXCOORD6;
+#endif
     float3 vWorldPos     : TEXCOORD7;  // world-space position for per-pixel distance fog
 };
 
@@ -110,10 +138,18 @@ VSOutput main(VSInput input)
     o.vWorldNormal = DecodeOctNormal(input.aNormalOct);
     o.vVertexColor = input.aVertexColor;
     o.vWorldUv = worldPos.xy * uDebugMode_UvScale_Pad.y;
+#if TERRAIN_BLEND_QUADS >= 1
     o.vLayerWeights0 = input.aLayerWeights0;
+#endif
+#if TERRAIN_BLEND_QUADS >= 2
     o.vLayerWeights1 = input.aLayerWeights1;
+#endif
+#if TERRAIN_BLEND_QUADS >= 3
     o.vLayerWeights2 = input.aLayerWeights2;
+#endif
+#if TERRAIN_BLEND_QUADS >= 4
     o.vLayerWeights3 = input.aLayerWeights3;
+#endif
     o.vWorldPos = worldPosRel; // camera-relative world pos (matches the shader camera = 0 for fog)
     return o;
 }

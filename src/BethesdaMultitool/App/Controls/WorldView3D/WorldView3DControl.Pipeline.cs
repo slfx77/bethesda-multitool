@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.WorldData;
+using Microsoft.UI.Xaml;
 
 namespace BethesdaMultitool;
 
@@ -29,9 +30,11 @@ public sealed partial class WorldView3DControl
 
     /// <summary>
     ///     Mesh-BSA parallel of <see cref="DiscoverTextureBsaPaths" />. Globs the primary file's
-    ///     directory + every Load Order entry's directory for the BSA(s) that <c>BsaDiscovery</c>
-    ///     classifies as meshes archives (the primary + each entry's extras). Dedupes by full
-    ///     path so identical Load Order entries don't open the same BSA twice.
+    ///     directory + every Load Order entry's directory + every asset-only donor directory for
+    ///     the BSA(s) that <c>BsaDiscovery</c> classifies as meshes archives (the primary + each
+    ///     entry's extras). Dedupes by full path so identical Load Order entries don't open the
+    ///     same BSA twice. Result order is priority order — <c>MeshArchiveSet</c> layers the
+    ///     archives first-write-wins, so an earlier donor build outranks a later one.
     /// </summary>
     private static string[] DiscoverMeshBsaPaths(WorldViewData data)
     {
@@ -45,18 +48,109 @@ public sealed partial class WorldView3DControl
             foreach (var path in data.AdditionalDataPaths) AddFrom(path);
         }
 
+        // Asset-only donor builds, in declared priority order, after the load order — see
+        // WorldViewData.AssetDataDirectories.
+        if (data.AssetDataDirectories is not null)
+        {
+            foreach (var dir in data.AssetDataDirectories) AddFromDirectory(dir);
+        }
+
         return result.ToArray();
 
         void AddFrom(string? candidatePath)
         {
             if (string.IsNullOrEmpty(candidatePath)) return;
-            var dir = Path.GetDirectoryName(Path.GetFullPath(candidatePath));
-            if (string.IsNullOrEmpty(dir) || !seenDirs.Add(dir)) return;
-            var discovery = BsaDiscovery.Discover(candidatePath);
+            AddFromDirectory(Path.GetDirectoryName(Path.GetFullPath(candidatePath)));
+        }
+
+        void AddFromDirectory(string? candidateDir)
+        {
+            if (string.IsNullOrEmpty(candidateDir)) return;
+            var dir = Path.GetFullPath(candidateDir);
+            if (!seenDirs.Add(dir)) return;
+            var discovery = BsaDiscovery.DiscoverInDirectory(dir);
             foreach (var bsa in discovery.MeshesBsaPaths)
             {
                 if (seenBsas.Add(bsa)) result.Add(bsa);
             }
+        }
+    }
+
+    /// <summary>
+    ///     "Resolve Renames" (memory dumps only): runs the DMP→ESM conversion's donor fuzzy pass
+    ///     (<see cref="MeshRenameMapService" />) over every mesh path in the loaded dump, persists
+    ///     the resulting map as a sidecar next to the dump, and reopens the mesh pipeline so the
+    ///     preview immediately uses the same resolutions the converter would apply.
+    /// </summary>
+    private async void ResolveRenamesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_data is not { IsMemoryDump: true } data || data.SourceFilePath is not { } dumpPath) return;
+
+        ResolveRenamesButton.IsEnabled = false;
+        try
+        {
+            var donorDirs = CollectRenameDonorDataDirs(data);
+            var meshPaths = data.ModelPathIndex.Values.ToArray();
+            var sidecar = MeshRenameMapService.SidecarPathFor(dumpPath);
+            var built = await Task.Run(() =>
+            {
+                var result = MeshRenameMapService.Build(meshPaths, donorDirs, CancellationToken.None);
+                MeshRenameMapService.Save(sidecar, result.Renames, donorDirs);
+                return result;
+            });
+
+            data.MeshPathRenames = built.Renames;
+            Log.Info(
+                "ResolveRenames: {0} mesh paths considered, {1} renamed, {2} exact, {3} missing, {4} cross-root declined -> {5}",
+                built.Considered, built.Renamed, built.Exact, built.Missing,
+                built.CrossRootDeclined, sidecar);
+
+            // Reopen the archive set (and everything downstream of it) so the map takes effect.
+            TryInitReferencePipeline();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("ResolveRenames failed: {0}: {1}", ex.GetType().Name, ex.Message);
+        }
+        finally
+        {
+            ResolveRenamesButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    ///     Donor Data folders for the rename pass, in the same priority order the mesh-BSA
+    ///     discovery walks: load-order entry directories first, asset-only donors after.
+    ///     Build roots descend into their <c>Data\</c> folder, since that is what
+    ///     <c>DataFolderIndex</c> indexes.
+    /// </summary>
+    private static List<string> CollectRenameDonorDataDirs(WorldViewData data)
+    {
+        var dirs = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in data.AdditionalDataPaths)
+        {
+            Add(Path.GetDirectoryName(Path.GetFullPath(path)));
+        }
+
+        foreach (var dir in data.AssetDataDirectories)
+        {
+            Add(dir);
+        }
+
+        return dirs;
+
+        void Add(string? candidate)
+        {
+            if (string.IsNullOrEmpty(candidate) || !Directory.Exists(candidate)) return;
+            var full = Path.GetFullPath(candidate);
+            var dataDir = Path.Combine(full, "Data");
+            if (Directory.Exists(dataDir) && !Directory.EnumerateFiles(full, "*.bsa").Any())
+            {
+                full = dataDir;
+            }
+
+            if (seen.Add(full)) dirs.Add(full);
         }
     }
 
@@ -92,7 +186,8 @@ public sealed partial class WorldView3DControl
                 meshBsas[0],
                 meshBsas.Length > 1 ? meshBsas[1..] : null,
                 enableFuzzy: _data.IsMemoryDump,
-                includeLooseFiles: _data.IsMemoryDump);
+                includeLooseFiles: _data.IsMemoryDump,
+                pathRenames: _data.MeshPathRenames);
             _referenceTextureResolver = new NifTextureResolver(textureBsas);
             _referenceGpuTextureResolver12 =
                 new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);

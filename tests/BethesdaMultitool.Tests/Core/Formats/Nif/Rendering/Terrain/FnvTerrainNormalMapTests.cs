@@ -422,7 +422,7 @@ public sealed class FnvTerrainNormalMapTests
         Assert.Contains("mask |= 1u << slot;", decodeMask, StringComparison.Ordinal);
 
         Assert.Equal(16u, ReadUnsignedConstant(renderer, "PerModeByteSize"));
-        var perModeUpload = Slice(renderer, "// Per-mode CB (b2):", "cmd.SetPipelineState(pso);");
+        var perModeUpload = Slice(renderer, "// Per-mode CB (b2):", "cmd.IASetPrimitiveTopology(");
         Assert.Contains("_textureResolver.LandscapeNormalMappingEnabled ? 1f : 0f",
             perModeUpload,
             StringComparison.Ordinal);

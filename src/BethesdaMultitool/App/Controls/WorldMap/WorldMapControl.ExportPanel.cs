@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
@@ -272,33 +273,23 @@ public sealed partial class WorldMapControl
         var layer = SelectedExportLayer;
         var native = NativeExportPxPerCell(layer);
         var maxCells = _exportGrid.MaxGridDimension;
-        var requestedPpc = Math.Max(1, longEdge / maxCells);
-
-        // Without tiling a single PNG can't exceed the GPU max dimension — show the effective
-        // px/cell after that clamp. Tiled splits into multiple files instead, so no clamp.
         var tiled = ExportPanel.TiledCheckBox.IsChecked == true;
-        var effectivePpc = requestedPpc;
-        var capped = false;
-        if (!tiled && (long)requestedPpc * maxCells > WorldMapExporter.ExportMaxTileDimension)
-        {
-            effectivePpc = Math.Max(1, WorldMapExporter.ExportMaxTileDimension / maxCells);
-            capped = true;
-        }
 
-        var imageW = (long)cellsWide * effectivePpc;
-        var imageH = (long)cellsTall * effectivePpc;
-        var scaleX = (double)effectivePpc / native;
+        // All the sizing arithmetic (including the long-typed products that keep a large
+        // worldspace from overflowing) lives in Core so it is unit-testable.
+        var size = MapExportSizeEstimate.Plan(
+            cellsWide, cellsTall, maxCells, longEdge,
+            WorldMapExporter.ExportMaxTileDimension, tiled);
+
+        var scaleX = (double)size.EffectivePxPerCell / native;
         string note;
-        if (capped)
+        if (size.Capped)
         {
             note = $"  — capped to {WorldMapExporter.ExportMaxTileDimension} px (enable Tiled for full detail)";
         }
-        else if (tiled && (long)effectivePpc * maxCells > WorldMapExporter.ExportMaxTileDimension)
+        else if (size.Columns > 1 || size.Rows > 1)
         {
-            var perTile = Math.Max(1, WorldMapExporter.ExportMaxTileDimension / effectivePpc);
-            var cols = ((long)cellsWide + perTile - 1) / perTile;
-            var rows = ((long)cellsTall + perTile - 1) / perTile;
-            note = $"  — tiled into {cols}×{rows} PNGs";
+            note = $"  — tiled into {size.Columns}×{size.Rows} PNGs";
         }
         else
         {
@@ -306,7 +297,8 @@ public sealed partial class WorldMapControl
         }
 
         ExportPanel.OutputSizeText.Text =
-            $"Output: {imageW} × {imageH} px ({effectivePpc} px/cell, {scaleX:0.##}× of {native} native){note}";
+            $"Output: {size.ImageWidth} × {size.ImageHeight} px "
+            + $"({size.EffectivePxPerCell} px/cell, {scaleX:0.##}× of {native} native){note}";
     }
 
     /// <summary>

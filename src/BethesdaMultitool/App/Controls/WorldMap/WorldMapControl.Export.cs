@@ -3,6 +3,7 @@ using System.Globalization;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Utils;
 using BethesdaMultitool.Core.WorldData;
@@ -478,7 +479,13 @@ public sealed partial class WorldMapControl
                         worldspaceFormId: _state.SelectedWorldspace?.FormId,
                         hiddenCategories: hiddenCategories,
                         enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour,
-                        interiorCellFormId: null, ct); // export is exterior worldspace tiles only
+                        // Export is exterior worldspace tiles only, and each tile is composited over
+                        // the map's terrain layer exactly as the live overlay is.
+                        interiorCellFormId: null, includeTerrainColor: false,
+                        // Tiles are stitched into a world-aligned mosaic; a tilted camera would not
+                        // seam.
+                        projection: TopDownProjection.Straight, contentWorldZ: null,
+                        trimetricYawDegrees: TrimetricViewProjBuilder.YawDegrees, ct);
                 }
                 finally
                 {

@@ -39,7 +39,14 @@ internal static class BsaDiscovery
             .ToArray();
         if (bsaPaths.Length == 0 && ba2Paths.Length == 0)
         {
-            return BsaDiscoveryResult.Empty;
+            // A game-install ROOT is a natural directory to hand this API (asset-donor dirs get
+            // configured that way), and its archives live one level down in Data\. Falling through
+            // to that matters more than it looks: a donor root that silently discovers zero
+            // archives degrades every render that depended on the donor with no individual image
+            // looking obviously wrong — the FO3 and FNV-final corpus donors shipped exactly this
+            // way and contributed nothing.
+            var dataDir = Path.Combine(dir, "Data");
+            return Directory.Exists(dataDir) ? DiscoverInDirectory(dataDir) : BsaDiscoveryResult.Empty;
         }
 
         var meshes = new List<string>();

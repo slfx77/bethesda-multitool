@@ -17,6 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Conversion;
 ///     convert real July-prototype meshes and assert the engine-visible filter values.
 ///     bhkWorldObject layout: Shape (Ref, 4 bytes) then Havok Filter (4 bytes) at +0x04.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class HavokFilterEndianRegressionTests
 {
@@ -33,10 +34,6 @@ public sealed class HavokFilterEndianRegressionTests
     public void Convert_JulyTinCan_RigidBodyKeepsClutterLayerAndZeroGroup()
     {
         var filters = ConvertAndReadFilters("tincan01.nif", "bhkRigidBody");
-        if (filters is null)
-        {
-            return;
-        }
 
         Assert.NotEmpty(filters);
         foreach (var filter in filters)
@@ -50,10 +47,6 @@ public sealed class HavokFilterEndianRegressionTests
     public void Convert_JulySkeleton_RagdollBodiesKeepBipedLayerAndPartNumbers()
     {
         var filters = ConvertAndReadFilters(@"characters\_male\skeleton.nif", "bhkRigidBody");
-        if (filters is null)
-        {
-            return;
-        }
 
         Assert.NotEmpty(filters);
         var sawNonZeroFlags = false;
@@ -73,10 +66,6 @@ public sealed class HavokFilterEndianRegressionTests
     public void Convert_JulyStatic_RigidBodyKeepsStaticLayer()
     {
         var filters = ConvertAndReadFilters("vendingmachine01.nif", "bhkRigidBody");
-        if (filters is null)
-        {
-            return;
-        }
 
         Assert.NotEmpty(filters);
         Assert.All(filters, f => Assert.Equal(FolStatic, (byte)(f & 0xFF)));
@@ -85,29 +74,24 @@ public sealed class HavokFilterEndianRegressionTests
     /// <summary>
     ///     Extracts the first BSA entry whose path ends with <paramref name="nifSuffix" />,
     ///     converts it Xbox→PC, and returns the little-endian Havok Filter dword of every
-    ///     block of <paramref name="blockType" />. Null when Bucket B is disabled or the
-    ///     sample archive is absent.
+    ///     block of <paramref name="blockType" />. Skips the calling test when Bucket B is
+    ///     disabled or the sample archive/entry is absent — an unavailable fixture must report
+    ///     <em>skipped</em>, never a pass with no assertions performed.
     /// </summary>
-    private static List<uint>? ConvertAndReadFilters(string nifSuffix, string blockType)
+    private static List<uint> ConvertAndReadFilters(string nifSuffix, string blockType)
     {
         BucketBTestGuard.SkipUnlessEnabled();
 
         var bsaPath = Path.Combine(SourceContract.RepoRoot, JulyMeshesBsa);
-        if (!File.Exists(bsaPath))
-        {
-            return null;
-        }
+        Assert.SkipUnless(File.Exists(bsaPath), $"July prototype meshes BSA not available: {JulyMeshesBsa}");
 
         using var extractor = new BsaExtractor(bsaPath);
         var entry = extractor.Archive.Folders
             .SelectMany(f => f.Files)
             .FirstOrDefault(f => f.FullPath.EndsWith(nifSuffix, StringComparison.OrdinalIgnoreCase));
-        if (entry is null)
-        {
-            return null;
-        }
+        Assert.SkipWhen(entry is null, $"No entry ending in `{nifSuffix}` inside {JulyMeshesBsa}.");
 
-        var nifBytes = extractor.ExtractFile(entry);
+        var nifBytes = extractor.ExtractFile(entry!);
         var result = NifConverter.Convert(nifBytes);
         Assert.True(result.Success, $"Conversion of {entry.FullPath} failed");
         var converted = result.OutputData!;

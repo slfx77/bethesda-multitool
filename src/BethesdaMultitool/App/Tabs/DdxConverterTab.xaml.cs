@@ -211,8 +211,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
             UpdateFileCount();
             UpdateButtonStates();
 
-            var xdoCount = _ddxFiles.Count(f => f.FormatDescription == "3XDO");
-            var xdrCount = _ddxFiles.Count(f => f.FormatDescription == "3XDR");
+            var xdoCount = _ddxFiles.Count(f => f.FormatDescription == DdxHeaderFormat.Xdo);
+            var xdrCount = _ddxFiles.Count(f => f.FormatDescription == DdxHeaderFormat.Xdr);
             StatusTextBlock.Text =
                 $"Found {_ddxFiles.Count} DDX files. {xdoCount} 3XDO, {xdrCount} 3XDR.";
         }
@@ -262,7 +262,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
                         RelativePath = relativePath,
                         FileSize = fileSize,
                         FormatDescription = formatDesc,
-                        IsSelected = formatDesc is "3XDO" or "3XDR"
+                        IsSelected = formatDesc is DdxHeaderFormat.Xdo or DdxHeaderFormat.Xdr
                     };
 
                     // Update progress every 100 files
@@ -287,31 +287,18 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
             var fileInfo = new FileInfo(filePath);
             var fileSize = fileInfo.Length;
 
-            Span<byte> header = stackalloc byte[4];
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4,
-                FileOptions.SequentialScan);
+            Span<byte> header = stackalloc byte[DdxHeaderFormat.RequiredHeaderBytes];
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                DdxHeaderFormat.RequiredHeaderBytes, FileOptions.SequentialScan);
             var bytesRead = fs.Read(header);
 
-            var formatDesc = bytesRead < 4 ? "Invalid" : DetermineDdxFormat(header);
+            var formatDesc = DdxHeaderFormat.Describe(header[..bytesRead]);
             return (fileSize, formatDesc);
         }
         catch
         {
-            return (0, "Error");
+            return (0, DdxHeaderFormat.Error);
         }
-    }
-
-    private static string DetermineDdxFormat(ReadOnlySpan<byte> header)
-    {
-        if (header[0] == '3' && header[1] == 'X' && header[2] == 'D')
-            return header[3] switch
-            {
-                (byte)'O' => "3XDO",
-                (byte)'R' => "3XDR",
-                _ => "Invalid"
-            };
-
-        return "Invalid";
     }
 
     private void InitializeScanProgress(int fileCount)

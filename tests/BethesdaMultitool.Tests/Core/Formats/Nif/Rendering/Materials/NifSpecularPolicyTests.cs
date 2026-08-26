@@ -7,6 +7,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class NifSpecularPolicyTests
 {
     [Fact]

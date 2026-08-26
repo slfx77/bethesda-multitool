@@ -37,12 +37,30 @@ internal static class Map2DProfilerDataLoader
             if (loadOrderRecords is not null)
             {
                 semantic = loadOrderRecords.MergeWith(semantic);
+
+                // Same post-merge pass the GUI runs (SingleFileTab.WorldMap.cs): re-link cells
+                // against the merged list, then resolve placed-object meshes against the merged
+                // base set — per-source parse enrichment leaves cross-file refs with a null
+                // ModelPath, which the renderer silently drops.
+                semantic.RelinkWorldspaceCells().ResolvePlacedModels();
             }
         }
 
         progress?.Report("Building world-view render data...");
         var data = WorldMapOverlayBuilder.BuildFromRecords(semantic, primary.FilePath);
         data.AdditionalDataPaths = loadOrderPaths;
+        // Set for the same reason as in RendererProfilerDataLoader: the builder leaves it false, so
+        // without this a headless dump run resolves meshes exact-only and silently loses every
+        // prototype asset whose path was renamed before the shipped archives.
+        data.IsMemoryDump = primary.FileType == AnalysisFileType.Minidump;
+        if (data.IsMemoryDump)
+        {
+            data.MeshPathRenames = BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking
+                .MeshRenameMapService.TryLoad(
+                    BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking
+                        .MeshRenameMapService.SidecarPathFor(primary.FilePath));
+        }
+
         return data;
     }
 

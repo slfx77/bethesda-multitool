@@ -7,6 +7,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class NifBillboardFacingTests
 {
     private const string FxFireMeshSmall =

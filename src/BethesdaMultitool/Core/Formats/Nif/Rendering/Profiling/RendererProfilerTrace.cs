@@ -138,6 +138,7 @@ internal static class RendererProfilerTrace
         Add("visibleCandidates", stats.VisibleCandidates);
         Add("terrainDraws", stats.TerrainDraws);
         Add("terrainQuadrantDraws", stats.TerrainQuadrantDraws);
+        Add("cellsEvictedForBudget", stats.CellsEvictedForBudget);
         Add("newUploads", stats.NewUploads);
         Add("newPreUploads", stats.NewPreUploads);
         Add("textureMisses", stats.TextureCacheMisses);
@@ -168,6 +169,7 @@ internal static class RendererProfilerTrace
         Add("refCandidates", stats.ReferenceCandidates);
         Add("refCulled", stats.ReferenceCulled);
         Add("refCullCacheHit", stats.ReferenceCullCacheHit);
+        Add("refCullCacheVeto", stats.ReferenceCullCacheVeto);
         Add("refBatchesReused", stats.ReferenceBatchesReused);
         Add("refReuseBlocker", stats.ReferenceBatchReuseBlocker);
         Add("refMeshMissing", stats.ReferenceMeshMissing);

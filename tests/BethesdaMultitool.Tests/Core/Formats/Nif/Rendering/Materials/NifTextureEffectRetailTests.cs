@@ -18,6 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 ///     with NO effect-derived env payload. That negative is the documented reason TES4 sphere
 ///     maps only light up for modded / runtime-captured content.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifTextureEffectRetailTests
 {

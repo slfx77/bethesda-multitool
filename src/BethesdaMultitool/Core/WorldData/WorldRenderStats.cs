@@ -29,6 +29,14 @@ internal sealed class WorldRenderStats
     /// </summary>
     internal int TerrainDrawsTruncated { get; set; }
 
+    /// <summary>
+    ///     Terrain cells evicted by the GPU byte-budget sweep this frame (farthest-first, never
+    ///     inside the retain or shadow-caster ring). A steady non-zero count means the worldspace's
+    ///     visible set is near the planned VRAM share and cells are cycling — the signal that
+    ///     distinguishes "budget is working" from "budget is thrashing".
+    /// </summary>
+    internal int CellsEvictedForBudget { get; set; }
+
     internal int NewUploads { get; set; }
     internal int NewPreUploads { get; set; }
     internal int TextureCacheMisses { get; set; }
@@ -393,6 +401,7 @@ internal sealed class WorldRenderStats
         return new WorldRenderStats
         {
             VisibleCandidates = VisibleCandidates,
+            CellsEvictedForBudget = CellsEvictedForBudget,
             TerrainDraws = TerrainDraws,
             TerrainQuadrantDraws = TerrainQuadrantDraws,
             TerrainDrawsTruncated = TerrainDrawsTruncated,
@@ -438,6 +447,7 @@ internal sealed class WorldRenderStats
             ReferenceCandidates = ReferenceCandidates,
             ReferenceCulled = ReferenceCulled,
             ReferenceCullCacheHit = ReferenceCullCacheHit,
+            ReferenceCullCacheVeto = ReferenceCullCacheVeto,
             ReferenceBatchesReused = ReferenceBatchesReused,
             ReferenceBatchReuseBlocker = ReferenceBatchReuseBlocker,
             ReferenceMeshMissing = ReferenceMeshMissing,

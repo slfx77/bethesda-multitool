@@ -1,4 +1,3 @@
-using System.Globalization;
 using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Xaml.Data;
 
@@ -10,8 +9,7 @@ public sealed class DrawDistanceTooltipConverter : IValueConverter
     public object Convert(object value, Type targetType, object parameter, string language)
     {
         var sliderValue = value is double number ? number : RenderDistanceScale.SliderMinimum;
-        var cells = RenderDistanceScale.CellsFromSlider(sliderValue);
-        return string.Format(CultureInfo.CurrentCulture, "{0:0.#} c", cells);
+        return RenderDistanceScale.FormatCells(sliderValue);
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

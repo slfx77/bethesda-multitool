@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.EsmView.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;

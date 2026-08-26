@@ -5,6 +5,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class SpeedTreeRuntimeLodTests
 {
     [Theory]

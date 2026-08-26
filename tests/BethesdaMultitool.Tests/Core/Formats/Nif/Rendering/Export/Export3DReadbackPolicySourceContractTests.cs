@@ -45,15 +45,14 @@ public sealed class Export3DReadbackPolicySourceContractTests
             "Export3DTile? tile = null;",
             "// Skip only the renderer's transparent-black clear.");
 
+        // The ladder itself is now ExportTileCaptureDecision.ResolveCapturePolicy, covered by value
+        // in ExportTileCaptureDecisionTests. What stays pinned here is that the loop still computes
+        // both clocks before the pass and feeds the resolved policy into the render call.
         SourceContract.AssertOrder(
             loop,
             "var looseGraceElapsed =",
             "var settleTimedOut =",
-            "var capturePolicy = ExportTileCapturePolicy.FullySettledOnly;",
-            "if (looseGraceElapsed)",
-            "capturePolicy = ExportTileCapturePolicy.CompleteOrFullySettled;",
-            "if (settleTimedOut)",
-            "capturePolicy = ExportTileCapturePolicy.Always;",
+            "var capturePolicy = ExportTileCaptureDecision.ResolveCapturePolicy(",
             "var result = await RenderProjectionTileAsync(",
             "plan.TileWidth, plan.TileHeight, opts, capturePolicy, ct);",
             "if (result.Readback is { } readback)",

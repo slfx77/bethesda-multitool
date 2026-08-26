@@ -8,6 +8,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class FnvLighting30EmissionRetailTests
 {

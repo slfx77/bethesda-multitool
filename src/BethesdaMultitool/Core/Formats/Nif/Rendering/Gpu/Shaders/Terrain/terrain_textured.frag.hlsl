@@ -9,6 +9,14 @@
 // sharp at any zoom — that's the property the pre-baked-composite alternative would have
 // given up.
 
+// Layer-weight quads this variant reads — must equal the vertex shader's TERRAIN_BLEND_QUADS, since
+// PSInput has to match VSOutput exactly. Set per cell from ceil(ActiveSlotCount / 4), which also
+// shortens the weighted sum below from a fixed 16 iterations to 4 * this. See the vertex shader for
+// why dropping the absent quads is exact.
+#ifndef TERRAIN_BLEND_QUADS
+#define TERRAIN_BLEND_QUADS 4
+#endif
+
 Texture2D    textures[] : register(t0, space1);
 SamplerState sDiffuse  : register(s0);
 SamplerState sShadowPoint : register(s3); // CLAMP, point — sun-shadow-map depth taps (PCF)
@@ -137,10 +145,18 @@ struct PSInput
     float3 vWorldNormal  : TEXCOORD0;
     float4 vVertexColor  : TEXCOORD1;
     float2 vWorldUv      : TEXCOORD2;
+#if TERRAIN_BLEND_QUADS >= 1
     float4 vLayerWeights0 : TEXCOORD3;
+#endif
+#if TERRAIN_BLEND_QUADS >= 2
     float4 vLayerWeights1 : TEXCOORD4;
+#endif
+#if TERRAIN_BLEND_QUADS >= 3
     float4 vLayerWeights2 : TEXCOORD5;
+#endif
+#if TERRAIN_BLEND_QUADS >= 4
     float4 vLayerWeights3 : TEXCOORD6;
+#endif
     float3 vWorldPos     : TEXCOORD7;
 };
 
@@ -153,20 +169,29 @@ float4 main(PSInput input) : SV_Target
     float3 color;
     if (uDebugMode_UvScale_Pad.x > 0.5)
     {
-        // Engine-accurate weighted sum across the cell's blend slots (up to 16 — matches the 2D
-        // per-pixel blit's layer ceiling, so the 3D blend is non-lossy). Per-vertex weights were
+        // Engine-accurate weighted sum across the cell's blend slots — 4 * TERRAIN_BLEND_QUADS of
+        // them, up to 16, which matches the 2D per-pixel blit's layer ceiling so the 3D blend is
+        // non-lossy at the widest variant. Per-vertex weights were
         // renormalized at table-build time to sum to ~1, but interpolation across the mesh may
         // shift the sum slightly (especially near vertices with empty weight sets) — the
         // totalWeight rescale below restores energy conservation per pixel.
-        float4 weights[4] = {
-            input.vLayerWeights0, input.vLayerWeights1, input.vLayerWeights2, input.vLayerWeights3
-        };
+        float4 weights[TERRAIN_BLEND_QUADS];
+        weights[0] = input.vLayerWeights0;
+#if TERRAIN_BLEND_QUADS >= 2
+        weights[1] = input.vLayerWeights1;
+#endif
+#if TERRAIN_BLEND_QUADS >= 3
+        weights[2] = input.vLayerWeights2;
+#endif
+#if TERRAIN_BLEND_QUADS >= 4
+        weights[3] = input.vLayerWeights3;
+#endif
 
         color = 0;
         float3 tangentNormalSum = 0;
         float totalWeight = 0;
         bool useTerrainNormals = uDebugMode_UvScale_Pad.w > 0.5;
-        [unroll] for (int g = 0; g < 4; g++)
+        [unroll] for (int g = 0; g < TERRAIN_BLEND_QUADS; g++)
         {
             [unroll] for (int c = 0; c < 4; c++)
             {

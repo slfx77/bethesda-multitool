@@ -27,8 +27,8 @@ public sealed class TerrainCellGridBindingSourceContractTests
     {
         var source = Renderer;
 
-        var geometryBinds = Regex.Matches(source, @"IASetVertexBuffers\(\s*0\s*,\s*entry\.VertexView").Count;
-        var gridBinds = Regex.Matches(source, @"BindCellGrid\(\s*cmd\s*,\s*entry\s*\)").Count;
+        var geometryBinds = Regex.Count(source, @"IASetVertexBuffers\(\s*0\s*,\s*entry\.VertexView");
+        var gridBinds = Regex.Count(source, @"BindCellGrid\(\s*cmd\s*,\s*entry\s*\)");
 
         Assert.True(geometryBinds >= 3, $"expected at least the colour/shadow/mirror passes, found {geometryBinds}");
         Assert.Equal(geometryBinds, gridBinds);

@@ -190,6 +190,12 @@ internal sealed class WorldSpatialIndex
             }
         }
 
+        var worldspacesById = new Dictionary<uint, WorldspaceRecord>();
+        foreach (var ws in data.Worldspaces)
+        {
+            if (ws.FormId != 0) worldspacesById.TryAdd(ws.FormId, ws);
+        }
+
         foreach (var (key, cell) in index._cellsByGrid)
         {
             var chunk = index.GetOrCreateChunk(key.gx, key.gy);
@@ -197,6 +203,57 @@ internal sealed class WorldSpatialIndex
 
             var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(
                 cell, defaultWaterHeight, defaultWaterRequiresCellHasWater);
+
+            // Memory dumps: exterior water exists only where TERRAIN exists to occlude it, and a
+            // per-cell override must be plausible against that terrain. This is the engine's own
+            // model made explicit — retail city worldspaces run the default plane under EVERY cell
+            // and hide it below the ground (TheStripWorldNew: land 1000, water 0, and 0 of 4096
+            // cells carry an in-range XCLW), so on a dump with partial terrain a quad in a
+            // terrain-less cell can only ever render as a bare floating sheet. The previous gate
+            // also admitted quads on the CELL water flag or an in-range WaterHeight — precisely the
+            // two runtime fields that are routinely stale on captured cells (xex21's Strip carried
+            // 27 garbage in-range overrides at heights from 6 to 18,070, the "blue quads floating
+            // at random levels" render). ESM/ESP views are unchanged.
+            if (data.IsMemoryDump)
+            {
+                if (cell.Heightmap is null && cell.RuntimeTerrainMesh is null)
+                {
+                    waterHeight = null;
+                }
+                else if (cell.WaterHeight is > -1e6f and < 1e6f &&
+                         (!WorldspaceAuthorsCellWater(worldspacesById, cell) ||
+                          !IsPlausibleDumpCellWaterOverride(cell.WaterHeight.Value, cell.Heightmap)))
+                {
+                    // Corrupt per-cell override — fall back to the worldspace default, exactly what
+                    // the engine does for a cell without an authored XCLW.
+                    if (defaultWaterRequiresCellHasWater && !cell.HasWater)
+                    {
+                        waterHeight = null;
+                    }
+                    else if (defaultWaterHeight is { } dflt &&
+                             WorldHeightNormalizer.IsReportableHeight(dflt) &&
+                             !WorldHeightNormalizer.IsNoWaterSentinel(dflt))
+                    {
+                        waterHeight = dflt;
+                    }
+                    else
+                    {
+                        waterHeight = null;
+                    }
+                }
+
+                // Emit only where the plane would actually SURFACE through the cell's captured
+                // terrain. Retail runs the default plane under every city cell and the ground
+                // hides it completely (Strip: land 1000 / water 0); a dump's partial terrain
+                // leaks that never-visible plane at capture borders instead. A plane at or below
+                // the cell's terrain floor cannot be legitimately visible anywhere in the cell.
+                if (waterHeight is { } visible && TryGetTerrainMinHeight(cell) is { } terrainMin &&
+                    visible <= terrainMin)
+                {
+                    waterHeight = null;
+                }
+            }
+
             if (waterHeight is > -1e6f and < 1e6f)
             {
                 // Exterior water: one cell-sized quad at the grid origin. The OriginXY/FootprintSize
@@ -265,9 +322,9 @@ internal sealed class WorldSpatialIndex
 
         // Interior water height comes from XCLW directly (no worldspace DNAM fallback).
         var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(interior, null);
-        if (waterHeight is > -1e6f and < 1e6f)
+        if (waterHeight is > -1e6f and < 1e6f && HasCredibleInteriorWater(interior, data.IsMemoryDump))
         {
-            var (originXY, footprint) = index.ComputeInteriorWaterFootprint(interior);
+            var (originXY, footprint) = ComputeInteriorWaterFootprint(interior);
             var water = new WorldWaterCell(key, interior, waterHeight.Value, originXY, footprint);
             index._waterCells.Add(water);
             chunk.WaterCells.Add(water);
@@ -282,34 +339,174 @@ internal sealed class WorldSpatialIndex
     }
 
     /// <summary>
-    ///     Square water footprint covering an interior's placed-object XY extent (padded), so the
-    ///     water plane reaches the room walls instead of the exterior cell-sized quad. Floors at
-    ///     one cell so tiny rooms still get a visible plane.
+    ///     Widest plausible interior water level, in absolute world units. Mirrors the bound
+    ///     CellEncoder.IsPlausibleCellWater applies on the plugin-export path: no room is 100k
+    ///     units deep, so a height beyond this is a stale runtime float, not authored water.
     /// </summary>
-    private (Vector2 OriginXY, float FootprintSize) ComputeInteriorWaterFootprint(CellRecord interior)
+    private const float MaxPlausibleInteriorWaterAbsHeight = 10_000f;
+
+    /// <summary>
+    ///     Whether a dump exterior cell's own water override is credible: at or below the cell's
+    ///     captured terrain crest plus shoreline slack — the same test the plugin encoder applies
+    ///     (CellEncoder.IsPlausibleCellWater). Without an authored heightmap the override is
+    ///     rejected outright: retail city worldspaces carry NO in-range per-cell water at all
+    ///     (measured on TheStripWorldNew: 0 of 4096 cells), so a runtime float with no terrain to
+    ///     justify it is noise, and the cell falls back to the worldspace default.
+    /// </summary>
+    /// <summary>
+    ///     Whether a dump cell's parent worldspace plausibly authors per-cell water at all.
+    ///     City-pattern worldspaces — default water BELOW default land, so the default plane never
+    ///     surfaces — author none in retail (TheStripWorldNew: 0 of 4096 cells; measured), while
+    ///     basin worldspaces (WastelandNV: water −2300 over land −2500) author hundreds of lake
+    ///     overrides. A runtime per-cell float in a city worldspace is therefore noise even when it
+    ///     happens to land near ground level, where terrain plausibility alone cannot reject it.
+    /// </summary>
+    private static bool WorldspaceAuthorsCellWater(
+        Dictionary<uint, WorldspaceRecord> worldspacesById, CellRecord cell)
     {
-        var minX = float.MaxValue;
-        var minY = float.MaxValue;
-        var maxX = float.MinValue;
-        var maxY = float.MinValue;
-        var any = false;
+        if (cell.WorldspaceFormId is not { } wsId ||
+            !worldspacesById.TryGetValue(wsId, out var ws) ||
+            ws.DefaultWaterHeight is not { } water ||
+            WorldHeightNormalizer.IsNoWaterSentinel(water) ||
+            ws.DefaultLandHeight is not { } land)
+        {
+            return true; // unknown pattern — the terrain-plausibility test stays the only guard
+        }
+
+        return water >= land;
+    }
+
+    private static bool IsPlausibleDumpCellWaterOverride(float waterHeight, LandHeightmap? heightmap)
+    {
+        if (heightmap is null) return false;
+
+        var heights = heightmap.CalculateHeights();
+        var maxTerrain = float.NegativeInfinity;
+        for (var y = 0; y < heights.GetLength(0); y++)
+        {
+            for (var x = 0; x < heights.GetLength(1); x++)
+            {
+                if (heights[y, x] > maxTerrain) maxTerrain = heights[y, x];
+            }
+        }
+
+        return waterHeight <= maxTerrain + 256f;
+    }
+
+    /// <summary>
+    ///     Lowest captured terrain elevation in the cell, from the authored heightmap when present,
+    ///     else from the runtime terrain mesh's diagnostics. Null when neither carries a finite
+    ///     floor.
+    /// </summary>
+    private static float? TryGetTerrainMinHeight(CellRecord cell)
+    {
+        if (cell.Heightmap is { } heightmap)
+        {
+            var min = float.PositiveInfinity;
+            foreach (var h in heightmap.CalculateHeights())
+            {
+                if (h < min) min = h;
+            }
+
+            return float.IsFinite(min) ? min : null;
+        }
+
+        if (cell.RuntimeTerrainMesh is { } mesh)
+        {
+            var minZ = mesh.DiagnoseQuality().MinZ;
+            return float.IsFinite(minZ) ? minZ : null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Whether an interior cell's water claim is credible enough to render. ESM/ESP data is
+    ///     authored, so the CELL DATA flag is the engine's own truth and is used as-is. Memory-dump
+    ///     cells are different: the runtime flags byte and fWaterHeight are routinely stale or
+    ///     garbage on captured cells (CellEncoder.ShouldEmitCellWater learned this first, on the
+    ///     export path — dry cells rendered flooded), so a dump interior must tell a coherent
+    ///     story: water flag set, the engine's own bAutoWaterLoaded not vetoing, and a level
+    ///     plausible for a room.
+    /// </summary>
+    public static bool HasCredibleInteriorWater(CellRecord interior, bool isMemoryDump)
+    {
+        if (!isMemoryDump) return interior.HasWater;
+        if (!interior.HasWater) return false;
+        if (interior.AutoWaterLoaded == false) return false;
+        if (interior.WaterHeight is not { } height ||
+            !WorldHeightNormalizer.IsReportableHeight(height) ||
+            MathF.Abs(height) > MaxPlausibleInteriorWaterAbsHeight)
+        {
+            return false;
+        }
+
+        // Bit-exact +0.0 is the TESObjectCELL stale-slot value, not an authored level. Measured
+        // across three dumps: ALL 463 water-flagged interiors read exactly 0x00000000 (and their
+        // retail counterparts are often not even water-flagged — NellisGenerator authors 0x21),
+        // while ZERO retail interiors author XCLW as 0.0 (minimum authored |h| is 204; the rest
+        // use the FLT_MAX sentinel). A cell genuinely flooded at the engine-default level would
+        // carry bAutoWaterLoaded == 1, which the corroboration clause preserves.
+        return BitConverter.SingleToUInt32Bits(height) != 0u || interior.AutoWaterLoaded == true;
+    }
+
+    /// <summary>
+    ///     Smallest side an interior water quad is given, in world units. Enough to read as a water
+    ///     surface in a small room, and far below the one-CELL floor this replaced.
+    /// </summary>
+    private const float MinInteriorWaterSide = 512f;
+
+    /// <summary>
+    ///     Square water footprint covering an interior's placed-object XY extent (padded), so the
+    ///     water plane reaches the room walls instead of the exterior cell-sized quad.
+    ///     <para>
+    ///         Floored at <see cref="MinInteriorWaterSide" />, NOT at a full cell. A cell is 4096
+    ///         units; most interiors are a small fraction of that, so the old floor handed every
+    ///         modest room a plane many times its own size. Inside the live first-person view the
+    ///         walls hide the overhang, which is why it went unnoticed — but any view from outside
+    ///         the room shows it, and under a tilted camera the quad also sits at the cell's XCLW
+    ///         height, so the overhang is thrown well clear of the room rather than tucked beneath
+    ///         it (Hoover Dam's power plant rendered a 4096-unit sheet far below and away from a
+    ///         room a few hundred units across).
+    ///     </para>
+    /// </summary>
+    private static (Vector2 OriginXY, float FootprintSize) ComputeInteriorWaterFootprint(CellRecord interior)
+    {
+        // Percentile extent, not min/max: dump-recovered interiors carry orphan refs attributed to
+        // the cell from far outside it, and one such placement sizes the water sheet to the orphan
+        // rather than to the room (HooverDamIntPowerPlant04's quad spanned tens of thousands of
+        // units). Trimming the 2% coordinate tails sizes the quad to where the room actually is.
+        var xs = new List<float>(interior.PlacedObjects.Count);
+        var ys = new List<float>(interior.PlacedObjects.Count);
         foreach (var obj in interior.PlacedObjects)
         {
             if (!float.IsFinite(obj.X) || !float.IsFinite(obj.Y)) continue;
-            minX = MathF.Min(minX, obj.X);
-            minY = MathF.Min(minY, obj.Y);
-            maxX = MathF.Max(maxX, obj.X);
-            maxY = MathF.Max(maxY, obj.Y);
-            any = true;
+            xs.Add(obj.X);
+            ys.Add(obj.Y);
         }
 
-        if (!any) return (Vector2.Zero, CellSize);
+        if (xs.Count == 0) return (Vector2.Zero, MinInteriorWaterSide);
 
-        var side = MathF.Max(maxX - minX, maxY - minY) * 1.2f;
-        if (side < CellSize) side = CellSize;
+        var (minX, maxX) = PercentileRange(xs);
+        var (minY, maxY) = PercentileRange(ys);
+
+        var side = MathF.Max(MathF.Max(maxX - minX, maxY - minY) * 1.2f, MinInteriorWaterSide);
         var centerX = (minX + maxX) * 0.5f;
         var centerY = (minY + maxY) * 0.5f;
         return (new Vector2(centerX - side * 0.5f, centerY - side * 0.5f), side);
+    }
+
+    /// <summary>
+    ///     The [2nd, 98th] percentile range of <paramref name="values" />. Small sets keep plain
+    ///     min/max — with a handful of refs, every placement is load-bearing.
+    /// </summary>
+    private static (float Min, float Max) PercentileRange(List<float> values)
+    {
+        values.Sort();
+        if (values.Count < 20) return (values[0], values[^1]);
+
+        var lo = (int)(values.Count * 0.02f);
+        return (values[lo], values[values.Count - 1 - lo]);
     }
 
     internal bool TryGetCell(int gx, int gy, out CellRecord cell)

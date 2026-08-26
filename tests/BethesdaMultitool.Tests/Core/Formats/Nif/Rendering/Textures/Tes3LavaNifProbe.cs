@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Textures;
 ///     chains (Tx_lava_molten/crust.tga) — all of which must classify + resolve like any NiNode
 ///     scene. Reads the real Morrowind.bsa; skips when absent (CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3LavaNifProbe
 {

@@ -39,13 +39,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // persists moved off the decode workers onto the background persist writer — a decode slot is now
     // pure CPU decode, so high-core machines (24+ threads) get the extra workers a cold Commonwealth
     // load can use. Env override for profiling specific machines.
-    private static readonly int DefaultMaxConcurrentDecodeTasks = ParsePositiveIntEnvironment(
-        EnvironmentVariables.Viewer.ReferenceDecodeConcurrency,
-        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 12),
-        min: 1,
-        max: 16);
+    // Sized as this workload's SHARE of the machine rather than from ProcessorCount in isolation:
+    // three pools each doing the latter summed to 25 workers on a 20-core box with no reserve for
+    // the UI or render threads. See CpuBudget.
+    private static readonly int DefaultMaxConcurrentDecodeTasks =
+        Core.Orchestration.ConcurrencyPolicy
+            .Fixed(Core.Orchestration.CpuBudget.Interactive()
+                .Claim(Core.Orchestration.CpuWorkload.ReferenceMeshDecode))
+            .WithEnvironmentOverride(EnvironmentVariables.Viewer.ReferenceDecodeConcurrency, 1, 16)
+            .Resolve();
 
-    private static readonly int DefaultMaxDecodeStartsPerFrame = ParsePositiveIntEnvironment(
+    private static readonly int DefaultMaxDecodeStartsPerFrame = EnvironmentVariables.GetClampedInt(
         EnvironmentVariables.Viewer.ReferenceDecodeStartsPerFrame,
         defaultValue: DefaultMaxConcurrentDecodeTasks,
         min: 1,
@@ -64,7 +68,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // each upload so a frame that has already spent its budget defers an expensive mesh to the next
     // frame instead of overshooting on it. Sized so a typical 48-mesh frame passes but a burst of
     // unusually large meshes is spread across frames.
-    private static readonly long DefaultMaxUploadBytesPerFrame = ParsePositiveLongEnvironment(
+    private static readonly long DefaultMaxUploadBytesPerFrame = EnvironmentVariables.GetClampedLong(
         EnvironmentVariables.Viewer.ReferenceUploadBytesPerFrame,
         defaultValue: 4L * 1024L * 1024L,
         min: 1L * 1024L * 1024L,
@@ -418,7 +422,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // Concurrency ceiling used when streaming is unthrottled (the on-demand top-down overlay path,
     // which has no framerate target). Wider than the conservative live-loop default so a single
     // overlay pass can saturate the CPU with decodes instead of trickling 2 at a time.
-    private static readonly int UnthrottledMaxConcurrentDecodeTasks = Math.Clamp(Environment.ProcessorCount, 4, 16);
+    private static readonly int UnthrottledMaxConcurrentDecodeTasks =
+        Core.Orchestration.CpuBudget.Bulk().Claim(Core.Orchestration.CpuWorkload.ReferenceMeshDecode);
 
     /// <summary>
     ///     When <c>false</c>, the per-frame streaming budget (decode starts + concurrency + upload
@@ -1732,28 +1737,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             (geometries ??= new List<NifWaterGeometry>(1)).Add(geometry);
         }
-    }
-
-    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
-    {
-        var raw = EnvironmentVariables.Get(name);
-        if (!int.TryParse(raw, out var value))
-        {
-            return defaultValue;
-        }
-
-        return Math.Clamp(value, min, max);
-    }
-
-    private static long ParsePositiveLongEnvironment(string name, long defaultValue, long min, long max)
-    {
-        var raw = EnvironmentVariables.Get(name);
-        if (!long.TryParse(raw, out var value))
-        {
-            return defaultValue;
-        }
-
-        return Math.Clamp(value, min, max);
     }
 
     private sealed class Node(

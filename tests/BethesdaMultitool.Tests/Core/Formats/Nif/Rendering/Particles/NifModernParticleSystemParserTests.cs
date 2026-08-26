@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Particles;
 ///     parser. Synthetic records cover both byte orders; installed retail fixtures prove the same cursors
 ///     against Skyrim LE (BS 83) and Fallout 4 (BS 130).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 public sealed class NifModernParticleSystemParserTests
 {
     private const string SkyrimFixture =

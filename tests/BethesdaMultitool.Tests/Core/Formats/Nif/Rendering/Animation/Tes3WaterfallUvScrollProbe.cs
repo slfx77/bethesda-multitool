@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 ///     NifKeyGroupReader stride table against real 4.0.0.2 data. Reads the real Morrowind.bsa;
 ///     skips when absent (CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3WaterfallUvScrollProbe
 {

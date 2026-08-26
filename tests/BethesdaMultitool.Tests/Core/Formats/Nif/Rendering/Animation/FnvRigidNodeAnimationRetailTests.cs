@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 ///     swinging board (44) real motion tracks while the static post (Frame:0, 48 — its
 ///     interpolator has no key data) and the NoLighting glow pane (31) stay untracked.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class FnvRigidNodeAnimationRetailTests
 {

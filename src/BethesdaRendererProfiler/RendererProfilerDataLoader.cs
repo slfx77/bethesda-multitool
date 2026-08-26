@@ -1,6 +1,7 @@
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.WorldData;
 
@@ -37,13 +38,66 @@ internal static class RendererProfilerDataLoader
             if (loadOrderRecords is not null)
             {
                 semantic = loadOrderRecords.MergeWith(semantic);
+
+                // Same post-merge pass the GUI runs (SingleFileTab.WorldMap.cs): re-link cells
+                // against the merged list, then resolve placed-object meshes against the merged
+                // base set. Parse-time enrichment is per-source, so a ref placing a base defined
+                // in another file is born with ModelPath == null and the renderer silently drops
+                // it (RenderableReference.TryBuild) — a converted plugin's refs onto master bases
+                // rendered as "missing entirely" until this ran.
+                semantic.RelinkWorldspaceCells().ResolvePlacedModels();
             }
         }
 
         progress?.Report("Building world-view render data...");
         var data = WorldMapOverlayBuilder.BuildFromRecords(semantic, primary.FilePath);
         data.AdditionalDataPaths = loadOrderPaths;
+        data.AssetDataDirectories = options.AssetDataDirectories;
+        // WorldMapOverlayBuilder does not set this — the GUI session does, and until now the
+        // profiler did not, so every headless run silently rendered a dump with the renamed-asset
+        // fuzzy fallback and loose-file overrides DISABLED (WorldView3DControl.Pipeline.cs gates
+        // both on it). Prototype dumps reference mesh paths that were renamed before the shipped
+        // archives, so exact-only resolution drops precisely the assets a dump most needs.
+        data.IsMemoryDump = primary.FileType == AnalysisFileType.Minidump;
+        if (data.IsMemoryDump)
+        {
+            var sidecar = MeshRenameMapService.SidecarPathFor(primary.FilePath);
+            if (options.ResolveRenames)
+            {
+                progress?.Report("Resolving renamed mesh paths against donor Data folders...");
+                var donorDataDirs = options.AssetDataDirectories.Select(ResolveDataDir).ToList();
+                var built = MeshRenameMapService.Build(
+                    data.ModelPathIndex.Values, donorDataDirs, cancellationToken);
+                MeshRenameMapService.Save(sidecar, built.Renames, donorDataDirs);
+                progress?.Report(
+                    $"Rename pass: {built.Considered} mesh paths, {built.Renamed} renamed, " +
+                    $"{built.Exact} exact, {built.Missing} missing, " +
+                    $"{built.CrossRootDeclined} cross-root declined -> {Path.GetFileName(sidecar)}");
+                data.MeshPathRenames = built.Renames;
+            }
+            else
+            {
+                data.MeshPathRenames = MeshRenameMapService.TryLoad(sidecar);
+                if (data.MeshPathRenames is { Count: > 0 } loaded)
+                {
+                    progress?.Report($"Loaded {loaded.Count} persisted mesh rename(s) from {Path.GetFileName(sidecar)}.");
+                }
+            }
+        }
+
         return data;
+    }
+
+    /// <summary>
+    ///     Donor directories are configured as build roots or Data folders interchangeably;
+    ///     DataFolderIndex wants the Data folder itself, so descend when the root has one.
+    /// </summary>
+    private static string ResolveDataDir(string dir)
+    {
+        var dataDir = Path.Combine(dir, "Data");
+        return Directory.Exists(dataDir) && !Directory.EnumerateFiles(dir, "*.bsa").Any()
+            ? dataDir
+            : dir;
     }
 
     private static async Task<WorldViewData> LoadDataDirectoryAsync(
@@ -72,6 +126,7 @@ internal static class RendererProfilerDataLoader
         var sourcePath = sourceSet.GetTerrainFilePath() ?? sourcePaths[^1];
         var data = WorldMapOverlayBuilder.BuildFromRecords(records, sourcePath);
         data.AdditionalDataPaths = sourceSet.Sources.Select(source => source.FilePath).ToArray();
+        data.AssetDataDirectories = options.AssetDataDirectories;
         return data;
     }
 

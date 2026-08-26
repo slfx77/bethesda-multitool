@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
@@ -12,7 +13,16 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 ///     (DefaultImageSpaceInterior 0x160 / DefaultImageSpaceExterior 0x161 — see
 ///     docs/research/fnv_engine_hdr_imagespace.md) and the bloom gating rules: bloom is engine-mode
 ///     only this cut, and FALLOUT_VIEWER_BLOOM=0|off kills it for A/Bs.
+///     <para>
+///         In <see cref="ProcessEnvironmentGroup" /> because the override tests set the real
+///         process-wide <c>FALLOUT_VIEWER_TONEMAP</c> / <c>_BLOOM</c> / <c>_MODERN_IMAGESPACE</c>
+///         variables. Restoring them in a <c>finally</c> only protects the next test — every
+///         other case in this class calls <c>ApplyOverrides</c>/<c>ForGame</c>, which read those
+///         same variables, so without serialization a parallel run observes another test's
+///         override and asserts against the wrong preset.
+///     </para>
 /// </summary>
+[Collection(ProcessEnvironmentGroup.Name)]
 public sealed class GpuTonemapSettingsTests
 {
     [Theory]

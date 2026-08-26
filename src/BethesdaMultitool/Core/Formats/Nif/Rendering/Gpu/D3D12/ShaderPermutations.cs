@@ -1,5 +1,6 @@
 // ShaderMacro lives in Vortice.Direct3D (Vortice.DirectX), NOT Vortice.D3DCompiler.
 
+using System.Globalization;
 using Vortice.Direct3D;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -76,11 +77,17 @@ internal static class ShaderPermutations
     /// </summary>
     internal static IReadOnlyList<ShaderPermutation> Water { get; } = BuildWater();
 
-    /// <summary>Terrain, sky, post-process, overlays and the sprite/skin path.</summary>
+    /// <summary>
+    ///     Terrain. The axis is TERRAIN_BLEND_QUADS: a cell declares only the layer-weight quads its
+    ///     active slot count reaches, and the vertex shader and input layout have to agree on that
+    ///     number or PSO creation fails. Quad count 0 is vertex-only — the depth-only and shadow
+    ///     passes, which have no pixel shader and so need no pixel permutation.
+    /// </summary>
+    internal static IReadOnlyList<ShaderPermutation> Terrain { get; } = BuildTerrain();
+
+    /// <summary>Sky, post-process, overlays and the sprite/skin path.</summary>
     internal static IReadOnlyList<ShaderPermutation> Other { get; } =
     [
-        new("terrain_textured.vert.hlsl", "main", "vs_5_1", None, "terrain"),
-        new("terrain_textured.frag.hlsl", "main", "ps_5_1", None, "terrain"),
         new("sky_geo.vert.hlsl", "main", "vs_5_1", None, "sky gradient dome"),
         new("sky_geo.frag.hlsl", "main", "ps_5_1", None, "sky gradient dome"),
         new("sky_billboard.vert.hlsl", "main", "vs_5_1", None, "sun / moon billboards"),
@@ -109,7 +116,30 @@ internal static class ShaderPermutations
 
     /// <summary>Every permutation across every family.</summary>
     internal static IReadOnlyList<ShaderPermutation> All { get; } =
-        [.. Reference, .. Water, .. Other];
+        [.. Reference, .. Water, .. Terrain, .. Other];
+
+    private static List<ShaderPermutation> BuildTerrain()
+    {
+        var list = new List<ShaderPermutation>
+        {
+            new("terrain_textured.vert.hlsl", "main", "vs_5_1",
+                [new ShaderMacro("TERRAIN_BLEND_QUADS", "0")],
+                "terrain depth-only + sun-shadow: no layer weights fetched at all")
+        };
+
+        // 1..4 quads = 4..16 layer weights. Written as a loop rather than eight literals so a change
+        // to the slot ceiling cannot add a vertex variant and forget its pixel companion — the two
+        // must be compiled from the same number or PSInput will not match VSOutput.
+        for (var quads = 1; quads <= 4; quads++)
+        {
+            var macros = (ShaderMacro[])[new ShaderMacro("TERRAIN_BLEND_QUADS", quads.ToString(CultureInfo.InvariantCulture))];
+            var purpose = $"terrain, {quads * 4}-slot cells";
+            list.Add(new ShaderPermutation("terrain_textured.vert.hlsl", "main", "vs_5_1", macros, purpose));
+            list.Add(new ShaderPermutation("terrain_textured.frag.hlsl", "main", "ps_5_1", macros, purpose));
+        }
+
+        return list;
+    }
 
     private static List<ShaderPermutation> BuildWater()
     {

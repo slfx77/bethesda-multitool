@@ -17,6 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Particles;
 ///     retail-asset gate independently proves the resolved source mesh reaches both static and live extraction.
 ///     Sample-gated — skips when the FNV meshes BSA isn't present (e.g. CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifParticleMeshEmitterColumnTests
 {
@@ -44,7 +45,9 @@ public sealed class NifParticleMeshEmitterColumnTests
         if (nif!.IsBigEndian)
         {
             var converted = NifConverter.Convert(data);
-            Assert.True(converted.Success && converted.OutputData != null);
+            // Split: a compound assert cannot say which half failed.
+            Assert.True(converted.Success, converted.ErrorMessage ?? "NifConverter reported failure.");
+            Assert.NotNull(converted.OutputData);
             data = converted.OutputData!;
             nif = NifParser.Parse(data)!;
         }

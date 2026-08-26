@@ -13,6 +13,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class NifTextureResolverTests
 {
     [Fact]

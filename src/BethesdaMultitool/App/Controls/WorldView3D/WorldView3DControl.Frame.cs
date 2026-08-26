@@ -163,10 +163,8 @@ public sealed partial class WorldView3DControl
 
     private int _consecutiveRenderFailures;
 
-    // Raw-dt history for the median-of-3 camera timestep filter (single-writer: the render loop).
-    private float _frameDtPrev1;
-    private float _frameDtPrev2;
-    private int _frameDtSampleCount;
+    // Median-of-3 camera timestep filter (single-writer: the render loop).
+    private readonly FrameDeltaFilter _frameDeltaFilter = new();
 
     // GPU address of the most recent b3 atmosphere CB bound by BindAtmosphereConstants.
     private ulong _lastAtmosphereCbGpuAddress;
@@ -370,21 +368,10 @@ public sealed partial class WorldView3DControl
         // Record the RAW timestep for the frame profiler before clamping: the clamp would hide
         // exactly the long-frame outliers a pacing investigation needs to see.
         _lastDeltaSeconds = deltaSeconds;
-        // Median-of-3 over the last three raw timesteps before the camera consumes the value. A
-        // single spiked frame (GC pause, compositor stall) otherwise integrates as a visible camera
-        // jump; the median rejects any lone outlier while — unlike an EMA — adding zero steady-state
-        // lag (when the three samples agree, the median IS the current sample). Missing history on
-        // the first two frames duplicates the current raw value, so those frames pass raw through.
-        var dtPrev1 = _frameDtSampleCount >= 1 ? _frameDtPrev1 : deltaSeconds;
-        var dtPrev2 = _frameDtSampleCount >= 2 ? _frameDtPrev2 : deltaSeconds;
-        _frameDtPrev2 = _frameDtPrev1;
-        _frameDtPrev1 = deltaSeconds;
-        if (_frameDtSampleCount < 2) _frameDtSampleCount++;
-        deltaSeconds = MathF.Max(MathF.Min(deltaSeconds, dtPrev1),
-            MathF.Min(MathF.Max(deltaSeconds, dtPrev1), dtPrev2));
-        // Clamp pathological deltas (long pause, debugger break) AFTER the median so a genuine
-        // multi-frame stall still reaches the camera bounded.
-        if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
+        // Median-of-3 then clamp — see FrameDeltaFilter for why that order matters and why the
+        // first two frames pass through raw. Kept in Core/ so it is unit-testable; this TFM's
+        // sources are invisible to the test project.
+        deltaSeconds = _frameDeltaFilter.Push(deltaSeconds);
         _windClockSeconds += deltaSeconds; // drives the SpeedTree leaf-wind sway phase
 
         var controllerStarted = StartProfileTimestamp();
@@ -996,6 +983,10 @@ public sealed partial class WorldView3DControl
         // Deletion queue advances frame counter — releases resources whose hold has elapsed.
         // Must run AFTER BeginFrame's fence wait so the prior GPU work is known complete.
         _deletionQueue12!.Tick();
+        // Immediately after the deletion queue, so the usage read is not inflated by resources the
+        // fence has already proven dead. Read-only in this phase: it publishes a pressure zone and
+        // keeps the OS reservation honest; nothing consumes the zone to evict anything yet.
+        _gpu12!.VideoMemory.Tick();
         _ringBuffer12!.ResetFrame();
         _cbvSrvUavHeap12!.BeginFrame(recorder.FrameIndex);
         // Drain D3D12 debug layer messages from the prior frame (no-op unless

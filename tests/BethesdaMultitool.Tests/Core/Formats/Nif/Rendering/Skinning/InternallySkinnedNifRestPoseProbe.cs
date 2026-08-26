@@ -14,6 +14,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Skinning;
 ///     FNV cloth flags) must skin against their own authored node transforms — the rest pose —
 ///     instead of rendering raw bind-pose geometry. Reads real game BSAs; skips when absent (CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class InternallySkinnedNifRestPoseProbe
 {

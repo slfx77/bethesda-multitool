@@ -185,15 +185,12 @@ public sealed class Export2DTileTraversalSourceContractTests
         Assert.DoesNotContain("maxGridY + 1", gridHelper, StringComparison.Ordinal);
         Assert.Contains("cellOffsetX <= cellsWide", gridHelper, StringComparison.Ordinal);
         Assert.Contains("cellOffsetY <= cellsTall", gridHelper, StringComparison.Ordinal);
-        // The panel's output-size readout does the same arithmetic the old dialog did — every product
-        // of a cell span and a px/cell scale stays in long.
-        Assert.Contains("(long)pxPerCell * maxCells", panel, StringComparison.Ordinal);
-        Assert.Contains("(long)cellsWide * effectivePpc", panel, StringComparison.Ordinal);
-        Assert.Contains("(long)cellsTall * effectivePpc", panel, StringComparison.Ordinal);
-        Assert.Contains("((long)cellsWide + perTile - 1) / perTile", panel, StringComparison.Ordinal);
-        Assert.Contains("((long)cellsTall + perTile - 1) / perTile", panel, StringComparison.Ordinal);
-        Assert.Contains("(long)requestedPpc * maxCells", panel, StringComparison.Ordinal);
-        Assert.Contains("(long)effectivePpc * maxCells", panel, StringComparison.Ordinal);
+        // The panel's output-size arithmetic moved to Core as MapExportSizeEstimate, where the
+        // 64-bit products are exercised at the boundary by MapExportSizeEstimateTests rather than
+        // matched as source text. All that stays pinned here is that the panel routes through it
+        // instead of recomputing the sizes inline.
+        Assert.Contains("MapExportSizeEstimate.Plan(", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("effectivePpc", panel, StringComparison.Ordinal);
     }
 
     /// <summary>

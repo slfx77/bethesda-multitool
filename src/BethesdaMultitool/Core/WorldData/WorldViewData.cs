@@ -319,10 +319,41 @@ internal sealed class WorldViewData
     public IReadOnlyList<string> AdditionalDataPaths { get; set; } = [];
 
     /// <summary>
+    ///     Data folders consulted for ASSETS ONLY, in priority order — their records are never
+    ///     parsed or merged. <see cref="AdditionalDataPaths" /> cannot express this: every entry
+    ///     there is also a semantic source, so borrowing a donor build's meshes would drag its
+    ///     records into the view as well.
+    ///     <para>
+    ///         Exists for cross-build asset fill-in when rendering a memory dump. A DMP references
+    ///         asset paths from the build it was captured on, and no single shipped Data folder has
+    ///         all of them — the April-2010 prototype ships textures but zero meshes, the July-2010
+    ///         prototype ships both, and some paths survive only in Fallout 3. Probing several
+    ///         builds in a declared order resolves each path from the earliest donor that has it.
+    ///     </para>
+    ///     <para>
+    ///         Order IS priority and it is first-hit-wins, matching the engine's SArchiveList
+    ///         convention: mesh lookups layer through <c>DataFolderIndex.FromArchivePaths</c> (first
+    ///         write wins) and texture lookups walk <c>NifTextureResolver</c>'s source list in
+    ///         order. Probed AFTER <see cref="AdditionalDataPaths" />, so an explicit load order
+    ///         still outranks a donor build.
+    ///     </para>
+    /// </summary>
+    public IReadOnlyList<string> AssetDataDirectories { get; set; } = [];
+
+    /// <summary>
     ///     True when this view was built from a memory dump (DMP). The 3D viewer enables the
     ///     renamed-asset fuzzy mesh fallback (and loose-file overrides) only for dumps, where
     ///     prototype mesh paths were renamed before the shipped archives; ESM/ESP/save views keep
     ///     exact-only resolution. Settable post-construction (like <see cref="AdditionalDataPaths" />).
     /// </summary>
     public bool IsMemoryDump { get; set; }
+
+    /// <summary>
+    ///     Persisted mesh-path rename map for this dump (normalized request → resolved donor path),
+    ///     produced by the user-triggered resolution pass — the same DataFolderIndex/Resolver pass
+    ///     DMP→ESM conversion runs — and stored as a sidecar next to the dump. Null when no pass has
+    ///     been run. <c>MeshArchiveSet</c> consults it ahead of its live fuzzy fallback, so the
+    ///     renderer previews the dump with the conversion's resolutions.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? MeshPathRenames { get; set; }
 }

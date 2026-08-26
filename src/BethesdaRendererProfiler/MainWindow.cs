@@ -199,6 +199,14 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(_options.CaptureTopDownBatchDirectory))
+            {
+                // Autonomous batch top-down capture: render every worldspace + every interior in
+                // this source, one PNG each, then exit.
+                _ = RunTopDownBatchCaptureAsync();
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(_options.CaptureTopDownPath))
             {
                 // Autonomous top-down overlay capture: render the 2D-map "Rendered models" overlay
@@ -304,6 +312,35 @@ internal sealed partial class MainWindow : Window, IDisposable
         return _worldView.Profiler_IsSceneReady;
     }
 
+    /// <summary>
+    ///     Drives <see cref="TopDownBatchCapture" /> over every subject in the loaded source, then
+    ///     exits. Exit code is non-zero when nothing was produced, so a corpus driver can tell an
+    ///     empty dump from a broken run.
+    /// </summary>
+    private async Task RunTopDownBatchCaptureAsync()
+    {
+        try
+        {
+            var batch = new TopDownBatchCapture(_worldView, _options);
+            var result = await batch.RunAsync();
+            if (result.AbortReason is { } reason)
+            {
+                ExitProfiler($"batch-{reason}", 1);
+                return;
+            }
+
+            // Written == 0 with nothing skipped means every subject failed; that is a run failure,
+            // not an empty source (an empty source aborts with "no-subjects" above).
+            ExitProfiler("batch-complete", result.Written == 0 && result.Skipped == 0 ? 1 : 0);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Batch capture failed: {0}", ex);
+            Console.Error.WriteLine($"[Batch] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ExitProfiler("batch-exception", 1);
+        }
+    }
+
     private async Task RunTopDownCaptureAsync()
     {
         var path = _options.CaptureTopDownPath!;
@@ -399,6 +436,12 @@ internal sealed partial class MainWindow : Window, IDisposable
                     Array.Empty<PlacedObjectCategory>(),
                     false, 12f,
                     null, // profiler top-down capture is exterior worldspaces only
+                    // Reproduces the 2D map's overlay exactly, so it stays comparable with what the
+                    // map shows; --capture-topdown-batch is the self-contained-image path.
+                    includeTerrainColor: false,
+                    projection: TopDownProjection.Straight,
+                    contentWorldZ: null,
+                    trimetricYawDegrees: TrimetricViewProjBuilder.YawDegrees,
                     CancellationToken.None);
                 if (render is null)
                 {

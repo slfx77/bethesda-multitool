@@ -7,6 +7,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 
+[Trait("Category", TestCategories.BucketB)]
 public class NifMaterialAlphaControllerTests
 {
     private const string RetailSandDust02 =

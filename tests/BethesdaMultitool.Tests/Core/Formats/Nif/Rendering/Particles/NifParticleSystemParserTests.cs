@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Particles;
 ///     when the FNV meshes BSA isn't present (e.g. CI). Layout independently verified against the block-46
 ///     hex (Data ref 51, World Space, 9 modifiers = blocks 52-60).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifParticleSystemParserTests
 {
@@ -44,7 +45,9 @@ public sealed class NifParticleSystemParserTests
         if (nif!.IsBigEndian)
         {
             var converted = NifConverter.Convert(data);
-            Assert.True(converted.Success && converted.OutputData != null);
+            // Split: a compound assert cannot say which half failed.
+            Assert.True(converted.Success, converted.ErrorMessage ?? "NifConverter reported failure.");
+            Assert.NotNull(converted.OutputData);
             data = converted.OutputData!;
             nif = NifParser.Parse(data)!;
         }

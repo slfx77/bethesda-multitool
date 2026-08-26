@@ -1,3 +1,4 @@
+using System.Globalization;
 namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
@@ -28,5 +29,23 @@ internal static class RenderDistanceScale
     {
         var cells = (float)Math.Pow(2d, sliderValue);
         return Math.Clamp(cells, MinCells, MaxCells);
+    }
+
+    /// <summary>
+    ///     The slider tooltip's text for a slider position: the distance in cells, to one decimal
+    ///     place, suffixed "c".
+    ///     <para>
+    ///         Lives here rather than in the WinUI value converter so the rule is testable — the
+    ///         converter is in <c>App/</c>, which is excluded from the <c>net10.0</c> target
+    ///         framework, and the only coverage available there was asserting that the literal
+    ///         <c>"{0:0.#} c"</c> still appeared in the file.
+    ///     </para>
+    ///     <paramref name="provider" /> defaults to the current culture, matching what the user
+    ///     sees; pass an explicit culture for deterministic output.
+    /// </summary>
+    public static string FormatCells(double sliderValue, IFormatProvider? provider = null)
+    {
+        return string.Format(
+            provider ?? CultureInfo.CurrentCulture, "{0:0.#} c", CellsFromSlider(sliderValue));
     }
 }

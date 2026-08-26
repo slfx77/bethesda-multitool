@@ -66,7 +66,27 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // are 1-sample, so MSAA isn't an option without parallel PSOs. Final long-edge is capped so a
     // large canvas doesn't blow up the per-request readback.
     private const int TopDownSupersample = 2;
-    private const int MaxTopDownFinalDimension = 2048;
+    private const int DefaultMaxTopDownFinalDimension = 2048;
+
+    /// <summary>
+    ///     Largest final (post-downsample) dimension a top-down render may produce.
+    ///     <para>
+    ///         Defaults to the 2D map's budget: that overlay re-renders continuously while streaming
+    ///         converges, so its per-request readback has to stay small. A one-shot batch capture has
+    ///         no such loop and legitimately wants far more resolution — a whole worldspace at a
+    ///         fixed world-units-per-pixel scale is many thousands of pixels across — so it raises
+    ///         this. Beyond <see cref="SupersampleDropDimension" /> the 2× supersample is dropped, or
+    ///         the offscreen target would be 4× the pixels of an already very large image.
+    ///     </para>
+    /// </summary>
+    internal int TopDownMaxFinalDimension { get; set; } = DefaultMaxTopDownFinalDimension;
+
+    /// <summary>
+    ///     Final dimension beyond which the top-down render stops supersampling. At this size the
+    ///     image is already far above display resolution, so the aliasing supersampling exists to fix
+    ///     is not visible, while the target cost (colour + depth + readback, all ×4) is.
+    /// </summary>
+    private const int SupersampleDropDimension = 3072;
 
     /// <summary>
     ///     Smallest projected cell size (screen px per world cell) at which the top-down overlay still
@@ -124,7 +144,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ProfileLog);
 
     private readonly int _profileLogIntervalMilliseconds =
-        ParsePositiveInt(EnvironmentVariables.Get(EnvironmentVariables.Viewer.ProfileIntervalMilliseconds), 2000);
+        EnvironmentVariables.GetPositiveIntOrDefault(
+            EnvironmentVariables.Viewer.ProfileIntervalMilliseconds, 2000, 1, int.MaxValue);
 
     // Per-placement ACTI/REFR Enabled preview overrides. This table is scene-local and keyed by the
     // placed FormID, so changing one selected instance never mutates its parsed/base record or siblings.
@@ -727,6 +748,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             ? $"All Cells ({data.AllCells.Count})"
             : "All Cells";
         AllCellsButton.IsEnabled = data.AllCells.Count > 0;
+        ResolveRenamesButton.Visibility = data.IsMemoryDump ? Visibility.Visible : Visibility.Collapsed;
 
         // Weather dropdown: "(Climate default)" + all weathers. Built once here; the worldspace
         // selection below refreshes the climate default + timing it resolves against.

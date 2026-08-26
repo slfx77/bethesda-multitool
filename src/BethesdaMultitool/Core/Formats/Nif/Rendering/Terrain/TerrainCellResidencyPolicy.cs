@@ -53,13 +53,25 @@ internal static class TerrainCellResidencyPolicy
     public const int VertexStreamBytesPerVertex = TerrainVertex.SizeInBytes;
 
     /// <summary>
-    ///     Bytes per vertex in the blend-weight stream: <c>CellTerrainTextureSet.SlotVectors</c> (4)
-    ///     × <c>sizeof(Vector4)</c>.
+    ///     Bytes per vertex in the blend-weight stream at its <b>widest</b>: 16 layer weights as
+    ///     UNORM16. Was 64 while they were four <c>Vector4</c>s — the same predictor-drift trap as
+    ///     the vertex width above, so it tracks <see cref="TerrainBlendWeightPacking.BytesPerVertex" />
+    ///     rather than restating it. Since phase 3d a cell carries only the quads its slot count
+    ///     reaches, so a real cell is usually narrower than this; see
+    ///     <see cref="EstimateCellGpuBytes(int, int)" /> for why the plan still uses the maximum.
     /// </summary>
-    public const int BlendStreamBytesPerVertex = 64;
+    public const int BlendStreamBytesPerVertex = TerrainBlendWeightPacking.BytesPerVertex;
 
     /// <summary>
-    ///     What one cell actually charges: a single ARENA sub-allocation holding both streams.
+    ///     What the <b>widest</b> cell of this grid size charges — the number the budget plan wants.
+    ///     See <see cref="EstimateCellGpuBytes(int, int)" /> for the per-width form.
+    /// </summary>
+    public static long EstimateCellGpuBytes(int gridSize) =>
+        EstimateCellGpuBytes(gridSize, TerrainBlendWeightPacking.MaxQuadCount);
+
+    /// <summary>
+    ///     What one cell charges: a single ARENA sub-allocation holding both streams, with the
+    ///     blend-weight stream sized to <paramref name="blendQuadCount" /> layer-weight quads.
     ///     <para>
     ///         Must stay in step with how <c>GpuTerrainArena12</c> allocates — it does, because both
     ///         go through <see cref="GpuResourceFootprint.ArenaSubAllocationBytes" />. It previously
@@ -68,8 +80,17 @@ internal static class TerrainCellResidencyPolicy
     ///         mismatch would have left the planned budget permanently above real residency, so the
     ///         byte bound would never have evicted a single cell while still logging a budget.
     ///     </para>
+    ///     <para>
+    ///         <b>The plan deliberately keeps using the maximum quad count</b>, even though most
+    ///         cells are now narrower. The direction of the error is what matters: the budget's floor
+    ///         has to cover whatever the retained ring actually costs, and the ring's contents are
+    ///         not known when the plan is made. Over-estimating leaves the floor safely above the
+    ///         visible working set; under-estimating would put the cap below it, and enforcement
+    ///         would then be asked to evict a cell the camera is looking at. The saving is realised
+    ///         all the same — cells got smaller while the cap did not, so more of them fit.
+    ///     </para>
     /// </summary>
-    public static long EstimateCellGpuBytes(int gridSize)
+    public static long EstimateCellGpuBytes(int gridSize, int blendQuadCount)
     {
         if (gridSize <= 0)
         {
@@ -78,7 +99,8 @@ internal static class TerrainCellResidencyPolicy
 
         long vertices = (long)gridSize * gridSize;
         return GpuResourceFootprint.ArenaSubAllocationBytes(
-            vertices * VertexStreamBytesPerVertex, vertices * BlendStreamBytesPerVertex);
+            vertices * VertexStreamBytesPerVertex,
+            vertices * TerrainBlendWeightPacking.BytesPerVertexFor(blendQuadCount));
     }
 
     /// <summary>
@@ -100,7 +122,7 @@ internal static class TerrainCellResidencyPolicy
     /// <summary>
     ///     The planned byte budget:
     ///     <c>clamp(localBudget × TerrainShare, floor, wholeWorldspace)</c>, where the floor is
-    ///     <see cref="MinimumResidentCells" /> × <see cref="EstimateCellGpuBytes" /> and the upper
+    ///     <see cref="MinimumResidentCells" /> × <see cref="EstimateCellGpuBytes(int)" /> and the upper
     ///     clamp stops a small worldspace from being handed a budget it can never spend. Returns 0
     ///     (meaning: apply NO byte bound) when the VRAM budget is unknown or degenerate — on
     ///     WARP/iGPU adapters the local budget can be 0, and treating that as "budget 0, evict

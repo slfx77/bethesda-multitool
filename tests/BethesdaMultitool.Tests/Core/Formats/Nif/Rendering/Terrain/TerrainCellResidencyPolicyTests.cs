@@ -8,22 +8,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Terrain;
 ///     stream formats and the arena's 16-byte sub-region rule — never by calling the policy, which
 ///     would make the assertions agree with any behaviour the policy happened to have.
 ///     <para>
-///         These values have now changed three times, for the same reason each time — the policy
-///         predicts what the renderer charges, so it moves whenever the renderer's allocation or its
-///         vertex format does. A 33-grid cell was 262,144 bytes under per-cell committed buffers,
-///         148,112 once those became arena sub-allocations, 91,488 once the vertex narrowed from the
-///         shared 72-byte GpuVertex to a 20-byte TerrainVertex, and 82,768 once world X/Y left the
-///         vertex for the shader. A predictor left behind at any of those would keep the planned
+///         These values have now changed four times, for the same reason each time — the policy
+///         predicts what the renderer charges, so it moves whenever the renderer's allocation or
+///         either stream's format does. A 33-grid cell was 262,144 bytes under per-cell committed
+///         buffers, 148,112 once those became arena sub-allocations, 91,488 once the vertex narrowed
+///         from the shared 72-byte GpuVertex to a 20-byte TerrainVertex, 82,768 once world X/Y left
+///         the vertex for the shader, and 47,920 once the blend weights became UNORM16 — 5.5× less
+///         than where this started. A predictor left behind at any of those would keep the planned
 ///         budget above real residency, and the byte bound would never evict a cell while still
 ///         logging a healthy-looking budget.
 ///     </para>
 /// </summary>
 public sealed class TerrainCellResidencyPolicyTests
 {
-    // One arena sub-allocation per cell: align16(verts × 12) + verts × 64, whole range align16.
-    private const long Cell33 = 82_768; // 1089 verts: 13,068→13,072 + 69,696
-    private const long Cell65 = 321_104; // 4225 verts: 50,700→50,704 + 270,400
-    private const long Cell129 = 1_264_720; // 16,641 verts: 199,692→199,696 + 1,065,024
+    // One arena sub-allocation per cell: align16(verts × 12) + verts × 32, whole range align16.
+    private const long Cell33 = 47_920; // 1089 verts: 13,068→13,072 + 34,848
+    private const long Cell65 = 185_904; // 4225 verts: 50,700→50,704 + 135,200
+    private const long Cell129 = 732_208; // 16,641 verts: 199,692→199,696 + 532,512
 
     [Theory]
     [InlineData(33, Cell33)]
@@ -39,8 +40,8 @@ public sealed class TerrainCellResidencyPolicyTests
         // Guards the regression direction that matters: if this ever climbs back toward the
         // committed-buffer figure, the predictor has drifted away from the arena and the bound is
         // inert. 33-grid committed cost was 4 × 64 KiB = 262,144, and the shared-GpuVertex arena
-        // charge was 148,112. The blend-weight stream now dominates what remains (Phase 3c).
-        Assert.True(TerrainCellResidencyPolicy.EstimateCellGpuBytes(33) < 148_112 * 0.6);
+        // charge was 148,112.
+        Assert.True(TerrainCellResidencyPolicy.EstimateCellGpuBytes(33) < 148_112 * 0.35);
     }
 
     [Fact]
@@ -72,28 +73,36 @@ public sealed class TerrainCellResidencyPolicyTests
     [Fact]
     public void The_plan_is_the_vram_share_when_it_sits_between_the_floor_and_the_worldspace()
     {
-        // 8 GiB × 0.35 = 3,006,477,107 B. Against a 33-grid Appalachia-sized worldspace the floor is
-        // 441 × 82,768 = 34.8 MiB and the whole worldspace is 41,219 × 82,768 = 3.18 GiB, so the
-        // share genuinely falls between them and is what gets planned.
+        // 8 GiB × 0.35 = 3,006,477,107 B, against a 129-grid Appalachia-sized worldspace: floor
+        // 441 × 732,208 = 308 MiB, whole worldspace 41,219 × 732,208 = 28.1 GiB.
+        //
+        // This scenario used the 33 grid until the blend weights narrowed, at which point the whole
+        // 41,219-cell worldspace came to 1.84 GiB — BELOW the 8 GiB adapter's share, so the plan is
+        // clamped by the worldspace and the "share wins" case no longer exists there. That is the
+        // program's goal showing up as a broken test premise: a Fallout-family worldspace now fits
+        // entirely in a mid-range card's terrain budget. The premise assertion below is what caught
+        // it rather than the test silently asserting the wrong branch.
         const long budget = 8L << 30;
         var expected = (long)(budget * TerrainCellResidencyPolicy.TerrainShare);
-        Assert.True(expected > 441L * Cell33 && expected < 41_219L * Cell33, "scenario premise broken");
+        Assert.True(expected > 441L * Cell129 && expected < 41_219L * Cell129, "scenario premise broken");
 
-        Assert.Equal(expected, TerrainCellResidencyPolicy.PlanBudgetBytes(budget, 33, 41_219, 10));
+        Assert.Equal(expected, TerrainCellResidencyPolicy.PlanBudgetBytes(budget, 129, 41_219, 10));
     }
 
     [Fact]
     public void The_floor_wins_over_a_small_vram_share()
     {
-        // 441 retained 129-grid cells cost 441 × 1,264,720 = 531.9 MiB. A 1 GiB adapter's 35% share
-        // is 358 MiB — below it. Planning the share would guarantee the sweep evicted visible
+        // 441 retained 129-grid cells cost 441 × 732,208 = 308 MiB. A 512 MiB adapter's 35% share
+        // is 179 MiB — below it. Planning the share would guarantee the sweep evicted visible
         // terrain the instant a new cell was built, which is the flicker the floor exists to stop.
+        // (A 1 GiB adapter used to lose this race; after the format shrink its share clears the
+        // floor, so the case now needs the weakest hardware we still intend to run on.)
         var floor = 441L * Cell129;
 
-        var plan = TerrainCellResidencyPolicy.PlanBudgetBytes(1L << 30, 129, 41_219, 10);
+        var plan = TerrainCellResidencyPolicy.PlanBudgetBytes(512L << 20, 129, 41_219, 10);
 
         Assert.Equal(floor, plan);
-        Assert.True(plan > (long)((1L << 30) * TerrainCellResidencyPolicy.TerrainShare));
+        Assert.True(plan > (long)((512L << 20) * TerrainCellResidencyPolicy.TerrainShare));
     }
 
     [Fact]

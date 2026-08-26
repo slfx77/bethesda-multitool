@@ -41,6 +41,15 @@ internal sealed class CachedCellMesh12 : IDisposable
     /// </summary>
     public required TerrainCellGrid Grid { get; init; }
 
+    /// <summary>
+    ///     Layer-weight quads this cell's blend stream carries (1..<see cref="TerrainVertexLayout.MaxBlendQuads" />).
+    ///     Chosen at build time from the cell's active slot count, and load-bearing at draw time in
+    ///     two places: it selects the shader permutation whose <c>VSInput</c> declares exactly this
+    ///     many weight attributes, and it is the stride the blend-weight vertex-buffer view is bound
+    ///     with. Binding a wider permutation over a narrower stream reads the next vertices' weights.
+    /// </summary>
+    public required int BlendQuadCount { get; init; }
+
     public required TerrainTextureIndices TextureIndices { get; init; }
 
     /// <summary>
@@ -64,21 +73,26 @@ internal sealed class CachedCellMesh12 : IDisposable
     public long ByteSize => Geometry.Allocation.AlignedSize;
 
     /// <summary>
-    ///     Vertex-buffer view for stream slot 0 (positions/normals/colour).
+    ///     Vertex-buffer view for stream slot 0 (height/normal/colour).
     /// </summary>
-    public VertexBufferView VertexView(uint stride) => new()
+    public VertexBufferView VertexView() => new()
     {
         BufferLocation = Geometry.VertexGpuAddress,
         SizeInBytes = Geometry.VertexBytes,
-        StrideInBytes = stride
+        StrideInBytes = TerrainVertex.SizeInBytes
     };
 
-    /// <summary>Vertex-buffer view for stream slot 1 (per-vertex layer blend weights).</summary>
-    public VertexBufferView BlendWeightView(uint stride) => new()
+    /// <summary>
+    ///     Vertex-buffer view for stream slot 1 (per-vertex layer blend weights). The stride comes
+    ///     from this cell's own <see cref="BlendQuadCount" /> rather than from the caller: it varies
+    ///     per cell now, and a caller that passed the wrong one would silently walk into the next
+    ///     vertices' weights instead of failing.
+    /// </summary>
+    public VertexBufferView BlendWeightView() => new()
     {
         BufferLocation = Geometry.BlendGpuAddress,
         SizeInBytes = Geometry.BlendBytes,
-        StrideInBytes = stride
+        StrideInBytes = TerrainVertexLayout.BlendWeightStrideFor(BlendQuadCount)
     };
 
     // Route the arena range through the deletion queue so LRU eviction can't recycle bytes the GPU

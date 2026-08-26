@@ -32,6 +32,12 @@
         <Button x:Name="AllCellsButton" Content="All Cells" IsEnabled="False"
                 Click="AllCellsButton_Click"
                 ToolTipService.ToolTip="Browse every cell; picking an exterior switches worldspace and centres the camera on it" />
+        <!-- Memory dumps only. Runs the DMP→ESM conversion's donor fuzzy pass over every mesh path,
+             persists the map next to the dump, and reopens the mesh pipeline with it — so the
+             preview shows the same renamed-asset resolutions the converter would apply. -->
+        <Button x:Name="ResolveRenamesButton" Content="Resolve Renames" Visibility="Collapsed"
+                Click="ResolveRenamesButton_Click"
+                ToolTipService.ToolTip="Resolve renamed prototype mesh paths against the donor builds (the DMP-to-ESM conversion's fuzzy pass) and save the map next to the dump" />
       </StackPanel>
       <!-- Diagnostics-overlay toggle. Lives in the TOOLBAR rather than over the viewport so that
            switching the overlay off leaves the 3D view completely unobstructed — the button itself

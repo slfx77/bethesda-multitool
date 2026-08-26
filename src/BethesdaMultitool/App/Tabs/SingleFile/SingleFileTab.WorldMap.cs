@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Controls;
 using Windows.UI.Text;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.WorldData;
@@ -200,6 +201,14 @@ public sealed partial class SingleFileTab
         // viewer; ESM/ESP/save views stay exact-only. Set before LoadData so the mesh pipeline opens
         // its archive set with the right resolution mode.
         worldData.IsMemoryDump = !_session.IsEsmFile && !_session.IsSaveFile;
+
+        // A persisted rename map (the user-triggered conversion-parity resolution pass) is picked
+        // up automatically; building one is the explicit "Resolve renamed assets" action.
+        if (worldData.IsMemoryDump && _session.FilePath is { } dumpPath)
+        {
+            worldData.MeshPathRenames ??=
+                MeshRenameMapService.TryLoad(MeshRenameMapService.SidecarPathFor(dumpPath));
+        }
 
         WorldMapControl.LoadData(worldData);
         WorldView3DControl.LoadData(worldData);

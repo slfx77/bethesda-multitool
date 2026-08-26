@@ -23,7 +23,7 @@ public sealed partial class WorldView3DControl
     ///     Invariant: <see cref="MaxPlacedLightsPerFrame" /> &gt;= this, so an interior cell can never
     ///     exceed the frame budget it bypasses.
     /// </summary>
-    private const int MaxPlacedLightsPerInteriorCell = 64;
+    private const int MaxPlacedLightsPerInteriorCell = PlacedLightFrameBudget.MaxPerInteriorCell;
 
     /// <summary>
     ///     Exterior per-cell cap — deliberately unchanged at 16: exteriors accumulate across every
@@ -31,7 +31,7 @@ public sealed partial class WorldView3DControl
     ///     <see cref="FnvActiveAdtBasePolicy.IsEligible" /> keys the active ADT base route on
     ///     <c>PlacedLightCount == 0</c>, so the exterior population must not change here.
     /// </summary>
-    private const int MaxPlacedLightsPerExteriorCell = 16;
+    private const int MaxPlacedLightsPerExteriorCell = PlacedLightFrameBudget.MaxPerExteriorCell;
 
     /// <summary>
     ///     Whole-frame ceiling on uploaded emitters. The per-cell cap alone bounds nothing outdoors:
@@ -39,7 +39,7 @@ public sealed partial class WorldView3DControl
     ///     an unbounded shader <c>[loop]</c> that every terrain and reference pixel walks. Selection
     ///     is nearest-to-camera, which is the only ordering that degrades gracefully.
     /// </summary>
-    private const int MaxPlacedLightsPerFrame = 64;
+    private const int MaxPlacedLightsPerFrame = PlacedLightFrameBudget.MaxPerFrame;
 
     private static readonly bool PlacedLightsEnvEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLights) != "0";
@@ -134,18 +134,10 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private void ApplyFramePlacedLightCap(Vector3 cameraPosition)
     {
-        if (_framePlacedLights.Count <= MaxPlacedLightsPerFrame) return;
-
-        var clipped = _framePlacedLights.Count - MaxPlacedLightsPerFrame;
-        _framePlacedLights.Sort((left, right) =>
-        {
-            var distanceOrder = Vector3.DistanceSquared(left.Position, cameraPosition)
-                .CompareTo(Vector3.DistanceSquared(right.Position, cameraPosition));
-            // FormId breaks ties so the survivors do not shuffle between frames at equal distance.
-            return distanceOrder != 0 ? distanceOrder : left.FormId.CompareTo(right.FormId);
-        });
-        _framePlacedLights.RemoveRange(
-            MaxPlacedLightsPerFrame, _framePlacedLights.Count - MaxPlacedLightsPerFrame);
+        // Selection lives in Core/ so it is unit-testable; this TFM's sources are invisible to the
+        // test project. Only the once-per-session logging stays here.
+        var clipped = PlacedLightFrameBudget.ClipToFrameBudget(_framePlacedLights, cameraPosition);
+        if (clipped == 0) return;
 
         if (_framePlacedLightCapLogged) return;
         _framePlacedLightCapLogged = true;

@@ -1,5 +1,6 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
 
@@ -261,6 +262,14 @@ public sealed partial class WorldMapControl
                 // matches the hillshade (off ⇒ flat shade).
                 enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour,
                 interiorCellFormId: interiorCellFormId,
+                // The map composites this over its own terrain layer, so the overlay must leave the
+                // ground transparent and contribute terrain as depth only.
+                includeTerrainColor: false,
+                // Must stay world-axis-aligned: this overlay is composited onto the map in place of
+                // the marker dots, so it has to land on the same pixels they would.
+                projection: TopDownProjection.Straight,
+                contentWorldZ: null, // straight-down frames in XY only
+                trimetricYawDegrees: TrimetricViewProjBuilder.YawDegrees, // unused by Straight
                 ct);
 
             if (gen != _topDownGen)

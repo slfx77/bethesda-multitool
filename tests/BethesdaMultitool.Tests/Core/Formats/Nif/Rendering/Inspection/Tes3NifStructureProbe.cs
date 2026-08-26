@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Inspection;
 ///     textured shapes must be. Without this, the untextured collision hull renders as white panels /
 ///     a dark blob over the mesh. Reads the real Morrowind.bsa; skips when it isn't present (CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3NifStructureProbe
 {

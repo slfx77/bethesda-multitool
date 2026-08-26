@@ -270,7 +270,6 @@ public sealed class TerrainMeshBuilderTests
         var mesh = TerrainMeshBuilder.Build(cell);
         Assert.NotNull(mesh);
         var indices = mesh.Value.Indices;
-        var verts = mesh.Value.Vertices;
 
         // Triangle 1 of quad (0, 0): indices[0..2].
         var t1 = TriangleNormal(

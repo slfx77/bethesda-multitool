@@ -1,5 +1,6 @@
 using BethesdaAudioTranscriber.Models;
 using BethesdaAudioTranscriber.Services;
+using BethesdaMultitool.Core.Utils;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -149,6 +150,8 @@ public sealed partial class LoadingView : UserControl
             ResultsDetails.Text = detailLines;
             ResultsPanel.Visibility = Visibility.Visible;
 
+            ShowFfmpegWarningIfNeeded(entries);
+
             MainWindow.Instance?.SetStatus($"Loaded {entries.Count:N0} voice files from {DataDirectory}");
 
             BuildLoaded?.Invoke(this, EventArgs.Empty);
@@ -171,5 +174,27 @@ public sealed partial class LoadingView : UserControl
             _cts?.Dispose();
             _cts = null;
         }
+    }
+
+    /// <summary>
+    ///     Xbox 360 voice lines are XMA, and <c>BsaExtractor.ConvertXmaAsync</c> decodes them by
+    ///     shelling out to FFmpeg. Without FFmpeg on the machine every XMA entry fails to play and
+    ///     counts as an error in batch runs, with nothing on screen to say why — so surface it here,
+    ///     once, and only for builds that actually contain XMA (PC builds ship WAV and don't care).
+    /// </summary>
+    private void ShowFfmpegWarningIfNeeded(List<VoiceFileEntry> entries)
+    {
+        var xmaCount = entries.Count(e => e.Extension == "xma");
+        if (xmaCount == 0 || FfmpegLocator.IsAvailable)
+        {
+            FfmpegWarningBar.IsOpen = false;
+            return;
+        }
+
+        FfmpegWarningBar.Message =
+            $"{xmaCount:N0} of these voice files are Xbox 360 XMA, which needs FFmpeg to decode. "
+            + "Install it on your PATH or at C:\\ffmpeg\\bin\\ — until then those lines will not "
+            + "play or transcribe.";
+        FfmpegWarningBar.IsOpen = true;
     }
 }

@@ -14,6 +14,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Particles;
 ///     (invisible). Degenerate windows resolve to Color1, while FadeIn/FadeOut independently interpolate
 ///     the authored endpoint alpha values; RGB remains on the authored three-key curve.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class ParticleColorModifierTests
 {

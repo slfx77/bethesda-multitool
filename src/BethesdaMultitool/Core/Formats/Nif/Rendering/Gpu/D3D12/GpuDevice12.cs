@@ -1,5 +1,6 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Resources;
 using SharpGen.Runtime;
 using Vortice;
 using Vortice.Direct3D;
@@ -33,6 +34,7 @@ internal sealed class GpuDevice12 : IDisposable
     private readonly ID3D12InfoQueue? _infoQueue;
     private IDXGIAdapter3? _videoMemoryAdapter;
     private bool _videoMemoryAdapterResolved;
+    private GpuVideoMemoryMonitor12? _videoMemory;
 
     private GpuDevice12(
         ID3D12Device device,
@@ -110,8 +112,20 @@ internal sealed class GpuDevice12 : IDisposable
     /// <summary>Backend identifier for HUD + log lines. Mirrors the old <c>GpuDevice.Backend</c>.</summary>
     public static string Backend => "Direct3D12";
 
+    /// <summary>
+    ///     Per-frame VRAM feedback for this device, created on first access. Hangs off the device
+    ///     rather than off the GUI control so the headless profiler observes the identical signal —
+    ///     which is what makes a profiler capture evidence about the shipping renderer rather than
+    ///     about a second implementation of it. Callers drive it with
+    ///     <see cref="GpuVideoMemoryMonitor12.Tick" /> once per frame.
+    /// </summary>
+    public GpuVideoMemoryMonitor12 VideoMemory => _videoMemory ??= new GpuVideoMemoryMonitor12(this);
+
     public void Dispose()
     {
+        // Before the adapter: the monitor's watcher unregisters its notification through it.
+        _videoMemory?.Dispose();
+        _videoMemory = null;
         _videoMemoryAdapter?.Dispose();
         _infoQueue?.Dispose();
         FrameFence.Dispose();
@@ -279,11 +293,51 @@ internal sealed class GpuDevice12 : IDisposable
     ///     Returns false if the adapter doesn't expose <see cref="IDXGIAdapter3" /> or the query
     ///     fails. Used by the profiler/diagnostic logging to spot GPU-memory exhaustion (which
     ///     surfaces as a device removal / "crash with no cause") before it happens.
+    ///     <para>
+    ///         Kept as a delegating wrapper over <see cref="TryQueryVideoMemory" /> so its two
+    ///         existing callers — the shadow-resolution choice and the profiler log line — observe
+    ///         exactly the numbers they did before. In particular it still returns <c>true</c> for a
+    ///         query that succeeded with a budget of zero; <c>ShadowMapRenderer12</c> tests that case
+    ///         itself and would change behaviour if this started reporting failure.
+    ///     </para>
     /// </summary>
     public bool TryQueryLocalVideoMemoryMb(out long currentUsageMb, out long budgetMb)
     {
         currentUsageMb = 0;
         budgetMb = 0;
+        if (!TryQueryVideoMemory(GpuMemorySegment.Local, out var info))
+        {
+            return false;
+        }
+
+        currentUsageMb = info.CurrentUsageBytes / (1024 * 1024);
+        budgetMb = info.BudgetBytes / (1024 * 1024);
+        return true;
+    }
+
+    /// <summary>
+    ///     Byte-precision video-memory reading for one segment.
+    ///     <para>
+    ///         <b>The return value and <see cref="GpuVideoMemoryInfo.IsUsable" /> answer different
+    ///         questions.</b> This returns whether the API call succeeded; <c>IsUsable</c> says
+    ///         whether the numbers mean anything. A UMA part can succeed and report a budget of zero,
+    ///         and a caller that conflated the two would read that as "budget zero, therefore full".
+    ///     </para>
+    ///     <para>
+    ///         Both segments matter, not just <see cref="GpuMemorySegment.Local" />: the geometry
+    ///         arena's blocks are UPLOAD-heap and therefore charged to
+    ///         <see cref="GpuMemorySegment.NonLocal" />, so shedding geometry moves that counter and
+    ///         not the VRAM one.
+    ///     </para>
+    /// </summary>
+    public bool TryQueryVideoMemory(GpuMemorySegment segment, out GpuVideoMemoryInfo info)
+    {
+        info = GpuVideoMemoryInfo.Unavailable;
+        if (!TryMapSegment(segment, out var group))
+        {
+            return false;
+        }
+
         var adapter = ResolveVideoMemoryAdapter();
         if (adapter is null)
         {
@@ -292,9 +346,12 @@ internal sealed class GpuDevice12 : IDisposable
 
         try
         {
-            var info = adapter.QueryVideoMemoryInfo(0, MemorySegmentGroup.Local);
-            currentUsageMb = (long)(info.CurrentUsage / (1024UL * 1024UL));
-            budgetMb = (long)(info.Budget / (1024UL * 1024UL));
+            var raw = adapter.QueryVideoMemoryInfo(0, group);
+            info = new GpuVideoMemoryInfo(
+                ToSignedBytes(raw.Budget),
+                ToSignedBytes(raw.CurrentUsage),
+                ToSignedBytes(raw.AvailableForReservation),
+                ToSignedBytes(raw.CurrentReservation));
             return true;
         }
         catch (SharpGenException)
@@ -302,6 +359,91 @@ internal sealed class GpuDevice12 : IDisposable
             return false;
         }
     }
+
+    /// <summary>
+    ///     Tells the OS the minimum this process needs on a segment, so that when budgets are cut it
+    ///     trims other applications first. Directly on-policy for a viewer whose whole purpose is
+    ///     holding more resident than the game could.
+    ///     <para>
+    ///         <paramref name="bytes" /> is clamped to the segment's
+    ///         <see cref="GpuVideoMemoryInfo.AvailableForReservationBytes" /> — the OS's own ceiling
+    ///         on what this process may claim — so an over-large request degrades to the largest
+    ///         honest one instead of being rejected outright.
+    ///     </para>
+    /// </summary>
+    public bool TrySetVideoMemoryReservation(GpuMemorySegment segment, long bytes)
+    {
+        if (bytes < 0 || !TryMapSegment(segment, out var group))
+        {
+            return false;
+        }
+
+        var adapter = ResolveVideoMemoryAdapter();
+        if (adapter is null || !TryQueryVideoMemory(segment, out var info))
+        {
+            return false;
+        }
+
+        var clamped = Math.Min(bytes, Math.Max(0, info.AvailableForReservationBytes));
+        try
+        {
+            adapter.SetVideoMemoryReservation(0, group, (ulong)clamped);
+            return true;
+        }
+        catch (SharpGenException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    ///     Registers for OS budget-change notifications, returning a watcher the render thread polls.
+    ///     <para>
+    ///         <b>Polling and notification answer different questions and both are needed.</b> The
+    ///         notification fires when the OS changes our <i>denominator</i> — another application
+    ///         started and our budget was cut — and never fires when we ourselves consume more. A
+    ///         poll sees the numerator move and cannot see a budget cut promptly. Neither alone is a
+    ///         signal.
+    ///     </para>
+    ///     <para>
+    ///         DXGI signals a Win32 event rather than invoking a callback, which is the safer shape:
+    ///         there is no OS-owned thread running any of our code, so consuming the notification is
+    ///         a zero-timeout wait on the render thread and nothing else.
+    ///     </para>
+    /// </summary>
+    public bool TryCreateBudgetChangeWatcher(out GpuVideoMemoryBudgetWatcher? watcher)
+    {
+        watcher = null;
+        var adapter = ResolveVideoMemoryAdapter();
+        if (adapter is null)
+        {
+            return false;
+        }
+
+        return GpuVideoMemoryBudgetWatcher.TryCreate(adapter, out watcher);
+    }
+
+    private static bool TryMapSegment(GpuMemorySegment segment, out MemorySegmentGroup group)
+    {
+        switch (segment)
+        {
+            case GpuMemorySegment.Local:
+                group = MemorySegmentGroup.Local;
+                return true;
+            case GpuMemorySegment.NonLocal:
+                group = MemorySegmentGroup.NonLocal;
+                return true;
+            default:
+                // Unspecified is a registry-accounting value ("this pool does not distinguish"), not
+                // an addressable segment. Mapping it to Local would silently attribute host memory
+                // to VRAM, which is the exact confusion Phase 0 existed to remove.
+                group = MemorySegmentGroup.Local;
+                return false;
+        }
+    }
+
+    /// <summary>Saturating <c>ulong</c> → <c>long</c>. DXGI never reports 8 EiB; the clamp costs nothing.</summary>
+    private static long ToSignedBytes(ulong value) => value > long.MaxValue ? long.MaxValue : (long)value;
 
     private IDXGIAdapter3? ResolveVideoMemoryAdapter()
     {

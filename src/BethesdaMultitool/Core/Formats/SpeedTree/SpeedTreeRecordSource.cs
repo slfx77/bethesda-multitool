@@ -145,7 +145,7 @@ public static class SpeedTreeRecordSource
             height);
     }
 
-    private static uint? ExtractSeed(Dictionary<string, object?> fields, bool bigEndian)
+    private static uint? ExtractSeed(IReadOnlyDictionary<string, object?> fields, bool bigEndian)
     {
         if (!fields.TryGetValue("SNAM", out var snam))
         {
@@ -176,7 +176,7 @@ public static class SpeedTreeRecordSource
     }
 
     private static (float? Width, float? Height) ExtractBillboardSize(
-        Dictionary<string, object?> fields, bool bigEndian)
+        IReadOnlyDictionary<string, object?> fields, bool bigEndian)
     {
         if (!fields.TryGetValue("BNAM", out var bnam))
         {

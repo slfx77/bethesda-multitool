@@ -15,6 +15,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class NpcAppearanceHelperTests
 {
     private static readonly string MaleSampleCharacterRoot = FindMaleSampleCharacterRoot();

@@ -79,6 +79,41 @@ public sealed class WorldRenderInfrastructureTests
     }
 
     [Fact]
+    public async Task WorldRenderCache_GetStats_CountsARacedBuildExactlyOnce()
+    {
+        // The stats counters are maintained at the insertion sites, gated on TryAdd (true for
+        // exactly one thread per key). ConcurrentDictionary may run two builds for the same cell
+        // concurrently; if BOTH counted, the total would overstate by a whole product with nothing
+        // ever subtracting it. This hammers one key from many threads and pins entries == 1 per map.
+        var cell = new CellRecord
+        {
+            FormId = 0x400,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap { HeightOffset = 0f, HeightDeltas = new sbyte[33 * 33] }
+        };
+        var cache = new WorldRenderCache();
+
+        using var start = new ManualResetEventSlim();
+        var tasks = Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+        {
+            start.Wait();
+            cache.GetTerrain(cell);
+            cache.GetOrBuildTerrainTextureSet(cell, static () => new CellTerrainTextureSet());
+        })).ToArray();
+        start.Set();
+        await Task.WhenAll(tasks);
+
+        var stats = cache.GetStats();
+        Assert.Equal(2, stats.EntryCount); // one terrain + one texture set, never double-counted
+
+        var singleThreaded = new WorldRenderCache();
+        singleThreaded.GetTerrain(cell);
+        singleThreaded.GetOrBuildTerrainTextureSet(cell, static () => new CellTerrainTextureSet());
+        Assert.Equal(singleThreaded.GetStats().EstimatedBytes, stats.EstimatedBytes);
+    }
+
+    [Fact]
     public void WorldRenderCache_QueryPlacementCandidates_SkipsDistantSubCellBucketsButKeepsIntersectingBounds()
     {
         var near = RenderablePlacement(0x201, 100f, 0f);

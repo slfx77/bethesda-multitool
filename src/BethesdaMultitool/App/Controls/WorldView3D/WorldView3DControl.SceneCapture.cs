@@ -652,6 +652,7 @@ public sealed partial class WorldView3DControl
             try
             {
                 _deletionQueue12!.Tick();
+                _gpu12!.VideoMemory.Tick();
                 _ringBuffer12!.ResetFrame();
                 _cbvSrvUavHeap12!.BeginFrame(recorder.FrameIndex);
                 _gpu12!.PumpDebugMessages();

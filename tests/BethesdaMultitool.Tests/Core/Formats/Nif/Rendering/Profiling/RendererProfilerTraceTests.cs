@@ -354,4 +354,30 @@ public sealed class RendererProfilerTraceTests
             RendererProfilerTrace.ResetForTesting();
         }
     }
+
+    /// <summary>
+    ///     These stats exist for one purpose: to be read back out of a profiler trace. Each one
+    ///     answers a question the renderer cannot answer any other way — which cull-cache clause
+    ///     failed, whether frozen batches were reused, whether the terrain byte budget is evicting.
+    ///     <para>
+    ///         Two of them were measured absent from a 356-frame FO76 run on 2026-08-25:
+    ///         <c>refCullCacheVeto</c> was never emitted at all, and <c>cellsEvictedForBudget</c> was
+    ///         dropped one layer earlier by <c>Snapshot()</c>. A source comment had been asking for
+    ///         the veto since 2026-08-02. Silent absence is the failure mode, so pin presence by name.
+    ///     </para>
+    /// </summary>
+    [Theory]
+    [InlineData("refCullCacheHit")]
+    [InlineData("refCullCacheVeto")]
+    [InlineData("refBatchesReused")]
+    [InlineData("refReuseBlocker")]
+    [InlineData("cellsEvictedForBudget")]
+    public void StatsFields_EmitsTheDiagnosticsThatOnlyATraceCanAnswer(string field)
+    {
+        var fields = RendererProfilerTrace.StatsFields("refs.", new WorldRenderStats());
+
+        Assert.True(fields.ContainsKey("refs." + field),
+            $"'{field}' is not emitted, so it cannot be read from a profiler run no matter what the " +
+            "renderer sets it to");
+    }
 }

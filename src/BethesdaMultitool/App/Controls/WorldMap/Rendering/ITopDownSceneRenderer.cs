@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
@@ -57,11 +58,42 @@ internal interface ITopDownSceneRenderer
     ///     ceiling so the top-down view shows the floor plan instead of the roof. Returns null if the
     ///     interior cell isn't found.
     /// </param>
+    /// <param name="includeTerrainColor">
+    ///     When false (the default, and what the 2D map wants), terrain contributes DEPTH ONLY: the
+    ///     ground is transparent and the map composites this over its own terrain layer. When true,
+    ///     terrain is drawn in colour so the result is a self-contained image — required by any
+    ///     consumer that saves the render directly to a file, which would otherwise get objects
+    ///     floating on nothing.
+    ///     <para>
+    ///         Setting this also forces the terrain pass on regardless of the projected-cell-size
+    ///         gate that normally skips it at overview zoom. That gate assumes a terrain layer
+    ///         exists underneath; with no compositing there is no such fallback, so honouring it
+    ///         would produce exactly the empty image this flag exists to prevent.
+    ///     </para>
+    /// </param>
+    /// <param name="projection">
+    ///     Camera framing. <see cref="TopDownProjection.Straight" /> (the default the 2D map needs)
+    ///     keeps the image world-axis-aligned so it registers with the map's other layers;
+    ///     <see cref="TopDownProjection.Trimetric" /> tilts the camera for a more legible standalone
+    ///     picture and no longer corresponds 1:1 to world XY.
+    /// </param>
+    /// <param name="contentWorldZ">
+    ///     World-Z extent of the subject's content, for framing a tilted camera vertically. Ignored
+    ///     by <see cref="TopDownProjection.Straight" />, which frames purely in XY. Null falls back
+    ///     to a flat band at the ground plane.
+    /// </param>
+    /// <param name="trimetricYawDegrees">
+    ///     Camera azimuth for <see cref="TopDownProjection.Trimetric" /> (ignored by Straight).
+    ///     Exists so a capture harness can shoot the same subject from several compass directions —
+    ///     a single tilted view hides whatever stands behind the near-side walls.
+    /// </param>
     Task<TopDownRender?> RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
         IReadOnlyCollection<PlacedObjectCategory> hiddenCategories,
-        bool enableLighting, float gameHour, uint? interiorCellFormId, CancellationToken ct);
+        bool enableLighting, float gameHour, uint? interiorCellFormId, bool includeTerrainColor,
+        TopDownProjection projection, (float Min, float Max)? contentWorldZ,
+        float trimetricYawDegrees, CancellationToken ct);
 }
 
 /// <summary>

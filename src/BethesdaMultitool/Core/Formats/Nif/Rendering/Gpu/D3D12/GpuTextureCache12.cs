@@ -48,11 +48,12 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     // Half-cores (not full) leaves headroom for mesh decode + render + GC; the 8→12 ceiling raise
     // matches the decode-worker raise (high-core machines were idling half their cores cold-loading
     // FO4's texture-heavy Commonwealth). Env override for profiling.
-    private static readonly int DefaultMaxConcurrentTextureResolves = ParsePositiveIntEnvironment(
-        EnvironmentVariables.Viewer.TextureResolveConcurrency,
-        Math.Clamp(Environment.ProcessorCount / 2, 2, 12),
-        1,
-        12);
+    private static readonly int DefaultMaxConcurrentTextureResolves =
+        BethesdaMultitool.Core.Orchestration.ConcurrencyPolicy
+            .Fixed(BethesdaMultitool.Core.Orchestration.CpuBudget.Interactive()
+                .Claim(BethesdaMultitool.Core.Orchestration.CpuWorkload.TextureResolve))
+            .WithEnvironmentOverride(EnvironmentVariables.Viewer.TextureResolveConcurrency, 1, 12)
+            .Resolve();
 
     // Release each decoded texture payload's CPU mip bytes from the resolver cache once it's on the
     // GPU (default on) — they're dead weight afterward and otherwise accumulate to multi-GB managed
@@ -1029,16 +1030,6 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             groups);
     }
 
-    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
-    {
-        var raw = EnvironmentVariables.Get(name);
-        if (!int.TryParse(raw, out var value))
-        {
-            return defaultValue;
-        }
-
-        return Math.Clamp(value, min, max);
-    }
 
     /// <summary>
     ///     Deletion-queue payload that returns a persistent bindless slot to the allocator's

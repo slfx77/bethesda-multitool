@@ -118,6 +118,25 @@
         </StackPanel>
       </Border>
 
+      <!--
+        Xbox 360 voice lines are XMA, which only decodes by shelling out to FFmpeg. Without it,
+        playback and transcription fail silently on every one of them — so warn once, at load,
+        and only when the build actually contains XMA.
+      -->
+      <InfoBar
+        x:Name="FfmpegWarningBar"
+        IsOpen="False"
+        Severity="Warning"
+        Title="FFmpeg not found"
+        AutomationProperties.Name="FFmpeg not found warning">
+        <InfoBar.ActionButton>
+          <HyperlinkButton
+            Content="Download FFmpeg"
+            NavigateUri="https://www.ffmpeg.org/download.html"
+            AutomationProperties.Name="Download FFmpeg" />
+        </InfoBar.ActionButton>
+      </InfoBar>
+
     </StackPanel>
 
     <!-- Progress bar anchored to bottom, space always reserved to prevent layout jump -->

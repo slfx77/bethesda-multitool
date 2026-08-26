@@ -13,6 +13,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 ///     fixtures pin byte offsets; this gate pins the cross-block coordinate frame and source-shape
 ///     routing that cannot be inferred from an isolated constraint payload.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class FnvPhysicsLiteRetailTests
 {

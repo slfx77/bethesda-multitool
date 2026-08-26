@@ -12,6 +12,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     the additive gas billboard until the skip (previously BSLightingShaderProperty-only) covered
 ///     the FNV property types too.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifRefractionSkipTests
 {

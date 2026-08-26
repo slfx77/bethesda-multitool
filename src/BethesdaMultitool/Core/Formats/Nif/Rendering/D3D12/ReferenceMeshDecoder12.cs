@@ -845,24 +845,8 @@ internal sealed class ReferenceMeshDecoder12
         return null;
     }
 
-    public static string NormalizeModelPath(string modelPath)
-    {
-        var normalized = modelPath.Replace('/', '\\').Trim();
-
-        // SpeedTree trees ship at the BSA root under "trees\" (e.g. "trees\wastelandshrub01.spt"),
-        // NOT under "meshes\" like NIFs — and the TREE MODL is typically a bare name with a leading
-        // backslash ("\WastelandShrub01.spt"). Normalize to "trees\<name>.spt" so the archive hit
-        // matches; prepending "meshes\" (correct for NIFs) would miss every .spt and the tree would
-        // silently render nothing.
-        if (SpeedTreeModelPath.IsSpt(normalized))
-        {
-            return SpeedTreeModelPath.ToArchivePath(normalized);
-        }
-
-        return normalized.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-            ? normalized
-            : "meshes\\" + normalized.TrimStart('\\');
-    }
+    public static string NormalizeModelPath(string modelPath) =>
+        ReferenceModelPath.Normalize(modelPath);
 
     /// <summary>
     ///     Stable FNV-1a hash of the model path, used to seed the deterministic SpeedTree generator so

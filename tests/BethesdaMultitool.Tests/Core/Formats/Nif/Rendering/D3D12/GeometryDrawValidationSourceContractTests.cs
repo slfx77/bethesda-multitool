@@ -16,7 +16,7 @@ public sealed class GeometryDrawValidationSourceContractTests
     public void ValidatorRunsBeforeTheGeometryBindsAndGatesOnlyTheDraws()
     {
         var source = ReadRenderer();
-        var loop = Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
+        var loop = SourceContract.Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
 
         // The validator is called before the vertex/index binds.
         SourceContract.AssertOrder(
@@ -34,7 +34,7 @@ public sealed class GeometryDrawValidationSourceContractTests
     public void InstanceAccountingAdvancesUnconditionally()
     {
         var source = ReadRenderer();
-        var loop = Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
+        var loop = SourceContract.Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
 
         // The running instance base must advance for every batch regardless of validation, and it
         // must not be wrapped in the drawLiveness gate.
@@ -46,7 +46,7 @@ public sealed class GeometryDrawValidationSourceContractTests
     public void ValidationIsGatedOffByDefault()
     {
         var source = ReadRenderer();
-        var loop = Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
+        var loop = SourceContract.Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
 
         // With diagnostics disabled the validator is short-circuited (drawLiveness stays true), so
         // the disabled hot path is a single static-readonly branch.
@@ -58,14 +58,5 @@ public sealed class GeometryDrawValidationSourceContractTests
         return SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
-    }
-
-    private static string Extract(string source, string startMarker, string endMarker)
-    {
-        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Missing start marker `{startMarker}`.");
-        var end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
-        Assert.True(end > start, $"Missing end marker `{endMarker}` after `{startMarker}`.");
-        return source[start..end];
     }
 }

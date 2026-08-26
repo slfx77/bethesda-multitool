@@ -53,7 +53,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // A count cap couples loading rate to frame rate (N meshes × FPS); time-budgeting keeps the
     // per-frame cost constant regardless of FPS, which is the correct "spend a fixed slice of each
     // frame" pacing. The env var still imposes an explicit count for profiling.
-    private static readonly int MaxNewUploadsPerFrame = ParsePositiveIntEnvironment(
+    private static readonly int MaxNewUploadsPerFrame = EnvironmentVariables.GetClampedInt(
         EnvironmentVariables.Viewer.ReferenceUploadsPerFrame,
         defaultValue: int.MaxValue,
         min: 1,
@@ -802,7 +802,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                      new VisibilityCylinder(new Vector3(cameraX, cameraY, cameraZ), scanRadius)))
         {
             var placements = _renderCache.GetPlacementList(cell);
-            for (var i = 0; i < placements.Count; i++)
+            for (var i = 0; i < placements.Length; i++)
             {
                 var r = placements[i];
                 // Synthetic placements (engine-scattered grass, FormId 0) carry no authoring order.
@@ -1780,6 +1780,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
+        // Capture the streaming depths BEFORE Reset() clears them. The cull-cache debounce below
+        // asks "was streaming in flight?", and the only frame that can answer is the previous one:
+        // this frame's counters are not written until the very end of Render (the LastStats.Reference*
+        // assignments after the batch pass). Reading them post-Reset returned 0/0/0 unconditionally,
+        // which made `streamingDrained` permanently TRUE and silently deleted the debounce — measured
+        // 2026-08-25 as a MeshBounds cull-cache veto on 99.6% of 529 FO76 frames, i.e. a full batch
+        // rebuild (55.9 ms, 64% of the frame) every single frame. The one-frame lag is inherent and
+        // harmless: the debounce is multi-frame hysteresis already.
+        var streamingInFlightLastFrame = LastStats.ReferenceQueuedDecodes != 0 ||
+                                         LastStats.ReferenceActiveDecodes != 0 ||
+                                         LastStats.ReferenceGpuUploads != 0;
         LastStats.Reset();
         // Clip-w row of the scene viewProj — the blended sort key's metric. The water renderer
         // derives its batch depths from the SAME matrix, so the two streams merge numerically.
@@ -1966,9 +1977,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // MISSING from a frame that simultaneously reports streaming-quiescent — one-shot capture
         // consumers then trust a "settled" image that a later pass would disown. At drain the
         // re-cull costs one pass and cannot recur.
-        var streamingDrained = LastStats.ReferenceQueuedDecodes == 0 &&
-                               LastStats.ReferenceActiveDecodes == 0 &&
-                               LastStats.ReferenceGpuUploads == 0;
+        // Sampled before LastStats.Reset() at the top of this method — see the note there for why
+        // reading it here instead is a no-op that disables the debounce entirely.
+        var streamingDrained = !streamingInFlightLastFrame;
         var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
                                 || ((tolerant || viewIsStatic) && !streamingDrained &&
                                     _framesSinceCull < CullStreamingRefreshFrames);
@@ -4700,16 +4711,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
-    private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
-    {
-        var raw = EnvironmentVariables.Get(name);
-        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-        {
-            return defaultValue;
-        }
-
-        return Math.Clamp(value, min, max);
-    }
 
     private static double ParsePositiveDoubleEnvironment(string name, double defaultValue, double min, double max)
     {

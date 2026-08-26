@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
@@ -9,6 +10,20 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    /// <summary>
+    ///     Padding added around an interior's placed-object spread, as a fraction of its longer
+    ///     side. Object POSITIONS are origins, not extents, so a wall panel anchored on the
+    ///     bounding edge would be half outside an unpadded frame.
+    /// </summary>
+    private const float InteriorFrameMarginFraction = 0.12f;
+
+    /// <summary>
+    ///     Floor for the interior frame margin, in world units, so a cell whose objects are nearly
+    ///     coincident still frames a non-degenerate rectangle (the ortho projection needs a
+    ///     positive span) at roughly one room's worth of context.
+    /// </summary>
+    private const float MinInteriorFrameMargin = 256f;
+
     // Profiler-driving surface --------------------------------------------------------------
 
     internal long Profiler_FrameIndex => _profileFrameIndex;
@@ -39,6 +54,15 @@ public sealed partial class WorldView3DControl
 
     internal WorldRenderStats? Profiler_TerrainStats => _terrain?.LastStats.Snapshot();
     internal WorldRenderStats? Profiler_ReferenceStats => _references?.LastStats.Snapshot();
+
+    /// <summary>
+    ///     Model paths the reference renderer could not resolve in its last pass — the identities
+    ///     behind the <c>meshMissing</c> stat. Meaningful after streaming quiescence; mid-stream it
+    ///     includes paths merely still decoding. Snapshot copy: the renderer clears and rebuilds the
+    ///     backing list per resolve pass on its own cadence.
+    /// </summary>
+    internal IReadOnlyList<string> Profiler_LastMissingMeshPaths =>
+        _references is { } refs ? [.. refs.LastFrameMissingMeshPaths] : [];
     internal WorldRenderStats? Profiler_WaterStats => _water?.LastStats.Snapshot();
     internal WorldRenderStats? Profiler_WireframeStats => _cellGrid?.LastStats.Snapshot();
 
@@ -223,11 +247,26 @@ public sealed partial class WorldView3DControl
             fields["managedHeapMb"] = managedHeapMb;
             resourceGauge += string.Create(CultureInfo.InvariantCulture, $" managedMb={managedHeapMb}");
 
-            if (_gpu12 is not null && _gpu12.TryQueryLocalVideoMemoryMb(out var vramUsedMb, out var vramBudgetMb))
+            // Read the frame loop's already-sampled reading rather than issuing a second DXGI query
+            // here — and report the SIGNAL alongside the raw numbers, because the zone is what any
+            // future decision is made from and a capture that showed only the instantaneous usage
+            // could not explain why a decision was or was not taken.
+            var videoMemory = _gpu12?.VideoMemory;
+            if (videoMemory is { Supported: true })
             {
+                var reading = videoMemory.Local.LastReading;
+                var vramUsedMb = reading.CurrentUsageBytes / (1024 * 1024);
+                var vramBudgetMb = reading.BudgetBytes / (1024 * 1024);
                 fields["vramUsedMb"] = vramUsedMb;
                 fields["vramBudgetMb"] = vramBudgetMb;
-                resourceGauge += string.Create(CultureInfo.InvariantCulture, $" vramMb={vramUsedMb}/{vramBudgetMb}");
+                fields["vramPeakUsedMb"] = videoMemory.Local.PeakUsageBytes / (1024 * 1024);
+                fields["vramZone"] = videoMemory.Local.Zone.ToString();
+                fields["vramUsageFraction"] = videoMemory.Local.UsageFraction;
+                fields["vramNonLocalZone"] = videoMemory.NonLocal.Zone.ToString();
+                fields["vramPollMicroseconds"] = videoMemory.LastPollMicroseconds;
+                fields["vramBudgetChanges"] = videoMemory.BudgetChangeCount;
+                resourceGauge += string.Create(CultureInfo.InvariantCulture,
+                    $" vramMb={vramUsedMb}/{vramBudgetMb} vram={videoMemory.Local.Zone}");
             }
 
             Log.Info(resourceGauge.Length > 0 ? message + " | res:" + resourceGauge : message);
@@ -303,6 +342,212 @@ public sealed partial class WorldView3DControl
         return null;
     }
 
+    /// <summary>
+    ///     Profiler hook: every scene in the loaded source that can be captured top-down — each
+    ///     exterior worldspace, the unlinked-exterior set, and each interior cell — with the world
+    ///     rectangle that frames it. Feeds the batch capture harness so a corpus run enumerates
+    ///     subjects from the loaded data instead of being handed a list.
+    ///     <para>
+    ///         Subjects with nothing to draw are omitted: an exterior needs at least one cell with
+    ///         grid coordinates, an interior at least one placed object (its extent is DERIVED from
+    ///         those positions — interiors have no grid). Memory dumps routinely hold cell records
+    ///         whose placements were never captured, and rendering those produces an empty PNG that
+    ///         reads as a rendering failure rather than as absent data.
+    ///     </para>
+    ///     <para>
+    ///         Ordering is exteriors (largest cell count first, so the big worldspaces are captured
+    ///         while the process is youngest) then interiors by name, for stable, resumable runs.
+    ///     </para>
+    /// </summary>
+    internal IReadOnlyList<TopDownCaptureSubject> Profiler_EnumerateTopDownSubjects()
+    {
+        if (_data is null) return [];
+
+        var cellSize = _data.CellWorldSize;
+        var exteriors = new List<TopDownCaptureSubject>();
+        var interiors = new List<TopDownCaptureSubject>();
+
+        foreach (var ws in _data.Worldspaces)
+        {
+            if (TryFrameCellGrid(ws.Cells, cellSize, TopDownSubjectKind.Worldspace, ws.FormId,
+                    ws.EditorId ?? ws.FullName ?? $"0x{ws.FormId:X8}") is { } subject)
+            {
+                exteriors.Add(subject);
+            }
+        }
+
+        if (TryFrameCellGrid(_data.UnlinkedExteriorCells, cellSize, TopDownSubjectKind.UnlinkedExterior,
+                0u, "UnlinkedExterior") is { } unlinked)
+        {
+            exteriors.Add(unlinked);
+        }
+
+        foreach (var cell in _data.InteriorCells)
+        {
+            if (TryFrameInterior(cell) is { } subject)
+            {
+                interiors.Add(subject);
+            }
+        }
+
+        exteriors.Sort((a, b) => b.CellCount.CompareTo(a.CellCount));
+        interiors.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        exteriors.AddRange(interiors);
+        return exteriors;
+    }
+
+    /// <summary>
+    ///     Frames a set of exterior cells by their grid coordinates. The rectangle spans whole cells
+    ///     (max edge is the far side of the last cell, hence the +1) so nothing on a boundary cell is
+    ///     clipped. Null when no cell carries grid coordinates.
+    /// </summary>
+    private static TopDownCaptureSubject? TryFrameCellGrid(
+        IEnumerable<CellRecord> cells, float cellSize, TopDownSubjectKind kind, uint formId, string name)
+    {
+        var gxs = new List<float>();
+        var gys = new List<float>();
+        var zs = new List<float>();
+        var count = 0;
+        var placements = 0;
+        var nonPersistent = 0;
+        var terrainCells = 0;
+        foreach (var c in cells)
+        {
+            if (c.GridX is not int gx || c.GridY is not int gy) continue;
+            placements += c.PlacedObjects.Count;
+
+            // Residency test (USER RULING): only cells the capture actually RETAINED shape the
+            // subject. Persistent refs (doors, activators) exist for every cell in the file
+            // whether or not it was ever resident — WastelandNV's persistent activators alone
+            // stretched every frame to most of the worldspace while only small portions were
+            // captured. Non-persistent refs and terrain exist only where the cell was resident.
+            var cellNonPersistent = 0;
+            foreach (var p in c.PlacedObjects)
+            {
+                if (!p.IsPersistent) cellNonPersistent++;
+            }
+
+            var hasTerrain = c.Heightmap is not null || c.RuntimeTerrainMesh is not null;
+            if (hasTerrain) terrainCells++;
+            nonPersistent += cellNonPersistent;
+            if (cellNonPersistent == 0 && !hasTerrain) continue;
+
+            count++;
+
+            // One grid sample per CAPTURED ref (terrain-only cells anchor themselves once):
+            // the percentile below then frames where the capture's mass actually is, instead of
+            // letting a couple of stray far-flung resident cells stretch the frame across the
+            // worldspace the way min/max did.
+            var weight = Math.Max(cellNonPersistent, 1);
+            for (var w = 0; w < weight; w++)
+            {
+                gxs.Add(gx);
+                gys.Add(gy);
+            }
+
+            foreach (var p in c.PlacedObjects)
+            {
+                if (float.IsFinite(p.Z)) zs.Add(p.Z);
+            }
+        }
+
+        if (count == 0) return null;
+
+        // Percentile bands on the ref-weighted grid samples AND on Z, for the same reason as the
+        // interior framer: dump captures carry stray resident cells and orphan placements far
+        // from the capture's mass, and min/max framing hands the whole worldspace to them. The
+        // auto-fit pass grows the frame back if genuinely-drawn content ends up clipped.
+        var (minGxF, maxGxF) = PercentileRange(gxs);
+        var (minGyF, maxGyF) = PercentileRange(gys);
+        var minGx = (int)MathF.Floor(minGxF);
+        var maxGx = (int)MathF.Ceiling(maxGxF);
+        var minGy = (int)MathF.Floor(minGyF);
+        var maxGy = (int)MathF.Ceiling(maxGyF);
+        var (minZ, maxZ) = zs.Count > 0 ? PercentileRange(zs) : (0f, 0f);
+
+        return new TopDownCaptureSubject(
+            kind, formId, name,
+            minGx * cellSize, (maxGx + 1) * cellSize,
+            minGy * cellSize, (maxGy + 1) * cellSize,
+            minZ, maxZ,
+            count, placements,
+            // Exterior water is worldspace-level (WRLD NAM2 default, per-cell XCLW override), not
+            // something an individual cell has to opt into, so it always participates outdoors.
+            HasWater: true,
+            NonPersistentCount: nonPersistent,
+            TerrainCellCount: terrainCells);
+    }
+
+    /// <summary>
+    ///     Frames an interior from the spread of its placed objects, padded by
+    ///     <see cref="InteriorFrameMarginFraction" /> so wall geometry whose ORIGIN sits at the
+    ///     bounding edge still has its mesh inside the picture. Falls back to a minimum span for
+    ///     interiors whose objects are nearly coincident, which would otherwise frame a
+    ///     degenerate (zero-width) rectangle the ortho projection cannot build. Null when the
+    ///     cell has no positioned objects.
+    /// </summary>
+    private TopDownCaptureSubject? TryFrameInterior(CellRecord cell)
+    {
+        // Percentile box, not min/max. Dump-recovered interiors carry orphan refs attributed to the
+        // cell whose coordinates are nowhere near it (HooverDamIntPowerPlant04 holds hundreds of
+        // Utl* orphans; see the xex21 attribution work) — one such placement stretches a min/max
+        // box to tens of thousands of units, and at the fixed capture scale that demanded a ~5 GB
+        // render target and failed the whole subject with E_OUTOFMEMORY. Trimming the coordinate
+        // tails frames the room the refs actually describe; the auto-fit pass then recovers any
+        // real geometry the trim grazed.
+        var xs = new List<float>(cell.PlacedObjects.Count);
+        var ys = new List<float>(cell.PlacedObjects.Count);
+        var zs = new List<float>(cell.PlacedObjects.Count);
+        var nonPersistent = 0;
+        foreach (var p in cell.PlacedObjects)
+        {
+            if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)) continue;
+            xs.Add(p.X);
+            ys.Add(p.Y);
+            zs.Add(p.Z);
+            if (!p.IsPersistent) nonPersistent++;
+        }
+
+        var count = xs.Count;
+        if (count == 0) return null;
+
+        var (minX, maxX) = PercentileRange(xs);
+        var (minY, maxY) = PercentileRange(ys);
+        var (minZ, maxZ) = PercentileRange(zs);
+
+        var span = MathF.Max(maxX - minX, maxY - minY);
+        var margin = MathF.Max(span * InteriorFrameMarginFraction, MinInteriorFrameMargin);
+        minX -= margin;
+        maxX += margin;
+        minY -= margin;
+        maxY += margin;
+
+        return new TopDownCaptureSubject(
+            TopDownSubjectKind.Interior, cell.FormId,
+            cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}",
+            minX, maxX, minY, maxY, minZ, maxZ, 1, count,
+            // Same credibility test the spatial index applies to the quad itself, so the
+            // showWater switch and the quad's existence cannot disagree. On dumps the raw flag
+            // byte alone flooded most interiors (stale runtime bytes read as "has water").
+            HasWater: WorldSpatialIndex.HasCredibleInteriorWater(cell, _data?.IsMemoryDump == true),
+            NonPersistentCount: nonPersistent);
+    }
+
+    /// <summary>
+    ///     The [2nd, 98th] percentile range of <paramref name="values" /> — the coordinate band the
+    ///     bulk of a cell's placements actually occupy. Small sets keep plain min/max: with a handful
+    ///     of refs every one of them is load-bearing and nothing can be called an outlier.
+    /// </summary>
+    private static (float Min, float Max) PercentileRange(List<float> values)
+    {
+        values.Sort();
+        if (values.Count < 20) return (values[0], values[^1]);
+
+        var lo = (int)(values.Count * 0.02f);
+        var hi = values.Count - 1 - lo;
+        return (values[lo], values[hi]);
+    }
+
     internal void Profiler_SetCameraPose(RendererProfilerCameraPose pose)
     {
         _camera.Position = pose.Position;
@@ -331,13 +576,6 @@ public sealed partial class WorldView3DControl
         _mouseDragActive = false;
     }
 
-    private static int ParsePositiveInt(string? value, int fallback)
-    {
-        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
-               parsed > 0
-            ? parsed
-            : fallback;
-    }
 
     private static double ParseNonNegativeDouble(string? value, double fallback)
     {

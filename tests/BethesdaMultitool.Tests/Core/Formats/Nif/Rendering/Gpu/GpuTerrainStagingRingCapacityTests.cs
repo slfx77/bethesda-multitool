@@ -25,7 +25,7 @@ public sealed class GpuTerrainStagingRingCapacityTests
     [Fact]
     public void A_small_grid_gets_the_floor_rather_than_a_ring_too_small_to_absorb_a_frame()
     {
-        // 33-grid (Fallout/Oblivion/Skyrim): 82,768 × 8 × 3 = 1.9 MiB, well under the floor.
+        // 33-grid (Fallout/Oblivion/Skyrim): 47,920 × 8 × 3 = 1.1 MiB, well under the floor.
         var planned = GpuTerrainStagingRing12.PlanCapacityBytes(TerrainCellResidencyPolicy.EstimateCellGpuBytes(33));
 
         Assert.Equal(GpuTerrainStagingRing12.MinCapacityBytes, planned);

@@ -14,6 +14,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     <c>BSShader*</c> property. (2) was the actual "Oblivion NIFs don't load their textures even if
 ///     the BSA is automatically selected" bug — the raster path had the fallback, the export path didn't.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class OblivionNifBrowserTextureIntegrationTests
 {

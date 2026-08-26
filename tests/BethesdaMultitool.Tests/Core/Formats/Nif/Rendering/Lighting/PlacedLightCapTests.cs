@@ -1,59 +1,136 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
+using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
-///     Source contracts for the interior/exterior placed-light caps
-///     (<c>WorldView3DControl.PointLights.cs</c> lives in the App TFM, so the routing is pinned by
-///     source text). Interiors are hard-limited by the per-cell cap alone — the frame-level cap only
-///     runs on the exterior branch — so the interior ceiling was raised to 64 as an interim measure
-///     (dense interiors like the Strip casinos popped lights at 16) until the engine-parity
-///     light-volume selection work (FnvRetailLightAssociationOracle) lands. The exterior cap must
-///     stay 16: exteriors accumulate across every visible cell, and FnvActiveAdtBasePolicy keys on
-///     PlacedLightCount == 0.
+///     The placed-light caps and the nearest-N selection applied when the frame budget is exceeded.
+///     <para>
+///         Interiors are hard-limited by the per-cell cap alone — the frame-level cap only runs on
+///         the exterior branch — so the interior ceiling was raised to 64 as an interim measure
+///         (dense interiors like the Strip casinos popped lights at 16) until the engine-parity
+///         light-volume selection work lands. The exterior cap must stay 16: exteriors accumulate
+///         across every visible cell, and <c>FnvActiveAdtBasePolicy</c> keys on
+///         <c>PlacedLightCount == 0</c>.
+///     </para>
+///     <para>
+///         These used to be source pins that re-extracted the constants from the renderer's text
+///         with a regex and asserted call-site ordering. The selection itself — nearest-to-camera,
+///         FormID tie-break, in-place trim — had no coverage at all, which is the part that
+///         actually decides what the player sees.
+///     </para>
 /// </summary>
-public sealed class PlacedLightCapTests
+public class PlacedLightCapTests
 {
-    private static string ReadPointLightsSource()
+    /// <summary>
+    ///     A single interior cell bypasses the frame cap, so the frame budget must be able to
+    ///     absorb a full interior cell; and an interior must never be tighter than an exterior.
+    /// </summary>
+    [Fact]
+    public void Caps_AreOrdered_SoAnInteriorCellCanNeverExceedTheFrameBudget()
     {
-        return SourceContract.ReadAppSource("WorldView3DControl.PointLights.cs");
+        Assert.True(PlacedLightFrameBudget.MaxPerFrame >= PlacedLightFrameBudget.MaxPerInteriorCell,
+            $"Frame budget ({PlacedLightFrameBudget.MaxPerFrame}) < interior cap "
+            + $"({PlacedLightFrameBudget.MaxPerInteriorCell}).");
+        Assert.True(PlacedLightFrameBudget.MaxPerInteriorCell >= PlacedLightFrameBudget.MaxPerExteriorCell,
+            $"Interior cap ({PlacedLightFrameBudget.MaxPerInteriorCell}) < exterior cap "
+            + $"({PlacedLightFrameBudget.MaxPerExteriorCell}).");
+    }
+
+    /// <summary>
+    ///     The exterior cap is load-bearing for the active-ADT base route, so pin the value itself
+    ///     rather than only its ordering.
+    /// </summary>
+    [Fact]
+    public void ExteriorCap_StaysAtSixteen()
+    {
+        Assert.Equal(16, PlacedLightFrameBudget.MaxPerExteriorCell);
     }
 
     [Fact]
-    public void CapConstantsKeepTheirValues()
+    public void ClipToFrameBudget_WithinBudget_LeavesTheListUntouched()
     {
-        var source = ReadPointLightsSource();
-        Assert.Contains(
-            "private const int MaxPlacedLightsPerInteriorCell = 64;", source, StringComparison.Ordinal);
-        Assert.Contains(
-            "private const int MaxPlacedLightsPerExteriorCell = 16;", source, StringComparison.Ordinal);
-        Assert.Contains(
-            "private const int MaxPlacedLightsPerFrame = 64;", source, StringComparison.Ordinal);
+        var lights = MakeLights(PlacedLightFrameBudget.MaxPerFrame);
+        var original = lights.Select(l => l.FormId).ToList();
+
+        var clipped = PlacedLightFrameBudget.ClipToFrameBudget(lights, Vector3.Zero);
+
+        Assert.Equal(0, clipped);
+        // Order preserved too: sorting an in-budget frame would be wasted work and could reorder
+        // uploads for no reason.
+        Assert.Equal(original, lights.Select(l => l.FormId));
     }
 
     [Fact]
-    public void FrameBudgetCoversTheInteriorCellCap()
+    public void ClipToFrameBudget_OverBudget_TrimsToTheBudgetAndReportsTheOverflow()
     {
-        // Interiors bypass ApplyFramePlacedLightCap, so a single interior cell must never be able
-        // to exceed the whole-frame upload budget.
-        var source = ReadPointLightsSource();
-        var interior = ExtractConstant(source, "MaxPlacedLightsPerInteriorCell");
-        var exterior = ExtractConstant(source, "MaxPlacedLightsPerExteriorCell");
-        var frame = ExtractConstant(source, "MaxPlacedLightsPerFrame");
-        Assert.True(frame >= interior, $"MaxPlacedLightsPerFrame ({frame}) < interior cap ({interior}).");
-        Assert.True(interior >= exterior, $"Interior cap ({interior}) < exterior cap ({exterior}).");
+        const int excess = 7;
+        var lights = MakeLights(PlacedLightFrameBudget.MaxPerFrame + excess);
+
+        var clipped = PlacedLightFrameBudget.ClipToFrameBudget(lights, Vector3.Zero);
+
+        Assert.Equal(excess, clipped);
+        Assert.Equal(PlacedLightFrameBudget.MaxPerFrame, lights.Count);
+    }
+
+    /// <summary>
+    ///     The survivors must be the nearest ones — the only ordering that degrades gracefully as a
+    ///     player walks into a dense area.
+    /// </summary>
+    [Fact]
+    public void ClipToFrameBudget_KeepsTheNearestLightsToTheCamera()
+    {
+        // FormId i sits at distance i on X, so the nearest survivors are exactly FormIds 0..budget-1.
+        var lights = MakeLights(PlacedLightFrameBudget.MaxPerFrame + 20);
+        lights.Reverse(); // farthest first, so a no-op sort could not accidentally pass
+
+        PlacedLightFrameBudget.ClipToFrameBudget(lights, Vector3.Zero);
+
+        Assert.Equal(
+            Enumerable.Range(0, PlacedLightFrameBudget.MaxPerFrame).Select(i => (uint)i),
+            lights.Select(l => l.FormId));
+    }
+
+    /// <summary>
+    ///     Equal-distance lights must resolve deterministically, or the survivor set shuffles
+    ///     between frames and reads as flicker.
+    /// </summary>
+    [Fact]
+    public void ClipToFrameBudget_AtEqualDistance_BreaksTiesByFormIdSoSurvivorsAreStable()
+    {
+        var camera = new Vector3(0f, 0f, 0f);
+        var first = BuildCoincidentLights();
+        var second = BuildCoincidentLights();
+        second.Reverse(); // a different input order must not change the outcome
+
+        PlacedLightFrameBudget.ClipToFrameBudget(first, camera);
+        PlacedLightFrameBudget.ClipToFrameBudget(second, camera);
+
+        Assert.Equal(first.Select(l => l.FormId), second.Select(l => l.FormId));
+        Assert.Equal(
+            Enumerable.Range(0, PlacedLightFrameBudget.MaxPerFrame).Select(i => (uint)i),
+            first.Select(l => l.FormId));
     }
 
     [Fact]
-    public void InteriorBranchUsesTheInteriorCapAndExteriorBranchUsesTheExteriorCap()
+    public void ClipToFrameBudget_NullList_Throws()
     {
-        var source = ReadPointLightsSource();
+        Assert.Throws<ArgumentNullException>(
+            () => PlacedLightFrameBudget.ClipToFrameBudget(null!, Vector3.Zero));
+    }
 
-        // Interior branch: _selectedInterior gather runs with the interior constant, and the
-        // exterior visible-cell loop runs with the exterior constant before the frame cap.
+    /// <summary>
+    ///     Interiors gather with the interior cap and exteriors with the exterior cap, and the frame
+    ///     cap runs only on the exterior branch. That routing is a property of the render loop, not
+    ///     of the budget, so it stays a source pin.
+    /// </summary>
+    [Fact]
+    public void RenderLoop_RoutesEachBranchThroughItsOwnCap()
+    {
+        var source = SourceContract.ReadAppSource("WorldView3DControl.PointLights.cs");
+
         SourceContract.AssertOrder(
             source,
             "if (_selectedInterior is { } interior)",
@@ -66,10 +143,30 @@ public sealed class PlacedLightCapTests
         Assert.DoesNotContain("const int MaxPlacedLightsPerCell ", source, StringComparison.Ordinal);
     }
 
-    private static int ExtractConstant(string source, string name)
+    /// <summary>Lights strung out along +X, FormId ascending with distance.</summary>
+    private static List<PlacedLight> MakeLights(int count)
     {
-        var match = Regex.Match(source, $@"private const int {Regex.Escape(name)} = (\d+);");
-        Assert.True(match.Success, $"Constant {name} not found.");
-        return int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        return [.. Enumerable.Range(0, count).Select(i => MakeLight((uint)i, new Vector3(i, 0f, 0f)))];
+    }
+
+    /// <summary>Every light at the same point, so only the FormID tie-break can order them.</summary>
+    private static List<PlacedLight> BuildCoincidentLights()
+    {
+        return
+        [
+            .. Enumerable.Range(0, PlacedLightFrameBudget.MaxPerFrame + 10)
+                .Select(i => MakeLight((uint)i, new Vector3(5f, 0f, 0f)))
+        ];
+    }
+
+    private static PlacedLight MakeLight(uint formId, Vector3 position)
+    {
+        return new PlacedLight
+        {
+            FormId = formId,
+            Position = position,
+            Radius = 512f,
+            Color = new Vector3(1f, 1f, 1f)
+        };
     }
 }

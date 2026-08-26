@@ -14,6 +14,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Collision;
 ///     Before those gates the Ayleid ring wall's collision cage decoded at a wrong scale/position —
 ///     visible from afar, gone when the camera stood next to the wall.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class OblivionHavokCollisionIntegrationTests
 {

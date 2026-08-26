@@ -44,9 +44,15 @@ internal static class TerrainCellCpuBuilder
             ? renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, cells, gridSize))
             : BuildCellTextureSet(key, cell, cells, gridSize);
 
-        var blendWeights = new Vector4[TerrainMeshBuilder.VertexCountFor(gridSize) * CellTerrainTextureSet.SlotVectors];
-        PopulateBlendWeights(textureSet, blendWeights, gridSize);
-        return new BuiltCellCpuData(vertices, blendWeights, textureSet, grid, Unusable: false, generation);
+        // Only the quads this cell's slot count reaches. A cell painted with 3 land textures carries
+        // 8 bytes of weights a vertex, not 32 — exact, because slots past ActiveSlotCount are zero
+        // at every vertex of the cell (the slot -> LTEX map is cell-wide).
+        var blendQuadCount = TerrainBlendWeightPacking.QuadCountFor(textureSet?.ActiveSlotCount ?? 0);
+        var blendWeights = new ushort[
+            TerrainMeshBuilder.VertexCountFor(gridSize) * blendQuadCount * TerrainBlendWeightPacking.SlotsPerQuad];
+        PopulateBlendWeights(textureSet, blendWeights, gridSize, blendQuadCount);
+        return new BuiltCellCpuData(
+            vertices, blendWeights, blendQuadCount, textureSet, grid, Unusable: false, generation);
     }
 
     /// <summary>
@@ -126,18 +132,33 @@ internal static class TerrainCellCpuBuilder
     ];
 
     /// <summary>
-    ///     Pack <paramref name="set" />'s per-vertex Vector4 weights into the scratch array,
-    ///     remapping from the weight-table row order (vy=0 north) to the mesh-builder row
-    ///     order (j=0 south, since the mesh emits world-Y growing northward from originY).
+    ///     Projects the cell's weight table into the GPU stream: flips rows from the weight-table
+    ///     order (vy=0 north) into mesh order (j=0 south, since the mesh emits world-Y growing
+    ///     northward from originY), narrows each weight to UNORM16, and drops the quads this cell
+    ///     does not use — all in one pass.
+    ///     <para>
+    ///         <paramref name="dest" /> holds <paramref name="blendQuadCount" /> × 4 packed weights
+    ///         per vertex, not <see cref="CellTerrainTextureSet.SlotVectors" /> vectors: the wire
+    ///         format is <c>ushort</c>s that the input assembler presents to the shader as
+    ///         <c>float4</c>s. The CPU-side <see cref="CellTerrainTextureSet" /> deliberately stays
+    ///         <c>Vector4</c> at full width — it is the cached authoring model, sized by
+    ///         <c>TerrainTextureSetWarmPolicy</c>, and narrowing it would change a different budget.
+    ///     </para>
     /// </summary>
-    public static void PopulateBlendWeights(CellTerrainTextureSet? set, Vector4[] dest, int gridSize)
+    public static void PopulateBlendWeights(
+        CellTerrainTextureSet? set, ushort[] dest, int gridSize, int blendQuadCount)
     {
+        // Clear rather than fill: a cell with no texture set at all still renders, through the
+        // fragment shader's totalWeight fallback to the engine-default slot.
         if (set is null)
         {
             Array.Clear(dest);
             return;
         }
+
         const int vectors = CellTerrainTextureSet.SlotVectors;
+        var quads = Math.Clamp(blendQuadCount, 0, vectors);
+        var stride = quads * TerrainBlendWeightPacking.SlotsPerQuad;
         for (var j = 0; j < gridSize; j++)
         {
             var cellVy = gridSize - 1 - j;
@@ -145,9 +166,14 @@ internal static class TerrainCellCpuBuilder
             {
                 var meshIdx = j * gridSize + i;
                 var tableIdx = cellVy * gridSize + i;
-                for (var k = 0; k < vectors; k++)
+                for (var k = 0; k < quads; k++)
                 {
-                    dest[meshIdx * vectors + k] = set.VertexWeights[tableIdx * vectors + k];
+                    var w = set.VertexWeights[tableIdx * vectors + k];
+                    var o = meshIdx * stride + k * TerrainBlendWeightPacking.SlotsPerQuad;
+                    dest[o + 0] = TerrainBlendWeightPacking.Pack(w.X);
+                    dest[o + 1] = TerrainBlendWeightPacking.Pack(w.Y);
+                    dest[o + 2] = TerrainBlendWeightPacking.Pack(w.Z);
+                    dest[o + 3] = TerrainBlendWeightPacking.Pack(w.W);
                 }
             }
         }

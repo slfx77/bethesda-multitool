@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Walk;
 ///     by the GUI without requiring WinUI input: a wall blocks, diagonal motion slides, and a single
 ///     very long frame cannot step from one side of a thin wall to the other.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 public sealed class WalkHorizontalCollisionTests
 {
     private const float Radius = 24f;

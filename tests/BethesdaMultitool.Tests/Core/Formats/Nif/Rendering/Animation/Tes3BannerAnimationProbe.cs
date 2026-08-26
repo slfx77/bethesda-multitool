@@ -19,6 +19,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 ///     and the skin export must cover every vertex. Reads the real Morrowind.bsa; skips when
 ///     absent (CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3BannerAnimationProbe
 {

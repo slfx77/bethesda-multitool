@@ -12,6 +12,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 ///     Optional retail boundary for the synthetic classifier tests. The nearby animated Vivec
 ///     waterfall is a deliberate negative: UV motion and water-themed names alone are insufficient.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class Tes3PlacedWaterRetailTests
 {

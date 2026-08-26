@@ -18,6 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 ///     CYCLE_LOOP), and the skin export must bind bones block-exactly. Reads the real FNV meshes
 ///     BSA; skips when absent (CI).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class FnvFlagSequenceAnimationProbe
 {

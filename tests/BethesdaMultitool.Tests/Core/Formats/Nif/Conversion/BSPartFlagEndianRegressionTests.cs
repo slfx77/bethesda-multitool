@@ -17,6 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Conversion;
 ///     post-conversion partition bytes from a real prototype NIF and asserting they match
 ///     PC vanilla semantics (limbs visible, gore caps not).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class BSPartFlagEndianRegressionTests
 {
@@ -28,10 +29,6 @@ public sealed class BSPartFlagEndianRegressionTests
     {
         BucketBTestGuard.SkipUnlessEnabled();
         var nifBytes = LoadSamplePrototypeNif();
-        if (nifBytes is null)
-        {
-            return;
-        }
 
         var (info, converted) = ConvertAndReparseAsPc(nifBytes);
 
@@ -52,10 +49,6 @@ public sealed class BSPartFlagEndianRegressionTests
     {
         BucketBTestGuard.SkipUnlessEnabled();
         var nifBytes = LoadSamplePrototypeNif();
-        if (nifBytes is null)
-        {
-            return;
-        }
 
         var (info, converted) = ConvertAndReparseAsPc(nifBytes);
 
@@ -102,7 +95,11 @@ public sealed class BSPartFlagEndianRegressionTests
         Assert.Equal(230, partitions[2].BodyPart);
     }
 
-    private static byte[]? LoadSamplePrototypeNif()
+    /// <summary>
+    ///     Loads the prototype sample, or skips the calling test when it is absent. Never returns
+    ///     null — <see cref="Assert.SkipWhen" /> throws — so callers need no null check.
+    /// </summary>
+    private static byte[] LoadSamplePrototypeNif()
     {
         var path = SampleFileFixture.FindSamplePath(UlyssesProtoNifPath);
         Assert.SkipWhen(path is null, $"Sample NIF not available: {UlyssesProtoNifPath}");

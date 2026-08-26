@@ -1,3 +1,4 @@
+using System.Globalization;
 namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
@@ -48,4 +49,24 @@ internal static class FormIdHeatmapRangeScale
         var cells = MathF.Round((float)Math.Pow(2d, sliderValue));
         return Math.Clamp(cells, MinCells, MaxFiniteCells);
     }
+
+    /// <summary>
+    ///     The range slider's tooltip text: the distance in whole cells suffixed "c", or
+    ///     <see cref="UnlimitedLabel" /> at the dedicated top stop.
+    ///     <para>
+    ///         In <c>Core/</c> for the same reason as
+    ///         <see cref="RenderDistanceScale.FormatCells" /> — the WinUI converter that used to own
+    ///         this rule is unreachable from the test target framework.
+    ///     </para>
+    /// </summary>
+    public static string FormatCells(double sliderValue, IFormatProvider? provider = null)
+    {
+        var cells = CellsFromSlider(sliderValue);
+        return float.IsPositiveInfinity(cells)
+            ? UnlimitedLabel
+            : string.Format(provider ?? CultureInfo.CurrentCulture, "{0:0} c", cells);
+    }
+
+    /// <summary>Shown at the top stop, where the range is uncapped.</summary>
+    public const string UnlimitedLabel = "Unlimited";
 }

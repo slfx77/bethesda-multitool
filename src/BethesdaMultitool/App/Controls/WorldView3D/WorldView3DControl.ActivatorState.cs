@@ -16,25 +16,8 @@ public sealed partial class WorldView3DControl
     ///     reference mesh (including any embedded water) or a valid placed-LIGH emitter. Actor refs,
     ///     missing-model ordinary refs, and malformed placements do not get a success-looking no-op UI.
     /// </summary>
-    internal bool CanPreviewReferenceVisibility(PlacedReference reference)
-    {
-        if (reference.FormId == 0 || _data is null) return false;
-
-        var xespDisabled = _data.XespDisabledRefs.Contains(reference.FormId);
-        var category = _data.CategoryIndex.GetValueOrDefault(
-            reference.BaseFormId, PlacedObjectCategory.Unknown);
-        if (RenderableReference.TryBuild(
-                reference,
-                category,
-                xespDisabled: xespDisabled,
-                game: _data.Game) is not null)
-        {
-            return true;
-        }
-
-        return _data.LightsByFormId.TryGetValue(reference.BaseFormId, out var light) &&
-               PlacedLight.TryBuild(reference, light, xespDisabled, _data.Game) is { HasEmission: true };
-    }
+    internal bool CanPreviewReferenceVisibility(PlacedReference reference) =>
+        ReferencePreviewEligibility.CanPreview(reference, _data);
 
     /// <summary>Raised after the scene-wide recovery action restores every per-reference preview.</summary>
     public event EventHandler? ReferenceEnabledOverridesReset;
@@ -48,17 +31,14 @@ public sealed partial class WorldView3DControl
     ///     set, not vantage-only content. This intentionally ignores UI preview overrides.
     /// </summary>
     internal bool IsReferenceAuthoredEnabled(PlacedReference reference) =>
-        !reference.IsInitiallyDisabled &&
-        (_data?.XespDisabledRefs.Contains(reference.FormId) != true);
+        ReferencePreviewEligibility.IsAuthoredEnabled(reference, _data);
 
     /// <summary>
     ///     Returns the base LIGH emitter's independent authored state, or <c>null</c> when the
     ///     selected placement is not backed by a parsed LIGH record.
     /// </summary>
     internal bool? IsReferenceBaseLightAuthoredEnabled(PlacedReference reference) =>
-        _data?.LightsByFormId.TryGetValue(reference.BaseFormId, out var light) == true
-            ? (light.Flags & PlacedLight.OffByDefaultFlag) == 0
-            : null;
+        ReferencePreviewEligibility.IsBaseLightAuthoredEnabled(reference, _data);
 
     /// <summary>
     ///     Sets a session-only per-instance Enabled preview. <see cref="ReferenceEnabledOverride.Authored" />

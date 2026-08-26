@@ -12,6 +12,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Resources;
 
 namespace BethesdaMultitool.Core.WorldData;
 
@@ -25,7 +26,7 @@ internal sealed class WorldRenderCache : ITrackableResource
     private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<PlacedLight>> _placedLights =
         new(ReferenceEqualityComparer.Instance);
 
-    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements =
+    private readonly ConcurrentDictionary<CellRecord, RenderableReference[]> _placements =
         new(ReferenceEqualityComparer.Instance);
 
     private readonly ConcurrentDictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes =
@@ -39,11 +40,23 @@ internal sealed class WorldRenderCache : ITrackableResource
     // cardinal neighbors' LAND); see TerrainRenderer12.BuildCellTextureSet. Moves
     // ~0.05 ms per cell out of TryBuildAndCache, smoothing the 16-cell-per-frame mesh
     // build burst when entering a new area.
-    private readonly ConcurrentDictionary<CellRecord, Cached<CellTerrainTextureSet>> _terrainTextureSets =
-        new(ReferenceEqualityComparer.Instance);
+    /// <summary>
+    ///     Ceiling for each per-cell derived cache. Sized so a 33-grid worldspace (68 KB a cell)
+    ///     never evicts at all - about 7,700 cells, more than any such worldspace holds - while a
+    ///     129-grid one settles at a few hundred resident cells instead of tens of thousands.
+    /// </summary>
+    internal const long MaxDerivedCacheBytes = 512L * 1024L * 1024L;
 
-    private readonly ConcurrentDictionary<CellRecord, Cached<TextureWinnerGrid>> _textureWinners =
-        new(ReferenceEqualityComparer.Instance);
+    private readonly BoundedDerivedCache<CellRecord, CellTerrainTextureSet> _terrainTextureSets =
+        new(MaxDerivedCacheBytes);
+
+    private readonly BoundedDerivedCache<CellRecord, TextureWinnerGrid> _textureWinners =
+        new(MaxDerivedCacheBytes);
+
+    // Running stats totals, maintained at the insertion sites so GetStats is O(1). Append-only for
+    // the session (nothing removes from these maps), so the counters never need a subtract path.
+    private long _trackedBytes;
+    private long _trackedEntries;
 
     /// <summary>
     ///     Base-FormID → <see cref="PlacedObjectCategory" /> index (the owning
@@ -130,88 +143,108 @@ internal sealed class WorldRenderCache : ITrackableResource
     /// <summary>
     ///     Tracking-only conformance (session-scoped; dropped wholesale with its
     ///     <see cref="WorldViewData" />, never trimmed — shedding derived grids mid-render would
-    ///     just thrash rebuilds). Entries = decoded products across the five per-cell maps;
+    ///     just thrash rebuilds). Entries = decoded products across the six per-cell maps;
     ///     <see cref="Core.Diagnostics.ResourceStats.EstimatedBytes" /> sums their managed footprint.
-    ///     The terrain texture sets dominate (~68 KB each — a 1089-vertex × 4-Vector4 weight grid)
-    ///     and are warmed for every cell of the worldspace at load, so this number is the single
-    ///     largest managed consumer once a big worldspace is open; it used to report 0, hiding it.
+    ///     The terrain texture sets dominate (~68 KB each at a 33-grid, ~1 MB at Fallout 76's
+    ///     129-grid) and grow on demand as cells are visited, so this number is the single largest
+    ///     managed consumer once a big worldspace is open.
+    ///     <para>
+    ///         O(1): running totals maintained at the insertion sites. The previous implementation
+    ///         walked all six per-cell dictionaries per call — on a 40k-cell worldspace that is
+    ///         O(cells × buckets) work, and the diagnostics tab calls GetStats every second, which
+    ///         is exactly what the "cheap and lock-free" contract on
+    ///         <see cref="Core.Diagnostics.ITrackableResource.GetStats" /> forbids.
+    ///     </para>
     /// </summary>
     public ResourceStats GetStats()
     {
-        long bytes = 0;
-
-        foreach (var cell in _terrain.Values)
-        {
-            bytes += cell.EstimatedBytes;
-        }
-
-        foreach (var winners in _textureWinners.Values)
-        {
-            // uint?[] — each Nullable<uint> element is 8 bytes (value + has-value flag, padded).
-            bytes += winners.Value is { } grid ? grid.Winners.Length * 8L : 0L;
-        }
-
-        var refSize = Unsafe.SizeOf<RenderableReference>();
-        foreach (var list in _placements.Values)
-        {
-            bytes += (long)list.Count * refSize;
-        }
-
-        var lightSize = Unsafe.SizeOf<PlacedLight>();
-        foreach (var list in _placedLights.Values)
-        {
-            bytes += (long)list.Count * lightSize;
-        }
-
-        foreach (var index in _placementSpatialIndexes.Values)
-        {
-            bytes += index.EstimatedBytes;
-        }
-
-        foreach (var set in _terrainTextureSets.Values)
-        {
-            if (set.Value is { } textureSet)
-            {
-                bytes += textureSet.VertexWeights.Length * 16L /* sizeof(Vector4) */ +
-                         (long)textureSet.SlotFormIds.Length * sizeof(uint);
-            }
-        }
-
         return new ResourceStats
         {
-            EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count + _placedLights.Count +
-                         _placementSpatialIndexes.Count + _terrainTextureSets.Count,
-            EstimatedBytes = bytes
+            EntryCount = Volatile.Read(ref _trackedEntries),
+            EstimatedBytes = Volatile.Read(ref _trackedBytes)
         };
+    }
+
+    /// <summary>
+    ///     Counts one installed product. Every insertion site gates the call on
+    ///     <c>ConcurrentDictionary.TryAdd</c>, which returns true for exactly one thread per key —
+    ///     under a build race two threads construct, one installs, and only the installer counts.
+    ///     Counting the loser would overstate the total by a whole product with nothing ever
+    ///     subtracting it (these maps are append-only for the session).
+    /// </summary>
+    private void TrackInstalled(long bytes)
+    {
+        Interlocked.Add(ref _trackedBytes, bytes);
+        Interlocked.Increment(ref _trackedEntries);
+    }
+
+    /// <summary>
+    ///     Counterpart to <see cref="TrackInstalled" /> for the two DERIVED caches, which are the
+    ///     only ones that evict. Without it the registry would keep reporting bytes that had already
+    ///     been dropped, and a budget steered from that number would be steering from fiction.
+    /// </summary>
+    private void TrackReleased(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return;
+        }
+
+        Interlocked.Add(ref _trackedBytes, -bytes);
+        Interlocked.Decrement(ref _trackedEntries);
     }
 
     internal DecodedTerrainCell GetTerrain(CellRecord cell)
     {
-        return _terrain.GetOrAdd(cell, static c => DecodedTerrainCell.Decode(c));
+        if (_terrain.TryGetValue(cell, out var existing))
+        {
+            return existing;
+        }
+
+        // Same race semantics as GetOrAdd(factory): a concurrent caller may also decode, and one
+        // result installs. The split form exists so the accounting can observe WHICH one did.
+        var decoded = DecodedTerrainCell.Decode(cell);
+        if (_terrain.TryAdd(cell, decoded))
+        {
+            TrackInstalled(decoded.EstimatedBytes);
+            return decoded;
+        }
+
+        return _terrain[cell];
     }
 
     internal TextureWinnerGrid? GetTextureWinners(CellRecord cell)
     {
-        return _textureWinners.GetOrAdd(cell, static c =>
+        if (_textureWinners.TryGet(cell, out var existing))
         {
-            var layers = c.LandVisualData?.TextureLayers;
-            TextureWinnerGrid? winners;
-            if (layers is { Count: > 0 })
-            {
-                winners = TextureWinnerGrid.Build(layers);
-            }
-            else if (c.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
-            {
-                // Morrowind: build the region grid from the flat 16×16 VTEX grid (no BTXT/ATXT quadrants).
-                winners = TextureWinnerGrid.BuildFromVtex(vtex);
-            }
-            else
-            {
-                winners = null;
-            }
+            return existing;
+        }
 
-            return new Cached<TextureWinnerGrid>(winners);
-        }).Value;
+        var layers = cell.LandVisualData?.TextureLayers;
+        TextureWinnerGrid? winners;
+        if (layers is { Count: > 0 })
+        {
+            winners = TextureWinnerGrid.Build(layers);
+        }
+        else if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
+        {
+            // Morrowind: build the region grid from the flat 16×16 VTEX grid (no BTXT/ATXT quadrants).
+            winners = TextureWinnerGrid.BuildFromVtex(vtex);
+        }
+        else
+        {
+            winners = null;
+        }
+
+        var winnerBytes = winners?.EstimatedBytes ?? 0L;
+        if (_textureWinners.TryAdd(cell, winners, winnerBytes, out var evictedBytes))
+        {
+            TrackInstalled(winnerBytes);
+            TrackReleased(evictedBytes);
+            return winners;
+        }
+
+        return _textureWinners.TryGet(cell, out var raced) ? raced : winners;
     }
 
     /// <summary>
@@ -226,10 +259,24 @@ internal sealed class WorldRenderCache : ITrackableResource
         CellRecord cell,
         Func<CellTerrainTextureSet?> builder)
     {
-        return _terrainTextureSets.GetOrAdd(
-            cell,
-            static (_, build) => new Cached<CellTerrainTextureSet>(build()),
-            builder).Value;
+        if (_terrainTextureSets.TryGet(cell, out var existing))
+        {
+            return existing;
+        }
+
+        var built = builder();
+        var builtBytes = built is not null
+            ? built.VertexWeights.Length * 16L /* sizeof(Vector4) */ +
+              (long)built.SlotFormIds.Length * sizeof(uint)
+            : 0L;
+        if (_terrainTextureSets.TryAdd(cell, built, builtBytes, out var evictedBytes))
+        {
+            TrackInstalled(builtBytes);
+            TrackReleased(evictedBytes);
+            return built;
+        }
+
+        return _terrainTextureSets.TryGet(cell, out var raced) ? raced : built;
     }
 
     /// <summary>
@@ -238,9 +285,29 @@ internal sealed class WorldRenderCache : ITrackableResource
     ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
     ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.
     /// </summary>
-    internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell)
+    internal RenderableReference[] GetPlacementList(CellRecord cell)
     {
-        return _placements.GetOrAdd(cell, static (c, self) => self.BuildPlacementList(c), this);
+        if (_placements.TryGetValue(cell, out var existing))
+        {
+            return existing;
+        }
+
+        var built = BuildPlacementList(cell);
+        if (_placements.TryAdd(cell, built))
+        {
+            TrackInstalled((long)built.Length * Unsafe.SizeOf<RenderableReference>());
+            // The bake also installed the cell's placed-light list; count it with the winning bake.
+            // Under a build race the loser's identical-content list may replace the instance later,
+            // but the byte count is the same either way (the bake is deterministic).
+            if (_placedLights.TryGetValue(cell, out var lights))
+            {
+                TrackInstalled((long)lights.Count * Unsafe.SizeOf<PlacedLight>());
+            }
+
+            return built;
+        }
+
+        return _placements[cell];
     }
 
     /// <summary>
@@ -276,16 +343,25 @@ internal sealed class WorldRenderCache : ITrackableResource
         List<RenderableReference> destination,
         float ringRadius = 0f)
     {
-        var index = _placementSpatialIndexes.GetOrAdd(
-            cell,
-            static (c, cache) => ReferencePlacementSpatialIndex.Build(cache.GetPlacementList(c)),
-            this);
+        if (!_placementSpatialIndexes.TryGetValue(cell, out var index))
+        {
+            var mine = ReferencePlacementSpatialIndex.Build(GetPlacementList(cell));
+            if (_placementSpatialIndexes.TryAdd(cell, mine))
+            {
+                TrackInstalled(mine.EstimatedBytes);
+                index = mine;
+            }
+            else
+            {
+                index = _placementSpatialIndexes[cell];
+            }
+        }
 
         index.Query(centerX, centerY, radius, frustum, frustumMargin, destination, ringRadius);
         return index.Count;
     }
 
-    private IReadOnlyList<RenderableReference> BuildPlacementList(CellRecord cell)
+    private RenderableReference[] BuildPlacementList(CellRecord cell)
     {
         var placements = cell.PlacedObjects;
         var categoryIndex = CategoryIndex;
@@ -395,14 +471,28 @@ internal sealed class WorldRenderCache : ITrackableResource
             }
         }
 
-        // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs
-        // of the same model (road segments, fence posts, lamp poles, etc.) collapse into
-        // a single texture bind in ReferenceRenderer.BindSrvIfChanged. Ordinal compare is
-        // cheap and stable enough; we don't need a particular order, only batching.
-        built.Sort(static (a, b) => string.CompareOrdinal(a.ModelPath, b.ModelPath));
+        // Sorted by (spatial bucket, ModelPath). The ModelPath half is the original reason: adjacent
+        // REFRs of the same model (road segments, fence posts, lamp poles) collapse into a single
+        // texture bind in ReferenceRenderer.BindSrvIfChanged, and identical paths still land together
+        // WITHIN a bucket. The bucket half is what lets ReferencePlacementSpatialIndex describe each
+        // bucket as a RANGE over this very array instead of copying every placement into a per-bucket
+        // array - the struct payload of the whole worldspace was resident twice.
+        //
+        // Sorting HERE rather than inside the index is deliberate: the array is published to other
+        // threads through a ConcurrentDictionary the moment it is cached, and two threads racing to
+        // build the index would otherwise sort the same array concurrently.
+        built.Sort(static (a, b) =>
+        {
+            var ak = ReferencePlacementSpatialIndex.BucketKeyOf(a);
+            var bk = ReferencePlacementSpatialIndex.BucketKeyOf(b);
+            var byX = ak.bx.CompareTo(bk.bx);
+            if (byX != 0) return byX;
+            var byY = ak.by.CompareTo(bk.by);
+            return byY != 0 ? byY : string.CompareOrdinal(a.ModelPath, b.ModelPath);
+        });
         return built.Count == 0
             ? Array.Empty<RenderableReference>()
-            : built;
+            : built.ToArray();
     }
 
     internal static float? ResolveEffectiveWaterHeight(
@@ -436,18 +526,21 @@ internal sealed class WorldRenderCache : ITrackableResource
             : defaultWaterHeight;
     }
 
-    private readonly record struct Cached<T>(T? Value) where T : class;
 }
 
 internal sealed class ReferencePlacementSpatialIndex
 {
     private const float BucketSize = WorldGridConstants.CellSize / 4f;
-    private static readonly ReferencePlacementSpatialIndex Empty = new([], 0);
+    private static readonly ReferencePlacementSpatialIndex Empty = new([], [], 0);
 
     private readonly ReferencePlacementBucket[] _buckets;
 
-    private ReferencePlacementSpatialIndex(ReferencePlacementBucket[] buckets, int count)
+    private readonly RenderableReference[] _placements;
+
+    private ReferencePlacementSpatialIndex(
+        RenderableReference[] placements, ReferencePlacementBucket[] buckets, int count)
     {
+        _placements = placements;
         _buckets = buckets;
         Count = count;
     }
@@ -455,54 +548,60 @@ internal sealed class ReferencePlacementSpatialIndex
     internal int Count { get; }
 
     /// <summary>
-    ///     Approximate managed footprint: the per-bucket placement arrays (the placements are
-    ///     copied out of the cell's list into per-bucket arrays) plus each bucket's two bounds
-    ///     vectors. The struct payload of every placement is duplicated here relative to the
-    ///     <c>_placements</c> list it was built from.
+    ///     Approximate managed footprint: two bounds vectors and a range per bucket, and nothing
+    ///     more. The placements are deliberately NOT counted, because this index does not own them
+    ///     - it describes ranges over the cell's own placement array, which
+    ///     <c>GetPlacementList</c> has already charged for. It used to copy every placement into a
+    ///     per-bucket array, so the struct payload of an entire worldspace was resident twice.
     /// </summary>
-    internal long EstimatedBytes
-    {
-        get
-        {
-            var refSize = Unsafe.SizeOf<RenderableReference>();
-            var bytes = (long)_buckets.Length * (2 * 12 + 8); // 2 Vector3 bounds + array reference
-            foreach (var bucket in _buckets)
-            {
-                bytes += (long)bucket.Placements.Length * refSize;
-            }
+    internal long EstimatedBytes => (long)_buckets.Length * (2 * 12 + 2 * sizeof(int));
 
-            return bytes;
-        }
-    }
+    /// <summary>The bucket a placement belongs to. Shared with the sort that groups them.</summary>
+    internal static (int bx, int by) BucketKeyOf(RenderableReference placement) =>
+        BucketKey(placement.BoundsCenter.X, placement.BoundsCenter.Y);
 
-    internal static ReferencePlacementSpatialIndex Build(IReadOnlyList<RenderableReference> placements)
+    /// <summary>
+    ///     Describes <paramref name="placements" /> as bucket ranges.
+    ///     <para>
+    ///         <b>Requires the array to be grouped by bucket already.</b> <c>BuildPlacementList</c>
+    ///         sorts it that way. This detects runs rather than grouping, so an ungrouped array does
+    ///         not fail - it silently yields many small buckets with repeated keys, which is slower
+    ///         but still correct. That is why the ordering lives with the sort comparer, next to a
+    ///         comment saying so, rather than being assumed here.
+    ///     </para>
+    /// </summary>
+    internal static ReferencePlacementSpatialIndex Build(RenderableReference[] placements)
     {
-        if (placements.Count == 0)
+        if (placements.Length == 0)
         {
             return Empty;
         }
 
-        var builders = new Dictionary<(int bx, int by), ReferencePlacementBucketBuilder>();
-        foreach (var placement in placements)
+        var buckets = new List<ReferencePlacementBucket>();
+        var start = 0;
+        var currentKey = BucketKeyOf(placements[0]);
+        var min = new Vector3(float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity);
+
+        for (var i = 0; i < placements.Length; i++)
         {
-            var key = BucketKey(placement.BoundsCenter.X, placement.BoundsCenter.Y);
-            if (!builders.TryGetValue(key, out var builder))
+            var key = BucketKeyOf(placements[i]);
+            if (key != currentKey)
             {
-                builder = new ReferencePlacementBucketBuilder();
-                builders[key] = builder;
+                buckets.Add(new ReferencePlacementBucket(start, i - start, min, max));
+                start = i;
+                currentKey = key;
+                min = new Vector3(float.PositiveInfinity);
+                max = new Vector3(float.NegativeInfinity);
             }
 
-            builder.Add(placement);
+            var radius = placements[i].BoundsRadius;
+            min = Vector3.Min(min, placements[i].BoundsCenter - new Vector3(radius));
+            max = Vector3.Max(max, placements[i].BoundsCenter + new Vector3(radius));
         }
 
-        var buckets = new ReferencePlacementBucket[builders.Count];
-        var index = 0;
-        foreach (var builder in builders.Values)
-        {
-            buckets[index++] = builder.ToBucket();
-        }
-
-        return new ReferencePlacementSpatialIndex(buckets, placements.Count);
+        buckets.Add(new ReferencePlacementBucket(start, placements.Length - start, min, max));
+        return new ReferencePlacementSpatialIndex(placements, [.. buckets], placements.Length);
     }
 
     /// <summary>
@@ -546,9 +645,10 @@ internal sealed class ReferencePlacementSpatialIndex
                 }
             }
 
-            foreach (var placement in bucket.Placements)
+            var end = bucket.Start + bucket.Count;
+            for (var i = bucket.Start; i < end; i++)
             {
-                destination.Add(placement);
+                destination.Add(_placements[i]);
             }
         }
     }
@@ -579,33 +679,12 @@ internal sealed class ReferencePlacementSpatialIndex
         return ((int)MathF.Floor(x / BucketSize), (int)MathF.Floor(y / BucketSize));
     }
 
+    /// <summary>A half-open range over the cell's placement array, plus that range's bounds.</summary>
     private readonly record struct ReferencePlacementBucket(
-        RenderableReference[] Placements,
+        int Start,
+        int Count,
         Vector3 Min,
         Vector3 Max);
-
-    private sealed class ReferencePlacementBucketBuilder
-    {
-        private readonly List<RenderableReference> _placements = [];
-        private Vector3 _max = new(float.NegativeInfinity);
-        private Vector3 _min = new(float.PositiveInfinity);
-
-        internal void Add(RenderableReference placement)
-        {
-            _placements.Add(placement);
-
-            var radius = placement.BoundsRadius;
-            var itemMin = placement.BoundsCenter - new Vector3(radius);
-            var itemMax = placement.BoundsCenter + new Vector3(radius);
-            _min = Vector3.Min(_min, itemMin);
-            _max = Vector3.Max(_max, itemMax);
-        }
-
-        internal ReferencePlacementBucket ToBucket()
-        {
-            return new ReferencePlacementBucket(_placements.ToArray(), _min, _max);
-        }
-    }
 }
 
 internal sealed class DecodedTerrainCell
@@ -1011,16 +1090,46 @@ internal sealed class TextureWinnerGrid
     private const int QuadVertexCount = QuadSize * QuadSize;
     private const float AtxtOpacityThreshold = 0.5f;
 
-    private TextureWinnerGrid(uint?[] winners)
+    /// <summary>
+    ///     "No winner at this vertex".
+    ///     <para>
+    ///         <b>Not zero.</b> Zero is <see cref="CellLayerWeightTable.EngineDefaultSentinelFormId" />
+    ///         and is a MEANINGFUL value here — Morrowind's VTEX grid uses it for the engine-default
+    ///         land texture — so a zero sentinel would silently erase every engine-default vertex.
+    ///         <c>uint.MaxValue</c> is safe instead: it encodes plugin index 255, which the engine
+    ///         reserves and no LTEX can occupy.
+    ///     </para>
+    /// </summary>
+    private const uint NoWinner = uint.MaxValue;
+
+    private readonly uint[] _winners;
+
+    private TextureWinnerGrid(uint[] winners)
     {
-        Winners = winners;
+        _winners = winners;
     }
 
-    internal uint?[] Winners { get; }
+    /// <summary>
+    ///     Bytes this grid retains — the accounting the cache charges for it. Tracks the element
+    ///     width rather than restating it, so a future format change cannot leave the registry
+    ///     reporting the old size.
+    /// </summary>
+    internal long EstimatedBytes => (long)_winners.Length * sizeof(uint);
+
+    /// <summary>Allocates a grid with every vertex unassigned.</summary>
+    private static uint[] NewWinnerArray()
+    {
+        // uint[] rather than uint?[]: Nullable<uint> is 8 bytes after padding, so the nullable form
+        // cost 9,248 bytes per cell against 4,624 — and one of these is retained for every cell in
+        // the worldspace (41,219 on Fallout 76's Appalachia).
+        var winners = new uint[4 * QuadVertexCount];
+        Array.Fill(winners, NoWinner);
+        return winners;
+    }
 
     internal static TextureWinnerGrid? Build(List<LandTextureLayer> layers)
     {
-        var winners = new uint?[4 * QuadVertexCount];
+        var winners = NewWinnerArray();
         var any = false;
 
         foreach (var layer in layers)
@@ -1085,7 +1194,7 @@ internal sealed class TextureWinnerGrid
     {
         if (vtex.Length < vtexSize * vtexSize) return null;
 
-        var winners = new uint?[4 * QuadVertexCount];
+        var winners = NewWinnerArray();
         var any = false;
         for (var py = 0; py <= 32; py++)
         {
@@ -1133,6 +1242,7 @@ internal sealed class TextureWinnerGrid
             return null;
         }
 
-        return Winners[quad * QuadVertexCount + qy * QuadSize + qx];
+        var winner = _winners[quad * QuadVertexCount + qy * QuadSize + qx];
+        return winner == NoWinner ? null : winner;
     }
 }

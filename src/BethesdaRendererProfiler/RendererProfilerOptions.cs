@@ -12,6 +12,15 @@ internal sealed record RendererProfilerOptions
     internal string? InputPath { get; init; }
     internal string? DataDirectory { get; init; }
     internal IReadOnlyList<string> LoadOrderPaths { get; init; } = [];
+
+    /// <summary>
+    ///     Data folders searched for ASSETS ONLY, in priority order — records are never parsed or
+    ///     merged from them. Unlike <see cref="LoadOrderPaths" />, which are semantic sources whose
+    ///     records join the view, these only contribute their BSAs to mesh/texture resolution.
+    ///     Exists so a memory dump can borrow meshes/textures from several game builds at once
+    ///     (see <c>WorldViewData.AssetDataDirectories</c>).
+    /// </summary>
+    internal IReadOnlyList<string> AssetDataDirectories { get; init; } = [];
     internal string ProfileOutputPath { get; init; } = CreateDefaultProfileOutputPath();
 
     internal string ProfileJsonlOutputPath { get; init; } =
@@ -43,6 +52,115 @@ internal sealed record RendererProfilerOptions
 
     /// <summary>Width/height of the top-down capture window in cells (default 6).</summary>
     internal int CaptureSpanCells { get; init; } = 6;
+
+    /// <summary>
+    ///     When set, renders EVERY exterior worldspace and EVERY interior cell in the loaded source
+    ///     top-down, one PNG each, into this directory, then exits. Unlike
+    ///     <see cref="CaptureTopDownPath" /> — which captures a fixed-size window around one point —
+    ///     each render is framed to the subject's own extent, so the whole worldspace or the whole
+    ///     interior floor plan fits.
+    ///     <para>
+    ///         The source is loaded ONCE and every subject rendered from it. Loading a memory dump
+    ///         costs seconds to minutes, so a per-subject process would re-pay that hundreds of
+    ///         times over a corpus.
+    ///     </para>
+    /// </summary>
+    internal string? CaptureTopDownBatchDirectory { get; init; }
+
+    /// <summary>
+    ///     Filename prefix for <see cref="CaptureTopDownBatchDirectory" /> output; each PNG is
+    ///     <c>&lt;prefix&gt;_&lt;worldspace-or-interior EditorID&gt;.png</c>. Empty = no prefix.
+    /// </summary>
+    internal string CaptureNamePrefix { get; init; } = "";
+
+    /// <summary>
+    ///     Zoom for batch capture, where 1.0 renders at the reference scale: a standing human figure
+    ///     is 64 px tall in the image (see
+    ///     <see cref="TrimetricViewProjBuilder.WorldUnitsPerPixelAtUnitScale" />).
+    ///     <para>
+    ///         A FIXED world-units-per-pixel scale, not a fixed image size. Fitting every subject
+    ///         into the same pixel box makes scale meaningless — a broom closet and a worldspace come
+    ///         out the same size — and squeezes long thin subjects (a sewer corridor) into a
+    ///         letterbox strip where nothing is legible. Here the image dimensions follow the
+    ///         content instead.
+    ///     </para>
+    /// </summary>
+    internal float CaptureBatchScale { get; init; } = 1f;
+
+    /// <summary>
+    ///     Hard cap on either image dimension, in pixels (default 16384 — the D3D12 maximum texture
+    ///     dimension, so the default IS the hardware ceiling). A whole worldspace at the reference
+    ///     scale would be tens of thousands of pixels across; when the cap binds, the effective
+    ///     scale is reduced to fit.
+    /// </summary>
+    internal int CaptureBatchMaxPixels { get; init; } = 16384;
+
+    /// <summary>
+    ///     When true (the default), batch captures render unlit — every texture at full brightness.
+    ///     These images are inventory documents of what a dump holds, and directional shading works
+    ///     against that: interiors have no sun, so lit captures came out murky, and half of every
+    ///     exterior mesh faces away from the fixed noon light. Pass <c>--capture-batch-lit</c> to
+    ///     restore the lit path when shading itself is what a capture is meant to show.
+    /// </summary>
+    internal bool CaptureBatchFullBright { get; init; } = true;
+
+    /// <summary>
+    ///     Compass angles to render per subject: 4 (default) or 1. One tilted view hides whatever
+    ///     stands behind its near-side walls; the four-corner set (NE/SE/SW/NW camera positions)
+    ///     covers every facade. 1 keeps the primary NE view only. Forced to 1 for the straight-down
+    ///     projection, where every yaw produces the same image.
+    /// </summary>
+    internal int CaptureBatchAngles { get; init; } = 4;
+
+    /// <summary>
+    ///     Case-insensitive substring filter on subject EditorIDs. Empty renders everything.
+    ///     Exists so one broken subject can be re-rendered for verification without paying for the
+    ///     whole dump's sweep.
+    /// </summary>
+    internal string CaptureBatchFilter { get; init; } = "";
+
+    /// <summary>
+    ///     Path to a file of exact subject EditorIDs, one per line (case-insensitive). Unlike
+    ///     <see cref="CaptureBatchFilter" /> this never over-selects by substring, and a scripted
+    ///     partial re-render can pass hundreds of names without hitting command-line limits.
+    /// </summary>
+    internal string CaptureBatchFilterFile { get; init; } = "";
+
+    /// <summary>
+    ///     Print the subject inventory (name, kind, placement counts, residency-gate verdict) and
+    ///     exit without rendering. Needs no GPU and no asset donors — it exists so a driver script
+    ///     can diff a dump's CURRENT attribution against an existing corpus manifest and re-render
+    ///     only the subjects that changed.
+    /// </summary>
+    internal bool CaptureBatchListOnly { get; init; }
+
+    /// <summary>
+    ///     Per-subject settle budget for batch capture, in seconds (default 90). A subject that has
+    ///     not converged by then is saved anyway and reported as unsettled rather than stalling the
+    ///     whole corpus — regions with permanently-missing assets never fully quiesce.
+    /// </summary>
+    internal int CaptureBatchTimeoutSeconds { get; init; } = 90;
+
+    /// <summary>
+    ///     Run the conversion-grade mesh rename resolution pass before rendering a dump: resolve
+    ///     every distinct mesh path against the donor Data folders (the same
+    ///     DataFolderIndex/Resolver pass DMP→ESM conversion uses) and persist the result as a
+    ///     sidecar next to the dump (<c>&lt;dump&gt;.assetrenames.json</c>). Without the flag an
+    ///     existing sidecar is still picked up automatically.
+    /// </summary>
+    internal bool ResolveRenames { get; init; }
+
+    /// <summary>
+    ///     When true, batch capture skips a subject whose PNG already exists, making a corpus run
+    ///     resumable after an interruption.
+    /// </summary>
+    internal bool CaptureBatchResume { get; init; }
+
+    /// <summary>
+    ///     Camera framing for batch capture. Defaults to trimetric: a straight-down view flattens
+    ///     every wall to nothing, which makes one building indistinguishable from the next.
+    /// </summary>
+    internal TopDownProjection CaptureBatchProjection { get; init; } = TopDownProjection.Trimetric;
 
     /// <summary>
     ///     When set with --capture-topdown, targets this exterior worldspace by index (centered
@@ -210,6 +328,40 @@ internal sealed record RendererProfilerOptions
 
         Optional:
           --load-order <paths>        Extra ESM/ESP/DMP files, repeatable or semicolon-separated.
+          --asset-data-dir <dir>      Repeatable. Data folder searched for MESHES/TEXTURES only, in
+                                      priority order (first hit wins); its records are never loaded.
+                                      Use to fill a dump's assets from several builds at once.
+          --capture-topdown-batch <dir>  Render EVERY worldspace + EVERY interior top-down, framed to
+                                      its own extent, one PNG each into <dir>, then exit.
+          --capture-name-prefix <s>   Filename prefix for --capture-topdown-batch output.
+          --capture-batch-scale <f>   Batch zoom; 1.0 = reference scale (a standing figure is 64 px
+                                      tall). Image size follows content, so this sets scale, not size.
+          --capture-batch-max-pixels <n>
+                                      Cap on either image dimension (default 16384, the D3D12
+                                      texture maximum). When it binds the effective scale drops to fit.
+          --capture-batch-lit         Render batch captures with directional lighting instead of the
+                                      default unlit full-bright.
+          --capture-batch-angles <1|4>
+                                      Views per subject (default 4: NE/SE/SW/NW camera positions,
+                                      suffixed _ne/_se/_sw/_nw). 1 = the primary NE view only.
+          --capture-batch-filter <s>  Only render subjects whose EditorID contains <s>
+                                      (case-insensitive). For re-rendering one subject quickly.
+          --capture-batch-filter-file <path>
+                                      Only render subjects whose EditorID exactly matches a line
+                                      of <path>. For scripted partial re-renders. A filtered run
+                                      into an existing output dir MERGES the manifest and skip
+                                      lists instead of overwriting them.
+          --capture-batch-list-only   Print the subject inventory (with placement counts and the
+                                      residency-gate verdict) and exit without rendering.
+          --capture-batch-timeout <n> Per-subject settle budget in seconds (default 90).
+          --capture-batch-resume      Skip subjects whose PNG already exists.
+          --capture-batch-projection <trimetric|top-down>
+                                      Batch camera framing. Default trimetric (tilted orthographic,
+                                      so walls and height stay visible); top-down is the flat plan.
+          --resolve-renames           Build + persist the DMP mesh rename map before rendering: the
+                                      conversion-parity fuzzy pass over the donor Data folders,
+                                      saved as <dump>.assetrenames.json. An existing sidecar is
+                                      picked up automatically without this flag.
           --profile-output <path>     Profile/log output file. Defaults to a timestamped temp log.
           --profile-jsonl <path>      Structured JSONL output. Defaults to profile-output with .jsonl.
           --profile-interval-ms <n>   Aggregate profile interval. Default: 2000.
@@ -287,6 +439,20 @@ internal sealed record RendererProfilerOptions
         string? profileJsonl = null;
         var stressScene = DefaultStressScene;
         var loadOrder = new List<string>();
+        var assetDataDirs = new List<string>();
+        string? captureTopDownBatch = null;
+        var captureNamePrefix = "";
+        var captureBatchScale = 1f;
+        var captureBatchMaxPixels = 16384;
+        var captureBatchFullBright = true;
+        var captureBatchAngles = 4;
+        var captureBatchFilter = "";
+        var captureBatchFilterFile = "";
+        var captureBatchListOnly = false;
+        var captureBatchTimeoutSeconds = 90;
+        var captureBatchResume = false;
+        var resolveRenames = false;
+        var captureBatchProjection = TopDownProjection.Trimetric;
         var profileIntervalMs = 2000;
         int? durationSeconds = null;
         var cameraMotion = RendererCameraMotionKind.Static;
@@ -455,6 +621,109 @@ internal sealed record RendererProfilerOptions
                 case "--capture-topdown":
                     captureTopDown = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
+                    break;
+
+                case "--asset-data-dir":
+                    var assetDir = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options);
+                    assetDataDirs.Add(assetDir!);
+                    break;
+
+                case "--capture-topdown-batch":
+                    captureTopDownBatch = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-name-prefix":
+                    captureNamePrefix = RequireValue(args, ref i, arg, out error) ?? "";
+                    if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-batch-scale":
+                    var scaleText = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options);
+                    if (!float.TryParse(scaleText, NumberStyles.Float, CultureInfo.InvariantCulture,
+                            out captureBatchScale) || captureBatchScale <= 0f)
+                    {
+                        error = $"--capture-batch-scale expects a positive number, got '{scaleText}'.";
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-batch-max-pixels":
+                    if (!TryReadPositiveInt(args, ref i, arg, out captureBatchMaxPixels, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-batch-lit":
+                    captureBatchFullBright = false;
+                    break;
+
+                case "--capture-batch-filter":
+                    captureBatchFilter = RequireValue(args, ref i, arg, out error) ?? "";
+                    if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-batch-filter-file":
+                    captureBatchFilterFile = RequireValue(args, ref i, arg, out error) ?? "";
+                    if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-batch-list-only":
+                    captureBatchListOnly = true;
+                    break;
+
+                case "--resolve-renames":
+                    resolveRenames = true;
+                    break;
+
+                case "--capture-batch-angles":
+                    if (!TryReadPositiveInt(args, ref i, arg, out captureBatchAngles, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    if (captureBatchAngles is not (1 or 4))
+                    {
+                        error = $"--capture-batch-angles expects 1 or 4, got {captureBatchAngles}.";
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-batch-timeout":
+                    if (!TryReadPositiveInt(args, ref i, arg, out captureBatchTimeoutSeconds, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-batch-resume":
+                    captureBatchResume = true;
+                    break;
+
+                case "--capture-batch-projection":
+                    var projectionValue = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options);
+                    switch (projectionValue!.Trim().ToLowerInvariant())
+                    {
+                        case "trimetric":
+                            captureBatchProjection = TopDownProjection.Trimetric;
+                            break;
+                        case "top-down":
+                        case "topdown":
+                            captureBatchProjection = TopDownProjection.Straight;
+                            break;
+                        default:
+                            error = $"--capture-batch-projection expects 'trimetric' or 'top-down', got '{projectionValue}'.";
+                            return Fail(out options);
+                    }
+
                     break;
 
                 case "--capture-cells":
@@ -723,6 +992,30 @@ internal sealed record RendererProfilerOptions
             }
         }
 
+        foreach (var dir in assetDataDirs)
+        {
+            if (!Directory.Exists(dir))
+            {
+                error = $"Asset data directory not found: {dir}";
+                return Fail(out options);
+            }
+        }
+
+        // Both write a top-down PNG but frame it completely differently (fixed window around a
+        // point vs. fit-to-extent per subject), and each owns process exit. Accepting both would
+        // silently run only one.
+        if (!string.IsNullOrWhiteSpace(captureTopDownBatch) && !string.IsNullOrWhiteSpace(captureTopDown))
+        {
+            error = "--capture-topdown-batch cannot be combined with --capture-topdown.";
+            return Fail(out options);
+        }
+
+        if (!string.IsNullOrWhiteSpace(captureTopDownBatch) && !string.IsNullOrWhiteSpace(captureFrame))
+        {
+            error = "--capture-topdown-batch cannot be combined with --capture-frame.";
+            return Fail(out options);
+        }
+
         string? normalizedScenarioName = null;
         if (!string.IsNullOrWhiteSpace(scenarioName) &&
             !RendererProfilerScenarioCatalog.TryNormalizeName(scenarioName, out normalizedScenarioName))
@@ -831,6 +1124,10 @@ internal sealed record RendererProfilerOptions
             InputPath = input is null ? null : Path.GetFullPath(input),
             DataDirectory = dataDir is null ? null : Path.GetFullPath(dataDir),
             LoadOrderPaths = loadOrder.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            // Distinct() preserves first occurrence, so a folder listed twice keeps its HIGHER
+            // priority — dedup must never demote a donor.
+            AssetDataDirectories = assetDataDirs.Select(Path.GetFullPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             ProfileOutputPath = resolvedProfileOutput,
             ProfileJsonlOutputPath = resolvedProfileJsonl,
             ProfileIntervalMilliseconds = profileIntervalMs,
@@ -848,6 +1145,21 @@ internal sealed record RendererProfilerOptions
             WindowHeight = Math.Max(height, 480),
             CaptureTopDownPath = string.IsNullOrWhiteSpace(captureTopDown) ? null : Path.GetFullPath(captureTopDown),
             CaptureSpanCells = captureSpanCells,
+            CaptureTopDownBatchDirectory = string.IsNullOrWhiteSpace(captureTopDownBatch)
+                ? null
+                : Path.GetFullPath(captureTopDownBatch),
+            CaptureNamePrefix = captureNamePrefix ?? "",
+            CaptureBatchScale = captureBatchScale,
+            CaptureBatchMaxPixels = captureBatchMaxPixels,
+            CaptureBatchFullBright = captureBatchFullBright,
+            CaptureBatchAngles = captureBatchAngles,
+            CaptureBatchFilter = captureBatchFilter,
+            CaptureBatchFilterFile = captureBatchFilterFile,
+            CaptureBatchListOnly = captureBatchListOnly,
+            CaptureBatchTimeoutSeconds = captureBatchTimeoutSeconds,
+            CaptureBatchResume = captureBatchResume,
+            ResolveRenames = resolveRenames,
+            CaptureBatchProjection = captureBatchProjection,
             CaptureWorldspaceIndex = captureWorldspaceIndex,
             CaptureCenterX = captureCenterX,
             CaptureCenterY = captureCenterY,

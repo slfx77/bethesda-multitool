@@ -56,7 +56,7 @@ public sealed class WaterHardwareOcclusionSourceContractTests
             StringComparison.Ordinal);
 
         // The non-finite fail-closed guard is NOT occlusion and must stay unconditional.
-        var fallback = Extract(
+        var fallback = SourceContract.Extract(
             water001, "float4 FnvWater003LocalFallback(", "float noiseFade =");
         SourceContract.AssertOrder(
             fallback,
@@ -97,12 +97,12 @@ public sealed class WaterHardwareOcclusionSourceContractTests
     public void HostsBindTheReadOnlyDsvWhileWaterSamplesDepth()
     {
         var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
-        var liveBranch = Extract(frame, "if (waterUsesDepth)", "visibleWater = _showWater");
+        var liveBranch = SourceContract.Extract(frame, "if (waterUsesDepth)", "visibleWater = _showWater");
         Assert.Contains("cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);",
             liveBranch, StringComparison.Ordinal);
 
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
-        var captureBranch = Extract(capture, "if (captureWaterUsesDepth)",
+        var captureBranch = SourceContract.Extract(capture, "if (captureWaterUsesDepth)",
             "_water!.Render(viewProj, cylinder, captureRenderOrigin)");
         Assert.Contains("target.BindColorReadOnlyDepth(cmd);", captureBranch,
             StringComparison.Ordinal);
@@ -126,14 +126,5 @@ public sealed class WaterHardwareOcclusionSourceContractTests
         }
 
         return count;
-    }
-
-    private static string Extract(string source, string startMarker, string endMarker)
-    {
-        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Missing start marker `{startMarker}`.");
-        var end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
-        Assert.True(end > start, $"Missing end marker `{endMarker}` after `{startMarker}`.");
-        return source[start..end];
     }
 }

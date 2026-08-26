@@ -3168,12 +3168,18 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
     private float? ResolveWaterHeight(CellRecord cell)
     {
-        if (cell.WaterHeight is float cellHeight && !WorldHeightNormalizer.IsNoWaterSentinel(cellHeight))
+        // IsReportableHeight, not just the exact-bits sentinel test: dump-sourced heights can be
+        // NaN or arbitrary finite garbage, and an exact sentinel compare waves all of it through.
+        if (cell.WaterHeight is float cellHeight &&
+            !WorldHeightNormalizer.IsNoWaterSentinel(cellHeight) &&
+            WorldHeightNormalizer.IsReportableHeight(cellHeight))
             return cellHeight;
         // A WNAM-inherited default (TES4 child worldspaces) only waters Has-Water-flagged cells.
         if (DefaultWaterRequiresCellHasWater && !cell.HasWater)
             return null;
-        if (_worldspaceDefaultWaterHeight is float worldHeight && !WorldHeightNormalizer.IsNoWaterSentinel(worldHeight))
+        if (_worldspaceDefaultWaterHeight is float worldHeight &&
+            !WorldHeightNormalizer.IsNoWaterSentinel(worldHeight) &&
+            WorldHeightNormalizer.IsReportableHeight(worldHeight))
             return worldHeight;
         return null;
     }
