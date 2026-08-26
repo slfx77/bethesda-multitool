@@ -15,7 +15,7 @@ public class SubrecordSchemaRegistryTests
     [InlineData("TES4", "4SET")]
     [InlineData("ABCD", "DCBA")]
     [InlineData("NPC_", "_CPN")]
-    public void GetReversedSignature_ReversesCorrectly(string input, string expected)
+    public void GetReversedSignature_ReturnsTheFourCharactersInReverseOrder(string input, string expected)
     {
         Assert.Equal(expected, SubrecordSchemaRegistry.GetReversedSignature(input));
     }
@@ -201,6 +201,7 @@ public class SubrecordSchemaRegistryTests
     #region IsStringSubrecord
 
     [Theory]
+    // Signatures that carry a string in every record type.
     [InlineData("EDID", "WEAP")]
     [InlineData("FULL", "NPC_")]
     [InlineData("MODL", "ARMO")]
@@ -209,6 +210,15 @@ public class SubrecordSchemaRegistryTests
     [InlineData("MICO", "WEAP")]
     [InlineData("TX00", "LTEX")]
     [InlineData("TX07", "LTEX")]
+    // Signatures that are a string only in a specific record type — the same four characters
+    // carry binary data elsewhere, so the record type is what decides.
+    [InlineData("CNAM", "TES4")] // plugin author
+    [InlineData("SNAM", "TES4")] // plugin description
+    [InlineData("MAST", "TES4")] // master file name
+    [InlineData("RNAM", "INFO")] // prompt / result string
+    [InlineData("NAM1", "INFO")] // response text
+    [InlineData("TNAM", "NOTE")] // note text
+    [InlineData("DNAM", "WTHR")] // cloud texture path
     public void IsStringSubrecord_KnownStrings_ReturnsTrue(string signature, string recordType)
     {
         Assert.True(SubrecordSchemaRegistry.IsStringSubrecord(signature, recordType));
@@ -219,53 +229,6 @@ public class SubrecordSchemaRegistryTests
     {
         // DATA is never a string subrecord
         Assert.False(SubrecordSchemaRegistry.IsStringSubrecord("DATA", "WEAP"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_Tes4Cnam_ReturnsTrue()
-    {
-        // CNAM in TES4 is the author string
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("CNAM", "TES4"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_Tes4Snam_ReturnsTrue()
-    {
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("SNAM", "TES4"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_Tes4Mast_ReturnsTrue()
-    {
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("MAST", "TES4"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_InfoRnam_ReturnsTrue()
-    {
-        // INFO RNAM is a prompt/result string
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("RNAM", "INFO"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_InfoNam1_ReturnsTrue()
-    {
-        // INFO NAM1 is Response Text
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("NAM1", "INFO"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_NoteTnam_ReturnsTrue()
-    {
-        // NOTE TNAM is text
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("TNAM", "NOTE"));
-    }
-
-    [Fact]
-    public void IsStringSubrecord_WthrDnam_ReturnsTrue()
-    {
-        // WTHR DNAM is cloud texture string
-        Assert.True(SubrecordSchemaRegistry.IsStringSubrecord("DNAM", "WTHR"));
     }
 
     #endregion
@@ -335,48 +298,30 @@ public class SubrecordSchemaRegistryTests
 
     #region Schema Properties
 
-    [Fact]
-    public void SubrecordSchema_String_HasExpectedSize0()
+    /// <summary>
+    ///     <c>ExpectedSize</c> encodes how a schema validates payload length: a positive value is
+    ///     an exact byte count, 0 means "any length" (variable-length payloads), and -1 means
+    ///     "any whole multiple of the element width" (repeating arrays).
+    /// </summary>
+    public static TheoryData<string, SubrecordSchema, int> SchemaExpectedSizes => new()
     {
-        Assert.Equal(0, SubrecordSchema.String.ExpectedSize);
-    }
+        { "String", SubrecordSchema.String, 0 },
+        { "Empty", SubrecordSchema.Empty, 0 },
+        { "ByteArray", SubrecordSchema.ByteArray, 0 },
+        { "FormIdArray", SubrecordSchema.FormIdArray, -1 },
+        { "FloatArray", SubrecordSchema.FloatArray, -1 },
+        { "Simple4Byte", SubrecordSchema.Simple4Byte(), 4 },
+        { "Simple2Byte", SubrecordSchema.Simple2Byte(), 2 }
+    };
 
-    [Fact]
-    public void SubrecordSchema_Empty_HasExpectedSize0()
+    [Theory]
+    [MemberData(nameof(SchemaExpectedSizes))]
+    public void SubrecordSchema_ExposesTheExpectedSizeForItsKind(
+        string kind, SubrecordSchema schema, int expectedSize)
     {
-        Assert.Equal(0, SubrecordSchema.Empty.ExpectedSize);
-    }
+        _ = kind; // Names the case in the test display name.
 
-    [Fact]
-    public void SubrecordSchema_ByteArray_HasExpectedSize0()
-    {
-        Assert.Equal(0, SubrecordSchema.ByteArray.ExpectedSize);
-    }
-
-    [Fact]
-    public void SubrecordSchema_FormIdArray_HasExpectedSizeNegative1()
-    {
-        Assert.Equal(-1, SubrecordSchema.FormIdArray.ExpectedSize);
-    }
-
-    [Fact]
-    public void SubrecordSchema_FloatArray_HasExpectedSizeNegative1()
-    {
-        Assert.Equal(-1, SubrecordSchema.FloatArray.ExpectedSize);
-    }
-
-    [Fact]
-    public void SubrecordSchema_Simple4Byte_HasExpectedSize4()
-    {
-        var schema = SubrecordSchema.Simple4Byte();
-        Assert.Equal(4, schema.ExpectedSize);
-    }
-
-    [Fact]
-    public void SubrecordSchema_Simple2Byte_HasExpectedSize2()
-    {
-        var schema = SubrecordSchema.Simple2Byte();
-        Assert.Equal(2, schema.ExpectedSize);
+        Assert.Equal(expectedSize, schema.ExpectedSize);
     }
 
     #endregion

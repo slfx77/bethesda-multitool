@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
@@ -23,7 +24,7 @@ public sealed class PlannerXespObservabilityTests
         var xesp = new byte[8];
         BinaryPrimitives.WriteUInt32LittleEndian(xesp, missingParent);
         var stats = new ConversionPipelineStats();
-        var context = MakeContext(MakeEmptyPlan(), stats);
+        var context = MakeContext(PlanTestFactory.EmptyPlan(), stats);
 
         var sanitized = OverrideSubrecordSanitizer.Sanitize(
             [new EncodedSubrecord("XESP", xesp)], context,
@@ -77,7 +78,7 @@ public sealed class PlannerXespObservabilityTests
         string expectedReason)
     {
         var stats = new ConversionPipelineStats();
-        var context = MakeContext(MakeEmptyPlan(), stats);
+        var context = MakeContext(PlanTestFactory.EmptyPlan(), stats);
 
         PlannedPlacedRefEncoder.RecordEnableParentOutcome(sourceParent, false, context);
 
@@ -99,7 +100,7 @@ public sealed class PlannerXespObservabilityTests
         const uint baseFormId = 0x0008156E;
         var name = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(name, baseFormId);
-        var context = MakeContext(MakeEmptyPlan(), new ConversionPipelineStats(),
+        var context = MakeContext(PlanTestFactory.EmptyPlan(), new ConversionPipelineStats(),
             new Dictionary<uint, ParsedMainRecord>
             {
                 [baseFormId] = new()
@@ -194,7 +195,7 @@ public sealed class PlannerXespObservabilityTests
                 .Add(emittedParent, decision)
         };
 
-        return MakeEmptyPlan() with
+        return PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan),
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty
@@ -220,23 +221,6 @@ public sealed class PlannerXespObservabilityTests
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-        };
-    }
-
-    private static EmitPlan MakeEmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
-            }
         };
     }
 

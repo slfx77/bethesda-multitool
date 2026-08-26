@@ -65,6 +65,15 @@ public record CellRecord
     public float? WaterHeight { get; init; }
 
     /// <summary>
+    ///     Runtime-only water corroboration: TESObjectCELL::bAutoWaterLoaded, the engine's own
+    ///     "this cell created its auto-water" bool. Null when the source is not a memory dump, or
+    ///     when the byte held neither 0 nor 1 (garbage — no evidence either way). Dump water gates
+    ///     use false here as a veto, because the flags byte and fWaterHeight are routinely stale
+    ///     on captured cells.
+    /// </summary>
+    public bool? AutoWaterLoaded { get; init; }
+
+    /// <summary>
     ///     Per-cell water type FormID (XCWT subrecord). When absent or unresolved, exterior cells
     ///     inherit the parent worldspace's NAM2 default water type.
     /// </summary>

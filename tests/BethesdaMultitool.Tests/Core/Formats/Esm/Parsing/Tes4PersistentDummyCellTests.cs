@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 ///     (0,0) tile in the viewer. Classification is now structural (GRUP Type-1 direct child vs
 ///     Type-4/5 block member).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 public class Tes4PersistentDummyCellTests
 {
     private const uint WorldFormId = 0x00000858;
@@ -178,25 +179,13 @@ public class Tes4PersistentDummyCellTests
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes4PersistentDummyCellIntegrationTests
 {
-    private static string? ResolveOblivionEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Oblivion.esm")))
-        {
-            return Path.Combine(root, "Oblivion.esm");
-        }
-
-        var steam = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion.esm");
-        return File.Exists(steam) ? steam : null;
-    }
-
     [Theory]
     [InlineData("Toddland")]
     [InlineData("SETheFringe")]
     public async Task SmallWorldspaces_KeepTheirRealZeroZeroCell(string worldspaceEditorId)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var esm = ResolveOblivionEsm();
+        var esm = RealAssetPaths.Masters.Oblivion();
         Assert.SkipUnless(esm is not null,
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 

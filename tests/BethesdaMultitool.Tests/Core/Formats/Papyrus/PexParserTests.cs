@@ -6,6 +6,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Papyrus;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class PexParserTests
 {
     private static readonly string[] Strings =

@@ -195,6 +195,14 @@ public static class PlannedEncoders
         yield return Simple<GenericEsmRecord>("TACT", TactEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("ASPC", AspcEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("ADDN", AddnEncoder.EncodeNew);
+        // Wired 2026-08-26 (adversarial recovery audit M1). Same GenericEsmRecord shape; the
+        // pipeline yields them after the types their references point at (LSCT for LSCR.WMI1,
+        // SOUN for CHIP.YNAM/ZNAM and MSET.HNAM/INAM, IMAD for CAMS.MNAM).
+        yield return Simple<GenericEsmRecord>("LSCR", LscrEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("CHIP", ChipEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("IDLM", IdlmEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("CAMS", CamsEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("MSET", MsetEncoder.EncodeNew);
 
         // Tier 5d — historical final migration from the retired Phase-3 per-model encoder.
         // All four families are plain model-in/bytes-out encoders, so planner routing needs

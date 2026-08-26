@@ -72,13 +72,11 @@ public static class EsmParser
 
         if (bigEndian)
         {
-            // Reverse bytes for big-endian
-            Span<byte> reversed = stackalloc byte[4];
-            reversed[0] = data[3];
-            reversed[1] = data[2];
-            reversed[2] = data[1];
-            reversed[3] = data[0];
-            return Encoding.ASCII.GetString(reversed);
+            // Reverse bytes for big-endian, then pool exactly as the little-endian arm does —
+            // Xbox 360 loads were allocating a fresh signature string per record.
+            return EsmSignaturePool.TryIntern(data[3], data[2], data[1], data[0], out var swapped)
+                ? swapped
+                : new string([(char)data[3], (char)data[2], (char)data[1], (char)data[0]]);
         }
 
         return EsmRecordTypes.SignatureToString(data[..4]);

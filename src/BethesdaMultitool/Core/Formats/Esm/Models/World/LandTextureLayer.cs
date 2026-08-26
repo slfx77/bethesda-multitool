@@ -14,8 +14,16 @@ public enum LandTextureLayerKind
 
 /// <summary>
 ///     LAND VTXT blend entry associated with the preceding ATXT layer.
+///     <para>
+///         A <b>struct</b>, deliberately: these are the most numerous objects in a loaded
+///         worldspace — one per weighted terrain vertex, per layer, per quadrant, per cell. Its
+///         payload is 8 bytes, but as a reference type each entry cost ~24 bytes of heap object
+///         plus an 8-byte list slot, so the blend data for Fallout 76's Appalachia (40k cells)
+///         measured 3.45 GB — the single largest block in a loaded master. Inline storage removes
+///         that 4× overhead and, just as importantly, removes ~100M objects from every GC scan.
+///     </para>
 /// </summary>
-public record LandTextureBlendEntry(
+public readonly record struct LandTextureBlendEntry(
     ushort Position,
     byte Unused0,
     byte Unused1,

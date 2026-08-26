@@ -59,10 +59,21 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         // Pre-sort REFR records by offset for O(log N) binary search in DMP fallback
         long[]? refrOffsetIndex = null;
         ExtractedRefrRecord[]? refrSortedByOffset = null;
+        long[]? cellOffsetIndex = null;
         if (!hasGrupMapping && refrRecords.Count > 0)
         {
             refrSortedByOffset = refrRecords.OrderBy(r => r.Header.Offset).ToArray();
             refrOffsetIndex = refrSortedByOffset.Select(r => r.Header.Offset).ToArray();
+
+            // Sorted CELL record offsets: each cell's proximity window is capped at the NEXT
+            // cell's record. The heuristic's whole premise is that a cell's REFR run follows its
+            // record in the dump — so the run ENDS where the next cell's record begins. The
+            // uncapped 500 KB reach swallowed the following interiors' runs wholesale, both cells
+            // then held the same refs, and the best-cell dedup broke the tie by parse order —
+            // reliably awarding the contested refs to the EARLIER cell, i.e. to the thief
+            // (NewVegasMedicalClinicInterior rendered a Hidden Valley bunker's geometry while the
+            // bunker itself lost it).
+            cellOffsetIndex = cellRecords.Select(r => r.Offset).Order().ToArray();
         }
 
         Logger.Instance.Debug($"  [Semantic] Cell parsing: {cellRecords.Count} cells, " +
@@ -164,7 +175,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                 var cell = ParseCellFromScanResult(record, refrByFormId,
                     hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
-                    runtimeCellMapEntries.GetValueOrDefault(record.FormId), cellWs);
+                    cellOffsetIndex, runtimeCellMapEntries.GetValueOrDefault(record.FormId), cellWs);
                 if (cell != null)
                 {
                     // WorldspaceFormId + "CellGrup" assignment source are set at construction from
@@ -184,6 +195,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                     var cell = ParseCellFromAccessor(record, refrByFormId,
                         hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
+                        cellOffsetIndex,
                         heightmapByCellFormId, capturedHeightmapByCellFormId,
                         visualDataByCellFormId, terrainMeshByCellFormId,
                         heightmapByGrid, capturedHeightmapByGrid,
@@ -302,6 +314,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
+        long[]? cellOffsetIndex,
         RuntimeCellMapEntry? runtimeCellMapEntry)
     {
         if (cellToRefrMap != null && cellToRefrMap.TryGetValue(record.FormId, out var refrFormIds))
@@ -322,6 +335,20 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             // DMP fallback with binary search: O(log N + K) instead of O(N)
             var startOffset = record.Offset;
             var endOffset = record.Offset + 500_000; // CELL GRUPs can span hundreds of KB
+
+            // The window additionally ENDS at the next CELL record: refs beyond it are that
+            // cell's serialization run, not this one's (see the index build for the theft this
+            // uncapped reach caused).
+            if (cellOffsetIndex != null)
+            {
+                var nextCellIdx = Array.BinarySearch(cellOffsetIndex, record.Offset + 1);
+                if (nextCellIdx < 0) nextCellIdx = ~nextCellIdx;
+                if (nextCellIdx < cellOffsetIndex.Length)
+                {
+                    endOffset = Math.Min(endOffset, cellOffsetIndex[nextCellIdx]);
+                }
+            }
+
             var startIdx = Array.BinarySearch(refrOffsetIndex, startOffset);
             if (startIdx < 0) startIdx = ~startIdx; // First element >= startOffset
 
@@ -353,6 +380,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
+        long[]? cellOffsetIndex,
         Dictionary<uint, LandHeightmap> heightmapByCellFormId,
         Dictionary<uint, LandHeightmap> capturedHeightmapByCellFormId,
         Dictionary<uint, LandVisualData> visualDataByCellFormId,
@@ -369,7 +397,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         if (recordData == null)
         {
             return ParseCellFromScanResult(record, refrByFormId, cellToRefrMap,
-                refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry, cellWorldspace);
+                refrOffsetIndex, refrSortedByOffset, cellOffsetIndex, runtimeCellMapEntry,
+                cellWorldspace);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -489,7 +518,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             record.FormId, cellWorldspace, ref gridX, ref gridY, flags);
 
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
-            refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
+            refrOffsetIndex, refrSortedByOffset, cellOffsetIndex, runtimeCellMapEntry);
 
         // Find associated heightmap and terrain mesh via O(1) dictionary lookups.
         // Exact parent CELL FormID wins; grid lookups are only a fallback for runtime-only captures.
@@ -562,6 +591,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
+        long[]? cellOffsetIndex,
         RuntimeCellMapEntry? runtimeCellMapEntry,
         uint cellWorldspace = 0)
     {
@@ -570,7 +600,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             .FirstOrDefault(g => Math.Abs(g.Offset - record.Offset) < 200);
 
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
-            refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
+            refrOffsetIndex, refrSortedByOffset, cellOffsetIndex, runtimeCellMapEntry);
 
         var gridX = cellGrid?.GridX;
         var gridY = cellGrid?.GridY;
@@ -923,6 +953,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 : esm.CandidateWorldspaceFormIds,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
             WaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(esm.WaterHeight ?? runtime.WaterHeight),
+            AutoWaterLoaded = esm.AutoWaterLoaded ?? runtime.AutoWaterLoaded,
             WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,

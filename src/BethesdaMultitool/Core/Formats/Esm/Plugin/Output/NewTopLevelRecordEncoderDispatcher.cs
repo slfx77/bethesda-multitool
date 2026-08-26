@@ -91,6 +91,12 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["TACT"] = (model, _) => TactEncoder.EncodeNew((GenericEsmRecord)model),
             ["ASPC"] = (model, _) => AspcEncoder.EncodeNew((GenericEsmRecord)model),
             ["ADDN"] = (model, _) => AddnEncoder.EncodeNew((GenericEsmRecord)model),
+            // Wired 2026-08-26 — same GenericEsmRecord shape as the five above.
+            ["LSCR"] = (model, _) => LscrEncoder.EncodeNew((GenericEsmRecord)model),
+            ["CHIP"] = (model, _) => ChipEncoder.EncodeNew((GenericEsmRecord)model),
+            ["IDLM"] = (model, _) => IdlmEncoder.EncodeNew((GenericEsmRecord)model),
+            ["CAMS"] = (model, _) => CamsEncoder.EncodeNew((GenericEsmRecord)model),
+            ["MSET"] = (model, _) => MsetEncoder.EncodeNew((GenericEsmRecord)model),
             ["COBJ"] = (model, _) => CobjEncoder.EncodeNew((ConstructibleObjectRecord)model),
             ["EYES"] = (model, _) => EyesEncoder.EncodeNew((EyesRecord)model),
             ["HAIR"] = (model, _) => HairEncoder.EncodeNew((HairRecord)model),

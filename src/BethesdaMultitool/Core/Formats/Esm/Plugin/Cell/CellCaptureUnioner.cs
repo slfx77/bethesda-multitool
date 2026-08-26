@@ -110,6 +110,8 @@ internal static class CellCaptureUnioner
             CandidateWorldspaceFormIds = MergeDistinct(captures.SelectMany(c => c.CandidateWorldspaceFormIds)),
             Flags = primary.Flags != 0 ? primary.Flags : captures.Select(c => c.Flags).FirstOrDefault(f => f != 0),
             WaterHeight = primary.WaterHeight ?? captures.Select(c => c.WaterHeight).FirstOrDefault(v => v.HasValue),
+            AutoWaterLoaded = primary.AutoWaterLoaded ??
+                              captures.Select(c => c.AutoWaterLoaded).FirstOrDefault(v => v.HasValue),
             EncounterZoneFormId = primary.EncounterZoneFormId ??
                                   captures.Select(c => c.EncounterZoneFormId).FirstOrDefault(v => v is > 0),
             MusicTypeFormId = primary.MusicTypeFormId ??

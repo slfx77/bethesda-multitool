@@ -13,6 +13,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Completeness;
 ///     oracle (tools/EsmSchemaGen) supplies the expected structure for each gap when fixing them.
 ///     Skipped when the game master isn't present (set BETHESDA_TEST_DATA_ROOT or have Sample/ESM).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class SubrecordCompletenessTests
 {

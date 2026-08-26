@@ -119,8 +119,23 @@ public static class EsmSemdiffCommand
         }
 
         // Parse records from both files
-        var recordsA = SemdiffRecordParser.ParseRecordsWithSubrecords(dataA, bigEndianA, recordType, targetFormId);
-        var recordsB = SemdiffRecordParser.ParseRecordsWithSubrecords(dataB, bigEndianB, recordType, targetFormId);
+        var recordsA = SemdiffRecordParser.ParseRecordsWithSubrecords(
+            dataA, bigEndianA, recordType, targetFormId, out var skippedCompressedA);
+        var recordsB = SemdiffRecordParser.ParseRecordsWithSubrecords(
+            dataB, bigEndianB, recordType, targetFormId, out var skippedCompressedB);
+        if (skippedCompressedA > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Warning:[/] {labelA}: {skippedCompressedA} compressed record(s) could not be " +
+                "decompressed and were skipped from the diff.");
+        }
+
+        if (skippedCompressedB > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Warning:[/] {labelB}: {skippedCompressedB} compressed record(s) could not be " +
+                "decompressed and were skipped from the diff.");
+        }
 
         // Build lookup by FormID
         var lookupA = recordsA.ToDictionary(r => r.FormId);

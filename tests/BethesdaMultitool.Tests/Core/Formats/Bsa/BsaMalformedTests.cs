@@ -53,7 +53,8 @@ public sealed class BsaMalformedTests : IDisposable
         byte[] payload,
         uint? fileOffsetOverride = null,
         uint? fileSizeOverride = null,
-        bool compressionToggle = false)
+        bool compressionToggle = false,
+        uint archiveFlags = 0x3u)
     {
         const string folderName = "meshes";
         const string fileName = "test.nif";
@@ -65,7 +66,7 @@ public sealed class BsaMalformedTests : IDisposable
         bw.Write("BSA\0"u8.ToArray());
         bw.Write(104u); // version
         bw.Write(36u); // folder record offset
-        bw.Write(0x3u); // IncludeDirectoryNames | IncludeFileNames
+        bw.Write(archiveFlags); // default: IncludeDirectoryNames | IncludeFileNames
         bw.Write(1u); // folder count
         bw.Write(1u); // file count
         bw.Write((uint)(folderName.Length + 1)); // total folder name length
@@ -165,6 +166,23 @@ public sealed class BsaMalformedTests : IDisposable
 
         var ex = Assert.Throws<InvalidDataException>(() => extractor.ExtractFile(record));
         Assert.Contains("uncompressed size", ex.Message);
+    }
+
+    [Fact]
+    public void ExtractFile_XMemCodecEntry_ThrowsNamedNotSupported()
+    {
+        // 0x0203 = XMemCodec | IncludeFileNames | IncludeDirectoryNames. Without the explicit
+        // guard this falls into the zlib branch and surfaces as an opaque deflate error, which is
+        // how an unsupported-codec archive ends up looking like a corrupt one.
+        var entryData = new byte[12];
+        BinaryTestWriter.WriteUInt32LE(entryData, 0, 8);
+        var bytes = BuildV104Bsa(entryData, compressionToggle: true, archiveFlags: 0x203u);
+        using var extractor = new BsaExtractor(WriteBsa(bytes));
+        var record = Assert.Single(extractor.Archive.AllFiles);
+
+        Assert.True(extractor.Archive.Header.UsesXMemCodec);
+        var ex = Assert.Throws<NotSupportedException>(() => extractor.ExtractFile(record));
+        Assert.Contains("XMem/LZX", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Fixture-correctness control: the untouched builder output must round-trip.</summary>

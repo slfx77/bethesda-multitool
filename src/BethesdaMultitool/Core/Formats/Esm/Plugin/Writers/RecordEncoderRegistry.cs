@@ -192,6 +192,14 @@ public sealed class RecordEncoderRegistry
             new TactEncoder(),
             new AspcEncoder(),
             new AddnEncoder(),
+            // Same generic-only family, wired 2026-08-26. Registered here beside the others under
+            // the same forward-reference rule: CHIP.YNAM/ZNAM and MSET.HNAM/INAM need SOUN,
+            // LSCR.WMI1 needs LSCT (registered at the end of this list), CAMS.MNAM needs IMAD.
+            new LscrEncoder(),
+            new ChipEncoder(),
+            new IdlmEncoder(),
+            new CamsEncoder(),
+            new MsetEncoder(),
             new DebrEncoder(),
             new EczEncoder(),
             new CpthEncoder(),

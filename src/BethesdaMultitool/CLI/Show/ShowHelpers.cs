@@ -8,6 +8,9 @@ namespace BethesdaMultitool.CLI.Show;
 /// </summary>
 internal static class ShowHelpers
 {
+    /// <summary>Number of leading bytes shown for a raw embedded-struct payload.</summary>
+    private const int BytePreviewLength = 16;
+
     internal static bool Matches<T>(T record, uint? formId, string? editorId,
         Func<T, uint> getFormId, Func<T, string?> getEditorId)
     {
@@ -28,7 +31,7 @@ internal static class ShowHelpers
     /// <summary>
     ///     Append PDB-derived struct fields to the display lines, grouped by owner class.
     /// </summary>
-    internal static void AppendPdbFields(List<string> lines, Dictionary<string, object?> fields,
+    internal static void AppendPdbFields(List<string> lines, IReadOnlyDictionary<string, object?> fields,
         FormIdResolver resolver)
     {
         // Group fields by owner class (key format is "OwnerClass.FieldName")
@@ -89,7 +92,27 @@ internal static class ShowHelpers
             sbyte sb => sb.ToString(),
             bool b => b.ToString(),
             string s => Markup.Escape(s),
+            // RuntimeGenericReader hands back the raw bytes of any embedded struct larger than
+            // 8 bytes. Without this arm the default ToString() renders them as "System.Byte[]".
+            byte[] raw => FormatBytePreview(raw),
             _ => Markup.Escape(value.ToString() ?? "")
         };
+    }
+
+    /// <summary>
+    ///     Render a raw byte payload as a short hex preview plus its full length, so a long
+    ///     embedded struct stays one readable line.
+    /// </summary>
+    private static string FormatBytePreview(byte[] raw)
+    {
+        if (raw.Length == 0)
+        {
+            return "[grey](empty)[/]";
+        }
+
+        var shown = Math.Min(BytePreviewLength, raw.Length);
+        var hex = Convert.ToHexString(raw, 0, shown);
+        var ellipsis = raw.Length > shown ? "…" : "";
+        return $"{hex}{ellipsis}  ({raw.Length} bytes)";
     }
 }

@@ -782,7 +782,7 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         Assert.NotNull(result);
         Assert.Equal(0x00006010u, result.BaseFormId);
         Assert.Equal(0x00006011u, result.ParentCellFormId);
-        Assert.True(result.ParentCellIsInterior == true);
+        Assert.True(result.ParentCellIsInterior);
         Assert.Equal(1.25f, result.Scale);
         Assert.Equal(1024f, result.Position!.X);
         Assert.Equal(-2048f, result.Position.Y);

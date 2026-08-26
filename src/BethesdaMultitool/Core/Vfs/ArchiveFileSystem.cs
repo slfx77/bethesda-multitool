@@ -92,9 +92,13 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         }
         catch (Exception ex) when (IsExtractionFailure(ex))
         {
-            // Corrupt/unsupported stored payload (truncated recovery, XMem/LZX entry, garbage
+            // Corrupt/unsupported stored payload (truncated recovery, an unsupported codec, garbage
             // record fields): null lets a layered mount fall through to the next copy, matching
-            // the per-source tolerance of the hand-rolled chains this API replaces.
+            // the per-source tolerance of the hand-rolled chains this API replaces. Log it, though —
+            // silently returning null is indistinguishable from "the file isn't in this archive",
+            // which is how an entire unsupported-codec archive can read as merely absent.
+            Logger.Instance.Info("Vfs: archive entry failed to extract, treating as absent: {0}!{1} ({2})",
+                Label, path, ex.Message);
             return null;
         }
     }

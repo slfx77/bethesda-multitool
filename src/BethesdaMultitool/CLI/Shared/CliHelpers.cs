@@ -60,6 +60,36 @@ internal static class CliHelpers
             : null;
     }
 
+    /// <summary>
+    ///     Resolves a dump-path argument that may be a single file or a directory of .dmp files.
+    ///     A path to an existing file yields just that file (full path); a directory is enumerated
+    ///     for *.dmp, excluding test-host hangdumps. Returns null when the path exists as neither,
+    ///     and an empty list when the directory holds no matching dumps. Ordering is by full path
+    ///     (ordinal, case-insensitive) unless <paramref name="orderByLastWriteTime" /> is set, in
+    ///     which case dumps are ordered oldest-capture-first by LastWriteTimeUtc.
+    /// </summary>
+    internal static List<string>? DiscoverDumps(
+        string input, SearchOption searchOption, bool orderByLastWriteTime = false)
+    {
+        if (File.Exists(input))
+        {
+            return [Path.GetFullPath(input)];
+        }
+
+        if (!Directory.Exists(input))
+        {
+            return null;
+        }
+
+        var files = Directory.EnumerateFiles(input, "*.dmp", searchOption)
+            .Where(p => !Path.GetFileName(p).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
+            .Select(Path.GetFullPath);
+
+        return orderByLastWriteTime
+            ? files.OrderBy(f => new FileInfo(f).LastWriteTimeUtc).ToList()
+            : files.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     internal static string CsvEscape(string? value)
     {
         if (string.IsNullOrEmpty(value))

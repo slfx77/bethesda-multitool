@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Parity;
@@ -119,6 +120,121 @@ public sealed class PlannerRoutingConsistencyTests
             missing.Count == 0,
             "Planned encoders with no direct RecordEncoderRegistry model primitive: " +
             string.Join(", ", missing));
+    }
+
+    /// <summary>
+    ///     Types the generic runtime sweep (<c>RecordParserContext.MergeRuntimeGenericRecords</c>
+    ///     via <c>RuntimeGenericReader</c>) reads out of dumps but that the pipeline's top-level
+    ///     loop does not yield, each with the reason it is allowed to stay unrouted. Every entry
+    ///     is a captured record class that today silently never reaches the output ESM — the M1
+    ///     guard below keeps this set explicit instead of silent.
+    /// </summary>
+    private static readonly Dictionary<string, string> GenericSweepEmissionExemptions = new(StringComparer.Ordinal)
+    {
+        // LSCR / CHIP / IDLM / CAMS / MSET left this list 2026-08-26: all five now have an encoder,
+        // a DmpRecordSource row, a planned-encoder row, a registry row, and an
+        // EnumerateModelsByType yield. MSET additionally gained RuntimeMediaSetReader so its six
+        // pointer-backed layer names can be recovered at all.
+        ["EFSH"] =
+            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        ["CSNO"] =
+            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        ["IPDS"] =
+            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        ["RGDL"] =
+            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        ["DOBJ"] =
+            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        ["AMEF"] =
+            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        ["SKIL"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
+        ["CLOT"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
+        ["LVSP"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
+        // TLOD (0x44) left this list 2026-08-25: I4c PDB-verified that the engine registers
+        // TESObjectLAND (runtime terrain) under TLOD_ID, so 0x44 is now a SpecializedFormType
+        // (RuntimeWorldReader) and no longer flows through the generic sweep.
+        ["TES4"] = "file header form — Tes4HeaderBuilder synthesizes the plugin header; never routed as a record",
+        ["NAVI"] = "emitted outside the top-level loop — EsmAssembler's NAVI fallback builds it from emitted NAVMs",
+        ["NAVM"] = "cell child: emits under CELL Children GRUPs via the NAVM byte-rewriter, never a top-level GRUP",
+        ["PMIS"] = "placed-ref type — routes through cell children, not top-level yields",
+        ["PGRE"] = "placed-ref type — routes through cell children, not top-level yields",
+        ["PBEA"] = "placed-ref type — routes through cell children, not top-level yields",
+        ["PFLA"] = "placed-ref type — routes through cell children, not top-level yields"
+    };
+
+    /// <summary>
+    ///     M1 guard: every FormType the generic runtime sweep can read out of a dump must
+    ///     either be yielded by the pipeline's top-level loop or sit on
+    ///     <see cref="GenericSweepEmissionExemptions" /> with a written reason. The oracle
+    ///     mirrors the sweep's own gates: a PDB layout exists, no specialized reader claims
+    ///     the FormType, and <c>RuntimeGenericReader</c>'s readable-field early-out passes.
+    ///     Without this, a captured record class disappears with zero diagnostics — the
+    ///     catalog never sees a model the pipeline never yields.
+    /// </summary>
+    [Fact]
+    public void Every_Generic_Sweep_FormType_Is_Yielded_Or_Named_Exempt()
+    {
+        var missing = new List<string>();
+        foreach (var formType in PdbStructLayouts.Layouts.Keys.OrderBy(b => b))
+        {
+            if (PdbStructLayouts.HasSpecializedReader(formType))
+            {
+                continue; // A typed reader owns it; the generic sweep skips it.
+            }
+
+            if (PdbStructLayouts.GetReadableFields(formType).Count == 0)
+            {
+                continue; // RuntimeGenericReader early-outs; no record is ever produced.
+            }
+
+            // ASPC is intercepted inside RuntimeStructReader.ReadGenericRecord and routed to
+            // the specialized acoustic-space reader (it is deliberately NOT in
+            // SpecializedFormTypes — see that method's doc comment). The 0x0E byte is
+            // hardcoded here because the AspcFormType const is private.
+            if (formType == 0x0E)
+            {
+                continue;
+            }
+
+            var signature = RuntimeBuildOffsets.GetRecordTypeCode(formType);
+            Assert.True(signature is not null,
+                $"FormType 0x{formType:X2} has a PDB layout the generic sweep can read but no " +
+                "ENUM_FORM_ID signature in RuntimeBuildOffsets.GetRecordTypeCode — extend the " +
+                "mapping so its routing can be audited.");
+
+            if (PluginConversionPipeline.EmittableTopLevelRecordTypes.Contains(signature!)
+                || GenericSweepEmissionExemptions.ContainsKey(signature!))
+            {
+                continue;
+            }
+
+            missing.Add($"{signature} (0x{formType:X2})");
+        }
+
+        Assert.True(
+            missing.Count == 0,
+            "FormTypes the generic runtime sweep reads but the pipeline never yields and no " +
+            "exemption names (captured records of these types silently vanish): " +
+            string.Join(", ", missing));
+    }
+
+    /// <summary>
+    ///     Anti-staleness inverse of the M1 guard: once a type gains a top-level yield its
+    ///     exemption must be deleted, so the exemption list cannot silently outlive the gap
+    ///     it documents.
+    /// </summary>
+    [Fact]
+    public void Generic_Sweep_Exemptions_Name_Only_Types_The_Pipeline_Does_Not_Yield()
+    {
+        var wired = GenericSweepEmissionExemptions.Keys
+            .Where(type => PluginConversionPipeline.EmittableTopLevelRecordTypes.Contains(type))
+            .OrderBy(type => type, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(
+            wired.Count == 0,
+            "Exempted generic-sweep types that EnumerateModelsByType now yields — remove their " +
+            $"GenericSweepEmissionExemptions entries: {string.Join(", ", wired)}");
     }
 
     [Fact]

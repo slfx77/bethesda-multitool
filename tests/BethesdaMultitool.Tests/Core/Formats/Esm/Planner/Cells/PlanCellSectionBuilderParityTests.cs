@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using CellRecord = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.CellRecord;
 
@@ -24,7 +25,7 @@ public sealed class PlanCellSectionBuilderParityTests
     [Fact]
     public void Empty_Plan_Returns_Null()
     {
-        var plan = MakeEmptyPlan();
+        var plan = PlanTestFactory.EmptyPlan();
         var bytes = PlanCellSectionBuilder.BuildCellSection(
             CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()),
             new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
@@ -59,7 +60,7 @@ public sealed class PlanCellSectionBuilderParityTests
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan)
         };
@@ -114,7 +115,7 @@ public sealed class PlanCellSectionBuilderParityTests
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
             // The ref's base must be resolvable or the dangling-base guard drops the ref.
@@ -185,7 +186,7 @@ public sealed class PlanCellSectionBuilderParityTests
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x01000801, cellPlan)
         };
@@ -448,7 +449,7 @@ public sealed class PlanCellSectionBuilderParityTests
                 : ImmutableDictionary<uint, PlacedRefDecision>.Empty.Add(placed.FormId, verdict)
         };
 
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
             SourceToEmittedFormId = sourceToEmitted ?? ImmutableDictionary<uint, uint>.Empty,
@@ -480,23 +481,6 @@ public sealed class PlanCellSectionBuilderParityTests
         };
         return CellGrupBuilder.BuildCellSection(
             [legacyBundle], new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master });
-    }
-
-    private static EmitPlan MakeEmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
-            }
-        };
     }
 
     private static (ParsedMainRecord Master, PcEsmCellContext Context) MakeInteriorCellMaster(uint cellFormId)

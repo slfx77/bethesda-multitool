@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
@@ -69,7 +70,7 @@ public sealed class PlanCellSectionBuilderLandTests
                 worldspaceSource),
             CellFormIds = [cellEmitted]
         };
-        var plan = EmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellEmitted, cell),
             WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty
@@ -113,20 +114,4 @@ public sealed class PlanCellSectionBuilderLandTests
         };
     }
 
-    private static EmitPlan EmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
-            }
-        };
-    }
 }

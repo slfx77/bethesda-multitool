@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
 /// <summary>
@@ -23,6 +25,7 @@ public static class RecordCatalog
             dmp,
             enabledTypes,
             masterFormIdAliases,
+            out _,
             out _);
     }
 
@@ -31,17 +34,26 @@ public static class RecordCatalog
     ///     an enabled, same-type DMP/master pair. The mapping is intentionally independent
     ///     of which captured model wins a shared master slot: losing aliases still identify
     ///     references that must resolve to the retained master record.
+    ///     <para>
+    ///         <paramref name="diagnostics" /> reports the captures the catalog discarded —
+    ///         duplicate (type, FormID) DMP records and aliases shadowed by an earlier
+    ///         pairing — so first-wins selection is no longer a silent drop. Winners are
+    ///         unchanged; the caller routes these into <c>EmitPlan.Diagnostics</c>.
+    ///     </para>
     /// </summary>
     internal static IReadOnlyList<CatalogEntry> Build(
         MasterRecordSource master,
         DmpRecordSource dmp,
         IReadOnlySet<string> enabledTypes,
         IReadOnlyDictionary<uint, uint>? masterFormIdAliases,
-        out IReadOnlyDictionary<uint, uint> validatedMasterFormIdAliases)
+        out IReadOnlyDictionary<uint, uint> validatedMasterFormIdAliases,
+        out IReadOnlyList<PlanDiagnostic> diagnostics)
     {
         ArgumentNullException.ThrowIfNull(master);
         ArgumentNullException.ThrowIfNull(dmp);
 
+        var diagnosticList = new List<PlanDiagnostic>();
+        diagnostics = diagnosticList;
         if (enabledTypes.Count == 0)
         {
             validatedMasterFormIdAliases = new Dictionary<uint, uint>();
@@ -70,12 +82,29 @@ public static class RecordCatalog
         // Runtime dumps can contain repeated snapshots of the same top-level GRUP. Match
         // the legacy emitter's per-type, per-FormID first-wins behavior before catalog
         // pairing so later copies cannot masquerade as newly-authored records.
-        var seenDmpRecords = new HashSet<(string Type, uint FormId)>();
+        var keptDmpModels = new Dictionary<(string Type, uint FormId), object>();
         var pairedMasterFormIds = new HashSet<uint>();
         foreach (var (type, formId, model) in dmp.Enumerate(enabledTypes))
         {
-            if (!seenDmpRecords.Add((type, formId)))
+            if (!keptDmpModels.TryAdd((type, formId), model))
             {
+                var kept = keptDmpModels[(type, formId)];
+                diagnosticList.Add(new PlanDiagnostic
+                {
+                    Kind = PlanDiagnosticKind.Warning,
+                    Phase = "Catalog",
+                    Code = "catalog.duplicate-dmp-record",
+                    RecordType = type,
+                    FormId = formId,
+                    Message = $"Duplicate DMP capture of {type} 0x{formId:X8} discarded; " +
+                              "first capture wins (repeated runtime GRUP snapshot).",
+                    Metadata = new Dictionary<string, string?>
+                    {
+                        ["type"] = type,
+                        ["formId"] = $"0x{formId:X8}",
+                        ["differs"] = DescribeDiscardedModelDelta(kept, model)
+                    }
+                });
                 continue;
             }
 
@@ -120,6 +149,23 @@ public static class RecordCatalog
                 // master, retain the first capture just like duplicate raw FormIDs.
                 if (usesAlias && pairedMasterFormIds.Contains(masterLookupFormId))
                 {
+                    diagnosticList.Add(new PlanDiagnostic
+                    {
+                        Kind = PlanDiagnosticKind.Warning,
+                        Phase = "Catalog",
+                        Code = "catalog.alias-shadowed-by-exact",
+                        RecordType = type,
+                        FormId = formId,
+                        Message = $"Aliased DMP capture {type} 0x{formId:X8} discarded: master " +
+                                  $"0x{masterLookupFormId:X8} is already paired with an earlier " +
+                                  "capture (exact captures and first aliases win).",
+                        Metadata = new Dictionary<string, string?>
+                        {
+                            ["type"] = type,
+                            ["formId"] = $"0x{formId:X8}",
+                            ["masterFormId"] = $"0x{masterLookupFormId:X8}"
+                        }
+                    });
                     continue;
                 }
 
@@ -144,5 +190,71 @@ public static class RecordCatalog
 
         validatedMasterFormIdAliases = validatedAliases;
         return entries;
+    }
+
+    /// <summary>
+    ///     "Does the discarded duplicate differ from the kept capture" classifier for the
+    ///     <c>catalog.duplicate-dmp-record</c> diagnostic: <c>"false"</c> (provably the
+    ///     same), <c>"true"</c> (provably different), or <c>"unknown"</c> (no comparison
+    ///     surface for this model type). Deliberately ignores the capture <c>Offset</c> —
+    ///     two snapshots of one record at different heap addresses are not a content
+    ///     difference.
+    ///     <para>
+    ///         Model types that are flat scalar <c>record</c>s get an exact deep compare via
+    ///         compiler-synthesized value equality; anything holding collections cannot (see
+    ///         the <see cref="GenericEsmRecord" /> arm below).
+    ///     </para>
+    /// </summary>
+    private static string DescribeDiscardedModelDelta(object kept, object discarded)
+    {
+        if (ReferenceEquals(kept, discarded))
+        {
+            return "false";
+        }
+
+        if (kept.GetType() != discarded.GetType())
+        {
+            return "true";
+        }
+
+        // Flat scalar records: every member is a scalar or string, so the synthesized record
+        // equality IS the deep compare — no hand-written comparer to drift out of sync.
+        //
+        // IsBigEndian is deliberately NOT normalized away: two captures of one record inside a
+        // single dump must agree on endianness, so a divergence is a genuine red flag, not noise.
+        //
+        // Float members compare through EqualityComparer<float?>.Default -> Single.Equals, which
+        // treats NaN as equal to NaN (unlike operator ==). That is what we want here: a corrupt
+        // capture that read NaN twice is "the same capture twice", not an endless difference.
+        if (kept is GameSettingRecord keptSetting && discarded is GameSettingRecord discardedSetting)
+        {
+            return (keptSetting with { Offset = 0 }) == (discardedSetting with { Offset = 0 })
+                ? "false"
+                : "true";
+        }
+
+        if (kept is GlobalRecord keptGlobal && discarded is GlobalRecord discardedGlobal)
+        {
+            return (keptGlobal with { Offset = 0 }) == (discardedGlobal with { Offset = 0 })
+                ? "false"
+                : "true";
+        }
+
+        // GenericEsmRecord cannot use record equality: Fields is an IReadOnlyDictionary and
+        // DecodedTree an IReadOnlyList, neither of which overrides Equals, so the synthesized
+        // comparison degrades to reference equality and would report "true" for every duplicate.
+        // Hence the cheap surface probe, which can only ever prove difference, never sameness.
+        if (kept is GenericEsmRecord keptGeneric && discarded is GenericEsmRecord discardedGeneric)
+        {
+            var cheaplyDiffers =
+                !string.Equals(keptGeneric.EditorId, discardedGeneric.EditorId, StringComparison.Ordinal)
+                || !string.Equals(keptGeneric.FullName, discardedGeneric.FullName, StringComparison.Ordinal)
+                || !string.Equals(keptGeneric.ModelPath, discardedGeneric.ModelPath, StringComparison.Ordinal)
+                || keptGeneric.Fields.Count != discardedGeneric.Fields.Count
+                || (keptGeneric.DecodedTree?.Count ?? -1) != (discardedGeneric.DecodedTree?.Count ?? -1);
+            return cheaplyDiffers ? "true" : "unknown";
+        }
+
+        return "unknown";
     }
 }

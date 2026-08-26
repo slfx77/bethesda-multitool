@@ -6,6 +6,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Papyrus;
 
 /// <summary>Opt-in, hash-pinned structural coverage for the installed Fallout 76 PEX corpus.</summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class PexFallout76RetailArchiveTests
 {

@@ -39,8 +39,16 @@ internal sealed class MeshArchiveSet : IDisposable
 
     private readonly DataFolderResolver _resolver;
 
-    private MeshArchiveSet(IReadOnlyList<string> archivePaths, bool enableFuzzy, bool includeLooseFiles)
+    // Persisted DMP rename map (MeshRenameMapService sidecar): normalized request → resolved donor
+    // path. Consulted ahead of the live fuzzy fallback so a resolution pass the user ran once (the
+    // same pass DMP→ESM conversion applies) wins over per-load heuristics.
+    private readonly IReadOnlyDictionary<string, string>? _pathRenames;
+
+    private MeshArchiveSet(
+        IReadOnlyList<string> archivePaths, bool enableFuzzy, bool includeLooseFiles,
+        IReadOnlyDictionary<string, string>? pathRenames = null)
     {
+        _pathRenames = pathRenames is { Count: > 0 } ? pathRenames : null;
         ArchivePaths = archivePaths;
         _emptyBaseline = DataFolderIndex.FromArchivePaths([]);
         // Shared handles: the 3D viewer, NPC browser, and headless profiler open overlapping
@@ -95,7 +103,8 @@ internal sealed class MeshArchiveSet : IDisposable
         string primaryMeshesBsaPath,
         string[]? extraMeshesBsaPaths,
         bool enableFuzzy,
-        bool includeLooseFiles = false)
+        bool includeLooseFiles = false,
+        IReadOnlyDictionary<string, string>? pathRenames = null)
     {
         var paths = new List<string> { Path.GetFullPath(primaryMeshesBsaPath) };
         if (extraMeshesBsaPaths is { Length: > 0 })
@@ -110,7 +119,7 @@ internal sealed class MeshArchiveSet : IDisposable
             }
         }
 
-        return new MeshArchiveSet(paths, enableFuzzy, includeLooseFiles);
+        return new MeshArchiveSet(paths, enableFuzzy, includeLooseFiles, pathRenames);
     }
 
     public bool TryExtractFile(string virtualPath, out byte[] data, out string archivePath)
@@ -198,12 +207,39 @@ internal sealed class MeshArchiveSet : IDisposable
 
     private DataFolderResolution Resolve(string normalizedPath)
     {
-        return _resolveCache.GetOrAdd(normalizedPath, _resolver.Resolve);
+        return _resolveCache.GetOrAdd(normalizedPath, path =>
+        {
+            // The persisted rename map is a deliberate, user-triggered resolution (conversion
+            // parity), so it outranks the live fuzzy cascade — but a mapped path that no longer
+            // resolves (donor set changed since the sidecar was built) falls through to the
+            // normal lookup rather than failing.
+            if (_pathRenames is not null && _pathRenames.TryGetValue(path, out var mapped))
+            {
+                var mappedNormalized = Normalize(mapped);
+                var viaMap = _resolver.Resolve(mappedNormalized);
+                if (viaMap.Kind != AssetResolutionKind.Missing)
+                {
+                    // An exact hit on the MAPPED path reports no ResolvedPath ("you got what you
+                    // asked for") — but relative to the ORIGINAL request this is a substitution,
+                    // and consumers surface ResolvedPath as the "Fallback Mesh" label.
+                    return viaMap.ResolvedPath is null ? viaMap with { ResolvedPath = mappedNormalized } : viaMap;
+                }
+            }
+
+            return _resolver.Resolve(path);
+        });
     }
 
     private static string Normalize(string virtualPath)
     {
-        return virtualPath.Replace('/', '\\');
+        // Lowercase, matching how AssetPathRules.NormalizeDataRelativePath builds the index keys.
+        // The conversion pipeline lowercases every request (TryNormalizeRequestPath) before it hits
+        // DataFolderResolver, but render-side requests arrived mixed-case — and the index's
+        // by-last-directory buckets are Ordinal over lowercased keys, so "SCOL"/"Furniture" lookups
+        // returned empty and the substring-suffix + directory-containment fuzzy passes were dead
+        // code at render time. That is why prototype renames (SCOLParkingLotChunk03 →
+        // scolparkinglotchunk03b) resolved during DMP→ESM conversion but not in the viewer.
+        return virtualPath.Replace('/', '\\').ToLowerInvariant();
     }
 
     private static string ArchivePathOf(AssetSource source)

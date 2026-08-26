@@ -9,6 +9,7 @@ using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 
+[Trait("Category", TestCategories.BucketB)]
 public sealed class IngredientParserTests
 {
     private const string RetailEditorId = "DoNotCreateNewIngredientsWeArentUsingThemInFallout";
@@ -76,7 +77,7 @@ public sealed class IngredientParserTests
     public async Task RetailFalloutNv_HasOneExplicitlyNonCreatableIngredient()
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var esm = ResolveFalloutNvEsm();
+        var esm = RealAssetPaths.Masters.FalloutNv();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
@@ -89,19 +90,4 @@ public sealed class IngredientParserTests
         Assert.True(float.IsFinite(ingredient.Weight));
     }
 
-    private static string? ResolveFalloutNvEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "FalloutNV.esm")))
-        {
-            return Path.Combine(root, "FalloutNV.esm");
-        }
-
-        string?[] candidates =
-        [
-            @"Sample\ESM\pc_final\FalloutNV.esm",
-            RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\FalloutNV.esm")
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
 }

@@ -84,13 +84,13 @@ internal static class RuntimeRefrHeapSweep
         var added = 0;
         foreach (var region in info.MemoryRegions)
         {
-            var buffer = ReadRegion(accessor, region);
+            var buffer = ReadRegion(accessor, info, region);
             if (buffer == null)
             {
                 continue;
             }
 
-            ScanRegion(buffer, shift, masterFormIds, existing, addedFids,
+            ScanRegion(buffer, (int)region.Size, shift, masterFormIds, existing, addedFids,
                 hit =>
                 {
                     scanResult.RuntimeRefrFormEntries.Add(new RuntimeEditorIdEntry
@@ -135,14 +135,14 @@ internal static class RuntimeRefrHeapSweep
                     break;
                 }
 
-                var buffer = ReadRegion(accessor, region);
+                var buffer = ReadRegion(accessor, info, region);
                 if (buffer == null)
                 {
                     continue;
                 }
 
                 scanned += buffer.Length;
-                ScanRegion(buffer, shift, masterFormIds, existing, seen,
+                ScanRegion(buffer, (int)region.Size, shift, masterFormIds, existing, seen,
                     _ => hits++);
             }
 
@@ -156,18 +156,37 @@ internal static class RuntimeRefrHeapSweep
         return best;
     }
 
-    private static byte[]? ReadRegion(IMemoryAccessor accessor, MinidumpMemoryRegion region)
+    private static byte[]? ReadRegion(IMemoryAccessor accessor, MinidumpInfo info, MinidumpMemoryRegion region)
     {
         if (region.Size < RefrStructTail || region.Size > int.MaxValue)
         {
             return null;
         }
 
-        var buffer = new byte[region.Size];
+        // Over-read into the VA-adjacent successor region (when one is captured) so a REFR whose
+        // header starts in this region's last bytes can still validate its tail fields. The scan
+        // clamps struct STARTS to this region, so nothing is attributed to the successor. Regions
+        // are VA-adjacent but not file-adjacent — locate the successor by exact VA and read its own
+        // file bytes, clamped to its size, so a short successor never bleeds into a third region.
+        var successorVa = region.VirtualAddress + region.Size;
+        var successor = info.MemoryRegions.FirstOrDefault(r => r.VirtualAddress == successorVa);
+        var tailBytes = successor == null ? 0 : (int)Math.Min(RefrStructTail - 4, successor.Size);
+
+        var buffer = new byte[region.Size + tailBytes];
         try
         {
             var read = accessor.ReadArray(region.FileOffset, buffer, 0, (int)region.Size);
-            return read <= 0 ? null : buffer;
+            if (read <= 0)
+            {
+                return null;
+            }
+
+            if (tailBytes > 0)
+            {
+                accessor.ReadArray(successor!.FileOffset, buffer, (int)region.Size, tailBytes);
+            }
+
+            return buffer;
         }
         catch
         {
@@ -177,6 +196,7 @@ internal static class RuntimeRefrHeapSweep
 
     private static void ScanRegion(
         byte[] buffer,
+        int regionLength,
         int shift,
         IReadOnlySet<uint> masterFormIds,
         HashSet<uint> existing,
@@ -194,7 +214,8 @@ internal static class RuntimeRefrHeapSweep
             return;
         }
 
-        var maxStart = buffer.Length - tail;
+        // Struct starts stay inside the region proper; the buffer may carry successor tail bytes.
+        var maxStart = Math.Min(buffer.Length - tail, regionLength - 4);
         for (var start = 0; start <= maxStart; start += 4)
         {
             var vft = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(start + VftableOffset));

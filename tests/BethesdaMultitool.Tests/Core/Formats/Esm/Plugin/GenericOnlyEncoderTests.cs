@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
@@ -102,9 +103,11 @@ public class GenericOnlyEncoderTests
     }
 
     [Fact]
-    public void Mstt_RejectsLargeStructDescriptorPlaceholder()
+    public void Mstt_StillRejectsTheRetiredStructDescriptorPlaceholder()
     {
-        // Structs >8 bytes come back as "[TypeName, NB]" and carry no data — must not be parsed.
+        // RuntimeGenericReader no longer produces "[TypeName, NB]" for a >8-byte struct — it hands
+        // back the raw bytes. The guard stays so a stale capture or a hand-built record cannot
+        // smuggle a descriptor string in and have its characters parsed as hex.
         var result = MsttEncoder.EncodeNew(Mstt(new Dictionary<string, object?>
         {
             ["BGSMovableStatic.data"] = "[MOVABLE_STATIC_DATA, 16B]"
@@ -113,6 +116,25 @@ public class GenericOnlyEncoderTests
         var data = Assert.Single(result.Subrecords, s => s.Signature == "DATA");
         Assert.Equal([0x00], data.Bytes);
         Assert.Contains(result.Warnings, w => w.Contains("MOVABLE_STATIC_DATA"));
+    }
+
+    [Fact]
+    public void LargeEmbeddedStructBytes_ReachTryBytes_InsteadOfBeingDropped()
+    {
+        // The contract this replaces: >8-byte structs used to arrive as a data-free descriptor
+        // string, which made every large embedded block (CAMS's 40-byte CAMERA_SHOT_DATA among
+        // them) structurally unemittable. They now arrive as raw bytes, and TryBytes accepts them.
+        var payload = new byte[16];
+        for (var i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(0xA0 + i);
+        }
+
+        var record = Mstt(new Dictionary<string, object?> { ["BGSMovableStatic.data"] = payload });
+
+        Assert.Equal(payload, GenericRecordFields.TryBytes(record, 16, "BGSMovableStatic.data"));
+        // Length is still checked: a caller asking for a different size gets nothing.
+        Assert.Null(GenericRecordFields.TryBytes(record, 12, "BGSMovableStatic.data"));
     }
 
     [Fact]
@@ -158,7 +180,7 @@ public class GenericOnlyEncoderTests
             RecordType = "ANIO",
             EditorId = "ProtoAnimObject",
             ModelPath = @"Clutter\Anim01.NIF",
-            Fields = []
+            Fields = new Dictionary<string, object?>()
         });
 
         Assert.DoesNotContain(result.Subrecords, s => s.Signature == "DATA");
@@ -447,6 +469,11 @@ public class GenericOnlyEncoderTests
     [InlineData("IMGS")]
     [InlineData("PWAT")]
     [InlineData("TREE")]
+    [InlineData("LSCR")]
+    [InlineData("CHIP")]
+    [InlineData("IDLM")]
+    [InlineData("CAMS")]
+    [InlineData("MSET")]
     public void NewlyWiredTypes_AreRegisteredAndDispatchable(string recordType)
     {
         Assert.True(

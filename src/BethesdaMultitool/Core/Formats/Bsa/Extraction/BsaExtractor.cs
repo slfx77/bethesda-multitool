@@ -451,6 +451,15 @@ public sealed class BsaExtractor : IDisposable
 
         if (isCompressed)
         {
+            // XMem/LZX-coded entries would otherwise fall into the zlib branch below and surface as
+            // a confusing "unsupported compression method" deflate error. Fail with a named one
+            // instead: the codec is genuinely unimplemented (see BsaHeader.UsesXMemCodec for why).
+            if (Archive.Header.UsesXMemCodec)
+            {
+                throw new NotSupportedException(
+                    $"BSA entry '{file.FullPath}' uses the XMem/LZX codec, which is not supported.");
+            }
+
             if (dataSize < 4)
             {
                 throw new InvalidDataException(

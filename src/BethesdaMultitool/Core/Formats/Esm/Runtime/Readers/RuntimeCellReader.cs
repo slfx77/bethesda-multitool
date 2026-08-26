@@ -275,7 +275,7 @@ internal sealed class RuntimeCellReader
             WaterFormId = worldspaceMetadata?.WaterFormId,
             DefaultLandHeight = worldspaceMetadata?.DefaultLandHeight,
             DefaultWaterHeight =
-                WorldHeightNormalizer.NormalizeReportableHeight(worldspaceMetadata?.DefaultWaterHeight),
+                WorldHeightNormalizer.PreserveSentinelOrNormalize(worldspaceMetadata?.DefaultWaterHeight),
             MapUsableWidth = worldspaceMetadata?.MapUsableWidth,
             MapUsableHeight = worldspaceMetadata?.MapUsableHeight,
             MapNWCellX = worldspaceMetadata?.MapNWCellX,
@@ -570,7 +570,7 @@ internal sealed class RuntimeCellReader
             ClimateFormId = worldData.ClimateFormId,
             WaterFormId = worldData.WaterFormId,
             DefaultLandHeight = worldData.DefaultLandHeight,
-            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(worldData.DefaultWaterHeight),
+            DefaultWaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(worldData.DefaultWaterHeight),
             MapUsableWidth = worldData.MapUsableWidth,
             MapUsableHeight = worldData.MapUsableHeight,
             MapNWCellX = worldData.MapNWCellX,
@@ -597,7 +597,7 @@ internal sealed class RuntimeCellReader
             ClimateFormId = preferred.ClimateFormId ?? fallback.ClimateFormId,
             WaterFormId = preferred.WaterFormId ?? fallback.WaterFormId,
             DefaultLandHeight = preferred.DefaultLandHeight ?? fallback.DefaultLandHeight,
-            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(
+            DefaultWaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(
                 preferred.DefaultWaterHeight ?? fallback.DefaultWaterHeight),
             MapUsableWidth = preferred.MapUsableWidth ?? fallback.MapUsableWidth,
             MapUsableHeight = preferred.MapUsableHeight ?? fallback.MapUsableHeight,

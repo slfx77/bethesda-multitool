@@ -126,6 +126,14 @@ internal sealed class RuntimeCellObjectEnumerator
             ? buffer[flagsOffset.Value]
             : (byte)0;
 
+        // The engine's own water corroboration: TESObjectCELL::bAutoWaterLoaded is set when the
+        // cell actually created its auto-water. Read strictly — a bool byte holds 0 or 1, so any
+        // other value means the slot is garbage and carries no evidence either way (null).
+        var autoWaterOffset = view.Offset("bAutoWaterLoaded", "TESObjectCELL");
+        bool? autoWaterLoaded = autoWaterOffset.HasValue && autoWaterOffset.Value < buffer.Length
+            ? buffer[autoWaterOffset.Value] switch { 0 => false, 1 => true, _ => null }
+            : null;
+
         // iLightingTemplateInheritanceFlags (uint32)
         var inheritFlagsOffset = view.Offset("iLightingTemplateInheritanceFlags", "TESObjectCELL");
         uint? lightingInheritanceFlags = inheritFlagsOffset.HasValue && inheritFlagsOffset.Value + 4 <= buffer.Length
@@ -150,7 +158,8 @@ internal sealed class RuntimeCellObjectEnumerator
             cellExtras.EncounterZoneFormId,
             cellExtras.MusicTypeFormId,
             cellExtras.AcousticSpaceFormId,
-            cellExtras.ImageSpaceFormId);
+            cellExtras.ImageSpaceFormId,
+            autoWaterLoaded);
     }
 
     internal static CellRecord? BuildCellRecord(
@@ -171,6 +180,7 @@ internal sealed class RuntimeCellObjectEnumerator
             FullName = snapshot.FullName ?? NormalizeString(displayName),
             Flags = snapshot.Flags,
             WaterHeight = snapshot.WaterHeight,
+            AutoWaterLoaded = snapshot.AutoWaterLoaded,
             WorldspaceFormId = snapshot.WorldspaceFormId,
             LightingTemplateFormId = snapshot.LightingTemplateFormId,
             LightingTemplateInheritanceFlags = snapshot.LightingTemplateInheritanceFlags,
@@ -329,8 +339,13 @@ internal sealed class RuntimeCellObjectEnumerator
             return null;
         }
 
+        // Garbage collapses to the NO-WATER sentinel, never to 0. A runtime fWaterHeight that is
+        // NaN/Inf/FLT_MAX/out-of-range means the engine never set a level for this cell;
+        // NormalizeReportableHeight turned exactly that into 0f — an in-range, real-looking
+        // sea-level plane indistinguishable downstream from an authored XCLW of 0, which flooded
+        // every dry DMP interior.
         var value = RuntimePdbFieldAccessor.ReadFloat(buffer, offset.Value);
-        return WorldHeightNormalizer.NormalizeReportableHeight(value);
+        return WorldHeightNormalizer.PreserveSentinelOrNormalize(value);
     }
 
     internal sealed record RuntimeCellProbeSnapshot(
@@ -346,7 +361,8 @@ internal sealed class RuntimeCellObjectEnumerator
         uint? EncounterZoneFormId = null,
         uint? MusicTypeFormId = null,
         uint? AcousticSpaceFormId = null,
-        uint? ImageSpaceFormId = null);
+        uint? ImageSpaceFormId = null,
+        bool? AutoWaterLoaded = null);
 
     #region BSExtraData Linked List (Cell ExtraDataList)
 

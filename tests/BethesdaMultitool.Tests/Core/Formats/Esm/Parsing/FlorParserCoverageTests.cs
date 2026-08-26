@@ -75,7 +75,7 @@ public class FlorParserCoverageTests
         Assert.True(flor.Fields.ContainsKey("PFPC"));
     }
 
-    private static uint NestedFormId(Dictionary<string, object?> fields, string subrecord, string fieldName)
+    private static uint NestedFormId(IReadOnlyDictionary<string, object?> fields, string subrecord, string fieldName)
     {
         var nested = Assert.IsType<Dictionary<string, object?>>(fields[subrecord]);
         return Assert.IsType<uint>(nested[fieldName]);

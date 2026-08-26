@@ -31,12 +31,8 @@ public static class EsmSubrecordUtils
 
         while (offset + SubrecordHeaderSize <= dataSize)
         {
-            // Read subrecord signature (4 bytes)
-            var sig = bigEndian
-                ? new string([
-                    (char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset]
-                ])
-                : Encoding.ASCII.GetString(data, offset, 4);
+            // Read subrecord signature (4 bytes), pooled — see InternSignature.
+            var sig = InternSignature(data, offset, bigEndian);
 
             // Read subrecord size (2 bytes)
             var subSize = bigEndian
@@ -67,6 +63,30 @@ public static class EsmSubrecordUtils
             offset += SubrecordHeaderSize + (int)actualSize;
         }
     }
+
+    /// <summary>
+    ///     Returns a shared instance of the 4-character signature at <paramref name="offset" />,
+    ///     via the process-wide <see cref="EsmSignaturePool" /> that record headers and GRUP labels
+    ///     now share. Non-ASCII bytes (corrupt or misaligned data) fall back to a fresh string, so
+    ///     nothing is silently normalized away and the pool cannot be filled by garbage.
+    /// </summary>
+    private static string InternSignature(byte[] data, int offset, bool bigEndian)
+    {
+        var b0 = data[offset];
+        var b1 = data[offset + 1];
+        var b2 = data[offset + 2];
+        var b3 = data[offset + 3];
+        if (bigEndian)
+        {
+            (b0, b3) = (b3, b0);
+            (b1, b2) = (b2, b1);
+        }
+
+        return EsmSignaturePool.TryIntern(b0, b1, b2, b3, out var pooled)
+            ? pooled
+            : new string([(char)b0, (char)b1, (char)b2, (char)b3]);
+    }
+
 
     /// <summary>
     ///     Read subrecord signature as a uint for fast comparison.

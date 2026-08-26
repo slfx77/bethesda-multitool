@@ -67,7 +67,7 @@ public class SortedIntervalMapTests
     }
 
     [Fact]
-    public void FindContainingInterval_SingleInterval_Works()
+    public void FindContainingInterval_SingleInterval_MatchesInsideAndRejectsEitherSide()
     {
         var groups = new List<GrupHeaderInfo> { MakeGrup(1000, 500, 0xDEAD) };
         var map = new SortedIntervalMap(groups);
@@ -126,7 +126,7 @@ public class SortedIntervalMapTests
     }
 
     [Fact]
-    public void FindContainingInterval_UnsortedInput_StillWorks()
+    public void FindContainingInterval_UnsortedInput_IsSortedByTheConstructor()
     {
         // Input deliberately out of order — constructor should sort
         var groups = new List<GrupHeaderInfo>

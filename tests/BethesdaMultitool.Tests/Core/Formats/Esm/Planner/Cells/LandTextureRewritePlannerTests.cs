@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
@@ -67,7 +68,7 @@ public sealed class LandTextureRewritePlannerTests
         var records = ImmutableArray.Create(
             Record("LTEX", ltexEmitted, ltex, ltexSource),
             Record("GRAS", grassEmitted, new object(), grassSource));
-        var plan = EmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             Records = records,
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cell.CellFormId, cell),
@@ -125,20 +126,4 @@ public sealed class LandTextureRewritePlannerTests
         };
     }
 
-    private static EmitPlan EmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
-            }
-        };
-    }
 }

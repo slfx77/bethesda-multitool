@@ -39,8 +39,18 @@ internal sealed class LandOverrideBuilder(
                 heightmap = RuntimeTerrainHeightmapEncoder.Encode(dmpCell.RuntimeTerrainMesh);
                 heightmapSource = "runtime terrain mesh";
             }
-            catch
+            catch (Exception ex)
             {
+                stats.IncrementDropReason("land.terrain-mesh-encode-failed");
+                sink.Warn("Merging cell children",
+                    $"Runtime terrain mesh for cell 0x{dmpCell.FormId:X8} failed heightmap " +
+                    "encoding; falling back to master LAND when available.",
+                    "LAND", dmpCell.FormId, "land.terrain-mesh-encode-failed",
+                    new Dictionary<string, string?>
+                    {
+                        ["exceptionType"] = ex.GetType().Name,
+                        ["exceptionMessage"] = ex.Message
+                    });
                 heightmap = null;
                 heightmapSource = null;
             }
@@ -79,8 +89,18 @@ internal sealed class LandOverrideBuilder(
             {
                 runtimeVertexColors = RuntimeTerrainColorExtractor.ExtractVclr(dmpCell.RuntimeTerrainMesh);
             }
-            catch
+            catch (Exception ex)
             {
+                stats.IncrementDropReason("land.vclr-extract-failed");
+                sink.Warn("Merging cell children",
+                    $"Runtime vertex-color extraction failed for cell 0x{dmpCell.FormId:X8}; " +
+                    "the LAND emits without runtime VCLR.",
+                    "LAND", dmpCell.FormId, "land.vclr-extract-failed",
+                    new Dictionary<string, string?>
+                    {
+                        ["exceptionType"] = ex.GetType().Name,
+                        ["exceptionMessage"] = ex.Message
+                    });
                 runtimeVertexColors = null;
             }
         }
@@ -94,11 +114,21 @@ internal sealed class LandOverrideBuilder(
         var subs = LandEncoder.Encode(heightmap, visualData);
         if (subs is null)
         {
+            stats.IncrementDropReason("land.encoder-declined");
+            sink.Warn("Merging cell children",
+                $"LandEncoder declined the heightmap for cell 0x{dmpCell.FormId:X8} " +
+                "(missing or malformed height deltas); no LAND emitted.",
+                "LAND", dmpCell.FormId, "land.encoder-declined");
             return false;
         }
 
         if (!existingLandFormId.HasValue && options.NewRecordBaseFormId == 0u)
         {
+            stats.IncrementDropReason("land.no-allocator-base");
+            sink.Warn("Merging cell children",
+                $"Cell 0x{dmpCell.FormId:X8} has no master LAND to override and new-record " +
+                "FormID allocation is disabled (NewRecordBaseFormId=0); no LAND emitted.",
+                "LAND", dmpCell.FormId, "land.no-allocator-base");
             return false;
         }
 

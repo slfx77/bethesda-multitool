@@ -55,4 +55,13 @@ public record BsaHeader
     ///     there would mis-offset every extracted file. Gate it to v104+.
     /// </summary>
     public bool EmbedFileNames => Version >= 104 && ArchiveFlags.HasFlag(BsaArchiveFlags.EmbedFileNames);
+
+    /// <summary>
+    ///     Whether compressed entries use the XMem/LZX codec instead of zlib. Not supported by the
+    ///     extractor: no such archive exists in the sample corpus (all 87 are zlib, including every
+    ///     Xbox 360 build), so the two parameters a decoder needs — the LZX window size and whether
+    ///     an entry is one XMemCompress stream or several — cannot be validated against real data.
+    ///     Detected only so extraction can fail with a named error rather than a confusing zlib one.
+    /// </summary>
+    public bool UsesXMemCodec => ArchiveFlags.HasFlag(BsaArchiveFlags.XMemCodec);
 }

@@ -270,6 +270,46 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Fact]
+    public void Override_Without_Master_Record_Is_Dropped_With_Named_Reason()
+    {
+        // The override's FormID is deliberately absent from masterByFormId: there is
+        // nothing to merge onto. Previously a reasonless drop (silent, no stats).
+        var cells = Apply(MakeCell(
+            [OverrideChild("REFR", MasterRefId, Ref(MasterRefId, MasterStatBaseId))]));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("refr.override-no-master-record", verdict.DropReason);
+        Assert.False(verdict.MarksMasterCovered);
+    }
+
+    [Fact]
+    public void Skip_Disposition_Child_Drops_Without_A_Stats_Reason()
+    {
+        // Pre-settled skips (DuplicateActorPlacementMerge) already carry provenance; the
+        // verdict must stay a reasonless drop so drop-reason counters aren't polluted.
+        var cells = Apply(MakeCell(
+            [MakeChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId), RecordDisposition.Skip)]));
+
+        var verdict = cells[CellId].RefDecisions[NewRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Null(verdict.DropReason);
+    }
+
+    [Fact]
+    public void KeepMaster_Disposition_Child_Is_Dropped_With_Unhandled_Reason()
+    {
+        // Nothing routes KeepMaster into a cell child bucket today — if one arrives, the
+        // drop must be named instead of silent.
+        var cells = Apply(MakeCell(
+            [MakeChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId), RecordDisposition.KeepMaster)]));
+
+        var verdict = cells[CellId].RefDecisions[NewRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("refr.verdict-unhandled-disposition", verdict.DropReason);
+    }
+
+    [Fact]
     public void Override_Routes_To_Master_Bucket_And_Marks_Covered()
     {
         var cells = Apply(

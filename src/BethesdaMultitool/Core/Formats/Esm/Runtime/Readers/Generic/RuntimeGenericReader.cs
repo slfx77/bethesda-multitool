@@ -419,9 +419,18 @@ internal sealed class RuntimeGenericReader(
     /// <summary>
     ///     For BSStringT structs (8 bytes: pointer + length), resolve to the actual string.
     ///     For small embedded structs, read as a formatted hex string.
-    ///     For larger ones, just note the type name and size.
+    ///     For larger ones, hand back the raw big-endian bytes.
+    ///     <para>
+    ///         The large-struct arm used to return a <c>"[TypeName, NB]"</c> descriptor that carried
+    ///         no data, which made every embedded block over 8 bytes structurally unemittable —
+    ///         CAMS's 40-byte CAMERA_SHOT_DATA among them. Returning the bytes lets an encoder run
+    ///         them through the endian oracle
+    ///         (<c>SubrecordSchemaProcessor.ConvertWithSchema</c>) instead of inventing a value.
+    ///         <c>GenericRecordFields.TryBytes</c> already accepted a <c>byte[]</c>, so the change
+    ///         is transparent to every existing caller.
+    ///     </para>
     /// </summary>
-    private string? ReadEmbeddedStruct(byte[] data, PdbFieldLayout field, int effectiveOffset)
+    private object? ReadEmbeddedStruct(byte[] data, PdbFieldLayout field, int effectiveOffset)
     {
         if (field.Size <= 0 || effectiveOffset + field.Size > data.Length)
         {
@@ -459,7 +468,7 @@ internal sealed class RuntimeGenericReader(
             return Convert.ToHexString(data, effectiveOffset, field.Size);
         }
 
-        // For larger structs, just describe them
-        return $"[{field.TypeDetail ?? "struct"}, {field.Size}B]";
+        // Larger structs: hand back the raw big-endian bytes so an encoder can convert them.
+        return data.AsSpan(effectiveOffset, field.Size).ToArray();
     }
 }

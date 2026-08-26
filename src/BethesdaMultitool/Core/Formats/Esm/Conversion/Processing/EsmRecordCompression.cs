@@ -48,7 +48,8 @@ public static class EsmRecordCompression
         }
         catch
         {
-            // Decompression failed - write raw data
+            // Decompression failed - write raw data (bytes must stay identical; only count it)
+            stats.IncrementDecompressFailurePassedThrough(recordType);
             using var fallbackStream = new MemoryStream();
             using var fallbackWriter = new BinaryWriter(fallbackStream);
             fallbackWriter.Write(decompressedSize);

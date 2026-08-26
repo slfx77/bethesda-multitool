@@ -125,6 +125,83 @@ public class ScolParserCoverageTests
         Assert.Equal(0xAAAAu, scol.Parts[0].OnamFormId);
     }
 
+    /// <summary>
+    ///     Fallout 76 widened ONAM from one FormID to two: the base object followed by an optional
+    ///     override. Accepting only the 4-byte form dropped every part of all 17,384 SeventySix.esm
+    ///     collections — and, because a DATA block attaches to the part its ONAM just opened, all
+    ///     119,958 placement blocks with them, so the whole collection graph parsed empty.
+    ///     Byte pattern taken from Burn_AshCave_RockCliff10 (0x008A29CF): ONAM
+    ///     <c>71210000 a6e97c00</c> then a 56-byte (2 placement) DATA, and a part whose second
+    ///     FormID is absent — the shape of 90,208 of the file's 119,954 eight-byte ONAMs.
+    /// </summary>
+    [Fact]
+    public void ParseStaticCollections_Fallout76EightByteOnam_KeepsPartsAndPlacements()
+    {
+        var partWithOverride = new byte[8];
+        BinaryPrimitives.WriteUInt32LittleEndian(partWithOverride.AsSpan(0), 0x00002171u);
+        BinaryPrimitives.WriteUInt32LittleEndian(partWithOverride.AsSpan(4), 0x007CE9A6u);
+
+        // Second part: object present, override zero — must read as "no override", not as FormID 0.
+        var partNoOverride = new byte[8];
+        BinaryPrimitives.WriteUInt32LittleEndian(partNoOverride.AsSpan(0), 0x000C565Bu);
+        BinaryPrimitives.WriteUInt32LittleEndian(partNoOverride.AsSpan(4), 0u);
+
+        var scolBytes = BuildRecordBytes(0x008A29CF, "SCOL", false,
+            ("EDID", NullTermString("Burn_AshCave_RockCliff10")),
+            ("MODL", NullTermString(@"SCOL\SeventySix.esm\CM008A29CF.NIF")),
+            ("ONAM", partWithOverride),
+            ("DATA", BuildPlacementBytes(new[]
+            {
+                (377.8f, -852.2f, -86.1f, 2.951f, -0.319f, -0.969f, 1.0f),
+                (773.9f, -1314.6f, -103.7f, 2.919f, -0.299f, -0.866f, 1.0f)
+            }, false)),
+            ("ONAM", partNoOverride),
+            ("DATA", BuildPlacementBytes(new[]
+            {
+                (0f, 0f, 0f, 0f, 0f, 0f, 1.24f)
+            }, false)));
+
+        var mainRecord = new DetectedMainRecord(
+            "SCOL", (uint)(scolBytes.Length - 24), 0, 0x008A29CF, 0, false);
+        using var mmf = MemoryMappedFile.CreateNew(null, scolBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, scolBytes.Length);
+        accessor.WriteArray(0, scolBytes, 0, scolBytes.Length);
+
+        var parser = new RecordParser(
+            MakeScanResult([mainRecord]), accessor: accessor, fileSize: scolBytes.Length);
+        var scol = Assert.Single(parser.ParseStaticCollections());
+
+        Assert.Equal(2, scol.Parts.Count);
+
+        Assert.Equal(0x00002171u, scol.Parts[0].OnamFormId);
+        Assert.Equal(0x007CE9A6u, scol.Parts[0].SecondaryFormId);
+        Assert.Equal(2, scol.Parts[0].Placements.Count);
+        Assert.Equal(377.8f, scol.Parts[0].Placements[0].X, 3);
+        Assert.Equal(-1314.6f, scol.Parts[0].Placements[1].Y, 3);
+
+        Assert.Equal(0x000C565Bu, scol.Parts[1].OnamFormId);
+        Assert.Null(scol.Parts[1].SecondaryFormId);
+        Assert.Equal(1.24f, Assert.Single(scol.Parts[1].Placements).Scale, 3);
+    }
+
+    /// <summary>The 4-byte ONAM of Fallout 3/New Vegas must keep parsing, with no override.</summary>
+    [Fact]
+    public void ParseStaticCollections_LegacyFourByteOnam_LeavesSecondaryNull()
+    {
+        var scolBytes = BuildSyntheticScolLE();
+        var mainRecord = new DetectedMainRecord(
+            "SCOL", (uint)(scolBytes.Length - 24), 0, 0x00050100, 0, false);
+        using var mmf = MemoryMappedFile.CreateNew(null, scolBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, scolBytes.Length);
+        accessor.WriteArray(0, scolBytes, 0, scolBytes.Length);
+
+        var parser = new RecordParser(
+            MakeScanResult([mainRecord]), accessor: accessor, fileSize: scolBytes.Length);
+        var scol = Assert.Single(parser.ParseStaticCollections());
+
+        Assert.All(scol.Parts, part => Assert.Null(part.SecondaryFormId));
+    }
+
     private static byte[] BuildSyntheticScolLE()
     {
         var edid = NullTermString("ScolFixture");

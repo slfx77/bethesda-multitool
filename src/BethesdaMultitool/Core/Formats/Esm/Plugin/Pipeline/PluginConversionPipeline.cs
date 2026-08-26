@@ -2073,6 +2073,19 @@ public sealed class PluginConversionPipeline
         yield return ("ASPC", records.GenericRecords.Where(g => g.RecordType == "ASPC"));
         yield return ("ADDN", records.GenericRecords.Where(g => g.RecordType == "ADDN"));
         yield return ("LSCT", records.LoadScreenTypes);
+        // Generic-record types wired 2026-08-26. Each is decoded on every DMP load into the shared
+        // GenericRecords list and was previously dropped here with no diagnostic. Placement follows
+        // the same forward-reference rule as the block above — a type is yielded only after every
+        // type its FormID subrecords point at:
+        //   LSCR.WMI1 → LSCT (yielded immediately above)
+        //   CHIP.YNAM/ZNAM → SOUN, MSET.HNAM/INAM → SOUN (yielded far earlier)
+        //   CAMS.MNAM → IMAD (yielded near the top, before SCPT)
+        //   IDLM has no emitted references at all — IDLA is not recovered, so IDLC is written as 0.
+        yield return ("LSCR", records.GenericRecords.Where(g => g.RecordType == "LSCR"));
+        yield return ("CHIP", records.GenericRecords.Where(g => g.RecordType == "CHIP"));
+        yield return ("IDLM", records.GenericRecords.Where(g => g.RecordType == "IDLM"));
+        yield return ("CAMS", records.GenericRecords.Where(g => g.RecordType == "CAMS"));
+        yield return ("MSET", records.GenericRecords.Where(g => g.RecordType == "MSET"));
         yield return ("IDLE", records.IdleAnimations);
         yield return ("IPCT", records.ImpactData);
         yield return ("HDPT", records.HeadParts);

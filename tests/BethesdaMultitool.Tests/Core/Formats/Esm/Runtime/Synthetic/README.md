@@ -82,10 +82,17 @@ component instead.
 - **Bucket B (NIF / render / real-asset tests)** — contained under
   `Core/Formats/Nif/Rendering/`, `Core/Formats/Ddx/`,
   `Core/Semantic/`, `Core/Formats/Esm/DialogueProvenance*`, and a few
-  other paths. Marked with `[Trait("Category", BucketBTestGuard.Category)]`
-  and skipped by default; set `RUN_BUCKET_B=1` to run them. See
+  other paths. Every such file calls `BucketBTestGuard.SkipUnlessEnabled()`
+  **and** carries `[Trait("Category", TestCategories.BucketB)]`; skipped by
+  default, set `RUN_BUCKET_B=1` to run them. See
   [`BucketBTestGuard`](../../../../../Helpers/BucketBTestGuard.cs) for
   the gate rationale.
+
+  The guard and the trait must always agree — the guard is what skips, the
+  trait is what `--filter-trait Category=BucketB` selects, so a file with
+  one and not the other is silently dropped from targeted runs. That
+  pairing was only 26 of 95 files until 2026-08-21 and is now enforced by
+  [`TestCategoryConsistencyTests`](../../../../../Helpers/TestCategoryConsistencyTests.cs).
 - **Why they weren't migrated to synthetic:** the audit identified a
   few "synthetic-feasible" candidates (NIF GLB export, NPC composition
   planner, RedLucy evidence), but the synthetic-builder infrastructure

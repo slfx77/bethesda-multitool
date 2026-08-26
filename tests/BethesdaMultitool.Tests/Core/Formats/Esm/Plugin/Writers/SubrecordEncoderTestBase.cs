@@ -87,15 +87,15 @@ public abstract class SubrecordEncoderTestBase<TModel>
     public void RoundTrip_ParseEncode_IsByteIdentical()
     {
         var (parsed, model) = TryParseBytes(GetExpectedBytes());
-        if (!parsed || model is null)
-        {
-            // No parser available for this encoder yet; the encode path is still covered
-            // by Encodes_ProducesExpectedBytes. Treat this as a known gap rather than
-            // a failure so the scaffold doesn't block encoders shipped without parsers.
-            return;
-        }
 
-        var roundTripped = EncodeModel(model);
+        // No parser available for this encoder yet; the encode path is still covered by
+        // Encodes_ProducesExpectedBytes. Report this as SKIPPED rather than returning early —
+        // a silent `return` counts as a pass, which makes an unimplemented parser look like a
+        // verified round-trip.
+        Assert.SkipUnless(parsed && model is not null,
+            $"No parser available for {GetType().Name}; round-trip coverage is a known gap.");
+
+        var roundTripped = EncodeModel(model!);
         Assert.Equal(GetExpectedBytes(), roundTripped);
     }
 

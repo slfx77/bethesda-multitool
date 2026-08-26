@@ -24,6 +24,9 @@ public sealed class RuntimeStructReader
     /// <summary>ASPC — read by a typed reader but still delivered as a <c>GenericEsmRecord</c>.</summary>
     private const byte AspcFormType = 0x0E;
 
+    /// <summary>MSET — same arrangement as ASPC: typed reader, <c>GenericEsmRecord</c> result.</summary>
+    private const byte MsetFormType = 0x6F;
+
     private readonly RuntimeAcousticSpaceReader _acousticSpaces;
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeActorWeaponReader _actorWeapons;
@@ -57,6 +60,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeLightingTemplateReader _lightingTemplates;
     private readonly RuntimeLoadScreenTypeReader _loadScreenTypes;
     private readonly RuntimeMagicReader _magic;
+    private readonly RuntimeMediaSetReader _mediaSets;
     private readonly RuntimeMenuIconReader _menuIcons;
     private readonly RuntimeMessageReader _messages;
     private readonly RuntimeMsttReader _movableStatics;
@@ -130,6 +134,7 @@ public sealed class RuntimeStructReader
         _worldObjects = new RuntimeWorldObjectReader(_context);
         _races = new RuntimeRaceReader(_context, probeResults?.RaceLayout);
         _acousticSpaces = new RuntimeAcousticSpaceReader(_context, probeResults?.AcousticSpaceLayout);
+        _mediaSets = new RuntimeMediaSetReader(_context);
         _magic = new RuntimeMagicReader(_context);
         _globals = new RuntimeGlobalReader(_context);
         _classes = new RuntimeClassReader(_context);
@@ -449,17 +454,21 @@ public sealed class RuntimeStructReader
     ///     Reads a record with no specialized reader as a generic, PDB-layout-driven record
     ///     (identity and schema fields only) for the given DMP entry.
     ///     <para>
-    ///         ASPC is intercepted here rather than being added to
+    ///         ASPC and MSET are intercepted here rather than being added to
     ///         <c>PdbStructLayouts.SpecializedFormTypes</c>: that set <i>suppresses</i> the generic
-    ///         path, and since acoustic spaces have no record model of their own this is the only route
-    ///         by which they reach the writer at all. Excluding it would strand them entirely.
+    ///         path — <c>RecordParserContext.MergeRuntimeGenericRecords</c> skips every FormType it
+    ///         names — and since neither type has a record model of its own this is the only route
+    ///         by which they reach the writer at all. Excluding either would strand it entirely.
     ///     </para>
     /// </summary>
     public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
     {
-        return entry.FormType == AspcFormType
-            ? _acousticSpaces.ReadRuntimeAcousticSpace(entry)
-            : _generic.ReadGenericRecord(entry);
+        return entry.FormType switch
+        {
+            AspcFormType => _acousticSpaces.ReadRuntimeAcousticSpace(entry),
+            MsetFormType => _mediaSets.ReadRuntimeMediaSet(entry),
+            _ => _generic.ReadGenericRecord(entry)
+        };
     }
 
     /// <summary>

@@ -509,7 +509,7 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
             ClimateFormId = worldData.ClimateFormId,
             WaterFormId = worldData.WaterFormId,
             DefaultLandHeight = worldData.DefaultLandHeight,
-            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(worldData.DefaultWaterHeight),
+            DefaultWaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(worldData.DefaultWaterHeight),
             MapUsableWidth = worldData.MapUsableWidth,
             MapUsableHeight = worldData.MapUsableHeight,
             MapNWCellX = worldData.MapNWCellX,
@@ -561,7 +561,10 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
             ClimateFormId = esm.ClimateFormId ?? runtime.ClimateFormId,
             WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
             DefaultLandHeight = esm.DefaultLandHeight ?? runtime.DefaultLandHeight,
-            DefaultWaterHeight = WorldHeightNormalizer.NormalizeReportableHeight(
+            // PreserveSentinelOrNormalize, NOT NormalizeReportableHeight: a cleanly parsed ESM DNAM
+            // sentinel ("no default water") arrives intact here, and normalizing collapsed it to 0f
+            // — sea level — the moment an ESM worldspace merged with its runtime twin.
+            DefaultWaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(
                 esm.DefaultWaterHeight ?? runtime.DefaultWaterHeight),
             MapUsableWidth = esm.MapUsableWidth ?? runtime.MapUsableWidth,
             MapUsableHeight = esm.MapUsableHeight ?? runtime.MapUsableHeight,

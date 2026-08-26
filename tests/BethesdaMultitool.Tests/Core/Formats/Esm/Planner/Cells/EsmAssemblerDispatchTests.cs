@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
@@ -85,7 +86,7 @@ public sealed class EsmAssemblerDispatchTests
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan),
             EmittedFormIds = ImmutableHashSet.Create(placed.FormId)
@@ -96,23 +97,6 @@ public sealed class EsmAssemblerDispatchTests
             new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Equal(legacyBytes, plannerBytes);
-    }
-
-    private static EmitPlan MakeEmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
-            }
-        };
     }
 
     private static (ParsedMainRecord Master, PcEsmCellContext Context) MakeInteriorCellMaster(uint cellFormId)

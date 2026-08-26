@@ -5,6 +5,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.World;
 /// </summary>
 public record LandVisualData
 {
+    // Always a real list, never null: `TextureLayers = { … }` collection-initializer syntax compiles
+    // to Add() calls on whatever the GETTER returns, so a null backing field would silently swallow
+    // every initializer element into a throwaway list. An empty List is ~56 B, so keeping one per
+    // instance costs ~2 MB across Appalachia's 40k cells against the 1,250 MB this file is here to
+    // remove — not a trade worth being clever about.
+    private readonly List<LandTextureLayer> _textureLayers = [];
+
     /// <summary>
     ///     Parent CELL FormID from the recovered LAND hierarchy. Conversion planning uses this
     ///     provenance to reject visual data copied through a same-grid fallback.
@@ -36,7 +43,43 @@ public record LandVisualData
     public uint[]? VtexTextureFormIds { get; init; }
 
     /// <summary>Ordered BTXT/ATXT layers. VTXT entries are attached to their preceding ATXT.</summary>
-    public List<LandTextureLayer> TextureLayers { get; init; } = [];
+    /// <remarks>
+    ///     Reading this materializes a lazy layer set — see <see cref="TextureLayersProvider" />. Use
+    ///     <see cref="HasTextureLayers" /> when you only need to know whether layers exist.
+    /// </remarks>
+    public List<LandTextureLayer> TextureLayers
+    {
+        // Explicitly-set layers always win, so an eagerly-built or merged instance behaves exactly as
+        // it did before the lazy route existed.
+        get => TextureLayersProvider is { } provider && _textureLayers.Count == 0
+            ? provider()
+            : _textureLayers;
+        init => _textureLayers = value ?? [];
+    }
+
+    /// <summary>
+    ///     Lazy source for <see cref="TextureLayers" /> — FO76/Starfield BTD terrain attaches a
+    ///     per-cell decoder here instead of materializing every cell's layers at load (Appalachia's
+    ///     ~40k cells measured 1,250 MB eager, 18% of the whole post-load managed heap). Mirrors
+    ///     <see cref="LandHeightmap.ExactHeightsProvider" />, and like it the provider is expected to
+    ///     cache: repeated gets are cheap and callers may not hold the result across frames.
+    ///     Ignored when <see cref="TextureLayers" /> was set directly.
+    /// </summary>
+    internal Func<List<LandTextureLayer>>? TextureLayersProvider { get; init; }
+
+    /// <summary>
+    ///     Set by the BTD injector when it has established — cheaply, from the cell's 64-byte texture
+    ///     set alone, without decoding the 128×128 alpha map — that
+    ///     <see cref="TextureLayersProvider" /> will yield at least one layer.
+    ///     <para>
+    ///         This exists so <see cref="HasTextureLayers" /> and <see cref="HasAny" /> stay O(1). They
+    ///         are evaluated per cell across a whole worldspace (<c>WorldSpatialIndex</c>,
+    ///         <c>WorldMapViewportMath</c>, <c>CellWorldspaceAuthorityApplier</c>); answering them by
+    ///         reading <see cref="TextureLayers" /> would drag every cell through the decode gate and
+    ///         defeat the lazy route entirely.
+    ///     </para>
+    /// </summary>
+    internal bool HasLazyTextureLayers { get; init; }
 
     /// <summary>VTXT subrecords that appeared without a preceding ATXT and are not safe to emit.</summary>
     public int UnattachedVtxtCount { get; init; }
@@ -68,7 +111,11 @@ public record LandVisualData
 
     public bool HasTextureIndices => TextureIndices is { Length: > 0 };
 
-    public bool HasTextureLayers => TextureLayers.Count > 0;
+    /// <summary>
+    ///     Whether this cell has any BTXT/ATXT layer. Deliberately does NOT read
+    ///     <see cref="TextureLayers" />: see <see cref="HasLazyTextureLayers" /> for why.
+    /// </summary>
+    public bool HasTextureLayers => _textureLayers.Count > 0 || HasLazyTextureLayers;
 
     public bool HasAny => HasVertexColors || HasVertexNormals || HasTextureIndices || HasTextureLayers;
 

@@ -122,7 +122,8 @@ public sealed class EsmPlanner
             dmpSource,
             catalogTypes,
             masterFormIdAliases,
-            out var validatedMasterAliases);
+            out var validatedMasterAliases,
+            out var catalogDiagnostics);
 
         PlannerInputValidator.ValidateDiagnosticDirectives(
             masterRecords, catalog, enabledTypes, keepMasterFormIds, retainMasterSubrecords);
@@ -234,6 +235,7 @@ public sealed class EsmPlanner
             ValidScriptFormIds = ScriptReferenceSafetyPlanner.BuildValidScriptFormIds(masterRecords, ordered),
             RecordIndexByEmittedFormId = indexByFormId.ToImmutable(),
             Diagnostics = diagnostics
+                .AddRange(catalogDiagnostics)
                 .AddRange(nonEmissionReservations.Diagnostics)
                 .AddRange(scriptSanitation.Diagnostics)
                 .AddRange(packageSanitation.Diagnostics)

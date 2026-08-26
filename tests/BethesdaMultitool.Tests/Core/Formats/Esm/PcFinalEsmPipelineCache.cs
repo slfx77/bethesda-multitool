@@ -11,12 +11,33 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm;
 ///     Static cache that runs the full PC final ESM pipeline once and shares the results
 ///     between all test classes that need them (e.g. EsmWorldspaceAchrIntegrationTests).
 ///     Eliminates duplicate ~17s parsing + ~5s parsing per test class.
+///     <para>
+///         <b>Consumers must treat the result as immutable.</b> The cache hands every caller the
+///         same object graph — <see cref="PipelineResult.Collection" />,
+///         <see cref="PipelineResult.ScanResult" /> and the record lists are shared by reference,
+///         with no defensive copy. Mutating any of them corrupts every later consumer in the same
+///         process, and because the cache outlives individual test classes the damage surfaces as
+///         an unrelated test failing in an order-dependent way. Clone before modifying.
+///     </para>
+///     <para>
+///         Same contract as <c>RealAssetEsmCache</c>; the two differ only in which pipeline they
+///         memoize.
+///     </para>
 /// </summary>
 internal static class PcFinalEsmPipelineCache
 {
+    /// <summary>
+    ///     Process-lifetime memo. Guarded by <see cref="CacheLock" /> for publication only — the
+    ///     graph it points at is never mutated after <see cref="Build" /> returns.
+    /// </summary>
     private static PipelineResult? _cached;
+
     private static readonly Lock CacheLock = new();
 
+    /// <summary>
+    ///     Returns the shared pipeline result, building it on first call. The returned graph is
+    ///     shared with every other caller and must not be mutated.
+    /// </summary>
     public static PipelineResult GetOrBuild(string filePath)
     {
         lock (CacheLock)

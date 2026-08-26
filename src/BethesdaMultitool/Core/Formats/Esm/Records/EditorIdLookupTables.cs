@@ -201,14 +201,14 @@ internal static class EditorIdLookupTables
             }
             else
             {
-                log.Debug(
+                log.Warn(
                     "EditorIDs: pAllForms: LAND FormType detection low-confidence (best.Value={0}, need >=3) — skipping LAND population",
                     best.Value);
             }
         }
         else
         {
-            log.Debug("EditorIDs: pAllForms: no known LAND FormIDs matched — skipping LAND population");
+            log.Warn("EditorIDs: pAllForms: no known LAND FormIDs matched — skipping LAND population");
         }
 
         // Determine REFR FormType cluster: REFR/ACHR/ACRE are consecutive (base, base+1, base+2)

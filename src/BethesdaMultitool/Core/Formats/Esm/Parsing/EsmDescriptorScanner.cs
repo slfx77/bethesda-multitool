@@ -695,17 +695,22 @@ internal static class EsmDescriptorScanner
             return string.Empty;
         }
 
-        if (!bigEndian)
+        // Pooled through the shared table: the descriptor scan visits every record in the file, so
+        // this allocated one signature string per record on top of the parser's own.
+        var (b0, b1, b2, b3) = bigEndian
+            ? (data[3], data[2], data[1], data[0])
+            : (data[0], data[1], data[2], data[3]);
+        if (EsmSignaturePool.TryIntern(b0, b1, b2, b3, out var pooled))
         {
-            return Encoding.ASCII.GetString(data[..4]);
+            return pooled;
         }
 
-        Span<byte> reversed = stackalloc byte[4];
-        reversed[0] = data[3];
-        reversed[1] = data[2];
-        reversed[2] = data[1];
-        reversed[3] = data[0];
-        return Encoding.ASCII.GetString(reversed);
+        Span<byte> ordered = stackalloc byte[4];
+        ordered[0] = b0;
+        ordered[1] = b1;
+        ordered[2] = b2;
+        ordered[3] = b3;
+        return Encoding.ASCII.GetString(ordered);
     }
 
     private static bool IsValidSignature(string signature)

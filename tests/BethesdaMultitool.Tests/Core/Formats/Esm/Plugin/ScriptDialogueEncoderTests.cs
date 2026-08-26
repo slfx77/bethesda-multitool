@@ -823,9 +823,11 @@ public class ScriptDialogueEncoderTests
         // Order: DATA, INDX#1, QSDT#1, CNAM#1, INDX#2, QSDT#2, CNAM#2.
         var sigOrder = encoded.Subrecords.Select(s => s.Signature).ToList();
         var dataIdx = sigOrder.IndexOf("DATA");
-        Assert.True(sigOrder[dataIdx + 1] == "INDX");
-        Assert.True(sigOrder[dataIdx + 2] == "QSDT");
-        Assert.True(sigOrder[dataIdx + 3] == "CNAM");
+        // Assert.Equal, not Assert.True(a == b): a failure must name the signature that was
+        // emitted, not just report "Expected: True, Actual: False".
+        Assert.Equal("INDX", sigOrder[dataIdx + 1]);
+        Assert.Equal("QSDT", sigOrder[dataIdx + 2]);
+        Assert.Equal("CNAM", sigOrder[dataIdx + 3]);
 
         var indxRecords = encoded.Subrecords.Where(s => s.Signature == "INDX").ToList();
         Assert.Equal(2, indxRecords.Count);

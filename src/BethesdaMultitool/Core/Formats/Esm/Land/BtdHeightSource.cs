@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Land;
 
@@ -21,7 +22,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Land;
 ///         load result (<c>UnifiedAnalysisResult</c> / the GUI session), disposed with it.
 ///     </para>
 /// </summary>
-internal sealed class BtdHeightSource(BtdFile btd) : IDisposable
+internal sealed class BtdHeightSource(BtdFile btd, int blendGridEdge) : IDisposable
 {
     /// <summary>
     ///     Cells kept decoded: 512 × ~67 KB ≈ 34 MB — comfortably above the 3D viewer's visible ring
@@ -29,9 +30,17 @@ internal sealed class BtdHeightSource(BtdFile btd) : IDisposable
     /// </summary>
     private const int MaxCachedCells = 512;
 
+    /// <summary>
+    ///     Texture layers kept decoded. Measured ~31 KB per Appalachia cell, so 512 ≈ 16 MB against
+    ///     the 1,250 MB the eager sweep retained for the same worldspace.
+    /// </summary>
+    private const int MaxCachedLayerCells = 512;
+
     private readonly Dictionary<(int X, int Y), LinkedListNode<CachedCell>> _byCell = new();
 
     private readonly object _gate = new();
+    private readonly Dictionary<(int X, int Y), LinkedListNode<CachedLayers>> _layersByCell = new();
+    private readonly LinkedList<CachedLayers> _layersRecency = new();
     private readonly LinkedList<CachedCell> _recency = new();
     private bool _disposed;
 
@@ -47,6 +56,8 @@ internal sealed class BtdHeightSource(BtdFile btd) : IDisposable
             _disposed = true;
             _byCell.Clear();
             _recency.Clear();
+            _layersByCell.Clear();
+            _layersRecency.Clear();
             btd.Dispose();
         }
     }
@@ -100,5 +111,53 @@ internal sealed class BtdHeightSource(BtdFile btd) : IDisposable
         }
     }
 
+    /// <summary>
+    ///     Returns the cell's BTXT/ATXT layers, rebuilding them from the BTD on first request. Shares
+    ///     <see cref="GetExactHeights" />'s gate — <see cref="BtdFile" />'s tile cache is unsynchronized
+    ///     and both routes read it — and its degradation contract: a corrupt tile yields an empty layer
+    ///     list, cached so it is not re-attempted, and a read racing <see cref="Dispose" /> (renderer
+    ///     thread vs session teardown) returns empty rather than throwing across the frame loop.
+    /// </summary>
+    public List<LandTextureLayer> GetTextureLayers(int cellX, int cellY)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return [];
+            }
+
+            if (_layersByCell.TryGetValue((cellX, cellY), out var node))
+            {
+                _layersRecency.Remove(node);
+                _layersRecency.AddFirst(node);
+                return node.Value.Layers;
+            }
+
+            List<LandTextureLayer> layers;
+            try
+            {
+                layers = BtdTerrainInjector.BuildTextureLayers(btd, cellX, cellY, blendGridEdge) ?? [];
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+            {
+                layers = [];
+            }
+
+            var added = _layersRecency.AddFirst(new CachedLayers((cellX, cellY), layers));
+            _layersByCell[(cellX, cellY)] = added;
+            if (_layersByCell.Count > MaxCachedLayerCells)
+            {
+                var oldest = _layersRecency.Last!;
+                _layersRecency.RemoveLast();
+                _layersByCell.Remove(oldest.Value.Key);
+            }
+
+            return layers;
+        }
+    }
+
     private sealed record CachedCell((int X, int Y) Key, float[,] Heights);
+
+    private sealed record CachedLayers((int X, int Y) Key, List<LandTextureLayer> Layers);
 }

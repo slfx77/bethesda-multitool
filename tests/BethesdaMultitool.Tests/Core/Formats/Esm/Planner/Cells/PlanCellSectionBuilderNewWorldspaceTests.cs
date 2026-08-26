@@ -11,6 +11,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using CellRecord = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.CellRecord;
 
@@ -81,7 +82,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             },
             CellFormIds = ImmutableArray.Create(persistentCellId)
         };
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(persistentCellId, cellPlan),
             WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty.Add(sourceWrldId, wrldPlan),
@@ -167,7 +168,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             CellFormIds = ImmutableArray.Create(newCellId)
         };
 
-        var plan = MakeEmptyPlan() with
+        var plan = PlanTestFactory.EmptyPlan() with
         {
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(newCellId, cellPlan),
             WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty
@@ -208,23 +209,6 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), legacyNewWorldspaces);
 
         Assert.Equal(legacyBytes, plannerBytes);
-    }
-
-    private static EmitPlan MakeEmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
-            }
-        };
     }
 
     private static int FindRecord(byte[] bytes, string signature, uint formId)

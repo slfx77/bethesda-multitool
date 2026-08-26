@@ -21,43 +21,24 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Parity;
 /// </summary>
 public sealed class Tier5bEncoderParityTests
 {
-    [Fact]
-    public void New_Refr_Placed_Reference_Bytes_Match_Legacy()
+    /// <summary>
+    ///     The three placed-reference signatures share one encoder, so the record type is the only
+    ///     thing that varies between them.
+    /// </summary>
+    [Theory]
+    [InlineData("REFR")]
+    [InlineData("ACHR")]
+    [InlineData("ACRE")]
+    public void PlannedPlacedReference_MatchesLegacyBytes(string recordType)
     {
-        var refr = new PlacedReference
+        var placed = new PlacedReference
         {
             FormId = 0x01000800,
-            RecordType = "REFR",
+            RecordType = recordType,
             BaseFormId = 0u
         };
 
-        AssertPlacedRefParity("REFR", refr);
-    }
-
-    [Fact]
-    public void New_Achr_Placed_Reference_Bytes_Match_Legacy()
-    {
-        var achr = new PlacedReference
-        {
-            FormId = 0x01000800,
-            RecordType = "ACHR",
-            BaseFormId = 0u
-        };
-
-        AssertPlacedRefParity("ACHR", achr);
-    }
-
-    [Fact]
-    public void New_Acre_Placed_Reference_Bytes_Match_Legacy()
-    {
-        var acre = new PlacedReference
-        {
-            FormId = 0x01000800,
-            RecordType = "ACRE",
-            BaseFormId = 0u
-        };
-
-        AssertPlacedRefParity("ACRE", acre);
+        AssertPlacedRefParity(recordType, placed);
     }
 
     private static void AssertPlacedRefParity(string recordType, PlacedReference placed)

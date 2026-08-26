@@ -134,7 +134,15 @@ public sealed class DmpRecordSource
             ["ANIO"] = c => GenericsOfType(c, "ANIO"),
             ["TACT"] = c => GenericsOfType(c, "TACT"),
             ["ASPC"] = c => GenericsOfType(c, "ASPC"),
-            ["ADDN"] = c => GenericsOfType(c, "ADDN")
+            ["ADDN"] = c => GenericsOfType(c, "ADDN"),
+            // Generic-record types wired 2026-08-26 (adversarial recovery audit M1). All five are
+            // read out of every dump by RecordParser's generic sweep and were dropped at the writer
+            // boundary until they gained an encoder, this row, and a pipeline yield.
+            ["LSCR"] = c => GenericsOfType(c, "LSCR"),
+            ["CHIP"] = c => GenericsOfType(c, "CHIP"),
+            ["IDLM"] = c => GenericsOfType(c, "IDLM"),
+            ["CAMS"] = c => GenericsOfType(c, "CAMS"),
+            ["MSET"] = c => GenericsOfType(c, "MSET")
         };
 
     private readonly RecordCollection _collection;

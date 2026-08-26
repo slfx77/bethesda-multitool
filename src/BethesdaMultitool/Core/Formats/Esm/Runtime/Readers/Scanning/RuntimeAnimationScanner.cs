@@ -80,7 +80,7 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
         for (var ri = 0; ri < minidump.MemoryRegions.Count; ri++)
         {
             var region = minidump.MemoryRegions[ri];
-            if (region.Size < TesAnimGroupSize)
+            if (region.Size < 4)
             {
                 continue;
             }
@@ -99,7 +99,20 @@ internal sealed class RuntimeAnimationScanner(RuntimeMemoryContext context)
                 continue;
             }
 
-            for (var i = 0; i <= buf.Length - TesAnimGroupSize; i += 4)
+            // Stitch the successor's leading bytes (regions are VA-adjacent, not file-adjacent) so a
+            // struct starting near the region end is still extractable; starts stay region-local.
+            var regionLength = buf.Length;
+            var tail = _context.ReadBytesAtVa(region.VirtualAddress + region.Size, TesAnimGroupSize - 4);
+            if (tail != null)
+            {
+                var stitched = new byte[regionLength + tail.Length];
+                buf.CopyTo(stitched, 0);
+                tail.CopyTo(stitched, regionLength);
+                buf = stitched;
+            }
+
+            var lastStart = Math.Min(buf.Length - TesAnimGroupSize, regionLength - 4);
+            for (var i = 0; i <= lastStart; i += 4)
             {
                 if (buf[i] != vtableBytes[0] || buf[i + 1] != vtableBytes[1] ||
                     buf[i + 2] != vtableBytes[2] || buf[i + 3] != vtableBytes[3])

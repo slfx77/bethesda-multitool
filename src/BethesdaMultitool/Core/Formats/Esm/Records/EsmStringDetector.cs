@@ -33,7 +33,9 @@ internal static class EsmStringDetector
 
         var results = new List<DetectedAssetString>();
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+        // Over-read by one max string (plus terminator) so a path straddling a chunk boundary is
+        // still read whole; only strings STARTING inside the chunk are scanned, so nothing doubles.
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxStringLength + 1);
         var lastProgressMb = 0L;
 
         var log = Logger.Instance;
@@ -44,12 +46,13 @@ internal static class EsmStringDetector
             long offset = 0;
             while (offset < fileSize && results.Count < maxAssetStrings)
             {
-                var toRead = (int)Math.Min(chunkSize, fileSize - offset);
-                accessor.ReadArray(offset, buffer, 0, toRead);
+                var toRead = (int)Math.Min(chunkSize + maxStringLength + 1, fileSize - offset);
+                var bytesRead = accessor.ReadArray(offset, buffer, 0, toRead);
+                var scanEnd = Math.Min(bytesRead, chunkSize);
 
                 // Scan for null-terminated strings that look like asset paths
                 var i = 0;
-                while (i < toRead - minStringLength && results.Count < maxAssetStrings)
+                while (i < scanEnd && results.Count < maxAssetStrings)
                 {
                     // Look for strings that start with printable ASCII
                     if (!IsPathStartChar(buffer[i]))
@@ -59,7 +62,7 @@ internal static class EsmStringDetector
                     }
 
                     // Find the end of this potential string (null terminator)
-                    var stringEnd = FindStringEnd(buffer, i, Math.Min(i + maxStringLength, toRead));
+                    var stringEnd = FindStringEnd(buffer, i, Math.Min(i + maxStringLength, bytesRead));
                     if (stringEnd < 0)
                     {
                         i++;
@@ -89,7 +92,7 @@ internal static class EsmStringDetector
                     i = stringEnd + 1;
                 }
 
-                offset += toRead;
+                offset += chunkSize;
 
                 // Progress every 100MB
                 if (offset / (100 * 1024 * 1024) > lastProgressMb)

@@ -12,6 +12,18 @@ internal static class SemdiffRecordParser
     internal static List<SemdiffTypes.ParsedRecord> ParseRecordsWithSubrecords(byte[] data, bool bigEndian,
         string? typeFilter, uint? formIdFilter)
     {
+        return ParseRecordsWithSubrecords(data, bigEndian, typeFilter, formIdFilter, out _);
+    }
+
+    /// <summary>
+    ///     Parses records and reports how many compressed records were skipped because their
+    ///     payload failed zlib decompression — callers should surface a non-zero count so a
+    ///     partially-diffed file is visible instead of silently thinner.
+    /// </summary>
+    internal static List<SemdiffTypes.ParsedRecord> ParseRecordsWithSubrecords(byte[] data, bool bigEndian,
+        string? typeFilter, uint? formIdFilter, out int skippedCompressedRecords)
+    {
+        skippedCompressedRecords = 0;
         var records = new List<SemdiffTypes.ParsedRecord>();
         var offset = 0;
 
@@ -63,7 +75,9 @@ internal static class SemdiffRecordParser
                         // Some records have a compressed flag set but the payload isn't
                         // standard zlib (build artifacts, custom compression, header
                         // mismatch). Skip these rather than aborting the whole diff so
-                        // the rest of the file can still be analyzed.
+                        // the rest of the file can still be analyzed — but count them so
+                        // the caller can warn that the diff is partial.
+                        skippedCompressedRecords++;
                         offset = recordEnd;
                         continue;
                     }

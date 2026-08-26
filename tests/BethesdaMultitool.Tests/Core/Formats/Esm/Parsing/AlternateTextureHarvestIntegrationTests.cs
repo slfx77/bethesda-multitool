@@ -10,29 +10,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 ///     TXSTs — that difference is exactly what makes each billboard render its own vendor ad instead of
 ///     one shared default. Skipped when no FNV plugin is available.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class AlternateTextureHarvestIntegrationTests
 {
-    private static string? ResolveFalloutNvEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "FalloutNV.esm")))
-        {
-            return Path.Combine(root, "FalloutNV.esm");
-        }
-
-        string?[] candidates =
-        [
-            @"Sample\ESM\pc_final\FalloutNV.esm",
-            RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\FalloutNV.esm")
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
     [Fact]
     public async Task Fnv_HarvestsBillboardAlternateTextures_WithDistinctTxstPerBase()
     {
-        var esm = ResolveFalloutNvEsm();
+        var esm = RealAssetPaths.Masters.FalloutNv();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");

@@ -261,9 +261,10 @@ public static class CellChildVerdictPlanner
                 sourceToEmitted, emittedFormIds, inputs),
             RecordDisposition.Override => DecideOverride(
                 child, placed, plannedGroupType, cellPlan, masterByFormId, inputs, moveCandidates),
-            // Other dispositions never encode (legacy returned null silently): drop with
-            // no reason so the writer skips the stats counters.
-            _ => new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop }
+            // Skip = pre-settled drop; its Provenance names the policy, so no stats reason.
+            RecordDisposition.Skip => new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop },
+            // Nothing routes any other disposition here today — name the drop, don't hide it.
+            _ => Drop("refr.verdict-unhandled-disposition")
         };
     }
 
@@ -381,8 +382,8 @@ public static class CellChildVerdictPlanner
     {
         if (!masterByFormId.TryGetValue(child.FormId, out var masterRecord))
         {
-            // No master record to merge onto — silently not emitted (no stats), legacy parity.
-            return new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop };
+            // No master to merge onto. (override-verdict-without-master = Emit lost its master.)
+            return Drop("refr.override-no-master-record");
         }
 
         // Master TEMPORARY actors must never be re-emitted by an ESM-flagged plugin; the

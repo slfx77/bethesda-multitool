@@ -273,11 +273,25 @@ public static class BtdTerrainInjector
         // always for a memory-mapped loose file (pageable, ~free — FO76's Appalachia route, where
         // eager 40k × 129² floats ≈ 2.7 GB), and for an archived byte[] only when the held bytes
         // undercut the decoded grids (Starfield's small worldspaces usually stay eager, exactly the
-        // pre-lazy behavior). Texture layers stay eager either way: they are far smaller than
-        // heights, and the 3D viewer's LoadData warms ALL cells' texture sets up front, which under
-        // a lazy route would funnel the whole worldspace through the decode lock at 3D-open time.
+        // pre-lazy behavior).
         var decodedGridBytes = (long)targets.Count * HeightGridSize * HeightGridSize * sizeof(float);
         var lazyHeights = btd.IsMemoryMapped || btd.SourceLength < decodedGridBytes;
+
+        // Texture layers follow the renderer's OWN warm decision. This comment used to say layers
+        // stay eager because "they are far smaller than heights" and because the 3D viewer warms all
+        // cells' texture sets at LoadData anyway — both premises are now false for the case that
+        // matters. Measured 2026-08-25: the eager sweep retained 1,250 MB on Appalachia, 18% of the
+        // whole post-load managed heap and larger than anything heights cost lazily; and
+        // TerrainTextureSetWarmPolicy SKIPS the warm for exactly that worldspace (it would want
+        // ~42 GB), so nothing drags the cells through the gate up front any more.
+        //
+        // Keying off ShouldWarm keeps the coupling honest: where the renderer WILL warm every cell,
+        // a lazy route would serialize the whole worldspace through one decode lock for no saving,
+        // so those worldspaces stay eager — the pre-existing behaviour, unchanged.
+        var lazyLayers = !Nif.Rendering.Terrain.TerrainTextureSetWarmPolicy.ShouldWarm(
+            HeightGridSize, targets.Count);
+        var source = lazyHeights || lazyLayers ? new BtdHeightSource(btd, blendEdge) : null;
+        var lazyLayerCells = lazyLayers ? new List<CellRecord>(targets.Count) : [];
 
         foreach (var cell in targets)
         {
@@ -300,7 +314,25 @@ public static class BtdTerrainInjector
             // grid remains only as the fallback for a cell whose layer rebuild yields nothing.
             if (cell.LandVisualData is null)
             {
-                if (BuildTextureLayers(btd, gx, gy, blendEdge) is { } layers)
+                if (lazyLayers)
+                {
+                    // Probe only — the provider is attached in the second pass below. Every BTD read
+                    // must stay in THIS loop so the no-provider-until-all-reads-succeeded invariant
+                    // documented at the second pass keeps holding.
+                    if (CellHasTextureLayers(btd, gx, gy, blendEdge))
+                    {
+                        lazyLayerCells.Add(cell);
+                    }
+                    else if (BuildVtexFormIdGrid(btd, gx, gy) is { } lazyVtex)
+                    {
+                        cell.LandVisualData = new LandVisualData
+                        {
+                            VtexTextureFormIds = lazyVtex,
+                            Source = VisualDataSource.MasterEsm
+                        };
+                    }
+                }
+                else if (BuildTextureLayers(btd, gx, gy, blendEdge) is { } layers)
                 {
                     cell.LandVisualData = new LandVisualData
                     {
@@ -319,23 +351,32 @@ public static class BtdTerrainInjector
             }
         }
 
-        if (!lazyHeights)
-        {
-            return (targets.Count, null);
-        }
-
         // Provider attachment runs only after every BTD read above succeeded, and cannot itself
         // throw — so a corrupt BTD can never leave cells holding providers over a file the caller
         // is about to close.
-        var source = new BtdHeightSource(btd);
-        foreach (var cell in targets)
+        if (lazyHeights)
+        {
+            foreach (var cell in targets)
+            {
+                var gx = cell.GridX!.Value;
+                var gy = cell.GridY!.Value;
+                cell.Heightmap = new LandHeightmap
+                {
+                    HeightDeltas = UnusedDeltas,
+                    ExactHeightsProvider = () => source!.GetExactHeights(gx, gy)
+                };
+            }
+        }
+
+        foreach (var cell in lazyLayerCells)
         {
             var gx = cell.GridX!.Value;
             var gy = cell.GridY!.Value;
-            cell.Heightmap = new LandHeightmap
+            cell.LandVisualData = new LandVisualData
             {
-                HeightDeltas = UnusedDeltas,
-                ExactHeightsProvider = () => source.GetExactHeights(gx, gy)
+                TextureLayersProvider = () => source!.GetTextureLayers(gx, gy),
+                HasLazyTextureLayers = true,
+                Source = VisualDataSource.MasterEsm
             };
         }
 
@@ -354,7 +395,89 @@ public static class BtdTerrainInjector
     ///     </para>
     ///     Returns null when no quadrant declares any usable texture, so the caller can fall back.
     /// </summary>
-    private static List<LandTextureLayer>? BuildTextureLayers(BtdFile btd, int cellX, int cellY, int blendEdge)
+    /// <summary>
+    ///     Whether the cell declares any usable land texture, decided from its 64-byte texture set
+    ///     alone — no 128×128 alpha-map read, no blend-entry build. Exactly the condition under which
+    ///     <see cref="BuildTextureLayers" /> returns non-null, so the lazy route can answer
+    ///     "does this cell have layers?" without materializing them.
+    /// </summary>
+    private static bool CellHasTextureLayers(BtdFile btd, int cellX, int cellY, int blendEdge)
+    {
+        var texSet = new byte[64];
+        Array.Fill(texSet, (byte)0xFF);
+        btd.GetCellTextureSet(texSet, cellX, cellY);
+
+        var anyAlphaSlot = false;
+        for (var quadrant = 0; quadrant < 4; quadrant++)
+        {
+            var quadrantBase = quadrant << 4;
+
+            // A declared base texture always emits a Base layer, so this alone settles it.
+            if (texSet[quadrantBase] != 0xFF && btd.GetLandTexture(texSet[quadrantBase]) != 0)
+            {
+                return true;
+            }
+
+            for (var slot = 0; slot < QuadrantLayerSlots; slot++)
+            {
+                var index = texSet[quadrantBase + 1 + slot];
+                if (index != 0xFF && btd.GetLandTexture(index) != 0)
+                {
+                    anyAlphaSlot = true;
+                }
+            }
+        }
+
+        if (!anyAlphaSlot)
+        {
+            return false;
+        }
+
+        // Alpha slots declared but no base anywhere. Whether a layer survives depends on the alpha
+        // map, so the map has to be read — but only to answer yes/no, never to build the entries.
+        //
+        // The first cut of this called BuildTextureLayers here and threw the result away, on the
+        // assumption that a cell with no base texture was a rare tail. It is not: Appalachia's load
+        // went 02:39 -> 04:00 because most cells took this path, paying the full eager build AND the
+        // later lazy rebuild. Scanning for the first non-zero weight is the same decision at a
+        // fraction of the cost, and keeps the answer EXACT — being permissive would let
+        // HasTextureLayers disagree with TextureLayers and change which cells WorldSpatialIndex and
+        // the 2D map treat as carrying terrain data.
+        var alphaMap = new ushort[LtexMapEdge * LtexMapEdge];
+        btd.GetCellLandTexture(alphaMap, cellX, cellY);
+
+        for (var quadrant = 0; quadrant < 4; quadrant++)
+        {
+            var quadrantBase = quadrant << 4;
+            for (var slot = 0; slot < QuadrantLayerSlots; slot++)
+            {
+                var index = texSet[quadrantBase + 1 + slot];
+                if (index == 0xFF || btd.GetLandTexture(index) == 0)
+                {
+                    continue;
+                }
+
+                if (HasAnyBlendWeight(alphaMap, quadrant, slot, blendEdge))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="slot" /> has at least one non-zero opacity anywhere in the
+    ///     quadrant — the exact condition under which <see cref="BuildBlendEntries" /> returns a
+    ///     non-empty list, decided by early exit instead of materializing the entries.
+    /// </summary>
+    private static bool HasAnyBlendWeight(ushort[] alphaMap, int quadrant, int slot, int blendEdge)
+    {
+        return SampleBlendWeights(alphaMap, quadrant, slot, blendEdge, sink: null);
+    }
+
+    internal static List<LandTextureLayer>? BuildTextureLayers(BtdFile btd, int cellX, int cellY, int blendEdge)
     {
         // GetCellTextureSet leaves untouched slots alone, so pre-fill the "none" sentinel.
         var texSet = new byte[64];
@@ -426,13 +549,38 @@ public static class BtdTerrainInjector
     private static List<LandTextureBlendEntry> BuildBlendEntries(
         ushort[] alphaMap, int quadrant, int slot, int blendEdge)
     {
+        var entries = new List<LandTextureBlendEntry>();
+        SampleBlendWeights(alphaMap, quadrant, slot, blendEdge, entries);
+
+        // Zero-weight vertices are skipped, so the final count is unknowable up front and the list
+        // grows by doubling — leaving up to 2x slack on a structure that, across ~150M entries on
+        // Appalachia, is most of a gigabyte. One copy here trades transient churn for retained bytes,
+        // which is the direction that matters for a block this size.
+        entries.TrimExcess();
+        return entries;
+    }
+
+    /// <summary>
+    ///     The single definition of the quadrant sampling grid, shared by
+    ///     <see cref="BuildBlendEntries" /> and <see cref="HasAnyBlendWeight" /> so the "does this
+    ///     slot contribute anything?" probe can never drift from the entries it predicts. Two copies
+    ///     of this loop that disagreed would let a cell report layers it does not build, or — worse —
+    ///     build layers it claims not to have.
+    ///     <para>
+    ///         Pass <paramref name="sink" /> to collect entries, or <c>null</c> to probe: the probe
+    ///         returns on the first non-zero weight without allocating.
+    ///     </para>
+    /// </summary>
+    private static bool SampleBlendWeights(
+        ushort[] alphaMap, int quadrant, int slot, int blendEdge, List<LandTextureBlendEntry>? sink)
+    {
         const int quadPixelEdge = LtexMapEdge / 2;
         var eastOffset = (quadrant & 1) * quadPixelEdge;
         var northOffset = ((quadrant >> 1) & 1) * quadPixelEdge;
         var shift = slot * 3;
         var step = quadPixelEdge / (blendEdge - 1);
 
-        var entries = new List<LandTextureBlendEntry>();
+        var any = false;
         for (var qy = 0; qy < blendEdge; qy++)
         {
             // blendEdge vertices span quadPixelEdge pixels, so the shared far edge clamps onto the
@@ -447,12 +595,18 @@ public static class BtdTerrainInjector
                     continue;
                 }
 
-                entries.Add(new LandTextureBlendEntry(
+                if (sink is null)
+                {
+                    return true;
+                }
+
+                sink.Add(new LandTextureBlendEntry(
                     (ushort)(qy * blendEdge + qx), 0, 0, weight / PackedWeightMax));
+                any = true;
             }
         }
 
-        return entries;
+        return any;
     }
 
     /// <summary>

@@ -40,6 +40,15 @@ public record StaticCollectionPart
     /// <summary>FormID of the base STAT this part instantiates (ONAM subrecord).</summary>
     public uint OnamFormId { get; init; }
 
+    /// <summary>
+    ///     Fallout 76's second ONAM FormID, when present. Its 8-byte ONAM carries the base object
+    ///     followed by one more FormID that is zero on 90,208 of SeventySix.esm's 119,954 parts and a
+    ///     live FormID on the rest — i.e. an optional per-part override, matching where the FO4 family
+    ///     hangs material swaps. Kept verbatim rather than named, because nothing here has confirmed
+    ///     which record type it targets; the earlier games' 4-byte ONAM leaves this null.
+    /// </summary>
+    public uint? SecondaryFormId { get; init; }
+
     /// <summary>Placements for this part (DATA subrecord — 28 bytes per placement).</summary>
     public List<StaticCollectionPlacement> Placements { get; init; } = [];
 }

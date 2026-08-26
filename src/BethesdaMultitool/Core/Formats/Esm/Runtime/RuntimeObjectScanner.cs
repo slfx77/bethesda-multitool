@@ -42,13 +42,29 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
         int minStructSize = 88,
         IProgress<(long Scanned, long Total)>? progress = null)
     {
+        // The chunk overlap must cover every struct size or the read/scan-limit math silently
+        // creates a per-chunk dead zone (max struct today: NiTriShape at 240 vs overlap 256).
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(minStructSize, ChunkOverlap);
+
         var minidump = _context.MinidumpInfo;
         var log = Logger.Instance;
 
         // If not a valid minidump, fall back to sequential full-file scan
         if (minidump == null || !minidump.IsValid || minidump.MemoryRegions.Count == 0)
         {
-            log.Debug("RuntimeObjectScanner: no minidump regions, falling back to sequential scan");
+            if (minidump is { IsValid: true })
+            {
+                // A valid minidump without Memory64 regions loses all VA-aware scanning — the
+                // sequential fallback's 16-byte stride is file-anchored and probes the wrong lanes
+                // whenever the payload base is not 16-aligned. Surface it instead of hiding it.
+                log.Warn("RuntimeObjectScanner: valid minidump has NO memory regions — " +
+                         "sequential file-offset fallback cannot honor heap alignment");
+            }
+            else
+            {
+                log.Debug("RuntimeObjectScanner: no minidump regions, falling back to sequential scan");
+            }
+
             ScanSequential(candidateTest, processCandidate, minStructSize, progress);
             return;
         }
@@ -62,8 +78,14 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
                  "{2} module ranges excluded, {3}-byte alignment",
             regionGroups.Count, totalBytes / (1024 * 1024), moduleRanges.Length, HeapAlignment);
 
+        // Bounded rather than ProcessorCount: this runs alongside the caller's own work (the CLI
+        // reports progress, the GUI keeps painting), and an unbounded degree here was the last
+        // renderer-adjacent Parallel loop still claiming every core for itself.
         Parallel.ForEach(regionGroups,
-            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Orchestration.ConcurrencyPolicy.CoresMinusOne.Resolve()
+            },
             group =>
             {
                 ScanRegionGroup(group, moduleRanges, candidateTest, processCandidate, minStructSize);
@@ -105,11 +127,6 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
         for (long chunkStart = 0; chunkStart < regionSize; chunkStart += ChunkSize)
         {
             var readSize = (int)Math.Min(ChunkSize + ChunkOverlap, regionSize - chunkStart);
-            if (readSize < minStructSize)
-            {
-                break;
-            }
-
             var fileOffset = regionFileStart + chunkStart;
             var chunk = _context.ReadBytes(fileOffset, readSize);
             if (chunk == null)
@@ -122,7 +139,26 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
                 continue;
             }
 
-            var scanLimit = Math.Min(ChunkSize, readSize - minStructSize);
+            // Structs whose header starts in the region's last minStructSize-1 bytes continue into
+            // the VA-adjacent successor region. Regions are VA-adjacent but NOT file-adjacent, so
+            // the tail must come through the VA map; a missing successor fails closed (no stitch).
+            if (chunkStart + readSize >= regionSize && minStructSize > 1)
+            {
+                var tail = _context.ReadBytesAtVa(region.VirtualAddress + regionSize, minStructSize - 1);
+                if (tail != null)
+                {
+                    var stitched = new byte[chunk.Length + tail.Length];
+                    chunk.CopyTo(stitched, 0);
+                    tail.CopyTo(stitched, chunk.Length);
+                    chunk = stitched;
+                    readSize = stitched.Length;
+                }
+            }
+
+            // Candidates must START inside this region (the successor scans its own offsets from its
+            // own base) and have minStructSize bytes available in the (possibly stitched) chunk.
+            var inRegionLimit = (int)Math.Min(ChunkSize, regionSize - chunkStart);
+            var scanLimit = Math.Min(inRegionLimit, readSize - minStructSize + 1);
 
             for (var offset = 0; offset < scanLimit; offset += HeapAlignment)
             {

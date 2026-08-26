@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
@@ -593,7 +594,7 @@ public sealed class QuestVariableProducerGateTests
             [requirement]);
 
         var error = Assert.Throws<InvalidOperationException>(() =>
-            QuestVariableProducerGate.VerifyFinalPlan(EmptyPlan(), [requirement]));
+            QuestVariableProducerGate.VerifyFinalPlan(PlanTestFactory.EmptyPlan(), [requirement]));
         Assert.Contains("lost every proven producer", error.Message, StringComparison.Ordinal);
 
         var noPlanError = Assert.Throws<InvalidOperationException>(() =>
@@ -834,23 +835,6 @@ public sealed class QuestVariableProducerGateTests
             {
                 NextObjectId = 0x801,
                 PlannerCoverage = ImmutableHashSet.Create("TERM")
-            }
-        };
-    }
-
-    private static EmitPlan EmptyPlan()
-    {
-        return new EmitPlan
-        {
-            Records = ImmutableArray<RecordPlan>.Empty,
-            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = ImmutableHashSet<uint>.Empty,
-            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-            Meta = new PlanMetadata
-            {
-                NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty
             }
         };
     }

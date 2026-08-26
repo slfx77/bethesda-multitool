@@ -298,6 +298,10 @@ public static class EsmRecordTypes
             return "????";
         }
 
-        return Encoding.ASCII.GetString(sig[..4]);
+        // Pooled: this is the record-header path, so it ran once per record — 5.1M times on
+        // Fallout 76's master, each allocating its own "REFR".
+        return Utils.EsmSignaturePool.TryIntern(sig, out var pooled)
+            ? pooled
+            : Encoding.ASCII.GetString(sig[..4]);
     }
 }

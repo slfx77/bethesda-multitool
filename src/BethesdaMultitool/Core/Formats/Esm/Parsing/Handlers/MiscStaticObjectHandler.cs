@@ -536,6 +536,22 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
         };
     }
 
+    /// <summary>
+    ///     Fallout 4/76 SCOL fields this reader knowingly does not model — presentation, snapping,
+    ///     LOD and layer metadata that no consumer of <see cref="StaticCollectionRecord" /> reads.
+    ///     They are skipped without a log line so the "unexpected subrecord" warning keeps meaning
+    ///     "we have never seen this"; before this set existed, one Fallout 76 load buried the log
+    ///     under 4,492 lines of them.
+    /// </summary>
+    private static readonly HashSet<string> KnownUnmodelledScolSubrecords =
+    [
+        "MODB", "MODS", "MODD", // model variant/alt-texture blocks (the merged NIF is in MODL)
+        "FULL", "MNAM", "FLTR", // display name, workshop menu, editor filter string
+        "PTRN", "SNTP", "PHST", "DEFL", "XALG", "OPDS", "PRPS", // transform/snap/physics/layer/props
+        "NAM1", "LODP", // LOD selection
+        "ENLM", "ENLT", "ENLS", "AUUV" // Fallout 76 lighting/UV metadata
+    ];
+
     private StaticCollectionRecord? ParseScolFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = Context.ReadRecordData(record, buffer);
@@ -581,9 +597,25 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
-                case "ONAM" when sub.DataLength == 4:
-                    var onamFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                    parts.Add(new StaticCollectionPart { OnamFormId = onamFormId });
+                // Fallout 3/New Vegas pack one FormID here; Fallout 76 packs two — the base object
+                // followed by an optional override (zero on ~75% of parts). Accepting only 4 dropped
+                // every part of all 17,384 SeventySix.esm collections, and because a DATA block is
+                // only attached to the part its ONAM just opened, all 119,958 placement blocks fell
+                // with them: the whole collection graph parsed empty.
+                case "ONAM" when sub.DataLength is 4 or 8:
+                    var onamFormId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
+                    uint? secondaryFormId = null;
+                    if (sub.DataLength == 8)
+                    {
+                        var secondary = RecordParserContext.ReadFormId(subData[4..8], record.IsBigEndian);
+                        secondaryFormId = secondary != 0 ? secondary : null;
+                    }
+
+                    parts.Add(new StaticCollectionPart
+                    {
+                        OnamFormId = onamFormId,
+                        SecondaryFormId = secondaryFormId
+                    });
                     break;
                 case "DATA" when sub.DataLength > 0 && sub.DataLength % 28 == 0 && parts.Count > 0:
                 {
@@ -610,8 +642,12 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                     break;
                 }
                 default:
-                    Logger.Instance.Debug(
-                        $"  [SCOL] Unexpected subrecord '{sub.Signature}' (len {sub.DataLength}) in 0x{record.FormId:X8} — dropped silently. Update ParseScolFromAccessor if this becomes common.");
+                    if (!KnownUnmodelledScolSubrecords.Contains(sub.Signature))
+                    {
+                        Logger.Instance.Debug(
+                            $"  [SCOL] Unexpected subrecord '{sub.Signature}' (len {sub.DataLength}) in 0x{record.FormId:X8} — dropped silently. Update ParseScolFromAccessor if this becomes common.");
+                    }
+
                     break;
             }
         }

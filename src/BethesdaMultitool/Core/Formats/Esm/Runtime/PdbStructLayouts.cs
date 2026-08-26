@@ -53,7 +53,10 @@ internal static class PdbStructLayouts
         0x3B, // ACHR — RuntimeRefrReader (via actor)
         0x3C, // ACRE — RuntimeRefrReader (via creature)
         0x41, // WRLD — RuntimeWorldReader/CellReader
-        0x42, // LAND — RuntimeWorldReader
+        0x42, // LAND_ID — vestigial: the PDB enum maps 0x42 to TESLand, a class the engine never
+              // compiled (no layout exists), so no runtime instance carries this byte.
+        0x44, // TLOD_ID — the engine registers TESObjectLAND (runtime terrain) under this slot,
+              // NOT under LAND_ID; read by RuntimeWorldReader (PDB-verified 2026-08-25, both eras).
         0x45, // DIAL — RuntimeDialogueReader
         0x46, // INFO — RuntimeDialogueReader
         0x47, // QUST — RuntimeDialogueReader

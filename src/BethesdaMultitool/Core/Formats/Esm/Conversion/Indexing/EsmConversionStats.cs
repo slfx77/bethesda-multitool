@@ -21,10 +21,17 @@ public sealed class EsmConversionStats
     public int ScriptRegionScrosAppended { get; set; }
     public int ScriptRegionScriptsTouched { get; set; }
 
+    /// <summary>
+    ///     Compressed records whose zlib payload failed to decompress and were passed
+    ///     through raw (size prefix + original compressed bytes, subrecords unconverted).
+    /// </summary>
+    public int DecompressFailuresPassedThrough { get; set; }
+
     public Dictionary<string, int> RecordTypeCounts { get; } = [];
     public Dictionary<string, int> SubrecordTypeCounts { get; } = [];
     public Dictionary<string, int> SkippedRecordTypeCounts { get; } = [];
     public Dictionary<int, int> SkippedGrupTypeCounts { get; } = [];
+    public Dictionary<string, int> DecompressFailureRecordTypeCounts { get; } = [];
 
     /// <summary>
     ///     Increments the record type count.
@@ -67,6 +74,20 @@ public sealed class EsmConversionStats
     }
 
     /// <summary>
+    ///     Increments the decompress-failure pass-through count for a record type.
+    /// </summary>
+    public void IncrementDecompressFailurePassedThrough(string signature)
+    {
+        DecompressFailuresPassedThrough++;
+        if (!DecompressFailureRecordTypeCounts.TryGetValue(signature, out var count))
+        {
+            count = 0;
+        }
+
+        DecompressFailureRecordTypeCounts[signature] = count + 1;
+    }
+
+    /// <summary>
     ///     Increments the skipped GRUP type count.
     /// </summary>
     public void IncrementSkippedGrupType(int grupType)
@@ -94,6 +115,7 @@ public sealed class EsmConversionStats
 
         AppendToftStats(sb);
         AppendOfstStats(sb);
+        AppendDecompressFailureStats(sb);
         AppendScriptRegionStats(sb);
         AppendSkippedStats(sb);
 
@@ -131,6 +153,25 @@ public sealed class EsmConversionStats
         sb.AppendLine($"  WRLD offset tables: {OfstStripped:N0} subrecords ({OfstBytesStripped:N0} bytes)");
         sb.AppendLine(
             "  (File offsets to cells become invalid after conversion; game scans for cells instead)");
+    }
+
+    private void AppendDecompressFailureStats(StringBuilder sb)
+    {
+        if (DecompressFailuresPassedThrough <= 0)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Compressed records passed through raw:");
+        sb.AppendLine($"  Failed zlib decompression: {DecompressFailuresPassedThrough:N0} records");
+        foreach (var kvp in DecompressFailureRecordTypeCounts.OrderByDescending(x => x.Value))
+        {
+            sb.AppendLine($"    {kvp.Key}: {kvp.Value.ToString("N0", CultureInfo.InvariantCulture)}");
+        }
+
+        sb.AppendLine(
+            "  (Original compressed bytes copied verbatim; their subrecords were NOT converted)");
     }
 
     private void AppendScriptRegionStats(StringBuilder sb)

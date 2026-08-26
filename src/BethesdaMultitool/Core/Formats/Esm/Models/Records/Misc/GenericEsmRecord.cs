@@ -34,8 +34,15 @@ public record GenericEsmRecord
     /// <summary>
     ///     Type-specific subrecord fields parsed via SubrecordDataReader schemas
     ///     or stored as raw byte arrays. Keys are subrecord signatures.
+    ///     <para>
+    ///         Defaults to a shared empty instance rather than a fresh dictionary: the schema-driven
+    ///         parser populates <see cref="DecodedTree" /> instead and never touches this, so on a
+    ///         schema-primary master every record was carrying its own empty dictionary — 483,277 of
+    ///         them on Fallout 76, none ever read.
+    ///     </para>
     /// </summary>
-    public Dictionary<string, object?> Fields { get; init; } = [];
+    public IReadOnlyDictionary<string, object?> Fields { get; init; } =
+        System.Collections.ObjectModel.ReadOnlyDictionary<string, object?>.Empty;
 
     /// <summary>
     ///     The schema-decoded, ordered, labeled field tree, when this record was read by the schema-driven

@@ -131,7 +131,7 @@ public sealed class DataFolderResolverTests : IDisposable
     }
 
     [Fact]
-    public void Resolve_FuzzyDisabled_ReturnsMissing_ButExactStillWorks()
+    public void Resolve_FuzzyDisabled_ReturnsMissingForNearMatchesAndResolvesExactOnes()
     {
         var baselineDir = MakeDataFolder("baseline");
         Directory.CreateDirectory(baselineDir);
