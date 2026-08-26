@@ -29,6 +29,8 @@ internal readonly record struct ConcurrencyPolicy
 
     private int ClampMax { get; init; }
 
+    private int Divisor { get; init; }
+
     private string? EnvironmentVariable { get; init; }
 
     private int EnvironmentMin { get; init; }
@@ -57,15 +59,27 @@ internal readonly record struct ConcurrencyPolicy
     }
 
     /// <summary>
-    ///     Half the cores, clamped to [<paramref name="min" />, <paramref name="max" />] — the
-    ///     GC-aware default used by the streaming decode paths.
+    ///     <c>cores / divisor</c>, clamped to [<paramref name="min" />, <paramref name="max" />].
+    ///     The general form of the hand-rolled <c>Math.Clamp(Environment.ProcessorCount / N, a, b)</c>
+    ///     expression that had been copied, with a different N each time, across the renderer.
     /// </summary>
-    public static ConcurrencyPolicy HalfCoresClamped(int min, int max)
+    public static ConcurrencyPolicy CoresScaled(int divisor, int min, int max)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(divisor, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(min, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(max, min);
-        return new ConcurrencyPolicy { Kind = PresetKind.HalfCoresClamped, ClampMin = min, ClampMax = max };
+        return new ConcurrencyPolicy
+        {
+            Kind = PresetKind.CoresScaled, Divisor = divisor, ClampMin = min, ClampMax = max
+        };
     }
+
+    /// <summary>
+    ///     Half the cores, clamped to [<paramref name="min" />, <paramref name="max" />] — the
+    ///     GC-aware default used by the streaming decode paths. A named
+    ///     <see cref="CoresScaled" />(2, …).
+    /// </summary>
+    public static ConcurrencyPolicy HalfCoresClamped(int min, int max) => CoresScaled(2, min, max);
 
     /// <summary>
     ///     Lets the environment variable <paramref name="variableName" /> override the preset when
@@ -110,7 +124,7 @@ internal readonly record struct ConcurrencyPolicy
             PresetKind.FullCores => Math.Max(1, cores),
             PresetKind.CoresMinusOne => Math.Max(1, cores - 1),
             PresetKind.DoubleCores => Math.Max(1, cores * 2),
-            PresetKind.HalfCoresClamped => Math.Clamp(cores / 2, ClampMin, ClampMax),
+            PresetKind.CoresScaled => Math.Clamp(cores / Math.Max(1, Divisor), ClampMin, ClampMax),
             _ => 1
         };
     }
@@ -121,6 +135,6 @@ internal readonly record struct ConcurrencyPolicy
         FullCores,
         CoresMinusOne,
         DoubleCores,
-        HalfCoresClamped
+        CoresScaled
     }
 }

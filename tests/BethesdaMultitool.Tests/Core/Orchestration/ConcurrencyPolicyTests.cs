@@ -97,4 +97,36 @@ public sealed class ConcurrencyPolicyTests
         Assert.Equal(16, ConcurrencyPolicy.Fixed(16).WithExplicitOverride(null).Resolve());
         Assert.Equal(16, ConcurrencyPolicy.Fixed(16).WithExplicitOverride(0).Resolve());
     }
+
+    [Fact]
+    public void Cores_scaled_divides_and_clamps()
+    {
+        var cores = Environment.ProcessorCount;
+
+        Assert.Equal(Math.Clamp(cores, 1, 64), ConcurrencyPolicy.CoresScaled(1, 1, 64).Resolve());
+        Assert.Equal(Math.Clamp(cores / 4, 4, 8), ConcurrencyPolicy.CoresScaled(4, 4, 8).Resolve());
+        // The clamp genuinely binds in both directions, not just the divide.
+        Assert.Equal(3, ConcurrencyPolicy.CoresScaled(1024, 3, 9).Resolve());
+        Assert.Equal(2, ConcurrencyPolicy.CoresScaled(1, 1, 2).Resolve());
+    }
+
+    [Fact]
+    public void Half_cores_is_exactly_cores_scaled_by_two()
+    {
+        // HalfCoresClamped is now a named alias, so the two must not be able to drift apart.
+        Assert.Equal(
+            ConcurrencyPolicy.CoresScaled(2, 2, 8).Resolve(),
+            ConcurrencyPolicy.HalfCoresClamped(2, 8).Resolve());
+    }
+
+    [Fact]
+    public void Cores_scaled_rejects_a_nonsense_divisor_or_range()
+    {
+        // A divisor of zero would be a divide-by-zero at Resolve time — far from the call site that
+        // introduced it, and only on whatever machine happened to run that path.
+        Assert.Throws<ArgumentOutOfRangeException>(static () => ConcurrencyPolicy.CoresScaled(0, 1, 8));
+        Assert.Throws<ArgumentOutOfRangeException>(static () => ConcurrencyPolicy.CoresScaled(-1, 1, 8));
+        Assert.Throws<ArgumentOutOfRangeException>(static () => ConcurrencyPolicy.CoresScaled(2, 0, 8));
+        Assert.Throws<ArgumentOutOfRangeException>(static () => ConcurrencyPolicy.CoresScaled(2, 8, 4));
+    }
 }
