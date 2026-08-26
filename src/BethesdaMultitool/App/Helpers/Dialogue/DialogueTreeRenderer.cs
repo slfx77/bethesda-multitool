@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.EsmView.Dialogue;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;

@@ -5,6 +5,7 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:BethesdaMultitool"
+  xmlns:ui="using:BethesdaMultitool.Core.Ui"
   Title="Keyboard shortcuts"
   CloseButtonText="Close"
   DefaultButton="Close"
@@ -31,7 +32,7 @@
         </GroupStyle>
       </ListView.GroupStyle>
       <ListView.ItemTemplate>
-        <DataTemplate x:DataType="local:KeyboardShortcut">
+        <DataTemplate x:DataType="ui:KeyboardShortcut">
           <Grid Padding="0,4" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="160" />

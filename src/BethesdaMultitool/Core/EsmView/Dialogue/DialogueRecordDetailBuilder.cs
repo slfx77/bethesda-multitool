@@ -6,11 +6,17 @@ using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Formats.Subtitles;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.EsmView.Dialogue;
 
 /// <summary>
 ///     Builds detail row data for dialogue record and topic detail panels.
 ///     Pure computation — produces structured data that the UI layer renders into grids.
+///     <para>
+///         In <c>Core/</c> rather than <c>App/Helpers</c> precisely because it is pure: while it
+///         sat under <c>App/**</c> it was excluded from the <c>net10.0</c> target framework, so
+///         none of its identity/subtitle/flag/quest-variable logic could be unit-tested and the
+///         only coverage was a source pin over one method's text.
+///     </para>
 /// </summary>
 internal static class DialogueRecordDetailBuilder
 {
