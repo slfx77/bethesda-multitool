@@ -11,30 +11,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     names and response text live in external .STRINGS/.ILSTRINGS tables, so these assertions also
 ///     prove the loader joins those. Skipped when Skyrim.esm isn't installed.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class SkyrimSchemaParseIntegrationTests
 {
-    private static string? ResolveSkyrimEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Skyrim.esm")))
-        {
-            return Path.Combine(root, "Skyrim.esm");
-        }
-
-        // Prefer the original (LE) install — the build we hold symbols for — then Special Edition.
-        string?[] candidates =
-        [
-            RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim.esm"),
-            RealAssetPaths.SteamGameFile("Skyrim Special Edition", @"Data\Skyrim.esm")
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
     [Fact]
     public async Task Skyrim_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
-        var esm = ResolveSkyrimEsm();
+        var esm = RealAssetPaths.Masters.Skyrim();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
@@ -62,7 +46,7 @@ public class SkyrimSchemaParseIntegrationTests
     [Fact]
     public async Task Skyrim_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
-        var esm = ResolveSkyrimEsm();
+        var esm = RealAssetPaths.Masters.Skyrim();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");

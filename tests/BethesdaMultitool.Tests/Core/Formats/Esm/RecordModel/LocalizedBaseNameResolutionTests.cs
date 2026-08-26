@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     topic display name (DIAL). This asserts almost no display name is a raw index. Skipped when the real
 ///     game plugin is absent (env-gated, like the parity tests).
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class LocalizedBaseNameResolutionTests
 {

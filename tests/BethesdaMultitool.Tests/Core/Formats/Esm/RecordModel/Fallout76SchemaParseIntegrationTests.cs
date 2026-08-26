@@ -12,29 +12,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     names/text from a BA2 (not loose .STRINGS). FO76 reuses the FO4 dialogue extractor (identical INFO
 ///     layout). Skipped when SeventySix.esm isn't installed.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Fallout76SchemaParseIntegrationTests
 {
-    private static string? ResolveSeventySixEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "SeventySix.esm")))
-        {
-            return Path.Combine(root, "SeventySix.esm");
-        }
-
-        string?[] candidates =
-        [
-            RealAssetPaths.SteamGameFile("Fallout76", @"Data\SeventySix.esm"),
-            RealAssetPaths.SteamGameFile("Fallout76", @"Data\SeventySix.esm")
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
     [Fact]
     public async Task Fallout76_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
-        var esm = ResolveSeventySixEsm();
+        var esm = RealAssetPaths.Masters.SeventySix();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "SeventySix.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 76).");
@@ -62,7 +47,7 @@ public class Fallout76SchemaParseIntegrationTests
     [Fact]
     public async Task Fallout76_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
-        var esm = ResolveSeventySixEsm();
+        var esm = RealAssetPaths.Masters.SeventySix();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "SeventySix.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 76).");

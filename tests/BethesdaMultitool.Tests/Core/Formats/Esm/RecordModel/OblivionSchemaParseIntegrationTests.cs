@@ -10,25 +10,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     This is the "reads properly in the GUI" guarantee at the data layer — the GUI consumes the same
 ///     <c>RecordCollection</c>. Skipped when Oblivion.esm isn't installed.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class OblivionSchemaParseIntegrationTests
 {
-    private static string? ResolveOblivionEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Oblivion.esm")))
-        {
-            return Path.Combine(root, "Oblivion.esm");
-        }
-
-        var steam = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion.esm");
-        return File.Exists(steam) ? steam : null;
-    }
-
     [Fact]
     public async Task Oblivion_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
-        var esm = ResolveOblivionEsm();
+        var esm = RealAssetPaths.Masters.Oblivion();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
@@ -58,7 +47,7 @@ public class OblivionSchemaParseIntegrationTests
     [Fact]
     public async Task Oblivion_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
-        var esm = ResolveOblivionEsm();
+        var esm = RealAssetPaths.Masters.Oblivion();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");

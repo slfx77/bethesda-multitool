@@ -12,29 +12,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     TES3 dialogue is positional (INFO follows its DIAL in file order) and string-keyed (the ONAM speaker
 ///     is an NPC editor id), which this exercises. Skipped when Morrowind.esm isn't installed.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Tes3SchemaParseIntegrationTests
 {
-    private static string? ResolveMorrowindEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Morrowind.esm")))
-        {
-            return Path.Combine(root, "Morrowind.esm");
-        }
-
-        string?[] candidates =
-        [
-            RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm"),
-            RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.esm")
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
     [Fact]
     public async Task Morrowind_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
-        var esm = ResolveMorrowindEsm();
+        var esm = RealAssetPaths.Masters.Morrowind();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Morrowind.esm not found (set BETHESDA_TEST_DATA_ROOT or install Morrowind).");
@@ -60,7 +45,7 @@ public class Tes3SchemaParseIntegrationTests
     [Fact]
     public async Task Morrowind_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
-        var esm = ResolveMorrowindEsm();
+        var esm = RealAssetPaths.Masters.Morrowind();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Morrowind.esm not found (set BETHESDA_TEST_DATA_ROOT or install Morrowind).");

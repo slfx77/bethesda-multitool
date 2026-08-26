@@ -10,6 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     entries are the entire point of the record — came back as opaque bytes. Expanding the helper into the
 ///     12-byte struct (Level u16 / unused / Reference FormID / Count u16 / tail) fixed it. Env-gated.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class LeveledListDecodeTests
 {

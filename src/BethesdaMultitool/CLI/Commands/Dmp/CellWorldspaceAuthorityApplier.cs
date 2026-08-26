@@ -785,68 +785,96 @@ internal static class CellWorldspaceAuthorityApplier
         RecordCollection records,
         EsmRecordScanResult? scanResult)
     {
-        var anchors = records.Cells
-            .Where(cell => cell.IsInterior &&
-                           !cell.IsVirtual &&
-                           !cell.IsUnresolvedBucket)
-            .SelectMany(cell => cell.PlacedObjects
-                .Where(placed => placed.Offset > 0)
-                .Select(placed => (placed.Offset, Cell: cell)))
-            .OrderBy(anchor => anchor.Offset)
-            .ToList();
-
-        if (anchors.Count == 0)
-        {
-            return (0, 0);
-        }
-
-        var anchorOffsets = anchors.Select(anchor => anchor.Offset).ToArray();
-        var cellIndexByFormId = BuildCellIndex(records.Cells);
         var moved = 0;
+        var rounds = 0;
+        int movedThisRound;
 
-        for (var i = 0; i < records.Cells.Count; i++)
+        // Spatial gate, frozen BEFORE accretion: an orphan may only attach to a cell whose
+        // pre-accretion refs' coordinate box (percentile-trimmed, margin-expanded) contains the
+        // orphan's position. Offset adjacency alone cannot delimit runs when the NEXT run is
+        // wholly unanchored and packed contiguously — on xex39 the frontier walked straight out
+        // of LakeMeadCave into neighbouring shack interiors, and the grafts rendered as
+        // spatially detached clusters, which is precisely the signal this gate encodes. Frozen
+        // rather than per-round so an early graft cannot widen the box and admit the rest.
+        var spatialBounds = BuildInteriorSpatialBounds(records.Cells);
+
+        // Accretion loop: authority seeding anchors only part of each cell's run (measured on
+        // xex44's ULCasino, anchors stop 253 refs short of the run's end), so a single pass can
+        // only claim orphans near existing anchors. Each round's attachments become the next
+        // round's anchors, walking the frontier down the run one cluster at a time until it
+        // meets the next run's head anchors — where the disagreement rule in
+        // FindNearestInteriorOwner stops it. Bounded purely as a runaway backstop.
+        do
         {
-            var source = records.Cells[i];
-            if (!source.IsUnresolvedBucket || source.PlacedObjects.Count == 0)
+            movedThisRound = 0;
+            var anchors = records.Cells
+                .Where(cell => cell.IsInterior &&
+                               !cell.IsVirtual &&
+                               !cell.IsUnresolvedBucket)
+                .SelectMany(cell => cell.PlacedObjects
+                    .Where(placed => placed.Offset > 0)
+                    .Select(placed => (placed.Offset, Cell: cell)))
+                .OrderBy(anchor => anchor.Offset)
+                .ToList();
+
+            if (anchors.Count == 0)
             {
-                continue;
+                break;
             }
 
-            var movedFormIds = new HashSet<uint>();
-            foreach (var placed in source.PlacedObjects)
+            var anchorOffsets = anchors.Select(anchor => anchor.Offset).ToArray();
+            var cellIndexByFormId = BuildCellIndex(records.Cells);
+
+            for (var i = 0; i < records.Cells.Count; i++)
             {
-                if (placed.Offset <= 0)
+                var source = records.Cells[i];
+                if (!source.IsUnresolvedBucket || source.PlacedObjects.Count == 0)
                 {
                     continue;
                 }
 
-                var owner = FindNearestInteriorOwner(anchors, anchorOffsets, placed.Offset);
-                if (owner == null || !cellIndexByFormId.TryGetValue(owner.FormId, out var targetIndex))
+                var movedFormIds = new HashSet<uint>();
+                foreach (var placed in source.PlacedObjects)
                 {
-                    continue;
+                    if (placed.Offset <= 0)
+                    {
+                        continue;
+                    }
+
+                    var (owner, bothSidesAgree) =
+                        FindNearestInteriorOwner(anchors, anchorOffsets, placed.Offset);
+                    if (owner == null ||
+                        !IsSpatiallyPlausible(spatialBounds, owner.FormId, placed, bothSidesAgree) ||
+                        !cellIndexByFormId.TryGetValue(owner.FormId, out var targetIndex))
+                    {
+                        continue;
+                    }
+
+                    var target = records.Cells[targetIndex];
+                    if (!target.PlacedObjects.Any(p => p.FormId == placed.FormId))
+                    {
+                        target.PlacedObjects.Add(placed with { AssignmentSource = SourceInteriorOffsetCluster });
+                    }
+
+                    MoveScanResultRefLink(scanResult, source.FormId, owner.FormId, placed.FormId);
+                    movedFormIds.Add(placed.FormId);
+                    movedThisRound++;
                 }
 
-                var target = records.Cells[targetIndex];
-                if (!target.PlacedObjects.Any(p => p.FormId == placed.FormId))
+                if (movedFormIds.Count > 0)
                 {
-                    target.PlacedObjects.Add(placed with { AssignmentSource = SourceInteriorOffsetCluster });
+                    records.Cells[i] = source with
+                    {
+                        PlacedObjects = source.PlacedObjects
+                            .Where(placed => !movedFormIds.Contains(placed.FormId))
+                            .ToList()
+                    };
                 }
-
-                MoveScanResultRefLink(scanResult, source.FormId, owner.FormId, placed.FormId);
-                movedFormIds.Add(placed.FormId);
-                moved++;
             }
 
-            if (movedFormIds.Count > 0)
-            {
-                records.Cells[i] = source with
-                {
-                    PlacedObjects = source.PlacedObjects
-                        .Where(placed => !movedFormIds.Contains(placed.FormId))
-                        .ToList()
-                };
-            }
+            moved += movedThisRound;
         }
+        while (movedThisRound > 0 && ++rounds < 64);
 
         if (moved == 0)
         {
@@ -859,14 +887,17 @@ internal static class CellWorldspaceAuthorityApplier
     }
 
     /// <summary>
-    ///     Returns the captured interior cell whose ref is nearest in dump offset to
-    ///     <paramref name="offset" />, or null when the nearest interior ref is further than the
-    ///     adjacency cap. An interior's refs are streamed contiguously, so the nearest captured
-    ///     interior ref is the orphan's most likely owner; the cap rejects orphans that sit far
-    ///     from every captured interior ref (the cell shell was captured but its refs were not, so
-    ///     adjacency is not real evidence).
+    ///     Returns the captured interior cell that owns <paramref name="offset" /> by anchor
+    ///     adjacency. Both-side agreement attaches unconditionally (the orphan sits inside that
+    ///     cell's run). When the two sides DISAGREE, the nearer side wins only when it is
+    ///     decisively nearer (<see cref="DisagreementGapRatio" />) — measured on xex44's ULCasino,
+    ///     the cell's authority anchors stop before its run does, leaving a continuous 74-byte-
+    ///     spaced tail (late-FormID-block lights/flooring) 1–9 KB past the last own anchor with
+    ///     the next cell's first anchor 14–22 KB further on: clearly the same run, and a strict
+    ///     both-sides-must-agree rule dropped all 253 of those refs. A genuine run boundary shows
+    ///     comparable gaps on both sides and stays ambiguous → unattached.
     /// </summary>
-    private static CellRecord? FindNearestInteriorOwner(
+    private static (CellRecord? Cell, bool BothSidesAgree) FindNearestInteriorOwner(
         List<(long Offset, CellRecord Cell)> anchors,
         long[] anchorOffsets,
         long offset)
@@ -874,30 +905,148 @@ internal static class CellWorldspaceAuthorityApplier
         var idx = Array.BinarySearch(anchorOffsets, offset);
         if (idx >= 0)
         {
-            return anchors[idx].Cell;
+            return (anchors[idx].Cell, true);
         }
 
         idx = ~idx; // first anchor with offset greater than the orphan
-        CellRecord? best = null;
-        var bestGap = long.MaxValue;
-        if (idx < anchors.Count)
-        {
-            bestGap = anchorOffsets[idx] - offset;
-            best = anchors[idx].Cell;
-        }
+        var aboveGap = idx < anchors.Count ? anchorOffsets[idx] - offset : long.MaxValue;
+        var belowGap = idx - 1 >= 0 ? offset - anchorOffsets[idx - 1] : long.MaxValue;
+        var above = aboveGap <= AuthorityOffsetClusterWindowBytes ? anchors[idx].Cell : null;
+        var below = belowGap <= AuthorityOffsetClusterWindowBytes ? anchors[idx - 1].Cell : null;
 
-        if (idx - 1 >= 0)
+        if (above is not null && below is not null)
         {
-            var gapBelow = offset - anchorOffsets[idx - 1];
-            if (gapBelow < bestGap)
+            if (ReferenceEquals(above, below) || above.FormId == below.FormId)
             {
-                bestGap = gapBelow;
-                best = anchors[idx - 1].Cell;
+                return (above, true);
             }
+
+            if (belowGap * DisagreementGapRatio <= aboveGap && belowGap <= MaxAccretionStepBytes)
+            {
+                return (below, false);
+            }
+
+            if (aboveGap * DisagreementGapRatio <= belowGap && aboveGap <= MaxAccretionStepBytes)
+            {
+                return (above, false);
+            }
+
+            return (null, false); // comparable gaps to two different cells: a boundary, ambiguous
         }
 
-        return best is not null && bestGap <= AuthorityOffsetClusterWindowBytes ? best : null;
+        return Math.Min(aboveGap, belowGap) <= MaxAccretionStepBytes
+            ? (above ?? below, false)
+            : (null, false);
     }
+
+    /// <summary>
+    ///     How much nearer the winning side must be when the bracketing anchors belong to two
+    ///     different cells. 2× keeps the measured run-tail case (≥1.5× observed margin, usually
+    ///     far more) while an orphan sitting mid-way between two runs stays unattached.
+    /// </summary>
+    private const int DisagreementGapRatio = 2;
+
+    private readonly record struct InteriorSpatialBounds(
+        float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ);
+
+    /// <summary>
+    ///     Percentile-trimmed, margin-expanded coordinate box of every interior's currently
+    ///     attributed refs, keyed by cell FormID. Percentile (2nd–98th) so a stray orphan already
+    ///     mis-attributed by an earlier pass cannot stretch the box; the margin (a quarter of the
+    ///     larger span, floored at 1024 units) admits a cell's genuine outliers while keeping a
+    ///     NEIGHBOURING interior's detached cluster out. Cells with fewer than 4 positioned refs
+    ///     get no box — too little evidence to reject on.
+    /// </summary>
+    private static Dictionary<uint, InteriorSpatialBounds> BuildInteriorSpatialBounds(
+        IReadOnlyList<CellRecord> cells)
+    {
+        var bounds = new Dictionary<uint, InteriorSpatialBounds>();
+        foreach (var cell in cells)
+        {
+            if (!cell.IsInterior || cell.IsVirtual || cell.IsUnresolvedBucket)
+            {
+                continue;
+            }
+
+            var xs = new List<float>();
+            var ys = new List<float>();
+            var zs = new List<float>();
+            foreach (var p in cell.PlacedObjects)
+            {
+                if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)) continue;
+                xs.Add(p.X);
+                ys.Add(p.Y);
+                zs.Add(p.Z);
+            }
+
+            if (xs.Count < 4)
+            {
+                continue;
+            }
+
+            var (minX, maxX) = PercentileSpan(xs);
+            var (minY, maxY) = PercentileSpan(ys);
+            var (minZ, maxZ) = PercentileSpan(zs);
+            var margin = MathF.Max(0.25f * MathF.Max(maxX - minX, maxY - minY), 1024f);
+            var zMargin = MathF.Max(0.5f * (maxZ - minZ), 1024f);
+            bounds[cell.FormId] = new InteriorSpatialBounds(
+                minX - margin, maxX + margin,
+                minY - margin, maxY + margin,
+                minZ - zMargin, maxZ + zMargin);
+        }
+
+        return bounds;
+    }
+
+    /// <summary>
+    ///     Whether attaching <paramref name="placed" /> to the cell is spatially credible. A ref
+    ///     without finite coordinates passes (it draws nothing anyway). A cell WITHOUT a box (too
+    ///     few positioned refs to judge) accepts only agreement-based attaches — when spatial
+    ///     evidence is absent, both-side offset agreement must substitute for it; a lone-side or
+    ///     ratio attach onto a near-empty cell is exactly how xex39's NiptonHouse2 (3 real refs)
+    ///     collected another cell's stray geometry.
+    /// </summary>
+    private static bool IsSpatiallyPlausible(
+        Dictionary<uint, InteriorSpatialBounds> boundsByFormId,
+        uint cellFormId,
+        PlacedReference placed,
+        bool bothSidesAgree)
+    {
+        if (!boundsByFormId.TryGetValue(cellFormId, out var b)) return bothSidesAgree;
+        if (!float.IsFinite(placed.X) || !float.IsFinite(placed.Y) || !float.IsFinite(placed.Z))
+        {
+            return true;
+        }
+
+        return placed.X >= b.MinX && placed.X <= b.MaxX &&
+               placed.Y >= b.MinY && placed.Y <= b.MaxY &&
+               placed.Z >= b.MinZ && placed.Z <= b.MaxZ;
+    }
+
+    /// <summary>[2nd, 98th] percentile span; plain min/max below 20 samples.</summary>
+    private static (float Min, float Max) PercentileSpan(List<float> values)
+    {
+        values.Sort();
+        if (values.Count < 20)
+        {
+            return (values[0], values[^1]);
+        }
+
+        var lo = (int)(values.Count * 0.02f);
+        var hi = (int)MathF.Ceiling(values.Count * 0.98f) - 1;
+        return (values[lo], values[Math.Max(lo, hi)]);
+    }
+
+    /// <summary>
+    ///     Maximum gap for any attachment that is NOT corroborated by same-cell anchors on both
+    ///     sides. Runtime ref tables serialize a run's entries ~74 bytes apart, so genuine tail
+    ///     accretion advances in sub-KB steps (the accretion loop re-anchors each round, so long
+    ///     tails are still claimed in full); a multi-KB jump from a run's edge is how the frontier
+    ///     crossed into a NEIGHBOURING cell's unanchored run and grafted its head (the clinic
+    ///     regression). Same-cell-bracketed orphans keep the wide
+    ///     <see cref="AuthorityOffsetClusterWindowBytes" /> window.
+    /// </summary>
+    private const long MaxAccretionStepBytes = 2048;
 
     private static IEnumerable<List<PlacedReference>> BuildPlacedOffsetClusters(
         IReadOnlyList<PlacedReference> placedReferences)

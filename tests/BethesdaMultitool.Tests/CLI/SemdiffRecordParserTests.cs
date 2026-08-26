@@ -16,7 +16,7 @@ public class SemdiffRecordParserTests
     #region ParseRecordsWithSubrecords — Big-Endian
 
     [Fact]
-    public void ParseRecords_SingleRecord_BE_ParsesCorrectly()
+    public void ParseRecords_SingleRecord_BE_ReadsHeaderAndSubrecords()
     {
         var edidData = Encoding.ASCII.GetBytes("TestNPC\0");
         var data = BuildMinimalRecordBE("NPC_", 0x0017B37C, "EDID", edidData);
@@ -125,7 +125,7 @@ public class SemdiffRecordParserTests
     #region ParseRecordsWithSubrecords — Little-Endian
 
     [Fact]
-    public void ParseRecords_SingleRecord_LE_ParsesCorrectly()
+    public void ParseRecords_SingleRecord_LE_ReadsHeaderAndSubrecords()
     {
         // Build an ALCH record with an EDID subrecord containing "Stimpak\0"
         var edidData = Encoding.ASCII.GetBytes("Stimpak\0");
@@ -160,7 +160,7 @@ public class SemdiffRecordParserTests
     }
 
     [Fact]
-    public void ParseRecords_TypeFilter_FiltersCorrectly()
+    public void ParseRecords_TypeFilter_KeepsOnlyTheRequestedType()
     {
         // Build two records: one ALCH, one WEAP
         var alchData = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
@@ -178,7 +178,7 @@ public class SemdiffRecordParserTests
     }
 
     [Fact]
-    public void ParseRecords_FormIdFilter_FiltersCorrectly()
+    public void ParseRecords_FormIdFilter_KeepsOnlyTheRequestedFormId()
     {
         var rec1 = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
         var rec2 = BuildMinimalRecordLE("ALCH", 0x00020002, "EDID", [0x42, 0x00]);
@@ -225,6 +225,34 @@ public class SemdiffRecordParserTests
         // Less than 24 bytes means no record can be parsed
         var records = SemdiffRecordParser.ParseRecordsWithSubrecords(new byte[20], false, null, null);
         Assert.Empty(records);
+    }
+
+    [Fact]
+    public void ParseRecords_CorruptCompressedRecord_IsSkippedAndCounted()
+    {
+        // A record with the compressed flag (0x00040000) whose payload is not valid zlib:
+        // 4-byte decompressed size prefix followed by garbage that fails the zlib header check.
+        byte[] garbagePayload = [0x10, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+        var corrupt = new byte[24 + garbagePayload.Length];
+        WriteSig(corrupt, 0, "WEAP");
+        WriteUInt32LE(corrupt, 4, (uint)garbagePayload.Length);
+        WriteUInt32LE(corrupt, 8, 0x00040000); // compressed flag
+        WriteUInt32LE(corrupt, 12, 0x00030003);
+        Array.Copy(garbagePayload, 0, corrupt, 24, garbagePayload.Length);
+
+        var valid = BuildMinimalRecordLE("ALCH", 0x00010001, "EDID", [0x41, 0x00]);
+        var combined = new byte[corrupt.Length + valid.Length];
+        Array.Copy(corrupt, combined, corrupt.Length);
+        Array.Copy(valid, 0, combined, corrupt.Length, valid.Length);
+
+        var records = SemdiffRecordParser.ParseRecordsWithSubrecords(
+            combined, false, null, null, out var skippedCompressed);
+
+        // The corrupt record is skipped (and counted); parsing continues past it.
+        Assert.Equal(1, skippedCompressed);
+        var record = Assert.Single(records);
+        Assert.Equal("ALCH", record.Type);
+        Assert.Equal(0x00010001u, record.FormId);
     }
 
     #endregion

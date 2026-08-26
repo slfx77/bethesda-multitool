@@ -31,6 +31,8 @@ public static class DmpCommand
         command.Subcommands.Add(LeveledSpawnCensusCommand.Create());
         command.Subcommands.Add(ActorLedgerCommand.Create());
         command.Subcommands.Add(DmpGapInventoryCommand.Create());
+        command.Subcommands.Add(DmpRecoveryProbeCommand.Create());
+        command.Subcommands.Add(DmpXclcAuditCommand.Create());
         command.Subcommands.Add(BuffersCommand.Create());
         command.Subcommands.Add(CoverageCommand.Create());
         command.Subcommands.Add(ProbeShiftsCommand.Create());
@@ -281,6 +283,13 @@ public static class DmpCommand
 
     private static void HexDump(string path, string addressStr, int length)
     {
+        if (length <= 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Error: --length must be a positive byte count (got {length})[/]");
+            Environment.Exit(1);
+            return;
+        }
+
         var info = ParseDump(path);
 
         long fileOffset;
@@ -314,6 +323,29 @@ public static class DmpCommand
             }
 
             fileOffset = fo;
+
+            // Before this guard, an offset past EOF seeked beyond the file, read 0 bytes,
+            // printed nothing, and exited 0 — usually because the user pasted a virtual
+            // address without the 'va:' prefix.
+            var fileLength = new FileInfo(path).Length;
+            var resolvesAsVa = info.FindModuleByVirtualAddress(fileOffset) != null ||
+                               info.VirtualAddressToFileOffset(fileOffset) != null;
+            var classification = ClassifyBareOffset(fileOffset, fileLength, resolvesAsVa);
+            if (classification != BareOffsetClassification.InRange)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[red]Error: File offset 0x{fileOffset:X8} is beyond the end of the dump " +
+                    $"({fileLength:N0} bytes)[/]");
+                if (classification == BareOffsetClassification.OutOfRangeLikelyVirtualAddress)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]0x{fileOffset:X8} looks like a virtual address — retry with the " +
+                        $"'va:' prefix: hexdump <dump> va:0x{fileOffset:X8}[/]");
+                }
+
+                Environment.Exit(1);
+                return;
+            }
 
             var va = info.FileOffsetToVirtualAddress(fileOffset);
             if (va != null)
@@ -366,6 +398,32 @@ public static class DmpCommand
     }
 
     // ===== shared helpers =====
+
+    /// <summary>How a bare (non-'va:'-prefixed) hexdump address relates to the dump file.</summary>
+    internal enum BareOffsetClassification
+    {
+        InRange,
+        OutOfRange,
+        OutOfRangeLikelyVirtualAddress
+    }
+
+    /// <summary>
+    ///     Classifies a bare hexdump address against the dump file's length. Out-of-range
+    ///     values at or above 0x80000000, or that resolve through the module/region tables,
+    ///     are almost certainly virtual addresses the user forgot to prefix with 'va:'.
+    /// </summary>
+    internal static BareOffsetClassification ClassifyBareOffset(
+        long offset, long fileLength, bool resolvesAsVirtualAddress)
+    {
+        if (offset >= 0 && offset < fileLength)
+        {
+            return BareOffsetClassification.InRange;
+        }
+
+        return offset >= 0x80000000L || resolvesAsVirtualAddress
+            ? BareOffsetClassification.OutOfRangeLikelyVirtualAddress
+            : BareOffsetClassification.OutOfRange;
+    }
 
     private static MinidumpInfo ParseDump(string path)
     {

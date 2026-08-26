@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     member-array-symbol resolution + union support, a condition exposes Type / Comparison Value / Function
 ///     / Parameter #1 / #2. Env-gated.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class ConditionDecodeTests
 {

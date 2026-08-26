@@ -29,8 +29,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 ///         Value shapes also vary by producer. <c>RuntimeGenericReader.ReadPointerField</c> resolves a
 ///         TESForm pointer to a boxed <see cref="uint" /> FormID, while
 ///         <c>ReadEmbeddedStruct</c> renders a struct of ≤8 bytes as an uppercase hex
-///         <see cref="string" /> and anything larger as a <c>"[TypeName, NB]"</c> descriptor that
-///         carries no data — <see cref="TryBytes" /> rejects the latter rather than emitting garbage.
+///         <see cref="string" /> and anything larger as the raw big-endian <see cref="byte" />
+///         array — <see cref="TryBytes" /> accepts both shapes.
 ///     </para>
 /// </summary>
 internal static class GenericRecordFields
@@ -110,10 +110,15 @@ internal static class GenericRecordFields
     }
 
     /// <summary>
-    ///     Resolve a raw byte payload. Accepts a real byte array, or the uppercase hex string that
-    ///     <c>RuntimeGenericReader.ReadEmbeddedStruct</c> produces for structs of ≤8 bytes.
-    ///     Descriptor placeholders for larger structs (<c>"[MOVABLE_STATIC_DATA, 16B]"</c>) carry
-    ///     no recoverable data and are rejected.
+    ///     Resolve a raw byte payload. Accepts a real byte array — which is what
+    ///     <c>RuntimeGenericReader.ReadEmbeddedStruct</c> now returns for any struct larger than
+    ///     8 bytes, and what the ESM carve path stores for an unschematized subrecord — or the
+    ///     uppercase hex string that same reader still produces for structs of ≤8 bytes.
+    ///     <para>
+    ///         Strings beginning with <c>'['</c> are rejected: that is the shape of the old
+    ///         <c>"[MOVABLE_STATIC_DATA, 16B]"</c> descriptor placeholder, which carried no data.
+    ///         The guard stays so a stale capture or a hand-built record cannot smuggle one in.
+    ///     </para>
     /// </summary>
     public static byte[]? TryBytes(GenericEsmRecord record, int expectedLength, params string[] keys)
     {
@@ -138,7 +143,7 @@ internal static class GenericRecordFields
     /// <summary>Resolve an unsigned integer field (PDB uint8/uint16/uint32 all box as their CLR type).</summary>
     public static uint? TryUInt(GenericEsmRecord record, params string[] keys)
     {
-        return Find(record, keys) switch
+        return Unwrap(Find(record, keys)) switch
         {
             uint u => u,
             ushort us => us,
@@ -152,6 +157,60 @@ internal static class GenericRecordFields
             bool flag => flag ? 1u : 0u,
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Resolve a text field. <c>RuntimeGenericReader.ReadEmbeddedStruct</c> resolves a
+    ///     <c>BSStringT&lt;char&gt;</c> member to the real string, and the ESM carve path stores the
+    ///     null-terminated text of a known string subrecord (ICON/DESC/...) the same way, so both
+    ///     producers land on <see cref="string" />.
+    ///     <para>
+    ///         Returns null for an empty or whitespace-only value so callers omit the subrecord
+    ///         rather than writing a bare null terminator, and rejects the leading-<c>'['</c>
+    ///         descriptor shape for the same reason <see cref="TryBytes" /> does.
+    ///     </para>
+    /// </summary>
+    public static string? TryString(GenericEsmRecord record, params string[] keys)
+    {
+        return Find(record, keys) switch
+        {
+            string s when !string.IsNullOrWhiteSpace(s) && !s.StartsWith('[') => s,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    ///     Resolve a floating-point field. <c>RuntimeGenericReader.ReadValidatedFloat</c> already
+    ///     rejects non-finite and subnormal reads, so anything that arrives here as a
+    ///     <see cref="float" /> is a plausible captured value; non-finite values are re-checked
+    ///     anyway because the ESM carve path does not apply that filter.
+    /// </summary>
+    public static float? TryFloat(GenericEsmRecord record, params string[] keys)
+    {
+        var value = Unwrap(Find(record, keys)) switch
+        {
+            float f => f,
+            double d => (float)d,
+            _ => (float?)null
+        };
+
+        return value is { } v && float.IsFinite(v) ? v : null;
+    }
+
+    /// <summary>
+    ///     Unwrap the single-field decode dictionary the ESM carve path stores for a scalar
+    ///     subrecord. <c>MiscRecordHandler.ParseGenericRecords</c> runs every recognized subrecord
+    ///     through <c>SubrecordSchemaView</c>, so a one-field schema such as IDLF's
+    ///     <c>UInt8("Flags")</c> or IDLT's <c>Simple4Byte</c> arrives boxed inside a dictionary
+    ///     rather than as a bare number. Only a dictionary holding exactly one entry is unwrapped:
+    ///     with two or more there is no way to tell which field the caller meant, and guessing is
+    ///     how a wrong value reaches the plugin.
+    /// </summary>
+    private static object? Unwrap(object? value)
+    {
+        return value is IReadOnlyDictionary<string, object?> { Count: 1 } single
+            ? single.Values.First()
+            : value;
     }
 
     private static bool IsHex(string value)

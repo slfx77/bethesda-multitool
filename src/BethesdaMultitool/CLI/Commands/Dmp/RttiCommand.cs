@@ -12,6 +12,14 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 /// </summary>
 public static class RttiCommand
 {
+    // Brackets around <va2> are doubled so Spectre renders them literally instead of
+    // parsing "[<va2> ...]" as a style tag (which throws "Could not find color or style").
+    internal const string UsageTextNoInput =
+        "[yellow]Usage:[/] rtti <dmp> <va> [[<va2> ...]] or rtti <dmp> --census or rtti --census-all";
+
+    internal const string UsageTextNoAction =
+        "[yellow]Usage:[/] rtti <dmp> <va> [[<va2> ...]] or rtti <dmp> --scan 0xSTART-0xEND or rtti <dmp> --census";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -46,6 +54,12 @@ public static class RttiCommand
         {
             Description = "Full heap census: discover all C++ classes and instance counts"
         };
+        var allRegionsOpt = new Option<bool>("--all-regions")
+        {
+            Description =
+                "Include memory regions outside the 0x40000000-0x50000000 heap window in the census — " +
+                "slower, instance counts include code references"
+        };
         var censusAllOpt = new Option<bool>("--census-all")
         {
             Description = "Run census across all DMP files in a directory and aggregate results"
@@ -66,26 +80,27 @@ public static class RttiCommand
         command.Options.Add(scanOpt);
         command.Options.Add(strideOpt);
         command.Options.Add(censusOpt);
+        command.Options.Add(allRegionsOpt);
         command.Options.Add(censusAllOpt);
         command.Options.Add(dirOpt);
         command.Options.Add(outputOpt);
 
         command.SetAction(parseResult =>
         {
+            var allRegions = parseResult.GetValue(allRegionsOpt);
             var censusAll = parseResult.GetValue(censusAllOpt);
             if (censusAll)
             {
                 var dir = parseResult.GetValue(dirOpt)!;
                 var output = parseResult.GetValue(outputOpt)!;
-                ExecuteCensusAll(dir, output);
+                ExecuteCensusAll(dir, output, allRegions);
                 return;
             }
 
             var input = parseResult.GetValue(inputArg);
             if (string.IsNullOrEmpty(input))
             {
-                AnsiConsole.MarkupLine(
-                    "[yellow]Usage:[/] rtti <dmp> <va> [<va2> ...] or rtti <dmp> --census or rtti --census-all");
+                AnsiConsole.MarkupLine(UsageTextNoInput);
                 return;
             }
 
@@ -93,13 +108,14 @@ public static class RttiCommand
             var scan = parseResult.GetValue(scanOpt);
             var stride = parseResult.GetValue(strideOpt);
             var census = parseResult.GetValue(censusOpt);
-            Execute(input, addresses, scan, stride, census);
+            Execute(input, addresses, scan, stride, census, allRegions);
         });
 
         return command;
     }
 
-    private static void Execute(string input, string[] addresses, string? scanRange, int stride, bool census)
+    private static void Execute(
+        string input, string[] addresses, string? scanRange, int stride, bool census, bool includeAllRegions)
     {
         if (!File.Exists(input))
         {
@@ -119,15 +135,14 @@ public static class RttiCommand
 
         if (addresses.Length == 0 && scanRange == null && !census)
         {
-            AnsiConsole.MarkupLine(
-                "[yellow]Usage:[/] rtti <dmp> <va> [<va2> ...] or rtti <dmp> --scan 0xSTART-0xEND or rtti <dmp> --census");
+            AnsiConsole.MarkupLine(UsageTextNoAction);
             return;
         }
 
         // Census mode
         if (census)
         {
-            ExecuteCensus(reader);
+            ExecuteCensus(reader, includeAllRegions);
             return;
         }
 
@@ -188,7 +203,7 @@ public static class RttiCommand
         }
     }
 
-    private static void ExecuteCensus(RttiReader reader)
+    private static void ExecuteCensus(RttiReader reader, bool includeAllRegions)
     {
         List<CensusEntry> entries = [];
 
@@ -201,7 +216,7 @@ public static class RttiCommand
                     {
                         ctx.Status(
                             $"[blue]Scanning heap regions[/] {scanned}/{total} ({bytes / (1024 * 1024)} MB)");
-                    });
+                    }, includeAllRegions);
                 });
 
         if (entries.Count == 0)
@@ -274,7 +289,7 @@ public static class RttiCommand
         AnsiConsole.Write(table);
     }
 
-    private static void ExecuteCensusAll(string directory, string outputPath)
+    private static void ExecuteCensusAll(string directory, string outputPath, bool includeAllRegions)
     {
         if (!Directory.Exists(directory))
         {
@@ -332,7 +347,7 @@ public static class RttiCommand
                         var entries = reader.RunCensus((scanned, total, _) =>
                         {
                             task.Value = total > 0 ? (double)scanned / total * 100 : 0;
-                        });
+                        }, includeAllRegions);
 
                         var totalInstances = entries.Sum(e => e.InstanceCount);
 

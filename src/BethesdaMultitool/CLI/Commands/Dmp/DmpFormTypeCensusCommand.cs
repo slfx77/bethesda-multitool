@@ -22,7 +22,10 @@ internal static class DmpFormTypeCensusCommand
 {
     public static Command Create()
     {
-        var dirArg = new Argument<string>("directory") { Description = "Directory containing .dmp files" };
+        var inputArg = new Argument<string>("input")
+        {
+            Description = "Path to a minidump file or a directory of .dmp files"
+        };
         var verboseOpt = new Option<bool>("--verbose", "-v")
         {
             Description = "Show per-DMP detail table",
@@ -37,38 +40,35 @@ internal static class DmpFormTypeCensusCommand
 
         var command = new Command("formtype-census",
             "Audit FormType byte distributions across all DMP files to detect enum drift");
-        command.Arguments.Add(dirArg);
+        command.Arguments.Add(inputArg);
         command.Options.Add(verboseOpt);
         command.Options.Add(csvOpt);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            var dir = parseResult.GetValue(dirArg)!;
+            var input = parseResult.GetValue(inputArg)!;
             var verbose = parseResult.GetValue(verboseOpt);
             var csv = parseResult.GetValue(csvOpt);
-            await RunAsync(dir, verbose, csv, cancellationToken);
+            await RunAsync(input, verbose, csv, cancellationToken);
         });
 
         return command;
     }
 
     private static async Task RunAsync(
-        string dirPath, bool verbose, string? csvDir, CancellationToken cancellationToken)
+        string inputPath, bool verbose, string? csvDir, CancellationToken cancellationToken)
     {
-        if (!Directory.Exists(dirPath))
+        var dmpFiles = CliHelpers.DiscoverDumps(
+            inputPath, SearchOption.TopDirectoryOnly, orderByLastWriteTime: true);
+        if (dmpFiles == null)
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Directory not found: {dirPath}");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Path not found: {inputPath}");
             return;
         }
 
-        var dmpFiles = Directory.GetFiles(dirPath, "*.dmp")
-            .Where(f => !Path.GetFileName(f).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(f => new FileInfo(f).LastWriteTimeUtc)
-            .ToList();
-
         if (dmpFiles.Count == 0)
         {
-            AnsiConsole.MarkupLine($"[red]No .dmp files found in:[/] {dirPath}");
+            AnsiConsole.MarkupLine($"[red]No .dmp files found in:[/] {inputPath}");
             return;
         }
 
@@ -126,7 +126,12 @@ internal static class DmpFormTypeCensusCommand
 
         if (!string.IsNullOrEmpty(csvDir))
         {
-            await WriteCsvAsync(csvDir, dirPath, entries, cancellationToken);
+            // BuildDiscovery wants the directory of dumps; when the input was a single
+            // file, hand it that file's directory instead of the file path itself.
+            var dumpsDir = File.Exists(inputPath)
+                ? Path.GetDirectoryName(Path.GetFullPath(inputPath))!
+                : inputPath;
+            await WriteCsvAsync(csvDir, dumpsDir, entries, cancellationToken);
         }
     }
 

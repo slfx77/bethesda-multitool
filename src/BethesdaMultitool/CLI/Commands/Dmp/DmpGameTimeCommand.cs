@@ -57,7 +57,14 @@ internal static class DmpGameTimeCommand
 
     private static void Run(string input, string format)
     {
-        var paths = DiscoverDumps(input);
+        var paths = CliHelpers.DiscoverDumps(input, SearchOption.AllDirectories);
+        if (paths == null)
+        {
+            AnsiConsole.MarkupLine($"[red]Error: Path not found: {Markup.Escape(input)}[/]");
+            Environment.Exit(1);
+            return;
+        }
+
         if (paths.Count == 0)
         {
             AnsiConsole.MarkupLine($"[red]Error: No .dmp files found at: {Markup.Escape(input)}[/]");
@@ -90,27 +97,6 @@ internal static class DmpGameTimeCommand
         {
             WriteTable(ordered);
         }
-    }
-
-    private static List<string> DiscoverDumps(string input)
-    {
-        if (File.Exists(input))
-        {
-            return [Path.GetFullPath(input)];
-        }
-
-        if (!Directory.Exists(input))
-        {
-            AnsiConsole.MarkupLine($"[red]Error: Path not found: {Markup.Escape(input)}[/]");
-            Environment.Exit(1);
-            return [];
-        }
-
-        return Directory.EnumerateFiles(input, "*.dmp", SearchOption.AllDirectories)
-            .Where(p => !Path.GetFileName(p).Contains("hangdump", StringComparison.OrdinalIgnoreCase))
-            .Select(Path.GetFullPath)
-            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-            .ToList();
     }
 
     private static DumpGameTime ReadDump(string path)

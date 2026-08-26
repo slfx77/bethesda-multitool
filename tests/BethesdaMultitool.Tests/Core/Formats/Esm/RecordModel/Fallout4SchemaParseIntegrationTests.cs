@@ -16,29 +16,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     extractor + .STRINGS/.ILSTRINGS join still produce browsable records and grouped dialogue. Skipped
 ///     when Fallout4.esm isn't installed.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class Fallout4SchemaParseIntegrationTests
 {
-    private static string? ResolveFallout4Esm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Fallout4.esm")))
-        {
-            return Path.Combine(root, "Fallout4.esm");
-        }
-
-        string?[] candidates =
-        [
-            RealAssetPaths.SteamGameFile("Fallout 4", @"Data\Fallout4.esm"),
-            RealAssetPaths.SteamGameFile("Fallout 4", @"Data\Fallout4.esm")
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
     [Fact]
     public async Task Fallout4_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
-        var esm = ResolveFallout4Esm();
+        var esm = RealAssetPaths.Masters.Fallout4();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Fallout4.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 4).");
@@ -66,7 +51,7 @@ public class Fallout4SchemaParseIntegrationTests
     [Fact]
     public async Task Fallout4_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
-        var esm = ResolveFallout4Esm();
+        var esm = RealAssetPaths.Masters.Fallout4();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Fallout4.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 4).");
@@ -102,7 +87,7 @@ public class Fallout4SchemaParseIntegrationTests
         // Exact retail FormIDs and their authored relationship cannot be replaced by a synthetic
         // fixture without ceasing to be the requested retail oracle. Keep this coverage inside the
         // grandfathered, sequential Bucket-B class and reuse its cache-owned full-master load.
-        var esm = ResolveFallout4Esm();
+        var esm = RealAssetPaths.Masters.Fallout4();
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Fallout4.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 4).");
