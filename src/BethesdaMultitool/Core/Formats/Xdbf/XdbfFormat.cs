@@ -15,6 +15,12 @@ public sealed class XdbfFormat : FileFormatBase
     public override int MinSize => 24;
     public override int MaxSize => 10 * 1024 * 1024;
 
+    /// <summary>
+    ///     Window matches MaxSize so the boundary scan can actually reach the next
+    ///     signature instead of collapsing to the window edge.
+    /// </summary>
+    public override int ParseWindowSize => 10 * 1024 * 1024;
+
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [
         new()
@@ -58,18 +64,26 @@ public sealed class XdbfFormat : FileFormatBase
             const int defaultSize = 512 * 1024;
 
             var estimatedSize = SignatureBoundaryScanner.FindBoundary(
-                data, offset, minSize, maxScan, defaultSize,
+                data, offset, minSize, maxScan, defaultSize, out var usedDefaultSize,
                 "XDBF"u8, false);
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["version"] = version,
+                ["entryCount"] = entryCount
+            };
+
+            if (usedDefaultSize)
+            {
+                metadata["boundaryFallback"] = true;
+                metadata["boundaryFallbackReason"] = "no boundary signature found; default size used";
+            }
 
             return new ParseResult
             {
                 Format = "XDBF",
                 EstimatedSize = estimatedSize,
-                Metadata = new Dictionary<string, object>
-                {
-                    ["version"] = version,
-                    ["entryCount"] = entryCount
-                }
+                Metadata = metadata
             };
         }
         catch (Exception ex)

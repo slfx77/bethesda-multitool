@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Minidump;
@@ -44,8 +45,18 @@ public static class MinidumpParser
         var numberOfStreams = BinaryUtils.ReadUInt32LE(headerBuffer, 8);
         var streamDirectoryRva = BinaryUtils.ReadUInt32LE(headerBuffer, 12);
 
-        if (numberOfStreams == 0 || numberOfStreams > 100 || streamDirectoryRva == 0)
+        if (numberOfStreams == 0 || streamDirectoryRva == 0)
         {
+            return new MinidumpInfo { IsValid = false };
+        }
+
+        // Bound the directory by what the file can physically hold instead of a fixed stream cap —
+        // a fixed cap silently invalidated unusual-but-well-formed dumps.
+        if (streamDirectoryRva + numberOfStreams * 12L > stream.Length)
+        {
+            Logger.Instance.Warn(
+                "Minidump declares {0:N0} streams at RVA 0x{1:X} but the file is only {2:N0} bytes — treating as invalid",
+                numberOfStreams, streamDirectoryRva, stream.Length);
             return new MinidumpInfo { IsValid = false };
         }
 
@@ -104,12 +115,22 @@ public static class MinidumpParser
         }
 
         var numberOfModules = BinaryUtils.ReadUInt32LE(countBuffer);
-        if (numberOfModules == 0 || numberOfModules > 1000)
+        if (numberOfModules == 0)
         {
             return;
         }
 
         const int moduleEntrySize = 108;
+
+        // Bound by file capacity instead of a fixed count cap: the old >1000 guard returned ZERO
+        // modules with no diagnostic, and a corrupt count is detectable from the file length anyway.
+        if (stream.Position + numberOfModules * (long)moduleEntrySize > stream.Length)
+        {
+            Logger.Instance.Warn(
+                "Minidump module list declares {0:N0} modules but the file cannot hold them — module list skipped",
+                numberOfModules);
+            return;
+        }
         var modulesBuffer = ArrayPool<byte>.Shared.Rent((int)(numberOfModules * moduleEntrySize));
 
         try
@@ -149,12 +170,23 @@ public static class MinidumpParser
         var numberOfRanges = BinaryUtils.ReadUInt64LE(headerBuffer);
         var baseRva = (long)BinaryUtils.ReadUInt64LE(headerBuffer, 8);
 
-        if (numberOfRanges == 0 || numberOfRanges > 10000)
+        if (numberOfRanges == 0)
         {
             return;
         }
 
         const int descriptorSize = 16;
+
+        // Bound by file capacity instead of the old fixed >10,000 cap, which silently produced ZERO
+        // regions (killing all VA-based analysis) — the corpus already reaches 4,236 ranges and a
+        // larger devkit dump would have crossed the cap.
+        if (stream.Position + (long)numberOfRanges * descriptorSize > stream.Length)
+        {
+            Logger.Instance.Warn(
+                "Minidump Memory64List declares {0:N0} ranges but the file cannot hold the descriptors — memory regions skipped",
+                numberOfRanges);
+            return;
+        }
         var descriptorsSize = (int)(numberOfRanges * descriptorSize);
         var descriptorsBuffer = ArrayPool<byte>.Shared.Rent(descriptorsSize);
 
@@ -165,7 +197,10 @@ public static class MinidumpParser
                 return;
             }
 
+            var fileLength = stream.Length;
             var currentFileOffset = baseRva;
+            var truncatedRegions = 0;
+            long unbackedBytes = 0;
 
             for (var i = 0; i < (int)numberOfRanges; i++)
             {
@@ -173,14 +208,41 @@ public static class MinidumpParser
                 var virtualAddress = (long)BinaryUtils.ReadUInt64LE(descriptorsBuffer, offset);
                 var regionSize = (long)BinaryUtils.ReadUInt64LE(descriptorsBuffer, offset + 8);
 
+                // Clamp regions whose declared extent runs past EOF (truncated dump) — scanning the
+                // declared size would read bytes the file does not hold. File offsets keep advancing
+                // by the DECLARED size so any later descriptors stay spec-consistent.
+                var availableBytes = fileLength - currentFileOffset;
+                var storedSize = regionSize;
+                if (availableBytes <= 0)
+                {
+                    truncatedRegions++;
+                    unbackedBytes += regionSize;
+                    currentFileOffset += regionSize;
+                    continue;
+                }
+
+                if (regionSize > availableBytes)
+                {
+                    truncatedRegions++;
+                    unbackedBytes += regionSize - availableBytes;
+                    storedSize = availableBytes;
+                }
+
                 result.MemoryRegions.Add(new MinidumpMemoryRegion
                 {
                     VirtualAddress = virtualAddress,
-                    Size = regionSize,
+                    Size = storedSize,
                     FileOffset = currentFileOffset
                 });
 
                 currentFileOffset += regionSize;
+            }
+
+            if (truncatedRegions > 0)
+            {
+                Logger.Instance.Warn(
+                    "Minidump is truncated: {0:N0} region(s) extend past EOF ({1:N0} declared bytes not backed by the file)",
+                    truncatedRegions, unbackedBytes);
             }
         }
         finally

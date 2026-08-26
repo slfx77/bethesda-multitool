@@ -144,5 +144,59 @@ public class PngFormatTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public void Parse_IendBeyondOld64KWindow_FindsTrueSizeInWideSpan()
+    {
+        // Arrange - IEND at ~200KB, unreachable under the old 64KB parse window
+        const int iendPosition = 200 * 1024;
+        var data = new byte[300 * 1024];
+        var png = CreateMinimalPng();
+        Array.Copy(png, data, png.Length - 12); // signature + IHDR, no IEND
+        data[iendPosition] = 0x49; // "IEND"
+        data[iendPosition + 1] = 0x45;
+        data[iendPosition + 2] = 0x4E;
+        data[iendPosition + 3] = 0x44;
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert - true size found (IEND position + type + CRC), no fallback flagged
+        Assert.NotNull(result);
+        Assert.Equal(iendPosition + 8, result.EstimatedSize);
+        Assert.False(result.Metadata.ContainsKey("boundaryFallback"));
+    }
+
+    [Fact]
+    public void Parse_NoIendButValidIhdr_ReturnsEstimateWithBoundaryFallback()
+    {
+        // Arrange - valid signature + IHDR, IEND never appears in the span
+        var data = new byte[128 * 1024];
+        var png = CreateMinimalPng();
+        Array.Copy(png, data, png.Length - 12); // signature + IHDR, no IEND
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert - the file is no longer silently dropped
+        Assert.NotNull(result);
+        Assert.Equal(data.Length, result.EstimatedSize);
+        Assert.True(Assert.IsType<bool>(result.Metadata["boundaryFallback"]));
+        Assert.Equal("IEND not found in parse window", result.Metadata["boundaryFallbackReason"]);
+    }
+
+    [Fact]
+    public void Parse_NoIendAndNoValidIhdr_ReturnsNull()
+    {
+        // Arrange - PNG signature followed by garbage (no IHDR tag, no IEND)
+        var data = new byte[1024];
+        new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(data, 0);
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert - invalid headers still return null
+        Assert.Null(result);
+    }
+
     #endregion
 }

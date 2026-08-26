@@ -64,9 +64,24 @@ public sealed class DdsFormat : FileFormatBase
                 return null;
             }
 
-            var fourccStr = Encoding.ASCII.GetString(fourcc).TrimEnd('\0');
-            var bytesPerBlock = GetBytesPerBlock(fourccStr);
-            var estimatedSize = CalculateMipmapSize((int)width, (int)height, (int)mipmapCount, bytesPerBlock);
+            var fourccStr = Encoding.ASCII.GetString(fourcc).TrimEnd('\0', ' ');
+            var pfFlags = endianness == "big"
+                ? BinaryUtils.ReadUInt32BE(headerData, 80)
+                : BinaryUtils.ReadUInt32LE(headerData, 80);
+            var rgbBitCount = endianness == "big"
+                ? BinaryUtils.ReadUInt32BE(headerData, 88)
+                : BinaryUtils.ReadUInt32LE(headerData, 88);
+
+            // Uncompressed pixel formats (no DDPF_FOURCC, e.g. 16-bpp font atlases) size by
+            // rgbBitCount — the block-compression math halves/quarters them (measured: a 512x512
+            // 16-bpp atlas carved at exactly 50%).
+            const uint ddpfFourCc = 0x4;
+            var isUncompressed = (pfFlags & ddpfFourCc) == 0 &&
+                                 string.IsNullOrEmpty(fourccStr) &&
+                                 rgbBitCount is > 0 and <= 128;
+            var estimatedSize = isUncompressed
+                ? CalculateUncompressedSize((int)width, (int)height, (int)mipmapCount, (int)rgbBitCount)
+                : CalculateMipmapSize((int)width, (int)height, (int)mipmapCount, GetBytesPerBlock(fourccStr));
 
             // Try to find texture path before the DDS header
             var texturePath = TexturePathExtractor.FindPrecedingDdsPath(data, offset);
@@ -129,6 +144,22 @@ public sealed class DdsFormat : FileFormatBase
             "ATI1" or "BC4U" or "BC4S" => 8,
             _ => 16 // DXT2-5, ATI2, BC5U, BC5S, and others default to 16
         };
+    }
+
+    private static int CalculateUncompressedSize(int width, int height, int mipmapCount, int bitsPerPixel)
+    {
+        var estimatedSize = 0;
+        var mipWidth = width;
+        var mipHeight = height;
+        var levels = Math.Max(1, Math.Min(mipmapCount, 13));
+        for (var i = 0; i < levels; i++)
+        {
+            estimatedSize += Math.Max(1, mipWidth * mipHeight * bitsPerPixel / 8);
+            mipWidth = Math.Max(1, mipWidth / 2);
+            mipHeight = Math.Max(1, mipHeight / 2);
+        }
+
+        return estimatedSize;
     }
 
     private static int CalculateMipmapSize(int width, int height, int mipmapCount, int bytesPerBlock)

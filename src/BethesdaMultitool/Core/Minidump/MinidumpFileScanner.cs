@@ -123,9 +123,11 @@ internal sealed class MinidumpFileScanner
             while (offset < fileSize)
             {
                 var toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
-                accessor.ReadArray(offset, buffer, 0, toRead);
+                // Bound the span by the ACTUAL read count — the pooled buffer keeps the previous
+                // chunk's bytes, so a short read would otherwise produce phantom matches.
+                var bytesRead = accessor.ReadArray(offset, buffer, 0, toRead);
 
-                var span = buffer.AsSpan(0, toRead);
+                var span = buffer.AsSpan(0, bytesRead);
                 var matches = _signatureMatcher.Search(span, offset);
 
                 foreach (var (name, _, position) in matches)
@@ -175,9 +177,11 @@ internal sealed class MinidumpFileScanner
                 while (regionOffset < regionEnd)
                 {
                     var toRead = (int)Math.Min(chunkSize + maxPatternLength, regionEnd - regionOffset);
-                    accessor.ReadArray(regionOffset, buffer, 0, toRead);
+                    // Bound by the actual read count — a stale pooled buffer must not yield phantom
+                    // matches when the file ends inside the region.
+                    var bytesRead = accessor.ReadArray(regionOffset, buffer, 0, toRead);
 
-                    var span = buffer.AsSpan(0, toRead);
+                    var span = buffer.AsSpan(0, bytesRead);
                     var chunkMatches = _signatureMatcher.Search(span, regionOffset);
 
                     foreach (var (name, _, position) in chunkMatches)

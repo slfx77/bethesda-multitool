@@ -27,18 +27,31 @@ internal static class CarveExtractor
         var actualPreRead = (int)Math.Min(preReadSize, offset);
         var readStart = offset - actualPreRead;
 
-        var headerScanSize = signatureId.StartsWith("ddx", StringComparison.OrdinalIgnoreCase)
-            ? Math.Min(format.MaxSize, 512 * 1024) // 512KB for DDX boundary scanning
-            : Math.Min(format.MaxSize, 64 * 1024); // 64KB for other types
+        var headerScanSize = Math.Min(format.MaxSize, format.ParseWindowSize);
 
         var headerSize = (int)Math.Min(headerScanSize, fileSize - offset);
+
+        // Clamp the parse window to the flat-readable run of memory regions: a flat read
+        // is only VA-correct while successive regions are contiguous in BOTH file offset
+        // and virtual address. Past that point the file bytes belong to a different VA
+        // range and would feed cross-region garbage to the boundary scanners. Cross-region
+        // payload reassembly still happens later in ReadFileData; this only bounds the
+        // header/boundary scan. (Containing-region-only clamping regressed real DDX
+        // boundaries: dumps commonly store small regions back-to-back in file order.)
+        if (minidumpInfo is { IsValid: true })
+        {
+            headerSize = ClampToFlatReadableRun(minidumpInfo, offset, headerSize);
+        }
+
         var totalRead = actualPreRead + headerSize;
         var buffer = ArrayPool<byte>.Shared.Rent(totalRead);
 
         try
         {
-            accessor.ReadArray(readStart, buffer, 0, totalRead);
-            var span = buffer.AsSpan(0, totalRead);
+            // Pooled buffer: bound the span by the ACTUAL read count so stale bytes from a previous
+            // rental can never reach a parser.
+            var bytesRead = accessor.ReadArray(readStart, buffer, 0, totalRead);
+            var span = buffer.AsSpan(0, bytesRead);
 
             var sigOffset = actualPreRead;
 
@@ -80,6 +93,39 @@ internal static class CarveExtractor
     }
 
     /// <summary>
+    ///     Clamp a flat read starting at <paramref name="offset" /> to the run of memory
+    ///     regions that are contiguous in both file offset and virtual address, so the
+    ///     bytes handed to Parse match the VA view. Returns <paramref name="headerSize" />
+    ///     unchanged when the offset is not inside any region.
+    /// </summary>
+    private static int ClampToFlatReadableRun(MinidumpInfo minidumpInfo, long offset, int headerSize)
+    {
+        var region = minidumpInfo.FindRegionByFileOffset(offset);
+        if (region == null)
+        {
+            return headerSize;
+        }
+
+        var flatFileEnd = region.FileOffset + region.Size;
+        var vaEnd = region.VirtualAddress + region.Size;
+        var windowEnd = offset + headerSize;
+
+        while (flatFileEnd < windowEnd)
+        {
+            var next = minidumpInfo.GetRegionsInRange(vaEnd, vaEnd + 1).FirstOrDefault();
+            if (next == null || next.VirtualAddress != vaEnd || next.FileOffset != flatFileEnd)
+            {
+                break; // VA gap or file discontinuity - a flat read stops being VA-correct here
+            }
+
+            flatFileEnd += next.Size;
+            vaEnd += next.Size;
+        }
+
+        return (int)Math.Min(headerSize, flatFileEnd - offset);
+    }
+
+    /// <summary>
     ///     Read file data, using VA-aware reassembly for minidumps or flat read otherwise.
     /// </summary>
     private static (byte[] data, bool isTruncated, double coverage) ReadFileData(
@@ -108,8 +154,7 @@ internal static class CarveExtractor
                     var bufferOffset = (int)(overlapStart - startVa);
                     var regionFileOffset = region.FileOffset + (overlapStart - region.VirtualAddress);
 
-                    accessor.ReadArray(regionFileOffset, fileData, bufferOffset, overlapSize);
-                    bytesPresent += overlapSize;
+                    bytesPresent += accessor.ReadArray(regionFileOffset, fileData, bufferOffset, overlapSize);
                 }
 
                 var coverage = adjustedSize > 0 ? (double)bytesPresent / adjustedSize : 0;
@@ -119,8 +164,8 @@ internal static class CarveExtractor
 
         // Not a valid minidump or VA lookup failed - flat read (current behavior)
         var flatData = new byte[adjustedSize];
-        accessor.ReadArray(adjustedOffset, flatData, 0, adjustedSize);
-        return (flatData, false, 1.0);
+        var flatRead = accessor.ReadArray(adjustedOffset, flatData, 0, adjustedSize);
+        return (flatData, flatRead < adjustedSize, adjustedSize > 0 ? (double)flatRead / adjustedSize : 0);
     }
 
     private static (int leadingBytes, string? customFilename, string? originalPath, Dictionary<string, object>? metadata
@@ -173,12 +218,29 @@ internal static class CarveExtractor
         var filename = customFilename ?? $"{offset:X8}";
         var outputFile = Path.Combine(typePath, $"{filename}{extension}");
 
-        var counter = 1;
-        while (File.Exists(outputFile))
+        // Reserve the name ATOMICALLY. A check-then-use `while (File.Exists(...))` loop races
+        // under parallel extraction: two workers both observe "_2 is free", both claim it, one
+        // write loses, and the writer's retry path renames the loser to a GUID — while the
+        // manifest has already recorded the name the caller asked for. Manifest and disk then
+        // disagree. Whoever wins CreateNew owns the name; the real write overwrites the
+        // zero-byte placeholder.
+        const int maxDedupeAttempts = 10_000;
+        for (var counter = 1; counter <= maxDedupeAttempts; counter++)
         {
-            outputFile = Path.Combine(typePath, $"{filename}_{counter++}{extension}");
+            try
+            {
+                using var reservation = new FileStream(
+                    outputFile, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                return outputFile;
+            }
+            catch (IOException)
+            {
+                outputFile = Path.Combine(typePath, $"{filename}_{counter}{extension}");
+            }
         }
 
-        return outputFile;
+        // Pathological collision count: fall back to a name that cannot collide. Still returned
+        // to the caller, so the manifest records what actually gets written.
+        return Path.Combine(typePath, $"{filename}_{Guid.NewGuid():N}{extension}");
     }
 }

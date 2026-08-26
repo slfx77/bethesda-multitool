@@ -322,7 +322,11 @@ internal static class DmpGapRecoveryScanner
         Dictionary<uint, (uint TopicFormId, uint QuestFormId)> dialogueParentage,
         List<DmpGapRecoveryCandidate> candidates)
     {
-        var firstAligned = (int)((4 - (gap.FileOffset & 3)) & 3);
+        // Vtable pointers are 4-aligned in VIRTUAL address space, and file offset ≢ VA (mod 4) when
+        // the dump's Memory64 BaseRva is not 4-aligned (all Debug-era corpus dumps: BaseRva ≡ 2).
+        // Anchoring the stride on the file offset probed only positions a vtable can never occupy.
+        var alignmentAnchor = gap.VirtualAddress ?? gap.FileOffset;
+        var firstAligned = (int)((4 - (alignmentAnchor & 3)) & 3);
         for (var i = firstAligned; i <= buffer.Length - 16; i += 4)
         {
             var fileOffset = gap.FileOffset + i;

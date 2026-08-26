@@ -48,6 +48,14 @@ public interface IFileFormat
     int MaxSize { get; }
 
     /// <summary>
+    ///     Size in bytes of the parse window handed to <see cref="Parse" /> during carving.
+    ///     Formats that scan for boundary tokens (DDX, XDBF) or terminator chunks (PNG)
+    ///     override this with a larger window. The carver clamps the window at the
+    ///     containing memory region's end for minidumps, and at end-of-file otherwise.
+    /// </summary>
+    int ParseWindowSize => 64 * 1024;
+
+    /// <summary>
     ///     Whether to show in UI filter checkboxes.
     /// </summary>
     bool ShowInFilterUI { get; }

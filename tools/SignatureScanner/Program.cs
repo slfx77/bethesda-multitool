@@ -282,14 +282,14 @@ internal static class Program
         AnsiConsole.MarkupLine($"[dim]Searching for {signatures.Count} signatures, max {maxMatches} matches each[/]");
 
         // Build Aho-Corasick matcher
-        var matcher = new AhoCorasick();
+        var matcher = new SignatureMatcher();
         foreach (var sig in signatures)
         {
             matcher.AddPattern(sig.Name, sig.Pattern);
         }
         matcher.Build();
 
-        // Read and scan dump
+        // Read and scan dump (indexer assignment tolerates duplicate signature names)
         var results = new Dictionary<string, List<long>>();
         foreach (var sig in signatures)
         {
@@ -302,43 +302,40 @@ internal static class Program
                 var task = ctx.AddTask("[green]Scanning dump[/]");
 
                 const int chunkSize = 64 * 1024 * 1024; // 64 MB chunks
-                var maxPatternLen = signatures.Max(s => s.Pattern.Length);
-                var overlap = maxPatternLen - 1;
+                var maxPatternLen = matcher.MaxPatternLength;
 
                 await using var stream = File.OpenRead(dump.FullName);
-                var buffer = new byte[chunkSize + overlap];
+                var fileLength = stream.Length;
+                var buffer = new byte[chunkSize + maxPatternLen];
+
+                // Over-read template: each chunk reads maxPatternLen bytes past its end so
+                // boundary-spanning matches are seen, and the search gets the chunk's absolute
+                // base offset. Matches that START in the over-read tail belong to the next
+                // chunk (which re-reads that window from the stream), so they are skipped here
+                // — no carry-over of stale buffer bytes, no shifted offsets, no duplicates.
                 long offset = 0;
-                int bytesRead;
-                int carryOver = 0;
-
-                while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(carryOver, chunkSize))) > 0)
+                while (offset < fileLength)
                 {
-                    var totalBytes = carryOver + bytesRead;
-                    var matches = matcher.Search(buffer.AsSpan(0, totalBytes));
+                    stream.Position = offset;
+                    var toRead = (int)Math.Min(chunkSize + (long)maxPatternLen, fileLength - offset);
+                    await stream.ReadExactlyAsync(buffer.AsMemory(0, toRead));
 
-                    foreach (var (name, _, matchOffset) in matches)
+                    foreach (var (name, _, position) in matcher.Search(buffer.AsSpan(0, toRead), offset))
                     {
-                        var absoluteOffset = offset + matchOffset;
-                        if (results[name].Count < maxMatches)
+                        if (position >= offset + chunkSize)
                         {
-                            results[name].Add(absoluteOffset);
+                            continue; // owned by the next chunk's re-read
+                        }
+
+                        var matchList = results[name];
+                        if (matchList.Count < maxMatches)
+                        {
+                            matchList.Add(position);
                         }
                     }
 
-                    // Keep overlap for next iteration
-                    if (bytesRead == chunkSize && stream.Position < stream.Length)
-                    {
-                        Buffer.BlockCopy(buffer, chunkSize, buffer, 0, overlap);
-                        carryOver = overlap;
-                        offset += chunkSize;
-                    }
-                    else
-                    {
-                        offset += totalBytes;
-                        carryOver = 0;
-                    }
-
-                    task.Value = (double)stream.Position / stream.Length * 100;
+                    offset += chunkSize;
+                    task.Value = Math.Min((double)offset / fileLength, 1.0) * 100;
                 }
 
                 task.Value = 100;
@@ -426,7 +423,7 @@ internal static class Program
         AnsiConsole.MarkupLine($"[bold]Comparing {signatures.Count} signatures across {dumps.Length} dumps[/]");
 
         // Build matcher
-        var matcher = new AhoCorasick();
+        var matcher = new SignatureMatcher();
         foreach (var sig in signatures)
         {
             matcher.AddPattern(sig.Name, sig.Pattern);
@@ -514,39 +511,43 @@ internal static class Program
 
     private static async Task<Dictionary<string, int>> ScanDumpAsync(
         string dumpPath,
-        AhoCorasick matcher,
+        SignatureMatcher matcher,
         List<SearchSignature> signatures)
     {
-        var results = signatures.ToDictionary(s => s.Name, _ => 0);
+        // Indexer assignment (not ToDictionary, which throws) tolerates duplicate signature names.
+        var results = new Dictionary<string, int>();
+        foreach (var sig in signatures)
+        {
+            results[sig.Name] = 0;
+        }
 
         const int chunkSize = 64 * 1024 * 1024;
-        var maxPatternLen = signatures.Max(s => s.Pattern.Length);
-        var overlap = maxPatternLen - 1;
+        var maxPatternLen = matcher.MaxPatternLength;
 
         await using var stream = File.OpenRead(dumpPath);
-        var buffer = new byte[chunkSize + overlap];
-        int carryOver = 0;
-        int bytesRead;
+        var fileLength = stream.Length;
+        var buffer = new byte[chunkSize + maxPatternLen];
 
-        while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(carryOver, chunkSize))) > 0)
+        // Same over-read template as ScanHandler: matches starting in the over-read tail
+        // are counted by the next chunk's re-read, never twice.
+        long offset = 0;
+        while (offset < fileLength)
         {
-            var totalBytes = carryOver + bytesRead;
-            var matches = matcher.Search(buffer.AsSpan(0, totalBytes));
+            stream.Position = offset;
+            var toRead = (int)Math.Min(chunkSize + (long)maxPatternLen, fileLength - offset);
+            await stream.ReadExactlyAsync(buffer.AsMemory(0, toRead));
 
-            foreach (var (name, _, _) in matches)
+            foreach (var (name, _, position) in matcher.Search(buffer.AsSpan(0, toRead), offset))
             {
+                if (position >= offset + chunkSize)
+                {
+                    continue; // owned by the next chunk's re-read
+                }
+
                 results[name]++;
             }
 
-            if (bytesRead == chunkSize && stream.Position < stream.Length)
-            {
-                Buffer.BlockCopy(buffer, chunkSize, buffer, 0, overlap);
-                carryOver = overlap;
-            }
-            else
-            {
-                carryOver = 0;
-            }
+            offset += chunkSize;
         }
 
         return results;

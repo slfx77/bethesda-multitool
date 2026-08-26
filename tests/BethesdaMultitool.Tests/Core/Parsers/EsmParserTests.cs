@@ -297,7 +297,7 @@ public class EsmParserTests
     }
 
     [Fact]
-    public void ParseSubrecords_XxxxExtendedSize_HandlesCorrectly()
+    public void ParseSubrecords_XxxxExtendedSize_UsesTheExtendedLength()
     {
         // XXXX marker: sig(4) + len=4(2) + extSize(4)
         // Then: next subrecord with extended size

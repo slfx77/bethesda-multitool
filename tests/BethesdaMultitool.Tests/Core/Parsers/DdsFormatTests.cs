@@ -247,5 +247,45 @@ public class DdsFormatTests
         Assert.True(result.EstimatedSize > 32768 + 128);
     }
 
+    [Fact]
+    public void ParseHeader_Uncompressed16Bpp_SizesByRgbBitCount()
+    {
+        // A 512x512 16-bpp atlas (no FOURCC) was measured carved at exactly HALF its true size by
+        // the block-compression default — rgbBitCount must win for uncompressed pixel formats.
+        var data = CreateUncompressedDdsHeader(512, 512, rgbBitCount: 16);
+
+        var result = _parser.Parse(data);
+
+        Assert.NotNull(result);
+        Assert.Equal(512 * 512 * 2 + 128, result.EstimatedSize);
+    }
+
+    [Fact]
+    public void ParseHeader_Uncompressed32BppWithMips_SumsMipChain()
+    {
+        var data = CreateUncompressedDdsHeader(256, 256, rgbBitCount: 32, mipCount: 3);
+
+        var result = _parser.Parse(data);
+
+        Assert.NotNull(result);
+        Assert.Equal(256 * 256 * 4 + 128 * 128 * 4 + 64 * 64 * 4 + 128, result.EstimatedSize);
+    }
+
+    private static byte[] CreateUncompressedDdsHeader(int width, int height, uint rgbBitCount, int mipCount = 0)
+    {
+        var data = new byte[256];
+        "DDS "u8.CopyTo(data.AsSpan(0));
+        WriteUInt32LE(data, 4, 124);
+        WriteUInt32LE(data, 8, 0x1 | 0x2 | 0x4 | 0x1000);
+        WriteUInt32LE(data, 12, (uint)height);
+        WriteUInt32LE(data, 16, (uint)width);
+        WriteUInt32LE(data, 28, (uint)mipCount);
+        WriteUInt32LE(data, 76, 32); // pixel format struct size
+        WriteUInt32LE(data, 80, 0x41); // DDPF_RGB | DDPF_ALPHAPIXELS — no DDPF_FOURCC
+        // fourcc at 84 left zero (empty)
+        WriteUInt32LE(data, 88, rgbBitCount);
+        return data;
+    }
+
     #endregion
 }

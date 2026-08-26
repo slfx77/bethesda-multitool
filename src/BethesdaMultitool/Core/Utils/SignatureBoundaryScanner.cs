@@ -97,16 +97,44 @@ public static class SignatureBoundaryScanner
         ReadOnlySpan<byte> excludeSignature = default,
         bool validateRiff = true)
     {
+        return FindBoundary(data, offset, minSize, maxSize, defaultSize, out _, excludeSignature, validateRiff);
+    }
+
+    /// <summary>
+    ///     Find the boundary of a file by scanning for the next known signature,
+    ///     reporting whether the default-size fallback was used (no real boundary found).
+    /// </summary>
+    /// <param name="data">The data buffer to scan.</param>
+    /// <param name="offset">The offset where the current file starts.</param>
+    /// <param name="minSize">Minimum size before starting to scan.</param>
+    /// <param name="maxSize">Maximum size to scan.</param>
+    /// <param name="defaultSize">Default size to return if no boundary is found.</param>
+    /// <param name="usedDefaultSize">True when no boundary signature was found and the default-size path was taken.</param>
+    /// <param name="excludeSignature">Optional signature to exclude from detection.</param>
+    /// <param name="validateRiff">If true, validate RIFF headers before treating them as boundaries.</param>
+    /// <returns>The estimated file size.</returns>
+    public static int FindBoundary(
+        ReadOnlySpan<byte> data,
+        int offset,
+        int minSize,
+        int maxSize,
+        int defaultSize,
+        out bool usedDefaultSize,
+        ReadOnlySpan<byte> excludeSignature = default,
+        bool validateRiff = true)
+    {
         var boundaryOffset = validateRiff
             ? FindNextSignatureWithRiffValidation(data, offset, minSize, maxSize, excludeSignature)
             : FindNextSignature(data, offset, minSize, maxSize, excludeSignature);
 
         if (boundaryOffset > 0)
         {
+            usedDefaultSize = false;
             return boundaryOffset;
         }
 
         // No boundary found, use default but cap at available data
+        usedDefaultSize = true;
         var availableData = Math.Min(data.Length - offset, maxSize);
         return Math.Min(defaultSize, availableData);
     }

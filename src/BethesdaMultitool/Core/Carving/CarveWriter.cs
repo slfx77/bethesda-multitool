@@ -51,17 +51,17 @@ internal sealed class CarveWriter(
             isRepaired = outputData != p.Data;
         }
 
-        await WriteFileWithRetryAsync(p.OutputFile, outputData);
+        var writtenPath = await WriteFileWithRetryAsync(p.OutputFile, outputData);
         _addToManifest(new CarveEntry
         {
             FileType = p.SignatureId,
             Offset = p.Offset,
             SizeInDump = p.FileSize,
             SizeOutput = outputData.Length,
-            Filename = Path.GetFileName(p.OutputFile),
+            Filename = Path.GetFileName(writtenPath),
             OriginalPath = p.OriginalPath,
             IsPartial = p.IsTruncated,
-            Notes = BuildNotes(p.IsTruncated, p.Coverage, isRepaired),
+            Notes = BuildNotes(p.IsTruncated, p.Coverage, isRepaired, p.Metadata),
             Metadata = p.Metadata
         });
     }
@@ -85,7 +85,7 @@ internal sealed class CarveWriter(
             Path.DirectorySeparatorChar + targetFolder + Path.DirectorySeparatorChar), converter.TargetExtension);
         Directory.CreateDirectory(Path.GetDirectoryName(convertedOutputFile)!);
 
-        await WriteFileWithRetryAsync(convertedOutputFile, result.OutputData);
+        var writtenPath = await WriteFileWithRetryAsync(convertedOutputFile, result.OutputData);
 
         // Save atlas if available
         if (result.AtlasData != null && _saveAtlas)
@@ -99,32 +99,91 @@ internal sealed class CarveWriter(
             Offset = p.Offset,
             SizeInDump = p.FileSize,
             SizeOutput = result.OutputData.Length,
-            Filename = Path.GetFileName(convertedOutputFile),
+            Filename = Path.GetFileName(writtenPath),
             OriginalPath = p.OriginalPath,
             IsCompressed = true,
             ContentType = result.IsPartial ? "converted_partial" : "converted",
             IsPartial = result.IsPartial,
-            Notes = result.Notes,
+            Notes = AppendNote(result.Notes, BuildBoundaryFallbackNote(p.Metadata)),
             Metadata = p.Metadata
         });
 
         return true;
     }
 
-    private static string? BuildNotes(bool isTruncated, double coverage, bool isRepaired)
+    private static string? BuildNotes(bool isTruncated, double coverage, bool isRepaired,
+        IReadOnlyDictionary<string, object>? metadata)
     {
+        string? baseNote;
         if (isTruncated)
         {
-            return $"Memory coverage: {coverage:P0}";
+            baseNote = $"Memory coverage: {coverage:P0}";
+        }
+        else if (isRepaired)
+        {
+            baseNote = "Repaired";
+        }
+        else
+        {
+            baseNote = null;
         }
 
-        return isRepaired ? "Repaired" : null;
+        return AppendNote(baseNote, BuildBoundaryFallbackNote(metadata));
+    }
+
+    /// <summary>
+    ///     Builds the "size estimated" note when a format's Parse flagged that no real
+    ///     boundary was found and the size is a fallback estimate.
+    /// </summary>
+    private static string? BuildBoundaryFallbackNote(IReadOnlyDictionary<string, object>? metadata)
+    {
+        if (metadata == null ||
+            !metadata.TryGetValue("boundaryFallback", out var flag) ||
+            !IsTruthy(flag))
+        {
+            return null;
+        }
+
+        var note = "Size estimated (boundary fallback)";
+        if (metadata.TryGetValue("boundaryFallbackReason", out var reasonObj) &&
+            reasonObj is string { Length: > 0 } reason)
+        {
+            note = $"{note}: {reason}";
+        }
+
+        return note;
+    }
+
+    private static bool IsTruthy(object? value)
+    {
+        return value switch
+        {
+            bool b => b,
+            string s => bool.TryParse(s, out var parsed) && parsed,
+            _ => false
+        };
+    }
+
+    private static string? AppendNote(string? baseNote, string? extra)
+    {
+        if (extra == null)
+        {
+            return baseNote;
+        }
+
+        return baseNote == null ? extra : $"{baseNote}; {extra}";
     }
 
     /// <summary>
     ///     Write file with retry logic for handling concurrent access to same filename.
+    ///     <para>
+    ///         Returns the path actually written, which is NOT always the requested one: a
+    ///         collision falls back to a GUID-suffixed name. Callers must record the returned path
+    ///         in the manifest — recording the requested path instead is how manifest entries came
+    ///         to name files that do not exist on disk.
+    ///     </para>
     /// </summary>
-    private static async Task WriteFileWithRetryAsync(string outputFile, byte[] data, int maxRetries = 3)
+    private static async Task<string> WriteFileWithRetryAsync(string outputFile, byte[] data, int maxRetries = 3)
     {
         var currentPath = outputFile;
         for (var attempt = 0; attempt < maxRetries; attempt++)
@@ -132,7 +191,7 @@ internal sealed class CarveWriter(
             try
             {
                 await File.WriteAllBytesAsync(currentPath, data);
-                return;
+                return currentPath;
             }
             catch (IOException) when (attempt < maxRetries - 1)
             {
@@ -143,5 +202,7 @@ internal sealed class CarveWriter(
                 currentPath = Path.Combine(dir, $"{nameWithoutExt}_{suffix}{ext}");
             }
         }
+
+        return currentPath;
     }
 }

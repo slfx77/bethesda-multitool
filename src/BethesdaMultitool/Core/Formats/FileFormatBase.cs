@@ -13,6 +13,13 @@ public abstract class FileFormatBase : IFileFormat
     public abstract string OutputFolder { get; }
     public abstract int MinSize { get; }
     public abstract int MaxSize { get; }
+
+    /// <summary>
+    ///     Parse window handed to <see cref="Parse" /> during carving. 64KB covers
+    ///     header-computed formats; boundary-scanning formats override with a larger window.
+    /// </summary>
+    public virtual int ParseWindowSize => 64 * 1024;
+
     public virtual bool ShowInFilterUI => true;
     public virtual bool EnableSignatureScanning => true;
     public abstract IReadOnlyList<FormatSignature> Signatures { get; }

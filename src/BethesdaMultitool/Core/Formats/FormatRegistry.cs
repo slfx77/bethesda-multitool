@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Bik;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Formats.FaceGen;
 using BethesdaMultitool.Core.Formats.Lip;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Png;
@@ -280,8 +281,11 @@ public static class FormatRegistry
             new BikFormat(),
             new DdsFormat(),
             new DdxFormat(),
+            new EgmFormat(),
+            new EgtFormat(),
             new EsmRecordFormat(),
             new LipFormat(),
+            new TriFormat(),
             new NifFormat(),
             new PngFormat(),
             new SaveGameFormat(),

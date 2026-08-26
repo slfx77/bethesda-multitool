@@ -16,6 +16,12 @@ public sealed class PngFormat : FileFormatBase
     public override int MinSize => 67; // Min valid PNG
     public override int MaxSize => 50 * 1024 * 1024;
 
+    /// <summary>
+    ///     Wide window so the IEND scan can find the true size of large PNGs
+    ///     (the carver clamps at the containing memory region / EOF).
+    /// </summary>
+    public override int ParseWindowSize => 8 * 1024 * 1024;
+
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [
         new()
@@ -40,13 +46,6 @@ public sealed class PngFormat : FileFormatBase
 
         try
         {
-            // Find IEND chunk to determine file size
-            var size = FindIendChunk(data, offset);
-            if (size <= 0)
-            {
-                return null;
-            }
-
             // Try to extract dimensions from IHDR chunk (at offset 8)
             var width = 0;
             var height = 0;
@@ -64,6 +63,22 @@ public sealed class PngFormat : FileFormatBase
                 metadata["width"] = width;
                 metadata["height"] = height;
                 metadata["dimensions"] = $"{width}x{height}";
+            }
+
+            // Find IEND chunk to determine file size
+            var size = FindIendChunk(data, offset);
+            if (size <= 0)
+            {
+                // IEND may sit beyond the parse window. A valid IHDR still identifies a real
+                // PNG, so estimate from the available data instead of dropping the file.
+                if (!data.Slice(offset + 12, 4).SequenceEqual("IHDR"u8) || width <= 0 || height <= 0)
+                {
+                    return null;
+                }
+
+                size = Math.Min(data.Length - offset, MaxSize);
+                metadata["boundaryFallback"] = true;
+                metadata["boundaryFallbackReason"] = "IEND not found in parse window";
             }
 
             return new ParseResult
