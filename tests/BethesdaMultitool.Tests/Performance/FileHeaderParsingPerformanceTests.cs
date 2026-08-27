@@ -1,16 +1,31 @@
 using System.Buffers;
 using System.Diagnostics;
+using BethesdaMultitool.Core.Formats.Ddx;
+using BethesdaMultitool.Core.Formats.Nif;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Performance;
 
 /// <summary>
-///     Performance tests for file scanning and header parsing logic.
-///     These tests measure the time to scan directories and parse file headers.
+///     Covers the header classifiers used by the NIF/DDX converter file lists, both directly and
+///     through the concurrent directory-scan path the GUI uses.
+///     <para>
+///         These tests previously called private <c>DetermineNifFormat</c>/<c>DetermineDdxFormat</c>
+///         copies declared in this file under a "same logic as UI code" region. That made them
+///         tautologies — they asserted the test file agreed with itself and could not fail when
+///         production changed. The real rules now live in
+///         <see cref="NifHeaderFormat" /> and <see cref="DdxHeaderFormat" /> (in <c>Core/</c>,
+///         reachable from <c>net10.0</c>) and the GUI calls those, so these assertions finally
+///         bind to shipping behaviour.
+///     </para>
 /// </summary>
 public sealed class FileHeaderParsingPerformanceTests : IDisposable
 {
     private const int MaxConcurrentReads = 8;
+
+    /// <summary>Enough files to span several subdirectories and exceed <see cref="MaxConcurrentReads" />.</summary>
+    private const int ScanFileCount = 20;
+
     private readonly string _tempDir;
 
     public FileHeaderParsingPerformanceTests()
@@ -31,6 +46,143 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         }
     }
 
+    public static TheoryData<byte[], string, string> NifHeaderCases => new()
+    {
+        { CreateNifHeader(isXbox360: true), NifHeaderFormat.Xbox360, "endian byte 0 = big-endian" },
+        { CreateNifHeader(isXbox360: false), NifHeaderFormat.Pc, "endian byte 1 = little-endian" },
+        { CreateNifHeader(endianByte: 7), NifHeaderFormat.Unknown, "endian byte is neither 0 nor 1" },
+        { new byte[NifHeaderFormat.RequiredHeaderBytes - 1], NifHeaderFormat.Invalid, "one byte short of a header" },
+        { [], NifHeaderFormat.Invalid, "empty input" },
+        { new byte[NifHeaderFormat.RequiredHeaderBytes], NifHeaderFormat.Invalid, "all zeroes: no newline terminator" },
+        { CreateNifHeaderWithNewlineAt(0), NifHeaderFormat.Invalid, "newline at index 0 = empty version string" },
+        {
+            CreateNifHeaderWithNewlineAt(NifHeaderFormat.RequiredHeaderBytes - 3),
+            NifHeaderFormat.Invalid, "newline too close to the end to carry an endian byte"
+        }
+    };
+
+    public static TheoryData<byte[], string, string> DdxHeaderCases => new()
+    {
+        { "3XDO"u8.ToArray(), DdxHeaderFormat.Xdo, "linear Xbox 360 DDX" },
+        { "3XDR"u8.ToArray(), DdxHeaderFormat.Xdr, "engine-tiled Xbox 360 DDX" },
+        { "3XDZ"u8.ToArray(), DdxHeaderFormat.Invalid, "known prefix, unknown variant byte" },
+        { "XXXX"u8.ToArray(), DdxHeaderFormat.Invalid, "not a DDX magic at all" },
+        { "DDS "u8.ToArray(), DdxHeaderFormat.Invalid, "a PC DDS, not a DDX" },
+        { "3XD"u8.ToArray(), DdxHeaderFormat.Invalid, "one byte short of the magic" },
+        { [], DdxHeaderFormat.Invalid, "empty input" }
+    };
+
+    [Theory]
+    [MemberData(nameof(NifHeaderCases))]
+    public void Describe_NifHeader_ClassifiesEndianness(byte[] header, string expected, string because)
+    {
+        _ = because; // Surfaces the equivalence class in the test-case display name.
+
+        Assert.Equal(expected, NifHeaderFormat.Describe(header));
+    }
+
+    [Theory]
+    [MemberData(nameof(DdxHeaderCases))]
+    public void Describe_DdxHeader_ClassifiesVariant(byte[] header, string expected, string because)
+    {
+        _ = because;
+
+        Assert.Equal(expected, DdxHeaderFormat.Describe(header));
+    }
+
+    [Fact]
+    public async Task ScanAndParseHeaders_NifFiles_ClassifiesEveryFileInEverySubdirectory()
+    {
+        CreateTestFiles(ScanFileCount, ".nif", CreateNifHeader(isXbox360: true));
+
+        var results = await ScanAsync("*.nif", ReadNifHeaderAsync);
+
+        Assert.Equal(ScanFileCount, results.Length);
+        Assert.All(results, r => Assert.Equal(NifHeaderFormat.Xbox360, r.Format));
+    }
+
+    [Fact]
+    public async Task ScanAndParseHeaders_DdxFiles_ClassifiesEveryFileInEverySubdirectory()
+    {
+        const int count = 10;
+        CreateTestFiles(count, ".ddx", "3XDO"u8.ToArray());
+
+        var results = await ScanAsync("*.ddx", ReadDdxHeaderAsync);
+
+        Assert.Equal(count, results.Length);
+        Assert.All(results, r => Assert.Equal(DdxHeaderFormat.Xdo, r.Format));
+    }
+
+    [Fact]
+    public async Task ScanAndParseHeaders_MixedNifEndianness_SeparatesXboxFromPc()
+    {
+        const int perFormat = 10;
+        await WriteNifFilesAsync("xbox", perFormat, isXbox360: true);
+        await WriteNifFilesAsync("pc", perFormat, isXbox360: false);
+
+        var results = await ScanAsync("*.nif", ReadNifHeaderAsync);
+
+        Assert.Equal(perFormat * 2, results.Length);
+        Assert.Equal(perFormat, results.Count(r => r.Format == NifHeaderFormat.Xbox360));
+        Assert.Equal(perFormat, results.Count(r => r.Format == NifHeaderFormat.Pc));
+    }
+
+    [Fact]
+    public async Task ReadNifHeaderAsync_UnreadableFile_ReportsErrorRatherThanThrowing()
+    {
+        var missing = Path.Combine(_tempDir, "does-not-exist.nif");
+
+        var (size, format) = await ReadNifHeaderAsync(missing);
+
+        Assert.Equal(0, size);
+        Assert.Equal(NifHeaderFormat.Error, format);
+    }
+
+    /// <summary>
+    ///     Runs the concurrent scan the converter tabs use and returns every result. The stopwatch
+    ///     is reported for manual profiling only — timing assertions are inherently flaky under
+    ///     parallel test execution, since other CPU-heavy tests in the session can starve this one.
+    /// </summary>
+    private async Task<(string Path, long Size, string Format)[]> ScanAsync(
+        string pattern,
+        Func<string, Task<(long FileSize, string Format)>> readHeader)
+    {
+        var files = Directory.EnumerateFiles(_tempDir, pattern, SearchOption.AllDirectories).ToList();
+        var results = new (string Path, long Size, string Format)[files.Count];
+
+        var sw = Stopwatch.StartNew();
+        using var semaphore = new SemaphoreSlim(MaxConcurrentReads);
+        var tasks = files.Select((path, i) => Task.Run(async () =>
+        {
+            await semaphore.WaitAsync(TestContext.Current.CancellationToken);
+            try
+            {
+                var (size, format) = await readHeader(path);
+                results[i] = (path, size, format);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+        sw.Stop();
+        _ = sw.ElapsedMilliseconds;
+
+        return results;
+    }
+
+    private async Task WriteNifFilesAsync(string prefix, int count, bool isXbox360)
+    {
+        var header = CreateNifHeader(isXbox360);
+        for (var i = 0; i < count; i++)
+        {
+            var filePath = Path.Combine(_tempDir, $"{prefix}_{i:D3}.nif");
+            await File.WriteAllBytesAsync(filePath, header, TestContext.Current.CancellationToken);
+        }
+    }
+
     private void CreateTestFiles(int count, string extension, byte[] header)
     {
         for (var i = 0; i < count; i++)
@@ -43,196 +195,26 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task ScanAndParseHeaders_NifFiles_ScansAllFiles()
+    #region Header reading — mirrors the converter tabs' async read path
+
+    private static async Task<(long FileSize, string Format)> ReadNifHeaderAsync(string filePath)
     {
-        // Arrange - Create test NIF files with valid Xbox 360 header. The count only needs
-        // to span multiple subdirectories and exceed the read-concurrency limit; the
-        // format-detection logic itself is covered by the in-memory ParseNifHeader facts.
-        var header = CreateNifHeader(true);
-        CreateTestFiles(20, ".nif", header);
-
-        var sw = Stopwatch.StartNew();
-
-        // Act - Scan and parse all files
-        var files = Directory.EnumerateFiles(_tempDir, "*.nif", SearchOption.AllDirectories).ToList();
-        var results = new (string path, long size, string format)[files.Count];
-
-        using var semaphore = new SemaphoreSlim(MaxConcurrentReads);
-        var tasks = files.Select((path, i) => Task.Run(async () =>
-        {
-            await semaphore.WaitAsync();
-            try
-            {
-                var (size, format) = await ReadNifHeaderAsync(path);
-                results[i] = (path, size, format);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        })).ToArray();
-
-        await Task.WhenAll(tasks);
-        sw.Stop();
-
-        // Assert: functional correctness only. Timing assertions are inherently flaky
-        // under parallel test execution (other CPU-heavy tests in the same test session
-        // can starve this one). The stopwatch value is preserved so the duration is
-        // visible in test output for manual profiling.
-        Assert.Equal(20, results.Length);
-        Assert.All(results, r => Assert.Equal("Xbox 360 (BE)", r.format));
-        _ = sw.ElapsedMilliseconds;
-    }
-
-    [Fact]
-    public async Task ScanAndParseHeaders_DdxFiles_ScansAllFiles()
-    {
-        // Arrange
-        var header = "3XDO"u8.ToArray();
-        CreateTestFiles(10, ".ddx", header);
-
-        var sw = Stopwatch.StartNew();
-
-        // Act
-        var files = Directory.EnumerateFiles(_tempDir, "*.ddx", SearchOption.AllDirectories).ToList();
-        var results = new (string path, long size, string format)[files.Count];
-
-        using var semaphore = new SemaphoreSlim(MaxConcurrentReads);
-        var tasks = files.Select((path, i) => Task.Run(async () =>
-        {
-            await semaphore.WaitAsync();
-            try
-            {
-                var (size, format) = await ReadDdxHeaderAsync(path);
-                results[i] = (path, size, format);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        })).ToArray();
-
-        await Task.WhenAll(tasks);
-        sw.Stop();
-
-        // Assert: functional correctness only; see note on the NIF-files test.
-        Assert.Equal(10, results.Length);
-        Assert.All(results, r => Assert.Equal("3XDO", r.format));
-        _ = sw.ElapsedMilliseconds;
-    }
-
-    [Fact]
-    public async Task ScanAndParseHeaders_MixedFormats_CorrectlyParses()
-    {
-        // Arrange - Create mix of Xbox 360 and PC NIF files
-        var xbox360Header = CreateNifHeader(true);
-        var pcHeader = CreateNifHeader(false);
-
-        for (var i = 0; i < 10; i++)
-        {
-            var filePath = Path.Combine(_tempDir, $"xbox_{i:D3}.nif");
-            await File.WriteAllBytesAsync(filePath, xbox360Header, TestContext.Current.CancellationToken);
-        }
-
-        for (var i = 0; i < 10; i++)
-        {
-            var filePath = Path.Combine(_tempDir, $"pc_{i:D3}.nif");
-            await File.WriteAllBytesAsync(filePath, pcHeader, TestContext.Current.CancellationToken);
-        }
-
-        // Act
-        var files = Directory.EnumerateFiles(_tempDir, "*.nif", SearchOption.AllDirectories).ToList();
-        var results = new (string path, long size, string format)[files.Count];
-
-        using var semaphore = new SemaphoreSlim(MaxConcurrentReads);
-        var tasks = files.Select((path, i) => Task.Run(async () =>
-        {
-            await semaphore.WaitAsync();
-            try
-            {
-                var (size, format) = await ReadNifHeaderAsync(path);
-                results[i] = (path, size, format);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        })).ToArray();
-
-        await Task.WhenAll(tasks);
-
-        // Assert
-        Assert.Equal(20, results.Length);
-        Assert.Equal(10, results.Count(r => r.format == "Xbox 360 (BE)"));
-        Assert.Equal(10, results.Count(r => r.format == "PC (LE)"));
-    }
-
-    [Fact]
-    public void ParseNifHeader_Xbox360Format_ReturnsCorrect()
-    {
-        var header = CreateNifHeader(true);
-        var format = DetermineNifFormat(header, header.Length);
-
-        Assert.Equal("Xbox 360 (BE)", format);
-    }
-
-    [Fact]
-    public void ParseNifHeader_PCFormat_ReturnsCorrect()
-    {
-        var header = CreateNifHeader(false);
-        var format = DetermineNifFormat(header, header.Length);
-
-        Assert.Equal("PC (LE)", format);
-    }
-
-    [Fact]
-    public void ParseDdxHeader_3XDO_ReturnsCorrect()
-    {
-        var header = "3XDO"u8.ToArray();
-        var format = DetermineDdxFormat(header, header.Length);
-
-        Assert.Equal("3XDO", format);
-    }
-
-    [Fact]
-    public void ParseDdxHeader_3XDR_ReturnsCorrect()
-    {
-        var header = "3XDR"u8.ToArray();
-        var format = DetermineDdxFormat(header, header.Length);
-
-        Assert.Equal("3XDR", format);
-    }
-
-    [Fact]
-    public void ParseDdxHeader_Invalid_ReturnsCorrect()
-    {
-        var header = "XXXX"u8.ToArray();
-        var format = DetermineDdxFormat(header, header.Length);
-
-        Assert.Equal("Invalid", format);
-    }
-
-    #region Header Reading Helpers (same logic as UI code)
-
-    private static async Task<(long fileSize, string format)> ReadNifHeaderAsync(string filePath)
-    {
-        var headerBytes = ArrayPool<byte>.Shared.Rent(50);
+        var headerBytes = ArrayPool<byte>.Shared.Rent(NifHeaderFormat.RequiredHeaderBytes);
         try
         {
-            var fileInfo = new FileInfo(filePath);
-            var fileSize = fileInfo.Length;
+            var fileSize = new FileInfo(filePath).Length;
 
             await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var bytesRead = await fs.ReadAsync(headerBytes.AsMemory(0, 50));
+            var bytesRead = await fs.ReadAsync(
+                headerBytes.AsMemory(0, NifHeaderFormat.RequiredHeaderBytes),
+                TestContext.Current.CancellationToken);
 
-            var format = DetermineNifFormat(headerBytes, bytesRead);
-            return (fileSize, format);
+            return (fileSize, NifHeaderFormat.Describe(headerBytes.AsSpan(0, bytesRead)));
         }
-        catch
+        catch (IOException)
         {
-            return (0, "Error");
+            return (0, NifHeaderFormat.Error);
         }
         finally
         {
@@ -240,24 +222,24 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         }
     }
 
-    private static async Task<(long fileSize, string format)> ReadDdxHeaderAsync(string filePath)
+    private static async Task<(long FileSize, string Format)> ReadDdxHeaderAsync(string filePath)
     {
-        var headerBytes = ArrayPool<byte>.Shared.Rent(4);
+        var headerBytes = ArrayPool<byte>.Shared.Rent(DdxHeaderFormat.RequiredHeaderBytes);
         try
         {
-            var fileInfo = new FileInfo(filePath);
-            var fileSize = fileInfo.Length;
+            var fileSize = new FileInfo(filePath).Length;
 
             await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var bytesRead = await fs.ReadAsync(headerBytes.AsMemory(0, 4));
+            var bytesRead = await fs.ReadAsync(
+                headerBytes.AsMemory(0, DdxHeaderFormat.RequiredHeaderBytes),
+                TestContext.Current.CancellationToken);
 
-            var format = DetermineDdxFormat(headerBytes, bytesRead);
-            return (fileSize, format);
+            return (fileSize, DdxHeaderFormat.Describe(headerBytes.AsSpan(0, bytesRead)));
         }
-        catch
+        catch (IOException)
         {
-            return (0, "Error");
+            return (0, DdxHeaderFormat.Error);
         }
         finally
         {
@@ -265,47 +247,35 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         }
     }
 
-    private static string DetermineNifFormat(byte[] headerBytes, int bytesRead)
-    {
-        if (bytesRead < 50) return "Invalid";
+    #endregion
 
-        var newlinePos = Array.IndexOf(headerBytes, (byte)0x0A, 0, Math.Min(50, bytesRead));
-        if (newlinePos <= 0 || newlinePos + 5 >= bytesRead) return "Invalid";
-
-        return headerBytes[newlinePos + 5] switch
-        {
-            0 => "Xbox 360 (BE)",
-            1 => "PC (LE)",
-            _ => "Unknown"
-        };
-    }
-
-    private static string DetermineDdxFormat(byte[] headerBytes, int bytesRead)
-    {
-        if (bytesRead < 4) return "Invalid";
-
-        if (headerBytes[0] == '3' && headerBytes[1] == 'X' && headerBytes[2] == 'D')
-            return headerBytes[3] switch
-            {
-                (byte)'O' => "3XDO",
-                (byte)'R' => "3XDR",
-                _ => "Invalid"
-            };
-
-        return "Invalid";
-    }
+    #region Synthetic NIF headers
 
     private static byte[] CreateNifHeader(bool isXbox360)
     {
-        // Create a minimal valid NIF header
-        var versionString = "Gamebryo File Format, Version 20.2.0.7\n"u8.ToArray();
-        var header = new byte[50];
-        versionString.CopyTo(header, 0);
+        return CreateNifHeader(endianByte: (byte)(isXbox360 ? 0 : 1));
+    }
 
-        // Byte at position after newline + 5 determines endianness
+    /// <summary>
+    ///     A minimal 50-byte NIF header: a newline-terminated version string, then the endian
+    ///     byte five bytes past the terminator (the 4-byte binary version sits between them).
+    /// </summary>
+    private static byte[] CreateNifHeader(byte endianByte)
+    {
+        var header = new byte[NifHeaderFormat.RequiredHeaderBytes];
+        "Gamebryo File Format, Version 20.2.0.7\n"u8.ToArray().CopyTo(header, 0);
+
         var newlinePos = Array.IndexOf(header, (byte)0x0A);
-        if (newlinePos > 0 && newlinePos + 5 < header.Length) header[newlinePos + 5] = (byte)(isXbox360 ? 0 : 1);
+        header[newlinePos + 5] = endianByte;
+        return header;
+    }
 
+    /// <summary>A 50-byte buffer whose only newline sits at <paramref name="index" />.</summary>
+    private static byte[] CreateNifHeaderWithNewlineAt(int index)
+    {
+        var header = new byte[NifHeaderFormat.RequiredHeaderBytes];
+        Array.Fill(header, (byte)'A');
+        header[index] = 0x0A;
         return header;
     }
 

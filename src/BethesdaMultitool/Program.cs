@@ -180,7 +180,12 @@ public static class Program
         };
         var typesOption = new Option<string[]>("-t", "--types")
         {
-            Description = "File types to extract (e.g., dds ddx xma nif)"
+            Description = "File types to extract (e.g., dds ddx xma nif)",
+
+            // Without this, only the first value after -t binds; the rest become unmatched tokens,
+            // which RootCommand rejects outright. The space-separated form this Description
+            // advertises (and that README documents) would fail to parse.
+            AllowMultipleArgumentsPerToken = true
         };
         var verboseOption = new Option<bool>("-v", "--verbose")
         {

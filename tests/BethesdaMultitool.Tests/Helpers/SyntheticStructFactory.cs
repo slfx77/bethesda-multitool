@@ -25,6 +25,9 @@ internal static class SyntheticStructFactory
 {
     public const uint DefaultVtable = 0x82010000u;
 
+    /// <summary>Byte offsets of the six <c>MediaSet::MediaLayer</c> members (pMLOne..pMLSix).</summary>
+    public static readonly int[] MediaLayerOffsets = [88, 104, 120, 136, 152, 168];
+
     /// <summary>
     ///     Writes a 16-byte TESForm header at <paramref name="offset" />:
     ///     vtable @ +0, cFormType @ +4, iFormID @ +12. The intervening bytes
@@ -178,6 +181,67 @@ internal static class SyntheticStructFactory
     }
 
     /// <summary>
+    ///     Builds a synthetic MediaSet (FormType 0x6F) using the PDB-declared offsets that
+    ///     <c>RuntimeMediaSetReader</c> reads: cFullName @44, Type @84, the six 16-byte
+    ///     <c>MediaSet::MediaLayer</c> members at @88/104/120/136/152/168, cEnableFlags @184,
+    ///     fOne..fFour @188..200, pSoundOne @204, pSoundTwo @208. Struct size is 212.
+    ///     <para>
+    ///         Each layer is written as <c>Name</c> (BSStringT) @+0, <c>Attenuation</c> @+8,
+    ///         <c>Percent</c> @+12. A layer whose entry in <paramref name="layers" /> is null is
+    ///         left entirely zero, which is how the reader sees a layer the build does not use.
+    ///     </para>
+    /// </summary>
+    /// <param name="layers">Six slots, in pMLOne..pMLSix order; null leaves that layer zeroed.</param>
+    public static byte[] BuildMediaSet(
+        uint formId,
+        uint setType,
+        IReadOnlyList<MediaLayerSpec?> layers,
+        byte enableFlags = 0,
+        IReadOnlyList<float>? timings = null,
+        uint soundOnePtr = 0,
+        uint soundTwoPtr = 0,
+        uint fullNameVa = 0,
+        ushort fullNameLength = 0,
+        int bufferSize = 0x100)
+    {
+        ArgumentNullException.ThrowIfNull(layers);
+
+        var buf = new byte[bufferSize];
+        WriteFormHeader(buf, 0, 0x6F, formId);
+
+        if (fullNameVa != 0)
+        {
+            WriteBsString(buf, 44, fullNameVa, fullNameLength);
+        }
+
+        WriteUInt32BE(buf, 84, setType);
+
+        for (var i = 0; i < MediaLayerOffsets.Length && i < layers.Count; i++)
+        {
+            if (layers[i] is not { } layer)
+            {
+                continue;
+            }
+
+            var at = MediaLayerOffsets[i];
+            WriteBsString(buf, at, layer.NameVa, layer.NameLength);
+            WriteFloatBE(buf, at + 8, layer.Attenuation);
+            WriteFloatBE(buf, at + 12, layer.Percent);
+        }
+
+        buf[184] = enableFlags;
+
+        for (var i = 0; timings != null && i < 4 && i < timings.Count; i++)
+        {
+            WriteFloatBE(buf, 188 + (i * 4), timings[i]);
+        }
+
+        WriteUInt32BE(buf, 204, soundOnePtr);
+        WriteUInt32BE(buf, 208, soundTwoPtr);
+        return buf;
+    }
+
+    /// <summary>
     ///     Builds a synthetic TESObjectWEAP (FormType 0x28). PDB-aligned
     ///     core region (+16 build shift baked in). Per Phase 1B.11 anchors.
     /// </summary>
@@ -195,4 +259,7 @@ internal static class SyntheticStructFactory
         if (pickupSoundPtr.HasValue) WriteUInt32BE(buf, 236 + 16, pickupSoundPtr.Value);
         return buf;
     }
+
+    /// <summary>One synthetic <c>MediaSet::MediaLayer</c>: a name pointer plus its two floats.</summary>
+    public readonly record struct MediaLayerSpec(uint NameVa, ushort NameLength, float Attenuation, float Percent);
 }

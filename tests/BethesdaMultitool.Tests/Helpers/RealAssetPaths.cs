@@ -78,6 +78,48 @@ internal static class RealAssetPaths
     }
 
     /// <summary>
+    ///     The retail masters the opt-in suites load, each resolved through <see cref="SteamGameFile" />
+    ///     so the override, the repo's <c>Sample/</c> tree, and every Steam library are all probed.
+    ///     <para>
+    ///         These exist because a dozen test files had each grown a private
+    ///         <c>ResolveFalloutNvEsm()</c> / <c>ResolveOblivionEsm()</c> that re-implemented the same
+    ///         probe by hand — and each copy stopped at a different point in the order, so which
+    ///         installs a test could find depended on which copy it happened to inherit. Add a member
+    ///         here rather than a private resolver in a test file.
+    ///     </para>
+    /// </summary>
+    public static class Masters
+    {
+        /// <summary>
+        ///     The <em>installed</em> FalloutNV master.
+        ///     <para>
+        ///         Deliberately does NOT fall back to <c>Sample\ESM\pc_final\FalloutNV.esm</c>. The two
+        ///         are not interchangeable — measured 2026-08-21, the Sample copy is 245,650,747 bytes
+        ///         (md5 <c>fd13cc17…</c>) while the installed master is 266,840,039 bytes (md5
+        ///         <c>0ead5755…</c>). Parity suites must read the master the production build and the
+        ///         game itself load; substituting the Sample copy changes which records exist and
+        ///         turns real parity into false mismatches. (This is not hypothetical: adding that
+        ///         fallback silently repointed the profile-parity suite and produced PACK/DIAL
+        ///         divergences that had nothing to do with the code under test.)
+        ///     </para>
+        /// </summary>
+        public static string? FalloutNv() => SteamGameFile("Fallout New Vegas", @"Data\FalloutNV.esm");
+
+        /// <summary>The installed Fallout 3 master. Same no-Sample-fallback rule as <see cref="FalloutNv" />.</summary>
+        public static string? Fallout3() => SteamGameFile("Fallout 3 goty", @"Data\Fallout3.esm");
+
+        public static string? Oblivion() => SteamGameFile("Oblivion", @"Data\Oblivion.esm");
+
+        public static string? Skyrim() => SteamGameFile("Skyrim", @"Data\Skyrim.esm");
+
+        public static string? Fallout4() => SteamGameFile("Fallout 4", @"Data\Fallout4.esm");
+
+        public static string? SeventySix() => SteamGameFile("Fallout76", @"Data\SeventySix.esm");
+
+        public static string? Morrowind() => SteamGameFile("Morrowind", @"Data Files\Morrowind.esm");
+    }
+
+    /// <summary>
     ///     Resolve a directory inside a Steam-installed game (a Data folder, say) using the same probe
     ///     order as <see cref="SteamGameFile" />.
     /// </summary>

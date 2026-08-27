@@ -1566,7 +1566,7 @@
     ],
     "typedRuntimeReader": "RuntimeGenericReader.ReadGenericRecord",
     "genericLayoutAvailable": true,
-    "currentMergeMode": "runtime generic fallback for non-specialized forms; ASPC is dispatched to RuntimeAcousticSpaceReader from inside ReadGenericRecord and still returns a GenericEsmRecord",
+    "currentMergeMode": "runtime generic fallback for non-specialized forms; ASPC is dispatched to RuntimeAcousticSpaceReader and MSET to RuntimeMediaSetReader from inside ReadGenericRecord, and both still return a GenericEsmRecord",
     "status": "generic-only",
     "highValueFields": {
       "exact": [
@@ -1580,7 +1580,8 @@
     "evidence": [
       "RuntimeStructReader.ReadGenericRecord",
       "RecordParserContext.MergeRuntimeGenericRecords",
-      "ASPC exception: RuntimeAcousticSpaceProbe + RuntimeAcousticSpaceReader recover the per-build BGSAcousticSpace layout, which the generic shift probe mis-fitted as +4"
+      "ASPC exception: RuntimeAcousticSpaceProbe + RuntimeAcousticSpaceReader recover the per-build BGSAcousticSpace layout, which the generic shift probe mis-fitted as +4",
+      "MSET exception: RuntimeMediaSetReader walks the six 16-byte MediaSet::MediaLayer structs; their Name member is a BSStringT pointer, so the generic reader's raw-bytes result cannot resolve the six layer names"
     ],
     "confidence": "high",
     "nextAction": "Promote individual form types out of GenericEsmRecord only after typed readers are proven. PWAT left 2026-08-06 and TREE 2026-08-07; both had required subrecords inside embedded structs the generic reader will not walk."

@@ -60,6 +60,9 @@ XnaNative.dll
 test_output/
 /output/
 TestOutput/
+# The directory rule above does not cover an archive of it, which is how a stray
+# TestOutput.zip ended up staged for commit.
+TestOutput*.zip
 publish/
 artifacts/
 

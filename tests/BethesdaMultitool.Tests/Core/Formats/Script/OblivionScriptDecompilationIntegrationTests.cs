@@ -9,6 +9,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Script;
 ///     author's own text for every shipped script. The threshold is a RATCHET — raise it as TES4
 ///     dialect fixes land; it exists to catch regressions, not to bless the current tail.
 /// </summary>
+[Trait("Category", TestCategories.BucketB)]
 [Collection(SequentialIntegrationGroup.Name)]
 public class OblivionScriptDecompilationIntegrationTests
 {
@@ -17,23 +18,11 @@ public class OblivionScriptDecompilationIntegrationTests
     // shipped SCTX/SCDA drift (compiled blocks absent from the shipped source text).
     private const double MinStructuralMatchRatio = 0.98;
 
-    private static string? ResolveOblivionEsm()
-    {
-        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
-        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Oblivion.esm")))
-        {
-            return Path.Combine(root, "Oblivion.esm");
-        }
-
-        var steam = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion.esm");
-        return File.Exists(steam) ? steam : null;
-    }
-
     [Fact]
     public async Task OblivionScripts_DecompileWithStructuralFidelity()
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var esm = ResolveOblivionEsm();
+        var esm = RealAssetPaths.Masters.Oblivion();
         Assert.SkipUnless(esm is not null,
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 

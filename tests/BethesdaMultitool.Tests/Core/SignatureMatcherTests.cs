@@ -300,7 +300,7 @@ public class SignatureMatcherTests
     }
 
     [Fact]
-    public void Search_WithLargeBaseOffset_HandlesCorrectly()
+    public void Search_WithLargeBaseOffset_ReportsAbsolutePositions()
     {
         // Arrange
         var matcher = new SignatureMatcher();
@@ -411,10 +411,58 @@ public class SignatureMatcherTests
 
     #endregion
 
+    #region Duplicate and Suffix-Overlap Pattern Tests
+
+    [Fact]
+    public void Search_TwoPatternsWithIdenticalBytes_BothReport()
+    {
+        // Pins the defect class the old SignatureScanner AhoCorasick had: a single Output
+        // slot per trie node meant the second of two identical patterns (.nif/.kf share
+        // the 16-byte Gamebryo header) overwrote the first, so one reported 0 forever.
+        var gamebryo = "Gamebryo File Fo"u8.ToArray();
+        var matcher = new SignatureMatcher();
+        matcher.AddPattern("nif", gamebryo);
+        matcher.AddPattern("kf", gamebryo);
+        matcher.Build();
+
+        var data = new byte[32];
+        gamebryo.CopyTo(data, 4);
+
+        // Act
+        var results = matcher.Search(data);
+
+        // Assert - both names report at the same position
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, r => r.Name == "nif" && r.Position == 4);
+        Assert.Contains(results, r => r.Name == "kf" && r.Position == 4);
+    }
+
+    [Fact]
+    public void Search_SuffixPattern_ReportsAlongsideContainingPattern()
+    {
+        // "BC" is a proper suffix of "ABC": reporting it requires merging outputs across
+        // failure links; the old scanner-tool matcher chained output links only one level
+        // deep, under-reporting suffix-overlapping patterns.
+        var matcher = new SignatureMatcher();
+        matcher.AddPattern("abc", "ABC"u8.ToArray());
+        matcher.AddPattern("bc", "BC"u8.ToArray());
+        matcher.Build();
+
+        // Act
+        var results = matcher.Search("ABC"u8);
+
+        // Assert - both patterns report
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, r => r.Name == "abc" && r.Position == 0);
+        Assert.Contains(results, r => r.Name == "bc" && r.Position == 1);
+    }
+
+    #endregion
+
     #region Real-World File Signature Tests
 
     [Fact]
-    public void Search_RealFileSignatures_FindsCorrectly()
+    public void Search_RealFileSignatures_FindsEachAtItsOffset()
     {
         // Arrange - Common Xbox 360 file signatures
         var matcher = new SignatureMatcher();
@@ -444,7 +492,7 @@ public class SignatureMatcherTests
     }
 
     [Fact]
-    public void Search_PngSignature_FindsCorrectly()
+    public void Search_PngSignature_FindsTheEightByteMagic()
     {
         // Arrange - PNG has an 8-byte signature
         var matcher = new SignatureMatcher();

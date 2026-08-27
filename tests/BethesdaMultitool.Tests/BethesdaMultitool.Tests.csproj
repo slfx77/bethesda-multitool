@@ -9,8 +9,12 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-    <!-- CA1707: underscore naming is the standard xUnit test-method convention. -->
-    <NoWarn>$(NoWarn);CA1707;S3267;S3878</NoWarn>
+    <!-- CA1707: underscore naming is the standard xUnit test-method convention.
+         CA1716: the test tree mirrors src/ folder for folder, so a namespace like CLI.Shared is
+         forced by the production layout it shadows. The rule guards cross-language consumers of a
+         public API; nothing consumes this assembly, and production's own CLI.Shared is unflagged
+         only because its types are internal while xUnit requires public test classes. -->
+    <NoWarn>$(NoWarn);CA1707;CA1716;S3267;S3878</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

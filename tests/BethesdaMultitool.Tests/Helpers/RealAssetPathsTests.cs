@@ -8,7 +8,16 @@ namespace BethesdaMultitool.Tests.Helpers;
 ///     empty files in a temp directory, never real game data — because the locator is what decides
 ///     whether the opt-in suites find anything at all. A locator that silently resolves nothing
 ///     turns every real-asset test into a permanent skip that still reports green.
+///     <para>
+///         In <see cref="ProcessEnvironmentGroup" /> because the constructor points
+///         <c>BETHESDA_TEST_DATA_ROOT</c> at a scratch directory for the lifetime of each test.
+///         That variable is process-wide and is read at call time by
+///         <see cref="RealAssetPaths.SteamGameFile" />, which ~40 real-asset test files depend on;
+///         run in parallel with them, these tests would redirect their lookups at an empty folder
+///         and turn genuine coverage into silent skips.
+///     </para>
 /// </summary>
+[Collection(ProcessEnvironmentGroup.Name)]
 public sealed class RealAssetPathsTests : IDisposable
 {
     private readonly string _root =

@@ -44,6 +44,29 @@ internal static class EnvironmentVariables
         return Math.Clamp(value, min, max);
     }
 
+    /// <summary>
+    ///     Like <see cref="GetClampedInt" />, but a value of <b>zero or below is rejected</b> and
+    ///     falls through to <paramref name="defaultValue" /> instead of clamping up to
+    ///     <paramref name="min" />.
+    ///     <para>
+    ///         The distinction is the whole reason this exists separately. For a knob whose zero
+    ///         means "unset", clamping <c>FOO=0</c> up to the minimum silently turns "I did not
+    ///         choose a value" into "I chose the smallest one" — which for an interval or a worker
+    ///         count is the most aggressive setting available, not the least.
+    ///     </para>
+    /// </summary>
+    public static int GetPositiveIntOrDefault(string name, int defaultValue, int min, int max)
+    {
+        var raw = Get(name);
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ||
+            value <= 0)
+        {
+            return defaultValue;
+        }
+
+        return Math.Clamp(value, min, max);
+    }
+
     /// <inheritdoc cref="GetClampedInt" />
     public static long GetClampedLong(string name, long defaultValue, long min, long max)
     {

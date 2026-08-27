@@ -42,6 +42,15 @@ internal static class WorldDataBsaPathResolver
             foreach (var path in data.AdditionalDataPaths) AddFrom(path, $"load-order[{i++}]");
         }
 
+        // Asset-only donor builds, in declared priority order and AFTER the load order, so an
+        // explicit load-order entry still wins a path collision. These are directories, not files,
+        // so they skip the GetDirectoryName step the load-order entries need.
+        if (data.AssetDataDirectories is not null)
+        {
+            var i = 0;
+            foreach (var dir in data.AssetDataDirectories) AddFromDirectory(dir, $"asset-dir[{i++}]");
+        }
+
         return result.ToArray();
 
         void AddFrom(string? candidatePath, string label)
@@ -59,13 +68,25 @@ internal static class WorldDataBsaPathResolver
                 return;
             }
 
+            AddFromDirectory(dir, label);
+        }
+
+        void AddFromDirectory(string? candidateDir, string label)
+        {
+            if (string.IsNullOrEmpty(candidateDir))
+            {
+                Log.Info("BsaResolver {0}: skipped (path empty)", label);
+                return;
+            }
+
+            var dir = Path.GetFullPath(candidateDir);
             if (!seenDirs.Add(dir))
             {
                 Log.Info("BsaResolver {0} '{1}': dir already probed", label, dir);
                 return;
             }
 
-            var discovery = BsaDiscovery.Discover(candidatePath);
+            var discovery = BsaDiscovery.DiscoverInDirectory(dir);
             if (discovery.TexturesBsaPaths.Length == 0)
             {
                 Log.Info(

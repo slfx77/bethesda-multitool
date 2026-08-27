@@ -93,6 +93,12 @@ internal sealed class CarveWriter(
             await WriteFileWithRetryAsync(convertedOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
         }
 
+        // Residency must survive conversion. This branch used to build its entry purely from
+        // `result.*` and return before the coverage-bearing path ran, so a DDX/XMA/NIF that was
+        // only partly resident in the dump was recorded as IsPartial=false / "converted" /
+        // Notes=null — indistinguishable from a fully captured file. DDX is converted by default
+        // and is the corpus's dominant carved format, so that mislabelled the common case.
+        var isPartial = result.IsPartial || p.IsTruncated;
         _addToManifest(new CarveEntry
         {
             FileType = p.SignatureId,
@@ -102,9 +108,11 @@ internal sealed class CarveWriter(
             Filename = Path.GetFileName(writtenPath),
             OriginalPath = p.OriginalPath,
             IsCompressed = true,
-            ContentType = result.IsPartial ? "converted_partial" : "converted",
-            IsPartial = result.IsPartial,
-            Notes = AppendNote(result.Notes, BuildBoundaryFallbackNote(p.Metadata)),
+            ContentType = isPartial ? "converted_partial" : "converted",
+            IsPartial = isPartial,
+            Notes = AppendNote(
+                AppendNote(result.Notes, BuildCoverageNote(p.IsTruncated, p.Coverage)),
+                BuildBoundaryFallbackNote(p.Metadata)),
             Metadata = p.Metadata
         });
 
@@ -114,21 +122,23 @@ internal sealed class CarveWriter(
     private static string? BuildNotes(bool isTruncated, double coverage, bool isRepaired,
         IReadOnlyDictionary<string, object>? metadata)
     {
-        string? baseNote;
-        if (isTruncated)
-        {
-            baseNote = $"Memory coverage: {coverage:P0}";
-        }
-        else if (isRepaired)
-        {
-            baseNote = "Repaired";
-        }
-        else
-        {
-            baseNote = null;
-        }
+        // Not else-if: a file can be both incompletely resident AND repaired, and losing the
+        // "Repaired" note in that case hid the repair.
+        var baseNote = AppendNote(
+            BuildCoverageNote(isTruncated, coverage),
+            isRepaired ? "Repaired" : null);
 
         return AppendNote(baseNote, BuildBoundaryFallbackNote(metadata));
+    }
+
+    /// <summary>
+    ///     Note describing how much of a carved file was actually resident in the dump.
+    ///     P2 rather than P0: 99.6%-resident used to render as "Memory coverage: 100 %" beside
+    ///     an IsPartial=true entry, which reads as a contradiction.
+    /// </summary>
+    private static string? BuildCoverageNote(bool isTruncated, double coverage)
+    {
+        return isTruncated ? $"Memory coverage: {coverage:P2}" : null;
     }
 
     /// <summary>

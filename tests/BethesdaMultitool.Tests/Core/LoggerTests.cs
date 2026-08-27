@@ -165,155 +165,93 @@ public class LoggerTests : IDisposable
 
     #endregion
 
-    #region Error Tests
+    #region Per-level write contracts
 
-    [Fact]
-    public void Error_WritesMessage()
+    /// <summary>
+    ///     Every severity behaves identically apart from its threshold and prefix, so the five
+    ///     levels are a table and each contract is asserted once. Previously this was 17 near-
+    ///     identical facts (one per level per contract), and suppression was only checked for
+    ///     Debug and Trace.
+    /// </summary>
+    public static TheoryData<LogLevelCase> LogLevels => new()
     {
-        Logger.Instance.Level = LogLevel.Error;
-        Logger.Instance.Error("test error");
-        Assert.Contains("test error", _output.ToString());
+        new LogLevelCase(LogLevel.Error, "[ERR]", LogLevel.None,
+            (logger, message) => logger.Error(message),
+            (logger, format, args) => logger.Error(format, args)),
+        new LogLevelCase(LogLevel.Warn, "[WRN]", LogLevel.Error,
+            (logger, message) => logger.Warn(message),
+            (logger, format, args) => logger.Warn(format, args)),
+        new LogLevelCase(LogLevel.Info, "[INF]", LogLevel.Warn,
+            (logger, message) => logger.Info(message),
+            (logger, format, args) => logger.Info(format, args)),
+        new LogLevelCase(LogLevel.Debug, "[DBG]", LogLevel.Info,
+            (logger, message) => logger.Debug(message),
+            (logger, format, args) => logger.Debug(format, args)),
+        new LogLevelCase(LogLevel.Trace, "[TRC]", LogLevel.Debug,
+            (logger, message) => logger.Trace(message),
+            (logger, format, args) => logger.Trace(format, args))
+    };
+
+    [Theory]
+    [MemberData(nameof(LogLevels))]
+    public void Write_AtItsOwnLevel_EmitsTheMessage(LogLevelCase level)
+    {
+        Logger.Instance.Level = level.Level;
+
+        level.Write(Logger.Instance, "the message");
+
+        Assert.Contains("the message", _output.ToString(), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Error_IncludesErrPrefix()
+    [Theory]
+    [MemberData(nameof(LogLevels))]
+    public void Write_AtItsOwnLevel_EmitsTheLevelPrefix(LogLevelCase level)
     {
-        Logger.Instance.Level = LogLevel.Error;
-        Logger.Instance.Error("test");
-        Assert.Contains("[ERR]", _output.ToString());
+        Logger.Instance.Level = level.Level;
+
+        level.Write(Logger.Instance, "the message");
+
+        Assert.Contains(level.Prefix, _output.ToString(), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Error_WithFormatArgs_FormatsCorrectly()
+    [Theory]
+    [MemberData(nameof(LogLevels))]
+    public void Write_WithFormatArgs_SubstitutesThem(LogLevelCase level)
     {
-        Logger.Instance.Level = LogLevel.Error;
-        Logger.Instance.Error("error {0} {1}", 42, "arg");
-        Assert.Contains("error 42 arg", _output.ToString());
+        Logger.Instance.Level = level.Level;
+
+        level.WriteFormatted(Logger.Instance, "value {0} and {1}", [42, "arg"]);
+
+        Assert.Contains("value 42 and arg", _output.ToString(), StringComparison.Ordinal);
     }
 
-    #endregion
-
-    #region Warn Tests
-
-    [Fact]
-    public void Warn_WritesMessage()
+    /// <summary>
+    ///     A message must be dropped when the configured threshold sits one step below its own
+    ///     severity — this is what makes the level a filter rather than a label.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(LogLevels))]
+    public void Write_WhenThresholdIsOneStepStricter_EmitsNothing(LogLevelCase level)
     {
-        Logger.Instance.Level = LogLevel.Warn;
-        Logger.Instance.Warn("test warning");
-        Assert.Contains("test warning", _output.ToString());
-    }
+        Logger.Instance.Level = level.SuppressedWhenThresholdIs;
 
-    [Fact]
-    public void Warn_IncludesWrnPrefix()
-    {
-        Logger.Instance.Level = LogLevel.Warn;
-        Logger.Instance.Warn("test");
-        Assert.Contains("[WRN]", _output.ToString());
-    }
+        level.Write(Logger.Instance, "the message");
 
-    [Fact]
-    public void Warn_WithFormatArgs_FormatsCorrectly()
-    {
-        Logger.Instance.Level = LogLevel.Warn;
-        Logger.Instance.Warn("warning {0} {1}", 42, "arg");
-        Assert.Contains("warning 42 arg", _output.ToString());
-    }
-
-    #endregion
-
-    #region Info Tests
-
-    [Fact]
-    public void Info_WritesMessage()
-    {
-        Logger.Instance.Info("test info");
-        Assert.Contains("test info", _output.ToString());
-    }
-
-    [Fact]
-    public void Info_IncludesInfPrefix()
-    {
-        Logger.Instance.Info("test");
-        Assert.Contains("[INF]", _output.ToString());
-    }
-
-    [Fact]
-    public void Info_WithFormatArgs_FormatsCorrectly()
-    {
-        Logger.Instance.Info("info {0} {1}", 42, "arg");
-        Assert.Contains("info 42 arg", _output.ToString());
-    }
-
-    #endregion
-
-    #region Debug Tests
-
-    [Fact]
-    public void Debug_WritesMessage_WhenLevelIsDebug()
-    {
-        Logger.Instance.Level = LogLevel.Debug;
-        Logger.Instance.Debug("test debug");
-        Assert.Contains("test debug", _output.ToString());
-    }
-
-    [Fact]
-    public void Debug_DoesNotWrite_WhenLevelIsInfo()
-    {
-        Logger.Instance.Level = LogLevel.Info;
-        Logger.Instance.Debug("test debug");
         Assert.Empty(_output.ToString());
     }
 
-    [Fact]
-    public void Debug_IncludesDbgPrefix()
+    /// <summary>One severity and the behaviour it must exhibit. Named for a readable case display.</summary>
+    public sealed record LogLevelCase(
+        LogLevel Level,
+        string Prefix,
+        LogLevel SuppressedWhenThresholdIs,
+        Action<Logger, string> Write,
+        Action<Logger, string, object?[]> WriteFormatted)
     {
-        Logger.Instance.Level = LogLevel.Debug;
-        Logger.Instance.Debug("test");
-        Assert.Contains("[DBG]", _output.ToString());
-    }
-
-    [Fact]
-    public void Debug_WithFormatArgs_FormatsCorrectly()
-    {
-        Logger.Instance.Level = LogLevel.Debug;
-        Logger.Instance.Debug("debug {0} {1}", 42, "arg");
-        Assert.Contains("debug 42 arg", _output.ToString());
-    }
-
-    #endregion
-
-    #region Trace Tests
-
-    [Fact]
-    public void Trace_WritesMessage_WhenLevelIsTrace()
-    {
-        Logger.Instance.Level = LogLevel.Trace;
-        Logger.Instance.Trace("test trace");
-        Assert.Contains("test trace", _output.ToString());
-    }
-
-    [Fact]
-    public void Trace_DoesNotWrite_WhenLevelIsDebug()
-    {
-        Logger.Instance.Level = LogLevel.Debug;
-        Logger.Instance.Trace("test trace");
-        Assert.Empty(_output.ToString());
-    }
-
-    [Fact]
-    public void Trace_IncludesTrcPrefix()
-    {
-        Logger.Instance.Level = LogLevel.Trace;
-        Logger.Instance.Trace("test");
-        Assert.Contains("[TRC]", _output.ToString());
-    }
-
-    [Fact]
-    public void Trace_WithFormatArgs_FormatsCorrectly()
-    {
-        Logger.Instance.Level = LogLevel.Trace;
-        Logger.Instance.Trace("trace {0} {1}", 42, "arg");
-        Assert.Contains("trace 42 arg", _output.ToString());
+        public override string ToString()
+        {
+            return Level.ToString();
+        }
     }
 
     #endregion
@@ -403,7 +341,7 @@ public class LoggerTests : IDisposable
     }
 
     [Fact]
-    public void Logger_LevelFiltering_WorksCorrectly()
+    public void Log_AtWarnThreshold_KeepsErrorAndWarnAndDropsTheRest()
     {
         Logger.Instance.Level = LogLevel.Warn;
 
