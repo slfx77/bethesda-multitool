@@ -456,6 +456,20 @@ Tests use synthetic byte fixtures by default. Tests that require real game data 
 
 Every real-asset test class additionally MUST carry `[Collection(SequentialIntegrationGroup.Name)]` and load masters via `RealAssetEsmCache.LoadAsync` (never dispose the returned result — the cache owns it). Without this, xUnit runs the multi-GB parses in parallel and the suite thrashes RAM until it never finishes. A full `RUN_BUCKET_B=1` sweep takes ~7 min and is for when the relevant code (semantic loader, schema decode, profiles) changes.
 
+Resolve retail masters through `RealAssetPaths.Masters.*` — never a hand-rolled probe. `Masters.FalloutNv()` / `.Fallout3()` deliberately resolve the **installed** master and do NOT fall back to `Sample/ESM/…`: the two are different files (measured 2026-08-21: 266,840,039 vs 245,650,747 bytes, different md5), so substituting one produces field-level "failures" that have nothing to do with the code under test.
+
+Each opt-in guard must be paired with its `[Trait("Category", TestCategories.X)]` — the guard does the skipping, the trait is what `--filter-trait` selects, and a class with the guard but no trait is silently omitted from targeted runs. `TestCategoryConsistencyTests` enforces the pairing; `TestCategories` also defines `Benchmark` (measurement, not a correctness gate) and `Tool` (generator that asserts nothing).
+
+**A test must be able to fail.** Two patterns that look green but assert nothing, both previously present and now removed:
+- Bailing out with `return;` when a fixture is missing. That is recorded as a **pass**. Use `Assert.SkipWhen` / `Assert.SkipUnless` so an unavailable fixture reports *skipped*.
+- Asserting one production method equals another that delegates to it (e.g. `Assert.Equal(ReadUInt32BE(s), ReadUInt32(s, 0, true))` — the flag overload *calls* `ReadUInt32BE`). Pin an independently-known expected value instead; only then is an agreement check meaningful.
+
+### Source-contract tests: last resort, not first
+
+~76 test files assert on production **source text** (`Helpers/SourceContract.cs`) rather than behaviour. This exists only because `App/**` is `Compile Remove`d from the `net10.0` TFM (csproj line ~165) and ~30 `Core/` files sit behind `#if WINDOWS_GUI`, leaving that code unreachable from the test project. The cost is real: the 2026-08-20 ReSharper sweep produced 9 test failures, 8 of them source pins broken by pure style churn with zero behaviour change.
+
+Before adding one, apply the rule the csproj already states (line ~162): **if the logic is platform-neutral, move it to `Core/` and test it for real.** `Core/Formats/Nif/NifHeaderFormat.cs` and `Core/Formats/Ddx/DdxHeaderFormat.cs` are the worked example — the NIF/DDX header classifiers used to be private copies in `App/Tabs/`, which forced the test file to keep its own duplicate of the logic and assert against itself. A source-contract test is acceptable only when the behaviour genuinely cannot run headless (D3D12 call ordering, HLSL text, XAML markup, decompile-derived constants).
+
 ### Code Coverage
 
 Opt-in only, via `tools/scripts/coverage.ps1` (coverlet static IL instrumentation, scoped to `[BethesdaMultitool]*`; full default suite ≈ 2 min; baseline 2026-07-20: 64% line). Coverage never runs in the default test path. Do NOT use the Microsoft dynamic-instrumentation engine — VS coverage, `dotnet-coverage`, the MTP CodeCoverage extension, and VSTest `--collect:"XPlat Code Coverage"` all deadlock instrumenting `BethesdaMultitool.dll` (collector burns 200-300s CPU to ~8 GB with the test host frozen; reproduced 2026-07-19 on a single test class). The old `-p:CollectCoverage=false` flag is gone (it bound to nothing).

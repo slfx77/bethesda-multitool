@@ -30,9 +30,21 @@ Offset  Size  Field
 0x06    1     Priority High byte
 0x07    2     Version (uint16, LE) — must be >= 3
 0x08    52    D3DTexture GPU Header (Xbox 360 hardware format)
-0x3C    8     Padding / reserved
+0x3C    4     Total uncompressed payload size (uint32, BE)
+0x40    4     Compressed length of the FIRST XMemCompress stream (uint32, BE)
 0x44    var   XMemCompress-compressed texture data (one or more LZX chunks)
 ```
+
+Offsets `0x3C`-`0x43` were previously documented as "padding / reserved". They are not. Measured
+over the 26,122 non-empty `.ddx` files of the July 2010 360 build:
+
+- **`0x3C`** is an upper bound on the sum of every stream's declared uncompressed bytes
+  (26,122/26,122), and is *exactly* that sum for every two-stream file (19,841/19,841). It is the
+  allocation size the engine needs for the decompressed surface, so it also tells a carver whether
+  stream 1 alone accounts for the whole texture.
+- **`0x40`** is the byte length of the first stream's chunk framing. It matches the walked stream-1
+  length for all 19,841 two-stream files; single-stream files frequently leave it zero, so treat it
+  as corroboration rather than as the authoritative extent.
 
 ### 3XDR Format (Engine-Tiled)
 
@@ -61,12 +73,18 @@ Header offset  Size  Description
 -------------  ----  -----------
 0x00-0x0F      16    D3DResource base (Common, RefCount, Fence, ReadFence, Identifier, BaseFlush)
 0x10-0x13      4     MipFlush
-0x14-0x2F      24    Format structure (xe_gpu_texture_fetch_t): 6 big-endian DWORDs
+0x14-0x1B      8     Reserved / engine fields
+0x1C-0x33      24    Format structure (xe_gpu_texture_fetch_t): 6 big-endian DWORDs
 ```
+
+Header offsets above are relative to `0x08`. The fetch constant therefore begins at **file offset
+`0x24`** and runs to `0x3B` — the end of the 52-byte GPU header. (This table previously placed it at
+header offset `0x14`, i.e. file offset `0x1C`, which is off by two DWORDs and does not line up with
+the width/height DWORD the parsers actually read.)
 
 ### Format DWORDs (xe_gpu_texture_fetch_t)
 
-The 6 DWORDs at header offset `0x14` encode all GPU texture parameters. These are stored as big-endian and must be byte-swapped for parsing on little-endian systems.
+The 6 DWORDs starting at **file offset `0x24`** encode all GPU texture parameters. These are stored as big-endian and must be byte-swapped for parsing on little-endian systems.
 
 ```
 DWORD  Bits       Field
@@ -81,7 +99,16 @@ DWORD  Bits       Field
 [3-5]  Various    Swizzle, MIP info, border color, aniso filter, etc.
 ```
 
-**Dimension decoding** (from DWORD[2], stored big-endian at header offset `0x24`):
+DWORD[0] is at file offset `0x24`, DWORD[1] at `0x28`, DWORD[2] at `0x2C`, and so on.
+
+> **DWORD[1] bits 16-19 are NOT a mip count.** They are part of `base_address` (bits 8-31), which is
+> a GPU physical address and is **zero in every DDX file** — measured 24,268/24,268. A decoder that
+> reads `((dword1 >> 16) & 0xF) + 1` as "mip levels" therefore reports 1 mip for every file, which
+> silently collapses every mip chain downstream. Derive the mip count from how much uncompressed
+> data the file actually holds (`0x3C`, or the tiled mip-0 extent plus the sequential tiled chain)
+> instead. There is no better bit field to substitute here.
+
+**Dimension decoding** (from DWORD[2], stored big-endian at file offset `0x2C`):
 
 ```csharp
 // Read as big-endian, then:
