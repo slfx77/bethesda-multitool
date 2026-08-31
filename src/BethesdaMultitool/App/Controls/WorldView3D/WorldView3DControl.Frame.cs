@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -311,8 +312,16 @@ public sealed partial class WorldView3DControl
 
     private void OnRendering(object? sender, object e)
     {
-        if (Visibility == Microsoft.UI.Xaml.Visibility.Collapsed) return;
-        if (_surface12 is null || _gpu12 is null || _commandRecorder12 is null) return;
+        if (Visibility == Microsoft.UI.Xaml.Visibility.Collapsed)
+        {
+            ReseedFrameClocks();
+            return;
+        }
+        if (_surface12 is null || _gpu12 is null || _commandRecorder12 is null)
+        {
+            ReseedFrameClocks();
+            return;
+        }
 
         // Skip the whole frame until a scene is loaded. The render loop attaches at device init (see
         // Lifecycle.AttachRenderLoop), BEFORE LoadData runs — so without this gate the control renders an
@@ -320,7 +329,11 @@ public sealed partial class WorldView3DControl
         // thread, contending for the GPU and triggering GC pauses that stall both threads. That stretches
         // the load many-fold: a 5.6M-record FO76 parse measured ~8x slower with the loop running than the
         // same parse headless (world-data 2.5 min vs 17.6 s). Rendering resumes the instant LoadData sets _data.
-        if (_data is null) return;
+        if (_data is null)
+        {
+            ReseedFrameClocks();
+            return;
+        }
 
         // Pay the GPU fence wait BEFORE sampling the clock and the camera. This frame cannot start
         // recording until the slot frees regardless, and in a GPU-bound scene that wait is most of the
@@ -340,9 +353,9 @@ public sealed partial class WorldView3DControl
                 ex.Message);
         }
 
-        var now = DateTime.UtcNow;
-        var deltaSeconds = (float)(now - _lastFrameTime).TotalSeconds;
-        _lastFrameTime = now;
+        var now = Stopwatch.GetTimestamp();
+        var deltaSeconds = (float)Stopwatch.GetElapsedTime(_lastFrameStartTimestamp, now).TotalSeconds;
+        _lastFrameStartTimestamp = now;
 
         // Per-frame refresh is a cheap struct assignment; keeps the tonemap operator in lockstep with
         // interior/exterior + worldspace switches without invalidation bookkeeping. AdaptFactor is the
@@ -466,7 +479,8 @@ public sealed partial class WorldView3DControl
         bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
         float? gameHourOverride = null, Vector3? cameraOriginOverride = null, bool enableShadows = true,
         VisibilityCylinder? lightVisibility = null, GpuTonemapSettings? tonemapOverride = null,
-        Vector4? clipPlane = null)
+        Vector4? clipPlane = null, Matrix4x4? lightViewProjection = null,
+        int lightViewportWidth = 0, int lightViewportHeight = 0)
     {
         // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
         // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
@@ -498,8 +512,21 @@ public sealed partial class WorldView3DControl
         // Root SRV t9 is bound on every path, including lighting-off/top-down frames. Its returned
         // count rides the previously spare b3 Params.w slot so both shading PSOs read one list.
         var placedLightCount = BindPlacedLights(
-            cmd, frameIndex, lightVisibility, cameraOrigin, lightingOn);
+            cmd, frameIndex, lightVisibility, cameraOrigin, lightingOn,
+            lightViewProjection, lightViewportWidth, lightViewportHeight);
         _references?.SetPlacedLightCount(placedLightCount);
+        if (_references is { } references)
+        {
+            var tileTelemetry = _lastPlacedLightTileTelemetry;
+            references.SetPlacedLightTileTelemetry(
+                tileTelemetry.BuildMilliseconds,
+                tileTelemetry.TileCount,
+                tileTelemetry.UploadBytes,
+                tileTelemetry.AverageLightsPerTile,
+                tileTelemetry.MaxLightsPerTile,
+                tileTelemetry.EmptyTilePercent,
+                tileTelemetry.FallbackReason);
+        }
         // Per-game ambient fill scale (uAmbientColor.w): FNV's 0.3 is too dark for the ambient-heavier
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
@@ -977,7 +1004,9 @@ public sealed partial class WorldView3DControl
         var segmentStarted = StartProfileTimestamp();
         recorder.BeginFrame();
         EmitCompletedGpuFrames();
+        EmitCompletedReferencePipelineStatistics();
         _gpuTimestampProfiler12?.BeginFrame(recorder.FrameIndex);
+        _gpuReferencePipelineStatistics12?.BeginFrame(recorder.FrameIndex);
         var cmd = recorder.CommandList;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameStart);
         // Deletion queue advances frame counter — releases resources whose hold has elapsed.
@@ -1222,7 +1251,10 @@ public sealed partial class WorldView3DControl
             cmd, recorder.FrameIndex, enableFog: !projectionActive, cameraRelative: cameraRelative,
             shadingCameraPosOverride: projectionActive ? orthoEye : null,
             cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null,
-            enableShadows: shadowsActive, lightVisibility: cylinder, tonemapOverride: tonemap);
+            enableShadows: shadowsActive, lightVisibility: cylinder, tonemapOverride: tonemap,
+            lightViewProjection: viewProjScene,
+            lightViewportWidth: checked((int)surface.Width),
+            lightViewportHeight: checked((int)surface.Height));
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
@@ -1331,7 +1363,9 @@ public sealed partial class WorldView3DControl
         // the post-tonemap diagnostics are recorded later in their separate LDR block.
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.TerrainStart);
-        var visibleTerrain = _showTerrain ? _terrain?.Render(viewProjScene, cylinder) ?? 0 : 0;
+        var visibleTerrain = _showTerrain
+            ? _terrain?.Render(viewProjScene, cylinder, sceneRenderOrigin) ?? 0
+            : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.TerrainEnd);
         var terrainMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
@@ -1383,8 +1417,31 @@ public sealed partial class WorldView3DControl
         _references?.SetHiddenCategories(_hiddenCategories);
 
         var visibleReferences = 0;
-        if (_showReferences)
+        if (_gpuReferencePipelineStatistics12 is { } pipelineStatistics)
         {
+            pipelineStatistics.BeginReferencePass(cmd);
+            try
+            {
+                if (_showReferences)
+                {
+                    visibleReferences = _references?.Render(
+                        viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
+                        renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose,
+                        cameraPosition: projectionActive ? orthoEye : _camera.Position,
+                        cameraForward: projectionActive
+                            ? Vector3.Normalize(_projectionFocus - orthoEye)
+                            : _camera.Forward) ?? 0;
+                }
+            }
+            finally
+            {
+                pipelineStatistics.EndReferencePass(cmd);
+            }
+        }
+        else if (_showReferences)
+        {
+            // Keep the default-off path free of query commands and the enabled path's
+            // try/finally region. The only residual CPU cost is this one predictable null branch.
             visibleReferences = _references?.Render(
                 viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
                 renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose,
@@ -1416,6 +1473,7 @@ public sealed partial class WorldView3DControl
         if (sceneMirrorPlanned && _waterReflectionTarget is { } sceneMirrorTarget)
         {
             var mainAtmosphereCb = _lastAtmosphereCbGpuAddress;
+            var mainPointLightTiles = _lastPointLightTilesGpuAddress;
             try
             {
                 // Reflection about the dominant plane in ORIGIN-RELATIVE space (the VS transforms
@@ -1445,7 +1503,10 @@ public sealed partial class WorldView3DControl
                     cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null,
                     enableShadows: shadowsActive, lightVisibility: cylinder,
                     tonemapOverride: tonemap,
-                    clipPlane: new Vector4(0f, 0f, 1f, -mirrorPlaneRel));
+                    clipPlane: new Vector4(0f, 0f, 1f, -mirrorPlaneRel),
+                    lightViewProjection: mirrorViewProjScene,
+                    lightViewportWidth: sceneMirrorTarget.Width,
+                    lightViewportHeight: sceneMirrorTarget.Height);
                 // Sky first (depth-off background): the dome is at infinity, so the camera-plane
                 // Z flip is the same reflection as the water plane's — directions are unaffected
                 // by the translation difference. Cloud scroll must not advance twice per frame.
@@ -1477,6 +1538,8 @@ public sealed partial class WorldView3DControl
                 // Water/blended passes read b3 next — the mirror's CB must not leak forward.
                 cmd.SetGraphicsRootConstantBufferView(
                     GpuRootSignature12.Slots.AtmosphereCbv, mainAtmosphereCb);
+                cmd.SetGraphicsRootShaderResourceView(
+                    (uint)GpuRootSignature12.Slots.PointLightTilesSrv, mainPointLightTiles);
             }
         }
 
@@ -1879,6 +1942,7 @@ public sealed partial class WorldView3DControl
         // the shadow DSV/viewport need no restore). Replays this frame's captured reference batches
         // from the light's view; skipped entirely while the cache key (sun dir, snapped camera,
         // content version) is unchanged, so a settled scene records zero shadow work.
+        var shadowMs = 0.0;
         if (shadowsActive)
         {
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ShadowStart);
@@ -1889,7 +1953,9 @@ public sealed partial class WorldView3DControl
                 _ringBuffer12!.ReleaseTailReservation();
             }
 
+            segmentStarted = StartProfileTimestamp();
             RecordSunShadowPass(cmd, referenceRenderOrigin, _camera.Position);
+            shadowMs = ElapsedMilliseconds(segmentStarted);
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ShadowEnd);
         }
 
@@ -1984,14 +2050,34 @@ public sealed partial class WorldView3DControl
 
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameEnd);
         _gpuTimestampProfiler12?.ResolveActiveFrame(cmd);
+        _gpuReferencePipelineStatistics12?.ResolveActiveFrame(cmd);
         recorder.EndFrame();
         _gpuTimestampProfiler12?.MarkActiveFrameSubmitted(frameNumber, recorder.LastSubmittedFenceValue);
+        _gpuReferencePipelineStatistics12?.MarkActiveFrameSubmitted(
+            frameNumber,
+            recorder.LastSubmittedFenceValue);
         var endFrameMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
         surface.Present();
         var presentMs = ElapsedMilliseconds(segmentStarted);
 
-        var totalFrameMs = ElapsedMilliseconds(frameStarted);
+        var renderBodyMs = ElapsedMilliseconds(frameStarted);
+        // WaitForFrameSlot runs before RenderFrameD3D12 (and therefore before frameStarted), so
+        // renderBodyMs is useful stage diagnostics but is not a throughput denominator. Measure
+        // completion-to-completion here: unlike the camera's post-wait start interval, this window
+        // contains THIS frame's wait/controller/body and therefore attributes a hitch to the row
+        // whose stages caused it.
+        var frameCompletedTimestamp = Stopwatch.GetTimestamp();
+        var wallFrameMs = Stopwatch.GetElapsedTime(
+            _lastFrameCompletionTimestamp, frameCompletedTimestamp).TotalMilliseconds;
+        _lastFrameCompletionTimestamp = frameCompletedTimestamp;
+        if (!double.IsFinite(wallFrameMs) || wallFrameMs <= 0)
+        {
+            // Defensive first-frame fallback. LoadData/surface creation normally seed the
+            // completion clock immediately before rendering resumes.
+            wallFrameMs = renderBodyMs + recorder.LastFrameFenceWaitMilliseconds +
+                          _lastControllerUpdateMilliseconds;
+        }
         var gcGen0Collections = GC.CollectionCount(0);
         var gcGen1Collections = GC.CollectionCount(1);
         var gcGen2Collections = GC.CollectionCount(2);
@@ -2011,7 +2097,8 @@ public sealed partial class WorldView3DControl
         var referenceStats = _showReferences ? _references?.LastStats.Snapshot() : null;
         var sample = new FrameProfileSample(
             FrameNumber: frameNumber,
-            TotalMilliseconds: totalFrameMs,
+            TotalMilliseconds: wallFrameMs,
+            RenderBodyMilliseconds: renderBodyMs,
             ControllerMilliseconds: _lastControllerUpdateMilliseconds,
             BeginFrameMilliseconds: beginFrameMs,
             FenceWaitMilliseconds: recorder.LastFrameFenceWaitMilliseconds,
@@ -2022,6 +2109,7 @@ public sealed partial class WorldView3DControl
             ReferencesMilliseconds: referencesMs,
             WaterMilliseconds: waterMs,
             WireframeMilliseconds: wireframeMs,
+            ShadowMilliseconds: shadowMs,
             EndFrameMilliseconds: endFrameMs,
             PresentMilliseconds: presentMs,
             HudMilliseconds: hudMs,
@@ -2042,12 +2130,18 @@ public sealed partial class WorldView3DControl
             AllocatedBytes: allocatedBytes,
             DeltaSeconds: _lastDeltaSeconds);
 
+        // Feed the pacing window unconditionally — the HUD reads it whether or not profile logging
+        // is on, and it is the only place total frame time reaches the screen.
+        _performanceSampler.Add(sample.TotalMilliseconds);
+
         if (_profileLogging)
         {
             MaybeLogProfile(sample, terrainStats, waterStats, wireframeStats, referenceStats);
         }
 
-        if (_stallThresholdMilliseconds > 0 && sample.TotalMilliseconds >= _stallThresholdMilliseconds)
+        if (IsProfileWindowFrame(sample.FrameNumber) &&
+            _stallThresholdMilliseconds > 0 &&
+            sample.TotalMilliseconds >= _stallThresholdMilliseconds)
         {
             EmitFrameStall(sample, terrainStats, waterStats, wireframeStats, referenceStats);
             if (_gpuTimestampProfiler12 is null && !_gpuTimestampsAutoEnabled)

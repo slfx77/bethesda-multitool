@@ -374,6 +374,20 @@ public sealed partial class WorldView3DControl
             return;
         }
 
+        // WastelandNVHeavy is an FNV/Mojave workload, not a generic dense-scene finder. Running its
+        // all-cell placement search against Appalachia or New Atlantis populates the append-only
+        // WorldRenderCache for an irrelevant world before frame 1. Fail closed before the finder can
+        // materialize anything; explicit profiler worldspaces also suppress the implicit default.
+        var selectedWorldspace = CurrentSelectedExteriorWorldspace();
+        if (selectedWorldspace is null || !WorldspaceLooksLikeWastelandNv(selectedWorldspace))
+        {
+            _stressBookmarkApplied = true;
+            Log.Warn(
+                "WorldView3DControl: WastelandNV Heavy stress bookmark ignored for non-Mojave worldspace '{0}'.",
+                selectedWorldspace?.EditorId ?? "(none)");
+            return;
+        }
+
         var bookmark = WorldViewStressBookmarkFinder.FindWastelandNvHeavyBookmark(
             _spatialIndex,
             _data.RenderCache,

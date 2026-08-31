@@ -46,8 +46,9 @@ cbuffer PerDraw : register(b1)
     float4 uCameraUp;
     // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
     // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
-    // (startAngle, stopAngle, startOpacity, stopOpacity), all stored as cosines/opacities. On the
-    // mutually-exclusive Lighting30 route this slot is raw emission rgb + material multiplier.
+    // (startAngle, stopAngle, startOpacity, stopOpacity), all stored as cosines/opacities. Other
+    // mutually-exclusive arms carry Lighting30 emission, Starfield constant Lerp, or regular BGSM
+    // effective emission rgb + optional glow-map bindless index + 1.
     float4 uEffectTint;
     float4 uEffectFalloff;
     // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),

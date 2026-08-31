@@ -52,6 +52,98 @@ internal static class NifExportSceneBuilder
     }
 
     /// <summary>
+    ///     Builds a rigid GLB scene from the renderer's fully extracted model. This is the standalone
+    ///     preview/export bridge for modern self-contained shapes: Fallout 4/76 <c>BSTriShape</c>
+    ///     variants and Starfield <c>BSGeometry</c> do not have a separate <c>NiTriShapeData</c>
+    ///     block, so the hierarchy-preserving legacy exporter above cannot extract their geometry.
+    ///     <para>
+    ///         <see cref="NifGeometryExtractor" /> has already applied the source graph transforms and
+    ///         resolved modern material metadata. Attach each resulting submesh to the identity root;
+    ///         this intentionally exports a static preview rather than claiming to reconstruct a
+    ///         skinned/animated modern scene graph.
+    ///     </para>
+    /// </summary>
+    internal static GlbScene? BuildRenderableModel(NifRenderableModel model, string sourceLabel)
+    {
+        if (!model.HasGeometry)
+        {
+            return null;
+        }
+
+        var scene = new GlbScene();
+        var sourceName = Path.GetFileNameWithoutExtension(sourceLabel);
+        for (var index = 0; index < model.Submeshes.Count; index++)
+        {
+            var submesh = model.Submeshes[index];
+            if (submesh.VertexCount == 0 || submesh.TriangleCount == 0)
+            {
+                continue;
+            }
+
+            var name = string.IsNullOrWhiteSpace(submesh.ShapeName)
+                ? $"{sourceName}_{index}"
+                : submesh.ShapeName!;
+            scene.MeshParts.Add(new GlbMeshPart
+            {
+                Name = name,
+                NodeIndex = GlbScene.RootNodeIndex,
+                Submesh = submesh
+            });
+        }
+
+        return scene.MeshParts.Count == 0 ? null : scene;
+    }
+
+    /// <summary>
+    ///     Applies the modern renderer extractor's resolved material state to hierarchy/skin-preserving
+    ///     mesh parts. Geometry and binding stay untouched; matching is anchored to the originating NIF
+    ///     shape block so duplicate shape names cannot cross-wire materials.
+    /// </summary>
+    internal static void ApplyModernMaterialState(GlbScene scene, NifRenderableModel modernModel)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(modernModel);
+
+        var modernByBlock = modernModel.Submeshes
+            .Where(static submesh => submesh.SourceBlockIndex >= 0)
+            .GroupBy(static submesh => submesh.SourceBlockIndex)
+            .ToDictionary(static group => group.Key, static group => group.ToArray());
+
+        for (var index = 0; index < scene.MeshParts.Count; index++)
+        {
+            var part = scene.MeshParts[index];
+            var geometry = part.Submesh;
+            if (!modernByBlock.TryGetValue(geometry.SourceBlockIndex, out var candidates))
+            {
+                continue;
+            }
+
+            var materialSource = candidates.FirstOrDefault(candidate =>
+                                     string.Equals(
+                                         candidate.ShapeName,
+                                         geometry.ShapeName,
+                                         StringComparison.OrdinalIgnoreCase) &&
+                                     candidate.VertexCount == geometry.VertexCount &&
+                                     candidate.TriangleCount == geometry.TriangleCount)
+                                 ?? candidates.FirstOrDefault(candidate =>
+                                     candidate.VertexCount == geometry.VertexCount &&
+                                     candidate.TriangleCount == geometry.TriangleCount);
+            if (materialSource is null)
+            {
+                continue;
+            }
+
+            scene.MeshParts[index] = new GlbMeshPart
+            {
+                Name = part.Name,
+                NodeIndex = part.NodeIndex,
+                Skin = part.Skin,
+                Submesh = CloneGeometryWithMaterialState(geometry, materialSource)
+            };
+        }
+    }
+
+    /// <summary>
     ///     Builds a creature scene from skeleton (MODL) + body meshes (NIFZ).
     ///     Loads skeleton first, applies idle animation if available, then loads
     ///     all NIFZ body meshes bound to the skeleton bones.
@@ -149,7 +241,11 @@ internal static class NifExportSceneBuilder
             VertexColors = source.VertexColors != null ? (byte[])source.VertexColors.Clone() : null,
             Tangents = source.Tangents != null ? (float[])source.Tangents.Clone() : null,
             Bitangents = source.Bitangents != null ? (float[])source.Bitangents.Clone() : null,
+            StarfieldMaterialColor = source.StarfieldMaterialColor,
+            StarfieldMaterialAlpha = source.StarfieldMaterialAlpha,
             DiffuseTexturePath = source.DiffuseTexturePath,
+            BgsmGlowMapTexturePath = source.BgsmGlowMapTexturePath,
+            BgsmEmissionColor = source.BgsmEmissionColor,
             ClampTextureU = source.ClampTextureU,
             ClampTextureV = source.ClampTextureV,
             NormalMapTexturePath = source.NormalMapTexturePath,
@@ -171,7 +267,73 @@ internal static class NifExportSceneBuilder
             IsEyeEnvmap = source.IsEyeEnvmap,
             EnvMapScale = source.EnvMapScale,
             RenderOrder = source.RenderOrder,
-            TintColor = source.TintColor
+            TintColor = source.TintColor,
+            SourceBlockIndex = source.SourceBlockIndex,
+            SourceNifPath = source.SourceNifPath
+        };
+    }
+
+    private static RenderableSubmesh CloneGeometryWithMaterialState(
+        RenderableSubmesh geometry,
+        RenderableSubmesh material)
+    {
+        return new RenderableSubmesh
+        {
+            ShapeName = geometry.ShapeName,
+            Positions = geometry.Positions,
+            Triangles = geometry.Triangles,
+            Normals = geometry.Normals,
+            UVs = geometry.UVs,
+            VertexColors = geometry.VertexColors,
+            Tangents = geometry.Tangents,
+            Bitangents = geometry.Bitangents,
+            BindPosePositions = geometry.BindPosePositions,
+            LocalBounds = geometry.LocalBounds,
+            SourceBlockIndex = geometry.SourceBlockIndex,
+            SourceNifPath = material.SourceNifPath ?? geometry.SourceNifPath,
+
+            StarfieldMaterialColor = material.StarfieldMaterialColor,
+            StarfieldMaterialAlpha = material.StarfieldMaterialAlpha,
+            DiffuseTexturePath = material.DiffuseTexturePath,
+            BgsmGlowMapTexturePath = material.BgsmGlowMapTexturePath,
+            BgsmEmissionColor = material.BgsmEmissionColor,
+            NormalMapTexturePath = material.NormalMapTexturePath,
+            SpecularMapTexturePath = material.SpecularMapTexturePath,
+            GradientMapTexturePath = material.GradientMapTexturePath,
+            GradientMapV = material.GradientMapV,
+            EnvironmentMapTexturePath = material.EnvironmentMapTexturePath,
+            EnvironmentMapScale = material.EnvironmentMapScale,
+            EnvironmentMapSmoothness = material.EnvironmentMapSmoothness,
+            ClassicEnvironmentMapTexturePath = material.ClassicEnvironmentMapTexturePath,
+            ClassicEnvironmentMaskTexturePath = material.ClassicEnvironmentMaskTexturePath,
+            ClassicEnvironmentMapScale = material.ClassicEnvironmentMapScale,
+            ClassicEnvironmentMapUsesWindowReflection = material.ClassicEnvironmentMapUsesWindowReflection,
+            ClassicEnvironmentMapIsSphereMap = material.ClassicEnvironmentMapIsSphereMap,
+            ClassicParallaxHeightMapTexturePath = material.ClassicParallaxHeightMapTexturePath,
+            ClampTextureU = material.ClampTextureU,
+            ClampTextureV = material.ClampTextureV,
+            EffectTint = material.EffectTint,
+            EffectFalloff = material.EffectFalloff,
+            ShaderMetadata = material.ShaderMetadata,
+            IsEmissive = material.IsEmissive,
+            UseVertexColors = material.UseVertexColors,
+            UseVertexAlphaForOpacity = material.UseVertexAlphaForOpacity,
+            IsDoubleSided = material.IsDoubleSided,
+            HasAlphaBlend = material.HasAlphaBlend,
+            HasAlphaTest = material.HasAlphaTest,
+            AlphaTestThreshold = material.AlphaTestThreshold,
+            AlphaTestFunction = material.AlphaTestFunction,
+            SrcBlendMode = material.SrcBlendMode,
+            DstBlendMode = material.DstBlendMode,
+            MaterialAlpha = material.MaterialAlpha,
+            MaterialGlossiness = material.MaterialGlossiness,
+            SpecularColor = material.SpecularColor,
+            MaterialDiffuse = material.MaterialDiffuse,
+            IsEyeEnvmap = material.IsEyeEnvmap,
+            EnvMapScale = material.EnvMapScale,
+            RenderOrder = material.RenderOrder,
+            TintColor = material.TintColor,
+            IsFaceGen = material.IsFaceGen
         };
     }
 

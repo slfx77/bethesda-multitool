@@ -43,6 +43,18 @@ public sealed class FrameDeltaFilter
     private int _sampleCount;
 
     /// <summary>
+    ///     Discards timing history when rendering pauses for a scene load. Without this, the first
+    ///     two frames of the new scene can inherit pre-load samples and turn the load gap into camera
+    ///     motion even though the caller has reseeded its wall-clock timestamp.
+    /// </summary>
+    public void Reset()
+    {
+        _previous1 = 0;
+        _previous2 = 0;
+        _sampleCount = 0;
+    }
+
+    /// <summary>
     ///     Feeds one raw timestep and returns the value the camera should integrate.
     /// </summary>
     /// <param name="rawSeconds">The measured wall-clock delta for this frame.</param>

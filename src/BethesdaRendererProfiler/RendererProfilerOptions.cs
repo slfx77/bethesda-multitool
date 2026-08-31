@@ -28,6 +28,15 @@ internal sealed record RendererProfilerOptions
 
     internal int ProfileIntervalMilliseconds { get; init; } = 2000;
     internal int? DurationSeconds { get; init; }
+
+    /// <summary>
+    ///     Optional live-profile warm-up gate. When set, frame aggregates, stalls and GPU rows stay
+    ///     outside the scored window until the rendered scene reaches the existing clean, stable
+    ///     streaming fixpoint. The timeout is deliberately opt-in because some diagnostic sessions
+    ///     are intended to measure cold streaming itself.
+    /// </summary>
+    internal int? ProfileSettleTimeoutSeconds { get; init; }
+
     internal string? StressScene { get; init; } = DefaultStressScene;
     internal RendererCameraMotionKind CameraMotion { get; init; } = RendererCameraMotionKind.Static;
     internal float CameraSpeed { get; init; } = 2048f;
@@ -192,6 +201,14 @@ internal sealed record RendererProfilerOptions
     ///     <see cref="CaptureYawDegrees" /> and the explicit capture dimensions.
     /// </summary>
     internal string? CaptureFramePath { get; init; }
+
+    /// <summary>
+    ///     Diagnostic-only one-shot capture option. Immediately before the perspective capture's
+    ///     phase-two settle, force a blocking non-compacting full GC and ask Windows to trim this
+    ///     process's working set. The settle still uses its normal readiness contract; page faults
+    ///     are reported as an observation, not accepted against an invented threshold.
+    /// </summary>
+    internal bool TrimWorkingSetBeforeSettle { get; init; }
 
     /// <summary>Exterior worldspace EditorID to frame for <see cref="CaptureFramePath" /> (e.g. WastelandNV).</summary>
     internal string? CaptureWorldspaceName { get; init; }
@@ -365,13 +382,16 @@ internal sealed record RendererProfilerOptions
           --profile-output <path>     Profile/log output file. Defaults to a timestamped temp log.
           --profile-jsonl <path>      Structured JSONL output. Defaults to profile-output with .jsonl.
           --profile-interval-ms <n>   Aggregate profile interval. Default: 2000.
+          --profile-settle-timeout-seconds <n>
+                                      Before a live profile, wait up to n seconds for four clean,
+                                      unchanged streaming censuses; scoring/duration start afterward.
           --duration-seconds <n>      Exit automatically after the viewer has loaded.
           --scenario <name>           Run a deterministic same-process acceptance scenario and exit.
                                       Names: fnv-water-night-matrix, fnv-water001-synthetic,
                                       fnv-cloud-motion, fnv-celestial, fnv-prospector-neon-bloom, fnv-sunlight-dimmer,
                                       fnv-adaptation-history, fnv-weather-imagespace-bands, fnv-active-adt-base.
           --scenario-output <dir>     Scenario artifact directory. Defaults beside the timestamped profile log.
-          --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE. Default: WastelandNV; use none to disable.
+          --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE. Default without --worldspace: WastelandNV; use none to disable.
           --worldspace <name>         Select this worldspace at load (EditorID/FullName; in-process FALLOUT_VIEWER_WORLDSPACE).
           --camera-motion <mode>      static, forward, orbit, or sweep. Default: static.
           --camera-speed <n>          Camera automation speed in world units/sec. Default: 2048.
@@ -385,6 +405,10 @@ internal sealed record RendererProfilerOptions
           --height <px>               Window height. Default: 900.
           --capture-topdown <path>    Render one top-down "Rendered models" overlay to a PNG, log coverage, then exit.
           --capture-frame <path>      Render one perspective frame to a PNG, then exit.
+          --trim-working-set-before-settle
+                                      Diagnostic only; with --capture-frame, force one non-compacting
+                                      full GC and trim this process's working set before phase-two settle.
+                                      Logs pre/post memory and post-settle page-fault observations.
           --capture-width <px>        Perspective capture width. Default: 768; maximum: 16384.
           --capture-height <px>       Perspective capture height. Default: 480; maximum: 16384.
           --capture-worldspace-name <id>
@@ -438,6 +462,7 @@ internal sealed record RendererProfilerOptions
         string? profileOutput = null;
         string? profileJsonl = null;
         var stressScene = DefaultStressScene;
+        var stressSceneWasExplicit = false;
         var loadOrder = new List<string>();
         var assetDataDirs = new List<string>();
         string? captureTopDownBatch = null;
@@ -455,6 +480,7 @@ internal sealed record RendererProfilerOptions
         var captureBatchProjection = TopDownProjection.Trimetric;
         var profileIntervalMs = 2000;
         int? durationSeconds = null;
+        int? profileSettleTimeoutSeconds = null;
         var cameraMotion = RendererCameraMotionKind.Static;
         var cameraSpeed = 2048f;
         float? renderDistanceCells = null;
@@ -472,6 +498,7 @@ internal sealed record RendererProfilerOptions
         float? captureCenterY = null;
         float? captureZ = null;
         string? captureFrame = null;
+        var trimWorkingSetBeforeSettle = false;
         string? captureWorldspaceName = null;
         string? captureInterior = null;
         string? worldspaceName = null;
@@ -551,6 +578,15 @@ internal sealed record RendererProfilerOptions
                     durationSeconds = seconds;
                     break;
 
+                case "--profile-settle-timeout-seconds":
+                    if (!TryReadPositiveInt(args, ref i, arg, out var settleSeconds, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    profileSettleTimeoutSeconds = settleSeconds;
+                    break;
+
                 case "--scenario":
                     scenarioName = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
@@ -562,8 +598,10 @@ internal sealed record RendererProfilerOptions
                     break;
 
                 case "--stress-scene":
-                    stressScene = NormalizeStressScene(RequireValue(args, ref i, arg, out error));
+                    var stressSceneRaw = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
+                    stressScene = NormalizeStressScene(stressSceneRaw);
+                    stressSceneWasExplicit = true;
                     break;
 
                 case "--camera-motion":
@@ -779,6 +817,10 @@ internal sealed record RendererProfilerOptions
                 case "--capture-frame":
                     captureFrame = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
+                    break;
+
+                case "--trim-working-set-before-settle":
+                    trimWorkingSetBeforeSettle = true;
                     break;
 
                 case "--capture-width":
@@ -1074,6 +1116,32 @@ internal sealed record RendererProfilerOptions
             return Fail(out options);
         }
 
+        if (trimWorkingSetBeforeSettle && string.IsNullOrWhiteSpace(captureFrame))
+        {
+            error = "--trim-working-set-before-settle requires one-shot --capture-frame.";
+            return Fail(out options);
+        }
+
+        if (trimWorkingSetBeforeSettle &&
+            (!string.IsNullOrWhiteSpace(captureTopDown) ||
+             !string.IsNullOrWhiteSpace(captureTopDownBatch) ||
+             normalizedScenarioName is not null ||
+             durationSeconds is not null))
+        {
+            error = "--trim-working-set-before-settle is valid only with standalone one-shot --capture-frame.";
+            return Fail(out options);
+        }
+
+        if (profileSettleTimeoutSeconds is not null &&
+            (!string.IsNullOrWhiteSpace(captureFrame) ||
+             !string.IsNullOrWhiteSpace(captureTopDown) ||
+             !string.IsNullOrWhiteSpace(captureTopDownBatch) ||
+             normalizedScenarioName is not null))
+        {
+            error = "--profile-settle-timeout-seconds is valid only for the live profile loop.";
+            return Fail(out options);
+        }
+
         var defaultProfileOutput = CreateDefaultProfileOutputPath();
         string? resolvedScenarioOutput;
         if (normalizedScenarioName is null)
@@ -1132,7 +1200,15 @@ internal sealed record RendererProfilerOptions
             ProfileJsonlOutputPath = resolvedProfileJsonl,
             ProfileIntervalMilliseconds = profileIntervalMs,
             DurationSeconds = durationSeconds,
-            StressScene = normalizedScenarioName is null ? stressScene : null,
+            ProfileSettleTimeoutSeconds = profileSettleTimeoutSeconds,
+            // An explicit worldspace is a complete scene selection. Do not silently follow it with
+            // the profiler's historical FNV-heavy default, which scans/materializes the selected
+            // world's placement cache before moving the camera. An explicitly supplied stress scene
+            // still wins, preserving intentional FNV stress runs in either argument order.
+            StressScene = normalizedScenarioName is not null ||
+                          (!stressSceneWasExplicit && !string.IsNullOrWhiteSpace(worldspaceName))
+                ? null
+                : stressScene,
             CameraMotion = cameraMotion,
             CameraSpeed = cameraSpeed,
             RenderDistanceCells = renderDistanceCells,
@@ -1165,6 +1241,7 @@ internal sealed record RendererProfilerOptions
             CaptureCenterY = captureCenterY,
             CaptureZ = captureZ,
             CaptureFramePath = string.IsNullOrWhiteSpace(captureFrame) ? null : Path.GetFullPath(captureFrame),
+            TrimWorkingSetBeforeSettle = trimWorkingSetBeforeSettle,
             CaptureWorldspaceName = captureWorldspaceName,
             CaptureInterior = captureInterior?.Trim(),
             WorldspaceName = worldspaceName,

@@ -182,7 +182,7 @@ public sealed class GrassDistanceEnvelopeTests
             2,
             SourceContract.CountOccurrences(
                 compactRenderer,
-                "_opaqueBatches.GetOrCreate(sub,pso," +
+                "state.Target.OpaqueBatches.GetOrCreate(sub,pso," +
                 "usesGrassDistanceEnvelope,usesTallGrassWind," +
                 "r.GrassWaveMultiplier)"));
 

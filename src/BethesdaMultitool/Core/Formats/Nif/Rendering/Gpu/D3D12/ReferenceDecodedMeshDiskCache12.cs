@@ -4,6 +4,7 @@ using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -86,8 +87,24 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // TES4-era authored window reflections) now ride the classic env payload with a new
     // is-sphere-map bool appended after the rigid-anim track. Warm v78 entries lack both the
     // bool and the effect-derived env paths, so affected meshes would stay chrome-less.
+    // v80: vertex colour is stored packed (R8G8B8A8_UNORM, one uint) instead of a float4, matching
+    // the narrowed GpuVertex. A warm v79 entry holds 16 bytes where the reader now takes 4, so every
+    // field after it in the vertex stream would be misread as garbage geometry — this bump is what
+    // makes that impossible rather than merely unlikely.
+    // v81: Starfield BSGeometry now carries CDB-authorized Multiply tint (decoded vertex RGB or an
+    // sRGB-expanded authored constant) with alpha neutralized. Warm v80 entries have no such color.
+    // v82: Starfield constant Lerp carries its first-class CE2-expanded RGB + linear blend weight
+    // after the sphere-map marker. Warm v81 entries lack the operation and would render untinted.
+    // v83: Starfield AlphaSettings carries its distinct slot-2 cutout operation + exact threshold.
+    // Warm v82 entries would render authored fences/foliage as opaque sheets.
+    // v84: flipbook layer materials are excluded from that static cutout operation. Warm v83 entries
+    // can sample opacity and base colour from an unanimated, potentially different sheet frame.
+    // v85: Starfield CDB root-material ParamBool/ShaderModel two-sided state now reaches the decoded
+    // submesh's serialized DoubleSided bit. Warm v84 entries retain the old backface-culling verdict.
+    // v86: regular FO4/FO76 BGSM emissive RGB and optional slot-2 glow map join the payload. Warm
+    // v85 entries omit that authored lit-emission material state.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 79;
+    internal const int DecoderVersion = 86;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -150,7 +167,20 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         string? variantKey,
         out ReferenceDecodedMeshDiskCacheEntry12 entry)
     {
-        if (!TryLoadCore(BuildKeyText(metadata, variantKey), ReadMesh, out var mesh, out var isNegative))
+        return TryLoad(metadata, variantKey, null, out entry);
+    }
+
+    internal bool TryLoad(
+        MeshArchiveLookupMetadata metadata,
+        string? variantKey,
+        string? starfieldMaterialDatabaseIdentity,
+        out ReferenceDecodedMeshDiskCacheEntry12 entry)
+    {
+        if (!TryLoadCore(
+                BuildKeyText(metadata, variantKey, starfieldMaterialDatabaseIdentity),
+                ReadMesh,
+                out var mesh,
+                out var isNegative))
         {
             entry = default;
             return false;
@@ -165,15 +195,35 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         string? variantKey,
         ReferenceDecodedMeshPayload12? payload)
     {
-        StoreCore(BuildKeyText(metadata, variantKey), payload, WriteMesh);
+        Store(metadata, variantKey, null, payload);
+    }
+
+    internal void Store(
+        MeshArchiveLookupMetadata metadata,
+        string? variantKey,
+        string? starfieldMaterialDatabaseIdentity,
+        ReferenceDecodedMeshPayload12? payload)
+    {
+        StoreCore(BuildKeyText(metadata, variantKey, starfieldMaterialDatabaseIdentity), payload, WriteMesh);
     }
 
     internal string GetCachePath(MeshArchiveLookupMetadata metadata, string? variantKey = null)
     {
-        return GetCachePath(BuildKeyText(metadata, variantKey));
+        return GetCachePath(BuildKeyText(metadata, variantKey, null));
     }
 
-    private static string BuildKeyText(MeshArchiveLookupMetadata metadata, string? variantKey)
+    internal string GetCachePath(
+        MeshArchiveLookupMetadata metadata,
+        string? variantKey,
+        string? starfieldMaterialDatabaseIdentity)
+    {
+        return GetCachePath(BuildKeyText(metadata, variantKey, starfieldMaterialDatabaseIdentity));
+    }
+
+    private static string BuildKeyText(
+        MeshArchiveLookupMetadata metadata,
+        string? variantKey,
+        string? starfieldMaterialDatabaseIdentity)
     {
         var builder = new StringBuilder(512);
         Append("format", CacheFormatVersion);
@@ -185,6 +235,15 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         if (!string.IsNullOrEmpty(variantKey))
         {
             Append("variant", variantKey);
+        }
+
+        // Starfield BSGeometry bakes materialsbeta.cdb-selected color into decoded vertices. The CDB
+        // lives in the independent texture/material source set, so mesh-archive metadata alone cannot
+        // invalidate a material-only update or override. Omit the field entirely when no CDB exists:
+        // ordinary non-Starfield cache keys remain byte-identical.
+        if (!string.IsNullOrEmpty(starfieldMaterialDatabaseIdentity))
+        {
+            Append("starfieldMaterialDatabase", starfieldMaterialDatabaseIdentity);
         }
 
         Append("found", metadata.Found ? "1" : "0");
@@ -497,7 +556,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             WriteVector3(writer, vertex.Position);
             WriteVector3(writer, vertex.Normal);
             WriteVector2(writer, vertex.TexCoord);
-            WriteVector4(writer, vertex.VertexColor);
+            writer.Write(vertex.VertexColorRgba);
             WriteVector3(writer, vertex.Tangent);
             WriteVector3(writer, vertex.Bitangent);
         }
@@ -593,6 +652,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
 
         WriteRigidNodeAnimation(writer, submesh.RigidNodeAnimation);
         writer.Write(submesh.ClassicEnvironmentMapIsSphereMap);
+        WriteStarfieldMaterialColor(writer, submesh.StarfieldMaterialColor);
+        WriteStarfieldMaterialAlpha(writer, submesh.StarfieldMaterialAlpha);
+        ValidateBgsmEmission(submesh.BgsmGlowMapTexturePath, submesh.BgsmEmissionColor);
+        WriteNullableString(writer, submesh.BgsmGlowMapTexturePath, MaxStringBytes);
+        WriteVector3(writer, submesh.BgsmEmissionColor);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -604,7 +668,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             vertices[i].Position = ReadVector3(reader);
             vertices[i].Normal = ReadVector3(reader);
             vertices[i].TexCoord = ReadVector2(reader);
-            vertices[i].VertexColor = ReadVector4(reader);
+            vertices[i].VertexColorRgba = reader.ReadUInt32();
             vertices[i].Tangent = ReadVector3(reader);
             vertices[i].Bitangent = ReadVector3(reader);
         }
@@ -686,7 +750,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             reader.ReadBoolean() ? ReadVector3(reader) : null,
             ReadRigidNodeAnimation(reader),
-            reader.ReadBoolean());
+            reader.ReadBoolean(),
+            ReadStarfieldMaterialColor(reader),
+            ReadStarfieldMaterialAlpha(reader),
+            ReadNullableString(reader, MaxStringBytes),
+            ReadVector3(reader));
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -702,8 +770,99 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             throw new InvalidDataException("Invalid NIF billboard mode in decoded mesh cache.");
         }
 
+        ValidateBgsmEmission(payload.BgsmGlowMapTexturePath, payload.BgsmEmissionColor);
+
         return payload;
     }
+
+    private static void ValidateBgsmEmission(string? glowMapTexturePath, Vector3 emissionColor)
+    {
+        if (!IsFinite(emissionColor) || emissionColor.X < 0f || emissionColor.Y < 0f ||
+            emissionColor.Z < 0f)
+        {
+            throw new InvalidDataException("Decoded mesh cache has invalid BGSM emission color.");
+        }
+
+        if (emissionColor == Vector3.Zero && glowMapTexturePath is not null)
+        {
+            throw new InvalidDataException("Decoded mesh cache has a BGSM glow map without active emission.");
+        }
+    }
+
+    private static void WriteStarfieldMaterialColor(
+        BinaryWriter writer,
+        StarfieldMaterialColorRenderState state)
+    {
+        ValidateStarfieldMaterialColor(state);
+        writer.Write((byte)state.Mode);
+        WriteVector4(writer, state.LinearTint);
+    }
+
+    private static StarfieldMaterialColorRenderState ReadStarfieldMaterialColor(BinaryReader reader)
+    {
+        var state = new StarfieldMaterialColorRenderState(
+            (StarfieldMaterialColorRenderMode)reader.ReadByte(),
+            ReadVector4(reader));
+        ValidateStarfieldMaterialColor(state);
+        return state;
+    }
+
+    private static void ValidateStarfieldMaterialColor(StarfieldMaterialColorRenderState state)
+    {
+        var valid = state.Mode switch
+        {
+            StarfieldMaterialColorRenderMode.None => state.LinearTint == Vector4.Zero,
+            StarfieldMaterialColorRenderMode.ConstantLerp =>
+                IsNormalizedFinite(state.LinearTint.X) &&
+                IsNormalizedFinite(state.LinearTint.Y) &&
+                IsNormalizedFinite(state.LinearTint.Z) &&
+                IsNormalizedFinite(state.LinearTint.W) &&
+                state.LinearTint.W > 0f,
+            _ => false
+        };
+        if (!valid)
+        {
+            throw new InvalidDataException("Invalid Starfield material color state in decoded mesh cache.");
+        }
+    }
+
+    private static void WriteStarfieldMaterialAlpha(
+        BinaryWriter writer,
+        StarfieldMaterialAlphaRenderState state)
+    {
+        ValidateStarfieldMaterialAlpha(state);
+        writer.Write((byte)state.Mode);
+        writer.Write(state.AlphaTestThreshold);
+    }
+
+    private static StarfieldMaterialAlphaRenderState ReadStarfieldMaterialAlpha(BinaryReader reader)
+    {
+        var state = new StarfieldMaterialAlphaRenderState(
+            (StarfieldMaterialAlphaRenderMode)reader.ReadByte(),
+            reader.ReadSingle());
+        ValidateStarfieldMaterialAlpha(state);
+        return state;
+    }
+
+    private static void ValidateStarfieldMaterialAlpha(StarfieldMaterialAlphaRenderState state)
+    {
+        var valid = state.Mode switch
+        {
+            StarfieldMaterialAlphaRenderMode.None => state.AlphaTestThreshold == 0f,
+            StarfieldMaterialAlphaRenderMode.Layer0OpacityCutout =>
+                float.IsFinite(state.AlphaTestThreshold) &&
+                state.AlphaTestThreshold > 0f &&
+                state.AlphaTestThreshold < 1f,
+            _ => false
+        };
+        if (!valid)
+        {
+            throw new InvalidDataException("Invalid Starfield material alpha state in decoded mesh cache.");
+        }
+    }
+
+    private static bool IsNormalizedFinite(float value) =>
+        float.IsFinite(value) && value is >= 0f and <= 1f;
 
     private static void WritePhysicsLiteSway(
         BinaryWriter writer, PhysicsLiteSwayDescriptor? descriptor)
@@ -1121,4 +1280,12 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     NifRigidNodeAnimation? RigidNodeAnimation = null,
     // TES3/TES4-era NiTextureEffect ENVIRONMENT_MAP + CG_SPHERE_MAP marker (v79+): the classic
     // env texture is a 2D sphere map (view-space reflection lookup), never cube-promoted.
-    bool ClassicEnvironmentMapIsSphereMap = false);
+    bool ClassicEnvironmentMapIsSphereMap = false,
+    // Starfield constant-Lerp render state (v82+), appended after the sphere-map marker.
+    StarfieldMaterialColorRenderState StarfieldMaterialColor = default,
+    // Starfield AlphaSettings cutout state (v83+), appended after material colour.
+    StarfieldMaterialAlphaRenderState StarfieldMaterialAlpha = default,
+    // Regular FO4/FO76 BGSM emissive term (v86+). The map is nullable because the material can
+    // author a constant emissive color without a slot-2 texture.
+    string? BgsmGlowMapTexturePath = null,
+    Vector3 BgsmEmissionColor = default);

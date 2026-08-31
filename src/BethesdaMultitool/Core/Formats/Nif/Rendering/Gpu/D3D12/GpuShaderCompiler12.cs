@@ -70,17 +70,25 @@ internal static class GpuShaderCompiler12
     internal static byte[] Compile(
         string fileName, string entryPoint, string profile, params ShaderMacro[] macros)
     {
-        var key = BuildCacheKey(fileName, entryPoint, profile, macros);
+        var effectiveMacros = ShadowComparisonPcf12.ApplyRuntimeOptIn(profile, macros);
+        var key = BuildCacheKey(fileName, entryPoint, profile, effectiveMacros);
         if (BytecodeCache.TryGetValue(key, out var cached))
         {
             Interlocked.Increment(ref _cacheHitCount);
+            ShadowComparisonPcf12.TraceSuccessfulShader(
+                fileName, entryPoint, profile, effectiveMacros, key, cached, cacheHit: true);
             return cached;
         }
 
-        var bytecode = CompileSource(ReadSource(fileName), fileName, entryPoint, profile, macros);
+        var bytecode = CompileSource(
+            ReadSource(fileName), fileName, entryPoint, profile, effectiveMacros);
         // GetOrAdd rather than indexer assignment: a concurrent duplicate compile is wasteful but
         // harmless, and callers must all observe the same array instance.
-        return BytecodeCache.GetOrAdd(key, bytecode);
+        var selectedBytecode = BytecodeCache.GetOrAdd(key, bytecode);
+        ShadowComparisonPcf12.TraceSuccessfulShader(
+            fileName, entryPoint, profile, effectiveMacros, key, selectedBytecode,
+            cacheHit: !ReferenceEquals(selectedBytecode, bytecode));
+        return selectedBytecode;
     }
 
     /// <summary>

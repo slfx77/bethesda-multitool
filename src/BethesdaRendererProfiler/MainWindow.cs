@@ -40,6 +40,12 @@ internal sealed partial class MainWindow : Window, IDisposable
         Title = "Fallout Renderer Profiler";
 
         _worldView = new WorldView3DControl();
+        if (_options.ProfileSettleTimeoutSeconds is not null)
+        {
+            // The renderer must remain live to warm the scene, but its scored sinks must not write
+            // cold-streaming aggregates before the asynchronous Loaded handler reaches the gate.
+            _worldView.Profiler_PauseProfileWindow();
+        }
         _worldView.Loaded += OnWorldViewLoaded;
 
         _statusText = new TextBlock
@@ -231,6 +237,42 @@ internal sealed partial class MainWindow : Window, IDisposable
             // shading), which is the main reason to run one at a recorded pose in the first place.
             ApplyRequestedFraming("Profiler");
 
+            // Render distance is normally applied by Renderer3DScenario.Start. A settled profile
+            // must stream against that same distance before its window opens, while automation is
+            // still stopped at the exact requested pose.
+            if (_options.RenderDistanceCells is { } renderDistanceCells)
+            {
+                var pose = _worldView.Profiler_CameraPose with
+                {
+                    RenderDistance = renderDistanceCells * _worldView.Profiler_CellWorldSize
+                };
+                _worldView.Profiler_SetCameraPose(pose);
+            }
+
+            if (_options.ProfileSettleTimeoutSeconds is { } profileSettleTimeoutSeconds)
+            {
+                var settled = await WaitForProfileSceneSettledAsync(
+                    TimeSpan.FromSeconds(profileSettleTimeoutSeconds));
+                if (!settled)
+                {
+                    ExitProfiler("profile-settle-timeout", 3);
+                    return;
+                }
+
+                var firstScoredFrame = _worldView.Profiler_BeginProfileWindow();
+                var fields = RendererProfilerTrace.CameraPoseFields(_worldView.Profiler_CameraPose);
+                fields["phase"] = "start";
+                fields["firstScoredFrame"] = firstScoredFrame;
+                fields["settleTimeoutSeconds"] = profileSettleTimeoutSeconds;
+                fields["worldspaceFormId"] = _worldView.Profiler_SelectedWorldspaceFormId;
+                fields["worldspaceEditorId"] = _worldView.Profiler_SelectedWorldspaceEditorId;
+                fields["cameraFovDegrees"] = _worldView.Profiler_CameraFovDegrees;
+                RendererProfilerTrace.Event("profile-window", fields);
+                Log.Info(
+                    "Profiler: settled scoring window starts at frame {0} after a clean, stable scene fixpoint.",
+                    firstScoredFrame);
+            }
+
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
 
             StartTimedExitIfRequested();
@@ -310,6 +352,67 @@ internal sealed partial class MainWindow : Window, IDisposable
         }
 
         return _worldView.Profiler_IsSceneReady;
+    }
+
+    private async Task<bool> WaitForProfileSceneSettledAsync(TimeSpan timeout)
+    {
+        var timer = Stopwatch.StartNew();
+        var tracker = new ProfileSceneSettlementTracker();
+        var nextProgressLog = TimeSpan.Zero;
+        var lastObservedFrame = _worldView.Profiler_FrameIndex;
+
+        RendererProfilerTrace.Event("profile-window", new Dictionary<string, object?>
+        {
+            ["phase"] = "settling",
+            ["timeoutSeconds"] = timeout.TotalSeconds,
+            ["requiredConsecutiveCensuses"] = tracker.RequiredConsecutive
+        });
+
+        while (timer.Elapsed < timeout)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            var frame = _worldView.Profiler_FrameIndex;
+            if (frame > lastObservedFrame)
+            {
+                lastObservedFrame = frame;
+                var census = _worldView.Profiler_CaptureSceneCensus;
+                if (tracker.Observe(in census))
+                {
+                    RendererProfilerTrace.Event("profile-window", new Dictionary<string, object?>
+                    {
+                        ["phase"] = "settled",
+                        ["elapsedSeconds"] = timer.Elapsed.TotalSeconds,
+                        ["frame"] = frame,
+                        ["consecutiveCensuses"] = tracker.Consecutive
+                    });
+                    return true;
+                }
+            }
+
+            if (timer.Elapsed >= nextProgressLog)
+            {
+                nextProgressLog = timer.Elapsed + TimeSpan.FromSeconds(5);
+                Log.Info(
+                    "Profiler: settling scene ({0:0.0}/{1:0}s, stable={2}/{3}) {4}",
+                    timer.Elapsed.TotalSeconds,
+                    timeout.TotalSeconds,
+                    tracker.Consecutive,
+                    tracker.RequiredConsecutive,
+                    tracker.LastDirt.Length == 0 ? "waiting for a repeated census" : tracker.LastDirt);
+            }
+        }
+
+        var dirt = tracker.LastDirt.Length == 0 ? "no stable census" : tracker.LastDirt;
+        Log.Error("Profiler: scene did not settle within {0:0}s: {1}", timeout.TotalSeconds, dirt);
+        Console.Error.WriteLine($"[Profiler] scene did not settle within {timeout.TotalSeconds:0}s: {dirt}");
+        RendererProfilerTrace.Event("profile-window", new Dictionary<string, object?>
+        {
+            ["phase"] = "timeout",
+            ["elapsedSeconds"] = timer.Elapsed.TotalSeconds,
+            ["frame"] = _worldView.Profiler_FrameIndex,
+            ["lastDirt"] = dirt
+        });
+        return false;
     }
 
     /// <summary>
@@ -584,6 +687,12 @@ internal sealed partial class MainWindow : Window, IDisposable
                 $"fov={(_options.CaptureFovDegrees is float f ? $"{f:0.#}" : "scene")}° " +
                 $"(pitch/yaw {(_options.CapturePitchDegrees is null ? "from scene" : "requested")}).");
 
+            CaptureWorkingSetTrimSession? workingSetTrimSession = null;
+            if (_options.TrimWorkingSetBeforeSettle)
+            {
+                workingSetTrimSession = CaptureWorkingSetTrimDiagnostic.RunBeforeSettle();
+            }
+
             // Phase 2 — run the loop again so the SELECTED weather's cloud textures stream in + upload to
             // the GPU before the single (render-loop-paused) capture frame. A moved camera needs the
             // longer settle: the target location's cells/meshes start streaming only now. The fixed delay
@@ -628,6 +737,14 @@ internal sealed partial class MainWindow : Window, IDisposable
                 }
 
                 census = next;
+            }
+
+            if (workingSetTrimSession is { } trimSession)
+            {
+                CaptureWorkingSetTrimDiagnostic.ObserveAfterSettle(
+                    trimSession,
+                    quiesced,
+                    quiesceTimer.Elapsed);
             }
 
             if (!quiesced && lastDirt.Length > 0)

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -47,6 +48,19 @@ internal sealed class RenderableSubmesh
     /// <summary>R, G, B, A per vertex (optional). Length = numVertices * 4.</summary>
     public byte[]? VertexColors { get; init; }
 
+    /// <summary>
+    ///     Bounded CE2 material-colour operation that cannot be represented by
+    ///     <see cref="VertexColors" />. Constant Lerp preserves expanded RGB plus its independent
+    ///     composition weight; vertex-driven Lerp remains fail-closed.
+    /// </summary>
+    public StarfieldMaterialColorRenderState StarfieldMaterialColor { get; init; }
+
+    /// <summary>
+    ///     Bounded CE2 AlphaSettings coverage state. This is distinct from material opacity/blend
+    ///     and from <c>StarfieldMaterialColor.LinearTint.W</c>, which is a tint-Lerp weight.
+    /// </summary>
+    public StarfieldMaterialAlphaRenderState StarfieldMaterialAlpha { get; init; }
+
     /// <summary>Tangent X, Y, Z per vertex (optional, for bump mapping). Same length as Positions.</summary>
     public float[]? Tangents { get; set; }
 
@@ -87,6 +101,18 @@ internal sealed class RenderableSubmesh
 
     /// <summary>Palette row for the grayscale-to-palette lookup (0–1); meaningless when the map is null.</summary>
     public float GradientMapV { get; set; }
+
+    /// <summary>
+    ///     FO4/FO76 regular-BGSM glow texture (material slot 2), when the material's emissive term
+    ///     is active. This is distinct from classic Lighting30's similarly numbered glow-map lane.
+    /// </summary>
+    public string? BgsmGlowMapTexturePath { get; set; }
+
+    /// <summary>
+    ///     Effective FO4/FO76 regular-BGSM emissive RGB: authored emissive color multiplied by its
+    ///     authored scale. Zero, with <see cref="BgsmGlowMapTexturePath" /> null, means inactive.
+    /// </summary>
+    public Vector3 BgsmEmissionColor { get; set; }
 
     /// <summary>
     ///     FO4 environment/cubemap texture (BGSM slot 4 — typically

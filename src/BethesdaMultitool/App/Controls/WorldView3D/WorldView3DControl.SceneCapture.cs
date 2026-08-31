@@ -704,7 +704,11 @@ public sealed partial class WorldView3DControl
                 // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
                 BindAtmosphereConstants(
                     cmd, recorder.FrameIndex, cameraRelative: captureCameraRelative,
-                    lightVisibility: cylinder, tonemapOverride: tonemap);
+                    cameraOriginOverride: captureCameraRelative ? captureRenderOrigin : null,
+                    lightVisibility: cylinder, tonemapOverride: tonemap,
+                    lightViewProjection: viewProj,
+                    lightViewportWidth: target.Width,
+                    lightViewportHeight: target.Height);
                 target.Bind(cmd);
 
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
@@ -747,7 +751,7 @@ public sealed partial class WorldView3DControl
 
                 if (captureTerrainEnabled)
                 {
-                    _terrain!.Render(viewProj, cylinder);
+                    _terrain!.Render(viewProj, cylinder, captureRenderOrigin);
                 }
 
                 // Defer blended reference submeshes until after water so water never paints over them
@@ -766,6 +770,7 @@ public sealed partial class WorldView3DControl
                 if (captureSceneMirrorPlanned && _waterReflectionTarget is { } captureMirrorTarget)
                 {
                     var captureMainAtmosphereCb = _lastAtmosphereCbGpuAddress;
+                    var captureMainPointLightTiles = _lastPointLightTilesGpuAddress;
                     try
                     {
                         var mirrorPlaneRel = captureMirrorPlaneHeight - captureRenderOrigin.Z;
@@ -789,7 +794,10 @@ public sealed partial class WorldView3DControl
                                 : mirroredCameraAbs,
                             cameraOriginOverride: captureCameraRelative ? captureRenderOrigin : null,
                             lightVisibility: cylinder, tonemapOverride: tonemap,
-                            clipPlane: new Vector4(0f, 0f, 1f, -mirrorPlaneRel));
+                            clipPlane: new Vector4(0f, 0f, 1f, -mirrorPlaneRel),
+                            lightViewProjection: captureMirrorViewProj,
+                            lightViewportWidth: captureMirrorTarget.Width,
+                            lightViewportHeight: captureMirrorTarget.Height);
                         RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
                             animationTimeSeconds: animationTimeSeconds,
                             skyColorScale: sceneSkyScale, advanceCloudScroll: false);
@@ -820,6 +828,9 @@ public sealed partial class WorldView3DControl
                         cmd.RSSetScissorRect(target.Width, target.Height);
                         cmd.SetGraphicsRootConstantBufferView(
                             GpuRootSignature12.Slots.AtmosphereCbv, captureMainAtmosphereCb);
+                        cmd.SetGraphicsRootShaderResourceView(
+                            (uint)GpuRootSignature12.Slots.PointLightTilesSrv,
+                            captureMainPointLightTiles);
                     }
                 }
 
@@ -1419,6 +1430,17 @@ public sealed partial class WorldView3DControl
     {
         static float[] Vec3(Vector3 value) => [value.X, value.Y, value.Z];
         static float[] Vec4(Vector4 value) => [value.X, value.Y, value.Z, value.W];
+        static Dictionary<string, object?>? WthsColor(StarfieldBlendableColorPatch? color) =>
+            color is null
+                ? null
+                : new Dictionary<string, object?>
+                {
+                    ["operation"] = color.Operation,
+                    ["value"] = color.Value is { } value
+                        ? new float?[] { value.X, value.Y, value.Z, value.W }
+                        : null,
+                    ["blendAmount"] = color.BlendAmount
+                };
 
         var game = _data?.Game ?? Core.Games.BethesdaGame.Unknown;
         var interior = _selectedInterior;
@@ -1426,6 +1448,12 @@ public sealed partial class WorldView3DControl
         var behavesLikeExterior = skyContext.BehavesLikeExterior;
         var worldspace = skyContext.Worldspace;
         var climate = ResolveClimate(skyContext);
+        var weatherSettingsResolution = ResolveClimateDefaultWeatherSettings(skyContext);
+        var starfieldEnvironmentRoute = CurrentStarfieldEnvironmentRoute(skyContext);
+        var starfieldCelestialRoute = CurrentStarfieldCelestialRoute(skyContext);
+        var starfieldRenderSunPreset = StarfieldSunPresetForRenderingApproximation(
+            starfieldEnvironmentRoute,
+            starfieldCelestialRoute);
         var weatherTransition = ResolveSelectedWeatherTransition();
         var waterSelection = _waterAppearanceSelection;
         var waterRecord = waterSelection.Water;
@@ -1822,6 +1850,207 @@ public sealed partial class WorldView3DControl
         fields["secundaDirection"] = Vec3(secundaDirection);
         fields["secundaPathFade"] = secundaPathFade;
         fields["secundaDrawAlpha"] = secundaDrawAlpha;
+        var climateWeatherSettings = climate?.WeatherSettingsTypes ?? [];
+        fields["climateWeatherArchitecture"] = game == Core.Games.BethesdaGame.Starfield
+            ? climateWeatherSettings.Count > 0
+                ? "starfield-wths-reflection"
+                : climate?.WeatherTypes.Count > 0
+                    ? "legacy-wthr"
+                    : "none"
+            : "legacy-wthr";
+        fields["climateLegacyWeatherCount"] = climate?.WeatherTypes.Count ?? 0;
+        fields["climateWeatherSettingsCount"] = climateWeatherSettings.Count;
+        fields["climateWeatherSettings"] = climateWeatherSettings.Select(entry =>
+            new Dictionary<string, object?>
+            {
+                ["formId"] = $"0x{entry.WeatherSettingsFormId:X8}",
+                ["chance"] = entry.Chance,
+                ["globalFormId"] = entry.GlobalFormId == 0 ? null : $"0x{entry.GlobalFormId:X8}"
+            }).ToArray();
+        var effectiveWeatherSettings = weatherSettingsResolution?.EffectivePatch;
+        const StarfieldEnvironmentApproximationChannels weatherProjectionMask =
+            StarfieldEnvironmentApproximationChannels.WeatherFogNear |
+            StarfieldEnvironmentApproximationChannels.WeatherFogFar |
+            StarfieldEnvironmentApproximationChannels.WeatherSunDisc |
+            StarfieldEnvironmentApproximationChannels.WeatherSunGlare;
+        const StarfieldEnvironmentApproximationChannels sunPresetProjectionMask =
+            StarfieldEnvironmentApproximationChannels.SunPresetDiscColor |
+            StarfieldEnvironmentApproximationChannels.SunPresetGlareColor;
+        var appliedWeatherChannels = _starfieldEnvironmentAppliedChannels & weatherProjectionMask;
+        var appliedSunPresetChannels = _starfieldEnvironmentAppliedChannels & sunPresetProjectionMask;
+        var rejectedWeatherChannels = _starfieldEnvironmentRejectedChannels & weatherProjectionMask;
+        var rejectedSunPresetChannels = _starfieldEnvironmentRejectedChannels & sunPresetProjectionMask;
+        var volumetricLightingTelemetry = weatherSettingsResolution?.IsResolved == true
+            ? StarfieldEnvironmentCaptureTelemetry.ProjectVolumetricLighting(
+                effectiveWeatherSettings?.VolumetricLightingFormId,
+                _data?.VolumetricLightingByFormId)
+            : null;
+        var cloudFormTelemetry = weatherSettingsResolution?.IsResolved == true
+            ? StarfieldEnvironmentCaptureTelemetry.ProjectCloudForm(
+                effectiveWeatherSettings?.CloudsFormId,
+                _data?.CloudFormsByFormId)
+            : null;
+        // The live viewer now supplies the exact ATMO target selected by the unique PNDT inverse
+        // route. This remains a static source-backed route, not a claim about CE2 weather randomisation.
+        var atmosphereFormId = starfieldEnvironmentRoute?.PlanetCandidate?.Planet.Body.Atmosphere.AtmosphereFormId;
+        var atmosphereTelemetry = game == Core.Games.BethesdaGame.Starfield
+            ? StarfieldEnvironmentCaptureTelemetry.ProjectAtmosphere(
+                atmosphereFormId,
+                _data?.AtmospheresByFormId)
+            : null;
+        fields["starfieldAtmosphereSourceData"] = atmosphereTelemetry;
+        fields["starfieldEnvironmentRoute"] = game != Core.Games.BethesdaGame.Starfield
+            ? null
+            : new Dictionary<string, object?>
+            {
+                ["worldspaceFormId"] = worldspace is null ? null : $"0x{worldspace.FormId:X8}",
+                ["status"] = starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected",
+                ["failureDetail"] = starfieldEnvironmentRoute?.FailureDetail,
+                ["planetFormId"] = starfieldEnvironmentRoute?.PlanetCandidate is { } planetCandidate
+                    ? $"0x{planetCandidate.Planet.FormId:X8}"
+                    : null,
+                ["atmosphereFormId"] = atmosphereFormId is { } selectedAtmosphereFormId
+                    ? $"0x{selectedAtmosphereFormId:X8}"
+                    : null,
+                ["atmosphereSunPresetOverrideFormId"] = starfieldEnvironmentRoute?.SunPresetOverrideFormId is
+                    { } atmosphereSunOverrideFormId
+                    ? $"0x{atmosphereSunOverrideFormId:X8}"
+                    : null,
+                ["climateFormId"] = starfieldEnvironmentRoute?.Climate is { } routeClimate
+                    ? $"0x{routeClimate.FormId:X8}"
+                    : null,
+                ["weatherSettingsFormId"] = starfieldEnvironmentRoute?.WeatherSettingsChoice is { } routeWeather
+                    ? $"0x{routeWeather.WeatherSettingsFormId:X8}"
+                    : null,
+                ["selectionScope"] =
+                    "unique WRLD←PNDT→ATMO→CLMT→WTHS static route; CE2 weighted/runtime transitions are not inferred"
+            };
+        fields["starfieldCelestialRoute"] = game != Core.Games.BethesdaGame.Starfield
+            ? null
+            : new Dictionary<string, object?>
+            {
+                ["status"] = starfieldCelestialRoute?.Status.ToString() ?? "not-selected",
+                ["failureDetail"] = starfieldCelestialRoute?.FailureDetail,
+                ["systemId"] = starfieldCelestialRoute?.PlanetCandidate.Planet.Body.SystemId,
+                ["primaryStarDataFormId"] = starfieldCelestialRoute?.PrimaryStar is { } primaryStar
+                    ? $"0x{primaryStar.Star.FormId:X8}"
+                    : null,
+                ["primarySunPresetFormId"] = starfieldCelestialRoute?.PrimaryStar?.AuthoredSunPresetFormId is
+                    { } primarySunPresetFormId
+                    ? $"0x{primarySunPresetFormId:X8}"
+                    : null,
+                ["primarySunDiskTexture"] =
+                    starfieldCelestialRoute?.PrimaryStar?.EffectiveSunPreset?.SunDiskTexture,
+                ["primarySunIlluminance"] =
+                    starfieldCelestialRoute?.PrimaryStar?.EffectiveSunPreset?.SunIlluminance,
+                ["projectedSunDiskTexture"] = starfieldRenderSunPreset?.SunDiskTexture,
+                ["binaryStarDataFormId"] = starfieldCelestialRoute?.BinaryStar is { } binaryStar
+                    ? $"0x{binaryStar.Star.FormId:X8}"
+                    : null,
+                ["sunPresetRenderSource"] = starfieldRenderSunPreset is not null
+                    ? "primary STDT PNAM→SUNP"
+                    : starfieldEnvironmentRoute?.SunPresetOverrideFormId is
+                    { } nonzeroAtmosphereOverride && nonzeroAtmosphereOverride != 0
+                        ? "blocked: nonzero ATMO override precedence/combination is unresolved"
+                        : starfieldEnvironmentRoute is { } environmentRoute &&
+                          environmentRoute.Status != StarfieldEnvironmentRouteStatus.MissingAtmosphereReference &&
+                          environmentRoute.Atmosphere?.IsResolved != true
+                            ? "blocked: ATMO override state did not resolve"
+                        : "unavailable",
+                ["projectedStarScope"] =
+                    "primary SUNP disc/glare colors and disc texture only; draw visibility/placement/illuminance/TODD unresolved"
+            };
+        fields["starfieldEnvironmentRendering"] = game != Core.Games.BethesdaGame.Starfield
+            ? null
+            : new Dictionary<string, object?>
+            {
+                ["projection"] = StarfieldEnvironmentApproximationResult.Name,
+                ["appliedChannels"] = _starfieldEnvironmentAppliedChannels.ToString(),
+                ["weatherAppliedChannels"] = appliedWeatherChannels.ToString(),
+                ["sunPresetAppliedChannels"] = appliedSunPresetChannels.ToString(),
+                ["rejectedChannels"] = _starfieldEnvironmentRejectedChannels.ToString(),
+                ["weatherRejectedChannels"] = rejectedWeatherChannels.ToString(),
+                ["sunPresetRejectedChannels"] = rejectedSunPresetChannels.ToString(),
+                ["drawVisibilityProven"] = false,
+                ["ce2ParityClaimed"] = false
+            };
+        fields["selectedClimateWeatherSettings"] = weatherSettingsResolution is null
+            ? null
+            : new Dictionary<string, object?>
+            {
+                ["selectionScope"] =
+                    "active unique PNDT→ATMO→CLMT WSLT choice; weighted/global/runtime transitions fail closed",
+                ["targetFormId"] = $"0x{weatherSettingsResolution.TargetFormId:X8}",
+                ["status"] = weatherSettingsResolution.Status.ToString(),
+                ["inheritanceChain"] = weatherSettingsResolution.InheritanceChain
+                    .Select(formId => $"0x{formId:X8}").ToArray(),
+                ["failureFormId"] = weatherSettingsResolution.FailureFormId is { } failureFormId
+                    ? $"0x{failureFormId:X8}"
+                    : null,
+                ["failureDetail"] = weatherSettingsResolution.FailureDetail,
+                ["weatherChoiceWeight"] = effectiveWeatherSettings?.WeatherChoice?.Weight,
+                ["imageSpaceFormId"] = effectiveWeatherSettings?.ImageSpaceFormId is { } imageSpaceFormId
+                    ? $"0x{imageSpaceFormId:X8}"
+                    : null,
+                ["imageSpaceNightFormId"] = effectiveWeatherSettings?.ImageSpaceNightFormId is { } nightImageSpaceFormId
+                    ? $"0x{nightImageSpaceFormId:X8}"
+                    : null,
+                ["volumetricLightingFormId"] = effectiveWeatherSettings?.VolumetricLightingFormId is { } volumetricFormId
+                    ? $"0x{volumetricFormId:X8}"
+                    : null,
+                ["cloudsFormId"] = effectiveWeatherSettings?.CloudsFormId is { } cloudsFormId
+                    ? $"0x{cloudsFormId:X8}"
+                    : null,
+                ["volumetricLighting"] = volumetricLightingTelemetry,
+                ["cloudForm"] = cloudFormTelemetry,
+                ["lensFlareFormId"] = effectiveWeatherSettings?.LensFlareFormId is { } lensFlareFormId
+                    ? $"0x{lensFlareFormId:X8}"
+                    : null,
+                ["colors"] = effectiveWeatherSettings?.Colors is { } colors
+                    ? new Dictionary<string, object?>
+                    {
+                        ["effectLighting"] = WthsColor(colors.EffectLighting),
+                        ["fogFar"] = WthsColor(colors.FogFar),
+                        ["fogFarHigh"] = WthsColor(colors.FogFarHigh),
+                        ["fogNear"] = WthsColor(colors.FogNear),
+                        ["fogNearHigh"] = WthsColor(colors.FogNearHigh),
+                        ["sun"] = WthsColor(colors.Sun),
+                        ["sunGlare"] = WthsColor(colors.SunGlare),
+                        ["sunlight"] = WthsColor(colors.Sunlight),
+                        ["moonGlare"] = WthsColor(colors.MoonGlare),
+                        ["moonlight"] = WthsColor(colors.Moonlight)
+                    }
+                    : null,
+                ["renderingStatus"] = weatherSettingsResolution.IsResolved != true
+                    ? $"WTHS resolution failed closed: {weatherSettingsResolution.Status}"
+                    : appliedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
+                        ? "listed WTHS Set channels were projected into viewer atmosphere state; draw visibility is not implied"
+                        : rejectedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
+                            ? "resolved WTHS supported channels were rejected as incomplete, nonfinite, or not a Set operation"
+                            : "resolved WTHS supplied no supported complete Set channel to the viewer atmosphere projection"
+            };
+        fields["climateWeatherSettingsDecodeStatus"] = game != Core.Games.BethesdaGame.Starfield
+            ? "not-applicable"
+            : climate is null
+                ? $"no resolved CLMT for the active Starfield environment route: " +
+                  $"{starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected"}"
+                : climateWeatherSettings.Count == 0
+                    ? "no WSLT entries on the resolved CLMT"
+                    : weatherSettingsResolution?.IsResolved == true
+                        ? appliedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
+                            ? "WTHS REFL/RDIF resolved; bounded source-backed channels projected into viewer state"
+                            : "WTHS REFL/RDIF resolved; no supported bounded channel was projected"
+                        : $"WTHS resolution failed closed: {weatherSettingsResolution?.Status.ToString() ?? "unavailable"}";
+        fields["authoredSkyGeometryUnavailableReason"] =
+            game != Core.Games.BethesdaGame.Starfield
+                ? null
+                : climate is null
+                    ? $"No CLMT resolved for the active Starfield environment route " +
+                      $"({starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected"}); " +
+                      "CLDF/ATMO scattering and TODD geometry are not implemented"
+                    : string.IsNullOrWhiteSpace(climate.ModelPath)
+                        ? "Resolved Starfield CLMT has no sky MODL; CLDF/ATMO scattering and TODD geometry are not implemented"
+                        : null;
         var moonProfile = MoonProfile;
         var phaseLengthDays = _currentClimateTiming.MoonPhaseDays > 0
             ? _currentClimateTiming.MoonPhaseDays

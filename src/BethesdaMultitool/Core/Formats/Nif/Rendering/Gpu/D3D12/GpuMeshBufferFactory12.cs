@@ -33,9 +33,12 @@ internal static unsafe class GpuMeshBufferFactory12
         new("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0), // aPosition    (vec3)
         new("TEXCOORD", 1, Format.R32G32B32_Float, 12, 0), // aNormal      (vec3)
         new("TEXCOORD", 2, Format.R32G32_Float, 24, 0), // aTexCoord    (vec2)
-        new("TEXCOORD", 3, Format.R32G32B32A32_Float, 32, 0), // aVertexColor (vec4)
-        new("TEXCOORD", 4, Format.R32G32B32_Float, 48, 0), // aTangent     (vec3)
-        new("TEXCOORD", 5, Format.R32G32B32_Float, 60, 0) // aBitangent   (vec3)
+        // Colour is UNORM8, not float4. The IA still presents it to the VS as a float4, so every
+        // shader on this layout is unchanged; the stride drops 72 -> 60 bytes. Offsets after this
+        // element shifted by 12 — they are NOT independent of the format above.
+        new("TEXCOORD", 3, Format.R8G8B8A8_UNorm, 32, 0), // aVertexColor (unorm8x4 -> float4)
+        new("TEXCOORD", 4, Format.R32G32B32_Float, 36, 0), // aTangent     (vec3)
+        new("TEXCOORD", 5, Format.R32G32B32_Float, 48, 0) // aBitangent   (vec3)
     ];
 
 

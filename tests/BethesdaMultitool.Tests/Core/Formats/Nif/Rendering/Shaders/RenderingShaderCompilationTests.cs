@@ -63,9 +63,9 @@ public sealed class RenderingShaderCompilationTests
     ///         This replaces two hand-maintained lists. One was named
     ///         <c>EveryRemainingEmbeddedRenderingEntryPointCompiles</c> but was in fact 26 literal
     ///         tuples, so a newly added shader had zero coverage until someone remembered it. The
-    ///         other carried a phantom <c>FO76_WATER</c> macro that appears in no <c>.hlsl</c> file —
-    ///         a byte-identical duplicate of the FO4 permutation that implied FO76 was validated when
-    ///         nothing about it was.
+    ///         other carried a phantom <c>FO76_WATER</c> macro that appeared in no <c>.hlsl</c> file —
+    ///         a byte-identical duplicate of the FO4 permutation. The later <c>FO76_WATER_OPTICS</c>
+    ///         axis is different: it emits a real dual-source output and is a production permutation.
     ///     </para>
     ///     <para>
     ///         <see cref="ShaderInventoryTests.EveryEntryShaderIsReachedByAPermutation" /> keeps the
@@ -91,6 +91,27 @@ public sealed class RenderingShaderCompilationTests
         }
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void ShadowComparisonPcfPermutationsCompile()
+    {
+        foreach (var permutation in ShaderPermutations.ShadowComparisonPcf)
+        {
+            Compile(permutation.File, permutation.EntryPoint, permutation.Profile, permutation.Macros);
+        }
+    }
+
+    [Fact]
+    public void Fallout76FloatOpticsPermutationsCompile()
+    {
+        var permutations = ShaderPermutations.Water
+            .Where(permutation => permutation.Macros.Any(
+                macro => macro.Name == "FO76_WATER_OPTICS" && macro.Definition == "1"));
+        foreach (var permutation in permutations)
+        {
+            Compile(permutation.File, permutation.EntryPoint, permutation.Profile, permutation.Macros);
+        }
     }
 
     [Fact]

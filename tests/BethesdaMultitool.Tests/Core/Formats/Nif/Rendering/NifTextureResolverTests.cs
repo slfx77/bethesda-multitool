@@ -37,6 +37,57 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void GpuTextureCache_UsesDistinctCanonicalKeysForStarfieldDiffuseAndNormalSlots()
+    {
+        const string materialPath = @"Data/Materials/Test/Thing.MAT";
+
+        var diffuse = GpuTextureCache12.NormalizeCacheKey(materialPath);
+        var normal = GpuTextureCache12.NormalizeCacheKey(materialPath, isNormalMap: true);
+
+        Assert.Equal(@"materials\test\thing.mat", diffuse);
+        Assert.Equal(diffuse + MaterialTexturePathResolver.StarfieldNormalMapSuffix, normal);
+        Assert.Equal(normal, NifGpuTextureResolver.NormalizeKey(normal));
+        Assert.NotEqual(diffuse, normal);
+
+        var whitespaceNormal = GpuTextureCache12.NormalizeCacheKey(
+            "  Data/Materials/Test/Thing.MAT  ",
+            isNormalMap: true);
+        Assert.Equal(normal, whitespaceNormal);
+    }
+
+    [Fact]
+    public void StarfieldNormalMapRequest_RoundTripsItsMaterialPath()
+    {
+        var request = MaterialTexturePathResolver.BuildStarfieldNormalMapRequest(
+            @"Materials/Test/Thing.MAT");
+
+        Assert.True(MaterialTexturePathResolver.TrySplitStarfieldNormalMapRequest(
+            request, out var materialPath));
+        Assert.Equal(@"materials\test\thing.mat", materialPath);
+        Assert.False(MaterialTexturePathResolver.TrySplitStarfieldNormalMapRequest(
+            @"textures\test\thing_n.dds|sfmat-normal", out _));
+    }
+
+    [Fact]
+    public void StarfieldOpacityMapRequest_RoundTripsAndKeepsADistinctCacheIdentity()
+    {
+        var request = MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(
+            @"Data/Materials/Test/Thing.MAT");
+
+        Assert.Equal(@"materials\test\thing.mat|sfmat-opacity", request);
+        Assert.True(MaterialTexturePathResolver.TrySplitStarfieldOpacityMapRequest(
+            request, out var materialPath));
+        Assert.Equal(@"materials\test\thing.mat", materialPath);
+        Assert.Equal(request, NifGpuTextureResolver.NormalizeKey(request));
+        Assert.Equal(request, GpuTextureCache12.NormalizeCacheKey(request));
+        Assert.NotEqual(
+            GpuTextureCache12.NormalizeCacheKey(materialPath),
+            GpuTextureCache12.NormalizeCacheKey(request));
+        Assert.False(MaterialTexturePathResolver.TrySplitStarfieldOpacityMapRequest(
+            @"textures\test\thing_opacity.dds|sfmat-opacity", out _));
+    }
+
+    [Fact]
     public void GpuTextureCacheAliasTrace_MatchesTheOldCaseInsensitiveKeyExactly()
     {
         const string archiveRelative = @"SetDressing\NewsStand\NewStand01_n.dds";
@@ -672,6 +723,12 @@ public sealed class NifTextureResolverTests
         public bool Exists(string path)
         {
             return string.Equals(path, key, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
+        {
+            metadata = default;
+            return false;
         }
 
         public void Dispose()

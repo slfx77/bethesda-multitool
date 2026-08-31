@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -44,12 +45,42 @@ public sealed partial class WorldView3DControl
     private static readonly bool PlacedLightsEnvEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLights) != "0";
 
+    // Default-on exact tiled-forward A/B gate. Zero binds a one-tile all-active mask, preserving
+    // the prior shader workload and image while keeping the root/buffer ABI identical.
+    private static readonly bool PlacedLightTilesEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLightTiles) != "0";
+
     private readonly List<PlacedLight> _cellPlacedLightScratch = new(MaxPlacedLightsPerInteriorCell * 2);
 
     private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerFrame);
     private readonly List<WorldSpatialCell> _placedLightCellScratch = [];
     private readonly HashSet<uint> _placedLightClipLoggedCells = [];
+    private ulong[] _placedLightTileMaskScratch = new ulong[1];
+    private ulong[] _placedLightTileCachedMasks = new ulong[1];
+    private readonly List<PlacedLight> _placedLightTileCachedLights = new(MaxPlacedLightsPerFrame);
+    private bool _placedLightTileCacheValid;
+    private Matrix4x4 _placedLightTileCachedViewProjection;
+    private Vector3 _placedLightTileCachedRenderOrigin;
+    private int _placedLightTileCachedViewportWidth;
+    private int _placedLightTileCachedViewportHeight;
+    private int _placedLightTileCachedMaskCount;
+    private PlacedLightTileCullResult _placedLightTileCachedResult;
+    private long _placedLightTileCachedTotalLights;
+    private int _placedLightTileCachedMaxLights;
+    private int _placedLightTileCachedEmptyTiles;
     private bool _framePlacedLightCapLogged;
+    private ulong _lastPointLightTilesGpuAddress;
+
+    private readonly record struct PlacedLightTileFrameTelemetry(
+        double BuildMilliseconds,
+        int TileCount,
+        int UploadBytes,
+        double AverageLightsPerTile,
+        int MaxLightsPerTile,
+        double EmptyTilePercent,
+        string? FallbackReason);
+
+    private PlacedLightTileFrameTelemetry _lastPlacedLightTileTelemetry;
 
     /// <summary>
     ///     Selects visible-cell emitters, uploads one global structured buffer, and binds root SRV
@@ -69,7 +100,10 @@ public sealed partial class WorldView3DControl
         int frameIndex,
         VisibilityCylinder? visibility,
         Vector3 renderOrigin,
-        bool lightingEnabled)
+        bool lightingEnabled,
+        Matrix4x4? lightViewProjection = null,
+        int lightViewportWidth = 0,
+        int lightViewportHeight = 0)
     {
         _framePlacedLights.Clear();
 
@@ -116,7 +150,218 @@ public sealed partial class WorldView3DControl
         cmd.SetGraphicsRootShaderResourceView(
             (uint)GpuRootSignature12.Slots.PointLightsSrv,
             alloc.GpuAddress);
+
+        BindPlacedLightTiles(
+            cmd,
+            frameIndex,
+            lightViewProjection,
+            lightViewportWidth,
+            lightViewportHeight,
+            renderOrigin);
         return _framePlacedLights.Count;
+    }
+
+    /// <summary>
+    ///     Builds and binds the exact-superset tiled-forward mask. Every fallback is all-active:
+    ///     failure can cost performance, but cannot remove illumination relative to the old loop.
+    /// </summary>
+    private unsafe void BindPlacedLightTiles(
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        Matrix4x4? viewProjection,
+        int viewportWidth,
+        int viewportHeight,
+        Vector3 renderOrigin)
+    {
+        var started = StartProfileTimestamp();
+        var lightCount = _framePlacedLights.Count;
+        var activeMask = lightCount == PlacedLightTileCuller.MaxLights
+            ? ulong.MaxValue
+            : (1UL << lightCount) - 1UL;
+
+        var tileCountX = 1;
+        var tileCountY = 1;
+        var tileCount = 1;
+        var maskSource = _placedLightTileMaskScratch;
+        var reusedCachedMasks = false;
+        var storeBuiltMasks = false;
+        var builtResult = default(PlacedLightTileCullResult);
+        string? fallbackReason = null;
+        EnsurePlacedLightTileMaskCapacity(1);
+        _placedLightTileMaskScratch[0] = activeMask;
+
+        if (!PlacedLightTilesEnabled)
+        {
+            fallbackReason = "Disabled";
+        }
+        else if (lightCount == 0)
+        {
+            // Do not build thousands of empty frustums. A one-tile zero mask is exact.
+            _placedLightTileMaskScratch[0] = 0;
+        }
+        else if (viewProjection is not { } matrix)
+        {
+            fallbackReason = "MissingViewProjection";
+        }
+        else
+        {
+            var required = PlacedLightTileCuller.RequiredMaskCount(viewportWidth, viewportHeight);
+            EnsurePlacedLightTileMaskCapacity(required);
+            maskSource = _placedLightTileMaskScratch;
+            if (TryReusePlacedLightTileMasks(
+                    matrix, viewportWidth, viewportHeight, renderOrigin, required, out var cachedResult))
+            {
+                maskSource = _placedLightTileCachedMasks;
+                tileCountX = cachedResult.TileCountX;
+                tileCountY = cachedResult.TileCountY;
+                tileCount = cachedResult.TileCount;
+                reusedCachedMasks = true;
+            }
+            else
+            {
+                builtResult = PlacedLightTileCuller.Build(
+                    matrix,
+                    viewportWidth,
+                    viewportHeight,
+                    renderOrigin,
+                    CollectionsMarshal.AsSpan(_framePlacedLights),
+                    _placedLightTileMaskScratch.AsSpan(0, required));
+                fallbackReason = builtResult.UsedFallback ? builtResult.FallbackReason.ToString() : null;
+                if (!builtResult.UsedFallback)
+                {
+                    tileCountX = builtResult.TileCountX;
+                    tileCountY = builtResult.TileCountY;
+                    tileCount = builtResult.TileCount;
+                    storeBuiltMasks = true;
+                }
+                else
+                {
+                    // The culler filled every requested tile all-active. Collapse that equivalent
+                    // fallback to one element so an invalid matrix cannot also waste ring capacity.
+                    _placedLightTileMaskScratch[0] = activeMask;
+                }
+            }
+        }
+
+        var totalLights = reusedCachedMasks ? _placedLightTileCachedTotalLights : 0L;
+        var maxLights = reusedCachedMasks ? _placedLightTileCachedMaxLights : 0;
+        var emptyTiles = reusedCachedMasks ? _placedLightTileCachedEmptyTiles : 0;
+        if (!reusedCachedMasks)
+        {
+            for (var i = 0; i < tileCount; i++)
+            {
+                var count = BitOperations.PopCount(maskSource[i]);
+                totalLights += count;
+                maxLights = Math.Max(maxLights, count);
+                if (count == 0) emptyTiles++;
+            }
+        }
+
+        if (storeBuiltMasks)
+        {
+            StorePlacedLightTileMasks(
+                viewProjection!.Value,
+                viewportWidth,
+                viewportHeight,
+                renderOrigin,
+                builtResult,
+                totalLights,
+                maxLights,
+                emptyTiles);
+        }
+
+        // uint2 header + one uint2 mask per tile. ulong writes are layout-identical on the
+        // little-endian D3D12 host: low/high dwords map to uint2.x/y.
+        var uploadBytes = checked((uint)((tileCount + 1) * sizeof(ulong)));
+        var tileAlloc = _ringBuffer12!.Allocate(frameIndex, uploadBytes, alignment: 16);
+        var destination = (ulong*)tileAlloc.CpuPtr;
+        destination[0] = (uint)tileCountX | ((ulong)(uint)tileCountY << 32);
+        for (var i = 0; i < tileCount; i++)
+        {
+            destination[i + 1] = maskSource[i];
+        }
+
+        _lastPointLightTilesGpuAddress = tileAlloc.GpuAddress;
+        cmd.SetGraphicsRootShaderResourceView(
+            (uint)GpuRootSignature12.Slots.PointLightTilesSrv,
+            tileAlloc.GpuAddress);
+
+        _lastPlacedLightTileTelemetry = new PlacedLightTileFrameTelemetry(
+            ElapsedMilliseconds(started),
+            tileCount,
+            (int)uploadBytes,
+            tileCount == 0 ? 0 : (double)totalLights / tileCount,
+            maxLights,
+            tileCount == 0 ? 0 : 100.0 * emptyTiles / tileCount,
+            fallbackReason);
+    }
+
+    private void EnsurePlacedLightTileMaskCapacity(int required)
+    {
+        if (_placedLightTileMaskScratch.Length >= required) return;
+        Array.Resize(ref _placedLightTileMaskScratch, required);
+    }
+
+    private bool TryReusePlacedLightTileMasks(
+        Matrix4x4 viewProjection,
+        int viewportWidth,
+        int viewportHeight,
+        Vector3 renderOrigin,
+        int requiredMaskCount,
+        out PlacedLightTileCullResult result)
+    {
+        result = default;
+        if (!_placedLightTileCacheValid ||
+            _placedLightTileCachedMaskCount != requiredMaskCount ||
+            !PlacedLightTileCachePolicy.Matches(
+                _placedLightTileCachedViewProjection,
+                _placedLightTileCachedViewportWidth,
+                _placedLightTileCachedViewportHeight,
+                _placedLightTileCachedRenderOrigin,
+                CollectionsMarshal.AsSpan(_placedLightTileCachedLights),
+                viewProjection,
+                viewportWidth,
+                viewportHeight,
+                renderOrigin,
+                CollectionsMarshal.AsSpan(_framePlacedLights)))
+        {
+            return false;
+        }
+
+        result = _placedLightTileCachedResult;
+        return true;
+    }
+
+    private void StorePlacedLightTileMasks(
+        Matrix4x4 viewProjection,
+        int viewportWidth,
+        int viewportHeight,
+        Vector3 renderOrigin,
+        PlacedLightTileCullResult result,
+        long totalLights,
+        int maxLights,
+        int emptyTiles)
+    {
+        var maskCount = result.TileCount;
+        if (_placedLightTileCachedMasks.Length < maskCount)
+        {
+            Array.Resize(ref _placedLightTileCachedMasks, maskCount);
+        }
+
+        _placedLightTileMaskScratch.AsSpan(0, maskCount)
+            .CopyTo(_placedLightTileCachedMasks);
+        _placedLightTileCachedLights.Clear();
+        _placedLightTileCachedLights.AddRange(_framePlacedLights);
+        _placedLightTileCachedViewProjection = viewProjection;
+        _placedLightTileCachedViewportWidth = viewportWidth;
+        _placedLightTileCachedViewportHeight = viewportHeight;
+        _placedLightTileCachedRenderOrigin = renderOrigin;
+        _placedLightTileCachedMaskCount = maskCount;
+        _placedLightTileCachedResult = result;
+        _placedLightTileCachedTotalLights = totalLights;
+        _placedLightTileCachedMaxLights = maxLights;
+        _placedLightTileCachedEmptyTiles = emptyTiles;
+        _placedLightTileCacheValid = true;
     }
 
     /// <summary>

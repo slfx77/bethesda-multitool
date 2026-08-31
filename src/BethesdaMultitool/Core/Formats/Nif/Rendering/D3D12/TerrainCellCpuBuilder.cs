@@ -52,7 +52,14 @@ internal static class TerrainCellCpuBuilder
             TerrainMeshBuilder.VertexCountFor(gridSize) * blendQuadCount * TerrainBlendWeightPacking.SlotsPerQuad];
         PopulateBlendWeights(textureSet, blendWeights, gridSize, blendQuadCount);
         return new BuiltCellCpuData(
-            vertices, blendWeights, blendQuadCount, textureSet, grid, Unusable: false, generation);
+            vertices,
+            blendWeights,
+            blendQuadCount,
+            textureSet,
+            grid,
+            TerrainCellHeightBounds.FromVertices(vertices),
+            Unusable: false,
+            generation);
     }
 
     /// <summary>

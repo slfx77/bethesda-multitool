@@ -1,6 +1,7 @@
 // Flat tinted water plane — what the viewer draws for a game whose water shader has NOT been
 // recovered. Selected by WaterProfile.PixelShaderFile for WaterShaderVariant.FlatTinted
-// (WaterProfile.Flat: Starfield, BethesdaGame.Unknown, and any game added to the enum later).
+// (WaterProfile.Flat: BethesdaGame.Unknown and any game added to the enum later without its own
+// recovered or explicitly source-backed route).
 //
 // Deliberately NOT a port of anything, and deliberately the shortest program in the family. The
 // previous stand-in for these games was water_fnv.frag.hlsl — FNV's recovered WATER000 — which

@@ -42,6 +42,13 @@ internal sealed class CachedCellMesh12 : IDisposable
     public required TerrainCellGrid Grid { get; init; }
 
     /// <summary>
+    ///     Exact minimum and maximum world Z from the uploaded height stream. Combined with
+    ///     <see cref="Grid" /> only for conservative main color/depth draw rejection; malformed
+    ///     bounds fail open and do not affect streaming or the shadow/mirror passes.
+    /// </summary>
+    public required TerrainCellHeightBounds HeightBounds { get; init; }
+
+    /// <summary>
     ///     Layer-weight quads this cell's blend stream carries (1..<see cref="TerrainVertexLayout.MaxBlendQuads" />).
     ///     Chosen at build time from the cell's active slot count, and load-bearing at draw time in
     ///     two places: it selects the shader permutation whose <c>VSInput</c> declares exactly this

@@ -157,6 +157,11 @@ internal sealed class CachedNifMesh12 : IDisposable
                 _textureCache.Release(lighting30GlowMap);
             }
 
+            if (submesh.BgsmGlowMap is { } bgsmGlowMap)
+            {
+                _textureCache.Release(bgsmGlowMap);
+            }
+
             if (submesh.EnvMap is { } envMap)
             {
                 _textureCache.Release(envMap);
@@ -175,6 +180,11 @@ internal sealed class CachedNifMesh12 : IDisposable
             if (submesh.ClassicParallaxHeightMap is { } classicParallaxHeightMap)
             {
                 _textureCache.Release(classicParallaxHeightMap);
+            }
+
+            if (submesh.StarfieldOpacity is { } starfieldOpacity)
+            {
+                _textureCache.Release(starfieldOpacity);
             }
         }
     }

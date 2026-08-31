@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -263,7 +264,9 @@ internal static class NifBlockParsers
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
         Func<string, byte[]?>? externalMeshLoader = null,
-        Action<string>? onExternalMeshDecodeFailure = null)
+        Action<string>? onExternalMeshDecodeFailure = null,
+        StarfieldMaterialColorPolicy starfieldColorPolicy = default,
+        StarfieldMaterialAlphaPolicy starfieldAlphaPolicy = default)
     {
         return NifSubmeshExtractor.ExtractSubmesh(
             data,
@@ -293,7 +296,9 @@ internal static class NifBlockParsers
             useDualQuaternionSkinning,
             preSkinMorphDeltas,
             externalMeshLoader,
-            onExternalMeshDecodeFailure);
+            onExternalMeshDecodeFailure,
+            starfieldColorPolicy,
+            starfieldAlphaPolicy);
     }
 
     internal static RenderableSubmesh? ExtractTriShapeData(

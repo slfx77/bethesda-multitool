@@ -41,7 +41,7 @@ public sealed class AuthoredSkyArchitectureTests
     }
 
     [Fact]
-    public void DirectionalAmbientUpload_DefaultsOnForSkyrimWithoutEnablingOtherFamilies()
+    public void DirectionalAmbientUpload_DefaultsOnForSkyrimAndFallout76WithoutEnablingOtherFamilies()
     {
         var cube = new AtmosphereState.ResolvedAmbientCube(
             new Vector3(1f, 2f, 3f),
@@ -53,8 +53,12 @@ public sealed class AuthoredSkyArchitectureTests
 
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
             BethesdaGame.Skyrim, false, cube));
+        Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+            BethesdaGame.Fallout76, false, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
             BethesdaGame.Fallout4, false, cube));
+        Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+            BethesdaGame.Starfield, false, cube));
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
             BethesdaGame.Fallout4, true, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(

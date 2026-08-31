@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -82,11 +83,14 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal("textures\\foo_g.dds", loaded.Lighting30GlowMapTexturePath);
         Assert.Equal(new Vector3(0.25f, 0.5f, 0.75f), loaded.Lighting30EmissionColor);
         Assert.Equal(2.5f, loaded.Lighting30EmissionMultiplier);
+        Assert.Equal("textures\\foo_g.dds", loaded.BgsmGlowMapTexturePath);
+        Assert.Equal(new Vector3(0.125f, 0.25f, 0.375f), loaded.BgsmEmissionColor);
         Assert.True(loaded.ClampTextureU);
         Assert.False(loaded.ClampTextureV);
         Assert.Equal(new ushort[] { 0, 1, 2 }, loaded.Indices);
         Assert.Equal(new Vector3(10, 20, 30), loaded.Vertices[0].Position);
-        Assert.Equal(new Vector4(0.1f, 0.2f, 0.3f, 43f / 255f), loaded.Vertices[0].VertexColor);
+        Assert.Equal(new Vector4(26f / 255f, 51f / 255f, 77f / 255f, 43f / 255f),
+            loaded.Vertices[0].VertexColor);
         Assert.True(loaded.IsTallGrass);
         Assert.Equal("textures\\effects\\chrome_e.dds", loaded.ClassicEnvironmentMapTexturePath);
         Assert.Equal("textures\\foo_m.dds", loaded.ClassicEnvironmentMaskTexturePath);
@@ -108,10 +112,101 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // still contain those submeshes.
         // v78: rigid node-animated statics carry a baked delta-sample playback track.
         // v79: NiTextureEffect sphere-map marker appended after the rigid-anim track.
+        // v80: vertex colour stored packed (R8G8B8A8_UNORM uint) instead of a float4 — a warm v79
+        // entry holds 16 bytes where the reader now takes 4, so every later field in the vertex
+        // stream would be misread.
+        // v81: Starfield BSGeometry carries CDB-authorized Multiply tint with neutral alpha; warm
+        // v80 payloads permanently lack that extracted color.
+        // v82: constant Lerp appends CE2-expanded RGB plus its linear blend weight; warm v81
+        // payloads lack the first-class operation. v83 adds distinct AlphaSettings cutout state;
+        // v84 rejects flipbook layer materials from that static operation. v85 carries resolved
+        // Starfield root-material two-sided state in the existing serialized DoubleSided field.
+        // v86 appends regular BGSM emission plus its optional glow texture. This assertion pins all
+        // seven bumps.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
-        Assert.Equal(79, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(default(StarfieldMaterialColorRenderState), loaded.StarfieldMaterialColor);
+        Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
+        Assert.Equal(86, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsStarfieldConstantLerpState()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var source = Assert.Single(CreatePayload().Submeshes);
+        var expected = new StarfieldMaterialColorRenderState(
+            StarfieldMaterialColorRenderMode.ConstantLerp,
+            new Vector4(0.05140095f, 0.21378447f, 0.52255344f, 0.4f));
+        var payload = new ReferenceDecodedMeshPayload12(
+        [
+            source with
+            {
+                DiffuseTexturePath = @"materials\test\constant_lerp.mat",
+                StarfieldMaterialColor = expected
+            }
+        ]);
+
+        cache.Store(metadata, null, "cdb-identity", payload);
+
+        Assert.True(cache.TryLoad(metadata, null, "cdb-identity", out var entry));
+        var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
+        Assert.Equal(expected, loaded.StarfieldMaterialColor);
+        Assert.Equal(0.4f, loaded.StarfieldMaterialColor.LinearTint.W);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsInactiveBgsmEmissionAsZeroWithoutGlowMap()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var source = Assert.Single(CreatePayload().Submeshes) with
+        {
+            BgsmGlowMapTexturePath = null,
+            BgsmEmissionColor = Vector3.Zero
+        };
+
+        cache.Store(metadata, null, new ReferenceDecodedMeshPayload12([source]));
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
+        Assert.Null(loaded.BgsmGlowMapTexturePath);
+        Assert.Equal(Vector3.Zero, loaded.BgsmEmissionColor);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsStarfieldAlphaSettingsState()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var source = Assert.Single(CreatePayload().Submeshes);
+        var expected = new StarfieldMaterialAlphaRenderState(
+            StarfieldMaterialAlphaRenderMode.Layer0OpacityCutout,
+            0.37f);
+        var payload = new ReferenceDecodedMeshPayload12(
+        [
+            source with
+            {
+                DiffuseTexturePath = @"materials\test\cutout.mat",
+                AlphaRenderMode = NifAlphaRenderMode.Cutout,
+                AlphaTest = true,
+                AlphaTestThreshold = expected.AlphaTestThreshold,
+                AlphaTestFunction = 4,
+                StarfieldMaterialAlpha = expected
+            }
+        ]);
+
+        cache.Store(metadata, null, "cdb-identity", payload);
+
+        Assert.True(cache.TryLoad(metadata, null, "cdb-identity", out var entry));
+        var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
+        Assert.Equal(expected, loaded.StarfieldMaterialAlpha);
+        Assert.False(loaded.StarfieldMaterialColor.IsConstantLerp);
     }
 
     [Fact]
@@ -325,6 +420,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [InlineData(73)] // v74 TES3 placed-water classification invalidated this predecessor.
     [InlineData(74)] // v75 FO4 refraction-shape retention invalidated this predecessor.
     [InlineData(78)] // v79 NiTextureEffect sphere-map marker invalidated this predecessor.
+    [InlineData(80)] // v81 Starfield CDB color policy invalidated this predecessor.
+    [InlineData(81)] // v82 Starfield constant-Lerp render state invalidated this predecessor.
+    [InlineData(83)] // v84 rejects Starfield flipbook layers from static AlphaSettings cutout.
+    [InlineData(84)] // v85 carries Starfield root-material two-sided state into decoded submeshes.
+    [InlineData(85)] // v86 appends regular BGSM lit-emission state.
     public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
     {
         using var tempDir = new TempDirectory();
@@ -413,6 +513,29 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     }
 
     [Fact]
+    public void TryLoad_InvalidatesWhenStarfieldMaterialDatabaseIdentityChanges()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        const string firstCdbIdentity =
+            "sourceIndex=0\nsourcePath=C:\\Games\\Starfield\\Data\\Starfield - Materials.ba2\nsourceLength=1000\n";
+        const string changedCdbIdentity =
+            "sourceIndex=0\nsourcePath=C:\\Games\\Starfield\\Data\\Starfield - Materials.ba2\nsourceLength=1001\n";
+
+        cache.Store(metadata, null, firstCdbIdentity, CreatePayload());
+
+        Assert.True(cache.TryLoad(metadata, null, firstCdbIdentity, out _));
+        Assert.False(cache.TryLoad(metadata, null, changedCdbIdentity, out _));
+        Assert.NotEqual(
+            cache.GetCachePath(metadata, null, firstCdbIdentity),
+            cache.GetCachePath(metadata, null, changedCdbIdentity));
+
+        // The optional dependency must not churn the established keys of games with no Starfield CDB.
+        Assert.Equal(cache.GetCachePath(metadata), cache.GetCachePath(metadata, null, null));
+    }
+
+    [Fact]
     public void TryLoad_CorruptedCacheReturnsMissAndDeletesFile()
     {
         using var tempDir = new TempDirectory();
@@ -464,7 +587,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
             Position = new Vector3(10, 20, 30),
             Normal = new Vector3(0, 0, 1),
             TexCoord = new Vector2(0.25f, 0.75f),
-            VertexColor = new Vector4(0.1f, 0.2f, 0.3f, 43f / 255f),
+            // Byte-derived on purpose. Vertex colour is stored as R8G8B8A8_UNORM, which is bit-exact
+            // for the b/255 values every real NIF supplies but quantizes an arbitrary float — 0.1f
+            // came back as 26/255. Do not "simplify" these back to round decimals; the fixture would
+            // then be asserting a precision the format never promised.
+            VertexColor = new Vector4(26f / 255f, 51f / 255f, 77f / 255f, 43f / 255f),
             Tangent = new Vector3(1, 0, 0),
             Bitangent = new Vector3(0, 1, 0)
         };
@@ -521,6 +648,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 Lighting30GlowMapTexturePath: "textures\\foo_g.dds",
                 Lighting30EmissionColor: new Vector3(0.25f, 0.5f, 0.75f),
                 Lighting30EmissionMultiplier: 2.5f,
+                BgsmGlowMapTexturePath: "textures\\foo_g.dds",
+                BgsmEmissionColor: new Vector3(0.125f, 0.25f, 0.375f),
                 IsTallGrass: true,
                 ClassicEnvironmentMapTexturePath: "textures\\effects\\chrome_e.dds",
                 ClassicEnvironmentMaskTexturePath: "textures\\foo_m.dds",

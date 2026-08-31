@@ -6,16 +6,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
 ///     A sub-allocating geometry arena for static reference meshes. Replaces the per-mesh
-///     committed-resource + staging-buffer + copy + barrier pattern
-///     (<see cref="GpuMeshBufferFactory12.CreateDefaultBuffer{T}" />) — the committed-resource churn
-///     the profiler flagged — with a handful of large, persistently-mapped UPLOAD-heap blocks that
-///     each mesh's vertices and indices are <c>memcpy</c>'d into. UPLOAD-heap static vertex/index
-///     buffers are an accepted pattern here (see <see cref="GpuMeshBufferFactory12" />) and the ring
-///     buffer already binds them directly; the block stays in <see cref="ResourceStates.GenericRead" />
-///     for life and only freshly-allocated (un-referenced) sub-ranges are ever written, so there is
-///     no state transition and no read/write hazard.
+///     committed-resource churn with a handful of large blocks. The default
+///     <see cref="GpuGeometryArenaBackingMode.UploadHeap" /> mode preserves the established path:
+///     persistently-mapped UPLOAD blocks receive a direct <c>memcpy</c>, stay in
+///     <see cref="ResourceStates.GenericRead" /> for life, and are bound directly. The opt-in
+///     <see cref="GpuGeometryArenaBackingMode.DefaultHeap" /> mode keeps the long-lived geometry in
+///     device-local memory and records a staging copy plus a COPY_DEST→COMMON barrier during the
+///     frame's upload phase.
 ///     <para>
-///         Render-thread only: <see cref="Upload" /> on mesh upload, <see cref="Free" /> on eviction
+///         Render-thread only: <c>Upload</c> on mesh upload, <see cref="Free" /> on eviction
 ///         (deferred through the deletion queue so in-flight draws drain first).
 ///     </para>
 /// </summary>
@@ -30,16 +29,37 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     private const int RegionAlignment = 16;
     private readonly GeometryArenaAllocator _allocator;
     private readonly List<IntPtr> _blockPointers = new();
-    private readonly List<ID3D12Resource> _blockResources = new();
 
+    // Nullable and never compacted: a slot is null while its memory is released (see
+    // ReleaseEmptyBlocks) and is re-backed in place on demand. ArenaAllocation.BlockIndex indexes
+    // this list, so removing an entry would invalidate every live allocation after it.
+    private readonly List<ID3D12Resource?> _blockResources = new();
+
+    private readonly GpuGeometryArenaBackingMode _backingMode;
     private readonly GpuDevice12 _gpu;
+    private readonly List<int> _pendingBlockCopies = new();
+    private readonly GpuGeometryStagingRing12? _stagingRing;
     private long _committedBytes;
+    private int _pendingCopyCount;
     private bool _disposed;
     private ResourceRegistration? _registration;
 
-    public GpuGeometryArena12(GpuDevice12 gpu, long blockSize = DefaultBlockSize)
+    public GpuGeometryArena12(
+        GpuDevice12 gpu,
+        long blockSize = DefaultBlockSize,
+        GpuGeometryArenaBackingMode backingMode = GpuGeometryArenaBackingMode.UploadHeap)
     {
+        if (backingMode is not GpuGeometryArenaBackingMode.UploadHeap and
+            not GpuGeometryArenaBackingMode.DefaultHeap)
+        {
+            throw new ArgumentOutOfRangeException(nameof(backingMode), backingMode, "Unknown geometry arena backing mode.");
+        }
+
         _gpu = gpu;
+        _backingMode = backingMode;
+        _stagingRing = backingMode == GpuGeometryArenaBackingMode.DefaultHeap
+            ? new GpuGeometryStagingRing12(gpu)
+            : null;
         _allocator = new GeometryArenaAllocator(blockSize)
         {
             // FALLOUT_VIEWER_GEOMETRY_VALIDATE: double-free / overlap throws at the offending
@@ -51,6 +71,35 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     /// <summary>Arena blocks currently committed.</summary>
     public int BlockCount => _blockResources.Count;
 
+    /// <summary>The heap class selected at construction; it never changes while allocations live.</summary>
+    public GpuGeometryArenaBackingMode BackingMode => _backingMode;
+
+    /// <summary>Permanent UPLOAD staging committed for DEFAULT backing, otherwise 0.</summary>
+    public long StagingCapacityBytes => _stagingRing?.CapacityBytes ?? 0;
+
+    /// <summary>Staging bytes whose recorded copies may still be reading them.</summary>
+    public long StagingLiveBytes => _stagingRing?.LiveBytes ?? 0;
+
+    public long StagingServedCount => _stagingRing?.ServedCount ?? 0;
+
+    public long StagingOverflowCount => _stagingRing?.OverflowCount ?? 0;
+
+    /// <summary>Recorded DEFAULT-heap copies not yet retired by the frame deletion queue.</summary>
+    public int PendingCopyCount => _pendingCopyCount;
+
+    /// <summary>
+    ///     Monotonic signal that allocator or copy-retirement state changed in a way that can make an
+    ///     arena block newly releasable. Consumers can skip <see cref="ReleaseEmptyBlocks" /> while
+    ///     this value is unchanged without coupling reclamation to mesh-cache eviction bookkeeping.
+    ///     Advances only after a free succeeds, and after an actual pending-copy decrement.
+    /// </summary>
+    public ulong ReclamationGeneration { get; private set; }
+
+    /// <summary>
+    ///     Releases arena and staging resources. This method does not submit or wait on a fence; the
+    ///     owner must idle the GPU first, as the reference-cache teardown already does. Pending copy
+    ///     retirement handles become harmless no-ops after disposal.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed)
@@ -61,14 +110,27 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         _disposed = true;
         _registration?.Dispose();
         _registration = null;
+        _stagingRing?.Dispose();
         for (var i = 0; i < _blockResources.Count; i++)
         {
-            _blockResources[i].Unmap(0);
-            _blockResources[i].Dispose();
+            // Null when ReleaseEmptyBlocks already returned this block's memory.
+            if (_blockResources[i] is not { } resource)
+            {
+                continue;
+            }
+
+            if (_backingMode == GpuGeometryArenaBackingMode.UploadHeap)
+            {
+                resource.Unmap(0);
+            }
+
+            resource.Dispose();
         }
 
         _blockResources.Clear();
         _blockPointers.Clear();
+        _pendingBlockCopies.Clear();
+        _pendingCopyCount = 0;
     }
 
     public string ResourceName => nameof(GpuGeometryArena12);
@@ -76,20 +138,18 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     public ResourceCategory Category => ResourceCategory.GpuResident;
 
     /// <summary>
-    ///     Tracking-only conformance: bytes = committed UPLOAD-heap blocks; entries = block count.
-    ///     The arena is never trimmed — allocations are owned by live meshes and reclaimed through
-    ///     the mesh LRU's eviction cascade.
+    ///     Tracking-only conformance: bytes = committed arena blocks; entries = block slots.
+    ///     Empty-block release decrements the committed total; allocator ranges remain owned by live
+    ///     meshes and are reclaimed through the mesh LRU's eviction cascade.
     ///     <para>
-    ///         Reported as <see cref="GpuMemorySegment.NonLocal" />: these blocks are UPLOAD heap, so
-    ///         on a discrete adapter they are SYSTEM RAM read over PCIe, not device-local VRAM. The
-    ///         category says GpuResident and the bytes are genuinely GPU-owned, but summing them into
-    ///         a VRAM figure would overstate it by the whole arena — and shedding them would relieve
-    ///         the wrong pool.
+    ///         UPLOAD backing is <see cref="GpuMemorySegment.NonLocal" /> system memory. DEFAULT
+    ///         backing is <see cref="GpuMemorySegment.Local" /> device-local memory; its bounded
+    ///         staging ring is accounted separately as NonLocal.
     ///     </para>
     ///     <para>
-    ///         <see cref="_committedBytes" /> is a monotonic high-water mark (blocks are never
-    ///         released), so this is the worst instantaneous demand of the session rather than the
-    ///         live total. <c>GeometryArenaAllocator.AllocatedBytes</c> holds the live figure.
+    ///         <see cref="_committedBytes" /> is the live committed backing, including free-list holes
+    ///         inside non-empty blocks. <c>GeometryArenaAllocator.AllocatedBytes</c> is the tighter live
+    ///         sub-allocation figure.
     ///     </para>
     /// </summary>
     public ResourceStats GetStats()
@@ -98,7 +158,9 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         {
             EstimatedBytes = _committedBytes,
             EntryCount = _blockResources.Count,
-            Segment = GpuMemorySegment.NonLocal
+            Segment = _backingMode == GpuGeometryArenaBackingMode.DefaultHeap
+                ? GpuMemorySegment.Local
+                : GpuMemorySegment.NonLocal
         };
     }
 
@@ -110,6 +172,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     {
         _registration?.Dispose();
         _registration = registry.Register(this, instanceTag);
+        _stagingRing?.RegisterWith(registry, instanceTag);
         return this;
     }
 
@@ -122,6 +185,12 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         ReadOnlySpan<byte> vertexBytes, ReadOnlySpan<byte> indexBytes, string? debugTag = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_backingMode != GpuGeometryArenaBackingMode.UploadHeap)
+        {
+            throw new InvalidOperationException(
+                "DEFAULT-heap geometry must be uploaded through the command-list overload.");
+        }
+
         if (vertexBytes.Length == 0)
             throw new ArgumentException("Refusing to upload zero vertices.", nameof(vertexBytes));
 
@@ -139,7 +208,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
             // The allocator already reserved the range, so return it — otherwise the span leaks as
             // allocated and _allocatedBytes drifts. The allocator keeps the unbacked block; a later
             // upload retries the commit once pressure eases.
-            _allocator.Free(allocation);
+            FreeAllocation(allocation);
             throw;
         }
 
@@ -151,7 +220,146 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         }
 
         EmitAudit("alloc", allocation, debugTag);
-        var gpuBase = _blockResources[allocation.BlockIndex].GPUVirtualAddress + (ulong)allocation.Offset;
+
+        // EnsureBlocksThrough above guarantees this slot is backed; assert it rather than suppress,
+        // because a null here would mean a released block handed out a live range — the one way this
+        // scheme could corrupt geometry, and it should fail loudly rather than produce a bad address.
+        var block = _blockResources[allocation.BlockIndex]
+                    ?? throw new InvalidOperationException(
+                        $"Arena block {allocation.BlockIndex} is unbacked after EnsureBlocksThrough.");
+        var gpuBase = block.GPUVirtualAddress + (ulong)allocation.Offset;
+        return new GeometryAllocation12(
+            allocation,
+            gpuBase,
+            gpuBase + (ulong)alignedVertexBytes,
+            (uint)vertexBytes.Length,
+            (uint)indexBytes.Length,
+            debugTag);
+    }
+
+    /// <summary>
+    ///     Unified render-frame upload entry point. In <see cref="GpuGeometryArenaBackingMode.UploadHeap" />
+    ///     this delegates to the established mapped <see cref="Upload(ReadOnlySpan{byte}, ReadOnlySpan{byte}, string?)" />
+    ///     path without recording a command. In <see cref="GpuGeometryArenaBackingMode.DefaultHeap" /> it
+    ///     stages both streams, records their copy, and returns the block to COMMON for subsequent draws.
+    ///     <para>
+    ///         DEFAULT uploads must run before any geometry-arena draw on <paramref name="cmd" />. A
+    ///         COMMON buffer can then promote implicitly to COPY_DEST, the explicit COPY_DEST→COMMON
+    ///         barrier provides write visibility and restores the block's resting state, and the draw
+    ///         later promotes it to vertex/index read states. Uploading after a draw would require an
+    ///         explicit read→COPY_DEST transition that this stateless arena deliberately does not track.
+    ///     </para>
+    ///     <para>
+    ///         The staging release and a destination-block lifetime hold are enqueued after the copy
+    ///         and barrier are recorded. The block hold matters when later mesh construction rejects
+    ///         every submesh and frees the range immediately: an allocator-empty block still cannot
+    ///         be released until the recorded copy itself drains.
+    ///         <paramref name="deletionQueue" /> must be the render submission's FIFO queue and tick
+    ///         only after the recorder's frame-slot fence wait; recycling a ring region earlier would
+    ///         let the CPU overwrite bytes the GPU copy still reads.
+    ///     </para>
+    /// </summary>
+    public GeometryAllocation12 Upload(
+        ID3D12GraphicsCommandList cmd,
+        GpuDeletionQueue12 deletionQueue,
+        ReadOnlySpan<byte> vertexBytes,
+        ReadOnlySpan<byte> indexBytes,
+        string? debugTag = null)
+    {
+        if (_backingMode == GpuGeometryArenaBackingMode.UploadHeap)
+        {
+            return Upload(vertexBytes, indexBytes, debugTag);
+        }
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(cmd);
+        ArgumentNullException.ThrowIfNull(deletionQueue);
+        if (vertexBytes.Length == 0)
+        {
+            throw new ArgumentException("Refusing to upload zero vertices.", nameof(vertexBytes));
+        }
+
+        var alignedVertexBytes = (int)AlignUp(vertexBytes.Length, RegionAlignment);
+        var totalBytes = alignedVertexBytes + indexBytes.Length;
+        var allocation = _allocator.Allocate(totalBytes);
+
+        ID3D12Resource stagingResource = null!;
+        ulong stagingOffset = 0;
+        IDisposable? stagingRelease = null;
+        ID3D12Resource? transientStaging = null;
+        var stagingFromRing = false;
+        try
+        {
+            EnsureBlocksThrough(allocation.BlockIndex);
+            if (_stagingRing!.TryReserve(totalBytes, out var region))
+            {
+                stagingResource = region.Resource;
+                stagingOffset = region.Offset;
+                stagingRelease = region.Release;
+                stagingFromRing = true;
+                WriteStreams((byte*)region.CpuPtr, vertexBytes, alignedVertexBytes, indexBytes);
+            }
+            else
+            {
+                // Preserve progress when the bounded ring is full or a single mesh exceeds its cap.
+                // This one-shot resource is retired by the same queue after its recorded copy drains.
+                transientStaging = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                    HeapProperties.UploadHeapProperties,
+                    HeapFlags.None,
+                    ResourceDescription.Buffer((ulong)totalBytes),
+                    ResourceStates.GenericRead);
+
+                void* cpuPtr = null;
+                transientStaging.Map(0, &cpuPtr).CheckError();
+                try
+                {
+                    WriteStreams((byte*)cpuPtr, vertexBytes, alignedVertexBytes, indexBytes);
+                }
+                finally
+                {
+                    transientStaging.Unmap(0);
+                }
+
+                stagingResource = transientStaging;
+                stagingRelease = transientStaging;
+            }
+        }
+        catch
+        {
+            // If a FIFO ring region was reserved, delay even an unsubmitted region behind older
+            // submissions rather than releasing it out of order. Transient staging has no such
+            // dependency and can be returned immediately before any copy command was recorded.
+            if (stagingFromRing && stagingRelease is not null)
+            {
+                deletionQueue.EnqueueDispose(stagingRelease);
+            }
+            else
+            {
+                stagingRelease?.Dispose();
+                if (stagingRelease is null)
+                {
+                    transientStaging?.Dispose();
+                }
+            }
+
+            FreeAllocation(allocation);
+            throw;
+        }
+
+        var block = _blockResources[allocation.BlockIndex]
+                    ?? throw new InvalidOperationException(
+                        $"Arena block {allocation.BlockIndex} is unbacked after EnsureBlocksThrough.");
+
+        // Blocks are created/rest in COMMON. Copy promotes to COPY_DEST; returning to COMMON both
+        // makes the write visible and permits the later vertex/index read promotion without tracking
+        // a mutable per-block state across the many meshes packed into it.
+        cmd.CopyBufferRegion(block, (ulong)allocation.Offset, stagingResource, stagingOffset, (ulong)totalBytes);
+        cmd.ResourceBarrierTransition(block, ResourceStates.CopyDest, ResourceStates.Common);
+        MarkCopyPending(allocation.BlockIndex);
+        deletionQueue.EnqueueDispose(new CopyRetirement(this, allocation.BlockIndex, stagingRelease!));
+
+        EmitAudit("alloc", allocation, debugTag);
+        var gpuBase = block.GPUVirtualAddress + (ulong)allocation.Offset;
         return new GeometryAllocation12(
             allocation,
             gpuBase,
@@ -170,7 +378,58 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         }
 
         EmitAudit("free", allocation.Allocation, allocation.DebugTag);
-        _allocator.Free(allocation.Allocation);
+        FreeAllocation(allocation.Allocation);
+    }
+
+    /// <summary>
+    ///     Returns the memory of every fully-drained block to the OS, leaving the block's slot in
+    ///     place so live allocations elsewhere keep their indices. Returns the bytes released.
+    ///     <para>
+    ///         Render-thread only, and safe by the arena's own ordering: evicted draw ranges return
+    ///         through the deletion queue, while DEFAULT uploads hold a per-block pending-copy count
+    ///         on that same queue. A block is released only when both its allocator range and copy
+    ///         count are empty, so neither an in-flight draw nor an immediately-rejected mesh upload
+    ///         can still reference it. The arena does not need a second fence.
+    ///     </para>
+    ///     <para>
+    ///         The block is NOT retired: its free list stays intact, and
+    ///         <see cref="EnsureBlocksThrough" /> re-backs the slot on demand if the allocator hands
+    ///         out a range in it again. Retiring instead would return the memory but permanently
+    ///         strand the address space, so a long session with churn would keep appending blocks it
+    ///         could have reused.
+    ///     </para>
+    /// </summary>
+    public long ReleaseEmptyBlocks()
+    {
+        if (_disposed)
+        {
+            return 0;
+        }
+
+        long released = 0;
+        for (var i = 0; i < _blockResources.Count; i++)
+        {
+            if (_blockResources[i] is not { } resource || !_allocator.IsBlockEmpty(i) ||
+                _pendingBlockCopies[i] != 0)
+            {
+                continue;
+            }
+
+            if (_backingMode == GpuGeometryArenaBackingMode.UploadHeap)
+            {
+                resource.Unmap(0);
+            }
+
+            resource.Dispose();
+            _blockResources[i] = null;
+            _blockPointers[i] = IntPtr.Zero;
+
+            var blockBytes = _allocator.BlockSizeOf(i);
+            _committedBytes -= blockBytes;
+            released += blockBytes;
+        }
+
+        return released;
     }
 
     /// <summary>
@@ -206,12 +465,20 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     {
         fnv1a64 = 0;
         var blockIndex = allocation.Allocation.BlockIndex;
-        if (_disposed || (uint)blockIndex >= (uint)_blockResources.Count)
+        if (_disposed || _backingMode != GpuGeometryArenaBackingMode.UploadHeap ||
+            (uint)blockIndex >= (uint)_blockResources.Count)
         {
             return false;
         }
 
-        var blockBase = _blockResources[blockIndex].GPUVirtualAddress;
+        // A released block has no bytes to hash — the same "range left the arena" answer this method
+        // already gives for a stale view.
+        if (_blockResources[blockIndex] is not { } block)
+        {
+            return false;
+        }
+
+        var blockBase = block.GPUVirtualAddress;
         var blockSize = (ulong)_allocator.BlockSizeOf(blockIndex);
         if (gpuAddress < blockBase || gpuAddress - blockBase + sizeInBytes > blockSize)
         {
@@ -251,10 +518,37 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     {
         while (_blockResources.Count <= requiredBlockIndex)
         {
-            // Per-block size: standard blocks share _blockSize; an oversized mesh's dedicated
-            // block is exactly as large as the allocation that forced it.
-            var blockBytes = _allocator.BlockSizeOf(_blockResources.Count);
-            var resource = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+            _blockResources.Add(null);
+            _blockPointers.Add(IntPtr.Zero);
+            _pendingBlockCopies.Add(0);
+        }
+
+        // A slot can be null either because it was just appended, or because ReleaseEmptyBlocks gave
+        // its memory back. Both are re-backed the same way — the slot itself never moves, because
+        // ArenaAllocation.BlockIndex indexes this list and shifting it would invalidate every live
+        // allocation in the arena.
+        if (_blockResources[requiredBlockIndex] is not null)
+        {
+            return;
+        }
+
+        // Per-block size: standard blocks share _blockSize; an oversized mesh's dedicated
+        // block is exactly as large as the allocation that forced it.
+        var blockBytes = _allocator.BlockSizeOf(requiredBlockIndex);
+        ID3D12Resource resource;
+        if (_backingMode == GpuGeometryArenaBackingMode.DefaultHeap)
+        {
+            // Buffers created on DEFAULT heap must begin in COMMON. Each upload promotes to
+            // COPY_DEST and explicitly transitions back; the resource is never CPU-mapped.
+            resource = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties,
+                HeapFlags.None,
+                ResourceDescription.Buffer((ulong)blockBytes),
+                ResourceStates.Common);
+        }
+        else
+        {
+            resource = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.UploadHeapProperties,
                 HeapFlags.None,
                 ResourceDescription.Buffer((ulong)blockBytes),
@@ -271,15 +565,78 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
                 throw;
             }
 
-            _blockResources.Add(resource);
-            _blockPointers.Add((IntPtr)mapped);
-            _committedBytes += blockBytes;
+            _blockPointers[requiredBlockIndex] = (IntPtr)mapped;
+        }
+
+        _blockResources[requiredBlockIndex] = resource;
+        _committedBytes += blockBytes;
+    }
+
+    /// <summary>Writes the two packed streams into either mapped ring or transient staging memory.</summary>
+    private static void WriteStreams(
+        byte* destination,
+        ReadOnlySpan<byte> vertexBytes,
+        int alignedVertexBytes,
+        ReadOnlySpan<byte> indexBytes)
+    {
+        vertexBytes.CopyTo(new Span<byte>(destination, vertexBytes.Length));
+        if (indexBytes.Length > 0)
+        {
+            indexBytes.CopyTo(new Span<byte>(destination + alignedVertexBytes, indexBytes.Length));
         }
     }
 
     private static long AlignUp(long value, int alignment)
     {
         return (value + alignment - 1) & ~((long)alignment - 1);
+    }
+
+    private void MarkCopyPending(int blockIndex)
+    {
+        _pendingBlockCopies[blockIndex]++;
+        _pendingCopyCount++;
+    }
+
+    private void CompleteCopy(int blockIndex)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if ((uint)blockIndex >= (uint)_pendingBlockCopies.Count || _pendingBlockCopies[blockIndex] <= 0)
+        {
+            if (GeometryArenaDiagnostics.Enabled)
+            {
+                throw new InvalidOperationException(
+                    $"Geometry arena copy retirement for block {blockIndex} has no matching pending copy.");
+            }
+
+            return;
+        }
+
+        _pendingBlockCopies[blockIndex]--;
+        _pendingCopyCount--;
+        AdvanceReclamationGeneration();
+    }
+
+    /// <summary>
+    ///     The sole allocator-free path. Generation advances after, never before, the allocator
+    ///     accepts the free; strict-validation rejection therefore cannot signal phantom work.
+    /// </summary>
+    private void FreeAllocation(in ArenaAllocation allocation)
+    {
+        _allocator.Free(allocation);
+        AdvanceReclamationGeneration();
+    }
+
+    private void AdvanceReclamationGeneration()
+    {
+        // Saturation preserves monotonicity even in the theoretical 2^64-operation session.
+        if (ReclamationGeneration != ulong.MaxValue)
+        {
+            ReclamationGeneration++;
+        }
     }
 
     private sealed class FreeHandle(GpuGeometryArena12 arena, GeometryAllocation12 allocation) : IDisposable
@@ -297,6 +654,37 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
 
             _freed = true;
             arena.Free(allocation);
+        }
+    }
+
+    /// <summary>
+    ///     One deletion-queue entry owns both sides of a DEFAULT upload's lifetime: staging remains
+    ///     readable until the copy drains, and the destination block remains committed even if its
+    ///     sub-allocation was rejected and freed before submission.
+    /// </summary>
+    private sealed class CopyRetirement(
+        GpuGeometryArena12 arena,
+        int blockIndex,
+        IDisposable stagingRelease) : IDisposable
+    {
+        private bool _retired;
+
+        public void Dispose()
+        {
+            if (_retired)
+            {
+                return;
+            }
+
+            _retired = true;
+            try
+            {
+                stagingRelease.Dispose();
+            }
+            finally
+            {
+                arena.CompleteCopy(blockIndex);
+            }
         }
     }
 }

@@ -18,6 +18,22 @@ internal static class RendererProfilerTrace
     private static TextWriter? _writer;
     private static bool _ownsWriter;
     private static bool _initialized;
+    private static string _sessionId = CreateSessionId();
+
+    /// <summary>
+    ///     Identifies one configured writer lifetime. Trace files append by design, so timestamps
+    ///     and event names alone cannot safely distinguish two profiler processes that reused a path.
+    /// </summary>
+    internal static string SessionId
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return _sessionId;
+            }
+        }
+    }
 
     internal static bool IsEnabled
     {
@@ -36,6 +52,7 @@ internal static class RendererProfilerTrace
         {
             CloseLocked();
             _initialized = true;
+            _sessionId = CreateSessionId();
             OutputPath = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
             if (OutputPath is null)
             {
@@ -56,6 +73,7 @@ internal static class RendererProfilerTrace
         {
             CloseLocked();
             _initialized = true;
+            _sessionId = CreateSessionId();
             OutputPath = null;
             _writer = writer;
             _ownsWriter = false;
@@ -68,6 +86,7 @@ internal static class RendererProfilerTrace
         {
             CloseLocked();
             _initialized = false;
+            _sessionId = CreateSessionId();
             OutputPath = null;
         }
     }
@@ -87,7 +106,8 @@ internal static class RendererProfilerTrace
             var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["event"] = eventType,
-                ["timestamp"] = DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture)
+                ["timestamp"] = DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
+                ["sessionId"] = _sessionId
             };
 
             if (fields is not null)
@@ -138,6 +158,8 @@ internal static class RendererProfilerTrace
         Add("visibleCandidates", stats.VisibleCandidates);
         Add("terrainDraws", stats.TerrainDraws);
         Add("terrainQuadrantDraws", stats.TerrainQuadrantDraws);
+        Add("terrainFrustumActive", stats.TerrainFrustumCullingActive);
+        Add("terrainFrustumRejected", stats.TerrainFrustumRejected);
         Add("cellsEvictedForBudget", stats.CellsEvictedForBudget);
         Add("newUploads", stats.NewUploads);
         Add("newPreUploads", stats.NewPreUploads);
@@ -172,7 +194,18 @@ internal static class RendererProfilerTrace
         Add("refCullCacheVeto", stats.ReferenceCullCacheVeto);
         Add("refBatchesReused", stats.ReferenceBatchesReused);
         Add("refReuseBlocker", stats.ReferenceBatchReuseBlocker);
+        Add("refBatchBuildInProgress", stats.ReferenceBatchBuildInProgress);
+        Add("refCullRefreshPending", stats.ReferenceCullRefreshPending);
+        Add("refBatchBuildIncrementalAdvanced", stats.ReferenceBatchBuildIncrementalAdvanced);
+        Add("refBatchBuildPublished", stats.ReferenceBatchBuildPublished);
+        Add("refBatchBuildSyncFallback", stats.ReferenceBatchBuildSynchronousFallback);
+        Add("refBatchBuildTrigger", stats.ReferenceBatchBuildTrigger);
+        Add("refBatchBuildPhase", stats.ReferenceBatchBuildPhase);
+        Add("refBatchBuildProcessed", stats.ReferenceBatchBuildProcessed);
+        Add("refBatchBuildTotal", stats.ReferenceBatchBuildTotal);
+        Add("refBatchBuildBudgetMs", stats.ReferenceBatchBuildBudgetMilliseconds);
         Add("refMeshMissing", stats.ReferenceMeshMissing);
+        Add("refShadowMeshMissing", stats.ReferenceShadowMeshMissing);
         Add("refTexturePending", stats.ReferenceTexturePending);
         Add("refDrawn", stats.ReferenceDrawn);
         Add("refSubmeshDraws", stats.ReferenceSubmeshDraws);
@@ -187,6 +220,8 @@ internal static class RendererProfilerTrace
         Add("refCpuDecodedMisses", stats.ReferenceCpuDecodedMeshCacheMisses);
         Add("refCpuDecodedNegativeHits", stats.ReferenceCpuDecodedMeshNegativeHits);
         Add("refGpuUploads", stats.ReferenceGpuUploads);
+        Add("refMeshMaterializationFailures", stats.ReferenceMeshMaterializationFailures);
+        Add("refMeshMaterializationPending", stats.ReferenceMeshMaterializationRetriesPending);
         Add("refUploadByteDeferrals", stats.ReferenceUploadByteBudgetDeferrals);
         Add("refCompressedTextureUploads", stats.ReferenceCompressedTextureUploads);
         Add("refRgbaTextureUploads", stats.ReferenceRgbaTextureUploads);
@@ -197,12 +232,54 @@ internal static class RendererProfilerTrace
         Add("refBatches", stats.ReferenceBatches);
         Add("refInstances", stats.ReferenceInstances);
         Add("refInstancedDraws", stats.ReferenceInstancedDraws);
+        Add("refOpaqueActiveDraws", stats.ReferenceOpaqueActiveDraws);
+        Add("refOpaqueSurvivingDraws", stats.ReferenceOpaqueSurvivingDraws);
+        Add("refOpaquePsoTransitions", stats.ReferenceOpaquePsoTransitions);
+        Add("refOpaqueUniquePsos", stats.ReferenceOpaqueUniquePsos);
+        Add("refOpaqueOrdinaryDraws", stats.ReferenceOpaqueOrdinaryDraws);
+        Add("refOpaqueDecalDraws", stats.ReferenceOpaqueDecalDraws);
+        Add("refOpaqueGrassCutoutDraws", stats.ReferenceOpaqueGrassCutoutDraws);
+        Add("refOpaqueGrassDepthWriteDraws", stats.ReferenceOpaqueGrassDepthWriteDraws);
+        Add("refOpaqueIndirectActive", stats.ReferenceOpaqueIndirectActive);
+        Add("refOpaqueDirectDraws", stats.ReferenceOpaqueDirectDraws);
+        Add("refOpaqueIndirectDraws", stats.ReferenceOpaqueIndirectDraws);
+        Add("refOpaqueIndirectExecuteCalls", stats.ReferenceOpaqueIndirectExecuteCalls);
+        Add("refOpaqueIndirectArgumentBytes", stats.ReferenceOpaqueIndirectArgumentBytes);
+        Add("refOpaqueIndirectFallbackReason", stats.ReferenceOpaqueIndirectFallbackReason);
+        Add("refOpaqueFrontToBackActive", stats.ReferenceOpaqueFrontToBackActive);
+        Add("refOpaqueFrontToBackBatches", stats.ReferenceOpaqueFrontToBackBatches);
+        Add("refOpaqueFrontToBackInstances", stats.ReferenceOpaqueFrontToBackInstances);
+        Add("refOpaqueFrontToBackFallbackReason", stats.ReferenceOpaqueFrontToBackFallbackReason);
+        Add("refModernStandardShaderActive", stats.ReferenceModernStandardShaderActive);
+        Add("refModernStandardBatches", stats.ReferenceModernStandardBatches);
+        Add("refModernStandardInstances", stats.ReferenceModernStandardInstances);
+        Add("refStaticOpaquePacketActive", stats.ReferenceStaticOpaquePacketActive);
+        Add("refStaticOpaquePacketHit", stats.ReferenceStaticOpaquePacketHit);
+        Add("refStaticOpaquePacketBatches", stats.ReferenceStaticOpaquePacketBatches);
+        Add("refStaticOpaquePacketInstances", stats.ReferenceStaticOpaquePacketInstances);
+        Add("refStaticOpaquePacketRuns", stats.ReferenceStaticOpaquePacketRuns);
+        Add("refStaticOpaquePacketBytes", stats.ReferenceStaticOpaquePacketBytes);
+        Add("refStaticOpaquePacketBuildMs", stats.ReferenceStaticOpaquePacketBuildMilliseconds);
+        Add("refStaticOpaquePacketSavedMatrixBytes", stats.ReferenceStaticOpaquePacketSavedMatrixBytes);
+        Add("refStaticOpaquePacketSavedConstantBytes", stats.ReferenceStaticOpaquePacketSavedConstantBytes);
+        Add("refStaticOpaquePacketSavedArgumentBytes", stats.ReferenceStaticOpaquePacketSavedArgumentBytes);
+        Add("refStaticOpaquePacketFallbackReason", stats.ReferenceStaticOpaquePacketFallbackReason);
         Add("refBlendedDraws", stats.ReferenceBlendedDraws);
         Add("refFnvSls1009Draws", stats.ReferenceFnvSls1009Draws);
         Add("refFnvSls1009Instances", stats.ReferenceFnvSls1009Instances);
         Add("refFnvSls1013Draws", stats.ReferenceFnvSls1013Draws);
         Add("refFnvSls1013Instances", stats.ReferenceFnvSls1013Instances);
         Add("refPlacedLightCount", stats.ReferencePlacedLightCount);
+        Add("refPlacedLightTileBuildMs", stats.ReferencePlacedLightTileBuildMilliseconds);
+        Add("refPlacedLightTileCount", stats.ReferencePlacedLightTileCount);
+        Add("refPlacedLightTileUploadBytes", stats.ReferencePlacedLightTileUploadBytes);
+        Add("refPlacedLightTileAverageLights", stats.ReferencePlacedLightTileAverageLights);
+        Add("refPlacedLightTileMaxLights", stats.ReferencePlacedLightTileMaxLights);
+        Add("refPlacedLightTileEmptyPercent", stats.ReferencePlacedLightTileEmptyPercent);
+        if (stats.ReferencePlacedLightTileFallbackReason is not null)
+        {
+            Add("refPlacedLightTileFallbackReason", stats.ReferencePlacedLightTileFallbackReason);
+        }
         Add("refFnvClassicBasicLightingEnabled", stats.ReferenceFnvClassicBasicLightingEnabled);
         Add("refFnvClassicBasicFallbackDraws", stats.ReferenceFnvClassicBasicFallbackDraws);
         Add("refFnvClassicBasicFallbackInstances", stats.ReferenceFnvClassicBasicFallbackInstances);
@@ -238,7 +315,17 @@ internal static class RendererProfilerTrace
         Add("refLiveParticleAuthoredCapacity", stats.ReferenceLiveParticleAuthoredCapacity);
         Add("refStateMs", stats.ReferenceStateSetupMilliseconds);
         Add("refCullMs", stats.ReferenceCullMilliseconds);
-        Add("refMeshUploadMs", stats.ReferenceMeshUploadMilliseconds);
+        Add("refBatchBuildMs", stats.ReferenceBatchBuildMilliseconds);
+        // Compatibility alias for existing traces, handoff gates and analysis scripts. This field
+        // historically measured the entire resolve + batch-build pass, not just GPU mesh upload.
+        Add("refMeshUploadMs", stats.ReferenceBatchBuildMilliseconds);
+        Add("refMeshResolveMs", stats.ReferenceMeshResolveMilliseconds);
+        Add("refInstanceBucketMs", stats.ReferenceInstanceBucketingMilliseconds);
+        Add("refBatchFinalizeMs", stats.ReferenceBatchFinalizeMilliseconds);
+        Add("refGpuUploadMs", stats.ReferenceGpuUploadMilliseconds);
+        Add("refBlendedRefreshMs", stats.ReferenceBlendedRefreshMilliseconds);
+        Add("refOpaqueSubmissionMs", stats.ReferenceOpaqueSubmissionMilliseconds);
+        Add("refBlendedSubmissionMs", stats.ReferenceBlendedSubmissionMilliseconds);
         Add("refCbUpdateMs", stats.ReferenceCbUpdateMilliseconds);
         Add("refSrvBindMs", stats.ReferenceSrvBindMilliseconds);
         Add("refDrawCallMs", stats.ReferenceDrawCallMilliseconds);
@@ -275,6 +362,7 @@ internal static class RendererProfilerTrace
             }
 
             _initialized = true;
+            _sessionId = CreateSessionId();
             var path = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ProfileJsonl);
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -304,4 +392,6 @@ internal static class RendererProfilerTrace
         _writer = null;
         _ownsWriter = false;
     }
+
+    private static string CreateSessionId() => Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 }

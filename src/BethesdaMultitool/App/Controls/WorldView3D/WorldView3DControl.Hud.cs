@@ -50,8 +50,21 @@ public sealed partial class WorldView3DControl
             : 0;
         // Layer on/off state now lives in the toolbar toggle buttons, so the HUD spends the
         // freed space spelling out the movement controls.
+        // Frame rate and PACING, first on the line because it is the number the renderer is judged
+        // by and the HUD previously did not show it at all — only per-stage milliseconds, of which
+        // the most prominent (terrain cpu) is ~1 ms and reads as if the frame were free.
+        // p99 and the 1% low are shown beside the median deliberately: a 40 ms median with a 166 ms
+        // worst frame is a completely different experience from a steady 40 ms, and an average
+        // cannot distinguish them.
+        var pacing = _performanceSampler.Snapshot();
+        var pacingText = pacing.SampleCount == 0
+            ? "fps: --   "
+            : $"fps: {pacing.MedianFps:0} ({pacing.MedianMilliseconds:0.0}ms)   " +
+              $"p99: {pacing.Percentile99Milliseconds:0.0}ms   " +
+              $"1%low: {pacing.OnePercentLowFps:0}fps   ";
+
         var text =
-            $"[{backend}]   " +
+            $"[{backend}]   " + pacingText +
             $"Cells: {visible} / {total}   refs: {visibleReferences}   nav: {visibleNavMesh}   " +
             // Placed lights previously had NO user-visible surface, so "the toggle does nothing"
             // was indistinguishable from "the lights are uploading but look subtle".
@@ -108,13 +121,17 @@ public sealed partial class WorldView3DControl
                 $"\nrefs cand:{rstats.ReferenceCandidates} drawn:{rstats.ReferenceDrawn} " +
                 $"sub:{rstats.ReferenceSubmeshDraws} batch:{rstats.ReferenceBatches} inst:{rstats.ReferenceInstances} " +
                 $"instDraw:{rstats.ReferenceInstancedDraws} blendDraw:{rstats.ReferenceBlendedDraws} " +
+                $"opaque:{rstats.ReferenceOpaqueActiveDraws}/{rstats.ReferenceOpaqueSurvivingDraws} " +
+                $"pso:{rstats.ReferenceOpaqueUniquePsos}/{rstats.ReferenceOpaquePsoTransitions} " +
+                $"lanes:{rstats.ReferenceOpaqueOrdinaryDraws}/{rstats.ReferenceOpaqueDecalDraws}/" +
+                $"{rstats.ReferenceOpaqueGrassCutoutDraws}/{rstats.ReferenceOpaqueGrassDepthWriteDraws} " +
                 $"srvBinds:{rstats.ReferenceSrvBinds} meshMiss:{rstats.ReferenceMeshCacheMisses} " +
                 $"qDec:{rstats.ReferenceQueuedDecodes} actDec:{rstats.ReferenceActiveDecodes} " +
                 $"texPend:{rstats.ReferenceTexturePending} " +
                 $"cpuHit:{rstats.ReferenceCpuDecodedMeshCacheHits} bcTex:{rstats.ReferenceCompressedTextureUploads} rgbaTex:{rstats.ReferenceRgbaTextureUploads} " +
-                $"cull:{rstats.ReferenceCullMilliseconds:0.0} mesh:{rstats.ReferenceMeshUploadMilliseconds:0.0} " +
-                $"cb:{rstats.ReferenceCbUpdateMilliseconds:0.0} srv:{rstats.ReferenceSrvBindMilliseconds:0.0} " +
-                $"draw:{rstats.ReferenceDrawCallMilliseconds:0.0}ms";
+                $"cull:{rstats.ReferenceCullMilliseconds:0.0} batch:{rstats.ReferenceBatchBuildMilliseconds:0.0} " +
+                $"cpu:{rstats.CpuFrameMilliseconds:0.0} opaque:{rstats.ReferenceOpaqueSubmissionMilliseconds:0.0} " +
+                $"blend:{rstats.ReferenceBlendedSubmissionMilliseconds:0.0}ms";
         }
 
         if (!string.Equals(_lastHudText, text, StringComparison.Ordinal))

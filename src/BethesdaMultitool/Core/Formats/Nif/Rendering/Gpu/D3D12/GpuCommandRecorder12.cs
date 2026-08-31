@@ -32,6 +32,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     public const int FramesInFlight = 2;
 
     private readonly ID3D12CommandAllocator[] _allocators = new ID3D12CommandAllocator[FramesInFlight];
+    private readonly List<IGpuCommandSubmissionParticipant12> _currentFrameParticipants = new();
     private readonly List<IDisposable> _currentFrameRetirements = new();
     private readonly AutoResetEvent _fenceEvent = new(false);
     private readonly Queue<FenceRetirement> _fenceRetirements = new();
@@ -122,6 +123,32 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         }
 
         _currentFrameRetirements.Add(resource);
+    }
+
+    /// <summary>
+    ///     Enlists a transaction participant in the currently open command list. A participant is
+    ///     notified exactly once when that list is either successfully submitted or abandoned, and
+    ///     duplicate enlistment of the same instance in one frame is ignored. This is the commit
+    ///     boundary for CPU cache state whose backing data exists only as commands in the open list.
+    /// </summary>
+    public void EnlistCurrentFrame(IGpuCommandSubmissionParticipant12 participant)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        if (!_frameOpen)
+        {
+            throw new InvalidOperationException(
+                "A command-submission participant can only enlist while a frame is open.");
+        }
+
+        foreach (var enlisted in _currentFrameParticipants)
+        {
+            if (ReferenceEquals(enlisted, participant))
+            {
+                return;
+            }
+        }
+
+        _currentFrameParticipants.Add(participant);
     }
 
     /// <summary>
@@ -219,6 +246,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
             finally
             {
                 _currentFrameRetirements.Clear();
+                NotifyCurrentFrameParticipants(submitted: false);
                 FrameIndex = (FrameIndex + 1) % FramesInFlight;
                 _frameOpen = false;
                 _fenceWaitAccumulating = false;
@@ -250,6 +278,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         }
 
         _currentFrameRetirements.Clear();
+        NotifyCurrentFrameParticipants(submitted: true);
 
         FrameIndex = (FrameIndex + 1) % FramesInFlight;
         _frameOpen = false;
@@ -294,5 +323,48 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         _currentFrameRetirements.Clear();
     }
 
+    /// <summary>
+    ///     Submission notification is deliberately exception-isolated. Recorder state must always
+    ///     advance after Execute/Signal (or after Abort closes the list), even if a cache participant
+    ///     has a bookkeeping bug. Participants are expected to be no-throw; the catch is the final
+    ///     containment boundary that keeps one cache from wedging every future BeginFrame.
+    /// </summary>
+    private void NotifyCurrentFrameParticipants(bool submitted)
+    {
+        foreach (var participant in _currentFrameParticipants)
+        {
+            try
+            {
+                if (submitted)
+                {
+                    participant.OnCommandListSubmitted();
+                }
+                else
+                {
+                    participant.OnCommandListAborted();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"GpuCommandRecorder12: submission participant {participant.GetType().Name} " +
+                    $"threw during {(submitted ? "commit" : "rollback")}: {ex}");
+            }
+        }
+
+        _currentFrameParticipants.Clear();
+    }
+
     private readonly record struct FenceRetirement(IDisposable Resource, ulong FenceValue);
+}
+
+/// <summary>
+///     A no-throw participant in one open command list's CPU-side transaction. Use this when cache
+///     publication is valid only if the commands that initialize its GPU backing are submitted.
+/// </summary>
+internal interface IGpuCommandSubmissionParticipant12
+{
+    void OnCommandListSubmitted();
+
+    void OnCommandListAborted();
 }

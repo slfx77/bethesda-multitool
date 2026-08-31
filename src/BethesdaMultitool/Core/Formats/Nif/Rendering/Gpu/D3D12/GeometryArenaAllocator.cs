@@ -80,13 +80,45 @@ internal sealed class GeometryArenaAllocator
             throw new ArgumentOutOfRangeException(nameof(size), "Must be > 0.");
 
         var alignedSize = AlignUp(size, _alignment);
+
+        // BEST fit, not first fit. First fit always retries block 0, so the early blocks accumulate
+        // small survivors while later blocks stay partly used — which is precisely the state in which
+        // NO block is ever fully free and empty-block release can never reclaim anything. Choosing
+        // the tightest sufficient span instead concentrates the leftovers and lets whole blocks drain.
+        var bestBlock = -1;
+        var bestSpan = -1;
+        var bestLength = long.MaxValue;
         for (var b = 0; b < _blocks.Count; b++)
         {
-            if (TryAllocateInBlock(b, alignedSize, out var offset))
+            var spans = _blocks[b];
+            for (var i = 0; i < spans.Count; i++)
             {
-                AllocatedBytes += alignedSize;
-                return Issue(b, offset, size, alignedSize);
+                var length = spans[i].Length;
+                if (length < alignedSize || length >= bestLength)
+                {
+                    continue;
+                }
+
+                bestBlock = b;
+                bestSpan = i;
+                bestLength = length;
+                if (length == alignedSize)
+                {
+                    break; // exact fit — nothing can beat it
+                }
             }
+
+            if (bestLength == alignedSize)
+            {
+                break;
+            }
+        }
+
+        if (bestBlock >= 0)
+        {
+            var offset = TakeFromSpan(bestBlock, bestSpan, alignedSize);
+            AllocatedBytes += alignedSize;
+            return Issue(bestBlock, offset, size, alignedSize);
         }
 
         // No existing block had room → append a fresh, fully-free block and allocate at its front.
@@ -201,6 +233,45 @@ internal sealed class GeometryArenaAllocator
         }
 
         return total;
+    }
+
+    /// <summary>
+    ///     Whether block <paramref name="blockIndex" /> holds no live allocations at all — its free
+    ///     list is exactly one span covering the whole block.
+    ///     <para>
+    ///         Safe to act on because a range only returns to the free list through
+    ///         <see cref="Free" />, and the arena routes eviction through the deletion queue, so an
+    ///         allocation is freed only after in-flight draws referencing it have drained. A fully
+    ///         free block therefore has no pending GPU reads.
+    ///     </para>
+    /// </summary>
+    public bool IsBlockEmpty(int blockIndex)
+    {
+        if ((uint)blockIndex >= (uint)_blocks.Count)
+        {
+            return false;
+        }
+
+        var spans = _blocks[blockIndex];
+        return spans.Count == 1 && spans[0].Offset == 0 && spans[0].Length == _blockSizes[blockIndex];
+    }
+
+    /// <summary>Removes <paramref name="alignedSize" /> from the front of one known free span.</summary>
+    private long TakeFromSpan(int blockIndex, int spanIndex, long alignedSize)
+    {
+        var spans = _blocks[blockIndex];
+        var span = spans[spanIndex];
+        var offset = span.Offset;
+        if (span.Length == alignedSize)
+        {
+            spans.RemoveAt(spanIndex);
+        }
+        else
+        {
+            spans[spanIndex] = new FreeSpan(span.Offset + alignedSize, span.Length - alignedSize);
+        }
+
+        return offset;
     }
 
     private bool TryAllocateInBlock(int blockIndex, long alignedSize, out long offset)

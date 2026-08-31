@@ -29,6 +29,46 @@ public sealed partial class WorldView3DControl
         }
     }
 
+    private void EnableReferencePipelineStatistics()
+    {
+        if (_gpuReferencePipelineStatistics12 is not null || _gpu12 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _gpuReferencePipelineStatistics12 = new GpuReferencePipelineStatistics12(_gpu12);
+            Log.Info("WorldView3DControl: primary-reference D3D12 pipeline statistics enabled.");
+            RendererProfilerTrace.Event(
+                "gpu-reference-pipeline-statistics-status",
+                new Dictionary<string, object?>
+                {
+                    ["frame"] = _profileFrameIndex,
+                    ["requested"] = true,
+                    ["enabled"] = true,
+                    ["error"] = null
+                });
+        }
+        catch (Exception ex)
+        {
+            _gpuReferencePipelineStatistics12?.Dispose();
+            _gpuReferencePipelineStatistics12 = null;
+            Log.Warn(
+                "WorldView3DControl: failed to enable primary-reference D3D12 pipeline statistics: {0}",
+                ex.Message);
+            RendererProfilerTrace.Event(
+                "gpu-reference-pipeline-statistics-status",
+                new Dictionary<string, object?>
+                {
+                    ["frame"] = _profileFrameIndex,
+                    ["requested"] = true,
+                    ["enabled"] = false,
+                    ["error"] = ex.Message
+                });
+        }
+    }
+
     /// <summary>
     ///     Initializes the D3D12 backend stack: device + direct queue + per-frame command
     ///     recorder + upload-heap ring + shader-visible descriptor heaps + shared root
@@ -107,6 +147,11 @@ public sealed partial class WorldView3DControl
             if (_forceGpuTimestamps)
             {
                 EnableGpuTimestamps("forced");
+            }
+
+            if (_referencePipelineStatisticsRequested)
+            {
+                EnableReferencePipelineStatistics();
             }
 
             // The cell-grid overlay is the simplest D3D12 renderer: PSO creation +
@@ -198,6 +243,15 @@ public sealed partial class WorldView3DControl
     private void DisposeD3D12Backend()
     {
         _commandRecorder12?.WaitForGpuIdle();
+        // The ordinary frame-start drain is two submissions behind the CPU. A timed profiler exit
+        // can therefore arrive immediately after an aggregate flush while its last one or two GPU
+        // rows are still pending. The idle wait above makes every pending readback safe; publish the
+        // producing-frame rows now, while the profiler host still has its trace open, before the
+        // query heaps and readback buffers disappear. This closes the tail for both query streams.
+        EmitCompletedGpuFrames();
+        EmitCompletedReferencePipelineStatistics();
+        _gpuReferencePipelineStatistics12?.Dispose();
+        _gpuReferencePipelineStatistics12 = null;
         _gpuTimestampProfiler12?.Dispose();
         _gpuTimestampProfiler12 = null;
         // Drain pending deletions now that the GPU is idle — anything queued is safe to release.

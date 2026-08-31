@@ -55,6 +55,54 @@ public class BgsmMaterialTests
         Assert.Null(BgsmMaterial.Parse(data));
     }
 
+    [Theory]
+    [InlineData(0x7FFFFFFFu)] // signed-positive length that previously wrapped pos + length
+    [InlineData(0xFFFFFFFFu)] // maximum u32 length must be rejected before narrowing to int
+    public void Parse_BgemOversizedTextureLength_FailsClosedWithoutThrowing(uint declaredLength)
+    {
+        var data = BuildBgsm(22, true, 60);
+        Array.Resize(ref data, 64);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(60), declaredLength);
+        BgsmMaterial? material = null;
+
+        var exception = Record.Exception(() =>
+        {
+            material = BgsmMaterial.Parse(data);
+        });
+
+        Assert.Null(exception);
+        var parsed = Assert.IsType<BgsmMaterial>(material);
+        Assert.True(parsed.IsEffect);
+        Assert.Null(parsed.Diffuse);
+        Assert.Null(parsed.Normal);
+    }
+
+    [Theory]
+    [InlineData(0x7FFFFFFFu)] // signed-positive length that previously wrapped pos + length + 1
+    [InlineData(0xFFFFFFFFu)] // maximum u32 length must be rejected before narrowing to int
+    public void Parse_BgsmOversizedRootMaterialLength_FailsClosedWithoutThrowing(uint declaredLength)
+    {
+        var emptyPaths = new string[10];
+        Array.Fill(emptyPaths, string.Empty);
+        var data = BuildBgsm(22, false, 60, emptyPaths);
+        var rootLengthOffset = data.Length + 24 + 21 + 30;
+        Array.Resize(ref data, rootLengthOffset + sizeof(uint));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rootLengthOffset), declaredLength);
+        BgsmMaterial? material = null;
+
+        var exception = Record.Exception(() =>
+        {
+            material = BgsmMaterial.Parse(data);
+        });
+
+        Assert.Null(exception);
+        var parsed = Assert.IsType<BgsmMaterial>(material);
+        Assert.False(parsed.IsEffect);
+        Assert.False(parsed.EmissiveEnabled);
+        Assert.Equal(Vector3.Zero, parsed.EmissiveColor);
+        Assert.Equal(0f, parsed.EmissiveScale);
+    }
+
     [Fact]
     public void Parse_Fallout4Bgsm_ReadsAlphaBlockAndTwoSided()
     {

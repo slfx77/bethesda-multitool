@@ -27,6 +27,9 @@ public sealed class BgsmMaterial
     /// <summary>Normal map slot.</summary>
     public const int SlotNormal = 1;
 
+    /// <summary>Glow / emissive texture slot.</summary>
+    public const int SlotGlow = 2;
+
     private const int SlotCount = 10;
 
     private readonly string?[] _paths = new string?[SlotCount];
@@ -174,8 +177,14 @@ public sealed class BgsmMaterial
     /// <summary>Opacity at/beyond the stop angle (falloffParams[3]).</summary>
     public float FalloffStopOpacity { get; private set; }
 
-    /// <summary>Emissive (glow) enabled (lighting materials only).</summary>
+    /// <summary>
+    ///     Effective emissive (glow) enablement (lighting materials only). This requires both the
+    ///     EOF-relative BGSM glow flag and a valid explicit or FO76 glow-map fallback payload.
+    /// </summary>
     public bool EmissiveEnabled { get; private set; }
+
+    /// <summary>Alias for <see cref="EmissiveEnabled" />.</summary>
+    public bool GlowEnabled => EmissiveEnabled;
 
     /// <summary>Emissive color RGB, each channel 0–1 (lighting materials only).</summary>
     public Vector3 EmissiveColor { get; private set; }
@@ -286,7 +295,12 @@ public sealed class BgsmMaterial
                     BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(58)), 0f, 8f);
             }
 
-            material.ReadLightingParams(data, endPos, isFallout4, envScale);
+            // The source material's final glow gate is independent from the local emit payload:
+            // FO4 v2 stores it at EOF-45, FO76 v20-23 at EOF-24 (fo76utils loadBGSMFile).
+            // Keep it bounds-checked so a truncated tail can never enable emissive rendering.
+            var glowFlagOffset = data.Length - (isFallout4 ? 45 : 24);
+            var glowFlag = glowFlagOffset >= 0 && data[glowFlagOffset] != 0;
+            material.ReadLightingParams(data, endPos, isFallout4, envScale, glowFlag);
 
             // Grayscale-to-palette row: an EOF-relative float (fo76utils loadBGSMFile), meaningful
             // only when the gradient slot was populated.
@@ -324,10 +338,16 @@ public sealed class BgsmMaterial
     ///     materials (fo76utils loadBGSMFile lines 331-361): skip 15 (FO4) / 24 (FO76) enable-flag bytes,
     ///     u8 specular enable, f32×4 specular color RGB + strength, f32 smoothness; then skip 28/30 bytes,
     ///     the root-material string + 1 aniso byte, u8 emit enable → f32×4 emissive color RGB + scale.
-    ///     Best-effort: leaves defaults on a short/odd buffer rather than failing the whole parse.
+    ///     FO76 emits a scalar scale with white RGB when the explicit byte is clear but slot 2 is populated.
+    ///     The payload is effective only when the EOF-relative glow flag is also set. Short data fails closed.
     /// </summary>
-    private void ReadLightingParams(byte[] data, int pos, bool isFallout4, float envScale)
+    private void ReadLightingParams(byte[] data, int pos, bool isFallout4, float envScale, bool glowFlag)
     {
+        // Emissive fields must not inherit an apparent glow from partial or disabled material data.
+        EmissiveEnabled = false;
+        EmissiveColor = Vector3.Zero;
+        EmissiveScale = 0f;
+
         pos += isFallout4 ? 15 : 24;
         if (pos + 21 > data.Length)
         {
@@ -367,23 +387,47 @@ public sealed class BgsmMaterial
             return;
         }
 
-        var rootLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        var rootLength = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         pos += 4;
-        if (rootLength < 0 || pos + rootLength + 1 > data.Length)
+        var remaining = data.Length - pos;
+        if (remaining < 1 || rootLength > (uint)(remaining - 1))
         {
             return;
         }
 
-        pos += rootLength + 1;
-        if (pos + 17 > data.Length || data[pos] == 0)
+        pos += (int)rootLength + 1;
+        // This is the reference reader's full explicit-payload guard. It also applies to FO76's
+        // scalar fallback, so an incomplete tail never becomes a usable glow map.
+        if (pos + 17 > data.Length)
         {
+            return;
+        }
+
+        var hasPayload = false;
+        if (data[pos] != 0)
+        {
+            EmissiveColor = new Vector3(
+                ReadClamped01(data, pos + 1), ReadClamped01(data, pos + 5), ReadClamped01(data, pos + 9));
+            EmissiveScale = Math.Clamp(
+                BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 13)), 0f, 8f);
+            hasPayload = true;
+        }
+        else if (!isFallout4 && _paths[SlotGlow] is not null)
+        {
+            EmissiveColor = Vector3.One;
+            EmissiveScale = Math.Clamp(
+                BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 1)), 0f, 8f);
+            hasPayload = true;
+        }
+
+        if (!glowFlag || !hasPayload)
+        {
+            EmissiveColor = Vector3.Zero;
+            EmissiveScale = 0f;
             return;
         }
 
         EmissiveEnabled = true;
-        EmissiveColor = new Vector3(
-            ReadClamped01(data, pos + 1), ReadClamped01(data, pos + 5), ReadClamped01(data, pos + 9));
-        EmissiveScale = Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 13)), 0f, 8f);
     }
 
     /// <summary>
@@ -474,23 +518,23 @@ public sealed class BgsmMaterial
                 break;
             }
 
-            var length = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+            var length = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
             pos += 4;
-            if (length < 0 || pos + length > data.Length)
+            if (length > (uint)(data.Length - pos))
             {
                 break;
             }
 
             if (slot < SlotCount)
             {
-                var path = ReadPath(data, pos, length);
+                var path = ReadPath(data, pos, (int)length);
                 if (!string.IsNullOrEmpty(path))
                 {
                     _paths[slot] = path;
                 }
             }
 
-            pos += length;
+            pos += (int)length;
             texturePathMap >>= 4;
             if (texturePathMap == 0)
             {

@@ -111,6 +111,12 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             StringComparison.Ordinal);
         Assert.Contains(
             "cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount,(uint)drawCount,0,0,0);" +
+            "LastStats.ReferenceOpaqueDirectDraws++;" +
+            "ObserveFnvActiveAdtBaseDraw(sub,textureState,drawCount);",
+            compact,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "pendingIndirectCount++;" +
             "ObserveFnvActiveAdtBaseDraw(sub,textureState,drawCount);",
             compact,
             StringComparison.Ordinal);

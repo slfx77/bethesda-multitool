@@ -61,10 +61,26 @@ float SampleMaterialAlpha(uint slot, float2 uv, float packedState)
     return textures[NonUniformResourceIndex(slot)].Sample(sDiffuse, uv).a;
 }
 
+float SampleMaterialRed(uint slot, float2 uv, float packedState)
+{
+    uint addressing = ((uint)round(packedState) >> 1u) & 3u;
+    if (addressing == 1u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUWrapV, uv).r;
+    if (addressing == 2u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sWrapUClampV, uv).r;
+    if (addressing == 3u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUV, uv).r;
+    return textures[NonUniformResourceIndex(slot)].Sample(sDiffuse, uv).r;
+}
+
 void main(PSInput input)
 {
-    float alpha = SampleMaterialAlpha(
-        input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
-    float testAlpha = (input.vAlphaState.w > 0.5) ? alpha : saturate(alpha * input.vVertexColor.a);
+    bool starfieldOpacity = (((uint)round(input.vTextureState.z)) & 32768u) != 0u;
+    float alpha = starfieldOpacity
+        ? SampleMaterialRed(input.vTexIndices.z, input.vTexCoord, input.vTextureState.z)
+        : SampleMaterialAlpha(input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
+    float testAlpha = starfieldOpacity
+        ? alpha
+        : (input.vAlphaState.w > 0.5) ? alpha : saturate(alpha * input.vVertexColor.a);
     if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
 }

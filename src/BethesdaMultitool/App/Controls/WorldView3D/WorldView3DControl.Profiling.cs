@@ -84,6 +84,34 @@ public sealed partial class WorldView3DControl
     /// </summary>
     internal float Profiler_CameraFovDegrees => _camera.FovYRadians * (180f / MathF.PI);
 
+    /// <summary>
+    ///     Keeps cold-streaming frames out of a later settled benchmark window without pausing the
+    ///     renderer that must do the warming. Called before the control is attached to the live
+    ///     profiler window, so no aggregate can race ahead of the gate.
+    /// </summary>
+    internal void Profiler_PauseProfileWindow()
+    {
+        _profileWindowEnabled = false;
+        _profileWindowStartFrame = long.MaxValue;
+        _profileAccumulator.ResetForSceneLoad();
+    }
+
+    /// <summary>
+    ///     Opens a new scored window at the next rendered frame. The completion clock itself keeps
+    ///     running during warm-up, so that first admitted sample remains a true Present-to-Present
+    ///     interval rather than a partial interval measured from this method call.
+    /// </summary>
+    internal long Profiler_BeginProfileWindow()
+    {
+        _profileAccumulator.ResetForSceneLoad();
+        _profileWindowStartFrame = _profileFrameIndex + 1;
+        _profileWindowEnabled = true;
+        return _profileWindowStartFrame;
+    }
+
+    private bool IsProfileWindowFrame(long frameNumber) =>
+        _profileWindowEnabled && frameNumber >= _profileWindowStartFrame;
+
     private void EmitCompletedGpuFrames()
     {
         if (_gpuTimestampProfiler12 is null || !RendererProfilerTrace.IsEnabled)
@@ -93,6 +121,13 @@ public sealed partial class WorldView3DControl
 
         while (_gpuTimestampProfiler12.TryCollectCompleted(out var timings))
         {
+            // Always drain completed warm-up queries so the timestamp ring keeps advancing, but do
+            // not let an old GPU result surface after the scored window opens a few CPU frames later.
+            if (!IsProfileWindowFrame(timings.FrameNumber))
+            {
+                continue;
+            }
+
             var fields = new Dictionary<string, object?>
             {
                 ["frame"] = timings.FrameNumber,
@@ -120,6 +155,35 @@ public sealed partial class WorldView3DControl
         }
     }
 
+    private void EmitCompletedReferencePipelineStatistics()
+    {
+        if (_gpuReferencePipelineStatistics12 is null)
+        {
+            return;
+        }
+
+        while (_gpuReferencePipelineStatistics12.TryCollectCompleted(out var statistics))
+        {
+            // Readback is delayed by the submission fence, so the producing frame number is the
+            // only valid profile-window identity. Always drain warm-up results; never relabel one
+            // as the later CPU frame on which it became readable.
+            if (!RendererProfilerTrace.IsEnabled || !IsProfileWindowFrame(statistics.FrameNumber))
+            {
+                continue;
+            }
+
+            RendererProfilerTrace.Event(
+                "gpu-reference-pipeline-statistics",
+                new Dictionary<string, object?>
+                {
+                    ["frame"] = statistics.FrameNumber,
+                    ["iaPrimitives"] = statistics.IAPrimitives,
+                    ["vsInvocations"] = statistics.VSInvocations,
+                    ["psInvocations"] = statistics.PSInvocations
+                });
+        }
+    }
+
     private void EmitFrameStall(
         FrameProfileSample sample,
         WorldRenderStats? terrain,
@@ -127,15 +191,21 @@ public sealed partial class WorldView3DControl
         WorldRenderStats? wireframe,
         WorldRenderStats? references)
     {
+        if (!IsProfileWindowFrame(sample.FrameNumber))
+        {
+            return;
+        }
+
         Log.Warn(
-            "3D stall frame={0} total={1:0.00}ms threshold={2:0.00}ms terrain={3:0.00}ms refs={4:0.00}ms present={5:0.00}ms fence={6:0.00}ms",
+            "3D stall frame={0} wall={1:0.00}ms threshold={2:0.00}ms terrain={3:0.00}ms refs={4:0.00}ms present={5:0.00}ms fence={6:0.00}ms body={7:0.00}ms",
             sample.FrameNumber,
             sample.TotalMilliseconds,
             _stallThresholdMilliseconds,
             sample.TerrainMilliseconds,
             sample.ReferencesMilliseconds,
             sample.PresentMilliseconds,
-            sample.FenceWaitMilliseconds);
+            sample.FenceWaitMilliseconds,
+            sample.RenderBodyMilliseconds);
 
         var fields = BuildFrameFields(sample);
         fields["thresholdMs"] = _stallThresholdMilliseconds;
@@ -151,6 +221,7 @@ public sealed partial class WorldView3DControl
         var fields = RendererProfilerTrace.CameraPoseFields(Profiler_CameraPose);
         fields["frame"] = sample.FrameNumber;
         fields["frameMs"] = sample.TotalMilliseconds;
+        fields["renderBodyMs"] = sample.RenderBodyMilliseconds;
         fields["controllerMs"] = sample.ControllerMilliseconds;
         fields["beginFrameMs"] = sample.BeginFrameMilliseconds;
         fields["fenceWaitMs"] = sample.FenceWaitMilliseconds;
@@ -161,6 +232,7 @@ public sealed partial class WorldView3DControl
         fields["referencesMs"] = sample.ReferencesMilliseconds;
         fields["waterMs"] = sample.WaterMilliseconds;
         fields["wireframeMs"] = sample.WireframeMilliseconds;
+        fields["shadowCpuMs"] = sample.ShadowMilliseconds;
         fields["endFrameMs"] = sample.EndFrameMilliseconds;
         fields["presentMs"] = sample.PresentMilliseconds;
         fields["hudMs"] = sample.HudMilliseconds;
@@ -214,7 +286,7 @@ public sealed partial class WorldView3DControl
         WorldRenderStats? wireframe,
         WorldRenderStats? references)
     {
-        if (!_profileLogging)
+        if (!_profileLogging || !IsProfileWindowFrame(sample.FrameNumber))
         {
             return;
         }

@@ -28,7 +28,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///     D3D12 placed-reference mesh cache. CPU decode is requested asynchronously; all D3D12
 ///     resource creation stays on the render thread while the command list is open.
 /// </summary>
-internal sealed class ReferenceMeshCache12 : IDisposable
+internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionParticipant12
 {
     private static readonly Logger Log = Logger.Instance;
 
@@ -78,7 +78,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private readonly ReferenceMeshDecoder12 _decoder;
     private readonly GpuTextureCache12 _textureCache;
     private readonly GpuDeletionQueue12 _deletionQueue;
+    private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuGeometryArena12 _geometryArena;
+    // DEFAULT-heap meshes are usable by the command list that records their copy, but cannot become
+    // durable cache state until that list is submitted. One enlistment covers every upload in the
+    // open frame; commit/rollback is delivered synchronously by GpuCommandRecorder12.
+    private readonly List<PendingMeshPublication> _pendingMeshPublications = new();
     // Resident-mesh LRU. Render-thread only — LruCache's lock-free single-threaded contract.
     // Eviction runs the GPU residency cascade via onEvicted → CachedNifMesh12.Dispose (deferred
     // arena free + per-submesh texture refcount release). Node values are mutated IN PLACE after
@@ -106,6 +111,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // collision entry can be rebuilt from the exact decoded variant without another GPU upload.
     private readonly CollisionRecoveryRegistry _collisionRecovery = new();
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
+    private readonly string? _starfieldMaterialDatabaseCacheIdentity;
     // Disk-persist handoff: decode workers enqueue (path, mesh) and free their slot immediately;
     // payload serialization + the atomic file write run on the single background writer below
     // instead of inside the decode task (cold loads were spending decode-worker time on disk I/O).
@@ -137,6 +143,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // When true, LoadData resizes _meshLru to the worldspace's working set (default). False when the
     // FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY env knob pins a fixed cap for eviction-cascade stress gates.
     private readonly bool _autoSizeMeshCapacity;
+    // Retry debt is scoped to the desired set visited by the current batch build. A global count
+    // wedges capture after the camera moves away from a failed resident node: nothing revisits that
+    // off-demand node to clear its flag. Each fresh traversal advances this token and resets the
+    // count in O(1); incremental continuation slices keep the same token until publication.
+    private ulong _materializationRetryDemandGeneration = 1;
+    private int _pendingMaterializationRetries;
     private bool _disposed;
 
     public ReferenceMeshCache12(
@@ -145,6 +157,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         NifTextureResolver textureResolver,
         GpuTextureCache12 textureCache,
         GpuDeletionQueue12 deletionQueue,
+        GpuCommandRecorder12 recorder,
         int capacity,
         long decodedCacheByteBudget = DefaultDecodedMeshCacheByteBudget,
         ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null,
@@ -156,13 +169,38 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
         _meshArchives = meshArchives;
+        _starfieldMaterialDatabaseCacheIdentity = textureResolver.StarfieldMaterialDatabaseCacheIdentity;
         // speedTreeHeights: null — the engine renders .spt geometry at its natural world scale; the old
         // TREE-OBND rescale oversized shrubs (param retained on the decoder until its file frees up).
         _decoder = new ReferenceMeshDecoder12(meshArchives, textureResolver, speedTreeHeights: null,
             speedTreeLeafTextures, speedTreeDimming);
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
-        _geometryArena = new GpuGeometryArena12(gpu)
+        _recorder = recorder;
+        var requestedGeometryBacking =
+            EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceGeometryHeap);
+        var geometryBackingMode = GpuGeometryArenaBackingModePolicy.Parse(requestedGeometryBacking);
+        string? geometryBackingFallback = null;
+        if (geometryBackingMode == GpuGeometryArenaBackingMode.DefaultHeap &&
+            GeometryArenaDiagnostics.ValidateLevel >= 2)
+        {
+            geometryBackingFallback = "geometry-validation-level-2";
+            Log.Warn(
+                "ReferenceMeshCache12: DEFAULT reference geometry disabled because geometry " +
+                "validation level {0} requires CPU-readable byte hashing; using UPLOAD heap.",
+                GeometryArenaDiagnostics.ValidateLevel);
+            geometryBackingMode = GpuGeometryArenaBackingMode.UploadHeap;
+        }
+
+        Log.Info("ReferenceMeshCache12: reference geometry backing = {0}.", geometryBackingMode);
+        RendererProfilerTrace.Event("reference-geometry-backing", new Dictionary<string, object?>
+        {
+            ["requested"] = requestedGeometryBacking,
+            ["effective"] = geometryBackingMode.ToString(),
+            ["fallback"] = geometryBackingFallback,
+            ["geometryValidationLevel"] = GeometryArenaDiagnostics.ValidateLevel
+        });
+        _geometryArena = new GpuGeometryArena12(gpu, backingMode: geometryBackingMode)
             .RegisterWith(Core.Diagnostics.ResourceRegistry.Instance, "reference");
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
         if (_persistentDecodedCache is not null)
@@ -181,9 +219,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // or the old 1-byte-per-entry default — would leave the largest reference pool
         // ungovernable, because a byte budget cannot be enforced on a size nobody knows.
         //
-        // Segment is NonLocal, not Local: the arena allocates UPLOAD-heap blocks, so this geometry
-        // lives in system RAM and is read over PCIe. Counting it as VRAM is what made the old
-        // GpuResident total meaningless on a discrete adapter.
+        // Segment follows the selected arena backing. UPLOAD geometry is NonLocal system RAM;
+        // DEFAULT geometry is Local device memory. The LRU is attribution-only either way, so the
+        // arena remains the single physical-byte owner in registry totals.
         //
         // sizeOf runs at Set time, when the node's Mesh is still null and the size is 0; the real
         // size is published via _meshLru.UpdateSize once the async decode completes and the mesh is
@@ -195,7 +233,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sizeOf: static (_, node) => node.Mesh?.Geometry.Allocation.AlignedSize ?? 0,
                 onEvicted: OnMeshNodeEvicted,
                 comparer: StringComparer.OrdinalIgnoreCase)
-            .WithSegment(Core.Diagnostics.GpuMemorySegment.NonLocal)
+            .WithSegment(geometryBackingMode == GpuGeometryArenaBackingMode.DefaultHeap
+                ? Core.Diagnostics.GpuMemorySegment.Local
+                : Core.Diagnostics.GpuMemorySegment.NonLocal)
             .RegisterWith(ResourceRegistry.Instance, "reference-meshes");
         _decodedLru = new LruCache<string, DecodedCacheValue>(
                 "ReferenceDecodedMeshCache",
@@ -216,6 +256,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private void OnMeshNodeEvicted(string cacheKey, Node node)
     {
         _collisionRecovery.RemoveOwner(node.DecodePath, cacheKey);
+        ClearMaterializationRetry(node);
+        if (node.PendingPublication is { } pending)
+        {
+            // The open command list may already contain draws through this pending mesh. Keep it
+            // alive until that list reaches its submit/abort boundary; the participant then disposes
+            // it instead of committing it into the node that has left the LRU.
+            pending.Evicted = true;
+            node.PendingPublication = null;
+        }
         node.Mesh?.Dispose();
         // Any eviction invalidates frozen (reused) reference batches: their instance lists key on
         // CachedSubmesh12 objects whose GPU buffers just entered the deletion queue. The renderer
@@ -255,7 +304,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     }
 
     /// <summary>
-    ///     Collision cold/recovery path. A never-seen plain model follows <see cref="GetOrUpload" />;
+    ///     Collision cold/recovery path. A never-seen plain model follows the collision-only resolver;
     ///     an independently evicted collision entry instead republishes from its exact resident
     ///     variant's decoded LRU/disk/source payload without uploading its GPU mesh again. The caller
     ///     bounds how many unique paths it offers per frame.
@@ -290,14 +339,23 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         if (_meshLru.TryPeek(normalizedPath, out var node) && node.DecodeQueued)
         {
-            // GetOrUpload normally starts the queue before re-offering an existing node's latest
+            // The ordinary resolver normally starts the queue before re-offering an existing node's latest
             // distance. The collision overlay already did a global nearest-first sort, so promote
             // here first or an older far-field priority could win the newly-open worker slot.
             _decodeQueue.Enqueue(normalizedPath, priority);
         }
 
-        var uploadBudget = 1;
-        _ = GetOrUpload(normalizedPath, ref uploadBudget, priority);
+        // Walk/collision sampling runs from the controller update BEFORE BeginFrame opens the direct
+        // command list. Resolve/decode and publish CPU collision here, but never let this path record
+        // a DEFAULT-heap geometry copy. The ordinary reference render will consume the same positive
+        // decoded-cache entry later with its active command list and realize the GPU mesh then.
+        var uploadBudget = 0;
+        _ = GetOrResolve(
+            null,
+            true,
+            normalizedPath,
+            ref uploadBudget,
+            priority);
         return ResolveCollisionMesh(normalizedPath, category);
     }
 
@@ -384,6 +442,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     evicted GPU buffers and must rebuild. Render-thread only, like the LRU it mirrors.
     /// </summary>
     public int EvictionGeneration { get; private set; }
+
+    /// <summary>Actual arena free/copy-retirement generation at the last empty-block sweep.</summary>
+    private ulong _lastArenaSweepReclamationGeneration;
 
     /// <summary>
     ///     Resizes the resident-mesh LRU to <paramref name="capacity" /> (raising holds more; lowering
@@ -488,6 +549,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public int FrameCpuDecodedCacheMisses { get; private set; }
     public int FrameCpuDecodedNegativeHits { get; private set; }
     public int FrameGpuUploads { get; private set; }
+    /// <summary>GPU materialization attempts that failed transiently in this frame.</summary>
+    public int FrameMaterializationFailures { get; private set; }
+    /// <summary>
+    ///     Resident decoded nodes that still need a GPU materialization retry. Unlike the per-frame
+    ///     failure counter this persists across batch reuse, so capture quiescence cannot mistake a
+    ///     quiet gap between retries for a settled scene.
+    /// </summary>
+    public int PendingMaterializationRetryCount => _pendingMaterializationRetries;
+    public double FrameGpuUploadMilliseconds => _frameUploadMsConsumed;
     public int FrameByteBudgetDeferrals { get; private set; }
     public int FrameCompressedTextureUploads => _textureCache.FrameCompressedUploads;
     public int FrameRgbaTextureUploads => _textureCache.FrameRgbaFallbackUploads;
@@ -508,6 +578,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         FrameCpuDecodedCacheMisses = 0;
         FrameCpuDecodedNegativeHits = 0;
         FrameGpuUploads = 0;
+        FrameMaterializationFailures = 0;
         FrameByteBudgetDeferrals = 0;
 
         // Self-measured frame duration → the time-based streaming pace for this frame. Driven from a
@@ -539,6 +610,41 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _frameUploadMsConsumed = 0;
         _textureCache.ResetFrameStats(FrameBudgetScale);
         PruneCompletedDecodeTasks();
+        ReleaseDrainedArenaBlocks();
+    }
+
+    /// <summary>
+    ///     Hands back any arena block that has fully drained. The arena's committed bytes were
+    ///     otherwise a monotonic high-water mark for the session — on Fallout 76 the arena is a large
+    ///     part of the ~8 GB of unmanaged memory that keeps a capture from settling, and it is UPLOAD
+    ///     heap, i.e. system RAM.
+    ///     <para>
+    ///         Gated on the arena's actual reclamation generation rather than the eviction-request
+    ///         generation. Mesh frees mature later on the deletion queue, and a rejected upload can
+    ///         free without an eviction at all; only the arena knows when either event really made a
+    ///         block newly releasable. With no actual free/copy retirement, steady state does no scan.
+    ///     </para>
+    /// </summary>
+    private void ReleaseDrainedArenaBlocks()
+    {
+        var reclamationGeneration = _geometryArena.ReclamationGeneration;
+        if (reclamationGeneration == _lastArenaSweepReclamationGeneration)
+        {
+            return;
+        }
+
+        _lastArenaSweepReclamationGeneration = reclamationGeneration;
+        var released = _geometryArena.ReleaseEmptyBlocks();
+        if (released > 0 && GeometryArenaDiagnostics.AuditEnabled)
+        {
+            RendererProfilerTrace.Event("geometry-arena", new Dictionary<string, object?>
+            {
+                ["op"] = "release-empty-blocks",
+                ["releasedBytes"] = released,
+                ["evictionGeneration"] = EvictionGeneration,
+                ["reclamationGeneration"] = reclamationGeneration
+            });
+        }
     }
 
     /// <summary>
@@ -562,11 +668,40 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public double UploadMillisecondsPerFrame { get; set; } = 4.0;
 
     public CachedNifMesh12? GetOrUpload(
+        ID3D12GraphicsCommandList commandList,
         string modelPath,
         ref int uploadBudget,
         float priority = 0f,
         AlternateTextureSet? alternateTextures = null)
     {
+        ArgumentNullException.ThrowIfNull(commandList);
+        return GetOrResolve(
+            commandList,
+            false,
+            modelPath,
+            ref uploadBudget,
+            priority,
+            alternateTextures);
+    }
+
+    /// <summary>
+    ///     Shared node/decode resolution. A null <paramref name="commandList" /> is admitted only for
+    ///     collision warmup: positive decoded geometry may populate the CPU collision cache, but it
+    ///     must remain GPU-unrealized until the render path returns with an open direct command list.
+    /// </summary>
+    private CachedNifMesh12? GetOrResolve(
+        ID3D12GraphicsCommandList? commandList,
+        bool collisionOnly,
+        string modelPath,
+        ref int uploadBudget,
+        float priority = 0f,
+        AlternateTextureSet? alternateTextures = null)
+    {
+        if (!collisionOnly && commandList is null)
+        {
+            throw new ArgumentNullException(nameof(commandList));
+        }
+
         if (_disposed) return null;
 
         PruneCompletedDecodeTasks();
@@ -585,7 +720,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // TryGet bumps the hit to MRU — the old explicit Touch.
         if (_meshLru.TryGet(cacheKey, out var existing))
         {
-            var resolved = ResolveExisting(cacheKey, existing, ref uploadBudget);
+            var resolved = ResolveExisting(
+                cacheKey, existing, commandList, collisionOnly, ref uploadBudget);
             // An unresolved node with no in-memory payload, no running decode, and no negative
             // verdict needs (re-)queueing: either its payload was evicted from the decoded LRU
             // after its decode/disk-load completed, or it's still waiting in the queue (the call
@@ -617,7 +753,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // Set evicts LRU entries over capacity, each through onEvicted (the dispose cascade);
         // the just-inserted node always survives its own Set.
         _meshLru.Set(cacheKey, node);
-        var mesh = ResolveExisting(cacheKey, node, ref uploadBudget);
+        var mesh = ResolveExisting(
+            cacheKey, node, commandList, collisionOnly, ref uploadBudget);
         if (mesh is null && !node.ResolvedNull && !node.DecodedCacheAvailable)
         {
             QueueDecode(cacheKey, node, priority);
@@ -630,6 +767,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        // Ordinarily EndFrame/AbortFrame has already resolved this list. Keep teardown robust when
+        // a host disposes after abandoning its render loop without delivering that boundary.
+        RollbackPendingPublicationsNoThrow(invalidateBatches: false, preserveRetries: false);
 
         DrainDecodeTasksForDispose();
 
@@ -698,7 +839,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _decodeTasks.WaitForDrainLogged();
     }
 
-    private CachedNifMesh12? ResolveExisting(string modelPath, Node node, ref int uploadBudget)
+    private CachedNifMesh12? ResolveExisting(
+        string modelPath,
+        Node node,
+        ID3D12GraphicsCommandList? commandList,
+        bool collisionOnly,
+        ref int uploadBudget)
     {
         // Consume completed work before either resident or render-null early return. Otherwise a
         // successful Task retains its DecodedNifMesh12 indefinitely even after _decodedLru evicts the
@@ -706,13 +852,34 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         DrainCompletedDecodeTask(modelPath, node);
         if (node.Mesh is not null)
         {
+            ClearMaterializationRetry(node);
             return node.Mesh;
+        }
+        if (node.PendingPublication is { } pending)
+        {
+            // Same-frame repeated placements must share the materialized mesh whose copy is already
+            // recorded. It is safe for this open list, but remains absent from durable node.Mesh until
+            // the recorder reports successful submission.
+            ClearMaterializationRetry(node);
+            return pending.Mesh;
         }
         if (node.ResolvedNull)
         {
+            // Terminal render-null nodes never carry materialization work. Keep this defensive clear
+            // at the early return so a future terminal path cannot strand current-demand retry debt.
+            ClearMaterializationRetry(node);
             return null;
         }
-        if (TryResolveFromDecodedCache(modelPath, node, ref uploadBudget, out var cachedMesh))
+        if (!collisionOnly && node.MaterializationRetryDemandGeneration != 0)
+        {
+            // A fresh demand generation resets the aggregate count in O(1), leaving old node stamps
+            // as membership hints. Re-adopt a still-visible failed node before decoded-cache, byte,
+            // time, or upload-count admission can defer it; otherwise a deferred retry could make a
+            // completed traversal look quiescent and then freeze under stable batch reuse.
+            MarkMaterializationRetry(node, countFrameFailure: false);
+        }
+        if (TryResolveFromDecodedCache(
+                modelPath, node, commandList, collisionOnly, ref uploadBudget, out var cachedMesh))
         {
             return cachedMesh;
         }
@@ -740,6 +907,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             {
                 node.ResolvedNull = true;
             }
+            ClearMaterializationRetry(node);
             node.CollisionRecoveryRequested = false;
             StoreDecodedCache(cacheKey, null);
             MarkCollisionTerminalUnavailable(cacheKey, node);
@@ -757,6 +925,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             {
                 node.ResolvedNull = true;
             }
+            ClearMaterializationRetry(node);
             node.CollisionRecoveryRequested = false;
             StoreDecodedCache(cacheKey, null);
             MarkCollisionTerminalUnavailable(cacheKey, node);
@@ -786,6 +955,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private bool TryResolveFromDecodedCache(
         string modelPath,
         Node node,
+        ID3D12GraphicsCommandList? commandList,
+        bool collisionOnly,
         ref int uploadBudget,
         out CachedNifMesh12? mesh)
     {
@@ -817,12 +988,28 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             FrameCpuDecodedNegativeHits++;
             node.ResolvedNull = true;
+            ClearMaterializationRetry(node);
             node.CollisionRecoveryRequested = false;
             MarkCollisionTerminalUnavailable(modelPath, node);
             return true;
         }
 
         node.DecodedCacheAvailable = true;
+        if (collisionOnly)
+        {
+            // This is deliberately BEFORE every GPU upload gate/counter. Collision warmup can run
+            // before BeginFrame, and a positive decoded payload is enough to publish its CPU soup.
+            // Do not mark the node render-null: its GPU mesh remains pending for the render path.
+            StoreCollisionMesh(modelPath, node, decoded.Mesh);
+            return true;
+        }
+
+        if (commandList is null)
+        {
+            throw new InvalidOperationException(
+                "GPU mesh realization requires an open D3D12 command list.");
+        }
+
         if (uploadBudget <= 0)
         {
             return true;
@@ -858,16 +1045,39 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // decoded material swaps can change AlphaBlend/IsEmissive/water admission. Until collision
         // identity carries the variant, the last uploaded variant wins (tracked in the active backlog).
         var uploadStarted = Stopwatch.GetTimestamp();
-        mesh = UploadDecodedMesh(modelPath, node, decoded.Mesh);
+        var materialization = UploadDecodedMesh(commandList, modelPath, node, decoded.Mesh);
         var uploadMs = Stopwatch.GetElapsedTime(uploadStarted).TotalMilliseconds;
         _frameUploadMsConsumed += uploadMs;
         RecordUploadThroughput(decoded.ByteSize, uploadMs);
-        if (mesh is null)
+        if (materialization.Status == MeshMaterializationStatus.RetryableFailure)
         {
-            // UploadDecodedMesh installs collision before returning null for a render-empty payload.
+            MarkMaterializationRetry(node);
+            return true;
+        }
+
+        ClearMaterializationRetry(node);
+        if (materialization.Status == MeshMaterializationStatus.RenderEmpty)
+        {
+            // UploadDecodedMesh installs collision before reporting an authored render-empty payload.
             // Keep that positive decoded payload in the CPU/disk caches; replacing it with a total
             // negative would discard the provenance after collision-LRU eviction or next launch.
             node.ResolvedNull = true;
+            return true;
+        }
+
+        mesh = materialization.Mesh
+               ?? throw new InvalidOperationException("Successful mesh materialization returned no mesh.");
+        if (_geometryArena.BackingMode == GpuGeometryArenaBackingMode.DefaultHeap)
+        {
+            if (!TryStagePendingPublication(modelPath, node, mesh))
+            {
+                mesh = null;
+                MarkMaterializationRetry(node);
+                return true;
+            }
+
+            // The copy and every draw through this return value belong to the same open list. The
+            // node remains transactionally pending until EndFrame submits that list.
             return true;
         }
 
@@ -880,6 +1090,273 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // key (path + optional "#variant"), which is what UpdateSize needs.
         _meshLru.UpdateSize(modelPath, mesh.Geometry.Allocation.AlignedSize);
         return true;
+    }
+
+    private bool TryStagePendingPublication(string cacheKey, Node node, CachedNifMesh12 mesh)
+    {
+        if (node.PendingPublication is not null)
+        {
+            Log.Warn(
+                "ReferenceMeshCache12: duplicate pending DEFAULT publication for '{0}'; retrying next frame.",
+                cacheKey);
+            SafeDisposePendingMesh(mesh, cacheKey, "duplicate-pending");
+            return false;
+        }
+
+        var pending = new PendingMeshPublication(cacheKey, node, mesh);
+        node.PendingPublication = pending;
+        _pendingMeshPublications.Add(pending);
+        try
+        {
+            _recorder.EnlistCurrentFrame(this);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            pending.Completed = true;
+            node.PendingPublication = null;
+            _pendingMeshPublications.Remove(pending);
+            SafeDisposePendingMesh(mesh, cacheKey, "enlist-failed");
+            Log.Warn(
+                "ReferenceMeshCache12: DEFAULT publication enlistment failed for '{0}': {1}",
+                cacheKey, ex.Message);
+            return false;
+        }
+    }
+
+    void IGpuCommandSubmissionParticipant12.OnCommandListSubmitted() =>
+        CommitPendingPublicationsNoThrow();
+
+    void IGpuCommandSubmissionParticipant12.OnCommandListAborted() =>
+        RollbackPendingPublicationsNoThrow(invalidateBatches: true, preserveRetries: true);
+
+    /// <summary>
+    ///     Commits DEFAULT-heap cache state only after Execute+Signal succeeded. Stale entries whose
+    ///     LRU node was evicted during the open frame are disposed instead; they may still have been
+    ///     used by that submitted list, so CachedNifMesh12 routes the geometry free through the same
+    ///     frames-in-flight deletion queue.
+    /// </summary>
+    private void CommitPendingPublicationsNoThrow()
+    {
+        var invalidateBatches = false;
+        try
+        {
+            foreach (var pending in _pendingMeshPublications)
+            {
+                if (pending.Completed)
+                {
+                    continue;
+                }
+
+                pending.Completed = true;
+                try
+                {
+                    var nodeOwnsPending = ReferenceEquals(pending.Node.PendingPublication, pending);
+                    if (nodeOwnsPending)
+                    {
+                        pending.Node.PendingPublication = null;
+                    }
+
+                    if (!_disposed && !pending.Evicted && nodeOwnsPending &&
+                        _meshLru.TryPeek(pending.CacheKey, out var current) &&
+                        ReferenceEquals(current, pending.Node))
+                    {
+                        pending.Node.Mesh = pending.Mesh;
+                        _meshLru.UpdateSize(
+                            pending.CacheKey, pending.Mesh.Geometry.Allocation.AlignedSize);
+                        continue;
+                    }
+
+                    SafeDisposePendingMesh(pending.Mesh, pending.CacheKey, "stale-on-submit");
+                }
+                catch (Exception ex)
+                {
+                    // Publication bookkeeping must never escape into EndFrame. Re-arm a resident
+                    // decoded node so the next batch build retries rather than retaining a half-
+                    // published mesh whose LRU size was not established.
+                    if (ReferenceEquals(pending.Node.PendingPublication, pending))
+                    {
+                        pending.Node.PendingPublication = null;
+                    }
+
+                    if (ReferenceEquals(pending.Node.Mesh, pending.Mesh))
+                    {
+                        pending.Node.Mesh = null;
+                    }
+
+                    try
+                    {
+                        if (!_disposed && _meshLru.TryPeek(pending.CacheKey, out var current) &&
+                            ReferenceEquals(current, pending.Node))
+                        {
+                            MarkMaterializationRetry(pending.Node, countFrameFailure: false);
+                        }
+                    }
+                    catch (Exception retryEx)
+                    {
+                        Log.Warn(
+                            "ReferenceMeshCache12: failed to re-arm DEFAULT publication retry for '{0}': {1}",
+                            pending.CacheKey, retryEx.Message);
+                    }
+
+                    invalidateBatches = true;
+                    SafeDisposePendingMesh(pending.Mesh, pending.CacheKey, "commit-failed");
+                    Log.Warn(
+                        "ReferenceMeshCache12: DEFAULT publication commit failed for '{0}': {1}",
+                        pending.CacheKey, ex.Message);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            invalidateBatches = true;
+            Log.Warn("ReferenceMeshCache12: DEFAULT publication commit sweep failed: {0}", ex.Message);
+        }
+        finally
+        {
+            _pendingMeshPublications.Clear();
+            if (invalidateBatches)
+            {
+                EvictionGeneration++;
+            }
+        }
+    }
+
+    private void RollbackPendingPublicationsNoThrow(bool invalidateBatches, bool preserveRetries)
+    {
+        var rolledBack = false;
+        try
+        {
+            foreach (var pending in _pendingMeshPublications)
+            {
+                if (pending.Completed)
+                {
+                    continue;
+                }
+
+                pending.Completed = true;
+                rolledBack = true;
+                try
+                {
+                    var nodeOwnsPending = ReferenceEquals(pending.Node.PendingPublication, pending);
+                    if (nodeOwnsPending)
+                    {
+                        pending.Node.PendingPublication = null;
+                    }
+
+                    if (preserveRetries && !_disposed && !pending.Evicted && nodeOwnsPending &&
+                        _meshLru.TryPeek(pending.CacheKey, out var current) &&
+                        ReferenceEquals(current, pending.Node))
+                    {
+                        MarkMaterializationRetry(pending.Node, countFrameFailure: false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (ReferenceEquals(pending.Node.PendingPublication, pending))
+                    {
+                        pending.Node.PendingPublication = null;
+                    }
+
+                    Log.Warn(
+                        "ReferenceMeshCache12: DEFAULT publication rollback failed for '{0}': {1}",
+                        pending.CacheKey, ex.Message);
+                }
+                finally
+                {
+                    // Every uncommitted mesh is disposed independently. A bookkeeping failure for
+                    // one LRU node must not leak this mesh or prevent later pending entries from
+                    // reaching their own rollback.
+                    SafeDisposePendingMesh(pending.Mesh, pending.CacheKey, "command-list-aborted");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            rolledBack = true;
+            Log.Warn("ReferenceMeshCache12: DEFAULT publication rollback sweep failed: {0}", ex.Message);
+        }
+        finally
+        {
+            _pendingMeshPublications.Clear();
+            if (invalidateBatches && rolledBack)
+            {
+                // A staged batch can already contain the pending mesh. Make every renderer snapshot
+                // observe the rollback on its next frame instead of drawing the freed allocation.
+                EvictionGeneration++;
+            }
+        }
+    }
+
+    private static void SafeDisposePendingMesh(
+        CachedNifMesh12 mesh, string cacheKey, string reason)
+    {
+        try
+        {
+            mesh.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(
+                "ReferenceMeshCache12: pending mesh disposal failed for '{0}' ({1}): {2}",
+                cacheKey, reason, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Starts accounting retry debt for a fresh desired-set traversal. Call exactly once for a
+    ///     newly-created batch-build state, never for a valid incremental continuation. Nodes that
+    ///     fell out of camera demand retain only a stale token and no longer veto capture.
+    /// </summary>
+    public void BeginMaterializationRetryDemandGeneration()
+    {
+        _pendingMaterializationRetries = 0;
+        if (_materializationRetryDemandGeneration != ulong.MaxValue)
+        {
+            _materializationRetryDemandGeneration++;
+            return;
+        }
+
+        // Practically unreachable, but make token wrap exact instead of allowing an ancient node
+        // tagged generation 1 to alias the new traversal. This scan runs at most once per 2^64
+        // desired-set generations and remains off every normal frame path.
+        foreach (var key in _meshLru.SnapshotKeys())
+        {
+            if (_meshLru.TryPeek(key, out var node))
+            {
+                node.MaterializationRetryDemandGeneration = 0;
+            }
+        }
+
+        _materializationRetryDemandGeneration = 1;
+    }
+
+    private void MarkMaterializationRetry(Node node, bool countFrameFailure = true)
+    {
+        if (countFrameFailure)
+        {
+            FrameMaterializationFailures++;
+        }
+
+        if (node.MaterializationRetryDemandGeneration ==
+            _materializationRetryDemandGeneration)
+        {
+            return;
+        }
+
+        node.MaterializationRetryDemandGeneration = _materializationRetryDemandGeneration;
+        _pendingMaterializationRetries++;
+    }
+
+    private void ClearMaterializationRetry(Node node)
+    {
+        var belongsToCurrentDemand = node.MaterializationRetryDemandGeneration ==
+                                     _materializationRetryDemandGeneration;
+        node.MaterializationRetryDemandGeneration = 0;
+        if (belongsToCurrentDemand && _pendingMaterializationRetries > 0)
+        {
+            _pendingMaterializationRetries--;
+        }
     }
 
     /// <summary>
@@ -1039,7 +1516,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         var metadata = _meshArchives.GetLookupMetadata(decodePath);
 
-        if (!_persistentDecodedCache.TryLoad(metadata, variantKey, out var cached))
+        if (!_persistentDecodedCache.TryLoad(
+                metadata,
+                variantKey,
+                _starfieldMaterialDatabaseCacheIdentity,
+                out var cached))
         {
             return false;
         }
@@ -1123,6 +1604,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             _persistentDecodedCache!.Store(
                 metadata,
                 variantKey,
+                _starfieldMaterialDatabaseCacheIdentity,
                 decoded is null ? null : ReferenceMeshDecoder12.ToPersistentPayload(decoded));
         }
         catch (Exception ex)
@@ -1131,7 +1613,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
     }
 
-    private CachedNifMesh12? UploadDecodedMesh(string cacheKey, Node node, DecodedNifMesh12 decoded)
+    private MeshMaterializationResult UploadDecodedMesh(
+        ID3D12GraphicsCommandList commandList,
+        string cacheKey,
+        Node node,
+        DecodedNifMesh12 decoded)
     {
         var modelPath = node.DecodePath;
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
@@ -1151,7 +1637,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // their authored soup, while a decoded model with neither render nor collision geometry needs
         // an authoritative resolved-null entry so cold warmup does not retry it forever.
         StoreCollisionMesh(cacheKey, node, decoded);
-        if (totalVertexCount == 0 || totalIndexCount == 0) return null;
+        if (totalVertexCount == 0 || totalIndexCount == 0)
+        {
+            return MeshMaterializationResult.RenderEmpty;
+        }
 
         var vertices = new GpuMeshUploader.GpuVertex[totalVertexCount];
         var indices = new ushort[totalIndexCount];
@@ -1174,10 +1663,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         GeometryAllocation12 geometry;
         try
         {
-            // memcpy the packed vertex/index bytes into a shared UPLOAD-heap arena sub-range — no
-            // per-mesh committed resource, staging buffer, copy, or barrier (the churn the profiler
-            // flagged). VBV/IBV bind directly against the arena block's GPU virtual address.
+            // Pack both streams into one shared arena range. UPLOAD backing memcpy's directly;
+            // DEFAULT backing stages and records its copy/barrier on this frame's active command
+            // list. Either mode publishes identical VBV/IBV addresses into the cached submeshes.
             geometry = _geometryArena.Upload(
+                commandList,
+                _deletionQueue,
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes<GpuMeshUploader.GpuVertex>(vertices),
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>(indices),
                 debugTag: modelPath);
@@ -1185,7 +1676,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         catch (Exception ex)
         {
             Log.Warn("ReferenceMeshCache12: geometry arena upload failed for '{0}': {1}", modelPath, ex.Message);
-            return null;
+            return MeshMaterializationResult.RetryableFailure;
         }
 
         // Conservative whole-mesh bounding radius around the NIF origin (max vertex distance from
@@ -1266,6 +1757,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         var submeshes = new List<CachedSubmesh12>(decoded.Submeshes.Count);
+        var materializationFailed = false;
         var softParticleSources = new HashSet<NifSoftParticleSource>();
         // Authored positions + triangle indices of submeshes classified as placed water (normally
         // WaterShaderProperty caves/pools; also the bounded TES3 Vivec legacy signature), captured so
@@ -1276,6 +1768,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         for (var i = 0; i < decoded.Submeshes.Count; i++)
         {
             var sub = decoded.Submeshes[i];
+            var submeshCountBefore = submeshes.Count;
+            List<GpuTextureCache12.Entry>? acquiredTextures = null;
+
+            GpuTextureCache12.Entry Acquire(GpuTextureCache12.Entry entry)
+            {
+                // Pinned fallbacks/synthetics are harmless to pass to Release (it ignores a null
+                // CacheKey), which keeps rollback uniform across every texture route.
+                (acquiredTextures ??= new List<GpuTextureCache12.Entry>(8)).Add(entry);
+                return entry;
+            }
+
             // Placed water geometry is NOT drawn as a reference slab. Divert it: retain the authored
             // triangles for WaterRenderer12 and skip the drawable submesh, preventing a double draw.
             // For the TES3 legacy signature this deliberately substitutes the shared Morrowind water
@@ -1347,9 +1850,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     {
                         var baseColor =
                             NifMaterialDiffusePolicy.ResolveUntexturedBaseColor(materialDiffuse);
-                        diffuse = _textureCache.GetOrCreateSynthetic(
+                        diffuse = Acquire(_textureCache.GetOrCreateSynthetic(
                             NifMaterialDiffusePolicy.SyntheticTextureKey(baseColor), 1, 1,
-                            NifMaterialDiffusePolicy.ToRgbaPixel(baseColor));
+                            NifMaterialDiffusePolicy.ToRgbaPixel(baseColor)));
                     }
                     else
                     {
@@ -1370,43 +1873,72 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     var diffusePath = sub.IsLeafBillboard && sub.AlphaTest
                         ? sub.DiffuseTexturePath + NifGpuTextureResolver.LeafAtlasMipsSuffix
                         : sub.DiffuseTexturePath!;
-                    diffuse = _textureCache.GetOrUpload(diffusePath);
+                    diffuse = Acquire(_textureCache.GetOrUpload(diffusePath));
                 }
-                var normal = !string.IsNullOrEmpty(sub.NormalMapTexturePath)
-                    ? _textureCache.GetOrUpload(sub.NormalMapTexturePath!, isNormalMap: true)
+                // Starfield stores both albedo and normal behind one .mat name; decoded meshes carry
+                // that name only in the diffuse lane. Derive the role-qualified normal request here
+                // (after the persistent decoded-mesh cache) so warm payloads gain slot 1 without a
+                // DecoderVersion bump/cold-cache rebuild. This does not admit skipped no-albedo
+                // shapes or add a draw — it only changes the normal bound to an existing submesh.
+                var starfieldMaterialPath =
+                    sub.DiffuseTexturePath is { } materialPath &&
+                    MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath)
+                        ? materialPath
+                        : null;
+                var normalBinding = StarfieldMaterialNormalPolicy.Resolve(
+                    sub.DiffuseTexturePath,
+                    sub.NormalMapTexturePath,
+                    sub.HasBump,
+                    sub.Vertices);
+                var normal = !string.IsNullOrEmpty(normalBinding.TexturePath)
+                    ? Acquire(_textureCache.GetOrUpload(normalBinding.TexturePath!, isNormalMap: true))
                     : _textureCache.FlatNormal;
+                var starfieldOpacity =
+                    starfieldMaterialPath is not null &&
+                    sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                        ? Acquire(_textureCache.GetOrUpload(
+                            MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(
+                                starfieldMaterialPath)))
+                        : null;
                 var specularMap = !string.IsNullOrEmpty(sub.SpecularMapTexturePath)
-                    ? _textureCache.GetOrUpload(sub.SpecularMapTexturePath!)
+                    ? Acquire(_textureCache.GetOrUpload(sub.SpecularMapTexturePath!))
                     : null;
                 var gradientMap = !string.IsNullOrEmpty(sub.GradientMapTexturePath)
-                    ? _textureCache.GetOrUpload(sub.GradientMapTexturePath!)
+                    ? Acquire(_textureCache.GetOrUpload(sub.GradientMapTexturePath!))
                     : null;
                 System.Diagnostics.Debug.Assert(
                     gradientMap is null || string.IsNullOrEmpty(sub.Lighting30GlowMapTexturePath),
                     "FO4 gradient and classic Lighting30 glow maps cannot share TexIndices.w.");
                 var lighting30GlowMap = sub.IsLighting30 && gradientMap is null &&
                                         !string.IsNullOrEmpty(sub.Lighting30GlowMapTexturePath)
-                    ? _textureCache.GetOrUpload(sub.Lighting30GlowMapTexturePath!)
+                    ? Acquire(_textureCache.GetOrUpload(sub.Lighting30GlowMapTexturePath!))
+                    : null;
+                var hasBgsmEmission = sub.BgsmEmissionColor.X > 0f ||
+                                      sub.BgsmEmissionColor.Y > 0f ||
+                                      sub.BgsmEmissionColor.Z > 0f;
+                var bgsmGlowMap = hasBgsmEmission &&
+                                  !string.IsNullOrEmpty(sub.BgsmGlowMapTexturePath)
+                    ? Acquire(_textureCache.GetOrUpload(sub.BgsmGlowMapTexturePath!))
                     : null;
                 // FO4 environment cubemap (nearly always the shared mipblur_defaultoutside1.dds —
                 // one texture serving thousands of materials). The env shader term stays off until
                 // the entry promotes to a real TextureCube (see CachedSubmesh12.EnvMapState).
                 var envMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) && sub.EnvironmentMapScale > 0f
-                    ? _textureCache.GetOrUpload(sub.EnvironmentMapTexturePath!)
+                    ? Acquire(_textureCache.GetOrUpload(sub.EnvironmentMapTexturePath!))
                     : null;
                 // FO3/FNV classic PP-lighting environment pass. Slot 5 is its own red-channel mask,
                 // not FO4's _s texture; keep both cache entries and packed-state routes separate.
                 var classicEnvMap = !string.IsNullOrEmpty(sub.ClassicEnvironmentMapTexturePath) &&
                                     sub.ClassicEnvironmentMapScale > 0f
-                    ? _textureCache.GetOrUpload(sub.ClassicEnvironmentMapTexturePath!)
+                    ? Acquire(_textureCache.GetOrUpload(sub.ClassicEnvironmentMapTexturePath!))
                     : null;
                 var classicEnvMask = classicEnvMap is not null &&
                                      !string.IsNullOrEmpty(sub.ClassicEnvironmentMaskTexturePath)
-                    ? _textureCache.GetOrUpload(sub.ClassicEnvironmentMaskTexturePath!)
+                    ? Acquire(_textureCache.GetOrUpload(sub.ClassicEnvironmentMaskTexturePath!))
                     : null;
                 var classicParallaxHeightMap =
                     !string.IsNullOrEmpty(sub.ClassicParallaxHeightMapTexturePath)
-                        ? _textureCache.GetOrUpload(sub.ClassicParallaxHeightMapTexturePath!)
+                        ? Acquire(_textureCache.GetOrUpload(sub.ClassicParallaxHeightMapTexturePath!))
                         : null;
                 System.Diagnostics.Debug.Assert(
                     envMap is null || classicEnvMap is null,
@@ -1417,8 +1949,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 System.Diagnostics.Debug.Assert(
                     (specularMap is null ? 0 : 1) +
                     (classicEnvMask is null ? 0 : 1) +
-                    (classicParallaxHeightMap is null ? 0 : 1) <= 1,
-                    "Specular, classic environment-mask, and classic height maps cannot share TexIndices.z.");
+                    (classicParallaxHeightMap is null ? 0 : 1) +
+                    (starfieldOpacity is null ? 0 : 1) <= 1,
+                    "Specular, classic environment-mask, classic height, and Starfield opacity maps cannot share TexIndices.z.");
 
                 var vertexByteOffset = CheckedByteSize(vertexStarts[i], vertexStride);
                 var vertexByteSize = CheckedByteSize(sub.Vertices.Length, vertexStride);
@@ -1456,9 +1989,16 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     IndexCount = sub.Indices.Length,
                     Diffuse = diffuse,
                     Normal = normal,
+                    StarfieldMaterialPath = starfieldMaterialPath,
+                    StarfieldMaterialColor = sub.StarfieldMaterialColor,
+                    StarfieldMaterialAlpha = sub.StarfieldMaterialAlpha,
+                    StarfieldOpacity = starfieldOpacity,
+                    HasDerivedStarfieldNormal = normalBinding.IsDerived,
                     SpecularMap = specularMap,
                     GradientMap = gradientMap,
                     Lighting30GlowMap = lighting30GlowMap,
+                    BgsmGlowMap = bgsmGlowMap,
+                    BgsmEmissionColor = hasBgsmEmission ? sub.BgsmEmissionColor : Vector3.Zero,
                     GradientMapV = sub.GradientMapV,
                     EnvMap = envMap,
                     EnvMapScale = sub.EnvironmentMapScale,
@@ -1473,13 +2013,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     // cube-promotes a 2D DDS); the flag routes EnvMapState + the shader.
                     ClassicEnvMapIsSphereMap = sub.ClassicEnvironmentMapIsSphereMap,
                     AlphaState = BuildAlphaState(sub),
-                    RenderState = BuildRenderState(sub),
+                    RenderState = BuildRenderState(sub, normalBinding.HasBump),
                     Specular = BuildSpecular(sub),
-                    HasBump = sub.HasBump,
+                    HasBump = normalBinding.HasBump,
                     AlphaRenderMode = sub.AlphaRenderMode,
                     AlphaBlend = sub.AlphaBlend,
                     AlphaTest = sub.AlphaTest,
-                    AlphaTestThreshold = sub.AlphaTestThreshold,
+                    AlphaTestThreshold = sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                        ? sub.StarfieldMaterialAlpha.AlphaTestThreshold
+                        : sub.AlphaTestThreshold,
                     AlphaTestFunction = sub.AlphaTestFunction,
                     SrcBlendMode = sub.SrcBlendMode,
                     DstBlendMode = sub.DstBlendMode,
@@ -1544,15 +2086,39 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
             catch (Exception ex)
             {
+                materializationFailed = true;
+                // If the exception landed after Add (for example in validation), remove the partial
+                // owner before releasing its acquisitions. A retry must rebuild the whole mesh; a
+                // silently partial resident mesh is not a successful materialization.
+                if (submeshes.Count > submeshCountBefore)
+                {
+                    submeshes.RemoveRange(submeshCountBefore, submeshes.Count - submeshCountBefore);
+                }
+
+                if (acquiredTextures is not null)
+                {
+                    foreach (var acquired in acquiredTextures)
+                    {
+                        _textureCache.Release(acquired);
+                    }
+                }
+
                 Log.Warn("ReferenceMeshCache12: submesh upload failed for '{0}': {1}", modelPath, ex.Message);
             }
+        }
+
+        if (materializationFailed)
+        {
+            ReleaseSubmeshTextures(submeshes);
+            _geometryArena.Free(geometry);
+            return MeshMaterializationResult.RetryableFailure;
         }
 
         if (submeshes.Count == 0 && (waterPlanesLocal is null || waterPlanesLocal.Count == 0))
         {
             // No drawable submeshes and no water geometry — nothing references the arena range, so reclaim it.
             _geometryArena.Free(geometry);
-            return null;
+            return MeshMaterializationResult.RenderEmpty;
         }
 
         success = true;
@@ -1588,7 +2154,30 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             });
         }
 
-        return cached;
+        return MeshMaterializationResult.Success(cached);
+    }
+
+    /// <summary>
+    ///     Rolls back texture acquisitions made by submeshes from a materialization attempt that
+    ///     cannot be published as a complete mesh. Pinned fallback/synthetic entries are accepted;
+    ///     <see cref="GpuTextureCache12.Release" /> deliberately ignores them.
+    /// </summary>
+    private void ReleaseSubmeshTextures(IEnumerable<CachedSubmesh12> submeshes)
+    {
+        foreach (var submesh in submeshes)
+        {
+            _textureCache.Release(submesh.Diffuse);
+            _textureCache.Release(submesh.Normal);
+            _textureCache.Release(submesh.SpecularMap);
+            _textureCache.Release(submesh.GradientMap);
+            _textureCache.Release(submesh.Lighting30GlowMap);
+            _textureCache.Release(submesh.BgsmGlowMap);
+            _textureCache.Release(submesh.EnvMap);
+            _textureCache.Release(submesh.ClassicEnvMap);
+            _textureCache.Release(submesh.ClassicEnvMask);
+            _textureCache.Release(submesh.ClassicParallaxHeightMap);
+            _textureCache.Release(submesh.StarfieldOpacity);
+        }
     }
 
     private static Vector3[]? ExtractParticleCenters(DecodedSubmesh12 sub)
@@ -1685,16 +2274,20 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var alphaTestEnabled = (sub.AlphaRenderMode != NifAlphaRenderMode.Blend || sub.DepthWritingBlend)
                                && sub.AlphaTest;
         return new Vector4(
-            alphaTestEnabled ? sub.AlphaTestThreshold : 0f,
+            alphaTestEnabled
+                ? sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                    ? sub.StarfieldMaterialAlpha.AlphaTestThreshold
+                    : sub.AlphaTestThreshold
+                : 0f,
             alphaTestEnabled ? sub.AlphaTestFunction : -1f,
             Math.Clamp(sub.MaterialAlpha, 0f, 8f),
             sub.AlphaRenderMode == NifAlphaRenderMode.Blend ? 1f : 0f);
     }
 
-    private static Vector4 BuildRenderState(DecodedSubmesh12 sub) =>
+    private static Vector4 BuildRenderState(DecodedSubmesh12 sub, bool hasBump) =>
         new(
             sub.DoubleSided ? 1f : 0f,
-            sub.HasBump ? 1f : 0f,
+            hasBump ? 1f : 0f,
             ReferenceBumpStrength,
             sub.IsEmissive ? 1f : 0f);
 
@@ -1739,6 +2332,36 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
     }
 
+    private enum MeshMaterializationStatus
+    {
+        Success,
+        RenderEmpty,
+        RetryableFailure
+    }
+
+    private readonly record struct MeshMaterializationResult(
+        MeshMaterializationStatus Status,
+        CachedNifMesh12? Mesh)
+    {
+        public static MeshMaterializationResult Success(CachedNifMesh12 mesh) =>
+            new(MeshMaterializationStatus.Success, mesh);
+
+        public static MeshMaterializationResult RenderEmpty { get; } =
+            new(MeshMaterializationStatus.RenderEmpty, null);
+
+        public static MeshMaterializationResult RetryableFailure { get; } =
+            new(MeshMaterializationStatus.RetryableFailure, null);
+    }
+
+    private sealed class PendingMeshPublication(string cacheKey, Node node, CachedNifMesh12 mesh)
+    {
+        public string CacheKey { get; } = cacheKey;
+        public Node Node { get; } = node;
+        public CachedNifMesh12 Mesh { get; } = mesh;
+        public bool Evicted { get; set; }
+        public bool Completed { get; set; }
+    }
+
     private sealed class Node(
         CachedNifMesh12? Mesh,
         Task<DecodedNifMesh12?>? DecodeTask,
@@ -1755,6 +2378,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         public bool DecodeQueued { get; set; }
         public bool DecodedCacheAvailable { get; set; }
         public bool DecodedCacheMissRecorded { get; set; }
+        public ulong MaterializationRetryDemandGeneration { get; set; }
+        public PendingMeshPublication? PendingPublication { get; set; }
 
         /// <summary>Plain normalized archive path (no '#variant' suffix), used for archive decode and
         /// on-disk metadata. Collision also keys on this today, but visual-fallback material admission

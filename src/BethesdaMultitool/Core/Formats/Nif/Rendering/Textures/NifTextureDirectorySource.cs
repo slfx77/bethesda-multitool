@@ -94,6 +94,29 @@ internal sealed class NifTextureDirectorySource(string rootPath) : INifTextureSo
         }
     }
 
+    public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
+    {
+        metadata = default;
+        try
+        {
+            var file = new FileInfo(ResolveLocalPath(path));
+            if (!file.Exists)
+            {
+                return false;
+            }
+
+            metadata = new NifTextureSourceAssetMetadata(
+                file.FullName,
+                file.Length,
+                file.LastWriteTimeUtc.Ticks);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public void Dispose()
     {
     }

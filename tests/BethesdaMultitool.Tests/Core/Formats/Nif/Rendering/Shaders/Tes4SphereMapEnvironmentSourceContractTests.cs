@@ -117,7 +117,8 @@ public sealed class Tes4SphereMapEnvironmentSourceContractTests
         SourceContract.AssertOrder(
             source,
             "ReadRigidNodeAnimation(reader),",
-            "reader.ReadBoolean());");
+            "reader.ReadBoolean(),",
+            "ReadStarfieldMaterialColor(reader));");
 
         // Extract returns the start marker inclusively; strip it before parsing the number.
         const string versionMarker = "internal const int DecoderVersion = ";

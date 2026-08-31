@@ -42,7 +42,11 @@ internal static class SingleFileAnalysisHelper
                     Offset = entry.Offset,
                     Length = entry.Length,
                     FileType = entry.FileType,
-                    FileName = entry.FileName
+                    FileName = entry.FileName,
+                    // The analysis scanner has always set IsTruncated (MinidumpFileScanner measures
+                    // the contiguous run from each match) and nothing ever read it, so a file the
+                    // dump only half contains looked identical to a complete one.
+                    IsAnalysisTruncated = entry.IsTruncated
                 });
             }
         }

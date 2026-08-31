@@ -226,7 +226,10 @@ public sealed partial class WorldView3DControl
                 BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false,
                     enableLighting: enableLighting, gameHourOverride: gameHour, enableShadows: false,
                     shadingCameraPosOverride: cylinder.Position,
-                    lightVisibility: cylinder);
+                    lightVisibility: cylinder,
+                    lightViewProjection: viewProj,
+                    lightViewportWidth: target.Width,
+                    lightViewportHeight: target.Height);
 
                 target.Bind(cmd);
                 if (terrainDepthEnabled)
@@ -424,11 +427,12 @@ public sealed partial class WorldView3DControl
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"culled={referenceStats.ReferenceCulled} drawn={referenceStats.ReferenceDrawn} "),
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                    $"cullMs={referenceStats.ReferenceCullMilliseconds:F1} meshUpMs={referenceStats.ReferenceMeshUploadMilliseconds:F1} "),
+                    $"cullMs={referenceStats.ReferenceCullMilliseconds:F1} batchMs={referenceStats.ReferenceBatchBuildMilliseconds:F1} "),
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                    $"cbMs={referenceStats.ReferenceCbUpdateMilliseconds:F1} srvMs={referenceStats.ReferenceSrvBindMilliseconds:F1} "),
+                    $"opaqueSubmitMs={referenceStats.ReferenceOpaqueSubmissionMilliseconds:F1} " +
+                    $"blendSubmitMs={referenceStats.ReferenceBlendedSubmissionMilliseconds:F1} "),
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                    $"drawMs={referenceStats.ReferenceDrawCallMilliseconds:F1} refCpuMs={referenceStats.CpuFrameMilliseconds:F1} "),
+                    $"refCpuMs={referenceStats.CpuFrameMilliseconds:F1} "),
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"submeshDraws={referenceStats.ReferenceSubmeshDraws} srvBinds={referenceStats.ReferenceSrvBinds} "),
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,

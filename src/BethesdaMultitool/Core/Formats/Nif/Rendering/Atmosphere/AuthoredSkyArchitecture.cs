@@ -20,15 +20,19 @@ internal static class AuthoredSkyArchitecture
     }
 
     /// <summary>
-    ///     Skyrim's DALC cube is scene lighting and is enabled independently of the authored
-    ///     Atmosphere.nif replacement. Other modern families retain the existing opt-in boundary until
-    ///     their own capture matrices pass. A null result makes shaders consume the flat cube mean.
+    ///     Skyrim and Fallout 76 DALC cubes are scene lighting and are enabled independently of the
+    ///     authored Atmosphere.nif replacement. Retail SeventySix.esm authors exactly eight DALC bands
+    ///     on all 121 WTHRs, and the shared shaders already consume the six directional faces. Other
+    ///     modern families retain the opt-in boundary until their own capture matrices pass. A null
+    ///     result makes shaders consume the flat cube mean.
     /// </summary>
     internal static AtmosphereState.ResolvedAmbientCube? SelectDirectionalAmbientForUpload(
         BethesdaGame game,
         bool explicitlyEnabled,
         AtmosphereState.ResolvedAmbientCube? directionalAmbient)
     {
-        return game == BethesdaGame.Skyrim || explicitlyEnabled ? directionalAmbient : null;
+        return game is BethesdaGame.Skyrim or BethesdaGame.Fallout76 || explicitlyEnabled
+            ? directionalAmbient
+            : null;
     }
 }

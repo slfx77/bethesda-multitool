@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -482,7 +483,9 @@ internal sealed class ReferenceMeshDecoder12
                     alphaRenderMode,
                     alphaState.HasAlphaBlend,
                     alphaState.HasAlphaTest,
-                    alphaState.AlphaTestThreshold / 255f,
+                    sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                        ? sub.StarfieldMaterialAlpha.AlphaTestThreshold
+                        : alphaState.AlphaTestThreshold / 255f,
                     alphaState.AlphaTestFunction,
                     alphaState.SrcBlendMode,
                     alphaState.DstBlendMode,
@@ -567,7 +570,11 @@ internal sealed class ReferenceMeshDecoder12
                     // bind would wrongly modulate the glow.
                     MaterialDiffuse: !sub.IsEmissive && sub.MaterialDiffuse is { } materialDiffuse
                         ? new Vector3(materialDiffuse.R, materialDiffuse.G, materialDiffuse.B)
-                        : (Vector3?)null));
+                        : (Vector3?)null,
+                    StarfieldMaterialColor: sub.StarfieldMaterialColor,
+                    StarfieldMaterialAlpha: sub.StarfieldMaterialAlpha,
+                    BgsmGlowMapTexturePath: sub.BgsmGlowMapTexturePath,
+                    BgsmEmissionColor: sub.BgsmEmissionColor));
             }
 
             if (submeshes.Count == 0)
@@ -677,7 +684,11 @@ internal sealed class ReferenceMeshDecoder12
                 sub.DepthTestOff,
                 sub.MaterialDiffuse,
                 RigidNodeAnimation: sub.RigidNodeAnimation,
-                ClassicEnvironmentMapIsSphereMap: sub.ClassicEnvironmentMapIsSphereMap));
+                ClassicEnvironmentMapIsSphereMap: sub.ClassicEnvironmentMapIsSphereMap,
+                StarfieldMaterialColor: sub.StarfieldMaterialColor,
+                StarfieldMaterialAlpha: sub.StarfieldMaterialAlpha,
+                BgsmGlowMapTexturePath: sub.BgsmGlowMapTexturePath,
+                BgsmEmissionColor: sub.BgsmEmissionColor));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -756,7 +767,11 @@ internal sealed class ReferenceMeshDecoder12
                 EngineZWriteOff: sub.EngineZWriteOff,
                 DepthTestOff: sub.DepthTestOff,
                 MaterialDiffuse: sub.MaterialDiffuse,
-                RigidNodeAnimation: sub.RigidNodeAnimation));
+                RigidNodeAnimation: sub.RigidNodeAnimation,
+                StarfieldMaterialColor: sub.StarfieldMaterialColor,
+                StarfieldMaterialAlpha: sub.StarfieldMaterialAlpha,
+                BgsmGlowMapTexturePath: sub.BgsmGlowMapTexturePath,
+                BgsmEmissionColor: sub.BgsmEmissionColor));
         }
 
         return new DecodedNifMesh12(

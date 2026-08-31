@@ -402,6 +402,8 @@ internal static class NifGeometryExtractor
             string? diffusePath = null;
             string? normalMapPath = null;
             var isEmissive = false;
+            var starfieldColorPolicy = default(StarfieldMaterialColorPolicy);
+            var starfieldAlphaPolicy = default(StarfieldMaterialAlphaPolicy);
             // Default true: in practice, both hair and environment NIFs ship with BSShaderFlags2
             // bit 5 (Vertex_Colors) cleared, yet the engine applies vertex colors when present
             // (e.g., rust shading on nv_prospectorsaloon's metal sheets). Treat the flag as
@@ -412,6 +414,8 @@ internal static class NifGeometryExtractor
             string? specularMapPath = null;
             string? gradientMapPath = null;
             var gradientMapV = 0.5f;
+            string? bgsmGlowMapTexturePath = null;
+            var bgsmEmissionColor = Vector3.Zero;
             string? environmentMapPath = null;
             var environmentMapScale = 0f;
             var environmentMapSmoothness = 0f;
@@ -658,6 +662,21 @@ internal static class NifGeometryExtractor
                     materialPath = swapped;
                 }
 
+                // Starfield's external .mesh colour stream is shader data whose base-surface use is
+                // declared only in materialsbeta.cdb. Resolve the effective lowest-layer policy once
+                // beside the texture/material path; NifSubmeshExtractor then fails closed if the
+                // database/path chain is unavailable or the supported composition is not selected.
+                if (materialPath is not null && textureResolver is not null &&
+                    MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath))
+                {
+                    starfieldColorPolicy = textureResolver.ResolveStarfieldBaseColorPolicy(materialPath);
+                    starfieldAlphaPolicy = textureResolver.ResolveStarfieldAlphaPolicy(materialPath);
+                    // CE2 root ParamBool and the authored shader model both write Flag_TwoSided.
+                    // A positive resolved material value can safely widen inline NIF state; an
+                    // unresolved/false value does not erase an independently authored stencil flag.
+                    isDoubleSided |= textureResolver.ResolveStarfieldRootTwoSided(materialPath) == true;
+                }
+
                 if (materialPath is not null && textureResolver?.TryGetMaterial(materialPath) is { } bgsm)
                 {
                     externalMaterial = bgsm;
@@ -748,6 +767,25 @@ internal static class NifGeometryExtractor
                             environmentMapScale = bgsm.EnvironmentMapScale;
                             environmentMapSmoothness = Math.Clamp(bgsm.SpecularSmoothness, 0f, 1f);
                             specularMapPath ??= bgsm.GetTexturePath(6) ?? bgsm.GetTexturePath(8);
+                        }
+
+                        // Regular BGSM emission is an additive material term, not the legacy
+                        // NoLighting/BGEM IsEmissive route. Preserve it independently so a later
+                        // FO4/FO76 shader can sample slot 2 without changing the base pass identity.
+                        var emissiveScale = bgsm.EmissiveScale;
+                        var effectiveEmission = bgsm.EmissiveColor * emissiveScale;
+                        if (bgsm.EmissiveEnabled &&
+                            float.IsFinite(emissiveScale) && emissiveScale > 0f &&
+                            float.IsFinite(effectiveEmission.X) &&
+                            float.IsFinite(effectiveEmission.Y) &&
+                            float.IsFinite(effectiveEmission.Z) &&
+                            effectiveEmission.X >= 0f && effectiveEmission.Y >= 0f &&
+                            effectiveEmission.Z >= 0f &&
+                            (effectiveEmission.X > 0f || effectiveEmission.Y > 0f ||
+                             effectiveEmission.Z > 0f))
+                        {
+                            bgsmGlowMapTexturePath = bgsm.GetTexturePath(2);
+                            bgsmEmissionColor = effectiveEmission;
                         }
                     }
 
@@ -889,7 +927,7 @@ internal static class NifGeometryExtractor
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
                 isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha, materialGlossiness,
                 specularColor, useDualQuaternionSkinning, shapeMorphDeltas, externalMeshLoader,
-                onExternalMeshDecodeFailure);
+                onExternalMeshDecodeFailure, starfieldColorPolicy, starfieldAlphaPolicy);
             if (submesh != null)
             {
                 submesh.SourceBlockIndex = shapeIndex;
@@ -904,6 +942,8 @@ internal static class NifGeometryExtractor
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;
+                submesh.BgsmGlowMapTexturePath = bgsmGlowMapTexturePath;
+                submesh.BgsmEmissionColor = bgsmEmissionColor;
                 submesh.EnvironmentMapTexturePath = environmentMapPath;
                 submesh.EnvironmentMapScale = environmentMapScale;
                 submesh.EnvironmentMapSmoothness = environmentMapSmoothness;
@@ -922,7 +962,9 @@ internal static class NifGeometryExtractor
                 submesh.EffectTint = effectTint;
                 submesh.EffectFalloff = effectFalloff;
                 submesh.SoftParticleFalloffDepth = softParticleFalloffDepth;
-                submesh.UseVertexAlphaForOpacity = useVertexAlpha;
+                submesh.UseVertexAlphaForOpacity = nif.Blocks[shapeIndex].TypeName == "BSGeometry"
+                    ? false
+                    : useVertexAlpha;
                 submesh.ClampTextureU = clampTextureU;
                 submesh.ClampTextureV = clampTextureV;
                 var isLighting30 = NifLighting30EmissionPolicy.IsStandardLighting30(nif, shaderMetadata);

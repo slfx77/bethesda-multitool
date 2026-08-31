@@ -34,8 +34,9 @@ internal static class ReferenceRendererConstants12
         public Vector4 CameraUp;
 
         // BGEM effect terms (uEffectTint / uEffectFalloff): rgb tint + falloff-enabled flag in .w,
-        // then the |N·V| opacity ramp params. For classic PP Lighting30 (TextureState bit 4), the
-        // mutually-exclusive EffectFalloff slot carries raw emission rgb + material multiplier.
+        // then the |N·V| opacity ramp params. Mutually-exclusive EffectFalloff union arms carry
+        // classic PP Lighting30 raw emission rgb + multiplier, Starfield constant Lerp, or regular
+        // BGSM effective emission rgb + optional glow-map bindless index + 1.
         public Vector4 EffectTint;
 
         public Vector4 EffectFalloff;
@@ -85,8 +86,9 @@ internal static class ReferenceRendererConstants12
         Vector4 CameraUp = default,
         // SpeedTree wind (uWind = rock amount/phase, rustle amount/phase).
         Vector4 Wind = default,
-        // BGEM effect terms (uEffectTint / uEffectFalloff), or the mutually-exclusive classic
-        // Lighting30 emission tuple selected by TextureState bit 4.
+        // BGEM effect terms (uEffectTint / uEffectFalloff), the mutually-exclusive classic
+        // Lighting30 emission tuple selected by TextureState bit 4, or Starfield constant-Lerp
+        // selected by TextureState.w == -2, or regular BGSM emission selected by bit 16.
         Vector4 EffectTint = default,
         Vector4 EffectFalloff = default,
         // FO4 cubemap environment mapping (uEnvMap: x = cube slot or −1, y = scale,

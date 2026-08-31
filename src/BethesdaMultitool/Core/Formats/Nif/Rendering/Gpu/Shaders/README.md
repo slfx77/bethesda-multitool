@@ -29,8 +29,10 @@ bare file name in `GpuShaderCompiler12`. Consequences:
   (`EngineFamily.Tes4`), a different set. No game token = shared across games.
 - **Recovered-program ids** (e.g. `001` from retail `WATER001`) are the per-variant axis where a
   disassembled retail shader is the source of truth.
-- **Preprocessor macros encode technique axes only** (`WATER_HARDWARE_OCCLUSION`,
-  `ALPHA_TO_COVERAGE`, `SHADOW_CARD_LIGHT_FACING`) — never game identity. Per-game differences get
+- **Preprocessor macros normally encode technique axes only** (`WATER_HARDWARE_OCCLUSION`,
+  `ALPHA_TO_COVERAGE`, `SHADOW_CARD_LIGHT_FACING`). The one deliberate output-ABI exception is
+  `FO76_WATER_OPTICS`: the shared FO4-family source returns `SV_Target1` only for a successfully
+  decoded FO76 float-optics payload and its dual-source PSO. Other per-game differences get
   per-game *files*, selected by a `ForGame` registry returning a `GameShaderPair`
   (see `GrassShaderProfile`).
 
@@ -41,7 +43,7 @@ bare file name in `GpuShaderCompiler12`. Consequences:
 | `Include/` | Shared `.hlsli` headers (atmosphere cbuffer, fog, shadow sampling, scene lighting) |
 | `Reference/` | Placed-object shaders (`reference.*`, instanced variant, shadow pass) |
 | `Grass/` | Per-game grass pairs (`reference_grass_oblivion.*`) |
-| `Water/` | Per-game water pixel shaders (`water_fnv` also Skyrim/default, `water_oblivion`, `water_fo4`, `water_morrowind`, retail-program `water_fnv001`; selected by `WaterProfile.PixelShaderFile`, shared plumbing in `Include/water_common.hlsli`) + shared VS + noise/simulation compute |
+| `Water/` | Per-game water pixel shaders (`water_fnv` also Skyrim/default, `water_oblivion`, `water_fo4` plus its strict FO76 float-optics output ABI, `water_morrowind`, retail-program `water_fnv001`; selected by `WaterProfile.PixelShaderFile` plus the typed FO76 gate, shared plumbing in `Include/water_common.hlsli`) + shared VS + noise/simulation compute |
 | `Terrain/` | Landscape (`terrain_textured.*` live; `terrain.*` legacy, kept compiling) |
 | `Sky/` | Sky dome geometry + celestial billboards |
 | `Post/` | Tonemap + bloom |

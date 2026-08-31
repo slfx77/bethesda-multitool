@@ -178,7 +178,7 @@ public sealed partial class WorldView3DControl
 
             HideStatus();
             EnsureDepthSrv();
-            _lastFrameTime = DateTime.UtcNow;
+            ReseedFrameClocks();
             AttachRenderLoop();
         }
         else

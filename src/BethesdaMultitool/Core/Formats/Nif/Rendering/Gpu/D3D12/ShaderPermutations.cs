@@ -44,12 +44,68 @@ internal static class ShaderPermutations
         new("reference.vert.hlsl", "main", "vs_5_1", None, "per-draw blended reference path"),
         new("reference_instanced.vert.hlsl", "main", "vs_5_1", None, "instanced opaque reference path"),
         new("reference_instanced.vert.hlsl", "main", "vs_5_1",
+            [new ShaderMacro("REFERENCE_MODERN_STANDARD", "1")],
+            "modern standard compact stage-link signature: opaque"),
+        new("reference_instanced.vert.hlsl", "main", "vs_5_1",
+            [
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1")
+            ],
+            "modern standard compact stage-link signature: GREATER cutout"),
+        new("reference_instanced.vert.hlsl", "main", "vs_5_1",
+            [new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1")],
+            "Starfield diffuse-lit compact stage-link signature: opaque"),
+        new("reference_instanced.vert.hlsl", "main", "vs_5_1",
+            [
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1")
+            ],
+            "Starfield diffuse-lit compact stage-link signature: GREATER cutout"),
+        new("reference_instanced.vert.hlsl", "main", "vs_5_1",
             [new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1")],
             "shadow-map replay: light-facing cards, wind compiled out"),
         new("reference.frag.hlsl", "main", "ps_5_1", None, "reference pixel shader"),
         new("reference.frag.hlsl", "main", "ps_5_1",
             [new ShaderMacro("ALPHA_TO_COVERAGE", "1")],
             "MSAA-only A2C variant; aliases the plain PSO when SceneSampleCount == 1"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [new ShaderMacro("REFERENCE_MODERN_STANDARD", "1")],
+            "modern standard material: single-sided opaque"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1")
+            ],
+            "modern standard material: single-sided GREATER cutout"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_DOUBLE_SIDED", "1")
+            ],
+            "modern standard material: double-sided GREATER cutout"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1")],
+            "Starfield diffuse-lit material: single-sided opaque"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1")
+            ],
+            "Starfield diffuse-lit material: double-sided opaque"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1")
+            ],
+            "Starfield diffuse-lit material: single-sided GREATER cutout"),
+        new("reference.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1")
+            ],
+            "Starfield diffuse-lit material: double-sided GREATER cutout"),
         new("shadow.frag.hlsl", "main", "ps_5_1", None, "shadow cutout discard"),
         // First per-game shader. Retail GRASS2020.vso / GRASS2002.pso light grass from the TERRAIN
         // normal with no surface normal at all, and compose ambient ADDITIVELY — neither expressible
@@ -114,9 +170,113 @@ internal static class ShaderPermutations
         new("triangle.frag.hlsl", "main", "ps_5_1", None, "UNREFERENCED dev smoke triangle")
     ];
 
+    /// <summary>
+    ///     Explicit <c>FALLOUT_VIEWER_SHADOW_COMPARISON_PCF=1</c> variants. This is the complete
+    ///     cross-product for pixel shaders that actually consume the macro; shaders that ignore it
+    ///     are intentionally omitted because their bytecode would be a duplicate.
+    /// </summary>
+    internal static IReadOnlyList<ShaderPermutation> ShadowComparisonPcf { get; } =
+        BuildShadowComparisonPcf();
+
     /// <summary>Every permutation across every family.</summary>
     internal static IReadOnlyList<ShaderPermutation> All { get; } =
-        [.. Reference, .. Water, .. Terrain, .. Other];
+        [.. Reference, .. Water, .. Terrain, .. Other, .. ShadowComparisonPcf];
+
+    private static List<ShaderPermutation> BuildShadowComparisonPcf()
+    {
+        static ShaderMacro Pcf() => new(ShadowComparisonPcf12.ShaderMacroName, "1");
+
+        var list = new List<ShaderPermutation>
+        {
+            new("reference.frag.hlsl", "main", "ps_5_1", [Pcf()],
+                "opt-in four-sample comparison PCF: reference"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [new ShaderMacro("ALPHA_TO_COVERAGE", "1"), Pcf()],
+                "opt-in four-sample comparison PCF: reference A2C"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: modern standard single-sided opaque"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                    new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: modern standard single-sided cutout"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                    new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
+                    new ShaderMacro("REFERENCE_MODERN_STANDARD_DOUBLE_SIDED", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: modern standard double-sided cutout"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: Starfield diffuse-lit single-sided opaque"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: Starfield diffuse-lit double-sided opaque"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: Starfield diffuse-lit single-sided cutout"),
+            new("reference.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
+                    new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"),
+                    Pcf()
+                ],
+                "opt-in four-sample comparison PCF: Starfield diffuse-lit double-sided cutout"),
+            new("reference_grass_oblivion.frag.hlsl", "main", "ps_5_1", [Pcf()],
+                "opt-in four-sample comparison PCF: Oblivion grass"),
+            new("reference_grass_fnv.frag.hlsl", "main", "ps_5_1", [Pcf()],
+                "opt-in four-sample comparison PCF: FO3/FNV grass"),
+            new("reference_grass_fnv.frag.hlsl", "main", "ps_5_1",
+                [new ShaderMacro("ALPHA_TO_COVERAGE", "1"), Pcf()],
+                "opt-in four-sample comparison PCF: FO3/FNV grass A2C")
+        };
+
+        for (var quads = 1; quads <= 4; quads++)
+        {
+            list.Add(new ShaderPermutation(
+                "terrain_textured.frag.hlsl", "main", "ps_5_1",
+                [
+                    new ShaderMacro(
+                        "TERRAIN_BLEND_QUADS", quads.ToString(CultureInfo.InvariantCulture)),
+                    Pcf()
+                ],
+                $"opt-in four-sample comparison PCF: terrain, {quads * 4}-slot cells"));
+        }
+
+        list.Add(new ShaderPermutation(
+            "water_fo4.frag.hlsl", "main", "ps_5_1",
+            [new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"), Pcf()],
+            "opt-in four-sample comparison PCF: FO4/FO76 architectural water"));
+        list.Add(new ShaderPermutation(
+            "water_fo4.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"),
+                Pcf()
+            ],
+            "opt-in four-sample comparison PCF: FO4/FO76 architectural water, hardware occlusion"));
+        return list;
+    }
 
     private static List<ShaderPermutation> BuildTerrain()
     {
@@ -151,7 +311,7 @@ internal static class ShaderPermutations
         };
 
         // File axis (the game, per WaterProfile.PixelShaderFile) x occlusion axis (read-only DSV).
-        // Written as a product rather than 8 literals so a new per-game file cannot be added to one
+        // Written as a product rather than literals so a new per-game file cannot be added to one
         // axis and forgotten on the other — the exact drift that left the water PSO table
         // asymmetric before.
         (string File, string Purpose)[] variants =
@@ -159,7 +319,8 @@ internal static class ShaderPermutations
             ("water_fnv.frag.hlsl", "FNV/FO3/Skyrim classic WATER000"),
             ("water_oblivion.frag.hlsl", "Oblivion WATER000: N.V body, single sun glint"),
             ("water_fo4.frag.hlsl", "FO4/FO76 BSWaterShader stand-in"),
-            ("water_morrowind.frag.hlsl", "Morrowind fixed-function animated plane")
+            ("water_morrowind.frag.hlsl", "Morrowind fixed-function animated plane"),
+            ("water_starfield.frag.hlsl", "Starfield WATR source-backed approximation")
         ];
         foreach (var (file, purpose) in variants)
         {
@@ -173,12 +334,29 @@ internal static class ShaderPermutations
             }
         }
 
+        // FO76 shares the FO4 file but no longer shares its byte-identical permutation. The strict
+        // 148-byte WATR route emits SV_Target1 for per-channel destination transmission, so both
+        // the macro and the matching dual-source PSO are real runtime axes.
+        foreach (var occlusion in (bool[])[false, true])
+        {
+            var macros = new List<ShaderMacro>
+            {
+                new("FO76_WATER_OPTICS", "1")
+            };
+            if (occlusion) macros.Add(new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+            list.Add(new ShaderPermutation(
+                "water_fo4.frag.hlsl", "main", "ps_5_1", [.. macros],
+                occlusion
+                    ? "FO76 float-optics reference approximation (hardware occlusion)"
+                    : "FO76 float-optics reference approximation"));
+        }
+
         // The flat tinted plane for games with no recovered shader is off BOTH axes above: it reads
         // no scene depth, so there is no occlusion clip for WATER_HARDWARE_OCCLUSION to remove and
         // the second compile would be byte-identical (PermutationsAreDistinct would reject it).
         list.Add(new ShaderPermutation(
             "water_flat.frag.hlsl", "main", "ps_5_1", None,
-            "flat tinted plane: no recovered shader (Starfield/Unknown)"));
+            "flat tinted plane: no recovered or source-backed shader (Unknown)"));
 
         // FNV WATER001 ships only in its hardware-occlusion form (the snapshot path needs the
         // read-only DSV), matching WaterRenderer12's single compile of it.

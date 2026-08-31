@@ -69,7 +69,21 @@ internal static class GpuMeshUploader
     }
 
     /// <summary>
-    ///     GPU vertex layout: position(12) + normal(12) + texcoord(8) + color(16) + tangent(12) + bitangent(12) = 72 bytes.
+    ///     GPU vertex layout: position(12) + normal(12) + texcoord(8) + color(4) + tangent(12) + bitangent(12)
+    ///     = 60 bytes.
+    ///     <para>
+    ///         Colour is <c>R8G8B8A8_UNORM</c> rather than a float4, which is <b>bit-exact</b>: every
+    ///         source is a NIF <c>byte</c> divided by 255, so packing it back recovers the same byte.
+    ///         The input assembler expands it to <c>float4</c> before any shader sees it, so no HLSL
+    ///         changed. This lands in the geometry arena, which is an UPLOAD heap — i.e. it is a
+    ///         <b>system RAM</b> saving, not a VRAM one, despite looking like the latter.
+    ///     </para>
+    ///     <para>
+    ///         Normal/tangent/bitangent deliberately stay <c>float3</c>: SpeedTree smuggles data in
+    ///         their magnitudes (<c>|N|-1</c> = leaf wind weight, <c>|T|</c> = matrix index,
+    ///         <c>aBitangent.z</c> = integer + <c>frac()</c> payload), so normalising them would
+    ///         destroy information the renderer reads.
+    ///     </para>
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct GpuVertex
@@ -77,8 +91,47 @@ internal static class GpuMeshUploader
         public Vector3 Position;
         public Vector3 Normal;
         public Vector2 TexCoord;
-        public Vector4 VertexColor;
+
+        /// <summary>Packed RGBA, one byte per channel in memory order R,G,B,A — see <see cref="PackColor" />.</summary>
+        public uint VertexColorRgba;
+
         public Vector3 Tangent;
         public Vector3 Bitangent;
+
+        /// <summary>Convenience view of <see cref="VertexColorRgba" /> as the float4 shaders receive.</summary>
+        public Vector4 VertexColor
+        {
+            get => UnpackColor(VertexColorRgba);
+            set => VertexColorRgba = PackColor(value);
+        }
+    }
+
+    /// <summary>
+    ///     Packs a [0,1] RGBA colour into <c>R8G8B8A8_UNORM</c> byte order (R in the low byte, so the
+    ///     little-endian memory bytes read R,G,B,A exactly as the format specifies).
+    /// </summary>
+    public static uint PackColor(Vector4 color)
+    {
+        static uint Channel(float v)
+        {
+            // Round-to-nearest, not truncate: the sources are b/255, and truncation would bias every
+            // channel down by one whenever the float lands a hair below the integer.
+            return (uint)MathF.Round(Math.Clamp(v, 0f, 1f) * 255f);
+        }
+
+        return Channel(color.X)
+               | (Channel(color.Y) << 8)
+               | (Channel(color.Z) << 16)
+               | (Channel(color.W) << 24);
+    }
+
+    /// <summary>Inverse of <see cref="PackColor" />.</summary>
+    public static Vector4 UnpackColor(uint packed)
+    {
+        return new Vector4(
+            (packed & 0xFF) / 255f,
+            ((packed >> 8) & 0xFF) / 255f,
+            ((packed >> 16) & 0xFF) / 255f,
+            ((packed >> 24) & 0xFF) / 255f);
     }
 }

@@ -211,6 +211,14 @@ internal sealed class GpuRootSignature12 : IDisposable
             new RootDescriptor1(9, 0),
             ShaderVisibility.Pixel);
 
+        // Slot 12: one uint2 header plus a uint2 64-light mask per 16x16 screen tile at t10.
+        // Appended so every established slot keeps its ABI. Pixel-only: only the two forward-lit
+        // terrain/reference shaders read it; all other PSOs legally ignore the bound root SRV.
+        var pointLightTiles = new RootParameter1(
+            RootParameterType.ShaderResourceView,
+            new RootDescriptor1(10, 0),
+            ShaderVisibility.Pixel);
+
         // Slot 8: one transient UAV descriptor for classic and modern water compute prepasses.
         // The compute and graphics root bindings are independent even when they share this root
         // signature, so dispatching the prepass does not invalidate the scene's graphics b3 binding.
@@ -297,6 +305,23 @@ internal sealed class GpuRootSignature12 : IDisposable
                 0f,
                 float.MaxValue,
                 ShaderVisibility.Pixel),
+            // s7: opt-in comparison-linear PCF sampler. Kept separate from legacy s3 so the
+            // default GatherRed path is unchanged. SampleCmp's comparison value is the source;
+            // reversed-Z visibility is therefore strict GREATER (reference > stored), matching
+            // `1 - step(reference, stored)` including its shadowed equality case.
+            new StaticSamplerDescription(
+                7,
+                Filter.ComparisonMinMagLinearMipPoint,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                0f,
+                1,
+                ComparisonFunction.Greater,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                0f,
+                ShaderVisibility.Pixel),
             // s4-s6: material-addressing permutations selected from BGSM/BGEM TileU/TileV.
             // They otherwise match the anisotropic wrap sampler so changing an address bit cannot
             // silently change filtering quality.
@@ -364,7 +389,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             {
                 perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv,
                 atmosphere, pointLights, waterNoiseUav, bindlessCubeTable, bindlessDepthMsaaTable,
-                terrainCellGrid
+                terrainCellGrid, pointLightTiles
             },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);
@@ -425,12 +450,18 @@ internal sealed class GpuRootSignature12 : IDisposable
         ///     for why these are root constants rather than a per-cell CBV.
         /// </summary>
         public const int TerrainCellGridConstants = 11;
+
+        /// <summary>
+        ///     Root SRV at <c>t10, space0</c> — header + exact conservative 64-bit placed-light
+        ///     masks for 16x16 screen tiles. Appended so all prior slot numbers stay stable.
+        /// </summary>
+        public const int PointLightTilesSrv = 12;
     }
 
     /// <summary>
     ///     DWORDs in the <see cref="Slots.TerrainCellGridConstants" /> block: <c>origin.x</c>,
     ///     <c>origin.y</c>, <c>spacing</c>, <c>gridSize</c>. Root constants cost one DWORD each of
-    ///     the 64-DWORD root-signature budget, of which this signature now uses 21.
+    ///     the 64-DWORD root-signature budget, of which this signature now uses 23.
     /// </summary>
     public const int TerrainCellGridConstantCount = 4;
 }

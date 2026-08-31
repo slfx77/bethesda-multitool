@@ -446,7 +446,9 @@ public sealed class FnvWater001SourceContractTests
             references,
             "if (_lastBuildStreamActive != _transparencyStreamActive)",
             "return BatchReuseBlocker.StreamRouting;");
-        Assert.Contains("_lastBuildStreamActive = _transparencyStreamActive;", references,
+        // Publication records the routing mode captured when the staged build began. Reading the
+        // live flag here would certify a list that may have been built for the opposite route.
+        Assert.Contains("_lastBuildStreamActive = state.StreamActive;", references,
             StringComparison.Ordinal);
     }
 

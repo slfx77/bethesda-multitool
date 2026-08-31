@@ -26,9 +26,11 @@ internal sealed record BuiltCellCpuData(
     int BlendQuadCount,
     CellTerrainTextureSet? TextureSet,
     TerrainCellGrid Grid,
+    TerrainCellHeightBounds HeightBounds,
     bool Unusable,
     int Generation)
 {
-    public static BuiltCellCpuData Failed(int generation) => new(null, null, 0, null, default, true, generation);
+    public static BuiltCellCpuData Failed(int generation) =>
+        new(null, null, 0, null, default, TerrainCellHeightBounds.Invalid, true, generation);
 }
 #endif

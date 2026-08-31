@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -39,12 +40,23 @@ namespace BethesdaRendererProfiler;
 /// </summary>
 internal static class NifHeadlessRenderer
 {
+    // Keep the manual verifier upload in lockstep with
+    // WorldView3DControl.AtmosphereConstants: ten base vectors, four matrices, four shadow
+    // vectors, six directional-ambient vectors, GrassSunColorScale, then ClipPlane.
+    private const int AtmosphereClipPlaneFloat4Slot = 37;
+    private const int AtmosphereBytes = (AtmosphereClipPlaneFloat4Slot + 1) * 16;
+
     public static int Run(string[] args)
     {
         string? nifPath = null;
         string? meshArchive = null;
         var textureArchives = new List<string>();
         string? outPng = null;
+        string? gameSpec = null;
+        string? expectedModernStandardSpec = null;
+        string? expectedStaticOpaquePacketSpec = null;
+        string? expectedWaterPipeline = null;
+        var expectWaterPipelineSpecified = false;
         var size = 512;
         string? bgSpec = null;
         string? bgClearSpec = null; // --bg-clear: clear the target OPAQUE before rendering (see below)
@@ -77,6 +89,15 @@ internal static class NifHeadlessRenderer
             switch (args[i])
             {
                 case "--render-nif": nifPath = Next(args, ref i); break;
+                case "--game": gameSpec = Next(args, ref i); break;
+                case "--expect-modern-standard": expectedModernStandardSpec = Next(args, ref i); break;
+                case "--expect-static-opaque-packet":
+                    expectedStaticOpaquePacketSpec = Next(args, ref i);
+                    break;
+                case "--expect-water-pipeline":
+                    expectWaterPipelineSpecified = true;
+                    expectedWaterPipeline = Next(args, ref i);
+                    break;
                 case "--leaf-texture": leafTextureOverride = Next(args, ref i); break;
                 case "--leaf-dimming":
                     leafDimming = float.TryParse(Next(args, ref i), out var ld) ? ld : null;
@@ -121,8 +142,38 @@ internal static class NifHeadlessRenderer
         {
             Console.Error.WriteLine("Usage: --render-nif <esm-relative-nif-path> --archive <meshes.bsa> " +
                                     "--textures-bsa <tex.bsa> [<tex2.bsa> ...] --out <png> [--size N] " +
+                                    "[--game <FO76|Starfield|BethesdaGame>] " +
+                                    "[--expect-modern-standard <0|1>] " +
+                                    "[--expect-static-opaque-packet <0|1>] " +
+                                    "[--expect-water-pipeline <exact-telemetry-name>] " +
                                     "[--bg <#RRGGBB|magenta|gray|checker>] [--bg-clear <#RRGGBB|gray|...>] " +
                                     "[--emissive-mult <n>]");
+            return 2;
+        }
+
+        if (expectWaterPipelineSpecified && string.IsNullOrWhiteSpace(expectedWaterPipeline))
+        {
+            Console.Error.WriteLine("--expect-water-pipeline requires an exact telemetry name.");
+            return 2;
+        }
+
+        if (expectedStaticOpaquePacketSpec is not null &&
+            expectedStaticOpaquePacketSpec is not ("0" or "1"))
+        {
+            Console.Error.WriteLine("--expect-static-opaque-packet must be exactly 0 or 1.");
+            return 2;
+        }
+
+        if (expectedModernStandardSpec is not null &&
+            expectedModernStandardSpec is not ("0" or "1"))
+        {
+            Console.Error.WriteLine("--expect-modern-standard must be exactly 0 or 1.");
+            return 2;
+        }
+
+        if (!TryParseHeadlessGame(gameSpec, out var game))
+        {
+            Console.Error.WriteLine($"Unknown --game value '{gameSpec}'.");
             return 2;
         }
 
@@ -141,9 +192,11 @@ internal static class NifHeadlessRenderer
 
         Console.WriteLine(
             $"[nif-render] {nifPath}  via {Path.GetFileName(meshArchive)}  -> {outPng} ({size}px) " +
+            $"Game={game} " +
             $"EmissiveMult={emissiveMult.ToString("G9", CultureInfo.InvariantCulture)}");
 
-        var gpu = GpuDevice12.Create();
+        var gpu = GpuDevice12.Create(
+            enableDebugLayer: EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug));
         if (gpu is null)
         {
             Console.Error.WriteLine("D3D12 device unavailable.");
@@ -205,11 +258,12 @@ internal static class NifHeadlessRenderer
             }
 
             meshCache = new ReferenceMeshCache12(
-                gpu, meshArchives, textureResolver, textureCache, deletion,
+                gpu, meshArchives, textureResolver, textureCache, deletion, recorder,
                 2048,
                 autoSizeMeshCapacity: false, speedTreeLeafTextures: leafTextures,
                 speedTreeDimming: dimming);
-            references = new ReferenceRenderer12(gpu, recorder, ring, rootSig, heap, meshCache)
+            references = new ReferenceRenderer12(
+                gpu, recorder, ring, rootSig, heap, meshCache, deletion, game)
             {
                 ShowInitiallyDisabled = true,
                 ShowMarkers = true,
@@ -219,6 +273,7 @@ internal static class NifHeadlessRenderer
                 ShowImposters = true,
                 StreamingThrottled = false // drain decodes/uploads as fast as possible
             };
+            gpu.PumpDebugMessages();
 
             // Water-shader submeshes are DIVERTED out of the reference draw path into authored
             // NifWaterGeometry (ReferenceMeshCache12 skips them as drawables), so a pure-water NIF
@@ -245,7 +300,7 @@ internal static class NifHeadlessRenderer
             };
             var cell = new CellRecord { FormId = 1, GridX = 0, GridY = 0, PlacedObjects = [placement] };
             var cells = new Dictionary<(int gx, int gy), CellRecord> { [(0, 0)] = cell };
-            references.LoadData(new WorldRenderCache(), cells, spatialIndex: null);
+            references.LoadData(new WorldRenderCache { Game = game }, cells, spatialIndex: null);
 
             target = new GpuOffscreenSceneTarget12(gpu, size, size);
             Console.WriteLine($"[nif-render] scene samples={target.SampleCount}");
@@ -370,6 +425,9 @@ internal static class NifHeadlessRenderer
                 var fenceValue = recorder.LastSubmittedFenceValue;
                 var complete = StreamingComplete(references.LastStats);
                 WaitForFence(gpu.FrameFence, fenceValue);
+                // D3D12 validation for recorded copy/barrier/draw commands is reported only after
+                // execution. Drain after the fence so a headless debug run actually surfaces it.
+                gpu.PumpDebugMessages();
 
                 var s = references.LastStats;
                 if (verbose)
@@ -380,6 +438,14 @@ internal static class NifHeadlessRenderer
                         $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} drawn={s.ReferenceDrawn} " +
                         $"submeshDraws={s.ReferenceSubmeshDraws} batches={s.ReferenceBatches} inst={s.ReferenceInstances} " +
                         $"instDraws={s.ReferenceInstancedDraws} blended={s.ReferenceBlendedDraws} " +
+                        $"modern={s.ReferenceModernStandardShaderActive}/" +
+                        $"{s.ReferenceModernStandardBatches}/{s.ReferenceModernStandardInstances} " +
+                        $"packet={s.ReferenceStaticOpaquePacketActive}/" +
+                        $"{s.ReferenceStaticOpaquePacketHit}/" +
+                        $"{s.ReferenceStaticOpaquePacketBatches}/" +
+                        $"{s.ReferenceStaticOpaquePacketInstances}/" +
+                        $"{s.ReferenceStaticOpaquePacketRuns}/" +
+                        $"{s.ReferenceStaticOpaquePacketBytes} " +
                         $"soft={s.ReferenceSoftParticleDraws}/{s.ReferenceSoftParticleDepthSampleCount} " +
                         $"alphaCtl={s.ReferenceMaterialAlphaControllerDraws}" +
                         $"[{s.ReferenceMaterialAlphaControllerMinimum:0.###}," +
@@ -402,12 +468,36 @@ internal static class NifHeadlessRenderer
                 // pending. texPending==0 guards the mixed case (water + textured submeshes): the
                 // textured part must still reach TexturesReady before we accept the frame.
                 var waterSettled = waterDraws > 0 && s.ReferenceTexturePending == 0 && s.ReferenceMeshMissing == 0;
-                if (complete && it > 0 && (s.ReferenceDrawn > 0 || waterSettled))
+                var renderedContent = s.ReferenceDrawn > 0 || waterSettled;
+                drew |= renderedContent;
+                // A positive packet expectation is also a bounded warm-up request: do not accept
+                // the first quiesced legacy frame while the repeated-frame packet candidate is
+                // still being established. A negative expectation remains fail-closed as well.
+                var staticOpaquePacketMatches = expectedStaticOpaquePacketSpec is null ||
+                    (expectedStaticOpaquePacketSpec == "1"
+                        ? s.ReferenceStaticOpaquePacketActive &&
+                          s.ReferenceStaticOpaquePacketHit &&
+                          s.ReferenceStaticOpaquePacketBatches > 0 &&
+                          s.ReferenceStaticOpaquePacketInstances > 0 &&
+                          s.ReferenceStaticOpaquePacketRuns > 0 &&
+                          s.ReferenceStaticOpaquePacketBytes > 0
+                        : !s.ReferenceStaticOpaquePacketActive &&
+                          !s.ReferenceStaticOpaquePacketHit &&
+                          s.ReferenceStaticOpaquePacketBatches == 0 &&
+                          s.ReferenceStaticOpaquePacketInstances == 0 &&
+                          s.ReferenceStaticOpaquePacketRuns == 0 &&
+                          s.ReferenceStaticOpaquePacketBytes == 0);
+                if (complete && it > 0 && renderedContent && staticOpaquePacketMatches)
                 {
-                    drew = true;
                     Console.WriteLine(
                         $"[nif-render] settled at iter {it} (drawn={s.ReferenceDrawn}, " +
                         $"submeshDraws={s.ReferenceSubmeshDraws}, waterPlanes={waterDraws}, " +
+                        $"packet={s.ReferenceStaticOpaquePacketActive}/" +
+                        $"{s.ReferenceStaticOpaquePacketHit}/" +
+                        $"{s.ReferenceStaticOpaquePacketBatches}/" +
+                        $"{s.ReferenceStaticOpaquePacketInstances}/" +
+                        $"{s.ReferenceStaticOpaquePacketRuns}/" +
+                        $"{s.ReferenceStaticOpaquePacketBytes}, " +
                         $"soft={s.ReferenceSoftParticleDraws}/{s.ReferenceSoftParticleDepthSampleCount}, " +
                         $"alphaCtl={s.ReferenceMaterialAlphaControllerDraws}" +
                         $"[{s.ReferenceMaterialAlphaControllerMinimum:0.###}," +
@@ -436,6 +526,94 @@ internal static class NifHeadlessRenderer
                     $"may be blank. last: cells={s.ReferenceCellsVisited} culled={s.ReferenceCulled} " +
                     $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} " +
                     $"drawn={s.ReferenceDrawn} waterPlanes={references.NifWaterPlanes.Count}");
+            }
+
+            if (expectedModernStandardSpec is not null)
+            {
+                var expectModernStandard = expectedModernStandardSpec == "1";
+                var s = references.LastStats;
+                var modernStandardMatches = expectModernStandard
+                    ? s.ReferenceModernStandardShaderActive &&
+                      s.ReferenceModernStandardBatches > 0 &&
+                      s.ReferenceModernStandardInstances > 0
+                    : !s.ReferenceModernStandardShaderActive &&
+                      s.ReferenceModernStandardBatches == 0 &&
+                      s.ReferenceModernStandardInstances == 0;
+                if (!modernStandardMatches)
+                {
+                    Console.Error.WriteLine(
+                        $"[nif-render] modern-standard expectation failed: expected={expectedModernStandardSpec} " +
+                        $"actual={s.ReferenceModernStandardShaderActive}/" +
+                        $"{s.ReferenceModernStandardBatches}/{s.ReferenceModernStandardInstances}.");
+                    return 6;
+                }
+
+                Console.WriteLine(
+                    $"[nif-render] modern-standard expectation passed: expected={expectedModernStandardSpec} " +
+                    $"actual={s.ReferenceModernStandardShaderActive}/" +
+                    $"{s.ReferenceModernStandardBatches}/{s.ReferenceModernStandardInstances}");
+            }
+
+            if (expectedStaticOpaquePacketSpec is not null)
+            {
+                var expectStaticOpaquePacket = expectedStaticOpaquePacketSpec == "1";
+                var s = references.LastStats;
+                var staticOpaquePacketMatches = expectStaticOpaquePacket
+                    ? s.ReferenceStaticOpaquePacketActive &&
+                      s.ReferenceStaticOpaquePacketHit &&
+                      s.ReferenceStaticOpaquePacketBatches > 0 &&
+                      s.ReferenceStaticOpaquePacketInstances > 0 &&
+                      s.ReferenceStaticOpaquePacketRuns > 0 &&
+                      s.ReferenceStaticOpaquePacketBytes > 0
+                    : !s.ReferenceStaticOpaquePacketActive &&
+                      !s.ReferenceStaticOpaquePacketHit &&
+                      s.ReferenceStaticOpaquePacketBatches == 0 &&
+                      s.ReferenceStaticOpaquePacketInstances == 0 &&
+                      s.ReferenceStaticOpaquePacketRuns == 0 &&
+                      s.ReferenceStaticOpaquePacketBytes == 0;
+                if (!staticOpaquePacketMatches)
+                {
+                    Console.Error.WriteLine(
+                        $"[nif-render] static-opaque-packet expectation failed: " +
+                        $"expected={expectedStaticOpaquePacketSpec} " +
+                        $"actual={s.ReferenceStaticOpaquePacketActive}/" +
+                        $"{s.ReferenceStaticOpaquePacketHit}/" +
+                        $"{s.ReferenceStaticOpaquePacketBatches}/" +
+                        $"{s.ReferenceStaticOpaquePacketInstances}/" +
+                        $"{s.ReferenceStaticOpaquePacketRuns}/" +
+                        $"{s.ReferenceStaticOpaquePacketBytes} " +
+                        $"fallback={s.ReferenceStaticOpaquePacketFallbackReason}.");
+                    return 7;
+                }
+
+                Console.WriteLine(
+                    $"[nif-render] static-opaque-packet expectation passed: " +
+                    $"expected={expectedStaticOpaquePacketSpec} " +
+                    $"actual={s.ReferenceStaticOpaquePacketActive}/" +
+                    $"{s.ReferenceStaticOpaquePacketHit}/" +
+                    $"{s.ReferenceStaticOpaquePacketBatches}/" +
+                    $"{s.ReferenceStaticOpaquePacketInstances}/" +
+                    $"{s.ReferenceStaticOpaquePacketRuns}/" +
+                    $"{s.ReferenceStaticOpaquePacketBytes}");
+            }
+
+            if (expectedWaterPipeline is not null)
+            {
+                var s = water.LastStats;
+                if (!string.Equals(s.WaterPipeline, expectedWaterPipeline, StringComparison.Ordinal) ||
+                    s.WaterDraws <= 0)
+                {
+                    Console.Error.WriteLine(
+                        $"[nif-render] water-pipeline expectation failed: expected={expectedWaterPipeline} " +
+                        $"actual={s.WaterPipeline ?? "<null>"} technique={s.WaterTechnique ?? "<null>"} " +
+                        $"draws={s.WaterDraws}.");
+                    return 8;
+                }
+
+                Console.WriteLine(
+                    $"[nif-render] water-pipeline expectation passed: expected={expectedWaterPipeline} " +
+                    $"actual={s.WaterPipeline} technique={s.WaterTechnique ?? "<null>"} " +
+                    $"draws={s.WaterDraws}");
             }
 
             var rgba = BgraToRgba(finalBgra);
@@ -530,6 +708,7 @@ internal static class NifHeadlessRenderer
                     target.RecordReadback(cmd);
                     recorder.EndFrame();
                     WaitForFence(gpu.FrameFence, recorder.LastSubmittedFenceValue);
+                    gpu.PumpDebugMessages();
                     holdBgra = target.ReadbackToBytes();
                 }
 
@@ -596,16 +775,16 @@ internal static class NifHeadlessRenderer
         GpuRingBuffer12 ring,
         float emissiveMult)
     {
-        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16;
-        var cb = new float[atmosphereBytes / sizeof(float)];
+        var cb = new float[AtmosphereBytes / sizeof(float)];
         // CameraOrigin.w carries EmissiveMult. The default is neutral; --emissive-mult deliberately
         // overrides it for paired GPU regressions without enabling the rest of atmosphere lighting.
         cb[4 * 4 + 3] = 1f; // SkyHorizon.w = HDR active for Lighting30 verification.
         cb[9 * 4 + 3] = emissiveMult;
-        var bytes = new byte[atmosphereBytes];
-        Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
-        var alloc = ring.Allocate(frameIndex, atmosphereBytes);
-        Marshal.Copy(bytes, 0, alloc.CpuPtr, atmosphereBytes);
+        cb[AtmosphereClipPlaneFloat4Slot * 4 + 3] = 1f; // neutral half-space: clip(+1)
+        var bytes = new byte[AtmosphereBytes];
+        Buffer.BlockCopy(cb, 0, bytes, 0, AtmosphereBytes);
+        var alloc = ring.Allocate(frameIndex, AtmosphereBytes);
+        Marshal.Copy(bytes, 0, alloc.CpuPtr, AtmosphereBytes);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
         BindEmptyPointLights(cmd, frameIndex, ring);
     }
@@ -627,11 +806,11 @@ internal static class NifHeadlessRenderer
         float emissiveMult)
     {
         var a = AtmosphereState.Resolve(gameHour);
-        // Zero the complete append-only b3 layout (ten atmosphere vectors, four shadow matrices,
-        // four shadow vectors, six directional-ambient vectors). In particular Params.w remains
-        // zero: this verifier has no world placement cache, so it binds an empty local-light list.
-        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16;
-        var cb = new float[atmosphereBytes / sizeof(float)];
+        // Zero the complete append-only b3 layout. In particular Params.w remains zero: this
+        // verifier has no world placement cache, so it binds an empty local-light list. ClipPlane
+        // is explicitly neutral below; leaving an appended field outside the upload made the uber
+        // shader read undefined constant-buffer data.
+        var cb = new float[AtmosphereBytes / sizeof(float)];
 
         void Put(int slot, float x, float y, float z, float w)
         {
@@ -658,11 +837,12 @@ internal static class NifHeadlessRenderer
         // shifted. The reference VS no longer reads this slot anyway (it folds the origin CPU-side); leaving
         // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
         Put(9, 0f, 0f, 0f, emissiveMult); // absolute origin + requested IMGS EmissiveMult
+        Put(AtmosphereClipPlaneFloat4Slot, 0f, 0f, 0f, 1f); // neutral half-space: clip(+1)
 
-        var alloc = ring.Allocate(frameIndex, atmosphereBytes);
-        var bytes = new byte[atmosphereBytes];
-        Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
-        Marshal.Copy(bytes, 0, alloc.CpuPtr, atmosphereBytes);
+        var alloc = ring.Allocate(frameIndex, AtmosphereBytes);
+        var bytes = new byte[AtmosphereBytes];
+        Buffer.BlockCopy(cb, 0, bytes, 0, AtmosphereBytes);
+        Marshal.Copy(bytes, 0, alloc.CpuPtr, AtmosphereBytes);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
         BindEmptyPointLights(cmd, frameIndex, ring);
     }
@@ -673,8 +853,15 @@ internal static class NifHeadlessRenderer
         const int pointLightBytes = 4 * 16;
         var alloc = ring.Allocate(frameIndex, pointLightBytes, 16);
         Marshal.Copy(new byte[pointLightBytes], 0, alloc.CpuPtr, pointLightBytes);
+        // With a zero atmosphere light count t9 is never dereferenced, so the same allocation can
+        // also carry t10's required 1x1 header + zero mask without another ring reservation.
+        Marshal.WriteInt32(alloc.CpuPtr, 0, 1);
+        Marshal.WriteInt32(alloc.CpuPtr, sizeof(int), 1);
         cmd.SetGraphicsRootShaderResourceView(
             GpuRootSignature12.Slots.PointLightsSrv,
+            alloc.GpuAddress);
+        cmd.SetGraphicsRootShaderResourceView(
+            GpuRootSignature12.Slots.PointLightTilesSrv,
             alloc.GpuAddress);
     }
 
@@ -753,7 +940,10 @@ internal static class NifHeadlessRenderer
 
     private static bool StreamingComplete(WorldRenderStats r)
     {
-        return StreamingQuiescence.IsQuiesced(r, terrain: null, strict: false);
+        // A single ready submesh can increment ReferenceDrawn while another submesh is still
+        // texture-withheld. Headless captures are acceptance artifacts, so require the strict
+        // predicate that also gates ReferenceTexturePending before declaring the NIF settled.
+        return StreamingQuiescence.IsQuiesced(r, terrain: null, strict: true);
     }
 
     private static void WaitForFence(ID3D12Fence fence, ulong value)
@@ -839,6 +1029,23 @@ internal static class NifHeadlessRenderer
         }
 
         return rgba;
+    }
+
+    private static bool TryParseHeadlessGame(string? value, out BethesdaGame game)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            game = BethesdaGame.Unknown;
+            return true;
+        }
+
+        if (value.Equals("FO76", StringComparison.OrdinalIgnoreCase))
+        {
+            game = BethesdaGame.Fallout76;
+            return true;
+        }
+
+        return Enum.TryParse(value, ignoreCase: true, out game) && Enum.IsDefined(game);
     }
 
     private static string? Next(string[] args, ref int i)

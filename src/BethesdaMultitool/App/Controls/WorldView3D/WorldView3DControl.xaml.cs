@@ -112,6 +112,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly bool _forceGpuTimestamps =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.GpuTimestamps);
 
+    private readonly bool _referencePipelineStatisticsRequested =
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferencePipelineStatistics);
+
     // Placed-object categories hidden in the 3D view. Sky/glow props (DiamondCityGlow) start HIDDEN
     // (atmosphere-only meshes); Activators start VISIBLE (model-bearing
     // activators — the Anvil lighthouse fire bowl, flora — are real scenery and must render by
@@ -142,6 +145,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     private readonly bool _profileLogging =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ProfileLog);
+
+    // A settled benchmark can pause only the scored trace sinks while the normal live renderer keeps
+    // running and warming its scene. GPU timestamp results are still drained while paused; rows older
+    // than the first admitted frame are discarded when the window opens.
+    private bool _profileWindowEnabled = true;
+    private long _profileWindowStartFrame;
 
     private readonly int _profileLogIntervalMilliseconds =
         EnvironmentVariables.GetPositiveIntOrDefault(
@@ -241,6 +250,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _backendFailedAfterDeviceCreation;
 
     private GpuTimestampProfiler12? _gpuTimestampProfiler12;
+    private GpuReferencePipelineStatistics12? _gpuReferencePipelineStatistics12;
     private bool _gpuTimestampsAutoEnabled;
     private bool _grassShadowsEnabled = true;
 
@@ -265,13 +275,25 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _initializing = true;
 
     private double _lastControllerUpdateMilliseconds;
-    private DateTime _lastFrameTime;
+    // Two monotonic clocks with deliberately different boundaries:
+    //   * frame-start drives camera integration (post-fence-wait to post-fence-wait), and
+    //   * frame-completion drives delivered-frame pacing (post-Present to post-Present).
+    // Keeping them separate makes a stall row line up with the body/wait that caused it without
+    // changing the low-latency camera sampling point.
+    private long _lastFrameStartTimestamp = Stopwatch.GetTimestamp();
+    private long _lastFrameCompletionTimestamp = Stopwatch.GetTimestamp();
     private int _lastGcGen0Collections = GC.CollectionCount(0);
     private int _lastGcGen1Collections = GC.CollectionCount(1);
     private int _lastGcGen2Collections = GC.CollectionCount(2);
     private string? _lastHudText;
 
     private long _lastHudUpdateTimestamp;
+
+    /// <summary>
+    ///     Rolling frame-duration window behind the HUD's fps / p99 / 1%-low readout and the
+    ///     profiler's pacing figures, so both quote the same arithmetic.
+    /// </summary>
+    private readonly Core.Diagnostics.PerformanceSampler _performanceSampler = new();
 
     // Process-wide monotonic allocation counter. Unlike live-heap size, its per-frame delta exposes
     // transient particle/controller churn even when a collection immediately reclaims the objects.
@@ -587,6 +609,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _referenceEnabledOverrides.Clear();
         RefreshReferenceOverrideRecoveryUi();
         RequestClearAdaptedLight();
+        // A second load commonly reuses vanilla WRLD FormIDs. Clear route objects before publishing
+        // the new data reference so the render loop can never accept a prior data set by FormID alone
+        // while the async worldspace selection is still yielding.
+        _starfieldEnvironmentRoute = null;
+        _starfieldCelestialRoute = null;
+        _starfieldEnvironmentAppliedChannels = StarfieldEnvironmentApproximationChannels.None;
+        _starfieldEnvironmentRejectedChannels = StarfieldEnvironmentApproximationChannels.None;
         _data = data;
         // Morrowind has no engine HDR/bloom/imagespace stage (LegacyClamp) — hide the toggles
         // rather than offering dead switches. Re-evaluated on every LoadData (ESM switch).
@@ -772,8 +801,27 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             MarkSceneSelectionReady(loadSelectionGeneration);
         }
 
+        // The device/render loop is created before the world finishes loading. Start every pacing,
+        // allocation and camera-delta window here so load time cannot masquerade as a rendered frame.
+        ReseedFrameClocks();
+        _frameDeltaFilter.Reset();
+        _performanceSampler.Reset();
+        _profileAccumulator.ResetForSceneLoad();
+        _lastGcGen0Collections = GC.CollectionCount(0);
+        _lastGcGen1Collections = GC.CollectionCount(1);
+        _lastGcGen2Collections = GC.CollectionCount(2);
+        _lastTotalAllocatedBytes = GC.GetTotalAllocatedBytes(false);
+
         _ = InspectObject; // referenced so the event isn't flagged unused on paths that never raise it
         _ = InspectCell;
+    }
+
+    private void ReseedFrameClocks()
+    {
+        var timestamp = Stopwatch.GetTimestamp();
+        _lastFrameStartTimestamp = timestamp;
+        _lastFrameCompletionTimestamp = timestamp;
+        _lastDeltaSeconds = 0;
     }
 
     /// <summary>Sets (or clears, with null) the current 3D selection and its outline programmatically.</summary>

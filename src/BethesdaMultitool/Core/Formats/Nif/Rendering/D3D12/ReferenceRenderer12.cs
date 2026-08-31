@@ -21,6 +21,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Orchestration;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -80,15 +81,35 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // per-REFR Chebyshev test below then trims back to the square (the broadphase only over-includes).
     private const float SquareBroadphaseFactor = 1.41422f;
 
+    private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
+    private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly ReferenceMeshCache12 _meshCache;
     private readonly ReferenceEnabledOverrideStore _enabledOverrides;
     private readonly ReferencePipelineFactory12 _pipelines;
-    private readonly OpaqueBatchRegistry12 _opaqueBatches = new();
-    private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
+    private readonly ID3D12CommandSignature? _opaqueIndirectSignature;
+    // The published set is immutable between batch publications. Refresh-only rebuilds populate the
+    // other set over several render-thread slices, then swap the aggregate in one assignment so no
+    // draw pass can observe a partial opaque/blended/shadow snapshot.
+    private ReferenceBatchSet _publishedBatchSet = new();
+    private ReferenceBatchSet _stagingBatchSet = new();
+    // Double-buffered ReferenceBatchSet object identity is ABA-prone (A -> B -> A). Packet reuse
+    // therefore keys on a publication ordinal that advances on every swap, even when the rebuilt
+    // content fingerprint happens to be unchanged.
+    private ulong _publishedBatchIdentity;
+    private int _publishedBatchGeneration;
+    private OpaqueSubmissionPacket12? _opaqueSubmissionPacket;
+    private StaticOpaquePacketReuseKey? _opaquePacketCandidateKey;
+    private int _opaquePacketCandidateFrames;
+    private OpaqueBatchRegistry12 _opaqueBatches => _publishedBatchSet.OpaqueBatches;
+    private List<BlendedReferenceDraw> _blendedDraws => _publishedBatchSet.BlendedDraws;
     private readonly List<BlendedReferenceDraw> _waterPartitionedBlendedDraws = new(256);
+    // Retained scratch for opaque-submission telemetry. Reference identity is the batch-key
+    // contract for PSOs too, and retaining the set avoids a per-frame allocation on this hot path.
+    private readonly HashSet<ID3D12PipelineState> _opaqueSubmissionPsos =
+        new(ReferenceEqualityComparer.Instance);
     private enum DeferredWaterPartition
     {
         All,
@@ -105,7 +126,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // Depth-writing blend foliage (effects-folder shapes the engine marks ZBuffer_Write, e.g. NVSeaPlant02):
     // kept as alpha blend but drawn INLINE before the water pass with a depth-writing PSO, so water occludes
     // them from above. Separate from _blendedDraws, which defers to after the water pass.
-    private readonly List<BlendedReferenceDraw> _depthWritingBlendDraws = new(64);
+    private List<BlendedReferenceDraw> _depthWritingBlendDraws => _publishedBatchSet.DepthWritingBlendDraws;
     private GrassDistanceEnvelope _grassDistanceEnvelope;
     private ClassicSpecularLodProfile _classicSpecularLodProfile;
     private bool _tallGrassWindSupported;
@@ -145,6 +166,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     // Cascade geometry for this frame's capture (see ArmShadowCapture). Null ⇒ no per-cascade culling.
     private (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? _cascadeFit;
+    // Anchor from the frame that established the widened cull survivor set. Incremental rebuilds
+    // classify around this fixed horizontal centre so every later camera pose accepted by that cull
+    // epoch is within one (not two opposing) CullPositionSlack envelope of the published prefixes.
+    // Z stays on the current post-cull shadow fit because its loaded-extent clamp can legitimately
+    // change immediately after a mesh-bounds recull.
+    private Vector2? _cullCacheCascadeAnchorXY;
 
     // Scratch for the per-batch counting sort that orders instances by smallest containing cascade.
     private readonly List<int> _cascadeBucketScratch = new(256);
@@ -397,6 +424,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             _formIdHeatmapEnabled = value;
             _lastBuildValid = false;
+            unchecked { _batchInvalidationGeneration++; }
             unchecked
             {
                 BatchContentVersion++;
@@ -425,6 +453,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             _grassShadowsEnabled = value;
             _lastBuildValid = false;
+            unchecked { _batchInvalidationGeneration++; }
             unchecked { BatchContentVersion++; }
         }
     }
@@ -449,6 +478,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             _windowReflectionsEnabled = value;
             _lastBuildValid = false;
+            unchecked { _batchInvalidationGeneration++; }
             unchecked { BatchContentVersion++; }
         }
     }
@@ -476,6 +506,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             _treeShadowsEnabled = value;
             _lastBuildValid = false;
+            unchecked { _batchInvalidationGeneration++; }
             unchecked { BatchContentVersion++; }
         }
     }
@@ -564,6 +595,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private static readonly bool ParallelCullEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.ParallelCull) != "0";
 
+    // Opt-in until a settled direct/indirect capture proves both the CPU win and GPU non-regression.
+    private static readonly bool OpaqueIndirectRequested =
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferenceOpaqueIndirect);
+
+    // Opt-in until the settled direct/packet capture proves the CPU saving and GPU non-regression.
+    private static readonly bool StaticOpaquePacketRequested =
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferenceStaticOpaquePacket);
+
+    // Opt-in until strict paired captures prove that coarse batch ordering reduces real PS work.
+    private static readonly bool OpaqueFrontToBackRequested =
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferenceOpaqueFrontToBack);
+
     private void EnsureCullPartitions(int count)
     {
         if (_cullPartitions is not null && _cullPartitions.Length >= count) return;
@@ -602,14 +645,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private int _cullCacheCellsVisited;
     private int _cullCacheCandidates;
     private int _cullCacheCulled;
-
-    // Per-frame memoization: MeshId → resolved CachedNifMesh12 (or null
-    // when the cache hasn't uploaded it yet this frame). Cleared at the top of each
-    // Render() so per-frame inserts (which may evict older entries) only affect entries
-    // we haven't yet read. Cuts the cull loop's per-REFR string-key dict lookup
-    // (~80 ns × 5000 REFRs ≈ 0.4 ms) down to a uint-keyed lookup (~25 ns) after the
-    // first sighting of each MeshId.
-    private readonly Dictionary<uint, CachedNifMesh12?> _resolvedMeshesThisFrame = new(256);
 
     // MeshId → the mesh's local bounding-sphere radius (around the NIF origin), recorded the first
     // time a mesh resolves. Lets the per-REFR cull use the ACTUAL geometry extent (conservative)
@@ -912,15 +947,49 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         GpuRootSignature12 rootSignature,
         GpuDescriptorHeapAllocator12 cbvSrvUavHeap,
         ReferenceMeshCache12 meshCache,
+        GpuDeletionQueue12 deletionQueue,
+        BethesdaGame game,
         ReferenceEnabledOverrideStore? enabledOverrides = null)
     {
+        _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
+        _deletionQueue = deletionQueue;
         _meshCache = meshCache;
         _enabledOverrides = enabledOverrides ?? new ReferenceEnabledOverrideStore();
 
-        _pipelines = new ReferencePipelineFactory12(gpu, rootSignature);
+        _pipelines = new ReferencePipelineFactory12(gpu, rootSignature, game);
+
+        if (OpaqueIndirectRequested || StaticOpaquePacketRequested)
+        {
+            try
+            {
+                var indirectArguments = new IndirectArgumentDescription[4];
+                indirectArguments[0].Type = IndirectArgumentType.ConstantBufferView;
+                indirectArguments[0].ConstantBufferView.RootParameterIndex =
+                    GpuRootSignature12.Slots.PerDrawCbv;
+                indirectArguments[1].Type = IndirectArgumentType.VertexBufferView;
+                indirectArguments[1].VertexBuffer.Slot = 0;
+                indirectArguments[2].Type = IndirectArgumentType.IndexBufferView;
+                indirectArguments[3].Type = IndirectArgumentType.DrawIndexed;
+                var indirectSignatureDescription = new CommandSignatureDescription
+                {
+                    ByteStride = OpaqueIndirectCommand12.ByteStride,
+                    IndirectArguments = indirectArguments,
+                };
+                _opaqueIndirectSignature = gpu.Device.CreateCommandSignature<ID3D12CommandSignature>(
+                    indirectSignatureDescription,
+                    rootSignature.RootSignature);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Core.Diagnostics.Logger.Instance.Warn(
+                    "ReferenceRenderer12: opaque ExecuteIndirect disabled because command-signature " +
+                    "creation failed: {0}",
+                    ex.Message);
+            }
+        }
     }
 
     public int ReferencesDrawnLastFrame { get; private set; }
@@ -938,6 +1007,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
     private int _placedLightCount;
+    private double _placedLightTileBuildMilliseconds;
+    private int _placedLightTileCount;
+    private int _placedLightTileUploadBytes;
+    private double _placedLightTileAverageLights;
+    private int _placedLightTileMaxLights;
+    private double _placedLightTileEmptyPercent;
+    private string? _placedLightTileFallbackReason;
     private bool _fnvActiveAdtLightingEnabled;
     private bool _fnvProjectedSunShadowActive;
     private bool _fnvActiveAdtFogEnabled;
@@ -948,6 +1024,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     associates and orders non-shadow lights per geometry rather than camera-globally.
     /// </summary>
     public void SetPlacedLightCount(int count) => _placedLightCount = Math.Max(count, 0);
+
+    /// <summary>
+    ///     Supplies the host-built tiled-forward mask telemetry for the next main reference pass.
+    ///     Mirror/capture bindings may replace the pending values after that pass, but cannot mutate
+    ///     the already-published <see cref="LastStats" /> row.
+    /// </summary>
+    public void SetPlacedLightTileTelemetry(
+        double buildMilliseconds,
+        int tileCount,
+        int uploadBytes,
+        double averageLights,
+        int maxLights,
+        double emptyPercent,
+        string? fallbackReason)
+    {
+        _placedLightTileBuildMilliseconds = Math.Max(0, buildMilliseconds);
+        _placedLightTileCount = Math.Max(0, tileCount);
+        _placedLightTileUploadBytes = Math.Max(0, uploadBytes);
+        _placedLightTileAverageLights = Math.Max(0, averageLights);
+        _placedLightTileMaxLights = Math.Max(0, maxLights);
+        _placedLightTileEmptyPercent = Math.Clamp(emptyPercent, 0, 100);
+        _placedLightTileFallbackReason = fallbackReason;
+    }
 
     /// <summary>
     ///     Supplies the global gates for the bounded active ID193/BSSM_ADT path. SLS2000 has no
@@ -1105,6 +1204,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Dictionary<(int gx, int gy), CellRecord> cells,
         global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? spatialIndex)
     {
+        // The game is deliberately not part of the frame reuse key: this explicit world-load seam
+        // invalidates both the packet and its debounced candidate before the new game is visible.
+        RetireOpaqueSubmissionPacket();
         _renderCache = renderCache;
         _cells = cells;
         _spatialIndex = spatialIndex;
@@ -1133,6 +1235,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // are any frozen batches built from them.
         _cullCacheValid = false;
         _lastBuildValid = false;
+        unchecked { _batchInvalidationGeneration++; }
         unchecked { BatchContentVersion++; }
         // Drop placed-NIF water ownership so it cannot leak across worldspace loads. The registry
         // clears its stable publication list in place for consumers that retained the reference.
@@ -1523,8 +1626,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // === Batch reuse on quiesced frames ===
     // When the cull cache hit, the render origin (snapped by the host) is unchanged, and the LAST
     // build frame streamed nothing (quiescent: every mesh + texture resolved, zero uploads/misses,
-    // hence zero evictions mid-build), the resolve+batch pass is skipped wholesale and the frozen
-    // batches re-draw. Safety rails: any resident-mesh eviction bumps the cache's
+    // hence zero evictions mid-build), the frozen batches re-draw. Refresh-only blockers may also
+    // spend a bounded slice populating an invisible staging set while those batches draw. Safety
+    // rails: any resident-mesh eviction bumps the cache's
     // EvictionGeneration (frozen batches reference CachedSubmesh12 GPU buffers), and the draw pass
     // re-tests every instance against the current exact frustum (PassesExactCull), so a frozen
     // WIDENED batch stays visually exact while the camera drifts inside the cull slack.
@@ -1595,16 +1699,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private Vector4 _frameWColumn;
 
     /// <summary>
-    ///     Ceiling on consecutive reuse frames (~1s at 60fps). Reuse frames never call GetOrUpload,
-    ///     so a background decode that completes AFTER the build (e.g. one of the perpetually
-    ///     retrying unresolvable meshes finally succeeding) has no path into the frozen batches;
-    ///     the periodic rebuild reissues every survivor's resolve, picks up anything that landed,
-    ///     and re-freezes. Also throttles the steady-state decode-retry churn of permanently
-    ///     missing meshes from per-frame to once per rebuild.
-    /// </summary>
-    private const int BatchReuseMaxFrames = 60;
-
-    /// <summary>
     ///     Consecutive QUIET build frames (no uploads, no cache misses, no pending textures)
     ///     required before reuse engages. A single quiet frame is not proof the scene finished
     ///     filling — decode waves have sub-second lulls, and freezing on one stalled the fill at
@@ -1626,6 +1720,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     private static readonly int BatchReuseStreamingMaxFrames = EnvironmentVariables.GetClampedInt(
         EnvironmentVariables.Viewer.BatchReuseStreamingFrames, 4, 1, 60);
+
+    /// <summary>
+    ///     Best-effort render-thread allowance for a refresh-only batch rebuild. Upload pacing is
+    ///     independent; this budget covers reference traversal, instance bucketing, inactive registry
+    ///     reset and cascade ordering. Work is checked only between bounded quanta so the cursor always
+    ///     advances; collection clears and publication refresh can still overshoot and are exposed by
+    ///     the split profiler timings.
+    /// </summary>
+    private static readonly double IncrementalBatchBuildBudgetMilliseconds = ParsePositiveDoubleEnvironment(
+        EnvironmentVariables.Viewer.ReferenceBatchBuildMillisecondsPerFrame,
+        defaultValue: 2.0,
+        min: 0.25,
+        max: 10.0);
 
     /// <summary>Why a frame did not reuse its cached cull survivors. Ordered as the gate tests them,
     /// so the reported value is the FIRST failing clause.</summary>
@@ -1658,7 +1765,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Disabled = 1,
         CullCacheMiss = 2,
         NoBuild = 3,
-        FrameCeiling = 4,
+        FrameCeiling = CaptureSceneCensus.FrameCeilingBatchBuildTriggerCode,
         CullEpoch = 5,
         RenderOrigin = 6,
         NotQuiesced = 7,
@@ -1669,7 +1776,141 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         MeshesMissing = 10
     }
 
+    internal enum BatchBuildPhase
+    {
+        None = 0,
+        Reset = 1,
+        References = 2,
+        ShadowCasters = 3,
+        CascadeSort = 4,
+        Complete = 5
+    }
+
+    private enum BatchBuildAdvanceResult
+    {
+        Incomplete,
+        Complete,
+        EvictionInvalidated
+    }
+
+    private enum CascadeBatchSortPhase
+    {
+        Initialize,
+        MainClassify,
+        MainScatter,
+        MainCopy,
+        ShadowInitialize,
+        ShadowClassify,
+        ShadowScatter,
+        ShadowCopy,
+        Complete
+    }
+
+    /// <summary>
+    ///     Cursor for one opaque batch's stable cascade counting-sort. A common FO76 batch carries
+    ///     roughly 82k placements, so treating the whole sort as one "work item" defeats a 2 ms
+    ///     frame budget even when every reference-resolution loop is sliced.
+    /// </summary>
+    private sealed class CascadeBatchSortState(OpaqueBatchState batch)
+    {
+        public OpaqueBatchState Batch { get; } = batch;
+        public CascadeBatchSortPhase Phase { get; set; } = CascadeBatchSortPhase.Initialize;
+        public int Index { get; set; }
+        public int Count { get; set; }
+        public int Cascades { get; set; }
+        public float Slack { get; set; }
+        public bool HasSeeds { get; set; }
+        public bool HasHeatmapIds { get; set; }
+        public int[] BucketCounts { get; } = new int[ShadowMapRenderer12.CascadeCount + 1];
+        public int[] WriteCursor { get; } = new int[ShadowMapRenderer12.CascadeCount + 1];
+    }
+
+    /// <summary>
+    ///     One immutable admission verdict for an entire staged sweep. TexturesReady is mutable on
+    ///     CachedNifMesh12, so reading it per placement would publish only the later placements when a
+    ///     texture lands halfway through a multi-frame build.
+    /// </summary>
+    private readonly record struct BatchMeshSnapshot(
+        CachedNifMesh12? Mesh,
+        bool TexturesReady,
+        bool MainAdmitted);
+
+    private sealed class ReferenceBatchSet
+    {
+        public OpaqueBatchRegistry12 OpaqueBatches { get; } = new();
+        public List<BlendedReferenceDraw> BlendedDraws { get; } = new(256);
+        public List<BlendedReferenceDraw> DepthWritingBlendDraws { get; } = new(64);
+        // MeshId already folds the case-insensitive model path and alternate-texture variant. Keep
+        // this uint-keyed like the measured pre-staging memo: hashing strings per placement at 90k+
+        // survivors costs materially more than the batch bookkeeping itself.
+        public Dictionary<uint, BatchMeshSnapshot> MeshSnapshots { get; } = new(512);
+        public List<string> MissingPaths { get; } = new(32);
+        public HashSet<string> MissingPathSet { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? CascadeFit { get; set; }
+
+        public void StartReset()
+        {
+            BlendedDraws.Clear();
+            DepthWritingBlendDraws.Clear();
+            MeshSnapshots.Clear();
+            MissingPaths.Clear();
+            MissingPathSet.Clear();
+            CascadeFit = null;
+            OpaqueBatches.StartBegin();
+        }
+    }
+
+    private sealed class BatchBuildState(
+        ReferenceBatchSet target,
+        BatchReuseBlocker trigger,
+        int cullEpoch,
+        int invalidationGeneration,
+        Vector3 renderOrigin,
+        bool streamActive,
+        bool widened,
+        int evictionGeneration,
+        int resetTotal,
+        OpaqueFrontToBackBuildView opaqueFrontToBackView)
+    {
+        public ReferenceBatchSet Target { get; } = target;
+        public BatchReuseBlocker Trigger { get; } = trigger;
+        public int CullEpoch { get; } = cullEpoch;
+        public int InvalidationGeneration { get; } = invalidationGeneration;
+        public Vector3 RenderOrigin { get; } = renderOrigin;
+        public bool StreamActive { get; } = streamActive;
+        public bool Widened { get; } = widened;
+        public int StartEvictionGeneration { get; } = evictionGeneration;
+        public int ResetTotal { get; } = resetTotal;
+        public OpaqueFrontToBackBuildView OpaqueFrontToBackView { get; set; } =
+            opaqueFrontToBackView;
+        public BatchBuildPhase Phase { get; set; } = BatchBuildPhase.Reset;
+        public int ResetProcessed { get; set; }
+        public int ReferenceIndex { get; set; }
+        public int ShadowIndex { get; set; }
+        public int SortIndex { get; set; } = -1;
+        public CascadeBatchSortState? CascadeSort { get; set; }
+        public int MainMissing { get; set; }
+        public int ShadowMissing { get; set; }
+        public int TexturePending { get; set; }
+        public int Drawn { get; set; }
+        public int DrawableSubmeshPlacements { get; set; }
+        public bool SawNonQuietActivity { get; set; }
+        public bool SawGpuUpload { get; set; }
+        public bool EvictionChanged { get; set; }
+        public int ObservedFrames { get; set; }
+        public ulong ContentFingerprint { get; set; }
+        public Dictionary<CachedNifMesh12, float> PendingSkinnerRegistrations { get; } =
+            new(ReferenceEqualityComparer.Instance);
+        public (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? CascadeFit { get; set; }
+    }
+
     private bool _lastBuildValid;
+    private int _batchInvalidationGeneration;
+    private BatchBuildState? _batchBuildState;
+    // Mesh residency can change during a staged build that is later abandoned by a hard cull-key
+    // change. Keep the dirty signal outside the disposable cursor so the replacement publication
+    // still invalidates cached shadow/reflection content exactly once.
+    private bool _batchContentDirtyPending;
     private int _framesSinceBuild;
     // This frame's reuse decision, captured for the geometry draw validator's violation context.
     private bool _frameReusedBatches;
@@ -1685,6 +1926,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private int _lastBuildEvictionGen;
     private int _lastBuildDrawn;
     private int _lastBuildMissing;
+    private int _lastBuildShadowMissing;
+    private int _lastBuildDrawableSubmeshPlacements;
+    private ulong _lastBuildContentFingerprint;
 
     /// <summary>
     ///     Consecutive completed builds whose unresolved-mesh count matched the one before it. Reaching
@@ -1806,6 +2050,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceSpeedTreeRuntimeLodEnabled = SpeedTreeRuntimeLod.Enabled;
         LastStats.ReferenceTallGrassWindSupported = _tallGrassWindSupported;
         LastStats.ReferencePlacedLightCount = _placedLightCount;
+        LastStats.ReferencePlacedLightTileBuildMilliseconds = _placedLightTileBuildMilliseconds;
+        LastStats.ReferencePlacedLightTileCount = _placedLightTileCount;
+        LastStats.ReferencePlacedLightTileUploadBytes = _placedLightTileUploadBytes;
+        LastStats.ReferencePlacedLightTileAverageLights = _placedLightTileAverageLights;
+        LastStats.ReferencePlacedLightTileMaxLights = _placedLightTileMaxLights;
+        LastStats.ReferencePlacedLightTileEmptyPercent = _placedLightTileEmptyPercent;
+        LastStats.ReferencePlacedLightTileFallbackReason = _placedLightTileFallbackReason;
+        LastStats.ReferenceBatchBuildBudgetMilliseconds = IncrementalBatchBuildBudgetMilliseconds;
         var isFalloutNewVegas =
             _renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas;
         // The dormant PS1 route remains off even when the active SLS2000 subset is enabled.
@@ -1933,7 +2185,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var broadphaseRing = broadphaseFrustum is not null && effectiveRing > 0f ? effectiveRing : 0f;
 
         double cullMs = 0;
-        double meshUploadMs = 0;
+        double batchBuildMs = 0;
+        double meshResolveMs = 0;
+        double instanceBucketingMs = 0;
+        double batchFinalizeMs = 0;
+        double blendedRefreshMs = 0;
         double cbUpdateMs = 0;
         double srvBindMs = 0;
         double drawCallMs = 0;
@@ -1941,6 +2197,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         int candidates = 0;
         int culled = 0;
         int missingMeshes = 0;
+        int shadowMissingMeshes = 0;
         int texturePending = 0;
         int referencesWithReadyMesh = 0;
         int submeshDraws = 0;
@@ -1969,25 +2226,33 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var viewIsStatic = !tolerant
                            && _cullCacheViewProj == cullFrustumSource
                            && _cullCacheCylinder == cylinder;
-        // The debounce holds only WHILE streaming is in flight — that is the thrash it exists to
-        // kill (every streaming frame resolves something and would re-cull). Once the pipes drain,
-        // a pending bounds delta vetoes immediately: the placeholder radii are not reliably larger
-        // than the real bounds (a re-cull after drain admitted 1,547 candidates where the
-        // placeholder cull had admitted 1,360), so deferring the refresh past drain leaves refs
-        // MISSING from a frame that simultaneously reports streaming-quiescent — one-shot capture
-        // consumers then trust a "settled" image that a later pass would disown. At drain the
-        // re-cull costs one pass and cannot recur.
+        // The ordinary debounce holds only WHILE streaming is in flight — that is the thrash it
+        // exists to kill (every streaming frame resolves something and would re-cull). Once the
+        // pipes drain, a pending bounds delta normally vetoes immediately: the placeholder radii
+        // are not reliably larger than the real bounds (a re-cull after drain admitted 1,547
+        // candidates where the placeholder cull had admitted 1,360). The one exception below is an
+        // already-valid staged build, whose live survivor lists must remain stable until publication;
+        // capture/quiescence gates count that cursor as pending work, so the temporary defer can
+        // never be mistaken for a settled image. The next frame after publication refreshes bounds.
         // Sampled before LastStats.Reset() at the top of this method — see the note there for why
         // reading it here instead is a no-op that disables the debounce entirely.
         var streamingDrained = !streamingInFlightLastFrame;
+        // A staged build indexes the live _cachedCullSurvivors / _cachedShadowOnlyCasters lists.
+        // A bounds-only re-cull would clear those lists, change their epoch and restart a 100k+
+        // sweep before it can ever publish. Hold ONLY the mesh-bounds generation while the cursor
+        // still matches every hard batch key; cullCacheStructureValid below remains independent, so
+        // a camera/filter/ring change still performs a fresh cull and invalidates the staged state.
+        var stagedBuildPinsCullSnapshot = _batchBuildState is not null
+                                          && BatchBuildMatchesCurrent(
+                                              _batchBuildState, renderOrigin, tolerant);
         var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
+                                || stagedBuildPinsCullSnapshot
                                 || ((tolerant || viewIsStatic) && !streamingDrained &&
                                     _framesSinceCull < CullStreamingRefreshFrames);
 #pragma warning disable S1244 // cull-cache identity: exact compare of a cached snapshot detects change, not proximity
 #pragma warning disable S3358 // the veto chain below IS the gate order; flattening it loses the priority it encodes
-        var cullCacheValid =
+        var cullCacheStructureValid =
             _cullCacheValid
-            && meshBoundsCurrent
             && _cullCacheShowMarkers == ShowMarkers
             && _cullCacheShowGrass == ShowGrass
             && _cullCacheShowImposters == ShowImposters
@@ -2005,6 +2270,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                   && _cullCacheRadius == cylinder.Radius
                   && ChebyshevWithin(cylinder.Position, _cullCachePosition, CullPositionSlack)
                 : _cullCacheViewProj == cullFrustumSource && _cullCacheCylinder == cylinder);
+        var cullCacheValid = meshBoundsCurrent && cullCacheStructureValid;
+        // A bounds-only refresh is safe to publish late: the old frozen set remains drawable while
+        // the newly re-culled survivor set is staged. This is the critical MeshesMissing transition
+        // where a landed mesh grows _meshLocalRadius; forcing the replacement batch pass to run
+        // synchronously here would recreate the exact hitch incremental rebuilding is meant to remove.
+        var meshBoundsOnlyCullRefresh = !meshBoundsCurrent && cullCacheStructureValid;
 
         // Which clause vetoed, in gate order. Reported (not inferred) for the same reason the batch
         // reuse blocker is: a cull miss has eight possible causes and guessing has been expensive.
@@ -2029,7 +2300,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // === Batch reuse decision ===
         // cullCacheValid ⇒ no re-cull this frame ⇒ _cullEpoch is stable, so an epoch match means
         // the frozen batches were built from exactly the survivor set this frame would iterate.
-        _framesSinceBuild++;
+        // Settled terminal snapshots no longer have a timer-driven rebuild, so keep this diagnostic
+        // age monotonic instead of allowing a very long-running viewer to wrap back through zero.
+        if (_framesSinceBuild < int.MaxValue)
+        {
+            _framesSinceBuild++;
+        }
         // NOTE (measured 2026-08-02): during motion this evaluates false on ~97-100% of frames, so the
         // 7-11 ms resolve+batch pass re-runs even on the ~40-80% of frames whose cull was cached. That
         // is the largest single CPU cost left in the frame. Relaxing the quiescence requirement was
@@ -2057,21 +2333,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 return BatchReuseBlocker.NoBuild;
             }
 
-            if (_framesSinceBuild >= (_lastBuildQuiesced
-                ? BatchReuseMaxFrames
-                : BatchReuseStreamingMaxFrames))
-            {
-                return BatchReuseBlocker.FrameCeiling;
-            }
-
             if (_lastBuildCullEpoch != _cullEpoch)
             {
                 return BatchReuseBlocker.CullEpoch;
             }
 
-            // Never freeze a build whose missing meshes are still ARRIVING. Reuse frames skip the
-            // resolve pass wholesale, and the resolve pass is the ONLY thing that calls GetOrUpload —
-            // i.e. the only thing that requests decodes. On the on-demand top-down path that is a hard
+            // Never stop advancing a build whose missing meshes are still ARRIVING. The resolve pass
+            // is the only thing that calls GetOrUpload — i.e. the only thing that requests decodes.
+            // On the on-demand top-down path, freezing without a staged slice is a hard
             // deadlock, not just a delay: the very first (cold) pass builds with everything missing, the
             // second pass reuses it, no decodes are ever requested, streaming therefore reports
             // quiesced, the overlay declares itself complete and stops re-rendering — a permanently
@@ -2088,9 +2357,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // repeated unchanged across builds with no decode queued or running, nothing is in flight
             // that another resolve pass could advance, so freezing is safe — and any camera move,
             // eviction or cull-epoch change still forces a rebuild through the clauses around this one.
-            if (_lastBuildMissing > 0 && !MissingMeshesStalled())
+            var hasMissingMeshes = _lastBuildMissing > 0 || _lastBuildShadowMissing > 0;
+            var missingMeshesStalled = hasMissingMeshes && MissingMeshesStalled();
+            if (_meshCache.PendingMaterializationRetryCount > 0 ||
+                (hasMissingMeshes && !missingMeshesStalled))
             {
                 return BatchReuseBlocker.MeshesMissing;
+            }
+
+            // A fully settled snapshot has no timer-driven work left. In accepted FO76 run
+            // 20260828_202603, the unconditional ceiling accounted for 1,865/5,291 scored frames
+            // (35.25%) even though all 59 profile samples held miss=476 with zero decode, upload, or
+            // texture work, and every rebuild republished the same 97,047 references. Keep the short
+            // ceiling only while streaming is not yet quiesced; hard identity changes below still
+            // invalidate immediately, while materialization retry debt and a changing missing
+            // population are handled above.
+            if (!ReferenceBatchBuildPolicy.CanSkipPeriodicRefresh(
+                    _lastBuildQuiesced,
+                    hasMissingMeshes,
+                    missingMeshesStalled,
+                    _meshCache.PendingMaterializationRetryCount)
+                && _framesSinceBuild >= BatchReuseStreamingMaxFrames)
+            {
+                return BatchReuseBlocker.FrameCeiling;
             }
 
             if (_lastBuildRenderOrigin != renderOrigin)
@@ -2116,8 +2405,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // worldspace's permanently unresolvable remainder rather than a stream still landing.
         // PendingDecodeCount is the queue's real depth. FrameQueuedDecodes counts only first-time
         // queue entries this frame, so a steady backlog reports zero — trusting it here would freeze
-        // the batches mid-stream, and because reuse frames never call GetOrUpload, nothing would ever
-        // request another decode: the world would stop filling in and the miss count would sit
+        // the batches mid-stream. The MeshesMissing blocker must keep scheduling staged resolve work
+        // or nothing requests another decode: the world would stop filling in and the miss count would sit
         // frozen, looking exactly like the "permanently unresolvable" population it is not.
         bool MissingMeshesStalled() =>
             _missingStallStreak >= MissingStallStreakBuilds &&
@@ -2128,25 +2417,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var reuseBatches = reuseBlocker == BatchReuseBlocker.None;
         LastStats.ReferenceBatchReuseBlocker = (int)reuseBlocker;
         _frameReusedBatches = reuseBatches;
-        if (!reuseBatches)
-        {
-            _opaqueBatches.Begin();
-            _blendedDraws.Clear();
-            _depthWritingBlendDraws.Clear();
-            _resolvedMeshesThisFrame.Clear();
-            // NOTE: the content version is deliberately NOT bumped here. A rebuild happens whenever the
-            // cull cache misses — i.e. on most frames while the camera moves — and treating that as
-            // "shadow content changed" kept the map's content trigger permanently armed, forcing a full
-            // 4-cascade re-render on a fixed cadence for the entire duration of any movement. Measured:
-            // 33% of frames took the Full path at 60.2 ms of GPU against 29.2 ms for the near-cascade
-            // refresh, a 31 ms swing that read as a pulsing frame rate while terrain streamed in.
-            // The camera's own movement is already covered by the pose key; what the shadow map
-            // actually needs to know is whether the RESIDENT GEOMETRY changed, which is bumped after
-            // the build below.
-        }
 
         LastStats.ReferenceCullCacheHit = cullCacheValid;
-        LastStats.ReferenceBatchesReused = reuseBatches;
 
         if (cullCacheValid)
         {
@@ -2404,6 +2676,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // historical exact-forward compare.
             _cullCacheForwardCos = effectiveAngleSlack > 0f ? MathF.Cos(effectiveAngleSlack) : 1f;
             _cullCacheMeshRadiusCount = _meshLocalRadius.Count;
+            _cullCacheCascadeAnchorXY = _cascadeFit is { } cullFit
+                ? new Vector2(cullFit.Anchor.X, cullFit.Anchor.Y)
+                : null;
             _cullCacheShowMarkers = ShowMarkers;
             _cullCacheShowGrass = ShowGrass;
             _cullCacheShowImposters = ShowImposters;
@@ -2417,7 +2692,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheCulled = culled;
         }
 
-        // === Resolve + batch pass (skipped wholesale on batch-reuse frames) ===
+        // === Resolve + batch pass (time-sliced behind the published set for refresh-only blockers) ===
         // Exact (unwidened) small-prop LOD cutoff for the draw passes' per-instance refilter — the
         // tolerant establishment cull's cutoff carries the drift slack, so the batches hold a ring
         // of distance-LOD'd clutter that must not survive the draw-time exact cull.
@@ -2433,433 +2708,220 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // FormID-heatmap normalization window for this frame (no-op while the overlay is off).
         // After the cull block so the epoch part of its memo key is settled for this frame.
         UpdateFormIdHeatmapScan(cylinderX, cylinderY, cylinder.Position.Z, cylinderRadius);
-        var meshStarted = StartTiming();
-        if (reuseBatches)
+        // === Resolve + batch publication ===
+        // A rebuild caused only by the periodic refresh ceiling or by still-arriving content can be
+        // spread across frames while the complete published set keeps drawing. Every structural key
+        // is checked independently: the first reported blocker may be soft even when a later gate
+        // (origin, routing or eviction) also changed.
+        var refreshOnlyBlocker =
+            reuseBlocker is BatchReuseBlocker.FrameCeiling or BatchReuseBlocker.MeshesMissing
+            || meshBoundsOnlyCullRefresh;
+        var validStagedContinuation = _batchBuildState is not null
+                                      && BatchBuildMatchesCurrent(_batchBuildState, renderOrigin, tolerant);
+        var canBuildIncrementally = ReferenceBatchBuildPolicy.CanAmortize(
+            streamingThrottled: throttled,
+            refreshOnlyBlocker: refreshOnlyBlocker || validStagedContinuation,
+            cullCacheHit: cullCacheValid || meshBoundsOnlyCullRefresh,
+            publishedBuildValid: BatchReuseEnabled && _lastBuildValid,
+            // A staged state was born from the current survivor snapshot and
+            // BatchBuildMatchesCurrent proved its epoch explicitly. Comparing only the older
+            // published epoch here discarded that valid continuation one frame after a
+            // mesh-bounds refresh, turning each bounded slice into a full synchronous rebuild.
+            cullEpochMatches: validStagedContinuation
+                              || _lastBuildCullEpoch == _cullEpoch
+                              || meshBoundsOnlyCullRefresh,
+            renderOriginMatches: _lastBuildRenderOrigin == renderOrigin,
+            evictionGenerationMatches: _lastBuildEvictionGen == _meshCache.EvictionGeneration,
+            streamRoutingMatches: _lastBuildStreamActive == _transparencyStreamActive);
+        var buildPublished = false;
+        var incrementalAdvanced = false;
+        var synchronousFallback = false;
+        BatchBuildState? frameBuildState = null;
+
+        if (reuseBatches && !validStagedContinuation)
         {
-            // Frozen batches re-draw as-is; only what the camera moves needs refreshing — blended
-            // draw distances (their back-to-front sort) and billboard facing matrices. Streaming
-            // counters carry over from the build frame (quiescent by definition of reuse).
-            drawn = _lastBuildDrawn;
-            referencesWithReadyMesh = _lastBuildDrawn;
-            missingMeshes = _lastBuildMissing;
-            texturePending = _lastBuildTexturePending;
-            RefreshBlendedDraws(frameCameraPosition, frameCameraForward, renderOrigin);
+            // A completed publication is the only path that can make the gate reusable again. This is
+            // defensive cleanup for a future policy change that might otherwise strand staging state.
+            _batchBuildState = null;
         }
-        // Rebuilt per resolve pass; carried over on batch-reuse frames exactly like the
-        // _lastBuildMissing counter, so the two always describe the same frame.
-        if (!reuseBatches)
+        else
         {
-            _lastFrameMissingMeshPaths.Clear();
-        }
-
-        var survivorsToResolve = reuseBatches ? 0 : _cachedCullSurvivors.Count;
-        for (var si = 0; si < survivorsToResolve; si++)
-        {
-            var r = _cachedCullSurvivors[si];
-            // Per-frame memoized resolve. First sighting of a MeshId
-            // pays one string-keyed _meshCache.GetOrUpload (+ potential mid-frame Insert
-            // + LRU touch); every later REFR with the same MeshId hits this map
-            // directly (uint-keyed). At 5K REFRs / ~300 unique meshes that drops the
-            // cull-loop's mesh-lookup cost ~3× steady-state.
-            if (!_resolvedMeshesThisFrame.TryGetValue(r.MeshId, out var mesh))
+            // A staged refresh remains authoritative even if its original missing-mesh blocker
+            // becomes "stalled" while the cursor is in flight. Finish it so newly admitted content
+            // is not discarded after the refresh trigger clears.
+            var buildStarted = StartTiming();
+            var blendedRefreshBeforeBuild = blendedRefreshMs;
+            if (canBuildIncrementally)
             {
-                // Upload pacing lives in the mesh cache: an accumulated-upload-TIME budget
-                // (UploadMillisecondsPerFrame × FrameBudgetScale) plus the byte budget. Both defer
-                // rather than fail — the remainder simply appears over the next frame(s). NOT a
-                // wall-clock deadline here: measured from frame start it expired before this loop
-                // reached far-cell survivors, so distant ready payloads could never start.
-                // Nearest-first decode priority: squared XY distance from the view point, so a
-                // dense area's foreground meshes decode before its far edge (the queue persists
-                // across frames). Cheap — only computed on the first sighting of each MeshId.
-                var pdx = r.BoundsCenter.X - cylinderX;
-                var pdy = r.BoundsCenter.Y - cylinderY;
-                mesh = _meshCache.GetOrUpload(
-                    r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy, r.AlternateTextures);
-                _resolvedMeshesThisFrame[r.MeshId] = mesh;
-                if (mesh is not null)
+                // Charge fresh-state setup to the same best-effort slice as traversal. StartBatchBuild
+                // clears auxiliary staging collections synchronously; starting the clock afterwards
+                // allowed that reset cost plus a new full budget in the first incremental frame.
+                var batchSliceStarted = Stopwatch.GetTimestamp();
+                incrementalAdvanced = true;
+                if (_batchBuildState is not null &&
+                    !BatchBuildMatchesCurrent(_batchBuildState, renderOrigin, tolerant))
                 {
-                    // Record the resident mesh's true local radius so the NEXT frame's cull uses
-                    // real geometry extent for this MeshId. A new key here grows
-                    // _meshLocalRadius.Count, which refreshes the cull cache (immediately in exact
-                    // mode, debounced in tolerant mode) so the tighter bounds are applied. Once per
-                    // unique MeshId per frame — per-REFR it was ~2ms of redundant dictionary writes
-                    // at 50k survivors.
-                    _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
-                    _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
-                    if (mesh.Animation is not null)
-                    {
-                        // Keyframe-animated mesh sighted this frame: (re-)register with the skinner
-                        // using the nearest-instance distance already computed for decode priority.
-                        _skinner.Register(mesh, pdx * pdx + pdy * pdy);
-                    }
-                }
-            }
-            if (mesh is null)
-            {
-                missingMeshes++;
-                // Diagnostic trail for "N meshes missing": the count alone cannot say WHICH paths
-                // failed to resolve, and that question comes up whenever a capture is missing
-                // furniture. During streaming this list also holds still-decoding paths; read it
-                // after quiescence, where null means terminally unresolved. Contains() is fine —
-                // the list is as long as the missing-mesh count, single digits in practice.
-                if (!_lastFrameMissingMeshPaths.Contains(r.ModelPath))
-                {
-                    _lastFrameMissingMeshPaths.Add(r.ModelPath);
+                    _batchBuildState = null;
                 }
 
-                continue;
-            }
-            // Placed water geometry needs no textures — register it as soon as the mesh resolves, once
-            // per REFR. The owner-aware registry filters its publication whenever non-spatial reference
-            // visibility changes; global Meshes visibility remains deliberately independent.
-            if (mesh.WaterPlanesLocal.Count > 0 && !_nifWaterRegistry.ContainsOwner(r.FormId))
-            {
-                AccumulateNifWaterPlanes(r, mesh.WaterPlanesLocal);
-            }
+                _batchBuildState ??= StartBatchBuild(
+                    reuseBlocker,
+                    renderOrigin,
+                    tolerant,
+                    frameCameraPosition,
+                    frameCameraForward);
+                frameBuildState = _batchBuildState;
+                var advance = AdvanceBatchBuild(
+                    frameBuildState,
+                    cmd,
+                    budgeted: true,
+                    sliceStartedTimestamp: batchSliceStarted,
+                    cylinderX,
+                    cylinderY,
+                    frameCameraPosition,
+                    frameCameraForward,
+                    ref uploadBudget,
+                    ref meshResolveMs,
+                    ref instanceBucketingMs,
+                    ref batchFinalizeMs);
+                ObserveBatchBuildActivity(frameBuildState);
 
-            var texturesReady = mesh.TexturesReady;
-            if (!texturesReady)
-            {
-                texturePending++;
-                // SpeedTree .spt geometry has a valid fallback SRV immediately. Do not hide the
-                // entire tree while a bark/leaf atlas is still resolving or unavailable; otherwise a
-                // single pending foliage texture suppresses both bark and leaves in the live viewer.
-                if (!SpeedTreeModelPath.IsSpt(r.ModelPath))
+                if (advance == BatchBuildAdvanceResult.EvictionInvalidated)
                 {
-                    continue;
-                }
-            }
-
-            var anySubmeshDrawn = false;
-            // Camera-relative UPLOAD: fold the render origin into this reference's world-matrix translation
-            // once, and upload the folded copy for every submesh. mul(uWorld_rel, pos) in the VS then
-            // operates on small near-camera coordinates instead of ~52,000 absolute ones — float32 keeps
-            // ~30× more precision, so coplanar surfaces on far-from-origin architecture stop Z-fighting. The
-            // CULL above still uses the ABSOLUTE r.WorldMatrix; only this GPU copy is shifted. renderOrigin
-            // is 0 on the absolute paths, so relWorldMatrix == r.WorldMatrix there (fold is a no-op).
-            var relWorldMatrix = r.WorldMatrix;
-            relWorldMatrix.Translation -= renderOrigin;
-            // Absolute per-instance cull sphere, stored alongside each opaque instance so the draw
-            // pass can re-test it against the current frame's EXACT bounds (the tolerant cull
-            // batches a widened superset; see PassesExactCull). Mirrors the establishment cull's
-            // resident-mesh branch: sphere at the placement point, mesh radius × uniform scale.
-            var boundsScaleBasis = new Vector3(r.WorldMatrix.M11, r.WorldMatrix.M12, r.WorldMatrix.M13);
-            var instanceBounds = new Vector4(
-                r.WorldMatrix.Translation, mesh.LocalBoundsRadius * boundsScaleBasis.Length());
-            var alphaDebug = AlphaDebugFilter != null
-                && !string.IsNullOrEmpty(r.ModelPath)
-                && r.ModelPath.Contains(AlphaDebugFilter, StringComparison.OrdinalIgnoreCase)
-                && _alphaDebugLogged.Add(r.ModelPath);
-            var alphaDebugIndex = 0;
-            foreach (var sub in mesh.Submeshes)
-            {
-                if (alphaDebug)
-                {
-                    var opaquePass = sub.DoubleSided ? "OPAQUE/DoublePso" : "OPAQUE/BackPso";
-                    var pass = sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard
-                        ? "BLEND"
-                        : opaquePass;
-                    try
+                    // The published batches hold arena views, not cache leases. Once an insertion
+                    // evicts one of those views the old set cannot be drawn again, so finish a fresh
+                    // stable pass before issuing this frame.
+                    synchronousFallback = true;
+                    _batchBuildState = null;
+                    if (TryCompleteSynchronousBatchBuild(
+                            reuseBlocker,
+                            renderOrigin,
+                            tolerant,
+                            cmd,
+                            cylinderX,
+                            cylinderY,
+                            frameCameraPosition,
+                            frameCameraForward,
+                            ref uploadBudget,
+                            ref meshResolveMs,
+                            ref instanceBucketingMs,
+                            ref batchFinalizeMs,
+                            out var completed))
                     {
-                        File.AppendAllText(
-                            Path.Combine(Path.GetTempPath(), "alpha_debug.txt"),
-                            $"{r.ModelPath} sub#{alphaDebugIndex++} mode={sub.AlphaRenderMode} " +
-                            $"billboard={sub.IsBillboard} double={sub.DoubleSided} pass={pass} " +
-                            $"alphaStateW={sub.AlphaState.W:0.##}{Environment.NewLine}");
-                    }
-                    catch
-                    {
-                        // diagnostic only — never let logging break the frame
-                    }
-                }
-
-                // TES4 grass rides the INSTANCED path despite being alpha-BLENDED. Oblivion grass
-                // authors NiAlphaProperty 0x12ED (blend AND test) where FNV authors 0x12EC (test
-                // only) — one bit — and NifAlphaClassifier turns that bit straight into
-                // NifAlphaRenderMode.Blend with no policy layer, which pinned an entire ~3,900-blade
-                // carpet to the per-draw path: one draw call, one 256-byte ring allocation, and three
-                // whole-list re-scans (DrawBlended runs up to three times per frame and both
-                // water-partitioned calls copy every surviving ~225-byte draw) per BLADE. Batching it
-                // costs nothing structurally — blend and instancing are argument values on the same
-                // CreatePipelineState over the same root signature and input layout — it only needs
-                // the VS compiled against the instanced ABI, which is what the availability check is.
-                //
-                // The exclusions are the shapes the instanced ABI genuinely cannot express, not
-                // conservatism: a billboard needs a unique camera-facing matrix per placement, and a
-                // NiAlphaController's material alpha is sampled per draw (the per-batch InstanceDraw
-                // CB writes sub.AlphaState raw). Those keep the per-draw grass shader and stay correct.
-                var instancedGrass = r.IsGrass
-                                     && sub.AlphaRenderMode == NifAlphaRenderMode.Blend
-                                     && !sub.IsBillboard
-                                     && !sub.IsDecal
-                                     && sub.DepthWritingBlend
-                                     && sub.MaterialAlphaController is null
-                                     && sub.LiveParticles is null
-                                     && _pipelines.InstancedBlendGrassShaderAvailable;
-
-                // Billboards must take the per-draw blended path even when opaque: the instanced
-                // opaque path has no per-draw matrix, but a billboard needs a unique camera-facing
-                // world matrix per placement.
-                if ((sub.AlphaRenderMode == NifAlphaRenderMode.Blend && !instancedGrass)
-                    || sub.IsBillboard)
-                {
-                    var sampledSourceWorld = ApplyRigidNodeAnimation(
-                        sub, ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix));
-                    var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, sampledSourceWorld);
-                    var worldRadius = ResolveWorldBoundsRadius(sub, sampledSourceWorld);
-                    // worldCenter stays ABSOLUTE (sorted against the actual rendering eye; billboard
-                    // facing needs the absolute camera vector). The uploaded matrix is camera-relative:
-                    // the non-billboard case folds the possibly-swayed source matrix;
-                    // BuildBillboardWorld folds renderOrigin into its own composed translation.
-                    var sampledRelativeWorld = sampledSourceWorld;
-                    sampledRelativeWorld.Translation -= renderOrigin;
-                    var world = sub.IsBillboard
-                        ? BuildBillboardWorld(
-                            sub.LocalBoundsCenter, sub.BillboardMode, sub.BillboardFrontNormal,
-                            sampledSourceWorld, worldCenter, frameCameraPosition, frameCameraForward,
-                            renderOrigin)
-                        : sampledRelativeWorld;
-                    var blendedDraw = new BlendedReferenceDraw(
-                        world,
-                        sub,
-                        Vector3.DistanceSquared(worldCenter, frameCameraPosition),
-                        sub.AlphaState,
-                        sub.RenderState,
-                        sub.Specular,
-                        r.WorldMatrix,
-                        r.FormId,
-                        r.IsGrass,
-                        r.GrassWaveMultiplier,
-                        worldCenter.Z,
-                        worldRadius,
-                        ResolveWorldBoundsMaxZ(
-                            r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
-                        ResolveWorldBoundsMinZ(
-                            r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
-                        r.MeshId,
-                        new Vector2(worldCenter.X, worldCenter.Y));
-                    // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
-                    // water occludes it from above; everything else defers to after water. Billboards keep
-                    // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
-                    // With the unified transparency stream active (set per FRAME by the host, not the
-                    // static switch — non-streaming frames/games must keep the hoisted path), z-write
-                    // becomes a per-draw PSO choice inside the single sorted stream instead.
-                    if (sub.DepthWritingBlend && !sub.IsBillboard && !_transparencyStreamActive)
-                    {
-                        _depthWritingBlendDraws.Add(blendedDraw);
+                        frameBuildState = completed;
+                        PublishBatchBuild(
+                            completed!,
+                            frameCameraPosition,
+                            frameCameraForward,
+                            renderOrigin,
+                            ref blendedRefreshMs);
+                        buildPublished = true;
+                        reuseBatches = false;
                     }
                     else
                     {
-                        _blendedDraws.Add(blendedDraw);
+                        ClearPublishedBatchSnapshotAfterEviction();
+                        reuseBatches = false;
                     }
-                    anySubmeshDrawn = true;
-                    continue;
                 }
-
-                var pso = (sub.DoubleSided, sub.IsDecal) switch
+                else if (advance == BatchBuildAdvanceResult.Complete)
                 {
-                    (true, true) => _pipelines.OpaqueDoubleDecalPso,
-                    (true, false) => _pipelines.OpaqueDoublePso,
-                    (false, true) => _pipelines.OpaqueBackDecalPso,
-                    (false, false) => _pipelines.OpaqueBackPso
-                };
-                if (instancedGrass)
-                {
-                    // The authored SRC_ALPHA/INV_SRC_ALPHA blend, kept verbatim — the July 2026 A2C
-                    // revert stands, and the recovered GRASS2020 distance ramp multiplies the BLENDED
-                    // output alpha, so the blend is load-bearing and is not being traded away for
-                    // batching. Always the depth-WRITING variant: every shipped TES4 grass mesh
-                    // authors a test threshold at or above the depth-write gate (which is why the
-                    // route requires DepthWritingBlend), grass genuinely is an occluder, and one
-                    // unconditional choice keeps the PSO — part of the batch key — stable across the
-                    // per-frame transparency-stream toggle that batches outlive.
-                    pso = _pipelines.GetBlendDepthWritePipeline(
-                        sub.SrcBlendMode, sub.DstBlendMode, sub.DoubleSided,
-                        decal: false, grassRoute: true, depthTestOff: false, instancedGrass: true);
+                    PublishBatchBuild(
+                        frameBuildState,
+                        frameCameraPosition,
+                        frameCameraForward,
+                        renderOrigin,
+                        ref blendedRefreshMs);
+                    _batchBuildState = null;
+                    buildPublished = true;
+                    reuseBatches = false;
                 }
-                else if (r.IsGrass && sub.AlphaTest && !sub.IsDecal)
+                else
                 {
-                    // Grass cutouts take the alpha-to-coverage variants so MSAA antialiases the
-                    // blade silhouettes (identical to the plain opaque PSOs when the scene is
-                    // single-sampled — the factory aliases them, so no fallback branch here), on
-                    // the per-game grass shader when the loaded game has a recovered pair.
-                    pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
+                    // The inactive aggregate remains invisible until every main/shadow list and every
+                    // cascade prefix is complete.
+                    reuseBatches = true;
                 }
-                var usesGrassDistanceEnvelope =
-                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
-                var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
-                var batch = _opaqueBatches.GetOrCreate(
-                    sub,
-                    pso,
-                    usesGrassDistanceEnvelope,
-                    usesTallGrassWind,
-                    r.GrassWaveMultiplier);
-                // Only the world matrix (+ its cull sphere) is per-instance. Material/texture state
-                // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
-                // across the whole batch — it comes from the submesh, which IS the batch key
-                // — so it is uploaded once per batch via the InstanceDraw CBV at draw time
-                // instead of being copied into every instance record.
-                batch.Instances.Add(relWorldMatrix);
-                batch.InstanceBounds.Add(instanceBounds);
-                if (sub.PhysicsLiteSway is not null)
-                {
-                    batch.PhysicsLiteSeeds.Add(r.FormId);
-                }
-                if (_formIdHeatmapEnabled)
-                {
-                    // Parallel to Instances only while the heatmap is on (the enable setter forces a
-                    // rebuild, so a frozen batch can never be half-filled). Grass records 0: its
-                    // matrices' w-lanes carry the FNV grass lighting payload and must stay untouched.
-                    batch.HeatmapFormIds.Add(r.IsGrass ? 0u : r.FormId);
-                }
-                anySubmeshDrawn = true;
             }
-
-            if (anySubmeshDrawn)
+            else
             {
-                referencesWithReadyMesh++;
-                drawn++;
+                synchronousFallback = _batchBuildState is not null;
+                _batchBuildState = null;
+                if (TryCompleteSynchronousBatchBuild(
+                        reuseBlocker,
+                        renderOrigin,
+                        tolerant,
+                        cmd,
+                        cylinderX,
+                        cylinderY,
+                        frameCameraPosition,
+                        frameCameraForward,
+                        ref uploadBudget,
+                        ref meshResolveMs,
+                        ref instanceBucketingMs,
+                        ref batchFinalizeMs,
+                        out var completed))
+                {
+                    frameBuildState = completed;
+                    PublishBatchBuild(
+                        completed!,
+                        frameCameraPosition,
+                        frameCameraForward,
+                        renderOrigin,
+                        ref blendedRefreshMs);
+                    buildPublished = true;
+                }
+                else
+                {
+                    ClearPublishedBatchSnapshotAfterEviction();
+                }
+
+                reuseBatches = false;
             }
+
+            batchBuildMs = Math.Max(
+                0.0,
+                ElapsedMilliseconds(buildStarted) - (blendedRefreshMs - blendedRefreshBeforeBuild));
         }
 
-        // === Shadow-only caster resolve (skipped on batch-reuse frames, like the main pass) ===
-        // Off-screen refs inside the caster ring: resolved through the same memoized mesh path
-        // (their meshes must be resident to cast — bounded streaming, that's the ring's price) and
-        // batched into ShadowOnlyInstances, which only the shadow replay draws. Opaque non-decal
-        // submeshes only — blended/billboard/decal submeshes don't cast (matches the capture
-        // filter), and there is no textures-ready gate: a cutout casting with a placeholder alpha
-        // for a few frames beats the whole caster popping.
-        var shadowCastersToResolve = reuseBatches ? 0 : _cachedShadowOnlyCasters.Count;
-        for (var si = 0; si < shadowCastersToResolve; si++)
+        drawn = _lastBuildDrawn;
+        referencesWithReadyMesh = _lastBuildDrawn;
+        missingMeshes = _lastBuildMissing;
+        shadowMissingMeshes = _lastBuildShadowMissing;
+        texturePending = _lastBuildTexturePending;
+
+        if (reuseBatches)
         {
-            var r = _cachedShadowOnlyCasters[si];
-            if (!_resolvedMeshesThisFrame.TryGetValue(r.MeshId, out var mesh))
-            {
-                var pdx = r.BoundsCenter.X - cylinderX;
-                var pdy = r.BoundsCenter.Y - cylinderY;
-                mesh = _meshCache.GetOrUpload(
-                    r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy, r.AlternateTextures);
-                _resolvedMeshesThisFrame[r.MeshId] = mesh;
-                if (mesh is not null)
-                {
-                    _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
-                    _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
-                }
-            }
-            if (mesh is null)
-            {
-                continue;
-            }
-
-            var relWorldMatrix = r.WorldMatrix;
-            relWorldMatrix.Translation -= renderOrigin;
-            foreach (var sub in mesh.Submeshes)
-            {
-                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard || sub.IsDecal
-                    || (_tallGrassWindSupported && sub.IsTallGrass)
-                    // Video-settings "Tree canopy shadows" OFF mirrors the capture-side gate: no
-                    // off-frustum tree canopy streams in just to cast.
-                    || (!_treeShadowsEnabled &&
-                        (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null)))
-                {
-                    // TallGrass: retail FO3/FNV ships no grass caster permutation — do not stream
-                    // off-screen grass just to cast (mirrors the capture-side exclusion).
-                    continue;
-                }
-
-                var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
-                if (r.IsGrass && sub.AlphaTest)
-                {
-                    // Mirror the main pass's routing so the shadow-only instances join the
-                    // SAME batch (the PSO is part of the batch key) instead of splitting a
-                    // second plain-PSO batch for the identical grass submesh.
-                    pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
-                }
-                var usesGrassDistanceEnvelope =
-                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
-                var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
-                var batch = _opaqueBatches.GetOrCreate(
-                    sub,
-                    pso,
-                    usesGrassDistanceEnvelope,
-                    usesTallGrassWind,
-                    r.GrassWaveMultiplier);
-                batch.ShadowOnlyInstances.Add(relWorldMatrix);
-                if (sub.PhysicsLiteSway is not null)
-                {
-                    batch.ShadowOnlyPhysicsLiteSeeds.Add(r.FormId);
-                }
-            }
+            var refreshStarted = StartTiming();
+            RefreshBlendedDraws(frameCameraPosition, frameCameraForward, renderOrigin);
+            blendedRefreshMs += ElapsedMilliseconds(refreshStarted);
         }
 
-        if (!reuseBatches)
-        {
-            // Grass batches carry a BLENDED pipeline on the TES4 route, so they must drain after
-            // every opaque batch (see OrderGrassBatchesLast). Ordered before the cascade sort purely
-            // for readability — the two are independent, one permutes batches and the other permutes
-            // instances within a batch.
-            _opaqueBatches.OrderGrassBatchesLast();
+        _frameReusedBatches = reuseBatches;
+        LastStats.ReferenceBatchesReused = reuseBatches;
+        LastStats.ReferenceBatchBuildInProgress = _batchBuildState is not null;
+        // Publication can land meshes whose real radii were unknown when this survivor snapshot was
+        // culled. Even though the staged batch itself is complete, the next bounds refresh/build is
+        // still pending and capture must not advance its clean-snapshot count in this one-frame gap.
+        LastStats.ReferenceCullRefreshPending =
+            _cullCacheMeshRadiusCount != _meshLocalRadius.Count;
+        LastStats.ReferenceBatchBuildIncrementalAdvanced = incrementalAdvanced;
+        LastStats.ReferenceBatchBuildPublished = buildPublished;
+        LastStats.ReferenceBatchBuildSynchronousFallback = synchronousFallback;
+        LastStats.ReferenceBatchBuildTrigger = (int)(frameBuildState?.Trigger ?? BatchReuseBlocker.None);
+        LastStats.ReferenceBatchBuildPhase = (int)(frameBuildState?.Phase ?? BatchBuildPhase.None);
+        LastStats.ReferenceBatchBuildProcessed = frameBuildState is null
+            ? 0
+            : BatchBuildProcessed(frameBuildState);
+        LastStats.ReferenceBatchBuildTotal = frameBuildState is null
+            ? 0
+            : BatchBuildTotal(frameBuildState);
 
-            // Order each batch's instances by smallest containing cascade so the shadow replay can
-            // draw a per-cascade PREFIX. Done at BUILD time, not per frame: the copy pass stays a
-            // bulk memcpy, and reuse frames inherit the ordering for free.
-            SortBatchInstancesByCascade();
-        }
-
-        if (!reuseBatches)
-        {
-            // Build snapshot for the next frame's reuse decision. Quiescence == a sustained streak
-            // of builds that streamed NOTHING: every RESOLVABLE survivor's mesh + textures are in,
-            // zero GPU uploads, zero cache misses — which also means zero LRU Sets, hence zero
-            // evictions mid-build, so the frozen batches cannot reference freed buffers (belt: the
-            // EvictionGeneration compare). missingMeshes is deliberately NOT in the gate: dense
-            // spots hold thousands of permanently unresolvable meshes (miss ≈ 10-20k at FO4
-            // downtown) that never reach zero and contribute nothing to the batches; a late
-            // resolve lands via the periodic BatchReuseMaxFrames rebuild instead.
-            // "Quiet" additionally requires the decode PIPELINE to be empty — not just zero
-            // uploads this frame. A freeze that begins while decodes are still in flight strands
-            // their payloads outside the frozen batches (a settle-gated capture caught a whole
-            // storefront missing that way). With upload pacing no longer reach-starved, the
-            // pipeline genuinely drains at steady state (decodeReq/active/queued all 0), so this
-            // does not dead-lock reuse the way it would have before that fix.
-            var buildQuiet = texturePending == 0
-                             && _meshCache.FrameGpuUploads == 0 && _meshCache.FrameCacheMisses == 0
-                             && _meshCache.FrameDecodeRequests == 0 && _meshCache.FrameDecodeStarts == 0
-                             && _meshCache.FrameActiveDecodes == 0;
-            _quietBuildStreak = buildQuiet ? _quietBuildStreak + 1 : 0;
-
-            // Shadow content signal: bump ONLY when the resident geometry actually changed — a mesh
-            // became GPU-resident this frame, or the cache evicted something the frozen batches
-            // referenced. Rebuilding the batches because the camera moved does not change what casts
-            // a shadow within the cascade footprint (which is anchored to the camera anyway), so it
-            // must not force a re-render. Compared BEFORE _lastBuildEvictionGen is overwritten below.
-            var residencyChanged = _meshCache.FrameGpuUploads > 0
-                                   || _lastBuildEvictionGen != _meshCache.EvictionGeneration;
-            if (residencyChanged)
-            {
-                unchecked { BatchContentVersion++; }
-            }
-
-            _lastBuildValid = true;
-            _framesSinceBuild = 0;
-            _lastBuildCullEpoch = _cullEpoch;
-            _lastBuildRenderOrigin = renderOrigin;
-            _lastBuildEvictionGen = _meshCache.EvictionGeneration;
-            _lastBuildQuiesced = _quietBuildStreak >= QuietBuildStreakFrames;
-            _lastBuildStreamActive = _transparencyStreamActive;
-            _lastBuildDrawn = referencesWithReadyMesh;
-            _missingStallStreak = missingMeshes == _lastBuildMissing ? _missingStallStreak + 1 : 0;
-            _lastBuildMissing = missingMeshes;
-            _lastBuildTexturePending = texturePending;
-            _batchesWidened = tolerant;
-        }
         // Generic cylinder/LOD/frustum refiltering requires a real frustum. Enabled grass-distance
         // batches independently force their own exact per-instance copy in DrawOpaqueBatches, so
         // disabling reference-frustum culling never samples the default frustum and never bypasses
         // the FNV hard end.
         _frameRefilterActive = _batchesWidened && hasFrustum;
-        meshUploadMs = ElapsedMilliseconds(meshStarted);
-
         // Legacy live particles: every visible unique particle submesh receives one coherent transient
         // VB/IB update before either blended pass binds geometry. Ring exhaustion/malformed controller data
         // clears the override and draws the existing immutable static cloud for this frame.
@@ -2868,26 +2930,32 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Keyframe playback: re-pose + CPU-skin every in-budget animated mesh into fresh ring
         // allocations (or clear all overrides when disabled) BEFORE any pass binds a vertex buffer —
         // both the opaque draws and the shadow capture below read EffectiveVertexBufferView.
-        // resolveRan: on batch-REUSE frames the resolve loop was skipped, so Register never had a
-        // chance to re-sight live meshes — the skinner must not expire/decay entries on those frames
-        // (a settled scene froze playback otherwise: meshes animated only while the camera moved).
+        // resolveRan means a COMPLETE resolve/publication pass, not merely that this frame advanced a
+        // staged slice. Partial slices buffer new sightings and must not expire/decay published meshes
+        // that their cursor has not reached yet.
         _skinner.Tick(
             frameIndex, _ringBuffer, _animationClockSeconds, cylinder.Position, AnimationsEnabled,
-            resolveRan: !reuseBatches);
+            resolveRan: buildPublished);
 
         ID3D12PipelineState? currentPso = null;
+        var opaqueSubmissionStarted = StartTiming();
         DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
+        LastStats.ReferenceOpaqueSubmissionMilliseconds = ElapsedMilliseconds(opaqueSubmissionStarted);
         // Depth-writing blend foliage draws here — INLINE, after the opaque batches but before the water
         // pass — with a depth-writing blend PSO, so the water surface occludes it from above (a no-depth
         // blend drawn after water painted over the surface). Runs every frame regardless of deferBlended.
+        var blendedSubmissionStarted = StartTiming();
         DrawDepthWritingBlend(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+        LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(blendedSubmissionStarted);
         // 3D-8: blended submeshes draw now (inline, e.g. top-down overlay) or are deferred to after the
         // water pass via RenderBlendedDeferred() so water never paints over transparent meshes.
         if (!deferBlended)
         {
+            blendedSubmissionStarted = StartTiming();
             DrawBlended(
                 cmd, frameIndex, sceneDepthSampled: false,
                 ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+            LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(blendedSubmissionStarted);
         }
 
         ReferencesDrawnLastFrame = drawn;
@@ -2895,6 +2963,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceCandidates = candidates;
         LastStats.ReferenceCulled = culled;
         LastStats.ReferenceMeshMissing = missingMeshes;
+        LastStats.ReferenceShadowMeshMissing = shadowMissingMeshes;
         LastStats.ReferenceTexturePending = texturePending;
         LastStats.ReferenceDrawn = referencesWithReadyMesh;
         LastStats.ReferenceSubmeshDraws = submeshDraws;
@@ -2908,6 +2977,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceCpuDecodedMeshCacheMisses = _meshCache.FrameCpuDecodedCacheMisses;
         LastStats.ReferenceCpuDecodedMeshNegativeHits = _meshCache.FrameCpuDecodedNegativeHits;
         LastStats.ReferenceGpuUploads = _meshCache.FrameGpuUploads;
+        LastStats.ReferenceMeshMaterializationFailures = _meshCache.FrameMaterializationFailures;
+        LastStats.ReferenceMeshMaterializationRetriesPending =
+            _meshCache.PendingMaterializationRetryCount;
         LastStats.ReferenceUploadByteBudgetDeferrals = _meshCache.FrameByteBudgetDeferrals;
         LastStats.ReferenceCompressedTextureUploads = _meshCache.FrameCompressedTextureUploads;
         LastStats.ReferenceRgbaTextureUploads = _meshCache.FrameRgbaTextureUploads;
@@ -2916,12 +2988,928 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceTexturePendingResolves = _meshCache.PendingTextureResolves;
         LastStats.ReferenceTexturePendingUploads = _meshCache.PendingTextureUploads;
         LastStats.ReferenceCullMilliseconds = cullMs;
-        LastStats.ReferenceMeshUploadMilliseconds = meshUploadMs;
+        LastStats.ReferenceBatchBuildMilliseconds = batchBuildMs;
+        LastStats.ReferenceMeshResolveMilliseconds = meshResolveMs;
+        LastStats.ReferenceInstanceBucketingMilliseconds = instanceBucketingMs;
+        LastStats.ReferenceBatchFinalizeMilliseconds = batchFinalizeMs;
+        LastStats.ReferenceGpuUploadMilliseconds = _meshCache.FrameGpuUploadMilliseconds;
+        LastStats.ReferenceBlendedRefreshMilliseconds = blendedRefreshMs;
         LastStats.ReferenceCbUpdateMilliseconds = cbUpdateMs;
         LastStats.ReferenceSrvBindMilliseconds = srvBindMs;
         LastStats.ReferenceDrawCallMilliseconds = drawCallMs;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
         return drawn;
+    }
+
+    private BatchBuildState StartBatchBuild(
+        BatchReuseBlocker trigger,
+        Vector3 renderOrigin,
+        bool widened,
+        Vector3 cameraPosition,
+        Vector3 cameraForward)
+    {
+        // A new state performs a fresh desired-set traversal. Scope materialization retry debt to
+        // that demand set; valid incremental continuations do not call StartBatchBuild and retain
+        // the same generation until they finish.
+        _meshCache.BeginMaterializationRetryDemandGeneration();
+        var resetTotal = _stagingBatchSet.OpaqueBatches.ActiveBatches.Count;
+        _stagingBatchSet.StartReset();
+        return new BatchBuildState(
+            _stagingBatchSet,
+            trigger,
+            _cullEpoch,
+            _batchInvalidationGeneration,
+            renderOrigin,
+            _transparencyStreamActive,
+            widened,
+            _meshCache.EvictionGeneration,
+            resetTotal,
+            OpaqueFrontToBackPolicy.CreateBuildView(
+                OpaqueFrontToBackRequested,
+                cameraPosition,
+                cameraForward));
+    }
+
+    private bool BatchBuildMatchesCurrent(
+        BatchBuildState state,
+        Vector3 renderOrigin,
+        bool widened)
+    {
+        return ReferenceEquals(state.Target, _stagingBatchSet)
+               && _lastBuildValid
+               && state.CullEpoch == _cullEpoch
+               && state.InvalidationGeneration == _batchInvalidationGeneration
+               && state.RenderOrigin == renderOrigin
+               && state.StreamActive == _transparencyStreamActive
+               && state.Widened == widened
+               && state.StartEvictionGeneration == _meshCache.EvictionGeneration;
+    }
+
+    private BatchBuildAdvanceResult AdvanceBatchBuild(
+        BatchBuildState state,
+        ID3D12GraphicsCommandList commandList,
+        bool budgeted,
+        long sliceStartedTimestamp,
+        float cylinderX,
+        float cylinderY,
+        Vector3 cameraPosition,
+        Vector3 cameraForward,
+        ref int uploadBudget,
+        ref double meshResolveMs,
+        ref double instanceBucketingMs,
+        ref double batchFinalizeMs)
+    {
+        const int referenceWorkChunk = 64;
+        var performedWork = false;
+
+        bool ShouldYield() =>
+            budgeted
+            && performedWork
+            && Stopwatch.GetElapsedTime(sliceStartedTimestamp).TotalMilliseconds >=
+            IncrementalBatchBuildBudgetMilliseconds;
+
+        BatchBuildAdvanceResult CheckBoundary()
+        {
+            if (state.StartEvictionGeneration != _meshCache.EvictionGeneration)
+            {
+                state.EvictionChanged = true;
+                if (budgeted)
+                {
+                    return BatchBuildAdvanceResult.EvictionInvalidated;
+                }
+            }
+
+            return ShouldYield()
+                ? BatchBuildAdvanceResult.Incomplete
+                : BatchBuildAdvanceResult.Complete;
+        }
+
+        while (true)
+        {
+            switch (state.Phase)
+            {
+                case BatchBuildPhase.Reset:
+                {
+                    var resetStarted = StartTiming();
+                    var resetWork = Math.Max(
+                        1,
+                        Math.Min(referenceWorkChunk, state.ResetTotal - state.ResetProcessed));
+                    var resetComplete = state.Target.OpaqueBatches.ContinueBegin(resetWork);
+                    batchFinalizeMs += ElapsedMilliseconds(resetStarted);
+                    if (state.ResetProcessed < state.ResetTotal)
+                    {
+                        state.ResetProcessed = Math.Min(
+                            state.ResetProcessed + resetWork, state.ResetTotal);
+                    }
+                    performedWork = true;
+                    if (resetComplete)
+                    {
+                        state.Phase = BatchBuildPhase.References;
+                    }
+
+                    var boundary = CheckBoundary();
+                    if (boundary != BatchBuildAdvanceResult.Complete)
+                    {
+                        return boundary;
+                    }
+                    break;
+                }
+                case BatchBuildPhase.References:
+                    if (state.ReferenceIndex >= _cachedCullSurvivors.Count)
+                    {
+                        state.Phase = BatchBuildPhase.ShadowCasters;
+                        continue;
+                    }
+
+                    var mainChunkStarted = StartTiming();
+                    var mainResolveBefore = meshResolveMs;
+                    var mainStop = Math.Min(
+                        state.ReferenceIndex + referenceWorkChunk, _cachedCullSurvivors.Count);
+                    while (state.ReferenceIndex < mainStop)
+                    {
+                        ProcessMainBatchReference(
+                            state,
+                            commandList,
+                            _cachedCullSurvivors[state.ReferenceIndex++],
+                            cylinderX,
+                            cylinderY,
+                            cameraPosition,
+                            cameraForward,
+                            ref uploadBudget,
+                            ref meshResolveMs);
+                    }
+                    instanceBucketingMs += Math.Max(
+                        0.0, ElapsedMilliseconds(mainChunkStarted) - (meshResolveMs - mainResolveBefore));
+                    performedWork = true;
+                    {
+                        var boundary = CheckBoundary();
+                        if (boundary != BatchBuildAdvanceResult.Complete)
+                        {
+                            return boundary;
+                        }
+                    }
+                    break;
+                case BatchBuildPhase.ShadowCasters:
+                    if (state.ShadowIndex >= _cachedShadowOnlyCasters.Count)
+                    {
+                        state.Phase = BatchBuildPhase.CascadeSort;
+                        continue;
+                    }
+
+                    var shadowChunkStarted = StartTiming();
+                    var shadowResolveBefore = meshResolveMs;
+                    var shadowStop = Math.Min(
+                        state.ShadowIndex + referenceWorkChunk, _cachedShadowOnlyCasters.Count);
+                    while (state.ShadowIndex < shadowStop)
+                    {
+                        ProcessShadowBatchReference(
+                            state,
+                            commandList,
+                            _cachedShadowOnlyCasters[state.ShadowIndex++],
+                            cylinderX,
+                            cylinderY,
+                            ref uploadBudget,
+                            ref meshResolveMs);
+                    }
+                    instanceBucketingMs += Math.Max(
+                        0.0, ElapsedMilliseconds(shadowChunkStarted) - (meshResolveMs - shadowResolveBefore));
+                    performedWork = true;
+                    {
+                        var boundary = CheckBoundary();
+                        if (boundary != BatchBuildAdvanceResult.Complete)
+                        {
+                            return boundary;
+                        }
+                    }
+                    break;
+                case BatchBuildPhase.CascadeSort:
+                    if (state.SortIndex < 0)
+                    {
+                        var orderStarted = StartTiming();
+                        state.Target.OpaqueBatches.OrderGrassBatchesLast();
+                        var frontToBackView = state.OpaqueFrontToBackView;
+                        state.Target.OpaqueBatches.OrderForSubmission(in frontToBackView);
+                        state.CascadeFit = SnapshotCascadeFitForBuild(state.Widened);
+                        state.SortIndex = 0;
+                        batchFinalizeMs += ElapsedMilliseconds(orderStarted);
+                        performedWork = true;
+                        var boundary = CheckBoundary();
+                        if (boundary != BatchBuildAdvanceResult.Complete)
+                        {
+                            return boundary;
+                        }
+                    }
+
+                    var activeBatches = state.Target.OpaqueBatches.ActiveBatches;
+                    if (state.SortIndex >= activeBatches.Count)
+                    {
+                        state.Phase = BatchBuildPhase.Complete;
+                        return state.EvictionChanged
+                            ? BatchBuildAdvanceResult.EvictionInvalidated
+                            : BatchBuildAdvanceResult.Complete;
+                    }
+
+                    var sortStarted = StartTiming();
+                    var batchSortComplete = SortBatchInstancesByCascade(
+                        state, activeBatches[state.SortIndex]);
+                    if (batchSortComplete)
+                    {
+                        state.SortIndex++;
+                        state.CascadeSort = null;
+                    }
+                    batchFinalizeMs += ElapsedMilliseconds(sortStarted);
+                    performedWork = true;
+                    {
+                        var boundary = CheckBoundary();
+                        if (boundary != BatchBuildAdvanceResult.Complete)
+                        {
+                            return boundary;
+                        }
+                    }
+                    break;
+                case BatchBuildPhase.Complete:
+                    return state.EvictionChanged
+                        ? BatchBuildAdvanceResult.EvictionInvalidated
+                        : BatchBuildAdvanceResult.Complete;
+                default:
+                    throw new InvalidOperationException($"Unexpected batch-build phase {state.Phase}.");
+            }
+        }
+    }
+
+    private BatchMeshSnapshot ResolveBatchMesh(
+        BatchBuildState state,
+        ID3D12GraphicsCommandList commandList,
+        in RenderableReference reference,
+        float cylinderX,
+        float cylinderY,
+        bool registerAnimation,
+        ref int uploadBudget,
+        ref double meshResolveMs)
+    {
+        var key = reference.MeshId;
+        if (state.Target.MeshSnapshots.TryGetValue(key, out var snapshot))
+        {
+            return snapshot;
+        }
+
+        var pdx = reference.BoundsCenter.X - cylinderX;
+        var pdy = reference.BoundsCenter.Y - cylinderY;
+        var resolveStarted = StartTiming();
+        var mesh = _meshCache.GetOrUpload(
+            commandList,
+            reference.ModelPath,
+            ref uploadBudget,
+            (pdx * pdx) + (pdy * pdy),
+            reference.AlternateTextures);
+        meshResolveMs += ElapsedMilliseconds(resolveStarted);
+
+        var texturesReady = mesh?.TexturesReady ?? false;
+        snapshot = new BatchMeshSnapshot(
+            mesh,
+            texturesReady,
+            mesh is not null && (texturesReady || SpeedTreeModelPath.IsSpt(reference.ModelPath)));
+        state.Target.MeshSnapshots.Add(key, snapshot);
+        AddMeshSnapshotToFingerprint(state, key, snapshot);
+
+        if (mesh is not null)
+        {
+            _meshLocalRadius[reference.MeshId] = mesh.LocalBoundsRadius;
+            _meshLocalBounds[reference.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+            if (registerAnimation && mesh.Animation is not null)
+            {
+                var distanceSquared = (pdx * pdx) + (pdy * pdy);
+                if (!state.PendingSkinnerRegistrations.TryGetValue(mesh, out var priorDistance) ||
+                    distanceSquared < priorDistance)
+                {
+                    state.PendingSkinnerRegistrations[mesh] = distanceSquared;
+                }
+            }
+        }
+
+        return snapshot;
+    }
+
+    private static void AddMeshSnapshotToFingerprint(
+        BatchBuildState state,
+        uint meshId,
+        in BatchMeshSnapshot snapshot)
+    {
+        static ulong Mix(ulong hash, uint value) => (hash ^ value) * 1099511628211UL;
+
+        var hash = 1469598103934665603UL;
+        hash = Mix(hash, meshId);
+        hash = Mix(hash, snapshot.Mesh is null ? 0u : 1u);
+        hash = Mix(hash, snapshot.TexturesReady ? 1u : 0u);
+        hash = Mix(hash, snapshot.MainAdmitted ? 1u : 0u);
+        hash = Mix(hash, unchecked((uint)(snapshot.Mesh?.Submeshes.Length ?? 0)));
+        // One unique key contributes once, so XOR makes the set fingerprint independent of the
+        // camera-distance cell order used by the cull enumerator.
+        state.ContentFingerprint ^= hash;
+    }
+
+    private void ProcessMainBatchReference(
+        BatchBuildState state,
+        ID3D12GraphicsCommandList commandList,
+        in RenderableReference r,
+        float cylinderX,
+        float cylinderY,
+        Vector3 cameraPosition,
+        Vector3 cameraForward,
+        ref int uploadBudget,
+        ref double meshResolveMs)
+    {
+        var snapshot = ResolveBatchMesh(
+            state, commandList, r, cylinderX, cylinderY, registerAnimation: true,
+            ref uploadBudget, ref meshResolveMs);
+        var mesh = snapshot.Mesh;
+        if (mesh is null)
+        {
+            state.MainMissing++;
+            if (state.Target.MissingPathSet.Add(r.ModelPath))
+            {
+                state.Target.MissingPaths.Add(r.ModelPath);
+            }
+            return;
+        }
+
+        if (mesh.WaterPlanesLocal.Count > 0 && !_nifWaterRegistry.ContainsOwner(r.FormId))
+        {
+            // Water ownership is intentionally global and visibility-filtered rather than part of
+            // the reference batch aggregate. Keep the original discovery semantics inside the
+            // budgeted reference work item so publication cannot inherit a water-heavy tail.
+            AccumulateNifWaterPlanes(r, mesh.WaterPlanesLocal);
+        }
+
+        if (!snapshot.TexturesReady)
+        {
+            state.TexturePending++;
+            if (!snapshot.MainAdmitted)
+            {
+                return;
+            }
+        }
+
+        var anySubmeshDrawn = false;
+        var relWorldMatrix = r.WorldMatrix;
+        relWorldMatrix.Translation -= state.RenderOrigin;
+        var boundsScaleBasis = new Vector3(r.WorldMatrix.M11, r.WorldMatrix.M12, r.WorldMatrix.M13);
+        var referenceBounds = new Vector4(
+            r.WorldMatrix.Translation, mesh.LocalBoundsRadius * boundsScaleBasis.Length());
+        var frontToBackView = state.OpaqueFrontToBackView;
+        var frontToBackDepthValid = OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
+            in frontToBackView,
+            in referenceBounds,
+            out var nearestViewDepth);
+        var alphaDebug = AlphaDebugFilter != null
+            && !string.IsNullOrEmpty(r.ModelPath)
+            && r.ModelPath.Contains(AlphaDebugFilter, StringComparison.OrdinalIgnoreCase)
+            && _alphaDebugLogged.Add(r.ModelPath);
+        var alphaDebugIndex = 0;
+
+        foreach (var sub in mesh.Submeshes)
+        {
+            if (alphaDebug)
+            {
+                var opaquePass = sub.DoubleSided ? "OPAQUE/DoublePso" : "OPAQUE/BackPso";
+                var pass = sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard
+                    ? "BLEND"
+                    : opaquePass;
+                try
+                {
+                    File.AppendAllText(
+                        Path.Combine(Path.GetTempPath(), "alpha_debug.txt"),
+                        $"{r.ModelPath} sub#{alphaDebugIndex++} mode={sub.AlphaRenderMode} " +
+                        $"billboard={sub.IsBillboard} double={sub.DoubleSided} pass={pass} " +
+                        $"alphaStateW={sub.AlphaState.W:0.##}{Environment.NewLine}");
+                }
+                catch
+                {
+                    // Diagnostic only.
+                }
+            }
+
+            var instancedGrass = r.IsGrass
+                                 && sub.AlphaRenderMode == NifAlphaRenderMode.Blend
+                                 && !sub.IsBillboard
+                                 && !sub.IsDecal
+                                 && sub.DepthWritingBlend
+                                 && sub.MaterialAlphaController is null
+                                 && sub.LiveParticles is null
+                                 && _pipelines.InstancedBlendGrassShaderAvailable;
+
+            if ((sub.AlphaRenderMode == NifAlphaRenderMode.Blend && !instancedGrass) || sub.IsBillboard)
+            {
+                var sampledSourceWorld = ApplyRigidNodeAnimation(
+                    sub, ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix));
+                var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, sampledSourceWorld);
+                var worldRadius = ResolveWorldBoundsRadius(sub, sampledSourceWorld);
+                var sampledRelativeWorld = sampledSourceWorld;
+                sampledRelativeWorld.Translation -= state.RenderOrigin;
+                var world = sub.IsBillboard
+                    ? BuildBillboardWorld(
+                        sub.LocalBoundsCenter,
+                        sub.BillboardMode,
+                        sub.BillboardFrontNormal,
+                        sampledSourceWorld,
+                        worldCenter,
+                        cameraPosition,
+                        cameraForward,
+                        state.RenderOrigin)
+                    : sampledRelativeWorld;
+                var blendedDraw = new BlendedReferenceDraw(
+                    world,
+                    sub,
+                    Vector3.DistanceSquared(worldCenter, cameraPosition),
+                    sub.AlphaState,
+                    sub.RenderState,
+                    sub.Specular,
+                    r.WorldMatrix,
+                    referenceBounds,
+                    r.FormId,
+                    r.IsGrass,
+                    r.GrassWaveMultiplier,
+                    worldCenter.Z,
+                    worldRadius,
+                    ResolveWorldBoundsMaxZ(
+                        r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
+                    ResolveWorldBoundsMinZ(
+                        r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
+                    r.MeshId,
+                    new Vector2(worldCenter.X, worldCenter.Y));
+                if (sub.DepthWritingBlend && !sub.IsBillboard && !state.StreamActive)
+                {
+                    state.Target.DepthWritingBlendDraws.Add(blendedDraw);
+                }
+                else
+                {
+                    state.Target.BlendedDraws.Add(blendedDraw);
+                }
+
+                state.DrawableSubmeshPlacements++;
+                anySubmeshDrawn = true;
+                continue;
+            }
+
+            var pso = ResolveOpaquePipeline(sub, r.IsGrass, out var usesModernStandardShader);
+            if (instancedGrass)
+            {
+                pso = _pipelines.GetBlendDepthWritePipeline(
+                    sub.SrcBlendMode,
+                    sub.DstBlendMode,
+                    sub.DoubleSided,
+                    decal: false,
+                    grassRoute: true,
+                    depthTestOff: false,
+                    instancedGrass: true);
+                usesModernStandardShader = false;
+            }
+            else if (r.IsGrass && sub.AlphaTest && !sub.IsDecal)
+            {
+                pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
+                usesModernStandardShader = false;
+            }
+
+            var usesGrassDistanceEnvelope =
+                GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
+            var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
+            var batch = state.Target.OpaqueBatches.GetOrCreate(
+                sub, pso, usesGrassDistanceEnvelope, usesTallGrassWind, r.GrassWaveMultiplier,
+                usesModernStandardShader);
+            if (state.OpaqueFrontToBackView.Valid &&
+                !state.Target.OpaqueBatches.ObserveFrontToBackDepth(
+                    batch,
+                    frontToBackDepthValid,
+                    nearestViewDepth))
+            {
+                state.OpaqueFrontToBackView = frontToBackView.Fail(
+                    OpaqueFrontToBackFallbackReason.InvalidBounds);
+            }
+            batch.Instances.Add(relWorldMatrix);
+            batch.InstanceBounds.Add(referenceBounds);
+            if (sub.PhysicsLiteSway is not null)
+            {
+                batch.PhysicsLiteSeeds.Add(r.FormId);
+            }
+            if (_formIdHeatmapEnabled)
+            {
+                batch.HeatmapFormIds.Add(r.IsGrass ? 0u : r.FormId);
+            }
+
+            state.DrawableSubmeshPlacements++;
+            anySubmeshDrawn = true;
+        }
+
+        if (anySubmeshDrawn)
+        {
+            state.Drawn++;
+        }
+
+    }
+
+    private void ProcessShadowBatchReference(
+        BatchBuildState state,
+        ID3D12GraphicsCommandList commandList,
+        in RenderableReference r,
+        float cylinderX,
+        float cylinderY,
+        ref int uploadBudget,
+        ref double meshResolveMs)
+    {
+        var snapshot = ResolveBatchMesh(
+            state, commandList, r, cylinderX, cylinderY, registerAnimation: false,
+            ref uploadBudget, ref meshResolveMs);
+        var mesh = snapshot.Mesh;
+        if (mesh is null)
+        {
+            state.ShadowMissing++;
+            if (state.Target.MissingPathSet.Add(r.ModelPath))
+            {
+                state.Target.MissingPaths.Add(r.ModelPath);
+            }
+            return;
+        }
+
+        var relWorldMatrix = r.WorldMatrix;
+        relWorldMatrix.Translation -= state.RenderOrigin;
+        foreach (var sub in mesh.Submeshes)
+        {
+            if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard || sub.IsDecal
+                || (_tallGrassWindSupported && sub.IsTallGrass)
+                || (!_treeShadowsEnabled &&
+                    (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null)))
+            {
+                continue;
+            }
+
+            var pso = ResolveOpaquePipeline(sub, r.IsGrass, out var usesModernStandardShader);
+            if (r.IsGrass && sub.AlphaTest)
+            {
+                pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
+                usesModernStandardShader = false;
+            }
+
+            var usesGrassDistanceEnvelope =
+                GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
+            var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
+            var batch = state.Target.OpaqueBatches.GetOrCreate(
+                sub, pso, usesGrassDistanceEnvelope, usesTallGrassWind, r.GrassWaveMultiplier,
+                usesModernStandardShader);
+            batch.ShadowOnlyInstances.Add(relWorldMatrix);
+            if (sub.PhysicsLiteSway is not null)
+            {
+                batch.ShadowOnlyPhysicsLiteSeeds.Add(r.FormId);
+            }
+            state.DrawableSubmeshPlacements++;
+        }
+
+    }
+
+    private ID3D12PipelineState ResolveOpaquePipeline(
+        CachedSubmesh12 sub,
+        bool isScatteredGrass,
+        out bool usesModernStandardShader)
+    {
+        var facts = new ModernStandardOpaqueShaderFacts(
+            Game: _renderCache?.Game ?? Core.Games.BethesdaGame.Unknown,
+            HeatmapEnabled: _formIdHeatmapEnabled,
+            IsScatteredGrass: isScatteredGrass,
+            AlphaBlend: sub.AlphaBlend,
+            IsDecal: sub.IsDecal,
+            IsEmissive: sub.IsEmissive,
+            IsLighting30: sub.IsLighting30,
+            HasLighting30GlowMap: sub.Lighting30GlowMap is not null,
+            HasEffectFalloff: sub.HasEffectFalloff,
+            IsEffectTintNeutral: sub.EffectTint == Vector3.One,
+            HasSoftParticle: sub.SoftParticle.Enabled,
+            IsBillboard: sub.IsBillboard,
+            IsLeafBillboard: sub.IsLeafBillboard,
+            IsTallGrass: sub.IsTallGrass,
+            IsParticle: sub.ParticleCenters is not null || sub.LiveParticles is not null,
+            HasRuntimeSpeedTreeLod: sub.SpeedTreeLod is not null,
+            HasClassicBasicShader: sub.ClassicBasicShaderMode != FnvClassicBasicShaderMode.None,
+            HasClassicEnvironmentMap:
+                sub.ClassicEnvMap is not null ||
+                sub.ClassicEnvMask is not null ||
+                sub.ClassicEnvMapUsesWindowReflection ||
+                sub.ClassicEnvMapIsSphereMap,
+            HasClassicParallax: sub.ClassicParallaxHeightMap is not null,
+            HasGradientMap: sub.GradientMap is not null,
+            StarfieldMaterialPath: sub.StarfieldMaterialPath,
+            HasDerivedStarfieldNormal: sub.HasDerivedStarfieldNormal,
+            TextureFeatureMask: (uint)MathF.Round(sub.TextureState.Z),
+            HasBump: sub.HasBump,
+            HasSpecularMap: sub.SpecularMap is not null,
+            SpecularExponent: sub.Specular.W,
+            ModernEnvironmentMapDeclared: sub.EnvMap is not null,
+            ModernEnvironmentMapScale: sub.EnvMapScale,
+            WrapTextureU: !sub.ClampTextureU,
+            WrapTextureV: !sub.ClampTextureV,
+            AlphaTestEnabled: sub.AlphaState.Y >= 0f,
+            AlphaTestFunction: sub.AlphaTestFunction,
+            DoubleSided: sub.DoubleSided);
+        var variant = ModernStandardOpaqueShaderPolicy.Resolve(in facts);
+        if (TryResolveStarfieldDiffuseLitVariant(variant, out var alphaGreater, out var doubleSided) &&
+            _pipelines.TryGetStarfieldDiffuseLitPso(alphaGreater, doubleSided, out var starfieldPso))
+        {
+            // The frozen packet snapshots the same bindless diffuse/normal descriptors and draw
+            // constants as the FO76 specialization. Mark this route specialized as well so it can
+            // reuse that exact packet resource policy once all resources are terminal.
+            usesModernStandardShader = true;
+            return starfieldPso!;
+        }
+
+        if (_pipelines.TryGetModernStandardOpaquePso(variant, out var specializedPso))
+        {
+            usesModernStandardShader = true;
+            return specializedPso!;
+        }
+
+        usesModernStandardShader = false;
+        return (sub.DoubleSided, sub.IsDecal) switch
+        {
+            (true, true) => _pipelines.OpaqueDoubleDecalPso,
+            (true, false) => _pipelines.OpaqueDoublePso,
+            (false, true) => _pipelines.OpaqueBackDecalPso,
+            (false, false) => _pipelines.OpaqueBackPso
+        };
+    }
+
+    private static bool TryResolveStarfieldDiffuseLitVariant(
+        ModernStandardOpaqueShaderVariant variant,
+        out bool alphaGreater,
+        out bool doubleSided)
+    {
+        (alphaGreater, doubleSided) = variant switch
+        {
+            ModernStandardOpaqueShaderVariant.StarfieldSingleSidedOpaque => (false, false),
+            ModernStandardOpaqueShaderVariant.StarfieldDoubleSidedOpaque => (false, true),
+            ModernStandardOpaqueShaderVariant.StarfieldSingleSidedGreaterCutout => (true, false),
+            ModernStandardOpaqueShaderVariant.StarfieldDoubleSidedGreaterCutout => (true, true),
+            _ => (false, false)
+        };
+        return variant is
+            ModernStandardOpaqueShaderVariant.StarfieldSingleSidedOpaque or
+            ModernStandardOpaqueShaderVariant.StarfieldDoubleSidedOpaque or
+            ModernStandardOpaqueShaderVariant.StarfieldSingleSidedGreaterCutout or
+            ModernStandardOpaqueShaderVariant.StarfieldDoubleSidedGreaterCutout;
+    }
+
+    private void ObserveBatchBuildActivity(BatchBuildState state)
+    {
+        state.ObservedFrames++;
+        state.SawGpuUpload |= _meshCache.FrameGpuUploads != 0;
+        _batchContentDirtyPending |= _meshCache.FrameGpuUploads != 0;
+        state.SawNonQuietActivity |=
+            state.TexturePending != 0
+            || _meshCache.FrameGpuUploads != 0
+            || _meshCache.FrameCacheMisses != 0
+            || _meshCache.FrameDecodeRequests != 0
+            || _meshCache.FrameDecodeStarts != 0
+            || _meshCache.FrameActiveDecodes != 0;
+    }
+
+    private bool TryCompleteSynchronousBatchBuild(
+        BatchReuseBlocker trigger,
+        Vector3 renderOrigin,
+        bool widened,
+        ID3D12GraphicsCommandList commandList,
+        float cylinderX,
+        float cylinderY,
+        Vector3 cameraPosition,
+        Vector3 cameraForward,
+        ref int uploadBudget,
+        ref double meshResolveMs,
+        ref double instanceBucketingMs,
+        ref double batchFinalizeMs,
+        out BatchBuildState? completed)
+    {
+        // The first pass after a staged eviction warms/touches the working set. A second pass is then
+        // normally generation-stable; keep one final retry for an unusually dense insertion wave.
+        const int maximumAttempts = 3;
+        for (var attempt = 0; attempt < maximumAttempts; attempt++)
+        {
+            var state = StartBatchBuild(
+                trigger,
+                renderOrigin,
+                widened,
+                cameraPosition,
+                cameraForward);
+            var result = AdvanceBatchBuild(
+                state,
+                commandList,
+                budgeted: false,
+                sliceStartedTimestamp: 0,
+                cylinderX,
+                cylinderY,
+                cameraPosition,
+                cameraForward,
+                ref uploadBudget,
+                ref meshResolveMs,
+                ref instanceBucketingMs,
+                ref batchFinalizeMs);
+            ObserveBatchBuildActivity(state);
+            if (result == BatchBuildAdvanceResult.Complete)
+            {
+                completed = state;
+                return true;
+            }
+        }
+
+        completed = null;
+        return false;
+    }
+
+    private void PublishBatchBuild(
+        BatchBuildState state,
+        Vector3 cameraPosition,
+        Vector3 cameraForward,
+        Vector3 renderOrigin,
+        ref double blendedRefreshMs)
+    {
+        if (state.StartEvictionGeneration != _meshCache.EvictionGeneration ||
+            state.CullEpoch != _cullEpoch ||
+            state.InvalidationGeneration != _batchInvalidationGeneration ||
+            state.RenderOrigin != renderOrigin ||
+            state.StreamActive != _transparencyStreamActive)
+        {
+            throw new InvalidOperationException("Attempted to publish an invalidated reference batch build.");
+        }
+
+        var refreshStarted = StartTiming();
+        RefreshBlendedDraws(
+            state.Target.BlendedDraws,
+            state.Target.DepthWritingBlendDraws,
+            cameraPosition,
+            cameraForward,
+            renderOrigin);
+        blendedRefreshMs += ElapsedMilliseconds(refreshStarted);
+
+        foreach (var (mesh, distanceSquared) in state.PendingSkinnerRegistrations)
+        {
+            _skinner.Register(mesh, distanceSquared);
+        }
+
+        var sameSurvivorGeneration = _lastBuildValid && state.CullEpoch == _lastBuildCullEpoch;
+        var contentChanged = _batchContentDirtyPending
+                             || state.SawGpuUpload
+                             || _lastBuildEvictionGen != _meshCache.EvictionGeneration
+                             || (sameSurvivorGeneration &&
+                                 (state.ContentFingerprint != _lastBuildContentFingerprint
+                                  || state.DrawableSubmeshPlacements != _lastBuildDrawableSubmeshPlacements));
+
+        state.Target.CascadeFit = SnapshotCascadeFit(state.CascadeFit);
+
+        // Publication identity always advances below, so the current packet can never match again.
+        // Retire it at the invalidation seam instead of retaining its upload resource, tail snapshots,
+        // and old batch graph indefinitely while a moving camera prevents a replacement debounce.
+        RetireOpaqueSubmissionPacket();
+        var oldPublished = _publishedBatchSet;
+        _publishedBatchSet = state.Target;
+        _stagingBatchSet = oldPublished;
+        unchecked
+        {
+            _publishedBatchIdentity++;
+            _publishedBatchGeneration++;
+        }
+
+        _lastFrameMissingMeshPaths.Clear();
+        _lastFrameMissingMeshPaths.AddRange(state.Target.MissingPaths);
+
+        var buildQuiet = !state.SawNonQuietActivity
+                         && state.TexturePending == 0
+                         && _meshCache.PendingDecodeCount == 0
+                         && _meshCache.FrameActiveDecodes == 0;
+        _quietBuildStreak = buildQuiet
+            ? _quietBuildStreak + Math.Max(state.ObservedFrames, 1)
+            : 0;
+        if (contentChanged)
+        {
+            unchecked { BatchContentVersion++; }
+        }
+        _batchContentDirtyPending = false;
+
+        var missingPopulationStable =
+            state.MainMissing == _lastBuildMissing &&
+            state.ShadowMissing == _lastBuildShadowMissing;
+        _missingStallStreak = missingPopulationStable ? _missingStallStreak + 1 : 0;
+        _lastBuildValid = true;
+        _framesSinceBuild = 0;
+        _lastBuildCullEpoch = state.CullEpoch;
+        _lastBuildRenderOrigin = state.RenderOrigin;
+        _lastBuildEvictionGen = _meshCache.EvictionGeneration;
+        _lastBuildQuiesced = _quietBuildStreak >= QuietBuildStreakFrames;
+        _lastBuildStreamActive = state.StreamActive;
+        _lastBuildDrawn = state.Drawn;
+        _lastBuildMissing = state.MainMissing;
+        _lastBuildShadowMissing = state.ShadowMissing;
+        _lastBuildTexturePending = state.TexturePending;
+        _lastBuildDrawableSubmeshPlacements = state.DrawableSubmeshPlacements;
+        _lastBuildContentFingerprint = state.ContentFingerprint;
+        _batchesWidened = state.Widened;
+        state.Phase = BatchBuildPhase.Complete;
+    }
+
+    private void ClearPublishedBatchSnapshotAfterEviction()
+    {
+        RetireOpaqueSubmissionPacket();
+        _publishedBatchSet.OpaqueBatches.Begin();
+        _publishedBatchSet.BlendedDraws.Clear();
+        _publishedBatchSet.DepthWritingBlendDraws.Clear();
+        _publishedBatchSet.CascadeFit = null;
+        _lastFrameMissingMeshPaths.Clear();
+        _lastBuildValid = false;
+        _lastBuildDrawn = 0;
+        _lastBuildMissing = 0;
+        _lastBuildShadowMissing = 0;
+        _lastBuildTexturePending = 0;
+        _lastBuildDrawableSubmeshPlacements = 0;
+        _batchesWidened = false;
+        unchecked
+        {
+            _publishedBatchIdentity++;
+            _publishedBatchGeneration++;
+        }
+        unchecked { BatchContentVersion++; }
+    }
+
+    private static int BatchBuildProcessed(BatchBuildState state)
+    {
+        return state.ResetProcessed
+               + state.ReferenceIndex
+               + state.ShadowIndex
+               + Math.Max(state.SortIndex, 0)
+               + (state.SortIndex >= 0 ? 1 : 0);
+    }
+
+    private int BatchBuildTotal(BatchBuildState state)
+    {
+        return state.ResetTotal
+               + _cachedCullSurvivors.Count
+               + _cachedShadowOnlyCasters.Count
+               + state.Target.OpaqueBatches.ActiveBatches.Count
+               + 1;
+    }
+
+    private (
+        Vector3 Anchor,
+        Vector3 SunDirection,
+        float[] Radii,
+        float[] Snaps,
+        float SceneZSpan)? SnapshotCascadeFitForBuild(bool widened)
+    {
+        var snapshot = SnapshotCascadeFit(_cascadeFit);
+        if (!widened || snapshot is not { } fit || _cullCacheCascadeAnchorXY is not { } cullAnchor)
+        {
+            return snapshot;
+        }
+
+        return (
+            new Vector3(cullAnchor.X, cullAnchor.Y, fit.Anchor.Z),
+            fit.SunDirection,
+            fit.Radii,
+            fit.Snaps,
+            fit.SceneZSpan);
+    }
+
+    private static (
+        Vector3 Anchor,
+        Vector3 SunDirection,
+        float[] Radii,
+        float[] Snaps,
+        float SceneZSpan)? SnapshotCascadeFit(
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? fit)
+    {
+        return fit is not { } value
+            ? null
+            : (value.Anchor, value.SunDirection, value.Radii.ToArray(), value.Snaps.ToArray(), value.SceneZSpan);
+    }
+
+    private static bool CascadeFitsCompatible(
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? left,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? right)
+    {
+        if (left.HasValue != right.HasValue)
+        {
+            return false;
+        }
+        if (left is not { } a || right is not { } b)
+        {
+            return true;
+        }
+
+        // ClassifyCascade deliberately expands every fitted volume by this exact anchor-drift
+        // allowance. Requiring raw-float anchor equality would make a multi-frame build restart on
+        // every walking/orbit frame and could prevent publication forever. Direction and ladder
+        // geometry have no corresponding envelope, so those remain exact hard keys.
+        var anchorDelta = a.Anchor - b.Anchor;
+        var anchorCompatible = anchorDelta.LengthSquared() <=
+                               CullPositionSlack * CullPositionSlack * 3.0001f;
+        return anchorCompatible
+               && a.SunDirection.Equals(b.SunDirection)
+               && a.SceneZSpan.Equals(b.SceneZSpan)
+               && a.Radii.AsSpan().SequenceEqual(b.Radii)
+               && a.Snaps.AsSpan().SequenceEqual(b.Snaps);
     }
 
     /// <summary>
@@ -3051,12 +4039,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         double cbUpdateMs = 0, drawCallMs = 0;
         var submeshDraws = 0;
         var sceneDepthSampled = _deferredSceneDepthIndex != NoSceneDepth;
+        var submissionStarted = StartTiming();
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
             ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
             probe is null ? DeferredWaterPartition.All : DeferredWaterPartition.NotWhollyBelow,
             probe, cameraZ, maxQueuedWaterHeight,
             interleave);
+        LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(submissionStarted);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
@@ -3100,10 +4090,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         double cbUpdateMs = 0, drawCallMs = 0;
         var submeshDraws = 0;
         var sceneDepthSampled = allowSceneDepth && _deferredSceneDepthIndex != NoSceneDepth;
+        var submissionStarted = StartTiming();
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
             ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
             waterPartition, probe, cameraZ, maxQueuedWaterHeight);
+        LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(submissionStarted);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
@@ -3156,7 +4148,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var hasCascadeInstances = false;
         foreach (var draw in _shadowDraws)
         {
-            if (Math.Min(draw.Cascades[cascadeIndex], draw.DrawCount) <= 0) continue;
+            if (ShadowCascadeSubmissionPolicy.ClampInstanceCount(
+                    draw.DrawCount, draw.Cascades[cascadeIndex]) <= 0) continue;
             hasCascadeInstances = true;
             break;
         }
@@ -3205,7 +4198,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             // Tested BEFORE any state binding: a batch that cannot reach this cascade should cost
             // nothing at all, not a PSO/SRV/CB/IA setup followed by a zero-instance draw.
-            var cascadeInstances = Math.Min(draw.Cascades[cascadeIndex], draw.DrawCount);
+            var cascadeInstances = ShadowCascadeSubmissionPolicy.ClampInstanceCount(
+                draw.DrawCount, draw.Cascades[cascadeIndex]);
             if (cascadeInstances <= 0)
             {
                 continue;
@@ -3314,6 +4308,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         if (_disposed) return;
         _disposed = true;
+        RetireOpaqueSubmissionPacket();
+        _opaqueIndirectSignature?.Dispose();
         _pipelines.Dispose();
     }
 
@@ -3418,6 +4414,353 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return PlacedNifWaterCellResolver.Resolve(_cells, new Vector2(center.X, center.Y), cellSize);
     }
 
+    private InstanceDrawConstants BuildOpaqueInstanceDrawConstants(
+        OpaqueBatchState batchState,
+        uint instanceBase,
+        out Vector4 textureState)
+    {
+        var sub = batchState.Submesh;
+        textureState = ResolveTextureState(sub);
+        // Video-settings "Shadows on grass" OFF for SCATTERED grass: the submesh has no grass
+        // marker (scatter identity lives on the reference/batch), so the no-sun-shadow bit is
+        // ORed here, where the batch's grass route is known. The per-game grass shaders honor
+        // the bit; TallGrass got it inside ResolveTextureState.
+        if (!_grassShadowsEnabled && batchState.UsesGrassDistanceEnvelope)
+        {
+            textureState.Z = (uint)MathF.Round(textureState.Z)
+                | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
+        }
+
+        return new InstanceDrawConstants(
+            sub.AlphaState,
+            sub.RenderState,
+            textureState,
+            new TexIndexQuad(
+                sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
+                sub.StarfieldOpacity?.BindlessIndex ??
+                sub.ClassicParallaxHeightMap?.BindlessIndex ??
+                sub.ClassicEnvMask?.BindlessIndex ?? sub.SpecularMap?.BindlessIndex ?? 0,
+                sub.GradientMap?.BindlessIndex ?? sub.Lighting30GlowMap?.BindlessIndex ?? 0),
+            instanceBase,
+            UvOffsetU: WrapUv(sub.UvScrollVelocity.X, UvScrollClock),
+            UvOffsetV: WrapUv(sub.UvScrollVelocity.Y, UvScrollClock),
+            WindMatrixValid: 1,
+            Specular: sub.Specular,
+            CameraRight: _leafBillboardRight,
+            CameraUp: _leafBillboardUp,
+            Wind: sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard
+                ? Vector4.Zero
+                : new Vector4(
+                    _wind.X,
+                    _wind.Y * sub.SpeedTreeWindSpeeds.X,
+            _wind.Z,
+            _wind.W * sub.SpeedTreeWindSpeeds.Y),
+            EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
+            EffectFalloff: ResolveEffectFalloffConstants(sub),
+            EnvMap: ResolveEnvMapState(sub),
+            SoftParticle: Vector4.Zero,
+            TallGrassWind: BuildTallGrassWindConstants(
+                batchState.UsesTallGrassWind,
+                batchState.GrassWaveMultiplier),
+            SpecularLodBounds: new Vector4(sub.LocalBoundsCenter, sub.LocalBoundsRadius),
+            SpecularLodParams: _classicSpecularLodProfile.ShaderParameters(
+                specularEligible: sub.Specular.W > 0f));
+    }
+
+    private static Vector4 ResolveEffectFalloffConstants(CachedSubmesh12 submesh)
+    {
+        if (submesh.StarfieldMaterialColor.IsConstantLerp)
+        {
+            System.Diagnostics.Debug.Assert(
+                submesh.StarfieldMaterialPath is not null &&
+                !submesh.HasEffectFalloff &&
+                !submesh.IsLighting30,
+                "Starfield constant Lerp must not alias an active effect/Lighting30 payload.");
+            return submesh.StarfieldMaterialColor.LinearTint;
+        }
+
+        if (submesh.HasBgsmEmission)
+        {
+            System.Diagnostics.Debug.Assert(
+                submesh.StarfieldMaterialPath is null &&
+                !submesh.IsEmissive &&
+                !submesh.IsLighting30 &&
+                !submesh.HasEffectFalloff &&
+                !submesh.SoftParticle.Enabled,
+                "Regular BGSM emission must not alias another EffectFalloff union payload.");
+            return new Vector4(
+                submesh.BgsmEmissionColor,
+                submesh.BgsmGlowMap is { } glowMap ? glowMap.BindlessIndex + 1f : 0f);
+        }
+
+        return submesh.HasEffectFalloff
+            ? submesh.EffectFalloffParams
+            : submesh.Lighting30Emission;
+    }
+
+    private OpaqueSubmissionPacket12? ResolveOpaqueSubmissionPacket(
+        ID3D12GraphicsCommandList cmd,
+        IReadOnlyList<OpaqueBatchState> activeBatches,
+        bool useCascadePrefixes,
+        out StaticOpaquePacketFallbackReason fallbackReason,
+        out double buildMilliseconds)
+    {
+        buildMilliseconds = 0;
+        if (!StaticOpaquePacketRequested)
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.Disabled;
+            return null;
+        }
+
+        if (_opaqueIndirectSignature is null)
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.SignatureUnavailable;
+            return null;
+        }
+        if (GeometryArenaDiagnostics.Enabled)
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.Diagnostics;
+            return null;
+        }
+        if (_frameHeatmapActive)
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.Heatmap;
+            return null;
+        }
+
+        var game = _renderCache?.Game switch
+        {
+            Core.Games.BethesdaGame.Fallout76 => StaticOpaquePacketGame.Fallout76,
+            Core.Games.BethesdaGame.Starfield => StaticOpaquePacketGame.Starfield,
+            _ => StaticOpaquePacketGame.Unknown,
+        };
+        if (game == StaticOpaquePacketGame.Unknown)
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.UnsupportedGame;
+            return null;
+        }
+
+        var frameKey = StaticOpaquePacketReuseKey.Create(
+            _publishedBatchIdentity,
+            _publishedBatchGeneration,
+            _meshCache.EvictionGeneration,
+            _frameRenderOrigin,
+            _frameRefilterActive,
+            in _frameFrustum,
+            _frameCylinderX,
+            _frameCylinderY,
+            _frameCylinderRadius,
+            _frameSmallPropCutoffSq,
+            _enableDistanceLod,
+            _shadowCaptureArmed,
+            useCascadePrefixes);
+        if (_opaqueSubmissionPacket is { IsDisposed: false } current &&
+            StaticOpaquePacketPolicy.CanReuse(current.Key, frameKey))
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.None;
+            _opaquePacketCandidateKey = null;
+            _opaquePacketCandidateFrames = 0;
+            return current;
+        }
+
+        // Avoid allocating and retiring a committed resource on every moving-camera frame. A
+        // candidate must survive one complete frame unchanged; a stationary capture pays one legacy
+        // frame, then receives packet hits until an exact dependency changes.
+        if (_opaquePacketCandidateKey is not { } candidate || candidate != frameKey)
+        {
+            _opaquePacketCandidateKey = frameKey;
+            _opaquePacketCandidateFrames = 1;
+            fallbackReason = StaticOpaquePacketFallbackReason.KeyMismatch;
+            return null;
+        }
+
+        _opaquePacketCandidateFrames++;
+        if (_opaquePacketCandidateFrames < 2)
+        {
+            fallbackReason = StaticOpaquePacketFallbackReason.KeyMismatch;
+            return null;
+        }
+        var started = Stopwatch.GetTimestamp();
+        var inputs = new List<OpaqueSubmissionPacket12.DrawInput>(
+            Math.Max(_opaqueBatches.ModernStandardBatchCount, 4));
+        for (var submissionIndex = 0; submissionIndex < activeBatches.Count; submissionIndex++)
+        {
+            var batch = activeBatches[submissionIndex];
+            var sub = batch.Submesh;
+            var exactInputsCaptured = !_frameRefilterActive ||
+                                      batch.InstanceBounds.Count == batch.Instances.Count;
+            var environmentTerminal = sub.EnvMap is null ||
+                                      sub.EnvMap is { IsReady: true } environment &&
+                                      (!environment.IsResident || environment.IsCubemap);
+            var facts = new StaticOpaquePacketFacts(
+                Requested: StaticOpaquePacketRequested,
+                Game: game,
+                IsOrdinaryLane: OpaqueIndirectSubmissionPolicy.IsOrdinaryLane(
+                    sub.DepthWritingBlend, batch.UsesGrassDistanceEnvelope, sub.IsDecal),
+                UsesModernStandardShader: batch.UsesModernStandardShader,
+                IsGrass: batch.UsesGrassDistanceEnvelope,
+                IsTallGrass: sub.IsTallGrass || batch.UsesTallGrassWind,
+                HasSpeedTree: sub.IsSpeedTreeBranch || sub.SpeedTreeLod is not null,
+                IsLeaf: sub.IsLeafBillboard,
+                HasPhysicsLiteSway: sub.PhysicsLiteSway is not null,
+                HasRigidNodeAnimation: sub.RigidNodeAnimation is not null,
+                HasSkin: sub.Skin is not null || sub.AnimatedVertexBufferView is not null,
+                HasLiveParticles: sub.LiveParticles is not null || sub.ParticleCenters is not null,
+                HasUvScroll: sub.UvScrollVelocity != Vector2.Zero,
+                DiagnosticsEnabled: GeometryArenaDiagnostics.Enabled,
+                HeatmapEnabled: _frameHeatmapActive,
+                TexturesTerminal: sub.TexturesReady,
+                EnvironmentMapTerminal: environmentTerminal,
+                MirrorReplaySupported: true,
+                ExactRefilterActive: _frameRefilterActive,
+                ExactRefilterInputsCaptured: exactInputsCaptured);
+            if (StaticOpaquePacketPolicy.Resolve(in facts) != StaticOpaquePacketFallbackReason.None ||
+                !TryBuildOpaquePacketMainMatrices(
+                    batch, useCascadePrefixes, out var matrices, out var cascades))
+            {
+                continue;
+            }
+
+            var tailCount = _shadowCaptureArmed
+                ? ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
+                    batch.ShadowOnlyInstances.Count,
+                    batch.ShadowOnlyCascadePrefix,
+                    useCascadePrefixes)
+                : 0;
+            ReadOnlyMemory<Matrix4x4> tailMatrices = tailCount == 0
+                ? default
+                : CollectionsMarshal.AsSpan(batch.ShadowOnlyInstances).Slice(0, tailCount).ToArray();
+            var tailCascades = useCascadePrefixes
+                ? new OpaqueSubmissionPacket12.CascadeCounts(
+                    batch.ShadowOnlyCascadePrefix[0],
+                    batch.ShadowOnlyCascadePrefix[1],
+                    batch.ShadowOnlyCascadePrefix[2],
+                    batch.ShadowOnlyCascadePrefix[3])
+                : OpaqueSubmissionPacket12.CascadeCounts.Uniform(tailCount);
+            var constants = BuildOpaqueInstanceDrawConstants(batch, 0, out _);
+            inputs.Add(new OpaqueSubmissionPacket12.DrawInput(
+                submissionIndex,
+                batch,
+                sub,
+                batch.Pso,
+                matrices,
+                constants,
+                cascades,
+                tailMatrices,
+                tailCascades));
+        }
+
+        if (inputs.Count == 0)
+        {
+            buildMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            fallbackReason = StaticOpaquePacketFallbackReason.NoEligibleBatches;
+            return null;
+        }
+
+        if (!OpaqueSubmissionPacket12.TryCreate(
+                _gpu, cmd, _deletionQueue, in frameKey, inputs, out var replacement))
+        {
+            _opaquePacketCandidateKey = null;
+            _opaquePacketCandidateFrames = 0;
+            buildMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            fallbackReason = StaticOpaquePacketFallbackReason.BuildFailed;
+            return null;
+        }
+
+        var prior = _opaqueSubmissionPacket;
+        _opaqueSubmissionPacket = replacement;
+        if (prior is not null)
+        {
+            _deletionQueue.EnqueueDispose(prior);
+        }
+        _opaquePacketCandidateKey = null;
+        _opaquePacketCandidateFrames = 0;
+        buildMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        fallbackReason = StaticOpaquePacketFallbackReason.None;
+        return replacement;
+    }
+
+    private bool TryBuildOpaquePacketMainMatrices(
+        OpaqueBatchState batch,
+        bool useCascadePrefixes,
+        out ReadOnlyMemory<Matrix4x4> matrices,
+        out OpaqueSubmissionPacket12.CascadeCounts cascades)
+    {
+        var worlds = CollectionsMarshal.AsSpan(batch.Instances);
+        if (worlds.Length == 0 ||
+            (_frameRefilterActive && batch.InstanceBounds.Count != worlds.Length))
+        {
+            matrices = default;
+            cascades = default;
+            return false;
+        }
+
+        if (!_frameRefilterActive)
+        {
+            matrices = worlds.ToArray();
+            cascades = useCascadePrefixes
+                ? new OpaqueSubmissionPacket12.CascadeCounts(
+                    batch.CascadePrefix[0], batch.CascadePrefix[1],
+                    batch.CascadePrefix[2], batch.CascadePrefix[3])
+                : OpaqueSubmissionPacket12.CascadeCounts.Uniform(worlds.Length);
+            return true;
+        }
+
+        var filtered = new Matrix4x4[worlds.Length];
+        Span<int> filteredPrefixes = stackalloc int[ShadowMapRenderer12.CascadeCount];
+        var bounds = CollectionsMarshal.AsSpan(batch.InstanceBounds);
+        var written = 0;
+        var cascadeCursor = 0;
+        for (var i = 0; i < worlds.Length; i++)
+        {
+            while (useCascadePrefixes && cascadeCursor < filteredPrefixes.Length &&
+                   i >= batch.CascadePrefix[cascadeCursor])
+            {
+                filteredPrefixes[cascadeCursor++] = written;
+            }
+
+            if (!PassesExactCull(bounds[i]))
+            {
+                continue;
+            }
+            filtered[written++] = worlds[i];
+        }
+
+        while (cascadeCursor < filteredPrefixes.Length)
+        {
+            filteredPrefixes[cascadeCursor++] = written;
+        }
+        if (written == 0)
+        {
+            matrices = default;
+            cascades = default;
+            return false;
+        }
+
+        if (written != filtered.Length)
+        {
+            Array.Resize(ref filtered, written);
+        }
+        matrices = filtered;
+        cascades = useCascadePrefixes
+            ? new OpaqueSubmissionPacket12.CascadeCounts(
+                filteredPrefixes[0], filteredPrefixes[1],
+                filteredPrefixes[2], filteredPrefixes[3])
+            : OpaqueSubmissionPacket12.CascadeCounts.Uniform(written);
+        return true;
+    }
+
+    private void RetireOpaqueSubmissionPacket()
+    {
+        if (_opaqueSubmissionPacket is { } packet)
+        {
+            _opaqueSubmissionPacket = null;
+            _deletionQueue.EnqueueDispose(packet);
+        }
+        _opaquePacketCandidateKey = null;
+        _opaquePacketCandidateFrames = 0;
+    }
+
     private void DrawOpaqueBatches(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
@@ -3429,20 +4772,157 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ref int submeshDraws)
     {
         var activeBatches = _opaqueBatches.ActiveBatches;
+        LastStats.ReferenceOpaqueFrontToBackActive = _opaqueBatches.FrontToBackActive;
+        LastStats.ReferenceOpaqueFrontToBackBatches = _opaqueBatches.FrontToBackBatchCount;
+        LastStats.ReferenceOpaqueFrontToBackInstances = _opaqueBatches.FrontToBackInstanceCount;
+        LastStats.ReferenceOpaqueFrontToBackFallbackReason =
+            (int)_opaqueBatches.FrontToBackFallbackReason;
+        LastStats.ReferenceModernStandardShaderActive = _renderCache?.Game switch
+        {
+            BethesdaGame.Fallout4 or BethesdaGame.Fallout76 =>
+                _pipelines.ModernStandardOpaqueAvailable,
+            BethesdaGame.Starfield => _pipelines.StarfieldDiffuseLitOpaqueAvailable,
+            _ => false
+        };
+        LastStats.ReferenceModernStandardBatches = _opaqueBatches.ModernStandardBatchCount;
+        LastStats.ReferenceModernStandardInstances = _opaqueBatches.ModernStandardInstanceCount;
+        _opaqueSubmissionPsos.Clear();
         // Shadow-only casters are uploaded only when the shadow capture is armed this frame (they
         // ride AFTER each batch's main instances in the same block — see the copy pass below).
         var includeShadow = _shadowCaptureArmed;
+        // Prefixes are conservative only inside the fit envelope they were classified for. If the
+        // sun/ladder/Z clamp changes before the next batch publication, keep shadows correct by
+        // replaying the full copied range for every cascade on those frames.
+        var useCascadePrefixes = CascadeFitsCompatible(_publishedBatchSet.CascadeFit, _cascadeFit);
+        var packet = ResolveOpaqueSubmissionPacket(
+            cmd, activeBatches, useCascadePrefixes, out var packetFallback, out var packetBuildMs);
+        GpuRingBuffer12.RingAllocation packetTailAllocation = default;
+        ulong packetTailInstanceAddress = 0;
+        if (packet is { TailInstanceCount: > 0 })
+        {
+            var tailBytes = checked((uint)packet.TailInstanceCount * OpaqueSubmissionPacket12.MatrixStride);
+            if (!_ringBuffer.TryAllocate(
+                    frameIndex,
+                    tailBytes + OpaqueSubmissionPacket12.MatrixStride - 1,
+                    out packetTailAllocation,
+                    alignment: 16))
+            {
+                // No packet command has been issued and no packet main has been excluded from the
+                // census yet, so the complete legacy frame (main + tails) remains available.
+                packet = null;
+                packetFallback = StaticOpaquePacketFallbackReason.ShadowTailAllocationFailed;
+            }
+            else
+            {
+                var tailByteOffset = AlignUp(
+                    packetTailAllocation.ByteOffset, OpaqueSubmissionPacket12.MatrixStride);
+                var tailCpuPtr = packetTailAllocation.CpuPtr +
+                                 (int)(tailByteOffset - packetTailAllocation.ByteOffset);
+                unsafe
+                {
+                    var destination = new Span<Matrix4x4>(
+                        (void*)tailCpuPtr, packet.TailInstanceCount);
+                    var tailBindingsValid = true;
+                    foreach (ref readonly var packetDraw in packet.Draws)
+                    {
+                        if (packetDraw.TailCount == 0)
+                        {
+                            continue;
+                        }
+                        if (packetDraw.TailPerDrawCbAddress == 0 ||
+                            (ulong)packetDraw.TailInstanceBase + (uint)packetDraw.TailCount >
+                            (uint)packet.TailInstanceCount)
+                        {
+                            tailBindingsValid = false;
+                            break;
+                        }
+                        packetDraw.ShadowTailMatrices.Span.CopyTo(
+                            destination.Slice((int)packetDraw.TailInstanceBase, packetDraw.TailCount));
+                    }
+                    if (!tailBindingsValid)
+                    {
+                        packet = null;
+                        packetFallback = StaticOpaquePacketFallbackReason.BuildFailed;
+                    }
+                }
+                if (packet is not null)
+                {
+                    packetTailInstanceAddress = packetTailAllocation.GpuAddress +
+                                                (tailByteOffset - packetTailAllocation.ByteOffset);
+                }
+            }
+        }
+
+        var packetBatchCount = packet?.DrawCount ?? 0;
+        var packetInstanceCount = packet?.InstanceCount ?? 0;
+        var packetRunCount = packet?.RunCount ?? 0;
+        LastStats.ReferenceStaticOpaquePacketActive =
+            StaticOpaquePacketRequested && _opaqueIndirectSignature is not null;
+        LastStats.ReferenceStaticOpaquePacketHit = packet is not null;
+        LastStats.ReferenceStaticOpaquePacketBatches = packetBatchCount;
+        LastStats.ReferenceStaticOpaquePacketInstances = packetInstanceCount;
+        LastStats.ReferenceStaticOpaquePacketRuns = packetRunCount;
+        LastStats.ReferenceStaticOpaquePacketBytes = packet is null
+            ? 0
+            : checked((int)packet.ByteLength);
+        LastStats.ReferenceStaticOpaquePacketBuildMilliseconds = packetBuildMs;
+        LastStats.ReferenceStaticOpaquePacketSavedMatrixBytes = packet is null
+            ? 0
+            : checked(LastStats.ReferenceStaticOpaquePacketInstances *
+                      (int)OpaqueSubmissionPacket12.MatrixStride);
+        LastStats.ReferenceStaticOpaquePacketSavedConstantBytes = packet is null
+            ? 0
+            : checked((packet.DrawCount + packet.TailDrawCount) * (int)InstanceDrawByteSize);
+        LastStats.ReferenceStaticOpaquePacketSavedArgumentBytes = packet is null
+            ? 0
+            : checked(LastStats.ReferenceStaticOpaquePacketBatches * OpaqueIndirectCommand12.ByteStride);
+        LastStats.ReferenceStaticOpaquePacketFallbackReason = (int)packetFallback;
         var totalInstances = 0;
         var activeBatchCount = 0;
-        foreach (var batchState in activeBatches)
+        var activeMainDrawCount = 0;
+        var ordinaryMainDrawCapacity = 0;
+        var packetCensusDrawCursor = 0;
+        for (var submissionIndex = 0; submissionIndex < activeBatches.Count; submissionIndex++)
         {
-            var count = batchState.Instances.Count +
-                        (includeShadow ? batchState.ShadowOnlyInstances.Count : 0);
+            var batchState = activeBatches[submissionIndex];
+            var packetized = packet is not null && packet.TryTakeDraw(
+                submissionIndex, batchState, ref packetCensusDrawCursor, out _);
+            var sourceInstanceCount = batchState.Instances.Count;
+            if (sourceInstanceCount != 0)
+            {
+                // One potential main-scene draw before this frame's exact instance filters run.
+                activeMainDrawCount++;
+            }
+
+            // Packet inputs are validated non-empty at construction. Their persistent main and
+            // optional tail never enter the transient census, so avoid even inspecting tail state.
+            if (packetized)
+            {
+                activeBatchCount++;
+                continue;
+            }
+
+            var submesh = batchState.Submesh;
+            if (sourceInstanceCount != 0 && OpaqueIndirectSubmissionPolicy.IsOrdinaryLane(
+                    submesh.DepthWritingBlend,
+                    batchState.UsesGrassDistanceEnvelope,
+                    submesh.IsDecal))
+            {
+                ordinaryMainDrawCapacity++;
+            }
+            var usefulShadowSourceCount = includeShadow
+                ? ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
+                    batchState.ShadowOnlyInstances.Count,
+                    batchState.ShadowOnlyCascadePrefix,
+                    useCascadePrefixes)
+                : 0;
+            var count = sourceInstanceCount + usefulShadowSourceCount;
             if (count == 0) continue;
             totalInstances += count;
             activeBatchCount++;
         }
-        if (totalInstances == 0) return;
+        LastStats.ReferenceOpaqueActiveDraws = activeMainDrawCount;
+        if (totalInstances == 0 && packet is null) return;
 
         var instanceStride = (uint)Marshal.SizeOf<Matrix4x4>();
         var instanceBytes = instanceStride * (uint)totalInstances;
@@ -3450,13 +4930,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // replay can rebind exactly what each draw's uInstanceBase indexes into (the shared block,
         // or a per-batch fallback block).
         ulong boundInstanceAddress = 0;
+        // Actual t8 state on the command list. Packet runs temporarily replace the legacy shared
+        // binding, so the next mixed/dynamic segment must explicitly restore it.
+        ulong commandListInstanceAddress = 0;
         // Fast path: one contiguous block holds every batch's world matrices (single bulk memcpy +
         // one SRV bind, per-batch draws index into it via StartInstance). When a dense frame can't
         // fit that single allocation, fall back to a per-batch block inside the loop below — the
         // frame degrades to skipping only the batches that no longer fit instead of dropping the
         // ENTIRE opaque pass (which read as "the whole city un-renders" on dense downtown frames).
-        var haveSharedBlock = _ringBuffer.TryAllocate(
-            frameIndex, instanceBytes + instanceStride - 1, out var instanceAlloc, alignment: 16);
+        GpuRingBuffer12.RingAllocation instanceAlloc = default;
+        var haveSharedBlock = totalInstances > 0 && _ringBuffer.TryAllocate(
+            frameIndex, instanceBytes + instanceStride - 1, out instanceAlloc, alignment: 16);
         var refilter = _frameRefilterActive;
         // CPU-mapped base of the shared instance block, kept for the geometry draw validator: it
         // reads back the exact matrices each batch's draw will fetch (0 when there is no shared block).
@@ -3476,11 +4960,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // while a real frustum is armed, while grass independently restores its zero-slack
                 // hard end even under the reference-frustum kill switch.
                 var span = new Span<Matrix4x4>((void*)instanceCpuPtr, totalInstances);
-                foreach (var batchState in activeBatches)
+                var packetCopyDrawCursor = 0;
+                for (var submissionIndex = 0; submissionIndex < activeBatches.Count; submissionIndex++)
                 {
+                    var batchState = activeBatches[submissionIndex];
+                    if (packet is not null && packet.TryTakeDraw(
+                            submissionIndex, batchState, ref packetCopyDrawCursor, out _))
+                    {
+                        continue;
+                    }
                     var worlds = batchState.Instances;
                     var shadowWorlds = includeShadow ? batchState.ShadowOnlyInstances : null;
-                    var shadowCount = shadowWorlds?.Count ?? 0;
+                    var shadowCount = shadowWorlds is null
+                        ? 0
+                        : ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
+                            shadowWorlds.Count,
+                            batchState.ShadowOnlyCascadePrefix,
+                            useCascadePrefixes);
                     var filterSpeedTreeLod = batchState.Submesh.SpeedTreeLod is not null;
                     var filterMainGrassDistance = batchState.UsesGrassDistanceEnvelope;
                     var exactMainPerInstance = GrassDistanceCullPolicy.RequiresExactPerInstanceFiltering(
@@ -3510,9 +5006,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         offset += worlds.Count;
                         batchState.FrameDrawCount = worlds.Count;
                         // Nothing was dropped, so the build-time prefixes still describe the block.
-                        Array.Copy(
-                            batchState.CascadePrefix, batchState.FrameCascadeCount,
-                            batchState.FrameCascadeCount.Length);
+                        if (useCascadePrefixes)
+                        {
+                            // Exactly four cascades. Array.Copy's general type/rank/bounds machinery
+                            // dominated this dense steady-state loop even though every copy is only
+                            // sixteen bytes (19k+ calls/frame in the FO76 profile).
+                            var source = batchState.CascadePrefix;
+                            var destination = batchState.FrameCascadeCount;
+                            destination[0] = source[0];
+                            destination[1] = source[1];
+                            destination[2] = source[2];
+                            destination[3] = source[3];
+                        }
+                        else
+                        {
+                            batchState.FrameCascadeCount.AsSpan().Fill(worlds.Count);
+                        }
                     }
                     else
                     {
@@ -3529,7 +5038,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var cascadeCursor = 0;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
-                            while (cascadeCursor < batchState.FrameCascadeCount.Length &&
+                            while (useCascadePrefixes &&
+                                   cascadeCursor < batchState.FrameCascadeCount.Length &&
                                    i >= batchState.CascadePrefix[cascadeCursor])
                             {
                                 batchState.FrameCascadeCount[cascadeCursor++] = offset - batchStart;
@@ -3575,26 +5085,38 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;
                         var animateShadowPhysicsLite = AnimationsEnabled &&
                                                        batchState.Submesh.PhysicsLiteSway is not null &&
-                                                       batchState.ShadowOnlyPhysicsLiteSeeds.Count == shadowCount;
+                                                       batchState.ShadowOnlyPhysicsLiteSeeds.Count == shadowWorlds!.Count;
                         if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !animateRigidNode &&
                             !filterGrassDistance)
                         {
-                            CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
+                            CollectionsMarshal.AsSpan(shadowWorlds!).Slice(0, shadowCount)
+                                .CopyTo(span.Slice(offset, shadowCount));
                             offset += shadowCount;
-                            Array.Copy(
-                                batchState.ShadowOnlyCascadePrefix, batchState.FrameShadowOnlyCascadeCount,
-                                batchState.FrameShadowOnlyCascadeCount.Length);
+                            if (useCascadePrefixes)
+                            {
+                                var source = batchState.ShadowOnlyCascadePrefix;
+                                var destination = batchState.FrameShadowOnlyCascadeCount;
+                                destination[0] = source[0];
+                                destination[1] = source[1];
+                                destination[2] = source[2];
+                                destination[3] = source[3];
+                            }
+                            else
+                            {
+                                batchState.FrameShadowOnlyCascadeCount.AsSpan().Fill(shadowCount);
+                            }
                         }
                         else
                         {
                             var shadowStart = offset;
-                            var shadowSpan = CollectionsMarshal.AsSpan(shadowWorlds!);
+                            var shadowSpan = CollectionsMarshal.AsSpan(shadowWorlds!).Slice(0, shadowCount);
                             var shadowPhysicsSeeds =
                                 CollectionsMarshal.AsSpan(batchState.ShadowOnlyPhysicsLiteSeeds);
                             var cascadeCursor = 0;
                             for (var i = 0; i < shadowSpan.Length; i++)
                             {
-                                while (cascadeCursor < batchState.FrameShadowOnlyCascadeCount.Length &&
+                                while (useCascadePrefixes &&
+                                       cascadeCursor < batchState.FrameShadowOnlyCascadeCount.Length &&
                                        i >= batchState.ShadowOnlyCascadePrefix[cascadeCursor])
                                 {
                                     batchState.FrameShadowOnlyCascadeCount[cascadeCursor++] =
@@ -3630,14 +5152,194 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var instanceGpuAddress = instanceAlloc.GpuAddress + (instanceByteOffset - instanceAlloc.ByteOffset);
             BindReferenceInstanceBuffer(cmd, instanceGpuAddress, ref srvBinds, ref srvBindMs);
             boundInstanceAddress = instanceGpuAddress;
+            commandListInstanceAddress = instanceGpuAddress;
         }
 
-        var startInstance = 0u;
-        foreach (var batchState in activeBatches)
+        GpuRingBuffer12.RingAllocation indirectArgumentAllocation = default;
+        var indirectArgumentBytes = checked((uint)(ordinaryMainDrawCapacity * OpaqueIndirectCommand12.ByteStride));
+        var remainingRingBytes = (ulong)(_ringBuffer.AllocationLimitBytes - _ringBuffer.CurrentFrameBytes);
+        // Preserve the opaque loop's existing soft-failure behavior: only spend argument bytes when
+        // every active batch's main CB and worst-case shadow-tail CB still have room afterward.
+        var opaqueCbReserve = ((ulong)activeBatchCount * InstanceDrawByteSize * (includeShadow ? 2UL : 1UL))
+                              + GpuRingBuffer12.CbAlignment - 1;
+        var indirectFallback = OpaqueIndirectSubmissionPolicy.ResolvePreallocationFallback(
+            OpaqueIndirectRequested,
+            _opaqueIndirectSignature is not null,
+            ordinaryMainDrawCapacity,
+            haveSharedBlock,
+            GeometryArenaDiagnostics.Enabled,
+            remainingRingBytes,
+            (ulong)indirectArgumentBytes + opaqueCbReserve);
+        var useOpaqueIndirect = indirectFallback == OpaqueIndirectFallbackReason.None;
+        if (useOpaqueIndirect && !_ringBuffer.TryAllocate(
+                frameIndex,
+                indirectArgumentBytes,
+                out indirectArgumentAllocation,
+                alignment: 4))
         {
+            useOpaqueIndirect = false;
+            indirectFallback = OpaqueIndirectFallbackReason.ArgumentAllocationFailed;
+        }
+
+        // A packet-only ordinary lane has no transient argument allocation to attempt. Report the
+        // successful persistent ExecuteIndirect route, rather than a misleading Disabled or
+        // NoOrdinaryDraws fallback from the transient lane's preallocation policy.
+        var reportedIndirectFallback = packet is not null && ordinaryMainDrawCapacity == 0
+            ? OpaqueIndirectFallbackReason.None
+            : indirectFallback;
+
+        LastStats.ReferenceOpaqueIndirectActive = useOpaqueIndirect || packet is not null;
+        LastStats.ReferenceOpaqueIndirectArgumentBytes = useOpaqueIndirect ? (int)indirectArgumentBytes : 0;
+        LastStats.ReferenceOpaqueIndirectFallbackReason = (int)reportedIndirectFallback;
+
+        var startInstance = 0u;
+        ID3D12PipelineState? previousOpaquePso = null;
+        ID3D12PipelineState? pendingIndirectPso = null;
+        var pendingIndirectStart = 0;
+        var pendingIndirectCount = 0;
+        var indirectWriteCount = 0;
+        var packetSubmissionDrawCursor = 0;
+        var packetSubmissionRunCursor = 0;
+        for (var submissionIndex = 0; submissionIndex < activeBatches.Count; submissionIndex++)
+        {
+            var batchState = activeBatches[submissionIndex];
+            if (packet is not null && packet.TryTakeDraw(
+                    submissionIndex,
+                    batchState,
+                    ref packetSubmissionDrawCursor,
+                    out var packetDrawIndex))
+            {
+                ref readonly var packetDraw = ref packet.DrawAt(packetDrawIndex);
+                var packetSub = packetDraw.Submesh;
+                var packetDrawCount = packetDraw.InstanceCount;
+
+                if (packet.TryTakeRun(
+                        submissionIndex,
+                        ref packetSubmissionRunCursor,
+                        out var packetRunIndex))
+                {
+                    ref readonly var packetRun = ref packet.RunAt(packetRunIndex);
+                    // Every draw in the run is consecutive and uses this PSO. Aggregate counters
+                    // and the unique-PSO probe once without changing the surrounding mixed order.
+                    LastStats.ReferenceOpaqueSurvivingDraws += packetRun.DrawCount;
+                    LastStats.ReferenceOpaqueOrdinaryDraws += packetRun.DrawCount;
+                    _opaqueSubmissionPsos.Add(packetRun.Pso);
+                    if (previousOpaquePso is not null &&
+                        !ReferenceEquals(previousOpaquePso, packetRun.Pso))
+                    {
+                        LastStats.ReferenceOpaquePsoTransitions++;
+                    }
+                    previousOpaquePso = packetRun.Pso;
+                    submeshDraws += packetRun.DrawCount;
+                    LastStats.ReferenceInstancedDraws += packetRun.DrawCount;
+                    LastStats.ReferenceInstances += packetRun.InstanceCount;
+
+                    // A transient indirect run owns a different argument resource and may depend on
+                    // the legacy shared t8 binding. Drain it before the immutable packet changes t8.
+                    FlushOpaqueIndirectRun(
+                        cmd,
+                        frameIndex,
+                        indirectArgumentAllocation,
+                        pendingIndirectStart,
+                        ref pendingIndirectCount,
+                        ref pendingIndirectPso,
+                        ref currentPso,
+                        ref drawCallMs);
+                    if (commandListInstanceAddress != packet.InstanceSrvAddress)
+                    {
+                        BindReferenceInstanceBuffer(
+                            cmd, packet.InstanceSrvAddress, ref srvBinds, ref srvBindMs);
+                        commandListInstanceAddress = packet.InstanceSrvAddress;
+                    }
+
+                    var packetStarted = StartTiming();
+                    if (!ReferenceEquals(currentPso, packetRun.Pso))
+                    {
+                        cmd.SetPipelineState(packetRun.Pso);
+                        currentPso = packetRun.Pso;
+                    }
+                    cmd.ExecuteIndirect(
+                        _opaqueIndirectSignature!,
+                        (uint)packetRun.DrawCount,
+                        packet.ArgumentBuffer,
+                        packetRun.ArgumentBufferOffset,
+                        countBuffer: null,
+                        countBufferOffset: 0);
+                    drawCallMs += ElapsedMilliseconds(packetStarted);
+                    LastStats.ReferenceOpaqueIndirectDraws += packetRun.DrawCount;
+                    LastStats.ReferenceOpaqueIndirectExecuteCalls++;
+                }
+
+                if (_mirrorCaptureArmed)
+                {
+                    _mirrorDraws.Add(new MirrorDraw(
+                        packetDraw.VertexBufferView,
+                        packetDraw.IndexBufferView,
+                        packetDraw.IndexCount,
+                        packetDraw.PerDrawCbAddress,
+                        packet.InstanceSrvAddress,
+                        packetDrawCount,
+                        packetDraw.Pso));
+                }
+
+                if (_shadowCaptureArmed)
+                {
+                    var packetMainCascades = new CascadeCounts(
+                        packetDraw.Cascades.C0,
+                        packetDraw.Cascades.C1,
+                        packetDraw.Cascades.C2,
+                        packetDraw.Cascades.C3);
+                    if (ShadowCascadeSubmissionPolicy.HasAnyInstances(
+                            packetDrawCount,
+                            packetMainCascades.C0,
+                            packetMainCascades.C1,
+                            packetMainCascades.C2,
+                            packetMainCascades.C3))
+                    {
+                        _shadowDraws.Add(new ShadowDraw(
+                            packetDraw.VertexBufferView,
+                            packetDraw.IndexBufferView,
+                            packetDraw.IndexCount,
+                            packetDraw.PerDrawCbAddress,
+                            packet.InstanceSrvAddress,
+                            packetDrawCount,
+                            packetSub.AlphaTest,
+                            packetMainCascades,
+                            UsesTallGrassWind: false));
+                    }
+
+                    if (packetDraw.TailCount > 0)
+                    {
+                        var tailCascades = new CascadeCounts(
+                            packetDraw.TailCascades.C0,
+                            packetDraw.TailCascades.C1,
+                            packetDraw.TailCascades.C2,
+                            packetDraw.TailCascades.C3);
+                        _shadowDraws.Add(new ShadowDraw(
+                            packetDraw.VertexBufferView,
+                            packetDraw.IndexBufferView,
+                            packetDraw.IndexCount,
+                            packetDraw.TailPerDrawCbAddress,
+                            packetTailInstanceAddress,
+                            packetDraw.TailCount,
+                            packetSub.AlphaTest,
+                            tailCascades,
+                            UsesTallGrassWind: false));
+                    }
+                }
+
+                continue;
+            }
+
             var batch = batchState.Instances;
             var shadowOnly = includeShadow ? batchState.ShadowOnlyInstances : null;
-            if (batch.Count == 0 && (shadowOnly is null || shadowOnly.Count == 0)) continue;
+            var usefulShadowSourceCount = shadowOnly is null
+                ? 0
+                : ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
+                    shadowOnly.Count,
+                    batchState.ShadowOnlyCascadePrefix,
+                    useCascadePrefixes);
+            if (batch.Count == 0 && usefulShadowSourceCount == 0) continue;
 
             var drawStartInstance = startInstance;
             var drawInstanceCpuBase = sharedInstanceCpuBase;
@@ -3647,7 +5349,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 // Per-batch fallback block: small (count × 64 B), so it fits where the frame-wide
                 // block could not. Rebind the instance SRV at this batch's base and draw from 0.
-                var fallbackShadowCount = shadowOnly?.Count ?? 0;
+                var fallbackShadowCount = usefulShadowSourceCount;
                 var batchBytes = instanceStride * (uint)(batch.Count + fallbackShadowCount);
                 if (!_ringBuffer.TryAllocate(
                         frameIndex, batchBytes + instanceStride - 1, out var batchAlloc, alignment: 16))
@@ -3719,17 +5421,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;
                         var animateShadowPhysicsLite = AnimationsEnabled &&
                                                        batchState.Submesh.PhysicsLiteSway is not null &&
-                                                       batchState.ShadowOnlyPhysicsLiteSeeds.Count == fallbackShadowCount;
+                                                       batchState.ShadowOnlyPhysicsLiteSeeds.Count == shadowOnly!.Count;
                         if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !animateRigidNode &&
                             !filterGrassDistance)
                         {
-                            CollectionsMarshal.AsSpan(shadowOnly!).CopyTo(span.Slice(drawCount, fallbackShadowCount));
+                            CollectionsMarshal.AsSpan(shadowOnly!).Slice(0, fallbackShadowCount)
+                                .CopyTo(span.Slice(drawCount, fallbackShadowCount));
                             shadowCount = fallbackShadowCount;
                         }
                         else
                         {
                             shadowCount = 0;
-                            var shadowSpan = CollectionsMarshal.AsSpan(shadowOnly!);
+                            var shadowSpan = CollectionsMarshal.AsSpan(shadowOnly!).Slice(0, fallbackShadowCount);
                             var shadowPhysicsSeeds =
                                 CollectionsMarshal.AsSpan(batchState.ShadowOnlyPhysicsLiteSeeds);
                             for (var i = 0; i < shadowSpan.Length; i++)
@@ -3755,11 +5458,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         shadowCount = 0;
                     }
                 }
+                // The fallback compacts each batch into its own ring allocation and historically
+                // left these frame-prefix arrays carrying stale values from the prior shared-block
+                // frame. Uniform counts are conservative and correct for this already-degraded path.
+                batchState.FrameCascadeCount.AsSpan().Fill(drawCount);
+                batchState.FrameShadowOnlyCascadeCount.AsSpan().Fill(shadowCount);
                 if (drawCount + shadowCount == 0) continue;
 
                 var batchInstanceAddress = batchAlloc.GpuAddress + (batchByteOffset - batchAlloc.ByteOffset);
                 BindReferenceInstanceBuffer(cmd, batchInstanceAddress, ref srvBinds, ref srvBindMs);
                 boundInstanceAddress = batchInstanceAddress;
+                commandListInstanceAddress = batchInstanceAddress;
                 drawStartInstance = 0;
                 drawInstanceCpuBase = batchCpuPtr;
             }
@@ -3770,16 +5479,107 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 if (drawCount + shadowCount == 0) continue;
             }
 
-            if (!ReferenceEquals(currentPso, batchState.Pso))
+            var sub = batchState.Submesh;
+            // Retail FO3/FNV TallGrass and TES4's instanced blend-grass route have no matching
+            // depth/caster permutation. The batch-level grass marker is not game-specific, hence
+            // the separate route gates (Skyrim and ordinary FO3/FNV grass must remain untouched).
+            var fnvGrassNeverCasts = _tallGrassWindSupported && sub.IsTallGrass;
+            var grassNeverCasts = fnvGrassNeverCasts
+                                  || (_instancedBlendGrassSupported && batchState.UsesGrassDistanceEnvelope);
+            // Video-settings "Tree canopy shadows" is a caster-only gate; color stays visible.
+            var treeNeverCasts = !_treeShadowsEnabled &&
+                                 (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null);
+            var tailHasCascadeInstances =
+                ShadowCascadeSubmissionPolicy.HasAnyInstances(
+                    shadowCount, batchState.FrameShadowOnlyCascadeCount);
+            var shadowCasterEligible = _shadowCaptureArmed &&
+                                       !sub.IsDecal && !grassNeverCasts && !treeNeverCasts;
+            var canCaptureShadowTail = shadowCasterEligible && tailHasCascadeInstances;
+            if (drawCount == 0 && !canCaptureShadowTail)
+            {
+                // No color command and no addressable shadow instance: do not manufacture main-pass
+                // PSO/root/IA work for a batch that cannot submit anything. The copied span still
+                // owns this range, so preserve the next batch's instance base.
+                startInstance += (uint)shadowCount;
+                continue;
+            }
+
+            if (drawCount > 0 && commandListInstanceAddress != boundInstanceAddress)
+            {
+                BindReferenceInstanceBuffer(
+                    cmd, boundInstanceAddress, ref srvBinds, ref srvBindMs);
+                commandListInstanceAddress = boundInstanceAddress;
+            }
+
+            var ordinaryLane = OpaqueIndirectSubmissionPolicy.IsOrdinaryLane(
+                sub.DepthWritingBlend,
+                batchState.UsesGrassDistanceEnvelope,
+                sub.IsDecal);
+            if (drawCount > 0)
+            {
+                // These are post-filter main-scene commands, before the opt-in geometry validator.
+                // They are the commands an ExecuteIndirect/grouping path would need to represent.
+                LastStats.ReferenceOpaqueSurvivingDraws++;
+                _opaqueSubmissionPsos.Add(batchState.Pso);
+                if (previousOpaquePso is not null &&
+                    !ReferenceEquals(previousOpaquePso, batchState.Pso))
+                {
+                    LastStats.ReferenceOpaquePsoTransitions++;
+                }
+                previousOpaquePso = batchState.Pso;
+
+                // Mutually-exclusive order lanes. Ordinary opaque/cutout draws can be PSO-grouped;
+                // decals retain their overlay order; depth-writing blended grass retains the
+                // grass-last correctness boundary. Cutout grass is separated because the registry
+                // deliberately keeps it in that same late lane for early-Z efficiency.
+                var submesh = batchState.Submesh;
+                if (submesh.DepthWritingBlend)
+                {
+                    // A blended shape reaches this opaque-instanced path only through the explicit
+                    // instanced-grass admission above. Classify it even if its distance envelope is
+                    // disabled, since DepthWritingBlend is the correctness-relevant order boundary.
+                    LastStats.ReferenceOpaqueGrassDepthWriteDraws++;
+                }
+                else if (batchState.UsesGrassDistanceEnvelope)
+                {
+                    LastStats.ReferenceOpaqueGrassCutoutDraws++;
+                }
+                else if (submesh.IsDecal)
+                {
+                    LastStats.ReferenceOpaqueDecalDraws++;
+                }
+                else if (ordinaryLane)
+                {
+                    LastStats.ReferenceOpaqueOrdinaryDraws++;
+                }
+            }
+
+            var submitIndirect = useOpaqueIndirect && drawCount > 0 && ordinaryLane;
+            if (pendingIndirectCount > 0 && drawCount > 0 &&
+                (!submitIndirect || OpaqueIndirectSubmissionPolicy.BeginsNewRun(
+                    pendingIndirectCount,
+                    pendingIndirectPso,
+                    batchState.Pso)))
+            {
+                FlushOpaqueIndirectRun(
+                    cmd,
+                    frameIndex,
+                    indirectArgumentAllocation,
+                    pendingIndirectStart,
+                    ref pendingIndirectCount,
+                    ref pendingIndirectPso,
+                    ref currentPso,
+                    ref drawCallMs);
+            }
+
+            if (!submitIndirect && drawCount > 0 && !ReferenceEquals(currentPso, batchState.Pso))
             {
                 cmd.SetPipelineState(batchState.Pso);
                 currentPso = batchState.Pso;
             }
 
-            var cbStarted = StartTiming();
             // Per-batch material/texture state pulled from the submesh (the batch key) — these
             // are identical for every instance in the batch, so they live here, not per instance.
-            var sub = batchState.Submesh;
             if (drawCount > 0 &&
                 (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null))
             {
@@ -3811,69 +5611,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         Math.Max(LastStats.ReferenceSpeedTreeMaximumLod, metadata.Level);
                 }
             }
-            var textureState = ResolveTextureState(sub);
-            // Video-settings "Shadows on grass" OFF for SCATTERED grass: the submesh has no grass
-            // marker (scatter identity lives on the reference/batch), so the no-sun-shadow bit is
-            // ORed here, where the batch's grass route is known. The per-game grass shaders honor
-            // the bit; TallGrass got it inside ResolveTextureState.
-            if (!_grassShadowsEnabled && batchState.UsesGrassDistanceEnvelope)
-            {
-                textureState.Z = (uint)MathF.Round(textureState.Z)
-                    | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
-            }
-            var instanceDraw = new InstanceDrawConstants(
-                sub.AlphaState,
-                sub.RenderState,
-                textureState,
-                new TexIndexQuad(
-                    sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
-                    sub.ClassicParallaxHeightMap?.BindlessIndex ??
-                    sub.ClassicEnvMask?.BindlessIndex ?? sub.SpecularMap?.BindlessIndex ?? 0,
-                    sub.GradientMap?.BindlessIndex ?? sub.Lighting30GlowMap?.BindlessIndex ?? 0),
-                drawStartInstance,
-                UvOffsetU: WrapUv(sub.UvScrollVelocity.X, UvScrollClock),
-                UvOffsetV: WrapUv(sub.UvScrollVelocity.Y, UvScrollClock),
-                WindMatrixValid: 1,
-                Specular: sub.Specular,
-                CameraRight: _leafBillboardRight,
-                CameraUp: _leafBillboardUp,
-                // TREE CNAM RockSpeed/RustleSpeed are per-species phase multipliers. They must be
-                // applied per batch (the shared wind rig advances the game-wide base phases).
-                // The far imposter is one whole-tree card, not a live leaf. Keep its corners rigid;
-                // applying STLEAF rock/rustle would curl the complete tree silhouette independently.
-                Wind: sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard
-                    ? Vector4.Zero
-                    : new Vector4(
-                        _wind.X,
-                        _wind.Y * sub.SpeedTreeWindSpeeds.X,
-                        _wind.Z,
-                        _wind.W * sub.SpeedTreeWindSpeeds.Y),
-                EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
-                // Classic PP lighting and BGEM/NoLighting falloff are mutually exclusive;
-                // TextureState bit 4 tells the PS when this existing slot carries
-                // (raw emission rgb, material multiplier) instead.
-                EffectFalloff: sub.HasEffectFalloff ? sub.EffectFalloffParams : sub.Lighting30Emission,
-                // Re-read every frame (like the bindless indices) so a cube promoted after the
-                // batch froze still lands — EnvMapState flips from −1 to the slot on residency.
-                // ResolveEnvMapState additionally suppresses window-flagged env draws while the
-                // "Window reflections" setting is off.
-                EnvMap: ResolveEnvMapState(sub),
-                SoftParticle: Vector4.Zero,
-                TallGrassWind: BuildTallGrassWindConstants(
-                    batchState.UsesTallGrassWind,
-                    batchState.GrassWaveMultiplier),
-                SpecularLodBounds: new Vector4(sub.LocalBoundsCenter, sub.LocalBoundsRadius),
-                SpecularLodParams: _classicSpecularLodProfile.ShaderParameters(
-                    specularEligible: sub.Specular.W > 0f));
+            var instanceDraw = BuildOpaqueInstanceDrawConstants(
+                batchState, drawStartInstance, out var textureState);
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
                 break;
             }
             unsafe { *(InstanceDrawConstants*)instanceDrawAlloc.CpuPtr = instanceDraw; }
-            cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, instanceDrawAlloc.GpuAddress);
-            cbUpdateMs += ElapsedMilliseconds(cbStarted);
-
+            if (drawCount > 0 && !submitIndirect)
+            {
+                cmd.SetGraphicsRootConstantBufferView(
+                    GpuRootSignature12.Slots.PerDrawCbv, instanceDrawAlloc.GpuAddress);
+            }
             // FALLOUT_VIEWER_GEOMETRY_VALIDATE: prove the geometry views and compacted instance
             // matrices this draw will read are sane. A violation only suppresses the cmd.* calls
             // (under _SKIP_DRAW) — the startInstance accounting below MUST advance regardless,
@@ -3884,42 +5634,63 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                                    drawCount, shadowCount, _framesSinceBuild, _lastBuildEvictionGen,
                                    _frameReusedBatches);
 
-            var drawStarted = StartTiming();
-            cmd.IASetVertexBuffers(0, batchState.Submesh.EffectiveVertexBufferView);
-            cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
-            if (drawCount > 0 && drawLiveness)
+            if (drawCount > 0)
             {
-                // The main scene draw excludes the shadow-only tail of the instance range.
-                cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
-                ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
-                if (batchState.UsesTallGrassWind)
+                if (submitIndirect)
                 {
-                    LastStats.ReferenceTallGrassInstancedDraws++;
-                    LastStats.ReferenceTallGrassInstancedInstances += drawCount;
-                    ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
+                    if (drawLiveness)
+                    {
+                        if (pendingIndirectCount == 0)
+                        {
+                            pendingIndirectStart = indirectWriteCount;
+                            pendingIndirectPso = batchState.Pso;
+                        }
+
+                        var command = new OpaqueIndirectCommand12
+                        {
+                            PerDrawCbAddress = instanceDrawAlloc.GpuAddress,
+                            VertexBufferView = sub.EffectiveVertexBufferView,
+                            IndexBufferView = sub.IndexBufferView,
+                            Draw = new OpaqueIndirectDrawIndexedArguments
+                            {
+                                IndexCountPerInstance = (uint)sub.IndexCount,
+                                InstanceCount = (uint)drawCount,
+                                StartIndexLocation = 0,
+                                BaseVertexLocation = 0,
+                                StartInstanceLocation = 0,
+                            },
+                        };
+                        unsafe
+                        {
+                            var destination = (byte*)indirectArgumentAllocation.CpuPtr
+                                              + (indirectWriteCount * OpaqueIndirectCommand12.ByteStride);
+                            *(OpaqueIndirectCommand12*)destination = command;
+                        }
+
+                        indirectWriteCount++;
+                        pendingIndirectCount++;
+                        ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
+                    }
+                }
+                else
+                {
+                    cmd.IASetVertexBuffers(0, batchState.Submesh.EffectiveVertexBufferView);
+                    cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
+                    if (drawLiveness)
+                    {
+                        // The main scene draw excludes the shadow-only tail of the instance range.
+                        cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
+                        LastStats.ReferenceOpaqueDirectDraws++;
+                        ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
+                        if (batchState.UsesTallGrassWind)
+                        {
+                            LastStats.ReferenceTallGrassInstancedDraws++;
+                            LastStats.ReferenceTallGrassInstancedInstances += drawCount;
+                            ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
+                        }
+                    }
                 }
             }
-            // Retail FO3/FNV grass never casts: the shipped GRASS shader families (GRASS2000-2006
-            // + TMS/23x mirrors, shaderpackage019) contain no depth/caster permutation at all, so
-            // TallGrass submeshes stay out of the sun-shadow cascades. Gated on the FNV wind
-            // support axis so other games' vegetation is untouched.
-            var fnvGrassNeverCasts = _tallGrassWindSupported && sub.IsTallGrass;
-            // TES4 grass must not START casting merely because it moved onto the batch path. It was
-            // blended per-draw before, and blended draws are never captured as casters, so any
-            // Oblivion grass shadow appearing here would be a NEW behaviour introduced by a perf
-            // change — and retail has no grass caster permutation in shaderpackage019 either.
-            // UsesGrassDistanceEnvelope is the batch-level "this is grass" marker (already part of the
-            // batch key), but it is NOT game-scoped: Skyrim (3500/1000) and FO3/FNV (7000/1000) set an
-            // envelope too. Gating on it ALONE — as this did between 2026-08-13 and 08-14 — silently
-            // stopped Skyrim grass and FO3/FNV NON-TallGrass grass from casting, which the old
-            // `_tallGrassWindSupported && sub.IsTallGrass` gate deliberately left untouched. Pair it
-            // with the route flag so the exclusion covers exactly the batches this change created.
-            var grassNeverCasts = fnvGrassNeverCasts
-                                  || (_instancedBlendGrassSupported && batchState.UsesGrassDistanceEnvelope);
-            // Video-settings "Tree canopy shadows" OFF: SpeedTree canopy geometry (branches, leaf
-            // cards, LOD components) stops casting — a CASTER-only gate; the trees stay visible.
-            var treeNeverCasts = !_treeShadowsEnabled &&
-                                 (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null);
             // Water-reflection mirror capture: MAIN-frustum draws only (never the shadow-only
             // tail — the mirror wants the visible set), original PSO + the per-draw CB / t8
             // window just bound. Decals are coplanar overlays that need their own biased mirror
@@ -3933,8 +5704,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                     instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount, batchState.Pso));
             }
-            if (_shadowCaptureArmed && !sub.IsDecal && !grassNeverCasts && !treeNeverCasts &&
-                drawCount + shadowCount > 0 && drawLiveness)
+            var mainCascades = CascadeCounts.From(batchState.FrameCascadeCount, drawCount);
+            var shadowTailCascades =
+                CascadeCounts.From(batchState.FrameShadowOnlyCascadeCount, shadowCount);
+            var mainHasCascadeInstances = ShadowCascadeSubmissionPolicy.HasAnyInstances(
+                drawCount,
+                mainCascades.C0,
+                mainCascades.C1,
+                mainCascades.C2,
+                mainCascades.C3);
+            if (shadowCasterEligible && drawLiveness &&
+                (mainHasCascadeInstances || tailHasCascadeInstances))
             {
                 // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
                 // (uInstanceBase et al.) + the t8 instance block it indexes stay valid until the
@@ -3946,9 +5726,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // bound). Emit the tail as its own draw with its own instance base so each range stays
                 // a clean prefix. Its CB is allocated HERE, inside the main pass, so the shadow pass's
                 // protected ring reservation is unaffected.
-                var mainCascades = CascadeCounts.From(batchState.FrameCascadeCount, drawCount);
                 var shadowTailCb = 0UL;
-                if (shadowCount > 0 &&
+                if (tailHasCascadeInstances &&
                     _ringBuffer.TryAllocate(
                         frameIndex, InstanceDrawByteSize, out var shadowTailAlloc,
                         GpuRingBuffer12.CbAlignment))
@@ -3962,7 +5741,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     shadowTailCb = shadowTailAlloc.GpuAddress;
                 }
 
-                if (shadowCount > 0 && shadowTailCb == 0UL)
+                if (tailHasCascadeInstances && shadowTailCb == 0UL)
                 {
                     // No room for the tail's own CB: fall back to one unculled draw covering both
                     // ranges. Correct, just not cascade-culled for this batch this frame.
@@ -3974,7 +5753,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 }
                 else
                 {
-                    if (drawCount > 0)
+                    if (mainHasCascadeInstances)
                     {
                         _shadowDraws.Add(new ShadowDraw(
                             sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
@@ -3982,13 +5761,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             sub.AlphaTest, mainCascades, batchState.UsesTallGrassWind));
                     }
 
-                    if (shadowCount > 0)
+                    if (tailHasCascadeInstances)
                     {
                         _shadowDraws.Add(new ShadowDraw(
                             sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                             shadowTailCb, boundInstanceAddress, shadowCount,
                             sub.AlphaTest,
-                            CascadeCounts.From(batchState.FrameShadowOnlyCascadeCount, shadowCount),
+                            shadowTailCascades,
                             // Tall-grass shadow telemetry is attributed to the main draw only, so the
                             // tail must not double-count it.
                             UsesTallGrassWind: false));
@@ -4031,14 +5810,70 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     ShadowDrawsIncludeAnimatedMeshes = true;
                 }
             }
-            drawCallMs += ElapsedMilliseconds(drawStarted);
             startInstance += (uint)(drawCount + shadowCount);
-            submeshDraws++;
-            LastStats.ReferenceInstancedDraws++;
-            LastStats.ReferenceInstances += drawCount;
+            if (drawCount > 0)
+            {
+                // These counters describe color submissions; shadow-only records replay later and
+                // have their own per-cascade submitted-draw/instance telemetry.
+                submeshDraws++;
+                LastStats.ReferenceInstancedDraws++;
+                LastStats.ReferenceInstances += drawCount;
+            }
         }
 
+        FlushOpaqueIndirectRun(
+            cmd,
+            frameIndex,
+            indirectArgumentAllocation,
+            pendingIndirectStart,
+            ref pendingIndirectCount,
+            ref pendingIndirectPso,
+            ref currentPso,
+            ref drawCallMs);
+
         LastStats.ReferenceBatches = activeBatchCount;
+        LastStats.ReferenceOpaqueUniquePsos = _opaqueSubmissionPsos.Count;
+    }
+
+    private void FlushOpaqueIndirectRun(
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        GpuRingBuffer12.RingAllocation argumentAllocation,
+        int pendingStart,
+        ref int pendingCount,
+        ref ID3D12PipelineState? pendingPso,
+        ref ID3D12PipelineState? currentPso,
+        ref double drawCallMs)
+    {
+        if (pendingCount == 0)
+        {
+            return;
+        }
+
+        var pso = pendingPso ?? throw new InvalidOperationException(
+            "An opaque indirect run has commands but no pipeline state.");
+        var started = StartTiming();
+        if (!ReferenceEquals(currentPso, pso))
+        {
+            cmd.SetPipelineState(pso);
+            currentPso = pso;
+        }
+
+        var commandSignature = _opaqueIndirectSignature ?? throw new InvalidOperationException(
+            "An opaque indirect run cannot execute without a command signature.");
+        cmd.ExecuteIndirect(
+            commandSignature: commandSignature,
+            maxCommandCount: (uint)pendingCount,
+            argumentBuffer: _ringBuffer.GetFrameBuffer(frameIndex),
+            argumentBufferOffset: argumentAllocation.ByteOffset
+                                  + ((ulong)pendingStart * OpaqueIndirectCommand12.ByteStride),
+            countBuffer: null,
+            countBufferOffset: 0);
+        drawCallMs += ElapsedMilliseconds(started);
+        LastStats.ReferenceOpaqueIndirectDraws += pendingCount;
+        LastStats.ReferenceOpaqueIndirectExecuteCalls++;
+        pendingCount = 0;
+        pendingPso = null;
     }
 
     private void DrawBlended(
@@ -4176,6 +6011,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // i walks the SORTED positions (reservations are keyed to them); order[i] maps back to
                 // the draw itself, which was never moved.
                 var draw = draws[order[i]];
+                if (draw.Submesh.EffectiveIndexCount <= 0 ||
+                    (_frameRefilterActive && !PassesExactCull(draw.ReferenceBounds)) ||
+                    !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 // Unified stream merge: draw every queued water batch at least as far as this draw
                 // first (sortKeys holds the NEGATED depth, indexed by ORIGINAL draw index). Water
                 // clobbers the per-frame CBV/bindless tables, so rebind and force a PSO re-set.
@@ -4194,9 +6032,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
                     currentPso = null;
                 }
-
-                if (draw.Submesh.EffectiveIndexCount <= 0 ||
-                    !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 // In the unified stream a depth-writing blend is a per-draw PSO choice (the hoisted
                 // pre-water list no longer exists there). With the ENGINE rule active (default),
                 // z-write is the decompile-proven ambient-ON minus the authored exceptions baked
@@ -4258,9 +6093,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     pso,
                     reservations[i],
                     sceneDepthSampled,
-                    ref currentPso,
-                    ref cbUpdateMs,
-                    ref drawCallMs);
+                    ref currentPso);
                 submeshDraws++;
                 LastStats.ReferenceBlendedDraws++;
                 if (sceneDepthSampled)
@@ -4336,6 +6169,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 var draw = _depthWritingBlendDraws[order[i]];
                 if (draw.Submesh.EffectiveIndexCount <= 0 ||
+                    (_frameRefilterActive && !PassesExactCull(draw.ReferenceBounds)) ||
                     !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 // BOTH blend sites must pass grassRoute. Oblivion grass authors 0x12ED (blend AND
                 // test) and BuildAlphaState keeps the test live for a depth-writing blend, so grass
@@ -4354,9 +6188,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     pso,
                     reservations[i],
                     sceneDepthSampled: false,
-                    ref currentPso,
-                    ref cbUpdateMs,
-                    ref drawCallMs);
+                    ref currentPso);
                 submeshDraws++;
                 LastStats.ReferenceBlendedDraws++;
                 if (draw.Submesh.LiveParticles is { HasLiveFrame: true })
@@ -4397,6 +6229,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 var draw = draws[order[i]];
                 drawable[i] = draw.Submesh.EffectiveIndexCount > 0 &&
+                              (!_frameRefilterActive || PassesExactCull(draw.ReferenceBounds)) &&
                               PassesExactGrassDistance(
                                   draw.SourceWorld.Translation,
                                   draw.IsGrass)
@@ -4450,14 +6283,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ID3D12PipelineState pso,
         GpuRingBuffer12.RingAllocation perDrawAlloc,
         bool sceneDepthSampled,
-        ref ID3D12PipelineState? currentPso,
-        ref double cbUpdateMs,
-        ref double drawCallMs)
+        ref ID3D12PipelineState? currentPso)
     {
         var effectiveIndexCount = draw.Submesh.EffectiveIndexCount;
         Debug.Assert(effectiveIndexCount > 0, "Quiet live-particle frames must be filtered before drawing.");
 
-        var cbStarted = StartTiming();
         var alphaState = draw.AlphaState;
         if (draw.Submesh.MaterialAlphaController is { } alphaController)
         {
@@ -4523,6 +6353,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
                 draw.Submesh.Normal.BindlessIndex,
+                draw.Submesh.StarfieldOpacity?.BindlessIndex ??
                 draw.Submesh.ClassicParallaxHeightMap?.BindlessIndex ??
                 draw.Submesh.ClassicEnvMask?.BindlessIndex ??
                 draw.Submesh.SpecularMap?.BindlessIndex ?? 0,
@@ -4534,9 +6365,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             CameraRight = _leafBillboardRight,
             CameraUp = _leafBillboardUp,
             EffectTint = new Vector4(draw.Submesh.EffectTint, draw.Submesh.HasEffectFalloff ? 1f : 0f),
-            EffectFalloff = draw.Submesh.HasEffectFalloff
-                ? draw.Submesh.EffectFalloffParams
-                : draw.Submesh.Lighting30Emission,
+            EffectFalloff = ResolveEffectFalloffConstants(draw.Submesh),
             EnvMap = ResolveEnvMapState(draw.Submesh),
             UvScroll = new Vector4(
                 WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
@@ -4554,9 +6383,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
         unsafe { *(PerDrawConstants*)perDrawAlloc.CpuPtr = perDraw; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
-        cbUpdateMs += ElapsedMilliseconds(cbStarted);
 
-        var drawStarted = StartTiming();
         cmd.IASetVertexBuffers(0, draw.Submesh.EffectiveVertexBufferView);
         var indexBufferView = draw.Submesh.EffectiveIndexBufferView;
         if (draw.Submesh.EffectiveParticleCenters is { Length: > 1 } centers)
@@ -4601,7 +6428,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             LastStats.ReferenceTallGrassDirectInstances++;
             ObserveTallGrassWaveMultiplier(draw.GrassWaveMultiplier);
         }
-        drawCallMs += ElapsedMilliseconds(drawStarted);
     }
 
     /// <summary>
@@ -4947,8 +6773,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private void RefreshBlendedDraws(
         Vector3 cameraPosition, Vector3 cameraForward, Vector3 renderOrigin)
     {
-        RefreshBlendedDrawList(_blendedDraws, cameraPosition, cameraForward, renderOrigin);
-        RefreshBlendedDrawList(_depthWritingBlendDraws, cameraPosition, cameraForward, renderOrigin);
+        RefreshBlendedDraws(
+            _blendedDraws,
+            _depthWritingBlendDraws,
+            cameraPosition,
+            cameraForward,
+            renderOrigin);
+    }
+
+    private void RefreshBlendedDraws(
+        List<BlendedReferenceDraw> blendedDraws,
+        List<BlendedReferenceDraw> depthWritingBlendDraws,
+        Vector3 cameraPosition,
+        Vector3 cameraForward,
+        Vector3 renderOrigin)
+    {
+        RefreshBlendedDrawList(blendedDraws, cameraPosition, cameraForward, renderOrigin);
+        RefreshBlendedDrawList(depthWritingBlendDraws, cameraPosition, cameraForward, renderOrigin);
     }
 
     private void RefreshBlendedDrawList(
@@ -5053,89 +6894,247 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///         order whose prefixes are exactly the per-cascade sets.
     ///     </para>
     /// </summary>
-    private void SortBatchInstancesByCascade()
+    private bool SortBatchInstancesByCascade(BatchBuildState build, OpaqueBatchState batch)
     {
-        // No fit (capture/export paths, or the kill switch): every cascade keeps the whole caster set.
-        // The prefixes MUST be filled explicitly — they are zeroed per frame, and leaving them at zero
-        // would mean "no caster reaches any cascade", i.e. silently no shadows at all.
-        if (!ShadowCascadeCullEnabled || _cascadeFit is not { } fit || fit.Radii.Length == 0)
+        const int sortWorkChunk = 512;
+        if (build.CascadeSort is not { } cursor || !ReferenceEquals(cursor.Batch, batch))
         {
-            foreach (var batch in _opaqueBatches.ActiveBatches)
+            cursor = new CascadeBatchSortState(batch);
+            build.CascadeSort = cursor;
+        }
+
+        switch (cursor.Phase)
+        {
+            case CascadeBatchSortPhase.Initialize:
+                Array.Clear(batch.CascadePrefix);
+                Array.Clear(batch.ShadowOnlyCascadePrefix);
+                // No fit (capture/export paths, or the kill switch): every cascade keeps the whole
+                // caster set. Zero prefixes mean "no caster", so fill them explicitly.
+                if (!ShadowCascadeCullEnabled || build.CascadeFit is not { } initialFit ||
+                    initialFit.Radii.Length == 0)
+                {
+                    batch.CascadePrefix.AsSpan().Fill(batch.Instances.Count);
+                    batch.ShadowOnlyCascadePrefix.AsSpan().Fill(batch.ShadowOnlyInstances.Count);
+                    cursor.Phase = CascadeBatchSortPhase.Complete;
+                    return true;
+                }
+
+                cursor.Cascades = Math.Min(initialFit.Radii.Length, ShadowMapRenderer12.CascadeCount);
+                cursor.Slack = CullPositionSlack * 1.7321f;
+                cursor.Count = batch.Instances.Count;
+                cursor.Index = 0;
+                cursor.HasSeeds = batch.PhysicsLiteSeeds.Count == cursor.Count;
+                cursor.HasHeatmapIds = batch.HeatmapFormIds.Count == cursor.Count;
+                Array.Clear(cursor.BucketCounts);
+                _cascadeBucketScratch.Clear();
+                _cascadeBucketScratch.EnsureCapacity(cursor.Count);
+                if (cursor.Count == 0)
+                {
+                    cursor.Phase = CascadeBatchSortPhase.ShadowInitialize;
+                }
+                else if (batch.InstanceBounds.Count != cursor.Count)
+                {
+                    batch.CascadePrefix.AsSpan().Fill(cursor.Count);
+                    cursor.Phase = CascadeBatchSortPhase.ShadowInitialize;
+                }
+                else
+                {
+                    cursor.Phase = CascadeBatchSortPhase.MainClassify;
+                }
+                return false;
+
+            case CascadeBatchSortPhase.MainClassify:
             {
-                batch.CascadePrefix.AsSpan().Fill(batch.Instances.Count);
-                batch.ShadowOnlyCascadePrefix.AsSpan().Fill(batch.ShadowOnlyInstances.Count);
+                var fit = build.CascadeFit!.Value;
+                var stop = Math.Min(cursor.Index + sortWorkChunk, cursor.Count);
+                var bounds = CollectionsMarshal.AsSpan(batch.InstanceBounds);
+                while (cursor.Index < stop)
+                {
+                    var bucket = ClassifyCascade(
+                        bounds[cursor.Index], fit, cursor.Cascades, cursor.Slack);
+                    _cascadeBucketScratch.Add(bucket);
+                    cursor.BucketCounts[bucket]++;
+                    cursor.Index++;
+                }
+
+                if (cursor.Index == cursor.Count)
+                {
+                    PrepareCascadeScatter(
+                        cursor.BucketCounts, cursor.WriteCursor,
+                        batch.CascadePrefix, cursor.Cascades);
+                    _cascadeSortMatrices.Clear();
+                    _cascadeSortBounds.Clear();
+                    _cascadeSortSeeds.Clear();
+                    _cascadeSortHeatmapIds.Clear();
+                    EnsureCapacity(_cascadeSortMatrices, cursor.Count);
+                    EnsureCapacity(_cascadeSortBounds, cursor.Count);
+                    if (cursor.HasSeeds) EnsureCapacity(_cascadeSortSeeds, cursor.Count);
+                    if (cursor.HasHeatmapIds) EnsureCapacity(_cascadeSortHeatmapIds, cursor.Count);
+                    cursor.Index = 0;
+                    cursor.Phase = CascadeBatchSortPhase.MainScatter;
+                }
+                return false;
             }
 
-            return;
-        }
+            case CascadeBatchSortPhase.MainScatter:
+            {
+                var stop = Math.Min(cursor.Index + sortWorkChunk, cursor.Count);
+                var sourceMatrices = CollectionsMarshal.AsSpan(batch.Instances);
+                var sourceBounds = CollectionsMarshal.AsSpan(batch.InstanceBounds);
+                var sourceSeeds = CollectionsMarshal.AsSpan(batch.PhysicsLiteSeeds);
+                var sourceHeatmapIds = CollectionsMarshal.AsSpan(batch.HeatmapFormIds);
+                var targetMatrices = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
+                var targetBounds = CollectionsMarshal.AsSpan(_cascadeSortBounds);
+                var targetSeeds = CollectionsMarshal.AsSpan(_cascadeSortSeeds);
+                var targetHeatmapIds = CollectionsMarshal.AsSpan(_cascadeSortHeatmapIds);
+                while (cursor.Index < stop)
+                {
+                    var slot = cursor.WriteCursor[_cascadeBucketScratch[cursor.Index]]++;
+                    targetMatrices[slot] = sourceMatrices[cursor.Index];
+                    targetBounds[slot] = sourceBounds[cursor.Index];
+                    if (cursor.HasSeeds) targetSeeds[slot] = sourceSeeds[cursor.Index];
+                    if (cursor.HasHeatmapIds) targetHeatmapIds[slot] = sourceHeatmapIds[cursor.Index];
+                    cursor.Index++;
+                }
 
-        var cascades = Math.Min(fit.Radii.Length, ShadowMapRenderer12.CascadeCount);
-        // Batches are frozen and re-drawn for up to BatchReuseMaxFrames while the camera drifts inside
-        // the cull slack (the base term below), and each cascade's own anchor can additionally lag by
-        // its snap quantum whenever an in-place refresh replays the PUBLISHED frustum — the classifier
-        // adds each cascade's own quantum (fit.Snaps) on top so a caster sorted against this frame's
-        // anchor still lies inside the older box that later draws it.
-        var slack = CullPositionSlack * 1.7321f;
+                if (cursor.Index == cursor.Count)
+                {
+                    cursor.Index = 0;
+                    cursor.Phase = CascadeBatchSortPhase.MainCopy;
+                }
+                return false;
+            }
 
-        foreach (var batch in _opaqueBatches.ActiveBatches)
-        {
-            SortInstanceListByCascade(
-                batch.Instances, batch.InstanceBounds, batch.PhysicsLiteSeeds, batch.HeatmapFormIds,
-                batch.CascadePrefix, fit, cascades, slack);
+            case CascadeBatchSortPhase.MainCopy:
+            {
+                var length = Math.Min(sortWorkChunk, cursor.Count - cursor.Index);
+                var sourceMatrices = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
+                var sourceBounds = CollectionsMarshal.AsSpan(_cascadeSortBounds);
+                sourceMatrices.Slice(cursor.Index, length).CopyTo(
+                    CollectionsMarshal.AsSpan(batch.Instances).Slice(cursor.Index, length));
+                sourceBounds.Slice(cursor.Index, length).CopyTo(
+                    CollectionsMarshal.AsSpan(batch.InstanceBounds).Slice(cursor.Index, length));
+                if (cursor.HasSeeds)
+                {
+                    CollectionsMarshal.AsSpan(_cascadeSortSeeds).Slice(cursor.Index, length).CopyTo(
+                        CollectionsMarshal.AsSpan(batch.PhysicsLiteSeeds).Slice(cursor.Index, length));
+                }
+                if (cursor.HasHeatmapIds)
+                {
+                    CollectionsMarshal.AsSpan(_cascadeSortHeatmapIds).Slice(cursor.Index, length).CopyTo(
+                        CollectionsMarshal.AsSpan(batch.HeatmapFormIds).Slice(cursor.Index, length));
+                }
+                cursor.Index += length;
+                if (cursor.Index == cursor.Count)
+                {
+                    cursor.Phase = CascadeBatchSortPhase.ShadowInitialize;
+                }
+                return false;
+            }
 
-            // Shadow-only casters are a SEPARATE range appended after the main instances, and the
-            // main draw's count excludes them — so they must be sorted independently and never
-            // interleaved with the block above.
-            SortShadowOnlyListByCascade(
-                batch.ShadowOnlyInstances, batch.ShadowOnlyPhysicsLiteSeeds,
-                batch.ShadowOnlyCascadePrefix, fit, cascades, slack);
+            case CascadeBatchSortPhase.ShadowInitialize:
+                cursor.Count = batch.ShadowOnlyInstances.Count;
+                cursor.Index = 0;
+                cursor.HasSeeds = batch.ShadowOnlyPhysicsLiteSeeds.Count == cursor.Count;
+                cursor.HasHeatmapIds = false;
+                Array.Clear(cursor.BucketCounts);
+                _cascadeBucketScratch.Clear();
+                _cascadeBucketScratch.EnsureCapacity(cursor.Count);
+                if (cursor.Count == 0)
+                {
+                    cursor.Phase = CascadeBatchSortPhase.Complete;
+                    return true;
+                }
+                cursor.Phase = CascadeBatchSortPhase.ShadowClassify;
+                return false;
+
+            case CascadeBatchSortPhase.ShadowClassify:
+            {
+                var fit = build.CascadeFit!.Value;
+                var stop = Math.Min(cursor.Index + sortWorkChunk, cursor.Count);
+                var instances = CollectionsMarshal.AsSpan(batch.ShadowOnlyInstances);
+                while (cursor.Index < stop)
+                {
+                    // Shadow-only matrices are render-origin relative; the fit is absolute.
+                    var center = instances[cursor.Index].Translation + build.RenderOrigin;
+                    var bucket = ClassifyCascade(
+                        new Vector4(center, 0f), fit, cursor.Cascades, cursor.Slack);
+                    _cascadeBucketScratch.Add(bucket);
+                    cursor.BucketCounts[bucket]++;
+                    cursor.Index++;
+                }
+
+                if (cursor.Index == cursor.Count)
+                {
+                    PrepareCascadeScatter(
+                        cursor.BucketCounts, cursor.WriteCursor,
+                        batch.ShadowOnlyCascadePrefix, cursor.Cascades);
+                    _cascadeSortMatrices.Clear();
+                    _cascadeSortSeeds.Clear();
+                    EnsureCapacity(_cascadeSortMatrices, cursor.Count);
+                    if (cursor.HasSeeds) EnsureCapacity(_cascadeSortSeeds, cursor.Count);
+                    cursor.Index = 0;
+                    cursor.Phase = CascadeBatchSortPhase.ShadowScatter;
+                }
+                return false;
+            }
+
+            case CascadeBatchSortPhase.ShadowScatter:
+            {
+                var stop = Math.Min(cursor.Index + sortWorkChunk, cursor.Count);
+                var sourceMatrices = CollectionsMarshal.AsSpan(batch.ShadowOnlyInstances);
+                var sourceSeeds = CollectionsMarshal.AsSpan(batch.ShadowOnlyPhysicsLiteSeeds);
+                var targetMatrices = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
+                var targetSeeds = CollectionsMarshal.AsSpan(_cascadeSortSeeds);
+                while (cursor.Index < stop)
+                {
+                    var slot = cursor.WriteCursor[_cascadeBucketScratch[cursor.Index]]++;
+                    targetMatrices[slot] = sourceMatrices[cursor.Index];
+                    if (cursor.HasSeeds) targetSeeds[slot] = sourceSeeds[cursor.Index];
+                    cursor.Index++;
+                }
+
+                if (cursor.Index == cursor.Count)
+                {
+                    cursor.Index = 0;
+                    cursor.Phase = CascadeBatchSortPhase.ShadowCopy;
+                }
+                return false;
+            }
+
+            case CascadeBatchSortPhase.ShadowCopy:
+            {
+                var length = Math.Min(sortWorkChunk, cursor.Count - cursor.Index);
+                CollectionsMarshal.AsSpan(_cascadeSortMatrices).Slice(cursor.Index, length).CopyTo(
+                    CollectionsMarshal.AsSpan(batch.ShadowOnlyInstances).Slice(cursor.Index, length));
+                if (cursor.HasSeeds)
+                {
+                    CollectionsMarshal.AsSpan(_cascadeSortSeeds).Slice(cursor.Index, length).CopyTo(
+                        CollectionsMarshal.AsSpan(batch.ShadowOnlyPhysicsLiteSeeds).Slice(cursor.Index, length));
+                }
+                cursor.Index += length;
+                if (cursor.Index == cursor.Count)
+                {
+                    cursor.Phase = CascadeBatchSortPhase.Complete;
+                    return true;
+                }
+                return false;
+            }
+
+            case CascadeBatchSortPhase.Complete:
+                return true;
+            default:
+                throw new InvalidOperationException($"Unexpected cascade-sort phase {cursor.Phase}.");
         }
     }
 
-    /// <summary>Counting-sorts one instance list (plus its parallel bounds/seed/heatmap lists) into
-    /// cascade order and fills <paramref name="prefix" />.</summary>
-    private void SortInstanceListByCascade(
-        List<Matrix4x4> instances,
-        List<Vector4> bounds,
-        List<uint> seeds,
-        List<uint> heatmapIds,
+    private static void PrepareCascadeScatter(
+        int[] bucketCounts,
+        int[] writeCursor,
         int[] prefix,
-        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan) fit,
-        int cascades,
-        float slack)
+        int cascades)
     {
-        Array.Clear(prefix);
-        var count = instances.Count;
-        if (count == 0)
-        {
-            return;
-        }
-
-        // Bounds are parallel to instances by construction; seeds only when physics-lite is
-        // present; heatmap FormIDs only while the heatmap overlay is enabled.
-        var hasBounds = bounds.Count == count;
-        var hasSeeds = seeds.Count == count;
-        var hasHeatmapIds = heatmapIds.Count == count;
-        if (!hasBounds)
-        {
-            // No per-instance bounds to classify against — keep every caster in every cascade.
-            prefix.AsSpan().Fill(count);
-            return;
-        }
-
-        _cascadeBucketScratch.Clear();
-        Span<int> bucketCounts = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
-        for (var i = 0; i < count; i++)
-        {
-            var bucket = ClassifyCascade(bounds[i], fit, cascades, slack);
-            _cascadeBucketScratch.Add(bucket);
-            bucketCounts[bucket]++;
-        }
-
-        // Prefix[c] = instances in cascades 0..c. Bucket `cascades` is "outside every cascade" and is
-        // deliberately excluded — those casters are drawn by the main pass but by no shadow map.
         var running = 0;
-        Span<int> writeCursor = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
         for (var c = 0; c <= cascades; c++)
         {
             writeCursor[c] = running;
@@ -5143,93 +7142,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             if (c < cascades) prefix[c] = running;
         }
 
-        // Any cascade beyond the supplied radii inherits the widest prefix rather than zero.
-        for (var c = cascades; c < prefix.Length; c++) prefix[c] = prefix[cascades - 1];
-
-        // Stable scatter into the cascade order.
-        _cascadeSortMatrices.Clear();
-        _cascadeSortBounds.Clear();
-        _cascadeSortSeeds.Clear();
-        _cascadeSortHeatmapIds.Clear();
-        EnsureCapacity(_cascadeSortMatrices, count);
-        EnsureCapacity(_cascadeSortBounds, count);
-        if (hasSeeds) EnsureCapacity(_cascadeSortSeeds, count);
-        if (hasHeatmapIds) EnsureCapacity(_cascadeSortHeatmapIds, count);
-
-        var matrixSpan = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
-        var boundsSpan = CollectionsMarshal.AsSpan(_cascadeSortBounds);
-        var seedSpan = hasSeeds ? CollectionsMarshal.AsSpan(_cascadeSortSeeds) : default;
-        var heatmapSpan = hasHeatmapIds ? CollectionsMarshal.AsSpan(_cascadeSortHeatmapIds) : default;
-        for (var i = 0; i < count; i++)
+        // Bucket `cascades` is outside every supplied cascade and deliberately excluded. Any
+        // renderer cascade beyond the supplied radii inherits the widest real prefix.
+        for (var c = cascades; c < prefix.Length; c++)
         {
-            var slot = writeCursor[_cascadeBucketScratch[i]]++;
-            matrixSpan[slot] = instances[i];
-            boundsSpan[slot] = bounds[i];
-            if (hasSeeds) seedSpan[slot] = seeds[i];
-            if (hasHeatmapIds) heatmapSpan[slot] = heatmapIds[i];
+            prefix[c] = prefix[cascades - 1];
         }
-
-        matrixSpan.CopyTo(CollectionsMarshal.AsSpan(instances));
-        boundsSpan.CopyTo(CollectionsMarshal.AsSpan(bounds));
-        if (hasSeeds) seedSpan.CopyTo(CollectionsMarshal.AsSpan(seeds));
-        if (hasHeatmapIds) heatmapSpan.CopyTo(CollectionsMarshal.AsSpan(heatmapIds));
-    }
-
-    /// <summary>Shadow-only casters carry no bounds list, so they are classified from their world
-    /// translation (converted back to absolute) plus the submesh's own radius.</summary>
-    private void SortShadowOnlyListByCascade(
-        List<Matrix4x4> instances,
-        List<uint> seeds,
-        int[] prefix,
-        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan) fit,
-        int cascades,
-        float slack)
-    {
-        Array.Clear(prefix);
-        var count = instances.Count;
-        if (count == 0)
-        {
-            return;
-        }
-
-        var hasSeeds = seeds.Count == count;
-        _cascadeBucketScratch.Clear();
-        Span<int> bucketCounts = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
-        for (var i = 0; i < count; i++)
-        {
-            // Instance matrices are render-origin relative; the fit is absolute.
-            var center = instances[i].Translation + _frameRenderOrigin;
-            var bucket = ClassifyCascade(new Vector4(center, 0f), fit, cascades, slack);
-            _cascadeBucketScratch.Add(bucket);
-            bucketCounts[bucket]++;
-        }
-
-        var running = 0;
-        Span<int> writeCursor = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
-        for (var c = 0; c <= cascades; c++)
-        {
-            writeCursor[c] = running;
-            running += bucketCounts[c];
-            if (c < cascades) prefix[c] = running;
-        }
-
-        for (var c = cascades; c < prefix.Length; c++) prefix[c] = prefix[cascades - 1];
-
-        _cascadeSortMatrices.Clear();
-        _cascadeSortSeeds.Clear();
-        EnsureCapacity(_cascadeSortMatrices, count);
-        if (hasSeeds) EnsureCapacity(_cascadeSortSeeds, count);
-        var matrixSpan = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
-        var seedSpan = hasSeeds ? CollectionsMarshal.AsSpan(_cascadeSortSeeds) : default;
-        for (var i = 0; i < count; i++)
-        {
-            var slot = writeCursor[_cascadeBucketScratch[i]]++;
-            matrixSpan[slot] = instances[i];
-            if (hasSeeds) seedSpan[slot] = seeds[i];
-        }
-
-        matrixSpan.CopyTo(CollectionsMarshal.AsSpan(instances));
-        if (hasSeeds) seedSpan.CopyTo(CollectionsMarshal.AsSpan(seeds));
     }
 
     /// <summary>Index of the smallest cascade containing this caster, or <paramref name="cascades" />
@@ -5369,6 +7287,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 RenderState,
         Vector4 Specular,
         Matrix4x4 SourceWorld,
+        Vector4 ReferenceBounds,
         uint PhysicsLiteSeed,
         bool IsGrass,
         float GrassWaveMultiplier,

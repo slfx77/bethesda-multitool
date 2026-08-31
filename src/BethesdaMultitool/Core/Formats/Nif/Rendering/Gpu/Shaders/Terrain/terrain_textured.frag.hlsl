@@ -62,7 +62,7 @@ cbuffer PerMode : register(b2)
 // viewer. Enabled: colored ambient + sun·(N·L)·sunShadow (shadow = 1.0 whenever the shadow pass
 // is off, preserving the exact pre-shadow output), energy-bounded so a fully sunlit surface lands
 // near the legacy max (~1.0) instead of blowing out.
-float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
+float3 AtmosphereLight(float3 N, float3 worldPos, float2 pixelPosition, float sunShadow)
 {
     if (uSunColorLighting.w < 0.5)
     {
@@ -90,7 +90,7 @@ float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
     float3 shade = ambient * kAmbientScale +
         uSunColorLighting.rgb * (ndotl * sunShadow) +
-        PlacedLightContribution(N, worldPos);
+        PlacedLightContribution(N, worldPos, pixelPosition);
     return max(shade, 0.0);
 }
 
@@ -254,6 +254,6 @@ float4 main(PSInput input) : SV_Target
     // inside AtmosphereLight retains its existing diagnostic equation; non-FNV games never enter
     // the normal-map branch because b2.w is zero.
     float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
-    float3 shade = AtmosphereLight(normal, input.vWorldPos, sunShadow);
+    float3 shade = AtmosphereLight(normal, input.vWorldPos, input.Position.xy, sunShadow);
     return float4(ApplyFog(color * shade, input.vWorldPos), 1.0);
 }

@@ -25,7 +25,7 @@ public sealed class SunShadowTelemetrySourceContractTests
             "LastShadowSubmittedDrawCount = 0;",
             "LastShadowSubmittedInstanceCount = 0;",
             "LastShadowReplayCompleted = false;",
-            "var cascadeInstances = Math.Min(draw.Cascades[cascadeIndex], draw.DrawCount);",
+            "var cascadeInstances = ShadowCascadeSubmissionPolicy.ClampInstanceCount(",
             "if (cascadeInstances <= 0)",
             "cmd.DrawIndexedInstanced",
             "LastShadowSubmittedDrawCount++;",

@@ -37,7 +37,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private static readonly Logger Log = Logger.Instance;
 
     // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32)
-    // + 3 layers(48) + depthParams(16) + renderOrigin(16) + 3 FO4 float4s(48)
+    // + 3 layers(48) + depthParams(16) + renderOrigin(16) + 3 FO4/FO76 union float4s(48)
     // + ordered normal indices(16) + 2 Oblivion DATA registers(32)
     // + 4 opt-in modern-water registers(64) = the established 416-byte / 26-register prefix.
     // WATER001 appends snapshot/plane + recovered refraction registers (32) without moving any
@@ -48,8 +48,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // the mirror pass's view-projection matrix + scene-content flag register (uReflectionViewProj
     // + uReflectionParams) for the Oblivion WATER007 projective arm.
     private const uint WaterReflectionUniformByteSize = 1 * 16 + 64 + 16;
+    // Dedicated append-only Starfield WATR tail. Keeping it after every established register means
+    // the new approximation cannot move a recovered classic/FO4/FNV constant-buffer offset.
+    private const uint StarfieldWaterUniformByteSize = StarfieldWaterFrameUniforms.RegisterCount * 16;
     private const uint WaterFrameUniformsByteSize =
-        UniformsByteSize + FnvWater001UniformByteSize + WaterReflectionUniformByteSize;
+        UniformsByteSize + FnvWater001UniformByteSize + WaterReflectionUniformByteSize +
+        StarfieldWaterUniformByteSize;
     private const uint FnvNoiseDimension = 256;
 
     // Full chain for the 256² noise-NORMAL tile (256..1 = 9 levels). The authored NNAM the retail
@@ -101,8 +105,18 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly ID3D12PipelineState _psoOblivionDepthSample;
     private readonly ID3D12PipelineState _psoFo4;
     private readonly ID3D12PipelineState _psoFo4DepthSample;
+    // FO76's 148-byte WATR carries float RGB body colour and per-channel opacity. Its dedicated
+    // pair uses dual-source blending so those three transmission channels reach the framebuffer
+    // without the old byte-colour/scalar-alpha compatibility projection. It is selected only when
+    // the typed payload decoded successfully; malformed/proto records retain the FO4-family PSO.
+    private readonly ID3D12PipelineState _psoFo76Optics;
+    private readonly ID3D12PipelineState _psoFo76OpticsDepthSample;
     private readonly ID3D12PipelineState _psoMorrowind;
     private readonly ID3D12PipelineState _psoMorrowindDepthSample;
+    // Starfield's source-backed approximation has its own file and PSO pair. It consumes exact WATR
+    // inputs but is deliberately not named or routed as the unrecovered CE2 Water shader.
+    private readonly ID3D12PipelineState _psoStarfield;
+    private readonly ID3D12PipelineState _psoStarfieldDepthSample;
     // The flat stand-in has NO depth-sample twin, unlike every pair above: it reads no scene depth,
     // so it has no occlusion clip to compile out and the two compiles would be byte-identical. One
     // PSO serves both host depth states — the depth-stencil state is the same in either template.
@@ -166,6 +180,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _fnvWaterSortScratch = new();
     private float? _worldspaceDefaultWaterHeight;
     private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
+    private StarfieldWaterApproximation? _starfieldApproximation;
     private uint _noiseBindlessIndex = NoNormalMap;
     // Planar sky-reflection target (see SetWaterReflection). Persists across frames; the host
     // re-supplies it each frame and passes null when the feature is off or the pass failed.
@@ -392,9 +407,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
              (long)gpu.Device.GetResourceAllocationInfo(0, noiseNormalTextureDescription).SizeInBytes));
 
         var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
-        // Per-game water is a per-FILE axis (WaterProfile.PixelShaderFile); the only remaining
-        // preprocessor axes are technique macros (WATER_HARDWARE_OCCLUSION below,
-        // FO4_WATER_ARCHITECTURAL in ModernWaterResources12). Every variant file is compiled
+        // Per-game water is normally a per-FILE axis (WaterProfile.PixelShaderFile). FO76 is the
+        // intentional exception: its strict float-optics/dual-source output is a real macro axis on
+        // the FO4-family file. The other axes are WATER_HARDWARE_OCCLUSION below and
+        // FO4_WATER_ARCHITECTURAL in ModernWaterResources12. Every direct variant is compiled
         // eagerly here because the loaded game can change per LoadData without rebuilding PSOs.
         var psBytecode = CompileEmbeddedShader("water_fnv.frag.hlsl", "main", "ps_5_1");
 
@@ -450,12 +466,38 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             RenderTargetWriteMask = D12.ColorWriteEnable.All,
         };
 
+        // FO76 per-channel transmission uses the pixel shader's SV_Target1.rgb as the destination
+        // factor: final.rgb = Target0.rgb + scene.rgb * Target1.rgb. D3D12 dual-source blending is
+        // defined for a single bound render target, which is exactly this pass's SceneColor layout.
+        // Alpha remains the established Max(source,destination) contract for capture readback.
+        var fallout76OpticsBlend = new D12.BlendDescription
+        {
+            AlphaToCoverageEnable = false,
+            IndependentBlendEnable = false,
+        };
+        fallout76OpticsBlend.RenderTarget[0] = new D12.RenderTargetBlendDescription
+        {
+            BlendEnable = true,
+            SourceBlend = D12.Blend.One,
+            DestinationBlend = D12.Blend.Source1Color,
+            BlendOperation = D12.BlendOperation.Add,
+            SourceBlendAlpha = D12.Blend.One,
+            DestinationBlendAlpha = D12.Blend.One,
+            BlendOperationAlpha = D12.BlendOperation.Max,
+            RenderTargetWriteMask = D12.ColorWriteEnable.All,
+        };
+
         var psOblivionBytecode = CompileEmbeddedShader(
             "water_oblivion.frag.hlsl", "main", "ps_5_1");
         var psFo4Bytecode = CompileEmbeddedShader(
             "water_fo4.frag.hlsl", "main", "ps_5_1");
+        var psFo76OpticsBytecode = CompileEmbeddedShader(
+            "water_fo4.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("FO76_WATER_OPTICS", "1"));
         var psMorrowindBytecode = CompileEmbeddedShader(
             "water_morrowind.frag.hlsl", "main", "ps_5_1");
+        var psStarfieldBytecode = CompileEmbeddedShader(
+            "water_starfield.frag.hlsl", "main", "ps_5_1");
         // Un-recovered games (WaterProfile.Flat). Compiled once — see _psoFlat.
         var psFlatBytecode = CompileEmbeddedShader(
             "water_flat.frag.hlsl", "main", "ps_5_1");
@@ -484,8 +526,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _psoOblivion = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psFo4Bytecode;
         _psoFo4 = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        var fallout76OpticsPsoDesc = psoDesc;
+        fallout76OpticsPsoDesc.PixelShader = psFo76OpticsBytecode;
+        fallout76OpticsPsoDesc.BlendState = fallout76OpticsBlend;
+        _psoFo76Optics = gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc);
         psoDesc.PixelShader = psMorrowindBytecode;
         _psoMorrowind = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psStarfieldBytecode;
+        _psoStarfield = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psFlatBytecode;
         _psoFlat = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psBytecode;
@@ -506,8 +554,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         var psFo4DepthSampleBytecode = CompileEmbeddedShader(
             "water_fo4.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        var psFo76OpticsDepthSampleBytecode = CompileEmbeddedShader(
+            "water_fo4.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("FO76_WATER_OPTICS", "1"),
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         var psMorrowindDepthSampleBytecode = CompileEmbeddedShader(
             "water_morrowind.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        var psStarfieldDepthSampleBytecode = CompileEmbeddedShader(
+            "water_starfield.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         psoDesc.PixelShader = psDepthSampleBytecode;
         _depthSamplePsoTemplate = psoDesc;
@@ -521,8 +576,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psFo4DepthSampleBytecode;
         _psoFo4DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        fallout76OpticsPsoDesc = psoDesc;
+        fallout76OpticsPsoDesc.PixelShader = psFo76OpticsDepthSampleBytecode;
+        fallout76OpticsPsoDesc.BlendState = fallout76OpticsBlend;
+        _psoFo76OpticsDepthSample = gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc);
         psoDesc.PixelShader = psMorrowindDepthSampleBytecode;
         _psoMorrowindDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psStarfieldDepthSampleBytecode;
+        _psoStarfieldDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
@@ -766,6 +827,19 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     /// <summary>
+    ///     Supplies Starfield's exact typed WATR payload independently of <see cref="WaterAppearance" />.
+    ///     Starfield authors no classic shallow/deep surface colours, so forcing this data through
+    ///     that compatibility model either discarded it or fabricated endpoints. Texture indices are
+    ///     still supplied through <see cref="SetAppearance" /> and correspond to the three explicitly
+    ///     inferred global paths exposed by <see cref="StarfieldWaterApproximation" />.
+    /// </summary>
+    public void SetStarfieldApproximation(StarfieldWaterApproximation? approximation)
+    {
+        _starfieldApproximation = approximation;
+        RefreshWaterMapTelemetry();
+    }
+
+    /// <summary>
     ///     Supplies the retained FNV WATR bindings used by generated CELL water.  A CELL's own XCWT
     ///     wins; a missing XCWT inherits the WRLD NAM2 supplied through
     ///     <see cref="SetFnvWater001WaterTypeContext"/>.  The catalog is copied so a worldspace reload
@@ -954,6 +1028,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     {
         _game = game;
         _waterProfile = WaterProfile.ForGame(game);
+        _starfieldApproximation = null;
         _fnvWaterMaterials.Clear();
         _fnvWaterCellDrawBatches.Clear();
         ClearFnvWater001TransientState(clearWaterTypeContext: true);
@@ -1014,7 +1089,18 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         var roles = new List<string>();
         var resolved = new List<bool>();
         var normals = _appearance?.NormalTextures;
-        if (normals is { Count: > 0 })
+        if (_waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox &&
+            _starfieldApproximation is not null)
+        {
+            for (var i = 0; i < StarfieldWaterApproximation.InferredGlobalTexturePaths.Count; i++)
+            {
+                paths.Add(StarfieldWaterApproximation.InferredGlobalTexturePaths[i]);
+                roles.Add(StarfieldWaterApproximation.InferredGlobalTextureRoles[i]);
+                resolved.Add(i < _normalBindlessIndices.Length &&
+                             _normalBindlessIndices[i] != NoNormalMap);
+            }
+        }
+        else if (normals is { Count: > 0 })
         {
             for (var i = 0; i < normals.Count; i++)
             {
@@ -1493,7 +1579,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         LastStats.WaterMapRoles = _telemetryMapRoles;
         LastStats.WaterMapResolved = _telemetryMapResolved;
         string? telemetryUnavailableReason = null;
-        if (_telemetryMapPaths.Length == 0)
+        if (_waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox &&
+            _starfieldApproximation is not null)
+        {
+            telemetryUnavailableReason =
+                "CE2 Water DXIL/material/CUR3 equations unrecovered; global texture-slot assignment inferred";
+        }
+        else if (_telemetryMapPaths.Length == 0)
         {
             telemetryUnavailableReason = _appearance is null
                 ? "no WATR appearance resolved; the shader uses profile colors and a procedural normal fallback"
@@ -1926,16 +2018,56 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             }
         }
         var useModernPipeline = modernResourcesReady && modernPrepassesRecorded && modernResources is not null;
+        var fallout76Visual = _game == BethesdaGame.Fallout76
+            ? _appearance?.Fallout76VisualData
+            : null;
+        // The dedicated shader's union lanes have FO76 meanings. Never select it for a proto,
+        // malformed or undecoded WATR: doing so would reinterpret the FO4 fallback constants as
+        // float body colour / channel opacity instead of failing closed to the established path.
+        // A SUCCESSFUL explicit modern-water opt-in remains a separate architectural experiment and
+        // bypasses this direct dual-source slice; its exact FO76 optics are still an open item. If
+        // that experiment cannot initialize/record, this strict path is the coherent fallback.
+        var useFallout76Optics = !useModernPipeline && fallout76Visual.HasValue;
+        var useStarfieldApproximation =
+            _game == BethesdaGame.Starfield &&
+            _waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox &&
+            _starfieldApproximation is not null;
         LastStats.WaterPipeline = ModernWaterPipeline.TelemetryName(
             _game,
             ModernPipelineEnabled,
             modernResourcesReady,
             modernPrepassesRecorded,
             modernTechnique);
+        if (useFallout76Optics)
+        {
+            LastStats.WaterPipeline = "fo76-optics-reference-approx";
+            const string approximationReason =
+                "retail FO76 BSWaterShader unrecovered; fo76utils transmission-only reference approximation";
+            LastStats.WaterTelemetryUnavailableReason =
+                LastStats.WaterTelemetryUnavailableReason is { Length: > 0 } existingReason
+                    ? $"{existingReason}; {approximationReason}"
+                    : approximationReason;
+        }
+        if (_waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox)
+        {
+            LastStats.WaterPipeline = useStarfieldApproximation
+                ? StarfieldWaterApproximation.TelemetryName
+                : $"{StarfieldWaterApproximation.TelemetryName}-no-exact-watr";
+            if (!useStarfieldApproximation)
+            {
+                const string missingReason =
+                    "no exact typed Starfield WATR payload resolved; source-backed shader inputs unavailable";
+                LastStats.WaterTelemetryUnavailableReason =
+                    LastStats.WaterTelemetryUnavailableReason is { Length: > 0 } existingReason
+                        ? $"{existingReason}; {missingReason}"
+                        : missingReason;
+            }
+        }
         LastStats.WaterNoisePrepassUsed = usedFnvNoisePrepass;
 
         var waterOpacity = surface.Opacity;
-        if (_waterProfile.ShaderVariant == WaterShaderVariant.MorrowindWater ||
+        if ((_waterProfile.ShaderVariant is WaterShaderVariant.MorrowindWater or
+             WaterShaderVariant.StarfieldWaterApprox) ||
             // The flat stand-in takes the profile alpha only when the WATR authored no ANAM of its
             // own: WaterSurfaceParams.Opacity defaults to a fully opaque 1.0 for a silent/unparsed
             // record, and an opaque plane would hide the scene under it. An authored opacity (< 1)
@@ -1943,6 +2075,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             (_waterProfile.ShaderVariant == WaterShaderVariant.FlatTinted && waterOpacity >= 1f))
         {
             waterOpacity = _waterProfile.SurfaceAlpha;
+        }
+        var normalIndex1 = _normalBindlessIndices[0];
+        var normalIndex2 = _normalBindlessIndices[1];
+        var normalIndex3 = _normalBindlessIndices[2];
+        if (_waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox)
+        {
+            // The Starfield shader samples the ordered indices directly rather than NoiseIndex, so
+            // apply the video setting to each input instead of leaving its animated maps live.
+            normalIndex1 = ApplyRippleToggle(normalIndex1);
+            normalIndex2 = ApplyRippleToggle(normalIndex2);
+            normalIndex3 = ApplyRippleToggle(normalIndex3);
         }
         unsafe
         {
@@ -1977,23 +2120,29 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 // xyz remains the camera-relative origin consumed by the VS. Spare w selects the
                 // Texture2D (1) or Texture2DMS (>1) depth alias without growing the 416-byte CB.
                 RenderOrigin = new Vector4(renderOrigin, _depthSampleCount),
-                // FO4-only constants (see WaterShaderVariant.Fo4Water); zero-defaults for other games.
+                // FO4-family constants (see WaterShaderVariant.Fo4Water). The strict FO76 path
+                // reinterprets the explicitly documented union lanes below.
                 Fo4Spec = new Vector4(
                     surface.SunSpecularMagnitude, surface.SiltAmount, surface.ShallowAlpha, surface.DeepAlpha),
                 Fo4Ranges = new Vector4(
                     surface.ColorShallowRange, surface.ColorDeepRange,
                     surface.AlphaShallowRange, surface.AlphaDeepRange),
-                Fo4DarkSilt = ColorToVector4(_appearance?.DarkSilt, Vector3.Zero) with
-                {
-                    W = surface.DepthAmount,
-                },
-                NormalIndex1 = _normalBindlessIndices[0],
+                // Union register. FO4 retains DarkSilt.rgb; the strict FO76 permutation receives
+                // its exact decoded float BaseColor (no RGB8 compatibility round-trip). Both use w
+                // for the authored depth amount.
+                Fo4DarkSilt = useFallout76Optics
+                    ? NormalizedRgbToVector4(fallout76Visual!.Value.BaseColor, fallout76Visual.Value.DepthAmount)
+                    : ColorToVector4(_appearance?.DarkSilt, Vector3.Zero) with
+                    {
+                        W = surface.DepthAmount,
+                    },
+                NormalIndex1 = normalIndex1,
                 // Oblivion repurposes y as the separately-authored TNAM DetailMap. Other variants
                 // retain y as the second ordered normal source (Skyrim/Creation water).
                 NormalIndex2 = _waterProfile.ShaderVariant == WaterShaderVariant.OblivionWater000
                     ? _oblivionDetailBindlessIndex
-                    : _normalBindlessIndices[1],
-                NormalIndex3 = _normalBindlessIndices[2],
+                    : normalIndex2,
+                NormalIndex3 = normalIndex3,
                 // 1 = NoiseIndex already contains the recovered FO3/FNV two-pass composite.
                 // 0 = sample authored layers directly (Skyrim/modern/fallback paths).
                 NormalIndex4 = usedFnvNoisePrepass ? 1u : 0u,
@@ -2020,10 +2169,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                         ModernWaterPipeline.GlossAmplitudeScale(surface.SunSpecularMagnitude),
                         1f,
                         0f),
-                    LightSilt = ColorToVector4(_appearance?.LightSilt, Vector3.Zero) with
-                    {
-                        W = surface.NormalMagnitude,
-                    },
+                    // Second union register. FO4 architectural water retains LightSilt.rgb; the
+                    // FO76 optics permutation receives exact per-channel opacity. NormalMagnitude
+                    // remains in w and scales the authored three-normal composite.
+                    LightSilt = useFallout76Optics
+                        ? NormalizedRgbToVector4(
+                            fallout76Visual!.Value.ChannelOpacity,
+                            fallout76Visual.Value.NormalMagnitude)
+                        : ColorToVector4(_appearance?.LightSilt, Vector3.Zero) with
+                        {
+                            W = surface.NormalMagnitude,
+                        },
                 },
                 FnvWater001SnapshotIndex = useFnvWater001
                     ? fnvWater001Snapshot.BindlessIndex
@@ -2042,6 +2198,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 WaterReflectionDistortion = ReflectionDistortionScale,
                 ReflectionViewProj = _reflectionViewProj,
                 ReflectionSceneFlag = _reflectionIsScene ? 1u : 0u,
+                Starfield = useStarfieldApproximation
+                    ? _starfieldApproximation!.ProjectFrameUniforms()
+                    : default,
             };
         }
 
@@ -2098,7 +2257,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 useModernPipeline,
                 modernTechnique,
                 depthSample,
-                _depthSampleCount);
+                _depthSampleCount,
+                useFallout76Optics);
             if (_game == BethesdaGame.FalloutNewVegas &&
                 _waterProfile.ShaderVariant == WaterShaderVariant.FnvWater000)
             {
@@ -2113,6 +2273,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         {
             cmd.SetPipelineState(depthSample ? modernResources!.PixelDepthSample : modernResources!.Pixel);
         }
+        else if (useFallout76Optics)
+        {
+            cmd.SetPipelineState(depthSample ? _psoFo76OpticsDepthSample : _psoFo76Optics);
+        }
         else
         {
             cmd.SetPipelineState(_waterProfile.ShaderVariant switch
@@ -2120,6 +2284,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 WaterShaderVariant.OblivionWater000 => depthSample ? _psoOblivionDepthSample : _psoOblivion,
                 WaterShaderVariant.Fo4Water => depthSample ? _psoFo4DepthSample : _psoFo4,
                 WaterShaderVariant.MorrowindWater => depthSample ? _psoMorrowindDepthSample : _psoMorrowind,
+                WaterShaderVariant.StarfieldWaterApprox =>
+                    depthSample ? _psoStarfieldDepthSample : _psoStarfield,
                 // No depthSample twin: the flat plane never samples the depth SRV, and its occlusion
                 // is the same hardware GreaterEqual test in both host depth states.
                 WaterShaderVariant.FlatTinted => _psoFlat,
@@ -2770,7 +2936,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 false,
                 ModernWaterTechnique.Baseline,
                 _depthBindlessIndex != NoNormalMap,
-                _depthSampleCount);
+                _depthSampleCount,
+                false);
             if (_fnvWaterCellDrawBatches.Count > 1)
             {
                 LastStats.WaterTechnique += $"+multi-watr-{_fnvWaterCellDrawBatches.Count}";
@@ -2785,10 +2952,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         bool modernPipeline,
         ModernWaterTechnique modernTechnique,
         bool sceneDepth,
-        int sampleCount)
+        int sampleCount,
+        bool fallout76Optics)
     {
         string shaderName;
-        if (modernPipeline)
+        if (fallout76Optics)
+        {
+            shaderName = "Fo76WaterOpticsReferenceApprox";
+        }
+        else if (modernPipeline)
         {
             shaderName = $"modern-{modernTechnique}";
         }
@@ -2797,6 +2969,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             shaderName = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
                 ? "FnvWater003RtFree"
                 : $"{game}-ClassicRtFreeWaterStandIn";
+        }
+        else if (shaderVariant == WaterShaderVariant.StarfieldWaterApprox)
+        {
+            shaderName = StarfieldWaterApproximation.TelemetryName;
         }
         else
         {
@@ -2849,8 +3025,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _psoOblivionDepthSample.Dispose();
         _psoFo4.Dispose();
         _psoFo4DepthSample.Dispose();
+        _psoFo76Optics.Dispose();
+        _psoFo76OpticsDepthSample.Dispose();
         _psoMorrowind.Dispose();
         _psoMorrowindDepthSample.Dispose();
+        _psoStarfield.Dispose();
+        _psoStarfieldDepthSample.Dispose();
         _psoFlat.Dispose();
         _fnvNoiseScrollBlendPso.Dispose();
         _fnvNoiseNormalPso.Dispose();
@@ -3302,6 +3482,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         return new Vector4(c.R / 255f, c.G / 255f, c.B / 255f, 1f);
     }
 
+    private static Vector4 NormalizedRgbToVector4(
+        (float R, float G, float B) color,
+        float w) => new(color.R, color.G, color.B, w);
+
     private static Vector4 LayerToVector4(
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterNoiseLayer layer)
         => new(layer.UvScale, layer.WindDirDegrees, layer.WindSpeed, layer.AmpScale);
@@ -3335,6 +3519,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             throw new InvalidOperationException(
                 $"Modern water-frame tail layout drifted: CPU={modernFrameTailSize} bytes, " +
                 $"HLSL={expectedModernFrameTailSize} bytes.");
+        }
+
+        var starfieldFrameTailSize = Marshal.SizeOf<StarfieldWaterFrameUniforms>();
+        if (starfieldFrameTailSize != (int)StarfieldWaterUniformByteSize)
+        {
+            throw new InvalidOperationException(
+                $"Starfield water-frame tail layout drifted: CPU={starfieldFrameTailSize} bytes, " +
+                $"HLSL={StarfieldWaterUniformByteSize} bytes.");
         }
 
         var uniformSize = Marshal.SizeOf<WaterFrameUniforms>();
@@ -3585,10 +3777,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         // xyz = camera-relative render origin subtracted in the VS before projection (0 on absolute paths);
         // w = scene-depth sample count (1 selects Texture2D, >1 selects Texture2DMS in the PS).
         public Vector4 RenderOrigin;
-        // FO4_WATER-only constants (appended so every other variant's offsets are untouched):
+        // FO4-family union constants (appended so every other variant's offsets are untouched):
         // Fo4Spec = (Sun Specular Magnitude, Silt Amount, Shallow Alpha, Deep Alpha);
         // Fo4Ranges = (Color Shallow/Deep Range, Alpha Shallow/Deep Range) in world units;
-        // Fo4DarkSilt = DNAM silt Dark Color (the FO4 PS's unshadowed ambient add).
+        // Fo4DarkSilt = FO4 DarkSilt.rgb or FO76 exact BaseColor.rgb; DepthAmount in w.
         public Vector4 Fo4Spec;
         public Vector4 Fo4Ranges;
         public Vector4 Fo4DarkSilt;
@@ -3605,7 +3797,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         public Vector4 LegacySurface1;
         // WATER-07 opt-in FO4/FO76 architecture. Four generated Texture2D indices, recovered
         // technique/cubemap/light-loop controls, recovered gloss scales + neutral unresolved alpha
-        // constants, then retained LightSilt/normal magnitude. Appended for legacy layout stability.
+        // constants, then the LightSilt/ChannelOpacity union + normal magnitude. The final register
+        // is also consumed by direct FO76 optics. Appended for legacy layout stability.
         public ModernWaterFrameUniforms Modern;
         // Bounded FNV WATER001 tail. The uint/float quartet is one raw register matching
         // uFnvWater001Snapshot: (snapshot SRV, width, height, asuint(horizontal plane height)).
@@ -3629,6 +3822,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         public uint ReflectionPad0;
         public uint ReflectionPad1;
         public uint ReflectionPad2;
+        // Dedicated 13-register Starfield WATR tail. No pre-existing shader offset moves.
+        public StarfieldWaterFrameUniforms Starfield;
     }
 }
 

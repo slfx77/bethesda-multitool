@@ -19,4 +19,27 @@ internal interface INifTextureSource : IDisposable
     ///     <see cref="TryLoadRaw" /> expects.
     /// </summary>
     bool Exists(string path);
+
+    /// <summary>
+    ///     Returns a cheap, stable identity for the source entry that would satisfy
+    ///     <paramref name="path" />, without extracting its payload. Archive implementations use
+    ///     their already-built file index plus container filesystem metadata; loose sources stat the
+    ///     resolved file directly.
+    /// </summary>
+    bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata);
 }
+
+/// <summary>
+///     Filesystem and archive-record metadata sufficient to invalidate a dependent persistent cache
+///     entry when its source asset changes, without hashing or extracting the asset itself.
+/// </summary>
+internal readonly record struct NifTextureSourceAssetMetadata(
+    string SourcePath,
+    long SourceLength,
+    long SourceLastWriteUtcTicks,
+    ulong? EntryOffset = null,
+    ulong? EntryRawSize = null,
+    ulong? EntrySize = null,
+    ulong? EntryNameHash = null,
+    uint? EntryDirectoryHash = null,
+    int? EntryIndex = null);

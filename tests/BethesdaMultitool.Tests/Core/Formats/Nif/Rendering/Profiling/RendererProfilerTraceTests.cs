@@ -38,6 +38,7 @@ public sealed class RendererProfilerTraceTests
             var root = document.RootElement;
             Assert.Equal("frame-stall", root.GetProperty("event").GetString());
             Assert.True(root.TryGetProperty("timestamp", out _));
+            Assert.Equal(RendererProfilerTrace.SessionId, root.GetProperty("sessionId").GetString());
             Assert.Equal(42, root.GetProperty("frame").GetInt32());
             Assert.Equal(51.25, root.GetProperty("cpuMs").GetDouble(), 3);
             Assert.Equal("sweep", root.GetProperty("cameraMotion").GetString());
@@ -371,6 +372,26 @@ public sealed class RendererProfilerTraceTests
     [InlineData("refCullCacheVeto")]
     [InlineData("refBatchesReused")]
     [InlineData("refReuseBlocker")]
+    [InlineData("refBatchBuildInProgress")]
+    [InlineData("refBatchBuildIncrementalAdvanced")]
+    [InlineData("refBatchBuildPublished")]
+    [InlineData("refBatchBuildSyncFallback")]
+    [InlineData("refBatchBuildTrigger")]
+    [InlineData("refBatchBuildPhase")]
+    [InlineData("refBatchBuildProcessed")]
+    [InlineData("refBatchBuildTotal")]
+    [InlineData("refBatchBuildBudgetMs")]
+    [InlineData("refCullRefreshPending")]
+    [InlineData("refShadowMeshMissing")]
+    [InlineData("refMeshMaterializationFailures")]
+    [InlineData("refMeshMaterializationPending")]
+    [InlineData("refBatchBuildMs")]
+    [InlineData("refMeshUploadMs")]
+    [InlineData("refMeshResolveMs")]
+    [InlineData("refInstanceBucketMs")]
+    [InlineData("refBatchFinalizeMs")]
+    [InlineData("refGpuUploadMs")]
+    [InlineData("refBlendedRefreshMs")]
     [InlineData("cellsEvictedForBudget")]
     public void StatsFields_EmitsTheDiagnosticsThatOnlyATraceCanAnswer(string field)
     {
@@ -379,5 +400,23 @@ public sealed class RendererProfilerTraceTests
         Assert.True(fields.ContainsKey("refs." + field),
             $"'{field}' is not emitted, so it cannot be read from a profiler run no matter what the " +
             "renderer sets it to");
+    }
+
+    [Fact]
+    public void StatsFields_MapsShadowMissesAndLegacyBatchAliasToTheirDedicatedValues()
+    {
+        var stats = new WorldRenderStats
+        {
+            ReferenceMeshMissing = 11,
+            ReferenceShadowMeshMissing = 17,
+            ReferenceBatchBuildMilliseconds = 23.5
+        };
+
+        var fields = RendererProfilerTrace.StatsFields("refs.", stats);
+
+        Assert.Equal(11, Assert.IsType<int>(fields["refs.refMeshMissing"]));
+        Assert.Equal(17, Assert.IsType<int>(fields["refs.refShadowMeshMissing"]));
+        Assert.Equal(23.5, Assert.IsType<double>(fields["refs.refBatchBuildMs"]));
+        Assert.Equal(23.5, Assert.IsType<double>(fields["refs.refMeshUploadMs"]));
     }
 }

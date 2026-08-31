@@ -9,6 +9,7 @@ public sealed class RendererProfilerOptionsTests
     [
         "--capture-topdown",
         "--capture-frame",
+        "--trim-working-set-before-settle",
         "--capture-width",
         "--capture-height",
         "--capture-worldspace-name",
@@ -63,6 +64,85 @@ public sealed class RendererProfilerOptionsTests
             Assert.Null(options.CaptureAnimationTimeSeconds);
             Assert.Null(options.ScenarioName);
             Assert.Null(options.ScenarioOutputDirectory);
+            Assert.False(options.TrimWorkingSetBeforeSettle);
+            Assert.Null(options.ProfileSettleTimeoutSeconds);
+            Assert.Equal(RendererProfilerOptions.DefaultStressScene, options.StressScene);
+        });
+    }
+
+    [Fact]
+    public void TryParse_ExplicitWorldspaceSuppressesOnlyImplicitStressScene()
+    {
+        WithInput(input =>
+        {
+            Assert.True(RendererProfilerOptions.TryParse(
+                ["--input", input, "--worldspace", "Appalachia"],
+                out var implicitStress,
+                out var implicitError));
+            Assert.Null(implicitError);
+            Assert.Null(implicitStress.StressScene);
+
+            Assert.True(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--stress-scene", RendererProfilerOptions.DefaultStressScene,
+                    "--worldspace", "WastelandNV"
+                ],
+                out var explicitStress,
+                out var explicitError));
+            Assert.Null(explicitError);
+            Assert.Equal(RendererProfilerOptions.DefaultStressScene, explicitStress.StressScene);
+        });
+    }
+
+    [Fact]
+    public void TryParse_MapsOptInLiveProfileSettlementGate()
+    {
+        WithInput(input =>
+        {
+            Assert.True(RendererProfilerOptions.TryParse(
+                ["--input", input, "--profile-settle-timeout-seconds", "180"],
+                out var options,
+                out var error));
+
+            Assert.Null(error);
+            Assert.Equal(180, options.ProfileSettleTimeoutSeconds);
+            Assert.Contains(
+                "--profile-settle-timeout-seconds",
+                RendererProfilerOptions.Usage,
+                StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsNonPositiveLiveProfileSettlementTimeout()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                ["--input", input, "--profile-settle-timeout-seconds", "0"],
+                out _,
+                out var error));
+
+            Assert.Contains("positive integer", error, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsLiveProfileSettlementGateWithCaptureLifecycle()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--profile-settle-timeout-seconds", "120",
+                    "--capture-frame", "frame.png"
+                ],
+                out _,
+                out var error));
+
+            Assert.Contains("live profile loop", error, StringComparison.OrdinalIgnoreCase);
         });
     }
 
@@ -223,6 +303,7 @@ public sealed class RendererProfilerOptionsTests
             {
                 "--input", input,
                 "--capture-frame", capture,
+                "--trim-working-set-before-settle",
                 "--capture-worldspace-name", "WastelandNV",
                 "--capture-weather", "NVWastelandClear",
                 "--capture-hour", "6.5",
@@ -247,6 +328,45 @@ public sealed class RendererProfilerOptionsTests
             Assert.Equal(1024, options.CaptureWidth);
             Assert.Equal(512, options.CaptureHeight);
             Assert.Equal(90, options.CaptureSettleTimeoutSeconds);
+            Assert.True(options.TrimWorkingSetBeforeSettle);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsWorkingSetTrimWithoutOneShotPerspectiveCapture()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                ["--input", input, "--trim-working-set-before-settle"],
+                out _,
+                out var error));
+
+            Assert.Contains("requires", error, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("--capture-frame", error, StringComparison.Ordinal);
+        });
+    }
+
+    [Theory]
+    [InlineData("--capture-topdown", "topdown.png")]
+    [InlineData("--duration-seconds", "30")]
+    public void TryParse_RejectsWorkingSetTrimWithCompetingLifecycle(
+        string option,
+        string value)
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--capture-frame", "frame.png",
+                    "--trim-working-set-before-settle",
+                    option, value
+                ],
+                out _,
+                out var error));
+
+            Assert.Contains("standalone one-shot", error, StringComparison.OrdinalIgnoreCase);
         });
     }
 

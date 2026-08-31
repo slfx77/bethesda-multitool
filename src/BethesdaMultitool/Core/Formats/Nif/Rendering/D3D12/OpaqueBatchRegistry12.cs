@@ -12,7 +12,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///     identities; each frame the renderer calls
 ///     <see cref="Begin" /> to reset per-frame instance lists (and periodically prune cold
 ///     batches), then <see cref="GetOrCreate" /> per visible submesh to append a world matrix.
-///     Pure bookkeeping — it records no command-list work, so it has no effect on draw ordering.
+///     Pure bookkeeping — it records no command-list work. At publication it establishes the safe
+///     PSO/lane submission order consumed by later reuse frames.
 /// </summary>
 internal sealed class OpaqueBatchRegistry12
 {
@@ -23,11 +24,28 @@ internal sealed class OpaqueBatchRegistry12
     private readonly List<OpaqueBatchState> _activeBatches = new(256);
     private readonly List<OpaqueBatchKey> _staleKeys = new(64);
     private readonly List<OpaqueBatchState> _partitionScratch = new(32);
+    private readonly List<OpaqueBatchState> _submissionOrderScratch = new(256);
+    private readonly List<ID3D12PipelineState> _submissionPsoScratch = new(8);
+    private static readonly IComparer<OpaqueBatchState> FrontToBackComparer =
+        new OpaqueBatchFrontToBackComparer();
     private int _frameId;
+    private int _beginCursor;
+    private bool _beginInProgress;
 
-    /// <summary>The batches touched in the current frame, in first-touch order — what the
-    /// renderer iterates to record the instanced opaque draws.</summary>
+    /// <summary>The batches touched in the current build. Initially first-touch order, then frozen
+    /// into publication order before the renderer records instanced opaque draws.</summary>
     public IReadOnlyList<OpaqueBatchState> ActiveBatches => _activeBatches;
+
+    /// <summary>Frozen publication census for the optional specialized shader. Calculated once in
+    /// <see cref="OrderForSubmission" />, never by the per-frame draw loop.</summary>
+    public int ModernStandardBatchCount { get; private set; }
+    public int ModernStandardInstanceCount { get; private set; }
+
+    /// <summary>Frozen census/verdict for the optional within-PSO depth order.</summary>
+    public bool FrontToBackActive { get; private set; }
+    public int FrontToBackBatchCount { get; private set; }
+    public int FrontToBackInstanceCount { get; private set; }
+    public OpaqueFrontToBackFallbackReason FrontToBackFallbackReason { get; private set; }
 
     /// <summary>
     ///     Stable-partitions the active set so grass batches are issued LAST within the instanced
@@ -66,6 +84,7 @@ internal sealed class OpaqueBatchRegistry12
 
         // Already partitioned (the common case, including "no grass at all") — touch nothing.
         if (firstGrass < 0) return;
+
         var anyOpaqueAfter = false;
         for (var i = firstGrass + 1; i < count; i++)
         {
@@ -96,19 +115,134 @@ internal sealed class OpaqueBatchRegistry12
     }
 
     /// <summary>
+    ///     Establishes the immutable publication order used by every reuse frame. Ordinary
+    ///     opaque/cutout batches are stable-grouped by PSO; decals retain authored overlay order;
+    ///     grass and depth-writing grass retain the existing grass-last correctness boundary.
+    /// </summary>
+    public void OrderForSubmission(in OpaqueFrontToBackBuildView frontToBackView)
+    {
+        FrontToBackActive = false;
+        FrontToBackBatchCount = 0;
+        FrontToBackInstanceCount = 0;
+        FrontToBackFallbackReason = frontToBackView.Requested
+            ? frontToBackView.FallbackReason
+            : OpaqueFrontToBackFallbackReason.None;
+
+        if (frontToBackView.Requested && frontToBackView.Valid)
+        {
+            foreach (var batch in _activeBatches)
+            {
+                if (SubmissionLane(batch) != OpaqueSubmissionLane.Ordinary ||
+                    batch.Instances.Count == 0)
+                {
+                    continue;
+                }
+
+                FrontToBackBatchCount++;
+                FrontToBackInstanceCount += batch.Instances.Count;
+            }
+
+            if (FrontToBackBatchCount > 0)
+            {
+                FrontToBackActive = true;
+                FrontToBackFallbackReason = OpaqueFrontToBackFallbackReason.None;
+            }
+            else
+            {
+                FrontToBackFallbackReason = OpaqueFrontToBackFallbackReason.NoEligibleBatches;
+            }
+        }
+
+        OpaqueSubmissionOrderPolicy.Order(
+            _activeBatches,
+            _submissionOrderScratch,
+            _submissionPsoScratch,
+            static batch => SubmissionLane(batch),
+            static batch => batch.Pso,
+            ReferenceEqualityComparer.Instance,
+            FrontToBackActive ? FrontToBackComparer : null);
+
+        ModernStandardBatchCount = 0;
+        ModernStandardInstanceCount = 0;
+        foreach (var batch in _activeBatches)
+        {
+            if (!batch.UsesModernStandardShader || batch.Instances.Count == 0)
+            {
+                continue;
+            }
+
+            ModernStandardBatchCount++;
+            ModernStandardInstanceCount += batch.Instances.Count;
+        }
+    }
+
+    private static OpaqueSubmissionLane SubmissionLane(OpaqueBatchState batch)
+    {
+        // Late-lane precedence is load-bearing: should malformed/novel content ever mark a grass
+        // shape as a decal too, it must still honor the depth-writing grass-last boundary.
+        if (batch.Submesh.DepthWritingBlend || batch.UsesGrassDistanceEnvelope)
+        {
+            return OpaqueSubmissionLane.Grass;
+        }
+
+        return batch.Submesh.IsDecal
+            ? OpaqueSubmissionLane.Decal
+            : OpaqueSubmissionLane.Ordinary;
+    }
+
+    /// <summary>
     ///     Starts a new frame: advances the frame id, clears each active batch's per-frame
     ///     instance list, empties the active set, and prunes batches that have gone cold on a
     ///     fixed interval.
     /// </summary>
     public void Begin()
     {
+        StartBegin();
+        if (!ContinueBegin(int.MaxValue))
+        {
+            throw new InvalidOperationException("An unbounded opaque-batch reset did not complete.");
+        }
+    }
+
+    /// <summary>
+    ///     Starts the destructive half of <see cref="Begin" /> without walking the old active set.
+    ///     The renderer uses this for the INACTIVE registry so clearing a large previous snapshot is
+    ///     charged to the same incremental budget as rebuilding it. The registry must not be queried
+    ///     with <see cref="GetOrCreate" /> until <see cref="ContinueBegin" /> returns true.
+    /// </summary>
+    public void StartBegin()
+    {
         unchecked
         {
             _frameId++;
         }
 
-        foreach (var batch in _activeBatches)
+        _beginCursor = 0;
+        _beginInProgress = true;
+        ModernStandardBatchCount = 0;
+        ModernStandardInstanceCount = 0;
+        FrontToBackActive = false;
+        FrontToBackBatchCount = 0;
+        FrontToBackInstanceCount = 0;
+        FrontToBackFallbackReason = OpaqueFrontToBackFallbackReason.None;
+    }
+
+    /// <summary>
+    ///     Clears at most <paramref name="batchBudget" /> old active batches. Returns true once the
+    ///     active set has been reset and the registry is ready to accept the next snapshot.
+    /// </summary>
+    public bool ContinueBegin(int batchBudget)
+    {
+        if (!_beginInProgress)
         {
+            return true;
+        }
+
+        var remaining = _activeBatches.Count - _beginCursor;
+        var stop = _beginCursor + Math.Min(remaining, Math.Max(batchBudget, 1));
+        while (_beginCursor < stop)
+        {
+            var batch = _activeBatches[_beginCursor++];
             batch.Instances.Clear();
             batch.InstanceBounds.Clear();
             batch.PhysicsLiteSeeds.Clear();
@@ -120,12 +254,22 @@ internal sealed class OpaqueBatchRegistry12
             Array.Clear(batch.FrameCascadeCount);
             Array.Clear(batch.FrameShadowOnlyCascadeCount);
         }
+
+        if (_beginCursor < _activeBatches.Count)
+        {
+            return false;
+        }
+
         _activeBatches.Clear();
+        _beginCursor = 0;
+        _beginInProgress = false;
 
         if (_frameId % PruneIntervalFrames == 0)
         {
             PruneStaleBatches();
         }
+
+        return true;
     }
 
     /// <summary>
@@ -138,8 +282,14 @@ internal sealed class OpaqueBatchRegistry12
         ID3D12PipelineState pso,
         bool usesGrassDistanceEnvelope,
         bool usesTallGrassWind,
-        float grassWaveMultiplier)
+        float grassWaveMultiplier,
+        bool usesModernStandardShader)
     {
+        if (_beginInProgress)
+        {
+            throw new InvalidOperationException("Opaque batch registry reset is incomplete.");
+        }
+
         // A shared grass NIF may be referenced by multiple GRAS records with different authored
         // phase multipliers. Keep those instances in distinct material batches so the 64-byte
         // matrix-only instance stream remains unchanged and the multiplier can stay per batch.
@@ -150,17 +300,21 @@ internal sealed class OpaqueBatchRegistry12
             ? FnvTallGrassWind.SanitizeWaveMultiplier(grassWaveMultiplier)
             : 0f;
         var key = new OpaqueBatchKey(
-            submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier, pso);
+            submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier, pso,
+            usesModernStandardShader);
         if (!_batches.TryGetValue(key, out var batch))
         {
             batch = new OpaqueBatchState(
-                submesh, pso, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier);
+                submesh, pso, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier,
+                usesModernStandardShader);
             _batches.Add(key, batch);
         }
 
         if (batch.LastTouchedFrame != _frameId)
         {
             batch.LastTouchedFrame = _frameId;
+            batch.FirstTouchOrdinal = _activeBatches.Count;
+            batch.NearestViewDepth = double.PositiveInfinity;
             _activeBatches.Add(batch);
         }
 
@@ -186,6 +340,44 @@ internal sealed class OpaqueBatchRegistry12
     }
 
     /// <summary>
+    ///     Observes one placement's already-computed near depth for an ordinary batch. Special
+    ///     correctness lanes deliberately ignore malformed depth data because they are never sorted.
+    ///     False means an ordinary batch lacked a valid key and the whole publication must preserve
+    ///     the established stable order.
+    /// </summary>
+    public bool ObserveFrontToBackDepth(
+        OpaqueBatchState batch,
+        bool depthValid,
+        double nearestViewDepth)
+    {
+        if (SubmissionLane(batch) != OpaqueSubmissionLane.Ordinary)
+        {
+            return true;
+        }
+
+        if (!depthValid || !double.IsFinite(nearestViewDepth))
+        {
+            return false;
+        }
+
+        batch.NearestViewDepth = Math.Min(batch.NearestViewDepth, nearestViewDepth);
+        return true;
+    }
+
+    private sealed class OpaqueBatchFrontToBackComparer : IComparer<OpaqueBatchState>
+    {
+        public int Compare(OpaqueBatchState? x, OpaqueBatchState? y)
+        {
+            if (ReferenceEquals(x, y)) return 0;
+            if (x is null) return 1;
+            if (y is null) return -1;
+
+            var depth = x.NearestViewDepth.CompareTo(y.NearestViewDepth);
+            return depth != 0 ? depth : x.FirstTouchOrdinal.CompareTo(y.FirstTouchOrdinal);
+        }
+    }
+
+    /// <summary>
     ///     A mesh can be placed both as FNV grass covered by the recovered envelope and as an
     ///     ordinary reference. Keeping those placements separate preserves the hard end during
     ///     exact filtering of frozen batches. The wind flag is independently keyed so acquiring a
@@ -200,7 +392,8 @@ internal sealed class OpaqueBatchRegistry12
         bool UsesGrassDistanceEnvelope,
         bool UsesTallGrassWind,
         float GrassWaveMultiplier,
-        ID3D12PipelineState Pso);
+        ID3D12PipelineState Pso,
+        bool UsesModernStandardShader);
 }
 
 internal sealed class OpaqueBatchState(
@@ -208,7 +401,8 @@ internal sealed class OpaqueBatchState(
     ID3D12PipelineState pso,
     bool usesGrassDistanceEnvelope,
     bool usesTallGrassWind,
-    float grassWaveMultiplier)
+    float grassWaveMultiplier,
+    bool usesModernStandardShader)
 {
     public CachedSubmesh12 Submesh { get; } = submesh;
     public ID3D12PipelineState Pso { get; } = pso;
@@ -223,6 +417,10 @@ internal sealed class OpaqueBatchState(
 
     /// <summary>True only when the renderer's explicit FNV capability gate admitted this batch.</summary>
     public bool UsesTallGrassWind { get; } = usesTallGrassWind;
+
+    /// <summary>True only when this batch's PSO was selected by the fail-closed modern-standard
+    /// material classifier. Immutable with the PSO/batch key.</summary>
+    public bool UsesModernStandardShader { get; } = usesModernStandardShader;
 
     /// <summary>Per-instance world matrices for this batch (the only per-instance GPU data;
     /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>
@@ -294,6 +492,11 @@ internal sealed class OpaqueBatchState(
     /// <summary>Shadow-only instances uploaded this frame (0 when the shadow capture is unarmed).
     /// Set by DrawOpaqueBatches alongside <see cref="FrameDrawCount" />.</summary>
     public int FrameShadowOnlyCount { get; set; }
+
+    /// <summary>Original active-list ordinal and publication-time nearest depth. These are rebuilt
+    /// on first touch and are never consulted by the per-frame draw loop.</summary>
+    public int FirstTouchOrdinal { get; set; }
+    public double NearestViewDepth { get; set; } = double.PositiveInfinity;
 
     public int LastTouchedFrame { get; set; }
 }

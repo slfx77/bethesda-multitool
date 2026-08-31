@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -15,6 +17,16 @@ internal static class MaterialTexturePathResolver
 {
     /// <summary>Data-relative path of Starfield's compiled material database.</summary>
     private const string StarfieldMaterialDatabasePath = @"materials\materialsbeta.cdb";
+
+    /// <summary>
+    ///     Reserved cache-key suffix selecting slot 1 (normal) instead of slot 0 (diffuse) from a
+    ///     Starfield material. <c>|</c> cannot occur in a Windows asset filename, so this cannot
+    ///     collide with retail content.
+    /// </summary>
+    internal const string StarfieldNormalMapSuffix = "|sfmat-normal";
+
+    /// <summary>Reserved role suffix selecting CE2 layer-0 texture-set slot 2 (opacity).</summary>
+    internal const string StarfieldOpacityMapSuffix = "|sfmat-opacity";
 
     /// <summary>
     ///     One parsed material database per source set. Keyed weakly on the source list so a viewer
@@ -64,10 +76,225 @@ internal static class MaterialTexturePathResolver
             : slot;
     }
 
+    /// <summary>
+    ///     Resolves the base layer's effective colour policy from Starfield's compiled material
+    ///     database. A default value means the path/database/object chain could not be resolved;
+    ///     callers must fail closed rather than treating the mesh's decoded colour bytes as albedo.
+    /// </summary>
+    internal static StarfieldMaterialColorPolicy ResolveStarfieldBaseColorPolicy(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return default;
+        }
+
+        return GetMaterialDatabase(sources)?.ResolveBaseColorPolicy(materialPath) ?? default;
+    }
+
+    /// <summary>
+    ///     Resolves the effective root CE2Material two-sided flag. Null is an unresolved or malformed
+    ///     material chain; false is a resolved one-sided material. This never interprets the type-4
+    ///     layer-material ParamBool, whose separate meaning is vertex-colour tint.
+    /// </summary>
+    internal static bool? ResolveStarfieldRootTwoSided(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return null;
+        }
+
+        return GetMaterialDatabase(sources)?.ResolveRootTwoSided(materialPath);
+    }
+
+    /// <summary>
+    ///     Resolves the effective root-material AlphaSettings component. Material opacity/cutout is
+    ///     deliberately independent from base-colour tint and its Lerp weight.
+    /// </summary>
+    internal static StarfieldMaterialAlphaPolicy ResolveStarfieldAlphaPolicy(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return default;
+        }
+
+        return GetMaterialDatabase(sources)?.ResolveAlphaPolicy(materialPath) ?? default;
+    }
+
+    /// <summary>
+    ///     Resolves the strict static-layer CE2 ORM policy used only by standards-based export.
+    ///     Texture paths are normalized here so callers can load them directly without inventing a
+    ///     role-qualified key that could accidentally become part of the live renderer contract.
+    /// </summary>
+    internal static StarfieldMaterialOrmPolicy ResolveStarfieldOrmPolicy(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return default;
+        }
+
+        var database = GetMaterialDatabase(sources);
+        if (database is null)
+        {
+            return default;
+        }
+
+        var policy = database.ResolveOrmPolicy(materialPath);
+        return policy with
+        {
+            RoughnessSlot = NormalizeStarfieldSlot(policy.RoughnessSlot),
+            MetalnessSlot = NormalizeStarfieldSlot(policy.MetalnessSlot),
+            AmbientOcclusionSlot = NormalizeStarfieldSlot(policy.AmbientOcclusionSlot)
+        };
+    }
+
+    internal static StarfieldMaterialSlot ResolveStarfieldOpacitySlot(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        var policy = ResolveStarfieldAlphaPolicy(materialPath, sources);
+        return policy.TryResolveStaticCutout(out _) ? policy.OpacitySlot : default;
+    }
+
+    private static StarfieldMaterialSlot NormalizeStarfieldSlot(StarfieldMaterialSlot slot)
+    {
+        return slot.TexturePath is { Length: > 0 } path
+            ? new StarfieldMaterialSlot(NifTexturePathUtility.Normalize(path), null)
+            : slot;
+    }
+
+    /// <summary>
+    ///     Cheap persistent-cache dependency identity for every ordered source that contains
+    ///     Starfield's compiled material database. The loader may skip a present-but-invalid CDB and
+    ///     parse a later candidate, so covering the whole candidate set makes either result coherent
+    ///     without extracting and hashing any 105 MB payload on the caller thread. Changes to an
+    ///     unused lower-priority candidate may conservatively invalidate decoded meshes.
+    /// </summary>
+    internal static string? ResolveStarfieldMaterialDatabaseCacheIdentity(
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        StringBuilder? builder = null;
+        var candidateIndex = 0;
+        for (var sourceIndex = 0; sourceIndex < sources.Count; sourceIndex++)
+        {
+            var source = sources[sourceIndex];
+            if (!source.Exists(StarfieldMaterialDatabasePath))
+            {
+                continue;
+            }
+
+            builder ??= new StringBuilder(512);
+            Append("candidateIndex", candidateIndex++);
+            Append("sourceIndex", sourceIndex);
+            Append("assetPath", StarfieldMaterialDatabasePath);
+            if (!source.TryGetAssetMetadata(StarfieldMaterialDatabasePath, out var metadata))
+            {
+                // Exists established that this is a candidate. Preserve its ordered presence even
+                // when a transient stat failure prevents richer metadata; null is reserved for a
+                // source set with no CDB candidate at all.
+                Append("metadata", "unavailable");
+                continue;
+            }
+
+            Append("sourcePath", metadata.SourcePath);
+            Append("sourceLength", metadata.SourceLength);
+            Append("sourceWriteUtcTicks", metadata.SourceLastWriteUtcTicks);
+            Append("entryOffset", FormatNullable(metadata.EntryOffset));
+            Append("entryRawSize", FormatNullable(metadata.EntryRawSize));
+            Append("entrySize", FormatNullable(metadata.EntrySize));
+            Append("entryNameHash", FormatNullable(metadata.EntryNameHash));
+            Append("entryDirectoryHash", FormatNullable(metadata.EntryDirectoryHash));
+            Append("entryIndex", FormatNullable(metadata.EntryIndex));
+        }
+
+        return builder?.ToString();
+
+        void Append(string name, object value)
+        {
+            var target = builder ?? throw new InvalidOperationException("CDB identity builder was not initialized.");
+            target.Append(name);
+            target.Append('=');
+            target.Append(Convert.ToString(value, CultureInfo.InvariantCulture));
+            target.Append('\n');
+        }
+    }
+
     /// <summary>True when <paramref name="path" /> is a Starfield material reference.</summary>
     internal static bool IsStarfieldMaterialPath(string path)
     {
-        return path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase);
+        return path.Trim().EndsWith(".mat", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Builds the canonical role-qualified request used by the GPU, resolver, and persistent
+    ///     texture caches for a Starfield material's normal slot.
+    /// </summary>
+    internal static string BuildStarfieldNormalMapRequest(string materialPath)
+    {
+        var normalized = NifTexturePathUtility.Normalize(materialPath);
+        if (!IsStarfieldMaterialPath(normalized))
+        {
+            throw new ArgumentException("The path must name a Starfield .mat material.", nameof(materialPath));
+        }
+
+        return string.Concat(normalized, StarfieldNormalMapSuffix);
+    }
+
+    /// <summary>Builds the role-qualified request for a supported CE2 opacity slot.</summary>
+    internal static string BuildStarfieldOpacityMapRequest(string materialPath)
+    {
+        var normalized = NifTexturePathUtility.Normalize(materialPath);
+        if (!IsStarfieldMaterialPath(normalized))
+        {
+            throw new ArgumentException("The path must name a Starfield .mat material.", nameof(materialPath));
+        }
+
+        return string.Concat(normalized, StarfieldOpacityMapSuffix);
+    }
+
+    /// <summary>Splits a role-qualified normal request back into its real material path.</summary>
+    internal static bool TrySplitStarfieldNormalMapRequest(string requestPath, out string materialPath)
+    {
+        materialPath = requestPath;
+        if (!requestPath.EndsWith(StarfieldNormalMapSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var candidate = requestPath[..^StarfieldNormalMapSuffix.Length];
+        if (!IsStarfieldMaterialPath(candidate))
+        {
+            return false;
+        }
+
+        materialPath = candidate;
+        return true;
+    }
+
+    /// <summary>Splits a role-qualified opacity request back into its real material path.</summary>
+    internal static bool TrySplitStarfieldOpacityMapRequest(string requestPath, out string materialPath)
+    {
+        materialPath = requestPath;
+        if (!requestPath.EndsWith(StarfieldOpacityMapSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var candidate = requestPath[..^StarfieldOpacityMapSuffix.Length];
+        if (!IsStarfieldMaterialPath(candidate))
+        {
+            return false;
+        }
+
+        materialPath = candidate;
+        return true;
     }
 
     /// <summary>
@@ -116,6 +343,11 @@ internal static class MaterialTexturePathResolver
         }
 
         return null;
+    }
+
+    private static string FormatNullable<T>(T? value) where T : struct, IFormattable
+    {
+        return value.HasValue ? value.Value.ToString(null, CultureInfo.InvariantCulture) : string.Empty;
     }
 
     /// <summary>

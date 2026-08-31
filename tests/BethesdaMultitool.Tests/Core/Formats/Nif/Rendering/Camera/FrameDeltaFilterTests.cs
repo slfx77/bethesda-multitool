@@ -149,6 +149,20 @@ public class FrameDeltaFilterTests
         Assert.Equal(0.09f, fresh.Push(0.09f));
     }
 
+    [Fact]
+    public void Reset_DiscardsSamplesFromThePreviousScene()
+    {
+        var filter = new FrameDeltaFilter();
+        filter.Push(SteadyFrame);
+        filter.Push(SteadyFrame);
+
+        filter.Reset();
+
+        // A fresh first sample passes through. If the old history survived, the median would
+        // incorrectly turn this into SteadyFrame.
+        Assert.Equal(0.09f, filter.Push(0.09f));
+    }
+
     /// <summary>
     ///     The camera-jitter threading-race theory was DISPROVED — the fix is dt filtering, not
     ///     synchronization. This stays a source pin because "no lock crept back in" is a property
@@ -159,7 +173,7 @@ public class FrameDeltaFilterTests
     {
         var region = SourceContract.Extract(
             SourceContract.ReadAppSource("WorldView3DControl.Frame.cs"),
-            "var now = DateTime.UtcNow;",
+            "var now = Stopwatch.GetTimestamp();",
             "_lastControllerUpdateMilliseconds");
 
         Assert.DoesNotContain("lock (", region, StringComparison.Ordinal);
@@ -178,11 +192,11 @@ public class FrameDeltaFilterTests
     {
         var region = SourceContract.Extract(
             SourceContract.ReadAppSource("WorldView3DControl.Frame.cs"),
-            "var now = DateTime.UtcNow;",
+            "var now = Stopwatch.GetTimestamp();",
             "_lastControllerUpdateMilliseconds");
 
         SourceContract.AssertOrder(region,
-            "var deltaSeconds = (float)(now - _lastFrameTime).TotalSeconds;",
+            "Stopwatch.GetElapsedTime(_lastFrameStartTimestamp, now).TotalSeconds;",
             "_lastDeltaSeconds = deltaSeconds;",
             "_frameDeltaFilter.Push(deltaSeconds)",
             "_controller.Update(deltaSeconds);");

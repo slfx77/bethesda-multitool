@@ -257,4 +257,71 @@ public sealed class GeometryArenaAllocatorTests
             }
         }
     }
+
+    [Fact]
+    public void IsBlockEmpty_IsTrueOnlyWhenEveryAllocationInTheBlockIsFreed()
+    {
+        // This predicate is what authorizes releasing a block's memory back to the OS, so a false
+        // positive would hand back memory the GPU is still reading.
+        var arena = new GeometryArenaAllocator(256);
+        var a = arena.Allocate(64);
+        var b = arena.Allocate(64);
+
+        Assert.False(arena.IsBlockEmpty(0));
+
+        arena.Free(a);
+        Assert.False(arena.IsBlockEmpty(0));
+
+        arena.Free(b);
+        Assert.True(arena.IsBlockEmpty(0));
+    }
+
+    [Fact]
+    public void IsBlockEmpty_IsFalseForABlockThatDoesNotExist()
+    {
+        var arena = new GeometryArenaAllocator(256);
+
+        Assert.False(arena.IsBlockEmpty(0));
+        Assert.False(arena.IsBlockEmpty(-1));
+        Assert.False(arena.IsBlockEmpty(99));
+    }
+
+    [Fact]
+    public void BestFit_DrainsABlockThatFirstFitWouldHaveKeptPartlyUsed()
+    {
+        // The point of best-fit is not tidiness, it is that empty-block release has something to
+        // release. First fit always retries block 0, so a small allocation lands there and block 0
+        // never drains; best fit puts it in the tight hole it actually belongs in.
+        var arena = new GeometryArenaAllocator(256);
+
+        // Fill block 0 completely, then force a second block.
+        var big = arena.Allocate(256);
+        var other = arena.Allocate(200);
+        Assert.Equal(2, arena.BlockCount);
+        Assert.Equal(1, other.BlockIndex);
+
+        // 200 aligns up to 208, so block 1 keeps a 48-byte tail. Free block 0 entirely.
+        arena.Free(big);
+        Assert.True(arena.IsBlockEmpty(0));
+
+        // A 48-byte request fits both the 256-byte block 0 and the 48-byte tail of block 1.
+        // First fit takes block 0 and un-empties it; best fit takes the exact-fit tail.
+        var small = arena.Allocate(48);
+
+        Assert.Equal(1, small.BlockIndex);
+        Assert.True(arena.IsBlockEmpty(0),
+            "best fit should have left the fully-free block alone so it can be released");
+    }
+
+    [Fact]
+    public void BestFit_StillAllocatesWhenOnlyALargerSpanIsAvailable()
+    {
+        // Best fit must not become "exact fit or nothing".
+        var arena = new GeometryArenaAllocator(256);
+
+        var allocation = arena.Allocate(48);
+
+        Assert.Equal(0, allocation.BlockIndex);
+        Assert.Equal(48L, allocation.AlignedSize);
+    }
 }

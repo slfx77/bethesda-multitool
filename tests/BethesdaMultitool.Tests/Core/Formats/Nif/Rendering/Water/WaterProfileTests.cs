@@ -39,18 +39,28 @@ public class WaterProfileTests
         Assert.Equal(WaterShaderVariant.FnvWater000, profile.ShaderVariant);
     }
 
-    [Theory]
-    [InlineData(BethesdaGame.Starfield)]
-    [InlineData(BethesdaGame.Unknown)]
-    public void GamesWithNoRecoveredShader_DrawTheFlatTintedPlane(BethesdaGame game)
+    [Fact]
+    public void UnknownGamesWithNoRecoveredOrSourceBackedShader_DrawTheFlatTintedPlane()
     {
         // These have no disassembled water shader of their own and no evidence they share one, so
         // they get the flat tinted plane instead of FNV's engine math applied to foreign records.
         // Routing them back onto WATER000 would be exactly the guess the binary-RE-only policy bars.
-        var profile = WaterProfile.ForGame(game);
+        var profile = WaterProfile.ForGame(BethesdaGame.Unknown);
         Assert.Same(WaterProfile.Flat, profile);
         Assert.Equal(WaterShaderVariant.FlatTinted, profile.ShaderVariant);
         Assert.Equal("water_flat.frag.hlsl", profile.PixelShaderFile);
+    }
+
+    [Fact]
+    public void Starfield_UsesItsDedicatedSourceBackedApproximation()
+    {
+        var profile = WaterProfile.ForGame(BethesdaGame.Starfield);
+
+        Assert.Same(WaterProfile.Starfield, profile);
+        Assert.Equal(WaterShaderVariant.StarfieldWaterApprox, profile.ShaderVariant);
+        Assert.Equal("water_starfield.frag.hlsl", profile.PixelShaderFile);
+        Assert.Equal(WaterProfile.Flat.DefaultShallow, profile.DefaultShallow);
+        Assert.Equal(WaterProfile.Flat.SurfaceAlpha, profile.SurfaceAlpha);
     }
 
     [Fact]
@@ -82,7 +92,8 @@ public class WaterProfileTests
             Assert.Contains(profile, (WaterProfile[])
             [
                 WaterProfile.Fnv, WaterProfile.Oblivion, WaterProfile.Fallout4,
-                WaterProfile.Fallout76, WaterProfile.Morrowind, WaterProfile.Flat
+                WaterProfile.Fallout76, WaterProfile.Morrowind, WaterProfile.Starfield,
+                WaterProfile.Flat
             ]);
         }
 

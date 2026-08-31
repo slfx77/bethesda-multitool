@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Skinning;
@@ -43,7 +44,9 @@ internal static class NifSubmeshExtractor
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
         Func<string, byte[]?>? externalMeshLoader = null,
-        Action<string>? onExternalMeshDecodeFailure = null)
+        Action<string>? onExternalMeshDecodeFailure = null,
+        StarfieldMaterialColorPolicy starfieldColorPolicy = default,
+        StarfieldMaterialAlphaPolicy starfieldAlphaPolicy = default)
     {
         var dataBlock = nif.Blocks[dataIndex];
         worldTransforms.TryGetValue(shapeIndex, out var transform);
@@ -100,7 +103,7 @@ internal static class NifSubmeshExtractor
                 // simply get no geometry rather than a wrong mesh).
                 "BSGeometry" => ExtractBsGeometry(
                     data, dataBlock, nif, transform, shapeName, externalMeshLoader,
-                    onExternalMeshDecodeFailure),
+                    onExternalMeshDecodeFailure, starfieldColorPolicy, starfieldAlphaPolicy),
                 _ => null
             };
 
@@ -129,6 +132,13 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
+        // Starfield's CDB policy is authoritative for external-mesh colour. The generic
+        // useVertexColors argument comes from NIF shader flags/defaults that predate CE2 and must
+        // not globally opt every BSGeometry colour stream into albedo modulation.
+        var effectiveUseVertexColors = dataBlock.TypeName == "BSGeometry"
+            ? submesh.VertexColors is not null
+            : useVertexColors;
+
         return new RenderableSubmesh
         {
             ShapeName = shapeName,
@@ -138,6 +148,8 @@ internal static class NifSubmeshExtractor
             Normals = submesh.Normals,
             UVs = submesh.UVs,
             VertexColors = submesh.VertexColors,
+            StarfieldMaterialColor = submesh.StarfieldMaterialColor,
+            StarfieldMaterialAlpha = submesh.StarfieldMaterialAlpha,
             Tangents = submesh.Tangents,
             Bitangents = submesh.Bitangents,
             BindPosePositions = submesh.BindPosePositions,
@@ -145,12 +157,21 @@ internal static class NifSubmeshExtractor
             DiffuseTexturePath = diffuseTexturePath,
             NormalMapTexturePath = normalMapTexturePath,
             IsEmissive = isEmissive,
-            UseVertexColors = useVertexColors,
+            UseVertexColors = effectiveUseVertexColors,
+            // CE2 Multiply/Lerp tint alpha is shader data, never coverage. The separately decoded
+            // AlphaSettings state below alone can activate slot-2 red-channel cutout.
+            UseVertexAlphaForOpacity = dataBlock.TypeName != "BSGeometry",
             IsDoubleSided = isDoubleSided,
-            HasAlphaBlend = hasAlphaBlend,
-            HasAlphaTest = hasAlphaTest,
-            AlphaTestThreshold = alphaTestThreshold,
-            AlphaTestFunction = alphaTestFunction,
+            HasAlphaBlend = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                ? false
+                : hasAlphaBlend,
+            HasAlphaTest = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout || hasAlphaTest,
+            AlphaTestThreshold = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                ? ToAlphaThresholdByte(submesh.StarfieldMaterialAlpha.AlphaTestThreshold)
+                : alphaTestThreshold,
+            AlphaTestFunction = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+                ? (byte)4
+                : alphaTestFunction,
             IsEyeEnvmap = isEyeEnvmap,
             EnvMapScale = envMapScale,
             SrcBlendMode = srcBlendMode,
@@ -1202,7 +1223,9 @@ internal static class NifSubmeshExtractor
         Matrix4x4 transform,
         string? shapeName,
         Func<string, byte[]?>? externalMeshLoader,
-        Action<string>? onExternalMeshDecodeFailure)
+        Action<string>? onExternalMeshDecodeFailure,
+        StarfieldMaterialColorPolicy colorPolicy,
+        StarfieldMaterialAlphaPolicy alphaPolicy)
     {
         if (externalMeshLoader is null)
         {
@@ -1247,17 +1270,25 @@ internal static class NifSubmeshExtractor
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, mesh.Triangles),
             UVs = mesh.Uvs,
-            // Starfield vertex colour is NOT albedo. Whether it modulates at all is decided by the
-            // material (BSMaterial::ColorChannelTypeComponent / MaterialOverrideColorTypeComponent),
-            // which this renderer does not read yet — and applying it unconditionally drowns the real
-            // diffuse in saturated tint (measured: AkilaCity rendered blue/green with no texture bound,
-            // then red once one was). Withhold it until the material can say; an untinted texture is
-            // the honest approximation, a wrongly-tinted one is not.
-            VertexColors = null,
+            // Starfield vertex colour is not automatically albedo. ParamBool slot 0 on the base
+            // layer's MaterialID target selects it as tint, while Multiply can also be represented
+            // by an sRGB-expanded authored constant through the same lane. Lerp and unrepresentable
+            // constants fail closed in the policy helper. ColorChannelTypeComponent belongs to layer
+            // BLENDERS and cannot be used as a substitute enable signal. Multiply ignores tint alpha,
+            // so the policy always emits 255 until the separate AlphaSettings policy is decoded.
+            VertexColors = colorPolicy.ResolveSupportedVertexColors(
+                mesh.VertexColors, transformed.Positions.Length / 3),
+            StarfieldMaterialColor = colorPolicy.ResolveRenderState(),
+            StarfieldMaterialAlpha = alphaPolicy.ResolveRenderState(),
             Tangents = transformed.Tangents,
             Bitangents = transformed.Bitangents,
             BindPosePositions = null
         };
+    }
+
+    private static byte ToAlphaThresholdByte(float threshold)
+    {
+        return (byte)Math.Clamp((int)MathF.Round(threshold * 255f), 0, 255);
     }
 
     /// <summary>

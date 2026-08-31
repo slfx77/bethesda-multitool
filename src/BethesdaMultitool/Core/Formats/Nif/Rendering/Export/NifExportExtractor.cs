@@ -42,6 +42,7 @@ internal static class NifExportExtractor
         var meshParts = ExtractMeshParts(
             data,
             nif,
+            nodeChildren,
             shapeDataMap,
             shapePropertyMap,
             shapeSkinInstanceMap,
@@ -159,6 +160,7 @@ internal static class NifExportExtractor
     private static List<ExtractedMeshPart> ExtractMeshParts(
         byte[] data,
         NifInfo nif,
+        Dictionary<int, List<int>> nodeChildren,
         Dictionary<int, int> shapeDataMap,
         Dictionary<int, List<int>> shapePropertyMap,
         Dictionary<int, int> shapeSkinInstanceMap,
@@ -173,7 +175,26 @@ internal static class NifExportExtractor
             var dataBlock = nif.Blocks[dataIndex];
             var shapeName = NifBlockParsers.ReadBlockName(data, shapeBlock, nif) ?? $"Shape_{shapeIndex}";
             var properties = ResolveShapeProperties(data, nif, shapePropertyMap, shapeIndex);
-            var skin = TryExtractSkinBinding(data, nif, shapeSkinInstanceMap, shapeIndex, dataIndex);
+
+            // FO76 self-contained shapes never enter shapeSkinInstanceMap: the walker maps them
+            // shape-to-self and deliberately skips the legacy NiGeometry skin parser. Read their
+            // inline SkinRef through the bounded BSSkin path. A candidate with an unsupported scale,
+            // skeleton, or vertex layout is omitted rather than exported as a plausible rigid mesh in
+            // raw skin space.
+            var fo76Skin = Fo76BsSkinBindingExtractor.Extract(data, nif, shapeIndex, nodeChildren);
+            if (fo76Skin.IsHardFailure)
+            {
+                continue;
+            }
+
+            var skin = fo76Skin.Binding is { } binding
+                ? new ExtractedSkinBinding
+                {
+                    BoneNames = binding.BoneNames,
+                    InverseBindMatrices = binding.InverseBindMatrices,
+                    PerVertexInfluences = binding.PerVertexInfluences
+                }
+                : TryExtractSkinBinding(data, nif, shapeSkinInstanceMap, shapeIndex, dataIndex);
 
             var shapeMorphDeltas = skin != null ? preSkinMorphDeltas : null;
             preSkinMorphDeltas = skin != null ? null : preSkinMorphDeltas;
@@ -188,6 +209,7 @@ internal static class NifExportExtractor
             {
                 continue;
             }
+            submesh.SourceBlockIndex = shapeIndex;
 
             meshParts.Add(new ExtractedMeshPart
             {
@@ -300,6 +322,15 @@ internal static class NifExportExtractor
                 null,
                 false,
                 preSkinMorphDeltas),
+            "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape" =>
+                NifSubmeshExtractor.ExtractBsTriShape(
+                    data,
+                    dataBlock,
+                    nif.IsBigEndian,
+                    nif.BsVersion,
+                    nif.BinaryVersion,
+                    Matrix4x4.Identity,
+                    shapeName),
             _ => null
         };
 

@@ -25,9 +25,18 @@ internal sealed class NifTextureResolver : IDisposable
 
     private readonly List<INifTextureSource> _sources;
 
+    /// <summary>
+    ///     Identity of the ordered sources containing Starfield's compiled material database, or
+    ///     null for games/source sets without a candidate. Decoded-mesh persistence includes this
+    ///     dependency because Starfield material policy is baked into its vertex output.
+    /// </summary>
+    internal string? StarfieldMaterialDatabaseCacheIdentity { get; }
+
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
         _sources = NifTextureArchiveSourceFactory.Create(texturesBsaPaths);
+        StarfieldMaterialDatabaseCacheIdentity =
+            MaterialTexturePathResolver.ResolveStarfieldMaterialDatabaseCacheIdentity(_sources);
         _cache = CreateCache().RegisterWith(ResourceRegistry.Instance);
     }
 
@@ -36,6 +45,19 @@ internal sealed class NifTextureResolver : IDisposable
         _sources = [];
         _loadTextureOverride = loadTexture ?? throw new ArgumentNullException(nameof(loadTexture));
         _cache = CreateCache(); // test instances stay out of the global registry
+    }
+
+    /// <summary>
+    ///     Test/diagnostic source injection that exercises the same material-database and texture
+    ///     lookup path as archive-backed sessions without registering its short-lived cache globally.
+    /// </summary>
+    internal NifTextureResolver(IReadOnlyList<INifTextureSource> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        _sources = [.. sources];
+        StarfieldMaterialDatabaseCacheIdentity =
+            MaterialTexturePathResolver.ResolveStarfieldMaterialDatabaseCacheIdentity(_sources);
+        _cache = CreateCache();
     }
 
     public int CacheHits => (int)_cache.Hits;
@@ -154,12 +176,29 @@ internal sealed class NifTextureResolver : IDisposable
             return LoadFromMaterial(path);
         }
 
-        // Starfield: same indirection, but the material is a record inside the compiled database
-        // rather than a file of its own. Kept in lockstep with the GPU resolver — this class's
-        // contract is that both paths resolve materials identically.
-        if (MaterialTexturePathResolver.IsStarfieldMaterialPath(path))
+        // Starfield: same indirection, but the material is a record inside the compiled database.
+        // Role-qualified suffixes select normal or the separately-authored opacity slot for GLB/
+        // software consumers; the unsuffixed .mat selects diffuse. Kept in lockstep with the GPU
+        // resolver, which uses the same key convention.
+        var starfieldNormal = MaterialTexturePathResolver.TrySplitStarfieldNormalMapRequest(
+            path,
+            out var starfieldMaterialPath);
+        var starfieldOpacity = MaterialTexturePathResolver.TrySplitStarfieldOpacityMapRequest(
+            path,
+            out var starfieldOpacityMaterialPath);
+        if (starfieldNormal || starfieldOpacity || MaterialTexturePathResolver.IsStarfieldMaterialPath(path))
         {
-            var slot = MaterialTexturePathResolver.ResolveStarfieldSlot(path, _sources);
+            var materialPath = starfieldNormal
+                ? starfieldMaterialPath
+                : starfieldOpacity
+                    ? starfieldOpacityMaterialPath
+                    : path;
+            var slot = starfieldOpacity
+                ? MaterialTexturePathResolver.ResolveStarfieldOpacitySlot(materialPath, _sources)
+                : MaterialTexturePathResolver.ResolveStarfieldSlot(
+                    materialPath,
+                    _sources,
+                    normalMap: starfieldNormal);
             if (slot.TexturePath is { Length: > 0 } starfieldTexture)
             {
                 return NifTextureLoader.TryLoadFromSources(starfieldTexture, _sources);
@@ -243,5 +282,41 @@ internal sealed class NifTextureResolver : IDisposable
             materialPath,
             static (path, sources) => MaterialTexturePathResolver.ResolveMaterial(path, sources),
             _sources);
+    }
+
+    /// <summary>
+    ///     Resolves whether a Starfield material's base layer consumes external-mesh vertex colour
+    ///     as tint, plus the authored colour-composition mode. Unresolved paths fail closed.
+    /// </summary>
+    internal StarfieldMaterialColorPolicy ResolveStarfieldBaseColorPolicy(string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldBaseColorPolicy(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     Resolves the effective root CE2Material two-sided flag. Null fails closed; the caller may
+    ///     OR only a resolved positive value into render state shared by World Viewer and Mesh Viewer.
+    /// </summary>
+    internal bool? ResolveStarfieldRootTwoSided(string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldRootTwoSided(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     Resolves CE2 AlphaSettings independently of base-colour tint. Unsupported combinations
+    ///     remain represented in the policy for diagnostics but fail closed in render/export helpers.
+    /// </summary>
+    internal StarfieldMaterialAlphaPolicy ResolveStarfieldAlphaPolicy(string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldAlphaPolicy(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     Resolves the fail-closed CE2 ORM policy consumed by Mesh Viewer GLB export. This does not
+    ///     opt the D3D12/world renderer into glTF PBR semantics.
+    /// </summary>
+    internal StarfieldMaterialOrmPolicy ResolveStarfieldOrmPolicy(string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldOrmPolicy(materialPath, _sources);
     }
 }

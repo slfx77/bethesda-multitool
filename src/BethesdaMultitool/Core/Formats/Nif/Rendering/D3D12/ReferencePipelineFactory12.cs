@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -51,12 +52,30 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private ID3D12PipelineState? _grassOpaqueBackA2CPso;
     private ID3D12PipelineState? _grassOpaqueDoubleA2CPso;
 
+    // Exact-quality A/B: only a fail-closed classifier can select these PSOs. They are optional
+    // resources so a compile/driver rejection leaves every batch on the established uber shader.
+    private ID3D12PipelineState? _modernStandardBackPso;
+    private ID3D12PipelineState? _modernStandardBackCutoutPso;
+    private ID3D12PipelineState? _modernStandardDoubleCutoutPso;
+    private ID3D12PipelineState? _starfieldDiffuseLitBackPso;
+    private ID3D12PipelineState? _starfieldDiffuseLitDoublePso;
+    private ID3D12PipelineState? _starfieldDiffuseLitBackCutoutPso;
+    private ID3D12PipelineState? _starfieldDiffuseLitDoubleCutoutPso;
+
     private bool _disposed;
 
-    public ReferencePipelineFactory12(GpuDevice12 gpu, GpuRootSignature12 rootSignature)
+    public ReferencePipelineFactory12(
+        GpuDevice12 gpu,
+        GpuRootSignature12 rootSignature,
+        BethesdaGame game)
     {
         _gpu = gpu;
         _rootSignature = rootSignature;
+        var shaderOverride =
+            EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceModernStandardShader);
+        var shaderActivation = ModernStandardShaderActivationPolicy.Resolve(game, shaderOverride);
+        FalloutModernStandardRequested = shaderActivation.FalloutModernStandardRequested;
+        StarfieldDiffuseLitRequested = shaderActivation.StarfieldDiffuseLitRequested;
 
         var blendedVsBytecode = CompileEmbeddedShader("reference.vert.hlsl", "main", "vs_5_1");
         var instancedVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1");
@@ -70,6 +89,25 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             blendAttachment: null, depthWriteEnabled: true, decal: true);
         OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true,
             blendAttachment: null, depthWriteEnabled: true, decal: true);
+
+        if (FalloutModernStandardRequested)
+        {
+            TryCreateModernStandardOpaquePipelines();
+        }
+        if (StarfieldDiffuseLitRequested)
+        {
+            TryCreateStarfieldDiffuseLitPipelines();
+        }
+
+        BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
+            "ReferencePipelineFactory12: opaque shader profile game={0} override={1} " +
+            "falloutRequested={2} falloutAvailable={3} starfieldRequested={4} starfieldAvailable={5}.",
+            game,
+            shaderOverride ?? "<unset>",
+            FalloutModernStandardRequested,
+            ModernStandardOpaqueAvailable,
+            StarfieldDiffuseLitRequested,
+            StarfieldDiffuseLitOpaqueAvailable);
 
         // Grass cutouts: alpha-to-coverage variants (engine mechanism — BSRenderState::
         // SetAlphaToCoverageEnable) so MSAA dithers the alpha-test edge instead of the binary
@@ -113,6 +151,36 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         {
             [OpaqueBackPso] = mirrorBack,
         };
+        // Mirror capture is deliberately kept on the established uber shader. Its per-draw state
+        // is identical, while the generic twins already encode the winding/clip-plane contract.
+        if (_modernStandardBackPso is not null)
+        {
+            _mirrorPsoMap[_modernStandardBackPso] = mirrorBack;
+        }
+        if (_modernStandardBackCutoutPso is not null)
+        {
+            _mirrorPsoMap[_modernStandardBackCutoutPso] = mirrorBack;
+        }
+        if (_modernStandardDoubleCutoutPso is not null)
+        {
+            _mirrorPsoMap[_modernStandardDoubleCutoutPso] = OpaqueDoublePso;
+        }
+        if (_starfieldDiffuseLitBackPso is not null)
+        {
+            _mirrorPsoMap[_starfieldDiffuseLitBackPso] = mirrorBack;
+        }
+        if (_starfieldDiffuseLitDoublePso is not null)
+        {
+            _mirrorPsoMap[_starfieldDiffuseLitDoublePso] = OpaqueDoublePso;
+        }
+        if (_starfieldDiffuseLitBackCutoutPso is not null)
+        {
+            _mirrorPsoMap[_starfieldDiffuseLitBackCutoutPso] = mirrorBack;
+        }
+        if (_starfieldDiffuseLitDoubleCutoutPso is not null)
+        {
+            _mirrorPsoMap[_starfieldDiffuseLitDoubleCutoutPso] = OpaqueDoublePso;
+        }
         if (AlphaToCoverageAvailable && !ReferenceEquals(OpaqueBackA2CPso, OpaqueBackPso))
         {
             var a2cPsBytecodeMirror = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
@@ -152,6 +220,56 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
     /// <summary>Alpha-to-coverage variant of <see cref="OpaqueDoublePso" /> (grass cutout edges).</summary>
     public ID3D12PipelineState OpaqueDoubleA2CPso { get; }
+
+    /// <summary>Effective Fallout 4/76 opt-in resolved when this game-specific factory was built.</summary>
+    public bool FalloutModernStandardRequested { get; }
+
+    /// <summary>Effective Starfield default/override resolved when this game-specific factory was built.</summary>
+    public bool StarfieldDiffuseLitRequested { get; }
+
+    /// <summary>True only when the A/B was requested and all three specialized PSOs were created.</summary>
+    public bool ModernStandardOpaqueAvailable =>
+        _modernStandardBackPso is not null &&
+        _modernStandardBackCutoutPso is not null &&
+        _modernStandardDoubleCutoutPso is not null;
+
+    /// <summary>Resolves a classifier-approved specialized PSO; false preserves the uber path.</summary>
+    public bool TryGetModernStandardOpaquePso(
+        ModernStandardOpaqueShaderVariant variant,
+        out ID3D12PipelineState? pso)
+    {
+        pso = variant switch
+        {
+            ModernStandardOpaqueShaderVariant.SingleSidedOpaque => _modernStandardBackPso,
+            ModernStandardOpaqueShaderVariant.SingleSidedGreaterCutout => _modernStandardBackCutoutPso,
+            ModernStandardOpaqueShaderVariant.DoubleSidedGreaterCutout => _modernStandardDoubleCutoutPso,
+            _ => null
+        };
+        return pso is not null;
+    }
+
+    /// <summary>True only when all four fail-soft Starfield diffuse-lit PSOs were created.</summary>
+    public bool StarfieldDiffuseLitOpaqueAvailable =>
+        _starfieldDiffuseLitBackPso is not null &&
+        _starfieldDiffuseLitDoublePso is not null &&
+        _starfieldDiffuseLitBackCutoutPso is not null &&
+        _starfieldDiffuseLitDoubleCutoutPso is not null;
+
+    /// <summary>Resolves a future policy-approved Starfield variant; false preserves the uber path.</summary>
+    public bool TryGetStarfieldDiffuseLitPso(
+        bool alphaGreater,
+        bool doubleSided,
+        out ID3D12PipelineState? pso)
+    {
+        pso = (alphaGreater, doubleSided) switch
+        {
+            (false, false) => _starfieldDiffuseLitBackPso,
+            (false, true) => _starfieldDiffuseLitDoublePso,
+            (true, false) => _starfieldDiffuseLitBackCutoutPso,
+            (true, true) => _starfieldDiffuseLitDoubleCutoutPso
+        };
+        return pso is not null;
+    }
 
     /// <summary>Depth-only shadow-pass PSO for opaque batches (instanced VS, no pixel shader).</summary>
     public ID3D12PipelineState ShadowOpaquePso { get; }
@@ -436,6 +554,136 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
+    private void TryCreateModernStandardOpaquePipelines()
+    {
+        ID3D12PipelineState? back = null;
+        ID3D12PipelineState? backCutout = null;
+        ID3D12PipelineState? doubleCutout = null;
+        try
+        {
+            // FXC assigns physical stage-link registers densely. Compile the instanced VS with
+            // the same family/alpha axes as its PS so their sparse TEXCOORD semantics land on
+            // identical hardware registers; a generic VS cannot link to these compact PS inputs.
+            var backVs = CompileEmbeddedShader(
+                "reference_instanced.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"));
+            var cutoutVs = CompileEmbeddedShader(
+                "reference_instanced.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"));
+            var backPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"));
+            var backCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"));
+            var doubleCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_DOUBLE_SIDED", "1"));
+
+            back = CreatePipelineState(
+                backVs, backPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            backCutout = CreatePipelineState(
+                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleCutout = CreatePipelineState(
+                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+
+            _modernStandardBackPso = back;
+            _modernStandardBackCutoutPso = backCutout;
+            _modernStandardDoubleCutoutPso = doubleCutout;
+            back = null;
+            backCutout = null;
+            doubleCutout = null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "ReferencePipelineFactory12: modern-standard opaque specialization disabled: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            doubleCutout?.Dispose();
+            backCutout?.Dispose();
+            back?.Dispose();
+        }
+    }
+
+    private void TryCreateStarfieldDiffuseLitPipelines()
+    {
+        ID3D12PipelineState? back = null;
+        ID3D12PipelineState? doubleSided = null;
+        ID3D12PipelineState? backCutout = null;
+        ID3D12PipelineState? doubleCutout = null;
+        try
+        {
+            var backVs = CompileEmbeddedShader(
+                "reference_instanced.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"));
+            var cutoutVs = CompileEmbeddedShader(
+                "reference_instanced.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"));
+            var backPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"));
+            var doublePs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"));
+            var backCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"));
+            var doubleCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"));
+
+            back = CreatePipelineState(
+                backVs, backPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleSided = CreatePipelineState(
+                backVs, doublePs, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+            backCutout = CreatePipelineState(
+                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleCutout = CreatePipelineState(
+                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+
+            _starfieldDiffuseLitBackPso = back;
+            _starfieldDiffuseLitDoublePso = doubleSided;
+            _starfieldDiffuseLitBackCutoutPso = backCutout;
+            _starfieldDiffuseLitDoubleCutoutPso = doubleCutout;
+            back = null;
+            doubleSided = null;
+            backCutout = null;
+            doubleCutout = null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "ReferencePipelineFactory12: Starfield diffuse-lit specialization disabled: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            doubleCutout?.Dispose();
+            backCutout?.Dispose();
+            doubleSided?.Dispose();
+            back?.Dispose();
+        }
+    }
+
     /// <summary>
     ///     Depth-only PSO for the sun-shadow pass: no render targets, single-sample D32 depth
     ///     (the shadow map is never MSAA regardless of the scene's sample count), no culling
@@ -498,6 +746,13 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _grassRoute.DisposeAll();
         _instancedGrassBlendRoute.DisposeAll();
         DisposeInstancedGrassPipelines();
+        _starfieldDiffuseLitDoubleCutoutPso?.Dispose();
+        _starfieldDiffuseLitBackCutoutPso?.Dispose();
+        _starfieldDiffuseLitDoublePso?.Dispose();
+        _starfieldDiffuseLitBackPso?.Dispose();
+        _modernStandardDoubleCutoutPso?.Dispose();
+        _modernStandardBackCutoutPso?.Dispose();
+        _modernStandardBackPso?.Dispose();
         ShadowAlphaTestPso.Dispose();
         ShadowOpaquePso.Dispose();
         if (AlphaToCoverageAvailable)

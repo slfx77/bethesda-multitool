@@ -32,7 +32,8 @@ public sealed class WaterHardwareOcclusionSourceContractTests
                      "water_fnv.frag.hlsl",
                      "water_oblivion.frag.hlsl",
                      "water_fo4.frag.hlsl",
-                     "water_morrowind.frag.hlsl"
+                     "water_morrowind.frag.hlsl",
+                     "water_starfield.frag.hlsl"
                  ])
         {
             var shader = SourceContract.ReadShaderSource(file);
@@ -78,8 +79,9 @@ public sealed class WaterHardwareOcclusionSourceContractTests
             StringComparison.Ordinal);
 
         // Every depth-sample pixel shader is a WATER_HARDWARE_OCCLUSION compile: the shared four,
-        // FNV WATER001, and the modern (FO4 architectural) clone of the depth-sample template.
-        Assert.Equal(6, CountOccurrences(renderer,
+        // FO76's distinct dual-source optics path, FNV WATER001, and the modern (FO4
+        // architectural) clone of the depth-sample template.
+        Assert.Equal(8, CountOccurrences(renderer,
             "new ShaderMacro(\"WATER_HARDWARE_OCCLUSION\", \"1\")"));
         SourceContract.AssertOrder(
             renderer,

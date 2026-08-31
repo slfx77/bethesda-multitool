@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
@@ -159,5 +160,15 @@ internal sealed record DecodedSubmesh12(
     // resolved through the ordinary 2D upload path — never the cubemap promotion route. Retail
     // TES4 authors NO such blocks (9,612-NIF sweep 2026-08-19: base + SI + DLC BSAs all zero);
     // the arm lights up for TES3 chrome (glass armor) and modded/runtime-captured TES4 content.
-    bool ClassicEnvironmentMapIsSphereMap = false);
+    bool ClassicEnvironmentMapIsSphereMap = false,
+    // Bounded Starfield constant-Lerp material state (v82+). LinearTint.xyz is CE2-expanded;
+    // LinearTint.w is the Lerp weight, never opacity. Vertex-Lerp is intentionally absent.
+    StarfieldMaterialColorRenderState StarfieldMaterialColor = default,
+    // Bounded Starfield AlphaSettings state (v83+). Layer-0 slot-2 red drives GREATER cutout;
+    // material opacity/blending and tint-Lerp alpha remain separate and are not represented here.
+    StarfieldMaterialAlphaRenderState StarfieldMaterialAlpha = default,
+    // FO4/FO76 regular-BGSM emissive lane (v86+): slot-2 glow map plus effective RGB
+    // (EmissiveColor × EmissiveScale). Zero/null means inactive; it never changes IsEmissive.
+    string? BgsmGlowMapTexturePath = null,
+    Vector3 BgsmEmissionColor = default);
 #endif

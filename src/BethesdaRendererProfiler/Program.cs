@@ -124,6 +124,7 @@ public static class Program
                     ["profileJsonl"] = options.ProfileJsonlOutputPath,
                     ["profileIntervalMs"] = options.ProfileIntervalMilliseconds,
                     ["durationSeconds"] = options.DurationSeconds,
+                    ["profileSettleTimeoutSeconds"] = options.ProfileSettleTimeoutSeconds,
                     ["scenario"] = options.ScenarioName,
                     ["scenarioOutput"] = options.ScenarioOutputDirectory,
                     ["stressScene"] = options.StressScene,
@@ -147,7 +148,28 @@ public static class Program
                     ["liveParticles"] = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_LIVE_PARTICLES"),
                     ["speedTreeRuntimeLod"] = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SPT_RUNTIME_LOD"),
                     ["modernWater"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernWater),
-                    ["modernImageSpace"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernImageSpace)
+                    ["modernImageSpace"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernImageSpace),
+                    ["placedLightTiles"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLightTiles),
+                    ["tolerantCull"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull),
+                    ["shadows"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.Shadows),
+                    ["referenceGeometryHeap"] =
+                        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceGeometryHeap),
+                    ["referenceOpaqueIndirect"] =
+                        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceOpaqueIndirect),
+                    ["referenceModernStandardShader"] =
+                        EnvironmentVariables.Get(
+                            EnvironmentVariables.Viewer.ReferenceModernStandardShader),
+                    ["referenceStaticOpaquePacket"] =
+                        EnvironmentVariables.Get(
+                            EnvironmentVariables.Viewer.ReferenceStaticOpaquePacket),
+                    ["referenceOpaqueFrontToBack"] =
+                        EnvironmentVariables.Get(
+                            EnvironmentVariables.Viewer.ReferenceOpaqueFrontToBack),
+                    ["referencePipelineStatistics"] =
+                        EnvironmentVariables.Get(
+                            EnvironmentVariables.Viewer.ReferencePipelineStatistics),
+                    ["shadowComparisonPcf"] =
+                        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowComparisonPcf)
                 });
             }
         }

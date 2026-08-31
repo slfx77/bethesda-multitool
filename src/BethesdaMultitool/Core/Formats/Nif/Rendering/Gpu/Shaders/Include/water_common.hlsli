@@ -24,13 +24,14 @@ cbuffer Uniforms : register(b0)
     uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits,
                          // w = depth-occlusion tie-break bias (world units, asfloat) — water wins coplanar ties
     float4 uRenderOrigin; // xyz = camera-relative render origin; w = scene-depth sample count
-    // ---- FO4_WATER-only constants (appended at the end so every other variant's offsets are
-    // untouched; sourced from the FO4 WATR DNAM — see WaterShaderVariant.Fo4Water). ----
+    // ---- FO4-family union constants (appended so every earlier variant's offsets are untouched).
+    // The default/architectural paths use FO4 meanings; FO76_WATER_OPTICS documents its two RGB
+    // reinterpretations below. ----
     float4 uFo4Spec;     // x = Sun Specular Magnitude, y = Silt Amount, z = Shallow Alpha, w = Deep Alpha
     float4 uFo4Ranges;   // x/y = Color Shallow/Deep Range, z/w = Alpha Shallow/Deep Range
                          //       (multipliers of Depth Amount; retail authors them ≈1.0)
-    float4 uFo4DarkSilt; // rgb = DNAM silt Dark Color (the FO4 PS's unshadowed ambient add),
-                         // w = DNAM Depth Amount (world-unit column at which the depth ramps saturate)
+    float4 uFo4DarkSilt; // FO4: rgb = DNAM silt Dark Color (unshadowed ambient add);
+                         // FO76_WATER_OPTICS: rgb = exact float BaseColor. Both: w = Depth Amount.
     uint4 uNormalIndices; // ordered normal sources; Oblivion repurposes y as WATR TNAM DetailMap
     float4 uLegacySurface0; // Oblivion: WaveAmplitude, WaveFrequency, ScrollXSpeed, ScrollYSpeed
     float4 uLegacySurface1; // Oblivion: FogNear, FogFar, TextureBlend, WindVelocity
@@ -38,7 +39,8 @@ cbuffer Uniforms : register(b0)
     uint4 uModernIndices;   // body/coverage, composited normal, gloss/flow, depth LUT
     uint4 uModernTechnique; // x = recovered technique ID, y = TextureCube index, z = point-light cap
     float4 uModernParams;   // glossScaleA/B, neutral outputAlpha, neutral alphaTestThreshold
-    float4 uModernLightSilt;// retained LightSilt rgb, normal magnitude in w
+    float4 uModernLightSilt;// FO4 architecture: retained LightSilt rgb;
+                            // FO76_WATER_OPTICS: exact float3 ChannelOpacity. w = normal magnitude.
     // Bounded FNV WATER001 tail. Appended after the established 416-byte prefix so every existing
     // WATER003/Oblivion/FO4/Morrowind constant retains its exact register.
     uint4 uFnvWater001Snapshot; // x = opaque SceneColor Texture2D index, y/z = dimensions,
@@ -54,6 +56,22 @@ cbuffer Uniforms : register(b0)
     // Oblivion's projective WATER007 arm applies; 0 ⇒ sky-only screen-UV semantics).
     float4x4 uReflectionViewProj;
     uint4 uReflectionParams;
+    // Dedicated append-only Starfield WATR tail. These are exact decoded source values, but the
+    // consumer is explicitly a viewer approximation: CE2 Water DXIL/material/CUR3 bindings remain
+    // unresolved. CPU mirror: StarfieldWaterFrameUniforms (13 registers).
+    float4 uStarfieldSurface;     // roughness, normal magnitude, shallow/deep normal falloff
+    float4 uStarfieldDepthFlow;   // depth amount, flowmap scale, oceanness, surface-effect falloff
+    float4 uStarfieldLayer1;      // UV scale, wind direction, wind speed, amplitude
+    float4 uStarfieldLayer2;
+    float4 uStarfieldLayer3;
+    float4 uStarfieldLayerFalloffsFlags; // three noise falloffs, asfloat(FNAM byte)
+    float4 uStarfieldLinearVelocity;     // xyz NAM0, w = present
+    float4 uStarfieldAngularVelocity;    // xyz NAM1, w = present
+    float4 uStarfieldDisplacement0;      // force, velocity, falloff, dampener
+    float4 uStarfieldDisplacement1;      // starting size, underwater fog amount/near/far
+    float4 uStarfieldAbsorption;         // authored RGB absorption ranges
+    float4 uStarfieldConcentrations;     // phytoplankton, sediment, yellow matter, oceanness
+    float4 uStarfieldUnderwaterColor;    // authored RGBA, for future underwater-volume rendering
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,

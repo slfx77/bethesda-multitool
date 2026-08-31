@@ -204,6 +204,8 @@ internal static class NpcExportSceneBuilder
             ClampTextureU = submesh.ClampTextureU,
             ClampTextureV = submesh.ClampTextureV,
             NormalMapTexturePath = submesh.NormalMapTexturePath,
+            BgsmGlowMapTexturePath = submesh.BgsmGlowMapTexturePath,
+            BgsmEmissionColor = submesh.BgsmEmissionColor,
             EffectTint = submesh.EffectTint,
             EffectFalloff = submesh.EffectFalloff,
             IsEmissive = submesh.IsEmissive,

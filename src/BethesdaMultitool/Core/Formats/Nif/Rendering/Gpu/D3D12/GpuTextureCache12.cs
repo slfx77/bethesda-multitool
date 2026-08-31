@@ -68,6 +68,16 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly bool _aliasTraceEnabled;
     private readonly Dictionary<string, TextureUploadNode> _cache = new(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly Logger Log = Logger.Instance;
+
+    /// <summary>How many unresolvable textures get named individually before rate-limiting.</summary>
+    private const int MaxNamedResolveFailures = 8;
+
+    // Resolution runs on background threads, so both of these are touched off the render thread.
+    private readonly List<string> _namedResolveFailures = new(MaxNamedResolveFailures);
+    private readonly Lock _resolveFailureGate = new();
+    private int _resolveFailures;
+
     private readonly ConcurrentQueue<CompletedUpload> _completedUploads = new();
 
     // Async copy-queue upload machinery (owned per-cache, mirroring _resolveQueue ownership).
@@ -345,7 +355,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     public Entry GetOrUpload(string path, bool isNormalMap = false)
     {
-        var cacheKey = NormalizeCacheKey(path);
+        var cacheKey = NormalizeCacheKey(path, isNormalMap);
         if (cacheKey.Length == 0)
         {
             return isNormalMap ? FlatNormal : WhitePixel;
@@ -401,9 +411,20 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     ///     descriptors, uploads, and resident textures even though the resolver normalized both to
     ///     one archive entry.
     /// </summary>
-    internal static string NormalizeCacheKey(string path)
+    internal static string NormalizeCacheKey(string path, bool isNormalMap = false)
     {
-        return string.IsNullOrWhiteSpace(path) ? string.Empty : NifTexturePathUtility.Normalize(path);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        // Starfield's .mat path names several CDB slots. A raw path alone cannot safely key both
+        // diffuse and normal: whichever role resolves first would alias the other. Qualify only the
+        // normal request; ordinary DDS paths and all existing cache keys remain unchanged.
+        var normalizedPath = NifGpuTextureResolver.NormalizeKey(path);
+        return isNormalMap && MaterialTexturePathResolver.IsStarfieldMaterialPath(normalizedPath)
+            ? MaterialTexturePathResolver.BuildStarfieldNormalMapRequest(normalizedPath)
+            : normalizedPath;
     }
 
     /// <summary>
@@ -683,6 +704,58 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     ///     Background-thread payload resolution (BSA read + DDX→DDS + BCn decode). Runs through the
     ///     resolver's own thread-safe cache; never touches render-thread state.
     /// </summary>
+    /// <summary>
+    ///     Textures this cache looked for and could not find in any source, for the session.
+    ///     Non-zero is always a real asset problem: a wrong path root, a missing archive, or a
+    ///     load-order gap.
+    /// </summary>
+    internal int ResolveFailureCount => Volatile.Read(ref _resolveFailures);
+
+    /// <summary>
+    ///     Records a texture that resolved to nothing, and says so in the log.
+    ///     <para>
+    ///         This existed only as a profiler trace field before, so a missing texture was SILENT
+    ///         unless JSONL tracing happened to be on. Fallout 76's entire landscape resolved to
+    ///         nothing for weeks behind that silence — every LTEX material was looked up under the
+    ///         wrong root, and the only symptom was terrain that looked plausibly default.
+    ///     </para>
+    ///     <para>
+    ///         Named individually for the first few, then rate-limited to widening milestones, so a
+    ///         systematically broken worldspace announces itself immediately without a flood drowning
+    ///         the log (a bad root fails EVERY texture, not one).
+    ///     </para>
+    /// </summary>
+    private void NoteResolveFailure(string cacheKey)
+    {
+        var count = Interlocked.Increment(ref _resolveFailures);
+
+        var name = false;
+        lock (_resolveFailureGate)
+        {
+            if (_namedResolveFailures.Count < MaxNamedResolveFailures)
+            {
+                _namedResolveFailures.Add(cacheKey);
+                name = true;
+            }
+        }
+
+        if (name)
+        {
+            Log.Warn("GpuTextureCache12[{0}]: texture not found in any source — '{1}'.",
+                _traceCacheTag, cacheKey);
+            return;
+        }
+
+        // 25, 100, 1000, 10000, … — enough to show a systemic failure escalating, few enough that a
+        // worldspace missing thousands of textures adds a handful of lines rather than thousands.
+        if (count == 25 || count == 100 || count == 1_000 || (count % 10_000) == 0)
+        {
+            Log.Warn(
+                "GpuTextureCache12[{0}]: {1:N0} textures unresolved so far. First few: {2}.",
+                _traceCacheTag, count, string.Join(", ", _namedResolveFailures));
+        }
+    }
+
     private GpuTexturePayload? ResolvePayload(string cacheKey)
     {
         if (_resolver is null)
@@ -692,6 +765,11 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var payload = _resolver.GetTexture(cacheKey);
+        if (payload is null && !_resolver.IsUnauthoredStarfieldNormalMap(cacheKey))
+        {
+            NoteResolveFailure(cacheKey);
+        }
+
         if (started != 0)
         {
             RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>

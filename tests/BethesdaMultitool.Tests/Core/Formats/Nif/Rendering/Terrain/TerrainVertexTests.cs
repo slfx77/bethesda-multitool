@@ -38,11 +38,12 @@ public sealed class TerrainVertexTests
     [Fact]
     public void It_is_dramatically_smaller_than_the_shared_mesh_vertex_it_replaced()
     {
-        // The point of the exercise. GpuVertex was 72 bytes: pos 12 + normal 12 + uv 8 + colour 16
-        // + tangent 12 + bitangent 12, of which uv/tangent/bitangent were never read by either
-        // terrain shader.
-        Assert.Equal(72, Unsafe.SizeOf<BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.GpuMeshUploader.GpuVertex>());
-        Assert.True(TerrainVertex.SizeInBytes * 5 < 72, "expected better than a 5x reduction");
+        // The point of the exercise. GpuVertex started at 72 bytes: pos 12 + normal 12 + uv 8 +
+        // colour 16 + tangent 12 + bitangent 12, of which uv/tangent/bitangent were never read by
+        // either terrain shader. It is now 60 — colour was later narrowed to R8G8B8A8_UNORM for the
+        // reference path too — so the gap this test measures is against 60, not the original 72.
+        Assert.Equal(60, Unsafe.SizeOf<BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.GpuMeshUploader.GpuVertex>());
+        Assert.True(TerrainVertex.SizeInBytes * 5 <= 60, "expected at least a 5x reduction");
     }
 
     [Theory]

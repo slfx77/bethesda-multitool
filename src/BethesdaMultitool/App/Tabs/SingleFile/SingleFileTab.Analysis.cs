@@ -104,7 +104,11 @@ public sealed partial class SingleFileTab
                 }
                 else
                 {
-                    entry.Status = ExtractionStatus.Extracted;
+                    // A file the dump only partly contains is extracted, but not complete. Showing
+                    // it as a plain success hid every gapped asset behind a green checkmark.
+                    entry.Status = entry.IsAnalysisTruncated
+                        ? ExtractionStatus.Partial
+                        : ExtractionStatus.Extracted;
                 }
             }
 

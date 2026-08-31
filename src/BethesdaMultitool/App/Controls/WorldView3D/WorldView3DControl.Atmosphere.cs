@@ -44,6 +44,10 @@ public sealed partial class WorldView3DControl
     private WeatherImageSpaceEvaluation? _weatherImageSpaceEvaluation;
     private string _weatherImageSpaceTelemetry = "inactive";
     private string? _weatherImageSpaceTelemetryLogKey;
+    private StarfieldEnvironmentRoute? _starfieldEnvironmentRoute;
+    private StarfieldCelestialRoute? _starfieldCelestialRoute;
+    private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentAppliedChannels;
+    private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentRejectedChannels;
 
     /// <summary>Last classic WTHR→IMAD selection and sampled tonemap values, for captures/profiling.</summary>
     internal string WeatherImageSpaceTelemetry => _weatherImageSpaceTelemetry;
@@ -81,6 +85,30 @@ public sealed partial class WorldView3DControl
 
     private WorldspaceRecord? CurrentExteriorWorldspace() => CurrentSkySceneContext().Worldspace;
 
+    private StarfieldEnvironmentRoute? CurrentStarfieldEnvironmentRoute(
+        ResolvedSkySceneContext skyContext)
+    {
+        return _data?.Game == BethesdaGame.Starfield &&
+               skyContext.RendersExteriorSky &&
+               skyContext.Worldspace is { } worldspace &&
+               _starfieldEnvironmentRoute is { } route &&
+               route.WorldspaceFormId == worldspace.FormId
+            ? route
+            : null;
+    }
+
+    private StarfieldCelestialRoute? CurrentStarfieldCelestialRoute(
+        ResolvedSkySceneContext skyContext)
+    {
+        return _data?.Game == BethesdaGame.Starfield &&
+               skyContext.RendersExteriorSky &&
+               skyContext.Worldspace is { } worldspace &&
+               _starfieldCelestialRoute is { } route &&
+               route.PlanetCandidate.Worldspace.WorldspaceFormId == worldspace.FormId
+            ? route
+            : null;
+    }
+
     /// <summary>
     ///     The climate driving the sky for an exterior worldspace or DATA-bit-7 interior, via the
     ///     engine's precedence:
@@ -103,6 +131,14 @@ public sealed partial class WorldView3DControl
     private ClimateRecord? ResolveClimate(ResolvedSkySceneContext skyContext)
     {
         if (_data is null || !skyContext.RendersExteriorSky) return null;
+        if (_data.Game == BethesdaGame.Starfield)
+        {
+            // CE2 does not source the active planet climate from WRLD CNAM. Use only the unique,
+            // fail-closed PNDT→ATMO route refreshed for this exact worldspace; falling through to
+            // ResolveDefaultClimate would silently select an unrelated CLMT by list order.
+            return CurrentStarfieldEnvironmentRoute(skyContext)?.Climate;
+        }
+
         if (skyContext.PreferredClimateFormId is uint climateFormId &&
             _data.ClimatesByFormId.TryGetValue(climateFormId, out var climate))
         {
@@ -154,6 +190,97 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
+    ///     Return the WTHS inheritance result selected by the current unique PNDT→ATMO→CLMT route.
+    ///     The route fails closed on weighted, global-gated, or otherwise ambiguous WSLT choices;
+    ///     this typed CE2 data is never converted into a legacy WTHR record.
+    /// </summary>
+    private StarfieldWeatherSettingsResolution? ResolveClimateDefaultWeatherSettings(
+        ResolvedSkySceneContext skyContext)
+    {
+        if (_data is not { Game: BethesdaGame.Starfield } ||
+            CurrentStarfieldEnvironmentRoute(skyContext) is not { } route)
+        {
+            return null;
+        }
+
+        // Preserve a failed resolver envelope for capture diagnostics. Rendering reads EffectivePatch,
+        // which remains null unless the complete inheritance chain resolved successfully.
+        return route.WeatherSettings;
+    }
+
+    /// <summary>
+    ///     Select the current Starfield planet environment and celestial records from the active WRLD.
+    ///     Both resolvers preserve ambiguity/failure state and never choose by record order.
+    /// </summary>
+    private void RefreshStarfieldEnvironmentRoutes(ResolvedSkySceneContext skyContext)
+    {
+        _starfieldEnvironmentRoute = null;
+        _starfieldCelestialRoute = null;
+        if (_data is not { Game: BethesdaGame.Starfield } data ||
+            !skyContext.RendersExteriorSky ||
+            skyContext.Worldspace is not { } worldspace)
+        {
+            return;
+        }
+
+        var environment = StarfieldEnvironmentRouteResolver.Resolve(
+            worldspace.FormId,
+            data.PlanetWorldspaceIndex,
+            data.AtmospheresByFormId,
+            data.ClimatesByFormId,
+            data.WeatherSettingsByFormId);
+        _starfieldEnvironmentRoute = environment;
+
+        // Environment resolution may stop after ATMO/CLMT/WTHS while the same unique PNDT candidate
+        // can still author a valid STDT/SUNP route. Keep those failure domains independent.
+        var planet = environment.PlanetCandidate;
+        if (planet is null &&
+            !data.PlanetWorldspaceIndex.TryResolveUnique(worldspace.FormId, out planet))
+        {
+            return;
+        }
+
+        _starfieldCelestialRoute = StarfieldCelestialRouteResolver.Resolve(
+            planet!,
+            data.StarDataIndex,
+            data.SunPresetsByFormId);
+    }
+
+    /// <summary>
+    ///     Return the primary STDT/SUNP preset only when the resolved ATMO does not author a nonzero
+    ///     sun override. The override field is retained and reported, but its precedence/combination
+    ///     with binary-star data is not yet recovered, so substituting either preset would invent it.
+    /// </summary>
+    private static StarfieldSunPresetPatch? StarfieldSunPresetForRenderingApproximation(
+        StarfieldEnvironmentRoute? environment,
+        StarfieldCelestialRoute? celestial)
+    {
+        if (environment?.PlanetCandidate is not { } environmentPlanet ||
+            celestial is null ||
+            environmentPlanet.Planet.FormId != celestial.PlanetCandidate.Planet.FormId)
+        {
+            return null;
+        }
+
+        // An explicit null ATMO reference proves there can be no atmosphere-level sun override and
+        // still permits an airless planet's STDT sun. Every decoded ATMO path must resolve before its
+        // override state is trusted; malformed/missing inheritance therefore blocks the approximation.
+        if (environment.Status != StarfieldEnvironmentRouteStatus.MissingAtmosphereReference &&
+            environment.Atmosphere?.IsResolved != true)
+        {
+            return null;
+        }
+
+        if (environment.Atmosphere?.EffectivePatch?.SunPresetOverrideFormId is
+            { } overrideFormId && overrideFormId != 0)
+        {
+            return null;
+        }
+
+        return celestial.PrimaryStar?.EffectiveSunPreset;
+    }
+
+    /// <summary>
     ///     The scene atmosphere for the current view. Interiors resolve from their AUTHORED cell
     ///     lighting (XCLL, with LGTM lighting-template fallback) — time-of-day independent, so the
     ///     time slider no longer drives interiors to black at night. Exteriors use the weather/climate
@@ -202,6 +329,8 @@ public sealed partial class WorldView3DControl
 
     private AtmosphereState.Resolved ResolveSceneAtmosphere(float gameHour, bool lightingEnabled)
     {
+        _starfieldEnvironmentAppliedChannels = StarfieldEnvironmentApproximationChannels.None;
+        _starfieldEnvironmentRejectedChannels = StarfieldEnvironmentApproximationChannels.None;
         // Cell DATA flag 0x80 = "behave like exterior" (xEdit): those interiors keep the exterior
         // sun/weather atmosphere by engine design.
         var skyContext = CurrentSkySceneContext();
@@ -216,10 +345,24 @@ public sealed partial class WorldView3DControl
         }
 
         var weather = ResolveSelectedWeatherTransition();
-        return AtmosphereState.ResolveWeatherTransition(
+        var resolved = AtmosphereState.ResolveWeatherTransition(
             gameHour, weather.CurrentWeather, weather.OutgoingWeather, weather.CurrentWeatherWeight,
             _currentClimateTiming, lightingEnabled, _data?.Game ?? default,
             GmstFloat("fSunXExtreme"), GmstFloat("fSunYExtreme"), GmstFloat("fSunAlphaTransTime"));
+        if (_data?.Game != BethesdaGame.Starfield)
+        {
+            return resolved;
+        }
+
+        var environment = CurrentStarfieldEnvironmentRoute(skyContext);
+        var celestial = CurrentStarfieldCelestialRoute(skyContext);
+        var approximation = StarfieldEnvironmentRenderingApproximation.Apply(
+            resolved,
+            environment?.WeatherSettings?.EffectivePatch,
+            StarfieldSunPresetForRenderingApproximation(environment, celestial));
+        _starfieldEnvironmentAppliedChannels = approximation.AppliedChannels;
+        _starfieldEnvironmentRejectedChannels = approximation.RejectedChannels;
+        return approximation.Atmosphere;
     }
 
     /// <summary>
@@ -229,6 +372,7 @@ public sealed partial class WorldView3DControl
     private void RefreshAtmosphereForCurrentWorldspace()
     {
         var skyContext = CurrentSkySceneContext();
+        RefreshStarfieldEnvironmentRoutes(skyContext);
         _currentClimateTiming = AtmosphereState.ClimateTiming.FromClimateData(ResolveClimate(skyContext)?.Timing);
         _climateDefaultWeather = ResolveClimateDefaultWeather(skyContext);
         _skyTexKey = null; // force the sky textures to re-resolve for the new climate/weather next frame
@@ -578,9 +722,10 @@ public sealed partial class WorldView3DControl
         {
             var dws = CurrentExteriorWorldspace();
             Log.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "[SkyGeo] enter: game={0} skyGeom={1} resolver={2} meshArch={3} climate={4} modl='{5}' | wsEdid={6} wsClimateFid={7} climCount={8} wsComboIdx={9} interior={10}",
+                "[SkyGeo] enter: game={0} skyGeom={1} resolver={2} meshArch={3} climate={4} modl='{5}' wslt={6} | wsEdid={7} wsClimateFid={8} climCount={9} wsComboIdx={10} interior={11}",
                 _data?.Game, _skyGeometry is not null, _textureResolver12 is not null, _meshArchives is not null,
                 climate?.EditorId ?? "(null)", climate?.ModelPath ?? "(null)",
+                climate?.WeatherSettingsTypes.Count ?? 0,
                 dws?.EditorId ?? "(null)",
                 dws?.ClimateFormId is uint cf ? $"0x{cf:X8}" : "(none)",
                 _data?.ClimatesByFormId.Count ?? -1,
@@ -1055,9 +1200,20 @@ public sealed partial class WorldView3DControl
 
         var cloud = PickCloudTexture(weather)
                     ?? HarvestSkyNifTexture(climate?.ModelPath, SkyObjectType.Clouds, preferNameContains: null);
+        var skyContext = CurrentSkySceneContext();
+        var starfieldSunPreset = StarfieldSunPresetForRenderingApproximation(
+            CurrentStarfieldEnvironmentRoute(skyContext),
+            CurrentStarfieldCelestialRoute(skyContext));
+        var starfieldSunDisk = _data?.Game == BethesdaGame.Starfield &&
+                               starfieldSunPreset?.SunDiskTexture is
+                                   { Length: > 0 } authoredSunDisk
+            ? authoredSunDisk
+            : null;
 
         return new SkyTexturePaths(
-            Sun: climate?.SunTexture,
+            // Starfield SUNP authors the disc texture directly. The classic CLMT FNAM path remains
+            // the source for earlier engines; no cross-game conventional asset probe is used.
+            Sun: starfieldSunDisk ?? climate?.SunTexture,
             SunGlare: climate?.SunGlareTexture,
             Cloud: cloud,
             Star: star,

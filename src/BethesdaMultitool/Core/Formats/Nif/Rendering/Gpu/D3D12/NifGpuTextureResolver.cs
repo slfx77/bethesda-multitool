@@ -114,8 +114,8 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     /// <summary>
     ///     Resolves a texture path to a GPU payload, normalizing the path and caching the decoded result.
-    ///     A trailing <see cref="LeafAtlasMipsSuffix" /> marker survives as part of the cache key but is
-    ///     stripped for path normalization (and later for the archive lookup).
+    ///     Trailing leaf-mip and Starfield material-slot markers survive as part of the cache key but
+    ///     are stripped for path normalization and source lookup.
     /// </summary>
     public GpuTexturePayload? GetTexture(string texturePath)
     {
@@ -123,18 +123,62 @@ internal sealed class NifGpuTextureResolver : IDisposable
     }
 
     /// <summary>
-    ///     Normalizes the path portion of a texture cache key, preserving a trailing
-    ///     <see cref="LeafAtlasMipsSuffix" /> variant marker outside the normalization.
+    ///     Normalizes the path portion of a texture cache key, preserving the leaf-mip and
+    ///     Starfield material-slot variant markers outside the normalization.
     /// </summary>
-    private static string NormalizeKey(string texturePath)
+    internal static string NormalizeKey(string texturePath)
     {
-        if (texturePath.EndsWith(LeafAtlasMipsSuffix, StringComparison.Ordinal))
+        var variants = SplitVariantKey(texturePath);
+        var normalized = NifTexturePathUtility.Normalize(variants.SourcePath);
+        if (variants.StarfieldNormalMap)
         {
-            var clean = texturePath[..^LeafAtlasMipsSuffix.Length];
-            return string.Concat(NifTexturePathUtility.Normalize(clean), LeafAtlasMipsSuffix);
+            normalized = string.Concat(normalized, MaterialTexturePathResolver.StarfieldNormalMapSuffix);
+        }
+        else if (variants.StarfieldOpacityMap)
+        {
+            normalized = string.Concat(normalized, MaterialTexturePathResolver.StarfieldOpacityMapSuffix);
         }
 
-        return NifTexturePathUtility.Normalize(texturePath);
+        return variants.LeafAtlasMips
+            ? string.Concat(normalized, LeafAtlasMipsSuffix)
+            : normalized;
+    }
+
+    private static (
+        string SourcePath,
+        bool LeafAtlasMips,
+        bool StarfieldNormalMap,
+        bool StarfieldOpacityMap) SplitVariantKey(
+        string texturePath)
+    {
+        var sourcePath = texturePath;
+        var leafAtlasMips = false;
+        var starfieldNormalMap = false;
+        var starfieldOpacityMap = false;
+
+        // Parse from the outside inward so the helper remains deterministic if variant markers are
+        // ever composed. Production currently uses leaf mips only for diffuse atlases and the
+        // Starfield marker only for .mat normal slots.
+        if (sourcePath.EndsWith(LeafAtlasMipsSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            sourcePath = sourcePath[..^LeafAtlasMipsSuffix.Length];
+            leafAtlasMips = true;
+        }
+
+        if (MaterialTexturePathResolver.TrySplitStarfieldNormalMapRequest(sourcePath, out var materialPath))
+        {
+            sourcePath = materialPath;
+            starfieldNormalMap = true;
+        }
+        else if (MaterialTexturePathResolver.TrySplitStarfieldOpacityMapRequest(
+                     sourcePath,
+                     out var opacityMaterialPath))
+        {
+            sourcePath = opacityMaterialPath;
+            starfieldOpacityMap = true;
+        }
+
+        return (sourcePath, leafAtlasMips, starfieldNormalMap, starfieldOpacityMap);
     }
 
     /// <summary>
@@ -200,10 +244,10 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     private GpuTexturePayload? LoadTexture(string path)
     {
-        // The leaf-atlas marker is part of the cache key (distinct resolver/disk/GPU entries per
-        // variant) but not of the archive path — strip it before any source lookup.
-        var leafAtlasMips = path.EndsWith(LeafAtlasMipsSuffix, StringComparison.Ordinal);
-        var sourcePath = leafAtlasMips ? path[..^LeafAtlasMipsSuffix.Length] : path;
+        // Variant markers are part of the cache key (distinct resolver/disk/GPU entries) but not of
+        // the archive/material path. The Starfield marker also selects CDB slot 1 rather than slot 0.
+        var variants = SplitVariantKey(path);
+        var sourcePath = variants.SourcePath;
 
         if (_loadTextureOverride is not null)
         {
@@ -213,7 +257,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         // Persistent disk cache (default on): on warm runs this returns the already-transcoded
         // payload (DDX→DDS LZX + untile + parse skipped entirely). Negatives are cached too, so a
         // missing texture isn't re-searched across the BSAs each session. The marker-inclusive key
-        // keeps rebuilt-mip payloads separate from the same texture's pass-through decode.
+        // keeps rebuilt mips and Starfield diffuse/normal roles in separate persistent entries.
         if (_persistentCache is not null)
         {
             var keyText = string.Concat(_sourceSetIdentity, "|", path);
@@ -222,12 +266,20 @@ internal sealed class NifGpuTextureResolver : IDisposable
                 return cachedPayload;
             }
 
-            var loaded = LoadTextureUncached(sourcePath, leafAtlasMips);
+            var loaded = LoadTextureUncached(
+                sourcePath,
+                variants.LeafAtlasMips,
+                variants.StarfieldNormalMap,
+                variants.StarfieldOpacityMap);
             _persistentCache.Store(keyText, loaded);
             return loaded;
         }
 
-        return LoadTextureUncached(sourcePath, leafAtlasMips);
+        return LoadTextureUncached(
+            sourcePath,
+            variants.LeafAtlasMips,
+            variants.StarfieldNormalMap,
+            variants.StarfieldOpacityMap);
     }
 
     /// <summary>
@@ -238,6 +290,23 @@ internal sealed class NifGpuTextureResolver : IDisposable
     internal bool IsStarfieldNoDrawMaterial(string materialPath)
     {
         return MaterialTexturePathResolver.IsStarfieldNoDrawMaterial(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     True when a role-qualified Starfield normal request names a material with no authored
+    ///     normal slot. That is a legitimate flat-normal fallback, not a missing archive asset. A
+    ///     slot that names a texture which then fails to load returns false so the real asset failure
+    ///     remains visible in diagnostics.
+    /// </summary>
+    internal bool IsUnauthoredStarfieldNormalMap(string requestPath)
+    {
+        return MaterialTexturePathResolver.TrySplitStarfieldNormalMapRequest(
+                   requestPath,
+                   out var materialPath) &&
+               !MaterialTexturePathResolver.ResolveStarfieldSlot(
+                   materialPath,
+                   _sources,
+                   normalMap: true).IsResolved;
     }
 
     /// <summary>
@@ -258,7 +327,11 @@ internal sealed class NifGpuTextureResolver : IDisposable
             GpuTexturePayloadFormat.Rgba8, 1, 1, [new GpuTextureMipPayload(1, 1, pixel)]);
     }
 
-    private GpuTexturePayload? LoadTextureUncached(string path, bool leafAtlasMips = false)
+    private GpuTexturePayload? LoadTextureUncached(
+        string path,
+        bool leafAtlasMips = false,
+        bool starfieldNormalMap = false,
+        bool starfieldOpacityMap = false)
     {
         // Fallout 4 / Fallout 76 shapes point at a .bgsm/.bgem material under materials\ instead of an
         // inline texture set; the material's diffuse path is the real texture. The CPU NifTextureResolver
@@ -276,7 +349,12 @@ internal sealed class NifGpuTextureResolver : IDisposable
         // resolve NO albedo at all are skipped before this point — see IsStarfieldNoDrawMaterial.)
         if (MaterialTexturePathResolver.IsStarfieldMaterialPath(path))
         {
-            var slot = MaterialTexturePathResolver.ResolveStarfieldSlot(path, _sources);
+            var slot = starfieldOpacityMap
+                ? MaterialTexturePathResolver.ResolveStarfieldOpacitySlot(path, _sources)
+                : MaterialTexturePathResolver.ResolveStarfieldSlot(
+                    path,
+                    _sources,
+                    normalMap: starfieldNormalMap);
             if (slot.TexturePath is { Length: > 0 } starfieldTexture)
             {
                 return TryLoadFromSources(starfieldTexture, leafAtlasMips);

@@ -161,7 +161,10 @@ public sealed partial class WorldView3DControl
                 BindAtmosphereConstants(
                     cmd, recorder.FrameIndex, enableFog: false, enableLighting: true,
                     cameraRelative: false, shadingCameraPosOverride: shadingEye, enableShadows: false,
-                    lightVisibility: cylinder, tonemapOverride: tonemap);
+                    lightVisibility: cylinder, tonemapOverride: tonemap,
+                    lightViewProjection: viewProj,
+                    lightViewportWidth: target.Width,
+                    lightViewportHeight: target.Height);
 
                 target.Bind(cmd);
 

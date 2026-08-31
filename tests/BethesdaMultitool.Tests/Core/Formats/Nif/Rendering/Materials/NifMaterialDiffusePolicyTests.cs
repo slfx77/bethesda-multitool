@@ -97,7 +97,19 @@ public sealed class NifMaterialDiffusePolicyTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "ReferenceDecodedMeshDiskCache12.cs");
 
-        Assert.Contains("internal const int DecoderVersion = 79;", source, StringComparison.Ordinal);
+        // Assert the INVARIANT the comment above states, not the incidental current number. Pinning
+        // the exact value made every unrelated payload bump fail this test — which is how it broke
+        // on the v80 vertex-colour change, a change with nothing to do with material diffuse.
+        const string marker = "internal const int DecoderVersion = ";
+        var start = source.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, "DecoderVersion declaration not found");
+        var end = source.IndexOf(';', start);
+        var version = int.Parse(
+            source[(start + marker.Length)..end].Trim(),
+            System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.True(version >= 72,
+            $"DecoderVersion is {version}; the v72 material-diffuse bump must not be reverted");
         Assert.Contains("v72: untextured legacy (BsVersion < 26)", source, StringComparison.Ordinal);
         Assert.Contains("MaterialDiffuse", source, StringComparison.Ordinal);
     }
@@ -111,7 +123,8 @@ public sealed class NifMaterialDiffusePolicyTests
 
         // Exactly one synthetic bind in the whole mesh cache, and it sits inside the
         // empty-DiffuseTexturePath branch, before the material-less WhitePixel fallback and the
-        // untouched textured GetOrUpload route.
+        // textured GetOrUpload route. Texture-lifetime wrappers around either acquisition are not
+        // part of this policy contract.
         Assert.Equal(1, SourceContract.CountOccurrences(source, "GetOrCreateSynthetic"));
         SourceContract.AssertOrder(
             source,
@@ -120,6 +133,6 @@ public sealed class NifMaterialDiffusePolicyTests
             "sub.MaterialDiffuse is { } materialDiffuse",
             "GetOrCreateSynthetic",
             "diffuse = _textureCache.WhitePixel;",
-            "diffuse = _textureCache.GetOrUpload(diffusePath);");
+            "GetOrUpload(diffusePath)");
     }
 }

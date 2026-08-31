@@ -559,17 +559,25 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
-        => RenderInternal(viewProj, cylinder, colorPass: true);
+        => RenderInternal(viewProj, cylinder, colorPass: true, renderOrigin: Vector3.Zero);
+
+    /// <summary>
+    ///     Camera-relative main color render. <paramref name="renderOrigin" /> is the exact absolute
+    ///     world origin subtracted by the terrain vertex shader before <paramref name="viewProj" />;
+    ///     carrying it here keeps CPU world-space cell bounds in the same coordinate frame.
+    /// </summary>
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 renderOrigin)
+        => RenderInternal(viewProj, cylinder, colorPass: true, renderOrigin);
 
     /// <summary>
     ///     Depth-only render: lays terrain depth into the bound depth buffer without writing color.
     ///     Used by the 2D map's top-down "Rendered models" overlay so placed references depth-test
     ///     against the ground and partially-buried meshes are clipped, while the 2D map keeps its
-    ///     own terrain layer underneath. Shares the cell mesh cache + async build path with
-    ///     <see cref="Render" />.
+    ///     own terrain layer underneath. Shares the cell mesh cache + async build path with the
+    ///     main color render.
     /// </summary>
     public int RenderDepthOnly(Matrix4x4 viewProj, VisibilityCylinder cylinder)
-        => RenderInternal(viewProj, cylinder, colorPass: false);
+        => RenderInternal(viewProj, cylinder, colorPass: false, renderOrigin: Vector3.Zero);
 
     /// <summary>Bumped whenever a terrain cell mesh becomes newly GPU-resident — part of the sun
     /// shadow map's cache key, so streamed-in hills re-render the map (terrain CASTS shadows).</summary>
@@ -779,7 +787,11 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         }
     }
 
-    private int RenderInternal(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool colorPass)
+    private int RenderInternal(
+        Matrix4x4 viewProj,
+        VisibilityCylinder cylinder,
+        bool colorPass,
+        Vector3 renderOrigin)
     {
         if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
             (_cells is null || _cells.Count == 0))
@@ -813,6 +825,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
+        // Main color/depth draw rejection only. A malformed matrix produces null and therefore
+        // fails open for every cell; streaming admission below remains cylinder-driven.
+        var drawFrustum = TerrainCellDrawCulling.CreateFrustum(viewProj, renderOrigin);
+        LastStats.TerrainFrustumCullingActive = drawFrustum.HasValue;
 
         var segmentStarted = StartTiming();
 
@@ -1014,6 +1030,15 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             var entry = GetOrUploadMesh(vc.Key, vc.Cell, ref uploadBudget);
             if (entry is null) return;
+
+            // Deliberately AFTER GetOrUploadMesh: every cylinder-admitted cell keeps exactly the
+            // same build/upload/cache-recency behavior. This rejects only the main color/depth draw;
+            // RenderShadowDepth and RenderMirror retain their own cylinder semantics.
+            if (!TerrainCellDrawCulling.ShouldDraw(drawFrustum, entry.Grid, entry.HeightBounds))
+            {
+                LastStats.TerrainFrustumRejected++;
+                return;
+            }
 
             // Slot 0 = TerrainVertex; slot 1 = per-cell blend weights for the engine-accurate
             // weighted sum. Vortice doesn't expose a 2-buffer IASetVertexBuffers overload directly;
@@ -1469,6 +1494,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             {
                 Geometry = geometry,
                 Grid = cpu.Grid,
+                HeightBounds = cpu.HeightBounds,
                 BlendQuadCount = cpu.BlendQuadCount,
                 Arena = _terrainArena,
                 TextureIndices = textureIndices,
@@ -1534,11 +1560,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 debugTag: null);
 
             var textureIndices = ResolveSlotTextureIndices(textureSet, out var normalTextureEntries);
+            var heightBounds = TerrainCellHeightBounds.FromVertices(_vertexScratch);
 
             var entry = new CachedCellMesh12
             {
                 Geometry = geometry,
                 Grid = grid,
+                HeightBounds = heightBounds,
                 BlendQuadCount = blendQuadCount,
                 Arena = _terrainArena,
                 TextureIndices = textureIndices,

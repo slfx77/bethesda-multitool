@@ -91,7 +91,9 @@ public sealed class Tes4GrassInstancingTests
         // opaque batch or its soft edge texels blend against terrain and then depth-reject whatever
         // stands behind them.
         SourceContract.AssertOrder(
-            renderer, "_opaqueBatches.OrderGrassBatchesLast();", "SortBatchInstancesByCascade();");
+            renderer,
+            "state.Target.OpaqueBatches.OrderGrassBatchesLast();",
+            "SortBatchInstancesByCascade(");
 
         // Grass was invisible to the shadow capture while it was blended per-draw. Moving it onto the
         // batch path must not make it start casting — retail shaderpackage019 has no grass caster

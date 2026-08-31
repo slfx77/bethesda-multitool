@@ -72,8 +72,9 @@ cbuffer InstanceDraw : register(b1)
     float4 uWind;
     // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
     // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
-    // (startAngle, stopAngle, startOpacity, stopOpacity). On the mutually-exclusive Lighting30
-    // route this slot is raw emission rgb + material multiplier.
+    // (startAngle, stopAngle, startOpacity, stopOpacity). Other mutually-exclusive arms carry
+    // Lighting30 emission, Starfield constant Lerp, or regular BGSM effective emission rgb +
+    // optional glow-map bindless index + 1.
     float4 uEffectTint;
     float4 uEffectFalloff;
     // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),
@@ -180,6 +181,22 @@ float ClassicSpecularLodFade(float4x4 world)
         (uSpecularLodParams.y - uSpecularLodParams.x);
 }
 
+// D3D12 links adjacent shader stages by the hardware registers recorded in their compiled
+// signatures, not by repacking matching semantic names at PSO creation. The specialized pixel
+// shaders deliberately omit unused TEXCOORDs, so FXC packs those inputs densely. Compile this VS
+// with the same family/alpha macros and omit the identical fields here; otherwise the generic
+// TEXCOORD0..17 output layout leaves (for example) TEXCOORD13 at o14 while the specialized PS
+// expects it at v11, and CreateGraphicsPipelineState rejects the pair with E_INVALIDARG.
+#if defined(REFERENCE_MODERN_STANDARD) || defined(REFERENCE_STARFIELD_DIFFUSE_LIT)
+#define REFERENCE_SPECIALIZED_INSTANCED_VERTEX 1
+#endif
+#if !defined(REFERENCE_SPECIALIZED_INSTANCED_VERTEX) || defined(REFERENCE_MODERN_STANDARD_ALPHA_GREATER) || defined(REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER)
+#define REFERENCE_INSTANCED_OUTPUT_ALPHA_STATE 1
+#endif
+#if !defined(REFERENCE_SPECIALIZED_INSTANCED_VERTEX) || defined(REFERENCE_MODERN_STANDARD)
+#define REFERENCE_INSTANCED_OUTPUT_MODERN_STATE 1
+#endif
+
 struct VSOutput
 {
     float4 Position     : SV_Position;
@@ -188,25 +205,44 @@ struct VSOutput
     float4 vVertexColor : TEXCOORD2;
     float3 vTangent     : TEXCOORD3;
     float3 vBitangent   : TEXCOORD4;
+#ifdef REFERENCE_INSTANCED_OUTPUT_ALPHA_STATE
     nointerpolation float4 vAlphaState  : TEXCOORD5;
+#endif
     nointerpolation float4 vRenderState : TEXCOORD6;
     nointerpolation float4 vTextureState : TEXCOORD7;
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;  // world-space position for per-pixel distance fog
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
+#endif
+#ifdef REFERENCE_STARFIELD_DIFFUSE_LIT
+    // Starfield-only union arm: uEffectFalloff carries CE2-expanded RGB + linear Lerp weight.
+    nointerpolation float4 vStarfieldMaterialColor : TEXCOORD10;
+#endif
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
+#endif
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
     nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
+#endif
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     nointerpolation float4 vSoftParticle  : TEXCOORD14;
+#endif
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
     nointerpolation float vSpecularLodFade : TEXCOORD15;
+#endif
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
     // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
     nointerpolation float4 vHeatmap : TEXCOORD17;
+#endif
 };
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 {
     float4x4 world = uInstanceWorlds[uInstanceBase + instanceId];
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     // FormID-heatmap payload (debug overlay): the CPU copy pass writes ramp rgb + a 2.0 flag into
     // the matrix's w-lanes (world[3]) for in-range instances. Ordinary affine matrices carry
     // exactly 1.0 in world[3].w and the FNV grass lighting payload caps its w-lane at 0.99, so
@@ -216,11 +252,14 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     float4 heatmap = heatmapPayload.w > 1.5
         ? float4(heatmapPayload.xyz, 1.0)
         : float4(0.0, 0.0, 0.0, 0.0);
+#endif
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
 #ifdef SHADOW_CARD_LIGHT_FACING
     // Shadow replay shares this VS/ABI but never evaluates a camera-distance shading term.
     float specularLodFade = 1.0;
 #else
     float specularLodFade = ClassicSpecularLodFade(world);
+#endif
 #endif
     bool isTallGrass = IsTallGrassMaterial(uTextureState.z);
     float tallGrassWindWeight = isTallGrass ? saturate(input.aVertexColor.a) : 0.0;
@@ -400,21 +439,40 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     }
     o.vTangent = mul((float3x3)world, modelTangent);
     o.vBitangent = mul((float3x3)world, modelBitangent);
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     float activeAdtUniformScale = length(mul((float3x3)world, float3(1.0, 0.0, 0.0)));
     o.vFnvActiveAdtBaseLight = IsFnvActiveAdtBaseMaterial(uTextureState.z)
         ? ResolveFnvActiveAdtBaseLight(
             o.vTangent, o.vBitangent, o.vWorldNormal, activeAdtUniformScale)
         : 0.0.xxx;
+#endif
+#ifdef REFERENCE_INSTANCED_OUTPUT_ALPHA_STATE
     o.vAlphaState = uAlphaState;
+#endif
     o.vRenderState = uRenderState;
     o.vTextureState = uTextureState;
     o.vTexIndices = uTexIndices;
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
     o.vSpecular = uSpecular;
+#endif
+#ifdef REFERENCE_STARFIELD_DIFFUSE_LIT
+    o.vStarfieldMaterialColor = uEffectFalloff;
+#endif
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     o.vEffectTint = uEffectTint;
     o.vEffectFalloff = uEffectFalloff;
+#endif
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
     o.vEnvMap = uEnvMap;
+#endif
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     o.vSoftParticle = uSoftParticle;
+#endif
+#ifdef REFERENCE_INSTANCED_OUTPUT_MODERN_STATE
     o.vSpecularLodFade = specularLodFade;
+#endif
+#ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     o.vHeatmap = heatmap;
+#endif
     return o;
 }

@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -14,6 +15,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 /// <summary>One submesh of a cached reference mesh: its GPU vertex/index buffer views, diffuse/normal texture entries, and packed alpha/render state.</summary>
 internal sealed class CachedSubmesh12
 {
+    internal const float StarfieldConstantLerpTextureState = -2f;
+    internal const uint StarfieldOpacityTextureFlag = 1u << 15;
+    internal const uint BgsmEmissionTextureFlag = 1u << 16;
+
     private Vector4 _textureState;
     private bool _textureStateCached;
 
@@ -22,6 +27,38 @@ internal sealed class CachedSubmesh12
     public required int IndexCount { get; init; }
     public required GpuTextureCache12.Entry Diffuse { get; init; }
     public required GpuTextureCache12.Entry Normal { get; init; }
+
+    /// <summary>
+    ///     Exact source <c>.mat</c> identity for a Starfield material, before diffuse/normal slot
+    ///     resolution. Null for every other material family. Keeping the material name separate from
+    ///     the resolved texture entries prevents a diffuse DDS from being mistaken for evidence that
+    ///     this submesh came through the audited Starfield material route.
+    /// </summary>
+    public required string? StarfieldMaterialPath { get; init; }
+
+    /// <summary>
+    ///     Persistent CE2 material-colour state. Constant Lerp reuses the Starfield-only
+    ///     uEffectFalloff lane; its W is a blend weight and never contributes to output opacity.
+    /// </summary>
+    public StarfieldMaterialColorRenderState StarfieldMaterialColor { get; init; }
+
+    /// <summary>
+    ///     Persistent CE2 AlphaSettings cutout state. Its threshold and slot-2 coverage are separate
+    ///     from material-colour Lerp alpha and never select the blended draw stream.
+    /// </summary>
+    public StarfieldMaterialAlphaRenderState StarfieldMaterialAlpha { get; init; }
+
+    /// <summary>
+    ///     CE2 layer-0 texture-set slot 2. Its RED channel drives coverage for the bounded static
+    ///     AlphaSettings path; it shares TexIndices.z only with mutually-exclusive material routes.
+    /// </summary>
+    public GpuTextureCache12.Entry? StarfieldOpacity { get; init; }
+
+    /// <summary>
+    ///     True only when <see cref="Normal" /> was derived from slot 1 of
+    ///     <see cref="StarfieldMaterialPath" />, rather than supplied by the ordinary NIF normal lane.
+    /// </summary>
+    public required bool HasDerivedStarfieldNormal { get; init; }
 
     /// <summary>
     ///     Diagnostics back-ref to the mesh whose arena allocation backs the buffer views. Set once
@@ -56,6 +93,22 @@ internal sealed class CachedSubmesh12
     ///     the engine families and policy routes are mutually exclusive.
     /// </summary>
     public GpuTextureCache12.Entry? Lighting30GlowMap { get; init; }
+
+    /// <summary>
+    ///     FO4/FO76 regular-lighting BGSM slot-2 glow map. Unlike the classic Lighting30 map this
+    ///     does not consume TexIndices.w: its bindless index rides the mutually-exclusive
+    ///     EffectFalloff.w union arm so a BGSM gradient palette can remain bound simultaneously.
+    /// </summary>
+    public GpuTextureCache12.Entry? BgsmGlowMap { get; init; }
+
+    /// <summary>
+    ///     Effective regular-lighting BGSM emission factor (<c>emissiveColor.rgb × scale</c>).
+    ///     This is an additive lit overlay, never the full-bright <see cref="IsEmissive" /> route.
+    /// </summary>
+    public Vector3 BgsmEmissionColor { get; init; }
+
+    public bool HasBgsmEmission =>
+        BgsmEmissionColor.X > 0f || BgsmEmissionColor.Y > 0f || BgsmEmissionColor.Z > 0f;
 
     /// <summary>Palette row (V) for the gradient lookup; only meaningful when <see cref="GradientMap" /> is set.</summary>
     public float GradientMapV { get; init; }
@@ -174,8 +227,24 @@ internal sealed class CachedSubmesh12
             System.Diagnostics.Debug.Assert(
                 (SpecularMap is null ? 0 : 1) +
                 (ClassicEnvMask is null ? 0 : 1) +
-                (ClassicParallaxHeightMap is null ? 0 : 1) <= 1,
-                "Specular, classic environment-mask, and classic height maps cannot share TexIndices.z.");
+                (ClassicParallaxHeightMap is null ? 0 : 1) +
+                (StarfieldOpacity is null ? 0 : 1) <= 1,
+                "Specular, classic environment-mask, classic height, and Starfield opacity maps cannot share TexIndices.z.");
+            System.Diagnostics.Debug.Assert(
+                !StarfieldMaterialColor.IsConstantLerp ||
+                (StarfieldMaterialPath is not null &&
+                 GradientMap is null &&
+                 !HasEffectFalloff &&
+                 !IsLighting30),
+                "Starfield constant Lerp requires the mutually-exclusive Starfield material lane.");
+            System.Diagnostics.Debug.Assert(
+                !HasBgsmEmission ||
+                (StarfieldMaterialPath is null &&
+                 !IsEmissive &&
+                 !IsLighting30 &&
+                 !HasEffectFalloff &&
+                 !SoftParticle.Enabled),
+                "Regular BGSM emission requires its mutually-exclusive lit-material union lane.");
 
             // .y > 0.5 routes the instanced VS to the leaf-billboard branch; 2 additionally marks
             // an ALPHA-TESTED leaf card (SPT leaves — the PS boosts test alpha by texture LOD to
@@ -186,6 +255,16 @@ internal sealed class CachedSubmesh12
                 (false, true) => AlphaTest ? 2f : 1f,
                 _ => 0f,
             };
+            var textureStateW = -1f;
+            if (StarfieldMaterialColor.IsConstantLerp)
+            {
+                textureStateW = StarfieldConstantLerpTextureState;
+            }
+            else if (GradientMap is not null)
+            {
+                textureStateW = GradientMapV;
+            }
+
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
                 leafBillboardMode,
@@ -194,7 +273,8 @@ internal sealed class CachedSubmesh12
                 // map, bit 4 = classic Lighting30 material route, bit 5 = TallGrassShaderProperty,
                 // bit 6 = classic FO3/FNV environment pass, bit 7 = TexIndices.z is its custom mask,
                 // bit 9 = classic bit-21/SLS2058 window-reflection direction (bit 8 is parallax),
-                // bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map
+                // bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map,
+                // bit 15 = Starfield layer-0 opacity, bit 16 = regular-lighting BGSM emission
                 // (bits 10-13 are runtime-only, ORed in by ResolveTextureState). All values are
                 // exactly representable in a float; shaders decode with integer bit tests.
                 (SpecularMap is not null ? 1f : 0f) +
@@ -209,8 +289,10 @@ internal sealed class CachedSubmesh12
                 (ClassicEnvMapUsesWindowReflection ? 512f : 0f) +
                 (ClassicEnvMap is not null && ClassicEnvMapScale > 0f && ClassicEnvMapIsSphereMap
                     ? 16384f
-                    : 0f),
-                GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
+                    : 0f) +
+                (StarfieldOpacity is not null ? (float)StarfieldOpacityTextureFlag : 0f) +
+                (HasBgsmEmission ? (float)BgsmEmissionTextureFlag : 0f),
+                textureStateW); // .w >= 0 = palette row; -2 = Starfield constant Lerp
             if (TexturesReady)
             {
                 _textureState = state;
@@ -223,10 +305,12 @@ internal sealed class CachedSubmesh12
     public bool TexturesReady => Diffuse.IsReady && Normal.IsReady &&
                                   SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false } &&
                                   Lighting30GlowMap is not { IsReady: false } &&
+                                  BgsmGlowMap is not { IsReady: false } &&
                                   EnvMap is not { IsReady: false } &&
                                   ClassicEnvMap is not { IsReady: false } &&
                                   ClassicEnvMask is not { IsReady: false } &&
-                                  ClassicParallaxHeightMap is not { IsReady: false };
+                                  ClassicParallaxHeightMap is not { IsReady: false } &&
+                                  StarfieldOpacity is not { IsReady: false };
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
     public required bool AlphaBlend { get; init; }

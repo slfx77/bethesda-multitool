@@ -3,8 +3,11 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -148,7 +151,47 @@ internal sealed class NifBrowserService : IDisposable
         var (data, nif) = ParseAndConvert(nifData);
         if (nif == null) return null;
 
-        var scene = NifExportSceneBuilder.Build(data, nif, sourceLabel);
+        // The hierarchy-preserving exporter handles classic NiTriShapeData/NiTriStripsData. Modern
+        // games instead keep geometry in the shape itself (FO4/FO76 BSTriShape variants), or in a
+        // separate geometries\*.mesh blob named by the shape (Starfield BSGeometry). Route those
+        // NIFs through the same modern extractor used by the world renderer, then bridge its already-
+        // transformed rigid submeshes into GLB. This keeps legacy skinned export behavior unchanged.
+        GlbScene? scene;
+        if (nif.Blocks.Any(block => NifSceneGraphWalker.SelfContainedShapeTypes.Contains(block.TypeName)))
+        {
+            var model = NifGeometryExtractor.Extract(
+                data,
+                nif,
+                _textureResolver,
+                externalMeshLoader: ReadExternalGeometryBlob);
+            if (model is not null)
+            {
+                AddStarfieldNormalMapRequests(model);
+            }
+
+            var hasFo76SkinCandidate = Enumerable.Range(0, nif.Blocks.Count)
+                .Any(shapeIndex => Fo76BsSkinBindingExtractor.IsCandidate(data, nif, shapeIndex));
+            if (hasFo76SkinCandidate)
+            {
+                scene = NifExportSceneBuilder.Build(data, nif, sourceLabel);
+                if (scene is not null && model is not null)
+                {
+                    // The hierarchy path owns joints/weights/inverse binds; the modern renderer path
+                    // owns BGSM-expanded normal maps and render state. Merge by source block so Mesh
+                    // Viewer gains skinning without regressing the material it already displayed.
+                    NifExportSceneBuilder.ApplyModernMaterialState(scene, model);
+                }
+            }
+            else
+            {
+                scene = model is null ? null : NifExportSceneBuilder.BuildRenderableModel(model, sourceLabel);
+            }
+        }
+        else
+        {
+            scene = NifExportSceneBuilder.Build(data, nif, sourceLabel);
+        }
+
         if (scene == null || scene.MeshParts.Count == 0) return null;
 
         return GlbWriter.WriteToBytes(scene, _textureResolver);
@@ -163,8 +206,13 @@ internal sealed class NifBrowserService : IDisposable
         var (data, nif) = ParseAndConvert(nifData);
         if (nif == null) return null;
 
-        var model = NifGeometryExtractor.Extract(data, nif, _textureResolver);
+        var model = NifGeometryExtractor.Extract(
+            data,
+            nif,
+            _textureResolver,
+            externalMeshLoader: ReadExternalGeometryBlob);
         if (model == null || !model.HasGeometry) return null;
+        AddStarfieldNormalMapRequests(model);
 
         var result = NifSpriteRenderer.Render(
             model,
@@ -178,6 +226,83 @@ internal sealed class NifBrowserService : IDisposable
         if (result == null) return null;
 
         return PngWriter.EncodeRgba(result.Pixels, result.Width, result.Height);
+    }
+
+    /// <summary>
+    ///     Starfield's NIF exposes one <c>.mat</c> identity rather than separate diffuse/normal paths.
+    ///     The D3D12 cache derives its normal request after decoded-mesh caching; do the equivalent for
+    ///     GLB preview so Three.js receives the material database's authored normal slot too.
+    /// </summary>
+    private static void AddStarfieldNormalMapRequests(NifRenderableModel model)
+    {
+        foreach (var submesh in model.Submeshes)
+        {
+            if (submesh.NormalMapTexturePath is null &&
+                submesh.DiffuseTexturePath is { } materialPath &&
+                MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath))
+            {
+                submesh.NormalMapTexturePath =
+                    MaterialTexturePathResolver.BuildStarfieldNormalMapRequest(materialPath);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Resolves the path fragment stored by a Starfield <c>BSGeometry</c> block to its external
+    ///     <c>geometries\*.mesh</c> payload in the currently opened BA2 or loose Data tree.
+    /// </summary>
+    private byte[]? ReadExternalGeometryBlob(string meshPath)
+    {
+        var normalized = meshPath.Replace('/', '\\').Trim().TrimStart('\\');
+        if (normalized.Length == 0 ||
+            normalized.Split('\\', StringSplitOptions.RemoveEmptyEntries)
+                .Any(part => part is "." or ".."))
+        {
+            return null;
+        }
+
+        if (!normalized.StartsWith("geometries\\", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "geometries\\" + normalized;
+        }
+
+        if (!normalized.EndsWith(".mesh", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized += ".mesh";
+        }
+
+        if (_archive != null)
+        {
+            return _archive.ReadFile(normalized);
+        }
+
+        if (_rootDirectory == null)
+        {
+            return null;
+        }
+
+        // A user may select either the Data root or its meshes subfolder. In the latter case,
+        // Starfield's geometries directory is a sibling of meshes.
+        var roots = new List<string> { _rootDirectory };
+        if (string.Equals(
+                Path.GetFileName(Path.TrimEndingDirectorySeparator(_rootDirectory)),
+                "meshes",
+                StringComparison.OrdinalIgnoreCase) &&
+            Path.GetDirectoryName(_rootDirectory) is { } dataRoot)
+        {
+            roots.Add(dataRoot);
+        }
+
+        foreach (var root in roots)
+        {
+            var candidate = Path.Combine(root, normalized.Replace('\\', Path.DirectorySeparatorChar));
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllBytes(candidate);
+            }
+        }
+
+        return null;
     }
 
     #region Private Helpers
@@ -198,10 +323,11 @@ internal sealed class NifBrowserService : IDisposable
 
     /// <summary>
     ///     Auto-discover texture sources for a directory of NIF files: content-classified texture
-    ///     archives in the directory or its parent, then a loose <c>textures</c> subfolder.
+    ///     archives in the directory or its parent, then a loose Data-relative asset root.
     /// </summary>
     private static string[] DiscoverTextureSources(string rootDir)
     {
+        string[] archiveSources = [];
         foreach (var dir in new[] { rootDir, Path.GetDirectoryName(rootDir) })
         {
             if (dir == null) continue;
@@ -209,13 +335,54 @@ internal sealed class NifBrowserService : IDisposable
             var textures = BsaDiscovery.DiscoverInDirectory(dir).TexturesBsaPaths;
             if (textures.Length > 0)
             {
-                return textures;
+                archiveSources = textures;
+                break;
             }
         }
 
-        // Check for a textures subdirectory
-        var texturesDir = Path.Combine(rootDir, "textures");
-        return Directory.Exists(texturesDir) ? [texturesDir] : [];
+        var looseAssetRoot = FindLooseAssetRoot(rootDir);
+        if (looseAssetRoot is null ||
+            archiveSources.Contains(looseAssetRoot, StringComparer.OrdinalIgnoreCase))
+        {
+            return archiveSources;
+        }
+
+        // Keep the pre-existing archive order/precedence; loose assets extend that source set so a
+        // sibling materials database (or an asset absent from the archives) can still resolve.
+        return [.. archiveSources, looseAssetRoot];
+    }
+
+    /// <summary>
+    ///     Finds the directory against which Data-relative asset paths can be resolved. When the
+    ///     selected NIF directory is <c>Data\meshes</c> (or any directory beneath it), canonical
+    ///     resolver keys still begin with <c>textures\</c> or <c>materials\</c>; registering the
+    ///     selected meshes directory would therefore incorrectly probe <c>meshes\textures</c>.
+    /// </summary>
+    private static string? FindLooseAssetRoot(string rootDir)
+    {
+        var selectedRoot = Path.GetFullPath(rootDir);
+
+        // Prefer the parent of the nearest meshes path component. This is the game/mod Data root,
+        // and one directory source rooted there can resolve both loose textures and materialsbeta.cdb.
+        for (var current = new DirectoryInfo(selectedRoot); current != null; current = current.Parent)
+        {
+            if (string.Equals(current.Name, "meshes", StringComparison.OrdinalIgnoreCase) &&
+                current.Parent is { } dataRoot &&
+                ContainsLooseTextureOrMaterialAssets(dataRoot.FullName))
+            {
+                return dataRoot.FullName;
+            }
+        }
+
+        // Also support callers that select Data itself, or a self-contained mod directory whose
+        // meshes and loose texture/material trees sit directly below the selected directory.
+        return ContainsLooseTextureOrMaterialAssets(selectedRoot) ? selectedRoot : null;
+    }
+
+    private static bool ContainsLooseTextureOrMaterialAssets(string rootDir)
+    {
+        return Directory.Exists(Path.Combine(rootDir, "textures")) ||
+               Directory.Exists(Path.Combine(rootDir, "materials"));
     }
 
     private static (byte[] Data, NifInfo? Nif) ParseAndConvert(byte[] nifData)

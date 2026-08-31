@@ -51,6 +51,40 @@ internal sealed class Ba2TextureArchiveSource(
         }
     }
 
+    public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
+    {
+        metadata = default;
+        if (!fileIndex.TryGetValue(path, out var fileRecord))
+        {
+            return false;
+        }
+
+        try
+        {
+            var archive = new FileInfo(extractor.Archive.FilePath);
+            if (!archive.Exists)
+            {
+                return false;
+            }
+
+            metadata = new NifTextureSourceAssetMetadata(
+                archive.FullName,
+                archive.Length,
+                archive.LastWriteTimeUtc.Ticks,
+                fileRecord.Offset,
+                fileRecord.PackedSize,
+                fileRecord.RealSize,
+                fileRecord.NameHash,
+                fileRecord.DirHash,
+                fileRecord.Index);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         ownedHandle.Dispose();

@@ -210,7 +210,7 @@ public sealed partial class WorldView3DControl
             // preserve the shipped behavior. Read here, not in the cache — same as `capacity` always was.
             _referenceMeshCache12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceMeshCache12(
                 _gpu12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
-                _deletionQueue12,
+                _deletionQueue12, _commandRecorder12,
                 capacity: BethesdaMultitool.Core.EnvironmentVariables.GetClampedInt(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity,
                     defaultValue: 2048, min: 8, max: 65_536),
@@ -231,7 +231,8 @@ public sealed partial class WorldView3DControl
                 speedTreeDimming: _data?.SpeedTreeDimming);
             _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
-                _cbvSrvUavHeap12, _referenceMeshCache12, _referenceEnabledOverrides)
+                _cbvSrvUavHeap12, _referenceMeshCache12, _deletionQueue12, _data.Game,
+                _referenceEnabledOverrides)
             {
                 DetailedProfilingEnabled = _profileLogging,
                 ShowInitiallyDisabled = _showDisabled, // persist the toggle across ESM reloads

@@ -81,7 +81,8 @@ float3 ApplyFog(float3 color, float3 worldPos, float blendOperation)
 // is off, preserving the exact pre-shadow output), energy-bounded so a fully sunlit surface lands
 // near the legacy max (~1.0) instead of blowing out.
 float3 AtmosphereLight(
-    float3 N, float3 worldPos, float sunShadow, float3 materialEmission, bool hdrActive)
+    float3 N, float3 worldPos, float2 pixelPosition, float sunShadow,
+    float3 materialEmission, bool hdrActive)
 {
     if (uSunColorLighting.w < 0.5)
     {
@@ -129,7 +130,7 @@ float3 AtmosphereLight(
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
     float3 shade = ambient +
         uSunColorLighting.rgb * (ndotl * sunShadow) +
-        PlacedLightContribution(N, worldPos);
+        PlacedLightContribution(N, worldPos, pixelPosition);
     // Negative LIGH records subtract illumination but never produce physically meaningless
     // negative scene radiance.
     return max(shade, 0.0);
@@ -158,6 +159,64 @@ struct PSInput
     nointerpolation float4 vHeatmap : TEXCOORD17; // FormID heatmap: rgb = ramp tint, w = active
     bool   IsFrontFace  : SV_IsFrontFace;
 };
+
+// Fail-closed fast path for the dominant FO4/FO76-style opaque material tuple. The C# classifier
+// admits only wrap-addressed, non-effect, non-emissive materials with declared normal, specular,
+// and modern environment maps. Keeping a separate entry signature matters: the all-games shader
+// consumes twenty interpolator registers even when most branches are uniformly false, while this
+// path carries only the values used by the retained equations.
+#if REFERENCE_MODERN_STANDARD
+struct ModernStandardPSInput
+{
+    float4 Position     : SV_Position;
+    float3 vWorldNormal : TEXCOORD0;
+    float2 vTexCoord    : TEXCOORD1;
+    float4 vVertexColor : TEXCOORD2;
+    float3 vTangent     : TEXCOORD3;
+    float3 vBitangent   : TEXCOORD4;
+#if REFERENCE_MODERN_STANDARD_ALPHA_GREATER
+    nointerpolation float4 vAlphaState : TEXCOORD5;
+#endif
+    nointerpolation float4 vRenderState : TEXCOORD6;
+    nointerpolation float4 vTextureState : TEXCOORD7;
+    nointerpolation uint4 vTexIndices : TEXCOORD8;
+    float3 vWorldPos : TEXCOORD9;
+    nointerpolation float4 vSpecular : TEXCOORD10;
+    nointerpolation float4 vEnvMap : TEXCOORD13;
+    nointerpolation float vSpecularLodFade : TEXCOORD15;
+#if REFERENCE_MODERN_STANDARD_DOUBLE_SIDED
+    bool IsFrontFace : SV_IsFrontFace;
+#endif
+};
+#endif
+
+// Starfield materials currently expose only the diffuse and (when present) derived-normal facts
+// needed for an exact specialization. Keep that family separate from REFERENCE_MODERN_STANDARD:
+// its eligibility contract requires zero uniform specular power and no specular/environment
+// textures, so carrying or evaluating the FO4/FO76 reflection terms would only add dead work.
+#if REFERENCE_STARFIELD_DIFFUSE_LIT
+struct StarfieldDiffuseLitPSInput
+{
+    float4 Position     : SV_Position;
+    float3 vWorldNormal : TEXCOORD0;
+    float2 vTexCoord    : TEXCOORD1;
+    float4 vVertexColor : TEXCOORD2;
+    float3 vTangent     : TEXCOORD3;
+    float3 vBitangent   : TEXCOORD4;
+#if REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER
+    nointerpolation float4 vAlphaState : TEXCOORD5;
+#endif
+    nointerpolation float4 vRenderState : TEXCOORD6;
+    nointerpolation float4 vTextureState : TEXCOORD7;
+    nointerpolation uint4 vTexIndices : TEXCOORD8;
+    float3 vWorldPos : TEXCOORD9;
+    // CE2-expanded RGB + linear Lerp weight. It is material composition, never opacity.
+    nointerpolation float4 vStarfieldMaterialColor : TEXCOORD10;
+#if REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED
+    bool IsFrontFace : SV_IsFrontFace;
+#endif
+};
+#endif
 
 // Reversed-Z [1,0] depth to positive perspective view distance (world units), identical to
 // water.frag's scene-column conversion. Eligible effects explicitly reject occluded fragments and
@@ -244,6 +303,8 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 // shadow input at all and STLEAF2000/2001.pso bind only DiffuseMap),
 // bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map sampled
 // from the view-space reflection vector via textures[], never the cubemaps[] alias
+// bit 15 = TexIndices.z is Starfield layer-0 slot-2 opacity (RED coverage, never tint alpha),
+// bit 16 = regular-lighting FO4/FO76 BGSM emission (EffectFalloff.xyz factor, .w glow slot + 1)
 // (bit 8 is classic parallax).
 uint MaterialTextureFlags(float packedState)
 {
@@ -268,6 +329,16 @@ bool IsLighting30Material(float packedState)
 bool HasClassicEnvironmentMap(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 64u) != 0u;
+}
+
+bool HasStarfieldOpacityMap(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 32768u) != 0u;
+}
+
+bool HasBgsmEmission(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 65536u) != 0u;
 }
 
 bool HasClassicEnvironmentMask(float packedState)
@@ -392,6 +463,189 @@ float2 ResolveClassicParallaxUv(PSInput input)
     return input.vTexCoord + viewTs.xy * (height * 0.04 - 0.02);
 }
 
+#if REFERENCE_MODERN_STANDARD
+float4 main(ModernStandardPSInput input) : SV_Target
+{
+    // This PSO family is main-scene only. Water-mirror replay maps every specialized PSO back to
+    // an established uber mirror twin, where the non-neutral clip plane remains enforced. Omitting
+    // the main pass's identically-neutral clip here leaves opaque variants free of any discard and
+    // restores the hardware's clean early-Z path; cutout variants retain only their authored test.
+
+    // Eligibility guarantees wrap addressing and no palette/parallax/effect route.
+    float4 sample = textures[NonUniformResourceIndex(input.vTexIndices.x)]
+        .Sample(sDiffuse, input.vTexCoord);
+    float sampleAlpha = saturate(sample.a * input.vVertexColor.a);
+#if REFERENCE_MODERN_STANDARD_ALPHA_GREATER
+    // Byte-for-byte predicate used by PassAlphaTest for function 4 (GREATER).
+    if (!(sampleAlpha > input.vAlphaState.x)) discard;
+#endif
+
+    float3 normal = normalize(input.vWorldNormal);
+#if REFERENCE_MODERN_STANDARD_DOUBLE_SIDED
+    if (!input.IsFrontFace)
+    {
+        normal = -normal;
+    }
+#endif
+
+    float4 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)]
+        .Sample(sNormalMap, input.vTexCoord);
+    float3 mapN;
+    if (input.vTextureState.x > 0.5)
+    {
+        float2 xy = normalSample.rg * 2.0 - 1.0;
+        mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
+    }
+    else
+    {
+        mapN = normalSample.rgb * 2.0 - 1.0;
+    }
+
+    // A declared FO4/FO76 specular map is part of the classifier contract, so the generic
+    // material-bit test and default-mask route are both impossible here.
+    float2 specSample = textures[NonUniformResourceIndex(input.vTexIndices.z)]
+        .Sample(sDiffuse, input.vTexCoord).rg;
+    float specMask = specSample.r;
+    float specSmoothScale = specSample.g;
+
+    mapN.xy *= input.vRenderState.z;
+    float tLenSq = dot(input.vTangent, input.vTangent);
+    float bLenSq = dot(input.vBitangent, input.vBitangent);
+    if (tLenSq > 1e-6 && bLenSq > 1e-6)
+    {
+        float3 T = input.vTangent * rsqrt(tLenSq);
+        float3 B = input.vBitangent * rsqrt(bLenSq);
+        float3x3 TBN = float3x3(T, B, normal);
+        normal = normalize(mul(mapN, TBN));
+    }
+
+    float sunShadow = uSunColorLighting.w >= 0.5
+        ? ShadowFactor(input.vWorldPos)
+        : 1.0;
+    bool hdrActive = uSkyHorizon.w >= 0.5;
+    float3 shade = AtmosphereLight(
+        normal, input.vWorldPos, input.Position.xy, sunShadow, 0.0, hdrActive);
+    float3 lit = sample.rgb * shade * input.vVertexColor.rgb;
+
+    // Reuse the identical normalized view vector across the two retained modern reflection terms.
+    float3 V = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
+    if (uSunColorLighting.w >= 0.5 && input.vSpecular.w > 0.0 && specMask > 0.0)
+    {
+        float3 H = normalize(uSunDirIntensity.xyz + V);
+        float specTerm = pow(saturate(dot(normal, H)), max(input.vSpecular.w, 1.0));
+        float spec = specMask * specTerm * input.vSpecularLodFade;
+        float ndotl = dot(normal, uSunDirIntensity.xyz);
+        if (ndotl <= 0.2) spec *= max(ndotl + 0.5, 0.0);
+        lit += uSunColorLighting.rgb * (spec * uSunDirIntensity.w * sunShadow);
+        // Preserve the uber shader's pre-environment per-sample ceiling.
+        lit = min(lit, 1.0);
+    }
+
+    // Classification uses the AUTHORED environment-map capability, not residency. The x/y gate
+    // remains so a cold 2D placeholder never gets indexed through the TextureCube alias and late
+    // cube promotion starts contributing without rebuilding the batch.
+    if (uSunColorLighting.w >= 0.5 && input.vEnvMap.x >= 0.0 && input.vEnvMap.y > 0.0 &&
+        specMask > 0.0)
+    {
+        float smoothness = saturate(input.vEnvMap.z * specSmoothScale);
+        uint cubeSlot = (uint)input.vEnvMap.x;
+        float cubeW, cubeH;
+        uint cubeMips;
+        cubemaps[NonUniformResourceIndex(cubeSlot)].GetDimensions(0, cubeW, cubeH, cubeMips);
+        float3 reflectDir = reflect(-V, normal);
+        float3 env = cubemaps[NonUniformResourceIndex(cubeSlot)]
+            .SampleLevel(sPalette, reflectDir,
+                (1.0 - smoothness) * max((float)cubeMips - 1.0, 0.0)).rgb;
+        float nDotV = abs(dot(normal, V));
+        float rEnv = 1.0 - min(smoothness, 0.999);
+        float kEnv = rEnv * rEnv * 0.5;
+        float gEnv = nDotV / (nDotV + kEnv - nDotV * kEnv);
+        lit += min(env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv), 1.0);
+    }
+
+    // Every admitted material is ordinary non-emissive opaque/cutout, so this is the generic
+    // shader's generalized firefly ceiling and normal fog branch after compile-time folding.
+    lit = min(lit, 1.0);
+    return float4(ApplyFog(lit, input.vWorldPos, 0.0), 1.0);
+}
+
+#elif REFERENCE_STARFIELD_DIFFUSE_LIT
+float4 main(StarfieldDiffuseLitPSInput input) : SV_Target
+{
+    // As above, mirror replay never executes this specialized family. The ordinary scene binds the
+    // neutral clip plane, so carrying its dynamic clip would add a discard-capable instruction to
+    // every pixel without changing coverage and can inhibit early depth rejection.
+
+    // Eligibility guarantees wrap addressing and excludes palette, parallax, effect, emissive,
+    // specular-map, and environment-map routes.
+    float4 sample = textures[NonUniformResourceIndex(input.vTexIndices.x)]
+        .Sample(sDiffuse, input.vTexCoord);
+#if REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER
+    // CE2 AlphaSettings samples layer-0 texture-set slot 2 RED. Material tint alpha is a Lerp
+    // weight and never coverage; the diffuse alpha remains only as a fail-closed legacy fallback.
+    float sampleAlpha = HasStarfieldOpacityMap(input.vTextureState.z)
+        ? textures[NonUniformResourceIndex(input.vTexIndices.z)].Sample(sDiffuse, input.vTexCoord).r
+        : saturate(sample.a);
+    // Byte-for-byte predicate used by PassAlphaTest for function 4 (GREATER).
+    if (!(sampleAlpha > input.vAlphaState.x)) discard;
+#endif
+
+    float3 normal = normalize(input.vWorldNormal);
+#if REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED
+    if (!input.IsFrontFace)
+    {
+        normal = -normal;
+    }
+#endif
+
+    // HasBump remains a uniform per-draw choice within this family. This permits Starfield's
+    // diffuse-only and derived-normal materials to share the same four PSOs without a fifth axis.
+    if (input.vRenderState.y > 0.5)
+    {
+        float4 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)]
+            .Sample(sNormalMap, input.vTexCoord);
+        float3 mapN;
+        if (input.vTextureState.x > 0.5)
+        {
+            float2 xy = normalSample.rg * 2.0 - 1.0;
+            mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
+        }
+        else
+        {
+            mapN = normalSample.rgb * 2.0 - 1.0;
+        }
+
+        mapN.xy *= input.vRenderState.z;
+        float tLenSq = dot(input.vTangent, input.vTangent);
+        float bLenSq = dot(input.vBitangent, input.vBitangent);
+        if (tLenSq > 1e-6 && bLenSq > 1e-6)
+        {
+            float3 T = input.vTangent * rsqrt(tLenSq);
+            float3 B = input.vBitangent * rsqrt(bLenSq);
+            float3x3 TBN = float3x3(T, B, normal);
+            normal = normalize(mul(mapN, TBN));
+        }
+    }
+
+    float sunShadow = uSunColorLighting.w >= 0.5
+        ? ShadowFactor(input.vWorldPos)
+        : 1.0;
+    bool hdrActive = uSkyHorizon.w >= 0.5;
+    float3 shade = AtmosphereLight(
+        normal, input.vWorldPos, input.Position.xy, sunShadow, 0.0, hdrActive);
+    // TextureState.w == -2 is the CPU's Starfield constant-Lerp union tag. Apply the affine
+    // composition before lighting; every other admitted Starfield material retains Multiply.
+    float3 albedo = input.vTextureState.w == -2.0
+        ? lerp(sample.rgb, input.vStarfieldMaterialColor.rgb, input.vStarfieldMaterialColor.a)
+        : sample.rgb * input.vVertexColor.rgb;
+    float3 lit = albedo * shade;
+
+    // The fail-closed contract makes every omitted reflection term identically zero. Preserve the
+    // generic non-emissive ceiling and ordinary fog operation after compile-time folding.
+    lit = min(lit, 1.0);
+    return float4(ApplyFog(lit, input.vWorldPos, 0.0), 1.0);
+}
+#else
 float4 main(PSInput input) : SV_Target
 {
     // Mirror-pass clip plane (b3 uClipPlane, origin-relative space; neutral (0,0,0,1) = no-op).
@@ -434,7 +688,9 @@ float4 main(PSInput input) : SV_Target
     bool fnvActiveAdtBaseVertexColor = UsesFnvActiveAdtBaseVertexColor(input.vTextureState.z);
     // The bounded active ADT route is opaque and Toggles.x consumes vertex RGB only. Its output
     // alpha is BaseMap.a * material alpha (the runtime gate requires material alpha == 1).
-    float sampleAlpha = saturate(sample.a * (fnvActiveAdtBase ? 1.0 : input.vVertexColor.a));
+    float sampleAlpha = HasStarfieldOpacityMap(input.vTextureState.z)
+        ? SampleMaterialTexture(input.vTexIndices.z, materialUv, input.vTextureState.z).r
+        : saturate(sample.a * (fnvActiveAdtBase ? 1.0 : input.vVertexColor.a));
 
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
     // discards transparent pixels rather than rendering them as opaque. Full NIF comparison
@@ -680,7 +936,7 @@ float4 main(PSInput input) : SV_Target
         else
         {
             shade = AtmosphereLight(
-                normal, input.vWorldPos, sunShadow,
+                normal, input.vWorldPos, input.Position.xy, sunShadow,
                 hasLighting30Glow ? 0.0 : emission,
                 hdrActive);
         }
@@ -830,6 +1086,25 @@ float4 main(PSInput input) : SV_Target
         lit += min(env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv), 1.0);
     }
 
+    // Regular FO4/FO76 BGSM glow remains scene-lit and adds its authored emission after the
+    // diffuse/specular/environment terms (fo76utils calculateLighting_FO4/FO76 + glowMap). It must
+    // not use the full-bright IsEmissive branch. This mutually-exclusive constant union carries
+    // effective emissiveColor.rgb * scale in xyz and an optional slot-2 bindless index + 1 in w;
+    // keeping the descriptor out of TexIndices.w lets a gradient palette coexist with glow.
+    if (HasBgsmEmission(input.vTextureState.z))
+    {
+        float3 bgsmEmission = input.vEffectFalloff.rgb;
+        if (input.vEffectFalloff.w > 0.5)
+        {
+            uint bgsmGlowSlot = (uint)round(input.vEffectFalloff.w - 1.0);
+            bgsmEmission *= SampleMaterialTexture(
+                bgsmGlowSlot, materialUv, input.vTextureState.z).rgb;
+        }
+
+        lit += bgsmEmission;
+        authoredGlow = dot(bgsmEmission, 1.0) > 0.0;
+    }
+
     // Generalized firefly bound: the sun-specular clamp above only reaches shapes that enter that
     // block (lighting + normal map + specular flag + mask). Matte shapes still alias — sub-pixel
     // triangles at distance modulate sun·(N·L) and the unbounded point-light sum per MSAA sample,
@@ -904,3 +1179,4 @@ float4 main(PSInput input) : SV_Target
     }
     return float4(outputRgb, outAlpha);
 }
+#endif

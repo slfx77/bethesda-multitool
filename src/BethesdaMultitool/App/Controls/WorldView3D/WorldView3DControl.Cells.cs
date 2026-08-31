@@ -132,7 +132,10 @@ public sealed partial class WorldView3DControl
             game: _data.Game,
             isInterior: false);
         var appearance = WaterAppearance.FromWaterRecord(initialWaterSelection.Water);
-        var normalIndices = ResolveWaterNormalIndices(appearance);
+        var starfieldApproximation = _data.Game == BethesdaGame.Starfield
+            ? StarfieldWaterApproximation.FromWaterRecord(initialWaterSelection.Water)
+            : null;
+        var normalIndices = ResolveWaterNormalIndices(appearance, starfieldApproximation);
         var oblivionDetailIndex = WaterProfile.ForGame(_data.Game).UsesWatrDetailTexture &&
                                   appearance?.SurfaceTexture is { Length: > 0 } detailPath
             ? _textureResolver12?.ResolveDiffuseBindlessIndex(detailPath)
@@ -158,6 +161,7 @@ public sealed partial class WorldView3DControl
         }
 
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
+        _water?.SetStarfieldApproximation(starfieldApproximation);
         _water?.SetFnvWater001WaterTypeContext(
             initialWaterSelection.WaterFormId,
             activeWorldspace?.WaterFormId);
@@ -236,8 +240,17 @@ public sealed partial class WorldView3DControl
         return frames.Count > 0 ? frames.ToArray() : null;
     }
 
-    private uint?[]? ResolveWaterNormalIndices(WaterAppearance? appearance)
+    private uint?[]? ResolveWaterNormalIndices(
+        WaterAppearance? appearance,
+        StarfieldWaterApproximation? starfieldApproximation = null)
     {
+        if (starfieldApproximation is not null)
+        {
+            return StarfieldWaterApproximation.InferredGlobalTexturePaths
+                .Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path))
+                .ToArray();
+        }
+
         if (appearance?.NormalTextures is { Count: > 0 } textures)
         {
             return textures.Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path)).ToArray();
@@ -274,20 +287,22 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Selects the current FNV camera CELL's XCWT material, falling back to WRLD NAM2 when that
-    ///     override is absent or unresolved. Only the material binding changes when the selected
-    ///     WATR changes; water instances and their spatial index remain resident.
+    ///     Selects the current camera CELL's XCWT material for the games whose retail data authors
+    ///     per-cell overrides, falling back to WRLD NAM2 when that override is absent or unresolved.
+    ///     Only the material binding changes when the selected WATR changes; water instances and
+    ///     their spatial index remain resident.
     /// </summary>
     private void RefreshWaterAppearanceForCurrentCell(bool force = false)
     {
-        // FO3 parity 2026-08-10: widened from FNV-only. Before this, FO3 exteriors NEVER
-        // re-resolved the camera cell's XCWT while moving — whatever bound at worldspace load
-        // stayed bound. Record semantics only (XCWT → NAM2 → engine-default tier, and the
-        // resolver's engine-default tier is already FNV+FO3); the FNV-only WATER001 route is
-        // unaffected (its contract hard-fails non-FNV input).
+        // FO3 parity 2026-08-10: widened from FNV-only. Starfield parity 2026-08-31: retail has six
+        // authored CELL XCWT overrides, including New Atlantis where WRLD NAM2 is absent. Before
+        // this, Starfield stayed on the world-load NAM2 (or unavailable) while crossing those cells.
+        // Record semantics only: XCWT → NAM2, with the engine-default tier still scoped to FO3/FNV.
+        // The FNV-only WATER001 route is unaffected (its contract hard-fails non-FNV input).
         if (_data is null || _water is null ||
             _data.Game is not (BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
-                or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3))
+                or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3
+                or BethesdaMultitool.Core.Games.BethesdaGame.Starfield))
         {
             return;
         }
@@ -309,7 +324,13 @@ public sealed partial class WorldView3DControl
         }
 
         var appearance = WaterAppearance.FromWaterRecord(selection.Water);
-        _water.SetAppearance(appearance, ResolveWaterNormalIndices(appearance));
+        var starfieldApproximation = _data.Game == BethesdaGame.Starfield
+            ? StarfieldWaterApproximation.FromWaterRecord(selection.Water)
+            : null;
+        _water.SetAppearance(
+            appearance,
+            ResolveWaterNormalIndices(appearance, starfieldApproximation));
+        _water.SetStarfieldApproximation(starfieldApproximation);
         _water.SetFnvWater001WaterTypeContext(selection.WaterFormId, worldspace?.WaterFormId);
         _boundWaterAppearanceFormId = selection.WaterFormId;
         _hasBoundWaterAppearance = true;
@@ -450,13 +471,17 @@ public sealed partial class WorldView3DControl
             game: _data.Game,
             isInterior: true);
         var appearance = WaterAppearance.FromWaterRecord(waterSelection.Water);
+        var starfieldApproximation = _data.Game == BethesdaGame.Starfield
+            ? StarfieldWaterApproximation.FromWaterRecord(waterSelection.Water)
+            : null;
         if (_water is not null) _water.DefaultWaterRequiresCellHasWater = false;
         _water?.LoadData(
             _cellGridLookup,
             worldspaceDefaultWaterHeight: null,
             _spatialIndex,
             appearance,
-            ResolveWaterNormalIndices(appearance));
+            ResolveWaterNormalIndices(appearance, starfieldApproximation));
+        _water?.SetStarfieldApproximation(starfieldApproximation);
         _water?.SetFnvWater001WaterTypeContext(waterSelection.WaterFormId, null);
         _waterAppearanceSelection = waterSelection;
         _boundWaterAppearanceFormId = waterSelection.WaterFormId;
