@@ -55,6 +55,15 @@ public class StarfieldMaterialDatabaseTests
     }
 
     [Fact]
+    public void Parse_RejectsTruncatedComponentChunkInsteadOfReturningConstructorDefaults()
+    {
+        var complete = BuildDatabase();
+        var truncated = complete[..^1];
+
+        Assert.Null(StarfieldMaterialDatabase.Parse(truncated));
+    }
+
+    [Fact]
     public void Parse_ResolvesTextureThroughTheObjectGraph()
     {
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase());
@@ -478,7 +487,7 @@ public class StarfieldMaterialDatabaseTests
         foreach (var name in new[] { @"Data\Textures\Ground\Dirt_color.dds", @"Data\Textures\Ground\Dirt_normal.dds" })
         {
             chunks.Add(Chunk("DIFF", Concat(
-                U32(offsets["BSMaterial::MRTextureFile"]), U16(0), Str(name))));
+                U32(offsets["BSMaterial::MRTextureFile"]), U16(0), Str(name), U16(0xFFFF))));
         }
 
         var file = new List<byte>();

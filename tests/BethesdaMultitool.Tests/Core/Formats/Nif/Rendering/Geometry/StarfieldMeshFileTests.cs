@@ -1,3 +1,8 @@
+using System.Numerics;
+using System.Text;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using Xunit;
 
@@ -107,11 +112,99 @@ public class StarfieldMeshFileTests
         Assert.Null(StarfieldMeshFile.Parse(blob));
     }
 
+    [Fact]
+    public void ExternalBsGeometry_UsesOnlySupportedMaterialColorComposition()
+    {
+        byte[] decodedRgba =
+        [
+            10, 20, 30, 40,
+            50, 60, 70, 80,
+            90, 100, 110, 120,
+            130, 140, 150, 160,
+            170, 180, 190, 200,
+            210, 220, 230, 240
+        ];
+        var meshBlob = BuildMesh(vertexColors: decodedRgba);
+        var (nifData, nif) = BuildExternalBsGeometry(@"test\colourmesh");
+
+        RenderableSubmesh Extract(StarfieldMaterialColorPolicy policy)
+        {
+            return Assert.IsType<RenderableSubmesh>(NifBlockParsers.ExtractSubmesh(
+                nifData,
+                nif,
+                shapeIndex: 0,
+                dataIndex: 0,
+                worldTransforms: new Dictionary<int, Matrix4x4>(),
+                externalMeshLoader: path => path == @"test\colourmesh" ? meshBlob : null,
+                starfieldColorPolicy: policy));
+        }
+
+        // ParamBool selects the decoded stream as tint, and Multiply is exactly the renderer's
+        // sample.rgb * vertexColor.rgb lane.
+        var decodedMultiply = Extract(new StarfieldMaterialColorPolicy(
+            true, true, StarfieldMaterialColorOverrideMode.Multiply, 0x00FFFFFFu));
+        Assert.True(decodedMultiply.UseVertexColors);
+        Assert.False(decodedMultiply.UseVertexAlphaForOpacity);
+        Assert.Equal(
+            decodedRgba.Select((value, index) => index % 4 == 3 ? byte.MaxValue : value).ToArray(),
+            decodedMultiply.VertexColors);
+
+        // With vertex tint disabled, constant Multiply is representable by repeating the authored
+        // RGB through that same lane after the reference renderer's sRGB expansion. Material alpha
+        // is ignored by Multiply, and the external mesh's unrelated bytes are not used.
+        var constantMultiply = Extract(new StarfieldMaterialColorPolicy(
+            true,
+            false,
+            StarfieldMaterialColorOverrideMode.Multiply,
+            new Vector4(0.25f, 0.5f, 0.75f, 0.5f)));
+        Assert.True(constantMultiply.UseVertexColors);
+        Assert.False(constantMultiply.UseVertexAlphaForOpacity);
+        Assert.Equal(
+            Enumerable.Repeat(new byte[] { 13, 55, 133, 255 }, 6).SelectMany(x => x).ToArray(),
+            constantMultiply.VertexColors);
+        Assert.Equal(default(StarfieldMaterialColorRenderState),
+            constantMultiply.StarfieldMaterialColor);
+
+        // Constant Lerp uses a distinct persistent operation because affine composition cannot be
+        // baked into the multiplicative vertex lane. RGB expands exactly once; alpha remains the
+        // material blend weight and never becomes vertex/output opacity.
+        var constantLerpPolicy = new StarfieldMaterialColorPolicy(
+            true,
+            false,
+            StarfieldMaterialColorOverrideMode.Lerp,
+            new Vector4(0.25f, 0.5f, 0.75f, 0.4f));
+        Assert.True(constantLerpPolicy.TryResolveConstantLerp(out var expectedLinearTint));
+        var constantLerp = Extract(constantLerpPolicy);
+        Assert.False(constantLerp.UseVertexColors);
+        Assert.False(constantLerp.UseVertexAlphaForOpacity);
+        Assert.Null(constantLerp.VertexColors);
+        Assert.Equal(StarfieldMaterialColorRenderMode.ConstantLerp,
+            constantLerp.StarfieldMaterialColor.Mode);
+        Assert.Equal(expectedLinearTint, constantLerp.StarfieldMaterialColor.LinearTint);
+
+        // Vertex-driven Lerp needs a separate per-vertex mask and remains fail-closed. Unresolved
+        // policy does too: neither may accidentally inherit the constant operation above.
+        foreach (var unsupported in new[]
+                 {
+                     new StarfieldMaterialColorPolicy(
+                         true, true, StarfieldMaterialColorOverrideMode.Lerp, 0x00FFFFFFu),
+                     default
+                 })
+        {
+            var withheld = Extract(unsupported);
+            Assert.False(withheld.UseVertexColors);
+            Assert.Null(withheld.VertexColors);
+            Assert.Equal(default(StarfieldMaterialColorRenderState),
+                withheld.StarfieldMaterialColor);
+        }
+    }
+
     private static byte[] BuildMesh(
         uint version = 2,
         float scale = Scale,
         (short X, short Y, short Z)? firstVertex = null,
-        uint? firstNormal = null)
+        uint? firstNormal = null,
+        byte[]? vertexColors = null)
     {
         const int vertexCount = 6;
         var w = new List<byte>();
@@ -132,7 +225,24 @@ public class StarfieldMeshFileTests
 
         AddHalfPairs(w, vertexCount); // UV0
         AddHalfPairs(w, vertexCount); // UV1
-        w.AddRange(BitConverter.GetBytes(0u)); // no vertex colours
+        if (vertexColors is null)
+        {
+            w.AddRange(BitConverter.GetBytes(0u)); // no vertex colours
+        }
+        else
+        {
+            Assert.Equal(vertexCount * 4, vertexColors.Length);
+            w.AddRange(BitConverter.GetBytes((uint)vertexCount));
+            for (var offset = 0; offset < vertexColors.Length; offset += 4)
+            {
+                var bgra = (uint)(vertexColors[offset + 2]
+                                  | (vertexColors[offset + 1] << 8)
+                                  | (vertexColors[offset] << 16)
+                                  | (vertexColors[offset + 3] << 24));
+                w.AddRange(BitConverter.GetBytes(bgra));
+            }
+        }
+
         AddDec4(w, vertexCount, firstNormal); // normals
         AddDec4(w, vertexCount, null); // tangents
         w.AddRange(BitConverter.GetBytes(0u)); // no skin weights
@@ -144,6 +254,45 @@ public class StarfieldMeshFileTests
         foreach (var f in new[] { 0f, 0f, 0f, 1f, 1f, 1f }) w.AddRange(BitConverter.GetBytes(f));
 
         return [.. w];
+    }
+
+    private static (byte[] Data, NifInfo Nif) BuildExternalBsGeometry(string meshPath)
+    {
+        var w = new List<byte>();
+        w.AddRange(BitConverter.GetBytes(-1)); // NiObjectNET name string-table index
+        w.AddRange(BitConverter.GetBytes(0u)); // no extra-data refs
+        w.AddRange(BitConverter.GetBytes(-1)); // no controller
+        w.AddRange(BitConverter.GetBytes(0u)); // NiAVObject flags: external mesh data
+        w.AddRange(new byte[12 + 36]); // translation + rotation (unused by this direct extraction)
+        w.AddRange(BitConverter.GetBytes(1f)); // scale
+        w.AddRange(BitConverter.GetBytes(-1)); // no collision object
+        w.AddRange(new byte[16 + 24]); // bounding sphere + box
+        w.AddRange(BitConverter.GetBytes(-1)); // no skin
+        w.AddRange(BitConverter.GetBytes(-1)); // no shader block in this focused fixture
+        w.AddRange(BitConverter.GetBytes(-1)); // no alpha block
+        w.Add(1); // LOD 0 has a mesh
+        w.AddRange(new byte[12]); // indices size + vertex count + mesh flags
+        var pathBytes = Encoding.ASCII.GetBytes(meshPath);
+        w.AddRange(BitConverter.GetBytes((uint)pathBytes.Length));
+        w.AddRange(pathBytes);
+
+        var data = w.ToArray();
+        var nif = new NifInfo
+        {
+            BinaryVersion = 0x14020007,
+            BsVersion = 173,
+            BlockCount = 1
+        };
+        nif.Blocks.Add(new BlockInfo
+        {
+            Index = 0,
+            TypeIndex = 0,
+            TypeName = "BSGeometry",
+            Size = data.Length,
+            DataOffset = 0
+        });
+        nif.BlockTypeNames.Add("BSGeometry");
+        return (data, nif);
     }
 
     private static void AddHalfPairs(List<byte> w, int count)
