@@ -252,8 +252,12 @@ public class LandSubrecordParserTests
     }
 
     [Fact]
-    public void MergeCategories_PrefersRuntime_FillsFromMasterEsm()
+    public void MergeCategories_AuthoredLayersOutrankRuntime_OtherCategoriesFillPerCandidateOrder()
     {
+        // Texture layers follow the 2026-08-31 ruling: a runtime capture holds only the layers
+        // resident at the crash, so any authored set — even the fallback's — outranks it. Vertex
+        // colors keep plain candidate-order fill. LandTextureLayerPrecedenceTests pins the layer
+        // rule in isolation; this case pins it inside a mixed-category merge.
         var runtime = new LandVisualData
         {
             TextureLayers =
@@ -278,10 +282,10 @@ public class LandSubrecordParserTests
         var merged = LandVisualData.MergeCategories(runtime, master);
 
         Assert.NotNull(merged);
-        Assert.Equal(VisualDataSource.Runtime, merged!.TextureLayersSource);
-        Assert.Equal(0x123u, merged.TextureLayers[0].TextureFormId);
+        Assert.Equal(VisualDataSource.MasterEsm, merged!.TextureLayersSource);
+        Assert.Equal(0x999u, merged.TextureLayers[0].TextureFormId);
         Assert.Equal(VisualDataSource.MasterEsm, merged.VertexColorsSource);
-        Assert.Equal(VisualDataSource.Merged, merged.Source);
+        Assert.Equal(VisualDataSource.MasterEsm, merged.Source);
     }
 
     [Fact]
