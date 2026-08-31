@@ -81,7 +81,9 @@ export npc <meshes-bsa> --esm <e> -o <dir>  # Export NPC with FaceGen morphs + e
                                             #   (--dmp / --dmp-equip work here too)
 
 # DMP commands
-dmp to-esm <file> -o <out>      # Rebuild a loadable ESM/ESP plugin from a dump (to-esp is a back-compat alias)
+dmp to-esm <file> -o <out>      # Rebuild a loadable ESM plugin from a dump. Output is ESM-FLAGGED
+                                #   (TES4 flags 0x00000001) — name it .esm, never .esp. The old
+                                #   'to-esp' alias was removed 2026-08-30: it created an ESM anyway.
                                 #   Planner-only since 2026-08-11: the legacy emission path and its
                                 #   --planner-types opt-in are gone. Every decision is settled by
                                 #   EsmPlanner before PlanWriter/PlanCellSectionBuilder emit a byte.

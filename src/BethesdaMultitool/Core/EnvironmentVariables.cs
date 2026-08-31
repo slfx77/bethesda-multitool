@@ -153,6 +153,15 @@ internal static class EnvironmentVariables
         public const string ReferenceUploadBytesPerFrame = "FALLOUT_VIEWER_REFERENCE_UPLOAD_BYTES_PER_FRAME";
         public const string ReferenceUploadsPerFrame = "FALLOUT_VIEWER_REFERENCE_UPLOADS_PER_FRAME";
         public const string ReferenceUploadMillisecondsPerFrame = "FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME";
+        public const string ReferenceBatchBuildMillisecondsPerFrame = "FALLOUT_VIEWER_REFERENCE_BATCH_BUILD_MS_PER_FRAME";
+        /// <summary>
+        ///     Static placed-reference geometry backing. "upload" preserves the established
+        ///     host-visible arena; "default" stages immutable payloads into device-local memory.
+        ///     Read once when the reference mesh cache is constructed so a live toggle cannot
+        ///     invalidate already-published vertex/index views.
+        /// </summary>
+        public const string ReferenceGeometryHeap = "FALLOUT_VIEWER_REFERENCE_GEOMETRY_HEAP";
+        public const string PlacedLightTiles = "FALLOUT_VIEWER_LIGHT_TILES";
 
         /// <summary>
         ///     Resident-mesh LRU entry cap for the 3D viewer's reference cache (default 2048). Diagnostic lever: tiny values
@@ -237,6 +246,52 @@ internal static class EnvironmentVariables
         ///     merge preserves survivor order.
         /// </summary>
         public const string ParallelCull = "FALLOUT_VIEWER_PARALLEL_CULL";
+
+        /// <summary>
+        ///     Opt-in CPU-authored ExecuteIndirect submission for ordinary instanced reference
+        ///     batches that share one frame-wide instance SRV. Decals, grass, geometry-validation
+        ///     draws, and the per-batch instance-buffer fallback remain on the direct path.
+        /// </summary>
+        public const string ReferenceOpaqueIndirect = "FALLOUT_VIEWER_REFERENCE_OPAQUE_INDIRECT";
+
+        /// <summary>
+        ///     Game-scoped, fail-closed pixel-shader specialization for audited modern opaque
+        ///     materials. Fallout 4/76 remain exact-"1" opt-in. Starfield's diffuse-lit <c>.mat</c>
+        ///     path defaults on when unset; exact "0" disables it for A/B or driver recovery, and
+        ///     invalid values disable both families. Unsupported material facts keep the established
+        ///     all-games reference shader. Read once when the game-specific renderer is constructed.
+        /// </summary>
+        public const string ReferenceModernStandardShader =
+            "FALLOUT_VIEWER_REFERENCE_MODERN_STANDARD_SHADER";
+
+        /// <summary>
+        ///     Opt-in persistent submission packet for immutable ordinary modern-standard reference
+        ///     batches. The packet reuses post-filter instance matrices, per-draw constants, and
+        ///     ExecuteIndirect arguments only while its exact publication/cull key remains valid.
+        /// </summary>
+        public const string ReferenceStaticOpaquePacket =
+            "FALLOUT_VIEWER_REFERENCE_STATIC_OPAQUE_PACKET";
+
+        /// <summary>
+        ///     Opt-in publication-time front-to-back ordering inside each ordinary opaque PSO
+        ///     group. Decals and both grass correctness lanes retain their existing stable order.
+        /// </summary>
+        public const string ReferenceOpaqueFrontToBack =
+            "FALLOUT_VIEWER_REFERENCE_OPAQUE_FRONT_TO_BACK";
+
+        /// <summary>
+        ///     Diagnostic-only D3D12 pipeline-statistics query around the primary reference pass.
+        ///     Unset/0 allocates no query/readback resources and records no query commands; set to
+        ///     "1" only for matched diagnostic A/B runs that need IA/VS/PS invocation counts.
+        /// </summary>
+        public const string ReferencePipelineStatistics =
+            "FALLOUT_VIEWER_REFERENCE_PIPELINE_STATISTICS";
+
+        /// <summary>
+        ///     Opt-in four-sample comparison-filtered shadow PCF. Unset/0 preserves the established
+        ///     nine-gather implementation so the GPU change can be benchmarked with the same binary.
+        /// </summary>
+        public const string ShadowComparisonPcf = "FALLOUT_VIEWER_SHADOW_COMPARISON_PCF";
 
         /// <summary>
         ///     Mip chain on the FNV water noise-normal prepass target (default ON). The

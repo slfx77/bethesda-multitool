@@ -60,6 +60,7 @@ internal partial class CvdumpParser
 {
     private readonly Dictionary<uint, FieldListInfo> _fieldLists = [];
     private readonly Dictionary<uint, PointerTypeInfo> _pointerTypes = [];
+    private readonly Dictionary<uint, ArrayTypeInfo> _arrayTypes = [];
     private readonly Dictionary<uint, uint> _forwardRefs = []; // forwardRefIndex → UDT actual index
     public List<StructureInfo> Structures { get; } = [];
     public Dictionary<uint, StructureInfo> StructuresByIndex { get; } = [];
@@ -75,7 +76,10 @@ internal partial class CvdumpParser
         Console.WriteLine("Pass 1: Collecting field lists and pointer types...");
         CollectFieldLists(lines);
         CollectPointerTypes(lines);
-        Console.WriteLine($"  Found {_fieldLists.Count:N0} field lists, {_pointerTypes.Count:N0} pointer types");
+        CollectArrayTypes(lines);
+        Console.WriteLine(
+            $"  Found {_fieldLists.Count:N0} field lists, {_pointerTypes.Count:N0} pointer types, " +
+            $"{_arrayTypes.Count:N0} array types");
 
         // Second pass: collect structures and enums
         Console.WriteLine("Pass 2: Collecting structures and enums...");
@@ -335,6 +339,60 @@ internal partial class CvdumpParser
         }
     }
 
+    /// <summary>
+    ///     Collect <c>LF_ARRAY</c> leaves. Without these, every fixed-size array member resolves to
+    ///     <c>("unknown", 0, …)</c> and is then dropped by the reader's readable-field filter — which
+    ///     is why <c>BGSDefaultObjectManager.pObjectArray</c> (the 136-byte default-object table),
+    ///     <c>BGSImpactDataSet.ppImpactData</c> and both of <c>TESCasino</c>'s model/texture arrays
+    ///     were invisible despite being present in every dump.
+    ///     <para>
+    ///         A record's shape in the dump is:
+    ///         <code>
+    ///     0xNNNN : Length = 14, Leaf = 0x1503 LF_ARRAY
+    ///         Element type = 0xMMMM
+    ///         Index type = T_ULONG(0022)
+    ///         length = 136
+    ///         </code>
+    ///         where <c>length</c> is the array's TOTAL size in bytes, not its element count.
+    ///     </para>
+    /// </summary>
+    private void CollectArrayTypes(string[] lines)
+    {
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].Contains("LF_ARRAY"))
+                continue;
+
+            var typeMatch = TypeIndexRegex().Match(lines[i]);
+            if (!typeMatch.Success)
+                continue;
+
+            var typeIndex = Convert.ToUInt32(typeMatch.Groups[1].Value, 16);
+            uint elementTypeIndex = 0;
+            var totalSize = -1;
+
+            for (var j = i + 1; j < Math.Min(i + 5, lines.Length); j++)
+            {
+                var elemMatch = ArrayElementTypeRegex().Match(lines[j]);
+                if (elemMatch.Success && elemMatch.Groups[1].Success)
+                {
+                    elementTypeIndex = Convert.ToUInt32(elemMatch.Groups[1].Value, 16);
+                    continue;
+                }
+
+                var lengthMatch = ArrayLengthRegex().Match(lines[j]);
+                if (lengthMatch.Success)
+                {
+                    totalSize = int.Parse(lengthMatch.Groups[1].Value);
+                    break;
+                }
+            }
+
+            if (totalSize >= 0)
+                _arrayTypes[typeIndex] = new ArrayTypeInfo(elementTypeIndex, totalSize, null);
+        }
+    }
+
     private void BuildStructureIndex()
     {
         // Index actual (non-forward-ref) structures
@@ -352,22 +410,61 @@ internal partial class CvdumpParser
         Console.WriteLine(
             $"  Structure index: {StructuresByIndex.Count:N0} entries ({_forwardRefs.Count:N0} forward refs resolved)");
 
-        // Resolve pointer element type names
-        foreach (var (idx, ptr) in _pointerTypes)
+        // Resolve pointer element type names. Iterated to a fixed point because a pointer's target
+        // can itself be a pointer — TESTextureList::pTextureOffsetArray is a BSFileEntry**, and
+        // naming it just "unknown" leaves a consumer unable to tell an array of file entries from
+        // an array of bytes. Two passes cover T**; the loop stops as soon as nothing new resolves.
+        for (var pass = 0; pass < 4; pass++)
         {
+            var resolvedThisPass = 0;
+
+            foreach (var (idx, ptr) in _pointerTypes)
+            {
+                if (ptr.ElementTypeName != null)
+                    continue;
+
+                var elemIdx = ptr.ElementTypeIndex;
+
+                // Follow forward ref if needed
+                if (_forwardRefs.TryGetValue(elemIdx, out var resolvedIdx))
+                    elemIdx = resolvedIdx;
+
+                string? elemName = null;
+                if (StructuresByIndex.TryGetValue(elemIdx, out var pointedStruct))
+                    elemName = pointedStruct.Name;
+                else if (_pointerTypes.TryGetValue(elemIdx, out var innerPtr) && innerPtr.ElementTypeName != null)
+                    elemName = $"{innerPtr.ElementTypeName} *";
+
+                if (elemName == null)
+                    continue;
+
+                _pointerTypes[idx] = ptr with { ElementTypeName = elemName };
+                resolvedThisPass++;
+            }
+
+            if (resolvedThisPass == 0)
+                break;
+        }
+
+        // Same for arrays: name the element so a consumer can tell an array of TESForm pointers
+        // from an array of bytes.
+        foreach (var (idx, arr) in _arrayTypes)
+        {
+            var elemIdx = arr.ElementTypeIndex;
+            if (_forwardRefs.TryGetValue(elemIdx, out var resolvedElemIdx))
+                elemIdx = resolvedElemIdx;
+
             string? elemName = null;
-            var elemIdx = ptr.ElementTypeIndex;
-
-            // Follow forward ref if needed
-            if (_forwardRefs.TryGetValue(elemIdx, out var resolvedIdx))
-                elemIdx = resolvedIdx;
-
-            if (StructuresByIndex.TryGetValue(elemIdx, out var pointedStruct))
-                elemName = pointedStruct.Name;
+            if (_pointerTypes.TryGetValue(elemIdx, out var elemPtr))
+                elemName = elemPtr.ElementTypeName != null ? $"{elemPtr.ElementTypeName} *" : "void *";
+            else if (StructuresByIndex.TryGetValue(elemIdx, out var elemStruct))
+                elemName = elemStruct.Name;
 
             if (elemName != null)
-                _pointerTypes[idx] = ptr with { ElementTypeName = elemName };
+                _arrayTypes[idx] = arr with { ElementTypeName = elemName };
         }
+
+        Console.WriteLine($"  Array index: {_arrayTypes.Count:N0} entries");
     }
 
     /// <summary>
@@ -420,12 +517,17 @@ internal partial class CvdumpParser
             if (StructuresByIndex.TryGetValue(typeIdx, out var structInfo))
                 return ("struct", structInfo.Size, structInfo.Name);
 
+            // Check if it's a fixed-size array (LF_ARRAY carries the TOTAL byte length)
+            if (_arrayTypes.TryGetValue(typeIdx, out var arrayInfo))
+                return ("array", arrayInfo.TotalSize,
+                    arrayInfo.ElementTypeName != null ? $"{arrayInfo.ElementTypeName}[]" : "[]");
+
             // Check if it's an enum (treat as its underlying int size)
             foreach (var e in Enums.Values)
                 if (e.TypeIndex == typeIdx)
                     return ("enum", 4, e.Name);
 
-            // Unknown custom type — could be array, bitfield, etc.
+            // Unknown custom type — bitfield, modifier, etc.
             return ("unknown", 0, typeName);
         }
 
@@ -500,6 +602,14 @@ internal partial class CvdumpParser
     [GeneratedRegex(@"Element type : (0x[0-9a-fA-F]+)")]
     private static partial Regex PointerElementTypeRegex();
 
+    // LF_ARRAY writes "Element type = 0xNNNN" (with '=', not ':' as LF_POINTER does) and the
+    // element may be a primitive, in which case there is no index to capture.
+    [GeneratedRegex(@"Element type = (?:(0x[0-9a-fA-F]+)|T_)")]
+    private static partial Regex ArrayElementTypeRegex();
+
+    [GeneratedRegex(@"^\s*length = (\d+)")]
+    private static partial Regex ArrayLengthRegex();
+
     [GeneratedRegex(@"UDT\((0x[0-9a-fA-F]+)\)")]
     private static partial Regex UdtRegex();
 }
@@ -533,6 +643,12 @@ internal class FieldInfo
 }
 
 internal record PointerTypeInfo(uint TypeIndex, uint ElementTypeIndex, string? ElementTypeName);
+
+/// <summary>
+///     A fixed-size array leaf. <paramref name="TotalSize" /> is the whole array's byte length as
+///     the PDB records it, not an element count.
+/// </summary>
+internal record ArrayTypeInfo(uint ElementTypeIndex, int TotalSize, string? ElementTypeName);
 
 internal record FlatField(
     string Name,

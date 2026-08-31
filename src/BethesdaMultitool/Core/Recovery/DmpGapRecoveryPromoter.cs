@@ -154,7 +154,12 @@ internal static class DmpGapRecoveryPromoter
             FormType = formType,
             TesFormOffset = candidate.FileOffset,
             TesFormPointer = candidate.VirtualAddress,
-            DialogueLine = candidate.DecodedText
+            DialogueLine = candidate.DecodedText,
+            // The scanner resolved these from an independently-built topic→info map and only
+            // promotes when that map agrees with the record's own decode. Dropping them here left
+            // the repaired parentage visible to the audit CLI and to nothing that emits.
+            RecoveredTopicFormId = candidate.TopicFormId,
+            RecoveredQuestFormId = candidate.QuestFormId
         });
         return true;
     }

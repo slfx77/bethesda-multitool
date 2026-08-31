@@ -143,7 +143,58 @@ public static class MinidumpExtractor
             HeightmapsExported = heightmapsExported,
             ScriptsExtracted = scriptsExtracted,
             RuntimeTexturesExported = runtimeTexturesExported,
-            RuntimeMeshesExported = runtimeMeshesExported
+            RuntimeMeshesExported = runtimeMeshesExported,
+            Residency = SummarizeResidency(entries)
+        };
+    }
+
+    /// <summary>
+    ///     Roll the per-file residency up so the CLI can report it. The manifest entries used to be
+    ///     discarded here after their offsets were harvested, which is why no caller could see how
+    ///     much of a carve was actually resident.
+    /// </summary>
+    private static CarveResidencySummary SummarizeResidency(IReadOnlyList<CarveEntry> entries)
+    {
+        var partial = 0;
+        var tailTruncated = 0;
+        var interiorHoles = 0;
+        var criticalRange = 0;
+        var worstCoverage = 1.0;
+
+        foreach (var entry in entries)
+        {
+            if (!entry.IsPartial)
+            {
+                continue;
+            }
+
+            partial++;
+            worstCoverage = Math.Min(worstCoverage, entry.Coverage);
+
+            var holeCount = entry.Holes?.Count ?? 0;
+            if (entry.TailTruncated)
+            {
+                tailTruncated++;
+            }
+
+            if (holeCount > (entry.TailTruncated ? 1 : 0))
+            {
+                interiorHoles++;
+            }
+
+            if (entry.CriticalRangeHit != null)
+            {
+                criticalRange++;
+            }
+        }
+
+        return new CarveResidencySummary
+        {
+            PartialFiles = partial,
+            TailTruncatedFiles = tailTruncated,
+            InteriorHoleFiles = interiorHoles,
+            CriticalRangeFiles = criticalRange,
+            WorstCoverage = worstCoverage
         };
     }
 

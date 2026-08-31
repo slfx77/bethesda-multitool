@@ -209,7 +209,8 @@ public static class GameProfiles
                 HasModernWeatherLayout = true,
                 ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
                 WideTimeOfDayBandsFormVersion = 111,
-                // HasVerifiedModernWatrLayout stays false: Starfield's WATR layout is unverified.
+                // HasVerifiedModernWatrLayout stays false: Starfield's verified CE2 WATR layout has
+                // no NAM2/NAM3/NAM4 texture-path set; its typed 152-byte DNAM is parsed separately.
                 // Every terrain\<worldspaceEditorId>.btd lives in Starfield - Terrain01..04.ba2 /
                 // TerrainPatch.ba2 (753 of them); the DLC and update archives carry more, hence the
                 // whole-Data fallback.

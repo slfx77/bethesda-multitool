@@ -116,6 +116,8 @@ internal static class RealAssetPaths
 
         public static string? SeventySix() => SteamGameFile("Fallout76", @"Data\SeventySix.esm");
 
+        public static string? Starfield() => SteamGameFile("Starfield", @"Data\Starfield.esm");
+
         public static string? Morrowind() => SteamGameFile("Morrowind", @"Data Files\Morrowind.esm");
     }
 
