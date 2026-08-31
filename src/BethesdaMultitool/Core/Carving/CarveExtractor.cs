@@ -80,11 +80,10 @@ internal static class CarveExtractor
 
             // Read the actual file data (including any leading bytes)
             // For minidumps, reassemble from VA-mapped regions; otherwise flat read
-            var (fileData, isTruncated, coverage) =
+            var (fileData, residency) =
                 ReadFileData(accessor, adjustedOffset, adjustedSize, minidumpInfo);
 
-            return new ExtractionData(outputFile, fileData, adjustedSize, originalPath, metadata,
-                isTruncated, coverage);
+            return new ExtractionData(outputFile, fileData, adjustedSize, originalPath, metadata, residency);
         }
         finally
         {
@@ -126,9 +125,10 @@ internal static class CarveExtractor
     }
 
     /// <summary>
-    ///     Read file data, using VA-aware reassembly for minidumps or flat read otherwise.
+    ///     Read file data, using VA-aware reassembly for minidumps or flat read otherwise, and
+    ///     report exactly which byte runs were missing rather than only how many there were.
     /// </summary>
-    private static (byte[] data, bool isTruncated, double coverage) ReadFileData(
+    private static (byte[] data, CarveResidency residency) ReadFileData(
         MemoryMappedViewAccessor accessor,
         long adjustedOffset,
         int adjustedSize,
@@ -144,7 +144,7 @@ internal static class CarveExtractor
                 var regions = minidumpInfo.GetRegionsInRange(startVa, endVa);
 
                 var fileData = new byte[adjustedSize]; // zero-filled for unmapped gaps
-                long bytesPresent = 0;
+                var presentRuns = new List<CarveHole>(regions.Count);
 
                 foreach (var region in regions)
                 {
@@ -154,18 +154,24 @@ internal static class CarveExtractor
                     var bufferOffset = (int)(overlapStart - startVa);
                     var regionFileOffset = region.FileOffset + (overlapStart - region.VirtualAddress);
 
-                    bytesPresent += accessor.ReadArray(regionFileOffset, fileData, bufferOffset, overlapSize);
+                    // GetRegionsInRange returns VA-sorted regions, so the runs come out ascending
+                    // and the complement over [0, size) is the hole set with no extra sorting.
+                    var read = accessor.ReadArray(regionFileOffset, fileData, bufferOffset, overlapSize);
+                    if (read > 0)
+                    {
+                        presentRuns.Add(new CarveHole(bufferOffset, read));
+                    }
                 }
 
-                var coverage = adjustedSize > 0 ? (double)bytesPresent / adjustedSize : 0;
-                return (fileData, coverage < 1.0, coverage);
+                return (fileData, CarveResidency.FromPresentRuns(presentRuns, adjustedSize));
             }
         }
 
-        // Not a valid minidump or VA lookup failed - flat read (current behavior)
+        // Not a valid minidump or VA lookup failed - flat read (current behavior). A short read
+        // here means end-of-file, i.e. a single trailing hole; there are no interior gaps to find.
         var flatData = new byte[adjustedSize];
         var flatRead = accessor.ReadArray(adjustedOffset, flatData, 0, adjustedSize);
-        return (flatData, flatRead < adjustedSize, adjustedSize > 0 ? (double)flatRead / adjustedSize : 0);
+        return (flatData, CarveResidency.FromPresentRuns([new CarveHole(0, flatRead)], adjustedSize));
     }
 
     private static (int leadingBytes, string? customFilename, string? originalPath, Dictionary<string, object>? metadata

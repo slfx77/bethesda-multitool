@@ -277,8 +277,7 @@ public sealed class MemoryCarver : IDisposable
                         extraction.Value.FileSize,
                         extraction.Value.OriginalPath,
                         extraction.Value.Metadata,
-                        extraction.Value.IsTruncated,
-                        extraction.Value.Coverage));
+                        extraction.Value.Residency));
                 }
 
                 var currentCount = Interlocked.Increment(ref processedCount);

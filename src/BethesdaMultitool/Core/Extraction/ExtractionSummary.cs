@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Carving;
+
 namespace BethesdaMultitool.Core.Extraction;
 
 /// <summary>
@@ -44,4 +46,33 @@ public class ExtractionSummary
     ///     Number of runtime in-memory meshes exported as OBJ.
     /// </summary>
     public int RuntimeMeshesExported { get; init; }
+
+    /// <summary>
+    ///     Residency of the carved files. The carver has always measured this, but the entries it
+    ///     measured it on were dropped before reaching the CLI, so nothing could report it.
+    /// </summary>
+    public CarveResidencySummary Residency { get; init; } = new();
+}
+
+/// <summary>
+///     How much of the carved output was actually present in the dump. Aggregated from the manifest
+///     entries so a run can say "23 of 4,100 files are incomplete, 4 of them structurally" instead
+///     of leaving that only in <c>manifest.json</c>.
+/// </summary>
+public sealed class CarveResidencySummary
+{
+    /// <summary>Files with any missing bytes.</summary>
+    public int PartialFiles { get; init; }
+
+    /// <summary>Files missing only their tail — usually trailing detail, still usable.</summary>
+    public int TailTruncatedFiles { get; init; }
+
+    /// <summary>Files with at least one hole that is not the tail.</summary>
+    public int InteriorHoleFiles { get; init; }
+
+    /// <summary>Files whose gap landed in bytes their format needs to be structurally valid.</summary>
+    public int CriticalRangeFiles { get; init; }
+
+    /// <summary>Lowest coverage seen across the partial files, or 1.0 when none were partial.</summary>
+    public double WorstCoverage { get; init; } = 1.0;
 }

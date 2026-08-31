@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Carving;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Xma;
@@ -6,8 +7,32 @@ namespace BethesdaMultitool.Core.Formats.Xma;
 ///     Xbox Media Audio (XMA) format module.
 ///     Handles parsing, repair, XMA1 -> XMA2 conversion, and XMA -> WAV/OGG decoding.
 /// </summary>
-public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
+public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter, IGapAssessor
 {
+    /// <summary>
+    ///     Bytes of RIFF chunk scaffolding at the front of an XMA: the RIFF/WAVE header plus the
+    ///     'fmt '/XMA2 chunk that carries sample rate, channel count and the block layout. A decoder
+    ///     cannot start without it. Past that, XMA is a sequence of independently-decodable 2 KB
+    ///     packets, so a hole costs the audio around it and nothing else.
+    /// </summary>
+    private const int RiffScaffoldSize = 60;
+
+    /// <inheritdoc />
+    public string? AssessGaps(
+        ReadOnlySpan<byte> data,
+        IReadOnlyList<CarveHole> holes,
+        IReadOnlyDictionary<string, object>? metadata)
+    {
+        if (GapAssessment.Overlaps(holes, 0, Math.Min(RiffScaffoldSize, data.Length)))
+        {
+            return "the RIFF/XMA2 format chunk (sample rate, channels and block layout are unreadable)";
+        }
+
+        // A missing seek table is already handled as a repair, not a gap, so packet loss is the
+        // only thing left — audible but decodable, and worth naming rather than flagging as fatal.
+        return null;
+    }
+
     /// <summary>
     ///     Output format for XMA conversion.
     /// </summary>

@@ -33,6 +33,13 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     public bool IsEsmRecord => EsmRecordType != null;
 
     /// <summary>
+    ///     Set during analysis when the dump does not contain the file's whole declared length —
+    ///     the run of memory starting at the match ends before the file does. Extraction promotes
+    ///     this to <see cref="ExtractionStatus.Partial" /> rather than a plain success.
+    /// </summary>
+    public bool IsAnalysisTruncated { get; set; }
+
+    /// <summary>
     ///     Display type - shows "ESM: NPC_" for ESM records, otherwise FileType.
     /// </summary>
     public string DisplayType => EsmRecordType != null ? $"ESM: {EsmRecordType}" : FileType;
@@ -58,6 +65,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExtractedGlyph)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExtractedColor)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusDescription)));
             }
         }
     }
@@ -88,18 +96,30 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     public string ExtractedGlyph => _status switch
     {
         ExtractionStatus.Extracted => "\uE73E", // Checkmark
+        ExtractionStatus.Partial => "\uE7BA", // Warning - extracted but not fully resident
         ExtractionStatus.Failed => "\uE711", // X
         ExtractionStatus.Skipped => "\uE738", // Emdash - ESM record not in report
         _ => "\uE8FB" // More (horizontal dots) - pending/not extracted
     };
 
-    /// <summary>Status indicator color (green extracted, red failed, gray pending/skipped).</summary>
+    /// <summary>Status indicator color (green extracted, amber partial, red failed, gray pending/skipped).</summary>
     public Brush ExtractedColor => _status switch
     {
         ExtractionStatus.Extracted => new SolidColorBrush(Colors.Green),
+        ExtractionStatus.Partial => new SolidColorBrush(Colors.Orange),
         ExtractionStatus.Failed => new SolidColorBrush(Colors.Red),
         ExtractionStatus.Skipped => new SolidColorBrush(Colors.DarkGray),
         _ => new SolidColorBrush(Colors.Gray)
+    };
+
+    /// <summary>Screen-reader / tooltip text for the status glyph.</summary>
+    public string StatusDescription => _status switch
+    {
+        ExtractionStatus.Extracted => "Extracted",
+        ExtractionStatus.Partial => "Extracted, but part of the file was not captured in the dump",
+        ExtractionStatus.Failed => "Extraction failed",
+        ExtractionStatus.Skipped => "Skipped",
+        _ => "Not extracted"
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;

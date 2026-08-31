@@ -11,5 +11,8 @@ internal sealed record WriteFileParams(
     int FileSize,
     string? OriginalPath,
     Dictionary<string, object>? Metadata,
-    bool IsTruncated = false,
-    double Coverage = 1.0);
+    CarveResidency? Residency = null)
+{
+    /// <summary>Residency of the carved bytes; a missing value means fully resident.</summary>
+    public CarveResidency Coverage => Residency ?? CarveResidency.Complete;
+}

@@ -79,12 +79,53 @@ public sealed class CarveWriterNotesTests : IDisposable
 
         // Act
         await writer.WriteFileAsync(new WriteFileParams(outputFile, [1, 2, 3], 0x200, "png", 3, null, metadata,
-            IsTruncated: true, Coverage: 0.8));
+            CarveResidency.FromPresentRuns([new CarveHole(0, 8)], 10)));
 
         // Assert - coverage note keeps its lead position, fallback note is appended
         Assert.NotNull(captured);
         Assert.StartsWith("Memory coverage", captured!.Notes);
         Assert.Contains("Size estimated (boundary fallback)", captured.Notes);
+    }
+
+    [Fact]
+    public async Task WriteFileAsync_CarriesHolePositionsAndSplitsTailFromInteriorLoss()
+    {
+        // Coverage alone cannot distinguish a zero-filled hole from a run of legitimate zero bytes,
+        // and cannot distinguish a file cut short at its end from one damaged in the middle.
+        CarveEntry? captured = null;
+        var writer = new CarveWriter(new Dictionary<string, IFileConverter>(), false, false, e => captured = e);
+        var outputFile = PrepareOutputFile("images", "holed.png");
+
+        // Present: [0,16) and [32,48). Missing: [16,32) interior and [48,64) tail.
+        var residency = CarveResidency.FromPresentRuns([new CarveHole(0, 16), new CarveHole(32, 16)], 64);
+        await writer.WriteFileAsync(
+            new WriteFileParams(outputFile, [1, 2, 3], 0x600, "png", 64, null, null, residency));
+
+        Assert.NotNull(captured);
+        Assert.True(captured!.IsPartial);
+        Assert.True(captured.TailTruncated);
+        Assert.Equal(0.5, captured.Coverage);
+        Assert.Equal(
+            [new CarveHole(16, 16), new CarveHole(48, 16)],
+            captured.Holes);
+        Assert.Contains("interior hole", captured.Notes);
+    }
+
+    [Fact]
+    public async Task WriteFileAsync_FullyResidentFileRecordsCompleteCoverageAndNoHoles()
+    {
+        CarveEntry? captured = null;
+        var writer = new CarveWriter(new Dictionary<string, IFileConverter>(), false, false, e => captured = e);
+        var outputFile = PrepareOutputFile("images", "whole.png");
+
+        await writer.WriteFileAsync(
+            new WriteFileParams(outputFile, [1, 2, 3], 0x700, "png", 3, null, null));
+
+        Assert.NotNull(captured);
+        Assert.False(captured!.IsPartial);
+        Assert.False(captured.TailTruncated);
+        Assert.Equal(1.0, captured.Coverage);
+        Assert.Null(captured.Holes);
     }
 
     [Fact]

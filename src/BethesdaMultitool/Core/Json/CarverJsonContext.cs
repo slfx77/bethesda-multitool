@@ -13,6 +13,8 @@ namespace BethesdaMultitool.Core.Json;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(List<CarveEntry>))]
 [JsonSerializable(typeof(CarveEntry))]
+[JsonSerializable(typeof(List<CarveHole>))]
+[JsonSerializable(typeof(CarveHole))]
 [JsonSerializable(typeof(JsonAnalysisResult))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 internal partial class CarverJsonContext : JsonSerializerContext;

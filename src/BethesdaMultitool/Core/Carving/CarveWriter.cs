@@ -52,7 +52,7 @@ internal sealed class CarveWriter(
         }
 
         var writtenPath = await WriteFileWithRetryAsync(p.OutputFile, outputData);
-        _addToManifest(new CarveEntry
+        var entry = new CarveEntry
         {
             FileType = p.SignatureId,
             Offset = p.Offset,
@@ -60,10 +60,35 @@ internal sealed class CarveWriter(
             SizeOutput = outputData.Length,
             Filename = Path.GetFileName(writtenPath),
             OriginalPath = p.OriginalPath,
-            IsPartial = p.IsTruncated,
-            Notes = BuildNotes(p.IsTruncated, p.Coverage, isRepaired, p.Metadata),
+            IsPartial = p.Coverage.IsPartial,
+            Notes = BuildNotes(p.Coverage, isRepaired, p.Metadata),
             Metadata = p.Metadata
-        });
+        };
+
+        ApplyResidency(entry, p, format, p.Data);
+        _addToManifest(entry);
+    }
+
+    /// <summary>
+    ///     Stamp the residency detail onto a manifest entry and, when the format can tell, whether a
+    ///     hole landed somewhere structural. Applied to both write paths so a converted file is not
+    ///     reported as complete when its source was gapped.
+    /// </summary>
+    private static void ApplyResidency(CarveEntry entry, WriteFileParams p, IFileFormat? format, byte[] sourceData)
+    {
+        var residency = p.Coverage;
+        entry.Coverage = residency.Coverage;
+        entry.TailTruncated = residency.TailTruncated;
+        entry.Holes = residency.Holes.Count > 0 ? [.. residency.Holes] : null;
+
+        if (residency.Holes.Count > 0 && format is IGapAssessor assessor)
+        {
+            entry.CriticalRangeHit = assessor.AssessGaps(sourceData, residency.Holes, p.Metadata);
+            if (entry.CriticalRangeHit != null)
+            {
+                entry.Notes = AppendNote(entry.Notes, $"Gap hit {entry.CriticalRangeHit}");
+            }
+        }
     }
 
     private async Task<bool> TryConvertAsync(IFileConverter converter, WriteFileParams p)
@@ -98,8 +123,8 @@ internal sealed class CarveWriter(
         // only partly resident in the dump was recorded as IsPartial=false / "converted" /
         // Notes=null — indistinguishable from a fully captured file. DDX is converted by default
         // and is the corpus's dominant carved format, so that mislabelled the common case.
-        var isPartial = result.IsPartial || p.IsTruncated;
-        _addToManifest(new CarveEntry
+        var isPartial = result.IsPartial || p.Coverage.IsPartial;
+        var entry = new CarveEntry
         {
             FileType = p.SignatureId,
             Offset = p.Offset,
@@ -111,34 +136,58 @@ internal sealed class CarveWriter(
             ContentType = isPartial ? "converted_partial" : "converted",
             IsPartial = isPartial,
             Notes = AppendNote(
-                AppendNote(result.Notes, BuildCoverageNote(p.IsTruncated, p.Coverage)),
+                AppendNote(result.Notes, BuildCoverageNote(p.Coverage)),
                 BuildBoundaryFallbackNote(p.Metadata)),
             Metadata = p.Metadata
-        });
+        };
+
+        // Assess the gaps against the SOURCE bytes and the SOURCE format: the converter's output is
+        // a different format whose offsets say nothing about where the dump's holes fell.
+        ApplyResidency(entry, p, format, p.Data);
+        _addToManifest(entry);
 
         return true;
     }
 
-    private static string? BuildNotes(bool isTruncated, double coverage, bool isRepaired,
+    private static string? BuildNotes(CarveResidency residency, bool isRepaired,
         IReadOnlyDictionary<string, object>? metadata)
     {
         // Not else-if: a file can be both incompletely resident AND repaired, and losing the
         // "Repaired" note in that case hid the repair.
         var baseNote = AppendNote(
-            BuildCoverageNote(isTruncated, coverage),
+            BuildCoverageNote(residency),
             isRepaired ? "Repaired" : null);
 
         return AppendNote(baseNote, BuildBoundaryFallbackNote(metadata));
     }
 
     /// <summary>
-    ///     Note describing how much of a carved file was actually resident in the dump.
-    ///     P2 rather than P0: 99.6%-resident used to render as "Memory coverage: 100 %" beside
-    ///     an IsPartial=true entry, which reads as a contradiction.
+    ///     Note describing how much of a carved file was actually resident in the dump, and whether
+    ///     what is missing is the tail or a hole in the middle.
+    ///     <para>
+    ///         P2 rather than P0: 99.6%-resident used to render as "Memory coverage: 100 %" beside
+    ///         an IsPartial=true entry, which reads as a contradiction.
+    ///     </para>
     /// </summary>
-    private static string? BuildCoverageNote(bool isTruncated, double coverage)
+    private static string? BuildCoverageNote(CarveResidency residency)
     {
-        return isTruncated ? $"Memory coverage: {coverage:P2}" : null;
+        if (!residency.IsPartial)
+        {
+            return null;
+        }
+
+        var note = $"Memory coverage: {residency.Coverage:P2}";
+        if (residency.InteriorHoleCount > 0)
+        {
+            note += $" ({residency.InteriorHoleCount} interior hole" +
+                    (residency.InteriorHoleCount == 1 ? ")" : "s)");
+        }
+        else if (residency.TailTruncated)
+        {
+            note += " (tail truncated)";
+        }
+
+        return note;
     }
 
     /// <summary>

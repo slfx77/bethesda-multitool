@@ -9,5 +9,4 @@ internal readonly record struct ExtractionData(
     int FileSize,
     string? OriginalPath,
     Dictionary<string, object>? Metadata,
-    bool IsTruncated = false,
-    double Coverage = 1.0);
+    CarveResidency Residency);

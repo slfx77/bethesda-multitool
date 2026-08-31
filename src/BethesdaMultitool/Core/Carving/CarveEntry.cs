@@ -23,6 +23,35 @@ public class CarveEntry
     public string? Notes { get; set; }
 
     /// <summary>
+    ///     Fraction of the file's bytes that were resident in the dump, 0..1. Always written, so a
+    ///     consumer can tell "fully captured" from "never measured" — previously the only trace of
+    ///     coverage was a percentage embedded in the free-text <see cref="Notes" />, and only when
+    ///     the file was partial.
+    /// </summary>
+    public double Coverage { get; set; } = 1.0;
+
+    /// <summary>
+    ///     True when the file's own tail is missing (the capture stopped before the file ended), as
+    ///     opposed to a hole inside it. The two failure modes have very different consequences and
+    ///     used to share one <see cref="IsPartial" /> flag.
+    /// </summary>
+    public bool TailTruncated { get; set; }
+
+    /// <summary>
+    ///     Zero-filled byte runs, ascending, relative to the start of this file. Null when the file
+    ///     is fully resident. Without these a zero-filled hole is indistinguishable from a run of
+    ///     legitimate zero bytes.
+    /// </summary>
+    public List<CarveHole>? Holes { get; set; }
+
+    /// <summary>
+    ///     Set when a hole landed inside bytes the format needs to be structurally valid (a mip
+    ///     table, a block list, a frame header). A file can be 95% resident and still unusable if
+    ///     the missing 5% is the wrong 5%.
+    /// </summary>
+    public string? CriticalRangeHit { get; set; }
+
+    /// <summary>
     ///     Format-specific metadata (e.g., qualityEstimate for XMA files).
     /// </summary>
     public Dictionary<string, object>? Metadata { get; set; }

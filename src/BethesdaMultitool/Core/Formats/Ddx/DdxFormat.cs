@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using BethesdaMultitool.Core.Carving;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Ddx;
@@ -6,8 +8,38 @@ namespace BethesdaMultitool.Core.Formats.Ddx;
 ///     Xbox 360 DDX texture format module (3XDO and 3XDR variants).
 ///     Supports conversion to DDS format.
 /// </summary>
-public sealed class DdxFormat : FileFormatBase, IFileConverter
+public sealed class DdxFormat : FileFormatBase, IFileConverter, IGapAssessor
 {
+    /// <summary>
+    ///     A DDX is a 0x44-byte header followed by one or two LZX streams whose chunks are read
+    ///     strictly front-to-back. A hole in the header destroys the format/dimension/size fields
+    ///     that everything else is derived from; a hole anywhere in the first stream desynchronises
+    ///     the chunk walk from that point on, so mip 0 and everything after it is lost. Only a hole
+    ///     that starts inside the second stream costs nothing but tail mips.
+    /// </summary>
+    public string? AssessGaps(
+        ReadOnlySpan<byte> data,
+        IReadOnlyList<CarveHole> holes,
+        IReadOnlyDictionary<string, object>? metadata)
+    {
+        if (GapAssessment.Overlaps(holes, 0, DdxHeaderSize))
+        {
+            return "the DDX header (format, dimensions and stream lengths are unreadable)";
+        }
+
+        var firstStreamLength = data.Length >= DdxHeaderSize
+            ? (int)Math.Min(
+                BinaryPrimitives.ReadUInt32BigEndian(data.Slice(DdxFirstStreamLengthOffset, 4)),
+                (uint)(data.Length - DdxHeaderSize))
+            : 0;
+        if (firstStreamLength > 0 && GapAssessment.Overlaps(holes, DdxHeaderSize, firstStreamLength))
+        {
+            return "the first LZX stream (the chunk walk desynchronises, losing mip 0 onward)";
+        }
+
+        return null;
+    }
+
     private const string SignatureId3Xdo = "ddx_3xdo";
     private const string SignatureId3Xdr = "ddx_3xdr";
 
