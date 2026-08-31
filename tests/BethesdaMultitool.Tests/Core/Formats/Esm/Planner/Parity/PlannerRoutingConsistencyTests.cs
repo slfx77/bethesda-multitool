@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
@@ -135,18 +136,17 @@ public sealed class PlannerRoutingConsistencyTests
         // a DmpRecordSource row, a planned-encoder row, a registry row, and an
         // EnumerateModelsByType yield. MSET additionally gained RuntimeMediaSetReader so its six
         // pointer-backed layer names can be recovered at all.
-        ["EFSH"] =
-            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
-        ["CSNO"] =
-            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
-        ["IPDS"] =
-            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
-        ["RGDL"] =
-            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
-        ["DOBJ"] =
-            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+        // EFSH / RGDL / CSNO left this list 2026-08-26 (round 3): each carries its payload in one
+        // block whose runtime size matches the file schema exactly, so the existing BE→LE registry
+        // converts it and no new decode was needed.
+        //
+        // IPDS and DOBJ left this list once pdb_layouts.json was regenerated with LF_ARRAY leaves
+        // resolved: their sole payload fields (BGSImpactDataSet.ppImpactData @44,
+        // BGSDefaultObjectManager.pObjectArray @40) used to export as size:0 / kind:"unknown" and
+        // were dropped by GetReadableFields before any reader ran. Both are now inline pointer
+        // arrays whose slot counts match their file schemas exactly (12 materials, 34 defaults).
         ["AMEF"] =
-            "read but not yet routed — awaiting per-type user ruling, see docs/adversarial_dmp_recovery_audit_2026_08_25.md M1",
+            "zero records corpus-wide across all 32 dumps (census2026-08-25) — nothing to route",
         ["SKIL"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
         ["CLOT"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
         ["LVSP"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",

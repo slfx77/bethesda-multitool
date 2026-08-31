@@ -66,17 +66,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + QustStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[QustStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, QustStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, QustStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -96,7 +87,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         // Try to read quest display name from BSStringT, with fallback to hash table DisplayName
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, QustFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, QustFullNameOffset);
 
         // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT).
         // Brute-force fallback when the canonical slot is null: scan the whole TESQuest
@@ -114,8 +105,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             scriptFormId = ScanForOwnerLinkedQuestScript(buffer, entry.FormId);
         }
 
-        var stages = WalkQuestStageList(offset, entry.FormId);
-        var objectives = WalkQuestObjectiveList(offset, entry.FormId);
+        var stages = WalkQuestStageList(buffer, entry.FormId);
+        var objectives = WalkQuestObjectiveList(buffer, entry.FormId);
 
         return new QuestRecord
         {
@@ -216,17 +207,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + TermStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[TermStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, TermStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, TermStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -257,7 +239,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         string? password = null;
 
         // Parse menu items from BSSimpleList at the PDB-aligned offset.
-        var menuItems = WalkTerminalMenuItemList(offset);
+        var menuItems = WalkTerminalMenuItemList(buffer);
 
         return new TerminalRecord
         {
@@ -285,17 +267,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + NoteStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[NoteStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, NoteStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, NoteStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -316,9 +289,9 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         // TESTexture.TextureName at +104 holds the icon path that maps to the ESM
         // ICON subrecord on disk. Text content (TNAM/DESC) is not exposed as a
         // BGSNote struct field — it lives only in the original ESM bytes.
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, NoteFullNameOffset);
-        var modelPath = _context.ReadBsStringT(offset, NoteModelPathOffset);
-        var iconPath = _context.ReadBsStringT(offset, NoteIconPathOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, NoteFullNameOffset);
+        var modelPath = _context.ReadBsStringT(buffer, NoteModelPathOffset);
+        var iconPath = _context.ReadBsStringT(buffer, NoteIconPathOffset);
 
         return new NoteRecord
         {
@@ -339,20 +312,19 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     containing two strings, an inline Script, conditions, NOTE/submenu pointers,
     ///     and a flags byte.
     /// </summary>
-    private List<TerminalMenuItem> WalkTerminalMenuItemList(long terminalOffset)
+    private List<TerminalMenuItem> WalkTerminalMenuItemList(byte[] terminalBuffer)
     {
         var results = new List<TerminalMenuItem>();
 
-        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) at runtime +164.
-        var listOffset = terminalOffset + TermMenuItemListOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
-        if (listBuf == null)
+        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) from the
+        // already residency-safe terminal buffer at runtime +164.
+        if (TermMenuItemListOffset + 8 > terminalBuffer.Length)
         {
             return results;
         }
 
-        var firstItem = BinaryUtils.ReadUInt32BE(listBuf); // TERMINAL_MENU_ITEM* pointer
-        var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4); // _Node* pointer
+        var firstItem = BinaryUtils.ReadUInt32BE(terminalBuffer, TermMenuItemListOffset);
+        var firstNext = BinaryUtils.ReadUInt32BE(terminalBuffer, TermMenuItemListOffset + 4);
 
         // Process inline first item
         var firstMenuItem = ReadTerminalMenuItem(firstItem);
@@ -367,13 +339,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
         {
             visited.Add(nextVA);
-            var nodeFileOffset = _context.VaToFileOffset(nextVA);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -411,7 +377,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buf = _context.ReadBytes(fileOffset.Value, MenuItemSize);
+        var buf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(menuItemVA), MenuItemSize);
         if (buf == null)
         {
             return null;
@@ -470,31 +436,23 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     Runtime stage projection keeps only stage index and flags; log text remains null until a
     ///     directly provable runtime source is mapped.
     /// </summary>
-    private List<QuestStage> WalkQuestStageList(long questOffset, uint questFormId)
+    private List<QuestStage> WalkQuestStageList(byte[] questBuffer, uint questFormId)
     {
         var results = new List<QuestStage>();
 
-        var listOffset = questOffset + QustStageListOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
-        if (listBuf == null)
+        if (QustStageListOffset + 8 > questBuffer.Length)
         {
             return results;
         }
 
-        ReadQuestStage(BinaryUtils.ReadUInt32BE(listBuf), questFormId, results);
+        ReadQuestStage(BinaryUtils.ReadUInt32BE(questBuffer, QustStageListOffset), questFormId, results);
 
-        var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var nextVA = BinaryUtils.ReadUInt32BE(questBuffer, QustStageListOffset + 4);
         var visited = new HashSet<uint>();
         while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
         {
             visited.Add(nextVA);
-            var nodeFileOffset = _context.VaToFileOffset(nextVA);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -529,20 +487,14 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var fileOffset = _context.VaToFileOffset(stageVa);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
-        var buf = _context.ReadBytes(fileOffset.Value, QuestStageStructSize);
+        var buf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(stageVa), QuestStageStructSize);
         if (buf == null)
         {
             return null;
         }
 
         var index = buf[QuestStageIndexOffset];
-        var stageItem = WalkQuestStageItemList(fileOffset.Value, questFormId);
+        var stageItem = WalkQuestStageItemList(buf, questFormId);
 
         return new QuestStage
         {
@@ -559,32 +511,25 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     Conditions come from the embedded TESCondition (BSSimpleList) at <c>TESQuestStageItem+4</c>
     ///     per <c>docs/PDB_Runtime_Structures.md</c>'s TESQuestStageItem layout.
     /// </summary>
-    private QuestStageItemReadResult? WalkQuestStageItemList(long stageOffset, uint questFormId)
+    private QuestStageItemReadResult? WalkQuestStageItemList(byte[] stageBuffer, uint questFormId)
     {
-        var listBuf = _context.ReadBytes(stageOffset + QuestStageItemListOffset, 8);
-        if (listBuf == null)
+        if (QuestStageItemListOffset + 8 > stageBuffer.Length)
         {
             return null;
         }
 
-        var first = ReadQuestStageItem(BinaryUtils.ReadUInt32BE(listBuf), questFormId);
+        var first = ReadQuestStageItem(BinaryUtils.ReadUInt32BE(stageBuffer, QuestStageItemListOffset), questFormId);
         if (first.HasValue)
         {
             return first.Value;
         }
 
-        var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var nextVA = BinaryUtils.ReadUInt32BE(stageBuffer, QuestStageItemListOffset + 4);
         var visited = new HashSet<uint>();
         while (nextVA != 0 && visited.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
         {
             visited.Add(nextVA);
-            var nodeFileOffset = _context.VaToFileOffset(nextVA);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -609,13 +554,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var fileOffset = _context.VaToFileOffset(stageItemVa);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
-        var buf = _context.ReadBytes(fileOffset.Value, QuestStageItemStructSize);
+        var buf = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(stageItemVa), QuestStageItemStructSize);
         if (buf == null)
         {
             return null;
@@ -641,31 +581,23 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     Each objective stores index, display text, owner quest, and runtime state.
     ///     Only index/text are projected into the semantic model for now.
     /// </summary>
-    private List<QuestObjective> WalkQuestObjectiveList(long questOffset, uint questFormId)
+    private List<QuestObjective> WalkQuestObjectiveList(byte[] questBuffer, uint questFormId)
     {
         var results = new List<QuestObjective>();
 
-        var listOffset = questOffset + QustObjectiveListOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
-        if (listBuf == null)
+        if (QustObjectiveListOffset + 8 > questBuffer.Length)
         {
             return results;
         }
 
-        ReadQuestObjective(BinaryUtils.ReadUInt32BE(listBuf), questFormId, results);
+        ReadQuestObjective(BinaryUtils.ReadUInt32BE(questBuffer, QustObjectiveListOffset), questFormId, results);
 
-        var nextVA = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var nextVA = BinaryUtils.ReadUInt32BE(questBuffer, QustObjectiveListOffset + 4);
         var visited = new HashSet<uint>();
         while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
         {
             visited.Add(nextVA);
-            var nodeFileOffset = _context.VaToFileOffset(nextVA);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -706,7 +638,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buf = _context.ReadBytes(fileOffset.Value, QuestObjectiveStructSize);
+        var buf = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(objectiveVa), QuestObjectiveStructSize);
         if (buf == null)
         {
             return null;

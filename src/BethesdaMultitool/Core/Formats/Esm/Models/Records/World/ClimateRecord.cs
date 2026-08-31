@@ -3,8 +3,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 /// <summary>
 ///     Climate (CLMT) record. A worldspace references one CLMT (via WRLD CNAM); it defines which
 ///     weathers can occur (and their chances), the sun / sun-glare textures, and the day's sunrise /
-///     sunset / moon timing. The atmosphere renderer uses it to pick a default weather for a worldspace
-///     and to drive the time-of-day sun curve.
+///     sunset / moon timing. Starfield additionally carries its Creation Engine 2 weather-settings
+///     choices in WSLT; those references are retained separately from legacy WTHR choices so callers
+///     cannot accidentally treat a WTHS FormID as a WTHR FormID.
 /// </summary>
 public record ClimateRecord
 {
@@ -26,6 +27,13 @@ public record ClimateRecord
     /// <summary>WLST — the weather list (weather FormID + chance + optional global) this climate cycles.</summary>
     public IReadOnlyList<ClimateWeatherEntry> WeatherTypes { get; init; } = [];
 
+    /// <summary>
+    ///     WSLT — Starfield weather-settings choices (WTHS FormID + chance + optional global).
+    ///     WTHS uses CE2 reflected REFL/RDIF payloads and is deliberately kept distinct from
+    ///     <see cref="WeatherTypes" /> until that payload has a source-backed decoder.
+    /// </summary>
+    public IReadOnlyList<ClimateWeatherSettingsEntry> WeatherSettingsTypes { get; init; } = [];
+
     /// <summary>TNAM — sunrise / sunset / moon timing.</summary>
     public ClimateTimingData? Timing { get; init; }
 
@@ -39,9 +47,13 @@ public record ClimateRecord
 /// <summary>One CLMT WLST entry: a candidate weather, its selection chance, and an optional gating global.</summary>
 public sealed record ClimateWeatherEntry(uint WeatherFormId, int Chance, uint GlobalFormId);
 
+/// <summary>One Starfield CLMT WSLT entry: a candidate WTHS record, its chance, and an optional gating global.</summary>
+public sealed record ClimateWeatherSettingsEntry(uint WeatherSettingsFormId, int Chance, uint GlobalFormId);
+
 /// <summary>
-///     CLMT TNAM timing block (6 bytes). The four time fields are stored RAW (one byte each) exactly as
-///     in the record. Byte→hours = value × 1/6 (10-minute units) — CONFIRMED by the engine decompile:
+///     CLMT TNAM timing block (five bytes in Starfield, six in legacy games). The four time fields are
+///     stored RAW (one byte each) exactly as in the record. Byte→hours = value × 1/6 (10-minute units) —
+///     CONFIRMED by the engine decompile:
 ///     <c>TESClimate::Load</c> reads the 6-byte TNAM into <c>climate+0x60</c> and <c>Sky::GetSunriseBegin</c>
 ///     reads <c>climate+0x60</c> and multiplies by <c>0.16666667</c>. See
 ///     <c>AtmosphereState.ClimateTiming.FromClimateData</c>.
@@ -52,4 +64,12 @@ public sealed record ClimateTimingData(
     byte SunsetBegin,
     byte SunsetEnd,
     byte Volatility,
-    byte MoonPhaseLength);
+    byte MoonPhaseLength)
+{
+    /// <summary>
+    ///     Whether TNAM actually carried the sixth moon/phase byte. Starfield's xEdit definition passes
+    ///     no phase callback and retail Starfield.esm authors five-byte TNAM blocks; legacy games author
+    ///     six. Keeping this bit avoids inventing a byte when a parsed record is emitted again.
+    /// </summary>
+    public bool HasMoonPhaseLength { get; init; } = true;
+}

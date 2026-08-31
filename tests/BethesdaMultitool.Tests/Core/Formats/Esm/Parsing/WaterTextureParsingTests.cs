@@ -116,6 +116,26 @@ public sealed class WaterTextureParsingTests
             water.NormalTextures);
     }
 
+    [Fact]
+    public void Fo76NamedLayers_PreserveAllThreeRetailNormalSources()
+    {
+        var water = ParseWater(
+            BethesdaGame.Fallout76,
+            false,
+            ("NAM2", "data\\Textures\\Water\\DefaultWaterTile_n.DDS"),
+            ("NAM3", "data\\Textures\\Water\\DefaultWater_n.DDS"),
+            ("NAM4", "data\\Textures\\Water\\DefaultWater_n.DDS"));
+
+        Assert.Equal("Textures\\Water\\DefaultWaterTile_n.DDS", water.NoiseTexture);
+        Assert.Equal(
+            [
+                "Textures\\Water\\DefaultWaterTile_n.DDS",
+                "Textures\\Water\\DefaultWater_n.DDS",
+                "Textures\\Water\\DefaultWater_n.DDS"
+            ],
+            water.NormalTextures);
+    }
+
     private static WaterRecord ParseWater(
         BethesdaGame game,
         bool bigEndian,

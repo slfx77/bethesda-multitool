@@ -28,17 +28,8 @@ internal sealed class RuntimeCharacterAppearanceReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + EyesStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[EyesStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, EyesStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, EyesStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -49,8 +40,8 @@ internal sealed class RuntimeCharacterAppearanceReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, EyesFullNameOffset);
-        var texturePath = _context.ReadBsStringT(offset, EyesTextureOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, EyesFullNameOffset);
+        var texturePath = _context.ReadBsStringT(buffer, EyesTextureOffset);
         var flags = buffer[EyesFlagsOffset];
 
         return new EyesRecord
@@ -78,17 +69,8 @@ internal sealed class RuntimeCharacterAppearanceReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + HairStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[HairStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, HairStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, HairStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -99,9 +81,9 @@ internal sealed class RuntimeCharacterAppearanceReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, HairFullNameOffset);
-        var modelPath = _context.ReadBsStringT(offset, HairModelOffset);
-        var texturePath = _context.ReadBsStringT(offset, HairTextureOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, HairFullNameOffset);
+        var modelPath = _context.ReadBsStringT(buffer, HairModelOffset);
+        var texturePath = _context.ReadBsStringT(buffer, HairTextureOffset);
         var flags = buffer[HairFlagsOffset];
 
         return new HairRecord

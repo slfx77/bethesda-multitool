@@ -203,6 +203,13 @@ public static class PlannedEncoders
         yield return Simple<GenericEsmRecord>("IDLM", IdlmEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("CAMS", CamsEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("MSET", MsetEncoder.EncodeNew);
+        // Round 3 of the same audit — the last M1 types whose payload is reachable without
+        // regenerating the PDB layout database.
+        yield return Simple<GenericEsmRecord>("EFSH", EfshEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("RGDL", RgdlEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("CSNO", CsnoEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("IPDS", IpdsEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("DOBJ", DobjEncoder.EncodeNew);
 
         // Tier 5d — historical final migration from the retired Phase-3 per-model encoder.
         // All four families are plain model-in/bytes-out encoders, so planner routing needs

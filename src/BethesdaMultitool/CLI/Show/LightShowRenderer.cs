@@ -62,6 +62,8 @@ internal sealed class LightShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Model:[/]       {Markup.Escape(light.ModelPath)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, light.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader($"[bold]LIGH[/] {Markup.Escape(light.EditorId ?? "")}")

@@ -94,7 +94,7 @@ internal sealed class RuntimeRecipeReader(RuntimeMemoryContext context)
                 continue;
             }
 
-            var compBuffer = _context.ReadBytes(compFileOffset.Value, 8);
+            var compBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(componentVa), 8);
             if (compBuffer == null)
             {
                 continue;

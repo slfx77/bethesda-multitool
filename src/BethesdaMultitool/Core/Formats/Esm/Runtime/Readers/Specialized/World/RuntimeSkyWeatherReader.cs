@@ -295,23 +295,13 @@ internal sealed class RuntimeSkyWeatherReader
                     var readLength = logicalLength + overlap;
                     var startVa = checked((uint)(scanStart + (ulong)consumed));
                     var startVaLong = Xbox360MemoryUtils.VaToLong(startVa);
-                    if (!_context.MinidumpInfo.IsVaRangeCaptured(startVaLong, readLength))
-                    {
-                        break;
-                    }
 
-                    var fileOffset = _context.MinidumpInfo.VirtualAddressToFileOffset(startVaLong);
-                    if (!fileOffset.HasValue || fileOffset.Value < 0
-                                             || fileOffset.Value + readLength > _context.FileSize)
-                    {
-                        break;
-                    }
-
-                    try
-                    {
-                        _context.Accessor.ReadArray(fileOffset.Value, buffer, 0, readLength);
-                    }
-                    catch
+                    // ReadBytesAtVaInto rather than IsVaRangeCaptured + a flat read at the
+                    // translated file offset: the guard passes for a range spanning several
+                    // VA-contiguous regions, whose file offsets need not be adjacent, so the flat
+                    // read would scan bytes from the wrong place. The Into overload keeps the
+                    // reused chunk buffer.
+                    if (!_context.ReadBytesAtVaInto(startVaLong, buffer, 0, readLength))
                     {
                         break;
                     }

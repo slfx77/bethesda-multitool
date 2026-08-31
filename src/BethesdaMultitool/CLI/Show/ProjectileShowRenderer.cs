@@ -77,6 +77,8 @@ internal sealed class ProjectileShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Model:[/]       {Markup.Escape(proj.ModelPath)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, proj.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(

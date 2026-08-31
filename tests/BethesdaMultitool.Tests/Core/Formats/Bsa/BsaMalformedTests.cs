@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
@@ -54,7 +55,8 @@ public sealed class BsaMalformedTests : IDisposable
         uint? fileOffsetOverride = null,
         uint? fileSizeOverride = null,
         bool compressionToggle = false,
-        uint archiveFlags = 0x3u)
+        uint archiveFlags = 0x3u,
+        uint version = 104u)
     {
         const string folderName = "meshes";
         const string fileName = "test.nif";
@@ -64,7 +66,7 @@ public sealed class BsaMalformedTests : IDisposable
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms, Encoding.ASCII);
         bw.Write("BSA\0"u8.ToArray());
-        bw.Write(104u); // version
+        bw.Write(version); // version (104 = FO3/FNV/Skyrim; 103 = Oblivion)
         bw.Write(36u); // folder record offset
         bw.Write(archiveFlags); // default: IncludeDirectoryNames | IncludeFileNames
         bw.Write(1u); // folder count
@@ -183,6 +185,40 @@ public sealed class BsaMalformedTests : IDisposable
         Assert.True(extractor.Archive.Header.UsesXMemCodec);
         var ex = Assert.Throws<NotSupportedException>(() => extractor.ExtractFile(record));
         Assert.Contains("XMem/LZX", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractFile_V103ArchiveSettingThe0x200Bit_IsNotTreatedAsXMem()
+    {
+        // Regression guard. The 0x200 bit only means "XMem codec" from v104; Oblivion's v103
+        // archives set it with no such meaning — Oblivion - Meshes.bsa has flags 0x787, which
+        // includes 0x200. Reading it unconditionally made every compressed Oblivion entry throw
+        // "uses the XMem/LZX codec" and took the whole Oblivion mesh corpus offline. This is the
+        // same version trap BsaHeader.EmbedFileNames already documents for the 0x100 bit.
+        // 0x787 already includes CompressedArchive (0x4), so the entry is compressed by default and
+        // the per-entry toggle must stay off — it INVERTS the archive default rather than setting it.
+        byte[] payload = [1, 2, 3, 4, 5, 6, 7, 8];
+        var bytes = BuildV104Bsa(BuildZlibEntry(payload), archiveFlags: 0x787u, version: 103u);
+        using var extractor = new BsaExtractor(WriteBsa(bytes));
+        var record = Assert.Single(extractor.Archive.AllFiles);
+
+        Assert.False(extractor.Archive.Header.UsesXMemCodec);
+        Assert.Equal(payload, extractor.ExtractFile(record));
+    }
+
+    /// <summary>A compressed BSA entry: 4-byte uncompressed size, then a zlib stream.</summary>
+    private static byte[] BuildZlibEntry(byte[] payload)
+    {
+        using var ms = new MemoryStream();
+        var size = new byte[4];
+        BinaryTestWriter.WriteUInt32LE(size, 0, (uint)payload.Length);
+        ms.Write(size);
+        using (var zlib = new ZLibStream(ms, CompressionLevel.Optimal, true))
+        {
+            zlib.Write(payload);
+        }
+
+        return ms.ToArray();
     }
 
     /// <summary>Fixture-correctness control: the untouched builder output must round-trip.</summary>

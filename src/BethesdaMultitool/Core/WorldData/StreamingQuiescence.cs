@@ -17,6 +17,13 @@ namespace BethesdaMultitool.Core.WorldData;
 ///         MUST be time-boxed by the caller because a permanently-missing texture can pin the counter.
 ///     </para>
 ///     <para>
+    ///         An incremental reference batch build or required bounds refresh gates BOTH modes. Its
+    ///         published counters describe the previous complete aggregate until the staged sweep swaps
+    ///         atomically, so treating that stable-looking snapshot as quiescent can capture content one
+    ///         frame before it appears. Retryable GPU materialization failures are pending work too:
+    ///         they retain their decoded payload and must never masquerade as permanent missing content.
+///     </para>
+///     <para>
 ///         <b>Never</b> add a <c>ReferenceMeshMissing == 0</c> term: dense regions hold 10–28k
 ///         permanently-unresolvable meshes (FO4 downtown) and any gate on it deadlocks.
 ///     </para>
@@ -39,7 +46,11 @@ internal static class StreamingQuiescence
     {
         if (references is not null)
         {
-            if (references.ReferenceGpuUploads != 0
+            if (references.ReferenceBatchBuildInProgress
+                || references.ReferenceCullRefreshPending
+                || references.ReferenceGpuUploads != 0
+                || references.ReferenceMeshMaterializationFailures != 0
+                || references.ReferenceMeshMaterializationRetriesPending != 0
                 || references.ReferenceQueuedDecodes != 0
                 || references.ReferenceActiveDecodes != 0
                 || references.ReferenceTexturePendingResolves != 0

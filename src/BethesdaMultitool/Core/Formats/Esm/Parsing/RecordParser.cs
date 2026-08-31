@@ -164,7 +164,7 @@ public sealed class RecordParser
         // Parsed record types — single source of truth lives in EsmParsedRecordTypes, which is
         // completeness-checked against RecordCollection so a new parser can't silently end up
         // mislabeled as "not parsed". Anything not in this set falls into UnparsedTypeCounts below.
-        var parsedTypes = EsmParsedRecordTypes.Codes;
+        var parsedTypes = EsmParsedRecordTypes.CodesForGame(_context.Game);
 
         // Count all record types and compute unparsed counts
         var allTypeCounts = _context.ScanResult.MainRecords
@@ -571,6 +571,16 @@ public sealed class RecordParser
         var navMeshes = _miscGameSystems.ParseNavMeshes();
         var encounterZones = _miscGameSystems.ParseEncounterZones();
         var weather = _miscEnvironment.ParseWeather();
+        var weatherSettings = _miscEnvironment.ParseStarfieldWeatherSettings();
+        var volumetricLightingSettings = _miscEnvironment.ParseStarfieldVolumetricLightingSettings();
+        var fallout76VolumetricLightingSettings =
+            _miscEnvironment.ParseFallout76VolumetricLightingSettings();
+        var cloudForms = _miscEnvironment.ParseStarfieldCloudForms();
+        var atmospheres = _miscEnvironment.ParseStarfieldAtmospheres();
+        var planetData = _miscEnvironment.ParseStarfieldPlanetData();
+        var starData = _miscEnvironment.ParseStarfieldStarData();
+        var sunPresets = _miscEnvironment.ParseStarfieldSunPresets();
+        var curves3D = _miscEnvironment.ParseStarfieldCurves3D();
         var climate = _miscEnvironment.ParseClimate();
         var imageSpaces = _miscEnvironment.ParseImageSpaces();
         var imageSpaceModifiers = _miscEnvironment.ParseImageSpaceModifiers();
@@ -596,7 +606,11 @@ public sealed class RecordParser
             $"(SOUN: {sounds.Count}, MUSC: {musicTypes.Count}, TXST: {textureSets.Count}, LTEX: {landTextures.Count}, ARMA: {armorAddons.Count}, " +
             $"WATR: {water.Count}, BPTD: {bodyPartData.Count}, AVIF: {actorValueInfos.Count}, " +
             $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
-            $"NAVM: {navMeshes.Count}, ECZN: {encounterZones.Count}, WTHR: {weather.Count})");
+            $"NAVM: {navMeshes.Count}, ECZN: {encounterZones.Count}, WTHR: {weather.Count}, " +
+            $"WTHS: {weatherSettings.Count}, VOLI-SF1: {volumetricLightingSettings.Count}, " +
+            $"VOLI-FO76: {fallout76VolumetricLightingSettings.Count}, " +
+            $"CLDF: {cloudForms.Count}, ATMO: {atmospheres.Count}, PNDT: {planetData.Count}, " +
+            $"STDT: {starData.Count}, SUNP: {sunPresets.Count}, CUR3: {curves3D.Count})");
 
         // === Placed-ref enrichment post-pass — DMP only ===
         // Refs built through ToPlacedReference were born enriched (the indexes were handed to cell
@@ -612,6 +626,17 @@ public sealed class RecordParser
         // the raw-subrecord read path (accessor-only), so it's empty on scan-only loads. Resolved
         // to real TXST texture paths / swap tables later in the world-view build.
         var modsHarvest = new AlternateTextureHandler(_context).BuildIndex();
+
+        // The same three payloads read from the live heap, for every record type that inherits the
+        // owning engine base class — including the ~20 routed to specialized readers, which never
+        // touch the generic path and so surface none of this on their own. Runtime only FILLS: an
+        // entry the ESM already supplied is left alone, matching the cross-source merge ruling that
+        // the file wins any field it has.
+        var runtimePayloads = new RuntimeNestedPayloadHandler(_context).BuildIndex();
+        foreach (var (formId, entries) in runtimePayloads.AlternateTextures)
+        {
+            modsHarvest.AlternateTextures.TryAdd(formId, entries);
+        }
 
         progressReporter?.ReportPhase(95, "Building lookup tables...");
 
@@ -722,6 +747,15 @@ public sealed class RecordParser
             NavMeshes = navMeshes,
             EncounterZones = encounterZones,
             Weather = weather,
+            WeatherSettings = weatherSettings,
+            VolumetricLightingSettings = volumetricLightingSettings,
+            Fallout76VolumetricLightingSettings = fallout76VolumetricLightingSettings,
+            CloudForms = cloudForms,
+            Atmospheres = atmospheres,
+            PlanetData = planetData,
+            StarData = starData,
+            SunPresets = sunPresets,
+            Curves3D = curves3D,
             Climate = climate,
             ImageSpaces = imageSpaces,
             ImageSpaceModifiers = imageSpaceModifiers,
@@ -730,6 +764,8 @@ public sealed class RecordParser
             AlternateTexturesByFormId = modsHarvest.AlternateTextures,
             BaseMaterialSwapFormIds = modsHarvest.BaseMaterialSwapFormIds,
             BaseColorRemapIndices = modsHarvest.BaseColorRemapIndices,
+            DestructionByFormId = runtimePayloads.Destruction,
+            TextureHashesByFormId = runtimePayloads.TextureHashes,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
             RuntimeWorldspaceMaps = _context.RuntimeWorldspaceCellMaps != null
@@ -754,6 +790,15 @@ public sealed class RecordParser
                 Cells = result.Cells,
                 Climate = result.Climate,
                 Weather = result.Weather,
+                WeatherSettings = result.WeatherSettings,
+                VolumetricLightingSettings = result.VolumetricLightingSettings,
+                Fallout76VolumetricLightingSettings = result.Fallout76VolumetricLightingSettings,
+                CloudForms = result.CloudForms,
+                Atmospheres = result.Atmospheres,
+                PlanetData = result.PlanetData,
+                StarData = result.StarData,
+                SunPresets = result.SunPresets,
+                Curves3D = result.Curves3D,
                 ImageSpaces = result.ImageSpaces,
                 ImageSpaceModifiers = result.ImageSpaceModifiers,
                 LandTextures = result.LandTextures,
@@ -779,6 +824,8 @@ public sealed class RecordParser
                 AlternateTexturesByFormId = result.AlternateTexturesByFormId,
                 BaseMaterialSwapFormIds = result.BaseMaterialSwapFormIds,
                 BaseColorRemapIndices = result.BaseColorRemapIndices,
+                DestructionByFormId = result.DestructionByFormId,
+                TextureHashesByFormId = result.TextureHashesByFormId,
                 RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
                 RuntimeWeatherTransition = result.RuntimeWeatherTransition,
                 FormIdToEditorId = result.FormIdToEditorId,
@@ -820,6 +867,14 @@ public sealed class RecordParser
                 "[Semantic Parse] Recovered {0} truncated compressed record(s) from the memory dump " +
                 "(leading subrecords preserved; set FALLOUT_ESM_DISABLE_DMP_PARTIAL_RECOVERY=1 to disable).",
                 _context.PartiallyRecoveredFormIds.Count);
+        }
+
+        if (_context.NonContiguousRecordFormIds.Count > 0)
+        {
+            Logger.Instance.Info(
+                "[Semantic Parse] {0} record(s) were not one VA-contiguous run in the dump; the resident " +
+                "prefix was parsed and the rest left alone (a flat read would have spliced foreign bytes).",
+                _context.NonContiguousRecordFormIds.Count);
         }
 
         progressReporter?.Complete();

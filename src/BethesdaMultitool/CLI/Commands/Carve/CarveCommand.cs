@@ -153,9 +153,38 @@ public static class CarveCommand
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)
     {
         PrintCategoryTable(summary);
+        PrintResidencyStats(summary);
         PrintConversionStats(summary, convertDdx);
         PrintScriptStats(summary);
         PrintEsmStats(summary);
+    }
+
+    /// <summary>
+    ///     Report how much of the carve was actually resident in the dump. The carver has always
+    ///     measured this per file, but the manifest entries were dropped before reaching here, so a
+    ///     run that recovered thousands of half-present files looked identical to a clean one.
+    /// </summary>
+    private static void PrintResidencyStats(ExtractionSummary summary)
+    {
+        var residency = summary.Residency;
+        if (residency.PartialFiles == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[yellow]Partially resident:[/] {residency.PartialFiles} file(s) — " +
+            $"{residency.TailTruncatedFiles} truncated at the tail, " +
+            $"{residency.InteriorHoleFiles} with interior holes " +
+            $"(worst coverage {residency.WorstCoverage:P2})");
+
+        if (residency.CriticalRangeFiles > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]Structurally damaged:[/] {residency.CriticalRangeFiles} of those lost bytes their " +
+                "format needs to be valid — see criticalRangeHit in manifest.json");
+        }
     }
 
     private static void PrintCategoryTable(ExtractionSummary summary)

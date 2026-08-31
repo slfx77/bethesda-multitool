@@ -188,6 +188,10 @@ internal static class EditorIdLookupTables
         // was provably wrong (0x45 is DIAL in our observed builds), causing DIAL records to be
         // mis-classified as LAND and downstream readers to receive garbage. Better to populate
         // nothing than wrong entries.
+        // ⚠ Do NOT substitute the PDB's answer here. pdb_layouts.json is generated from the FINAL
+        // build's PDB, but the corpus spans development builds whose record enumeration was still
+        // moving — that is the entire reason this detection is empirical rather than a constant.
+        // Hardcoding the final byte would repeat the old 0x45 default's mistake in a new form.
         byte landFormType = 0xFF;
         if (landFormTypeCounts.Count > 0)
         {
@@ -232,6 +236,15 @@ internal static class EditorIdLookupTables
         // Pass 2: Filter allEntries for detected FormTypes
         var landCount = 0;
         var refrCount = 0;
+        // When the FormID-correlation heuristic could not name this build's LAND type, stage the
+        // types it could still plausibly be so the enricher can settle it by evidence. The filter is
+        // the build-independent invariant: a LAND record has no EditorID, so any FormType observed
+        // carrying one in THIS dump is excluded. That leaves a handful of candidates (3 on
+        // Fallout_Debug.xex2), not the whole table.
+        var landTypesWithEditorIds = landFormType == 0xFF
+            ? new HashSet<byte>(scanResult.RuntimeEditorIds.Select(entry => entry.FormType))
+            : [];
+
         foreach (var (formId, formType, fileOffset, va) in allEntries)
         {
             if (formId == 0)
@@ -250,6 +263,17 @@ internal static class EditorIdLookupTables
                     TesFormPointer = va
                 });
                 landCount++;
+            }
+            else if (landFormType == 0xFF && !landTypesWithEditorIds.Contains(formType))
+            {
+                scanResult.RuntimeLandCandidateEntries.Add(new RuntimeEditorIdEntry
+                {
+                    EditorId = $"__LAND_{formId:X8}",
+                    FormId = formId,
+                    FormType = formType,
+                    TesFormOffset = fileOffset,
+                    TesFormPointer = va
+                });
             }
             else if (formType >= refrBaseFormType && formType <= refrBaseFormType + 2)
             {

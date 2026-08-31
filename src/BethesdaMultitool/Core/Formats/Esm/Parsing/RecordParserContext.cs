@@ -196,6 +196,16 @@ public sealed class RecordParserContext
     public HashSet<uint> PartiallyRecoveredFormIds { get; } = [];
 
     /// <summary>
+    ///     FormIDs whose record body could not be read as one VA-contiguous run out of a memory dump:
+    ///     the bytes following the record's start belong to a different virtual address range, so only
+    ///     the resident prefix was handed to the parser. A flat file read would have spliced foreign
+    ///     bytes into the middle of the record and produced plausible-looking garbage instead.
+    ///     Empty for clean ESMs, and expected to be empty for well-formed dumps — a non-zero count is
+    ///     the measurement that says how much this mattered.
+    /// </summary>
+    public HashSet<uint> NonContiguousRecordFormIds { get; } = [];
+
+    /// <summary>
     ///     External string tables for a localized plugin (Skyrim/FO4/Starfield with the TES4 0x80
     ///     flag). Null for non-localized plugins, in which case <see cref="ReadLString" /> reads
     ///     inline zstrings exactly as before.
@@ -280,8 +290,18 @@ public sealed class RecordParserContext
     #region Runtime Merge
 
     /// <summary>
-    ///     Merges runtime-only records into an existing list, deduplicating by FormID.
-    ///     Eliminates the repeated runtime merge pattern across all handler methods.
+    ///     Merges runtime records into an existing list: runtime-only FormIDs are added, and a
+    ///     FormID the ESM already supplied has its <b>missing</b> members filled in from the runtime
+    ///     capture.
+    ///     <para>
+    ///         This used to <c>continue</c> before the factory ever ran, so for any FormID the ESM
+    ///         had, the live heap object was never even read. The two sources fail in different
+    ///         places — a struck ESM copy can be missing an EditorID, a model path or a reference
+    ///         the runtime object still holds — so discarding one unread threw away the only
+    ///         evidence that could repair the other. ESM precedence is unchanged:
+    ///         <see cref="RecordModelUnion.Fill" /> never overwrites a value the ESM copy actually
+    ///         had, and never touches a non-nullable scalar, where zero cannot be told from unset.
+    ///     </para>
     /// </summary>
     public void MergeRuntimeRecords<T>(
         List<T> records,
@@ -295,34 +315,49 @@ public sealed class RecordParserContext
             return;
         }
 
-        var esmFormIds = new HashSet<uint>(records.Count);
-        foreach (var record in records)
+        var indexByFormId = new Dictionary<uint, int>(records.Count);
+        for (var i = 0; i < records.Count; i++)
         {
-            esmFormIds.Add(formIdSelector(record));
+            indexByFormId.TryAdd(formIdSelector(records[i]), i);
         }
 
         var runtimeCount = 0;
+        var repairedCount = 0;
         foreach (var entry in ScanResult.RuntimeEditorIds)
         {
-            if (entry.FormType != formType || esmFormIds.Contains(entry.FormId))
+            if (entry.FormType != formType)
             {
                 continue;
             }
 
             var item = factory(RuntimeReader, entry);
-            if (item != null)
+            if (item == null)
             {
-                records.Add(item);
-                esmFormIds.Add(entry.FormId);
-                runtimeCount++;
+                continue;
             }
+
+            if (indexByFormId.TryGetValue(entry.FormId, out var existingIndex))
+            {
+                if (RecordModelUnion.Fill(records[existingIndex], item) is T filled &&
+                    !ReferenceEquals(filled, records[existingIndex]))
+                {
+                    records[existingIndex] = filled;
+                    repairedCount++;
+                }
+
+                continue;
+            }
+
+            records.Add(item);
+            indexByFormId[entry.FormId] = records.Count - 1;
+            runtimeCount++;
         }
 
-        if (runtimeCount > 0)
+        if (runtimeCount > 0 || repairedCount > 0)
         {
             Logger.Instance.Debug(
-                $"  [Semantic] Added {runtimeCount} {typeName} from runtime struct reading " +
-                $"(total: {records.Count}, ESM: {esmFormIds.Count})");
+                $"  [Semantic] Added {runtimeCount} and repaired {repairedCount} {typeName} from " +
+                $"runtime struct reading (total: {records.Count})");
         }
     }
 
@@ -528,13 +563,33 @@ public sealed class RecordParserContext
         // shared buffer (NPC, CREA, PACK, BOOK, ITEM, …). Allocate an exact-size array when
         // the caller's buffer is too small so oversized records still parse correctly.
         var useBuffer = dataSize > buffer.Length ? new byte[dataSize] : buffer;
-        Accessor!.ReadArray(dataStart, useBuffer, 0, dataSize);
+        var readSize = ReadRecordBytes(dataStart, dataSize, useBuffer);
+        if (readSize <= 0)
+        {
+            Logger.Instance.Debug(
+                "  [ReadRecordData] NULL: {0} 0x{1:X8} at offset 0x{2:X} — no bytes readable",
+                record.RecordType, record.FormId, record.Offset);
+            return null;
+        }
+
+        if (readSize < dataSize)
+        {
+            // The record body is not one VA-contiguous run in this dump, or the accessor came up
+            // short. Either way the bytes past `readSize` belong to some other address range, so
+            // the prefix is everything that is genuinely this record. Recorded rather than silently
+            // accepted: a flat read here used to splice foreign bytes into the middle of the record.
+            NonContiguousRecordFormIds.Add(record.FormId);
+            Logger.Instance.Debug(
+                "  [ReadRecordData] PREFIX: {0} 0x{1:X8} at offset 0x{2:X} — {3} of {4} bytes are VA-contiguous",
+                record.RecordType, record.FormId, record.Offset, readSize, dataSize);
+        }
 
         if (!record.IsCompressed)
         {
-            return (useBuffer, dataSize);
+            return (useBuffer, readSize);
         }
 
+        dataSize = readSize;
         if (dataSize <= 4)
         {
             Logger.Instance.Debug("  [ReadRecordData] NULL: {0} 0x{1:X8} compressed but dataSize={2}",
@@ -574,6 +629,64 @@ public sealed class RecordParserContext
             "  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
             record.RecordType, record.FormId, record.Flags, dataSize);
         return null;
+    }
+
+    /// <summary>
+    ///     Fill <paramref name="target" /> with the record body at <paramref name="fileOffset" />,
+    ///     returning how many leading bytes are genuinely part of that record.
+    ///     <para>
+    ///         For a clean ESM this is a flat read and the answer is always the full size. For a
+    ///         memory dump it is not: successive memory regions are laid out back-to-back in the
+    ///         file whether or not their virtual addresses are adjacent, so a flat read that runs
+    ///         past a region boundary quietly splices in bytes from an unrelated address range —
+    ///         which then decode as plausible-looking subrecords. Translating to a VA and walking
+    ///         the region list gives the true extent, and re-deriving each region's file offset
+    ///         also stitches the reverse case: regions contiguous in VA but not in the file.
+    ///     </para>
+    ///     <para>
+    ///         Returns the resident <b>prefix</b> length rather than failing outright, matching the
+    ///         truncated-compressed salvage below: the leading subrecords are real and worth keeping.
+    ///     </para>
+    /// </summary>
+    private int ReadRecordBytes(long fileOffset, int size, byte[] target)
+    {
+        if (MinidumpInfo is not { IsValid: true, MemoryRegions.Count: > 0 })
+        {
+            return Accessor!.ReadArray(fileOffset, target, 0, size);
+        }
+
+        var startVa = MinidumpInfo.FileOffsetToVirtualAddress(fileOffset);
+        if (startVa == null)
+        {
+            // Outside any captured region (dump header, module image, stream tables). A flat read
+            // is the only meaningful interpretation and there is no VA continuity to violate.
+            return Accessor!.ReadArray(fileOffset, target, 0, size);
+        }
+
+        var endVa = startVa.Value + size;
+        var resident = 0;
+        foreach (var region in MinidumpInfo.GetRegionsInRange(startVa.Value, endVa))
+        {
+            var overlapStart = Math.Max(region.VirtualAddress, startVa.Value);
+            if (overlapStart - startVa.Value > resident)
+            {
+                break; // VA gap — everything past it belongs to a different allocation.
+            }
+
+            var overlapEnd = Math.Min(region.VirtualAddress + region.Size, endVa);
+            var bufferOffset = (int)(overlapStart - startVa.Value);
+            var overlapSize = (int)(overlapEnd - overlapStart);
+            var regionFileOffset = region.FileOffset + (overlapStart - region.VirtualAddress);
+
+            var copied = Accessor!.ReadArray(regionFileOffset, target, bufferOffset, overlapSize);
+            resident = bufferOffset + copied;
+            if (copied < overlapSize)
+            {
+                break; // Region is declared but not backed by file bytes.
+            }
+        }
+
+        return resident;
     }
 
     /// <summary>
@@ -909,7 +1022,12 @@ public sealed class RecordParserContext
         var buffer = new byte[len];
         try
         {
-            Accessor.ReadArray(tes4.Offset, buffer, 0, len);
+            // A short read leaves the tail zeroed, which PluginFormat.Detect would happily
+            // classify. The header probe only needs the first 30 bytes, so require at least that.
+            if (Accessor.ReadArray(tes4.Offset, buffer, 0, len) < 30)
+            {
+                return BethesdaGame.Unknown;
+            }
         }
         catch
         {

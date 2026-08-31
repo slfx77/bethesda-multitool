@@ -56,10 +56,14 @@ public sealed class MsttEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", mstt.ModelPath));
         }
 
-        // DEST is deliberately not emitted. BGSDestructibleObjectForm.pData is a pointer to a
-        // separate DestructibleObjectData allocation; the generic reader resolves pointers to a
-        // FormID or a raw VA and never walks that struct, so there is no captured destruction
-        // data to write. Emitting a synthesized DEST would invent content.
+        // MODS belongs inside xEdit's wbGenericModel group (MODL/MODB/MODT/MODS/MODD), so it goes
+        // here rather than with the record's own members.
+        NewRecordSubrecords.AppendAlternateTextures(subs, mstt);
+
+        // DEST comes from the DestructibleObjectData allocation behind
+        // BGSDestructibleObjectForm.pData, walked together with its DSTD stages so the header's
+        // count is always backed by the blocks that follow it.
+        NewRecordSubrecords.AppendDestruction(subs, mstt);
 
         // DATA is `.SetRequired` in xEdit — a single u8 "On Local Map" boolean, held at runtime
         // in the 1-byte BGSMovableStatic.data (MOVABLE_STATIC_DATA @128), which the generic

@@ -410,6 +410,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         byte flags = 0;
         float? waterHeight = null;
         uint? waterFormId = null;
+        string? starfieldWaterType = null;
         uint? encounterZoneFormId = null;
         uint? musicTypeFormId = null;
         uint? acousticSpaceFormId = null;
@@ -457,6 +458,12 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "XCWT" when sub.DataLength == 4:
                     waterFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "XCWM" when Context.Game == BethesdaGame.Starfield:
+                    // Starfield XCWM is an authored water-type string, not a WATR FormID. Preserve
+                    // an empty string as distinct from an absent subrecord; a later pure selector
+                    // decides precedence without assigning any renderer/shader semantics here.
+                    starfieldWaterType = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "XEZN" when sub.DataLength == 4:
                     encounterZoneFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -565,6 +572,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             Flags = flags,
             WaterHeight = waterHeight,
             WaterFormId = waterFormId,
+            StarfieldWaterType = starfieldWaterType,
             EncounterZoneFormId = encounterZoneFormId,
             MusicTypeFormId = musicTypeFormId,
             AcousticSpaceFormId = acousticSpaceFormId,
@@ -955,6 +963,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             WaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(esm.WaterHeight ?? runtime.WaterHeight),
             AutoWaterLoaded = esm.AutoWaterLoaded ?? runtime.AutoWaterLoaded,
             WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
+            StarfieldWaterType = esm.StarfieldWaterType ?? runtime.StarfieldWaterType,
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
             AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,

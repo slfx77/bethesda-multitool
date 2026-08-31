@@ -46,6 +46,11 @@ public sealed class FlorEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", flor.ModelPath));
         }
 
+        // No MODS and no DEST here even though TESFlora carries both members at runtime: FLOR is
+        // absent from xEdit's FNV and FO3 definitions (both only have a commented-out group-order
+        // line), and the canonical order this encoder follows has neither subrecord. Emitting one
+        // because the engine struct has the field would write a subrecord no reader expects.
+
         if (FormIdField(flor, "SCRI") is { } script)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", script));

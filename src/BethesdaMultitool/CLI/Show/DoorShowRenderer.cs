@@ -54,6 +54,8 @@ internal sealed class DoorShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Script:[/]      {resolver.FormatWithEditorId(door.Script.Value)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, door.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader($"[bold]DOOR[/] {Markup.Escape(door.EditorId ?? "")}")

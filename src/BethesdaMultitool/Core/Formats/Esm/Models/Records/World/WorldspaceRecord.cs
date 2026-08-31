@@ -33,6 +33,13 @@ public record WorldspaceRecord
     /// <summary>Water FormID (NAM2 subrecord).</summary>
     public uint? WaterFormId { get; init; }
 
+    /// <summary>
+    ///     Starfield's authored WRLD water-material string (NAM7 subrecord). This is distinct from
+    ///     <see cref="WaterFormId" />: NAM7 is not a WATR FormID. An empty string is retained as an
+    ///     authored value; <see langword="null" /> means the subrecord was absent.
+    /// </summary>
+    public string? StarfieldWaterMaterial { get; init; }
+
     /// <summary>Default land height from DNAM subrecord.</summary>
     public float? DefaultLandHeight { get; init; }
 

@@ -39,6 +39,8 @@ public sealed class AnioEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", anio.ModelPath));
         }
 
+        NewRecordSubrecords.AppendAlternateTextures(subs, anio);
+
         // DATA is the animation link (TESObjectANIO.pIdleAnim @72 → TESIdleForm), marked required
         // in the xEdit schema. Unlike MSTT's DATA there is no safe default: a zero FormID is not a
         // valid IDLE reference and the engine would fail to resolve it, so omit the subrecord and

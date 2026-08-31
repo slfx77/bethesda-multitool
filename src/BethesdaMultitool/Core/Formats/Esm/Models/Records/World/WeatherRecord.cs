@@ -22,6 +22,14 @@ public record WeatherRecord
     /// </summary>
     public WeatherTimeBands<uint>? ImageSpaceModifiers { get; init; }
 
+    /// <summary>
+    ///     Fallout 76 WTHR HNAM volumetric-lighting preset references in their exact authored order:
+    ///     Sunrise, Day, Sunset, Night, Early/Late Sunrise, and Early/Late Sunset. This field is game-
+    ///     scoped because Oblivion uses WTHR HNAM for an unrelated 14-float HDR structure. Null when the
+    ///     Fallout 76 record does not carry the exact 32-byte reference block.
+    /// </summary>
+    public WeatherTimeBands<uint>? VolumetricLightingFormIds { get; init; }
+
     /// <summary>Weather-related sounds (SNAM entries: FormID + type).</summary>
     public List<WeatherSound> Sounds { get; init; } = [];
 

@@ -247,9 +247,40 @@ public record LandVisualData
         return (null, VisualDataSource.None);
     }
 
+    /// <summary>
+    ///     Pick a texture-layer set, preferring any <b>authored</b> candidate over a runtime capture
+    ///     before falling back on candidate order.
+    ///     <para>
+    ///         ⚠ Texture layers are the one visual category where "nearest source wins" is wrong. A
+    ///         runtime <c>TESObjectLAND</c> describes the layers that were <i>resident</i> at the
+    ///         moment of the crash, which is a subset of what the cell authored; a parsed DMP record
+    ///         or the master ESM describes the whole authored set. Letting the runtime set win
+    ///         because it happens to be the primary silently drops the rest.
+    ///     </para>
+    ///     <para>
+    ///         Measured 2026-08-31, when runtime LAND recovery first started producing layers: 18 of
+    ///         41 emitted LAND records changed, ATXT/VTXT fell 794 → 759, and the reduction was
+    ///         concentrated in quadrants going from 6 layers to 5. Retail <c>FalloutNV.esm</c> proves
+    ///         6-layer quadrants are legal and ordinary — 2,529 of its 19,133 quadrants carry six —
+    ///         so this was the runtime view shadowing the master's authored layers, not a correction.
+    ///     </para>
+    ///     <para>
+    ///         This is the standing cross-source merge ruling applied to terrain: the file wins any
+    ///         field it has, and runtime only fills what is genuinely absent. Runtime layers are
+    ///         still used when nothing authored has any — which is the DMP-only browse case.
+    ///     </para>
+    /// </summary>
     private static (List<LandTextureLayer> Layers, VisualDataSource Source) ChooseNonEmptyLayers(
         params (List<LandTextureLayer>? Layers, VisualDataSource Source)[] candidates)
     {
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Layers is { Count: > 0 } && candidate.Source != VisualDataSource.Runtime)
+            {
+                return (candidate.Layers, candidate.Source);
+            }
+        }
+
         foreach (var candidate in candidates)
         {
             if (candidate.Layers is { Count: > 0 })

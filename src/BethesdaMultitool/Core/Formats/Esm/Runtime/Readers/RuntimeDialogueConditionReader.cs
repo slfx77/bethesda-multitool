@@ -31,20 +31,17 @@ internal sealed class RuntimeDialogueConditionReader
     ///     Walk TESTopicInfo.objConditions (TESCondition) and decode TESConditionItem entries
     ///     into the same semantic model used for CTDA subrecords.
     /// </summary>
-    internal RuntimeConditionData ReadConditions(long infoStructOffset, int conditionsOffset)
+    internal RuntimeConditionData ReadConditions(byte[] infoStructBuffer, int conditionsOffset)
     {
         var results = new RuntimeConditionData();
-
-        var listOffset = infoStructOffset + conditionsOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
-        if (listBuf == null)
+        if (conditionsOffset < 0 || conditionsOffset > infoStructBuffer.Length - 8)
         {
             return results;
         }
 
-        ReadConditionListItem(BinaryUtils.ReadUInt32BE(listBuf), results);
+        ReadConditionListItem(BinaryUtils.ReadUInt32BE(infoStructBuffer, conditionsOffset), results);
 
-        var nextVa = BinaryUtils.ReadUInt32BE(listBuf, 4);
+        var nextVa = BinaryUtils.ReadUInt32BE(infoStructBuffer, conditionsOffset + 4);
         var visited = new HashSet<uint>();
         while (nextVa != 0 &&
                results.Conditions.Count < RuntimeMemoryContext.MaxListItems &&
@@ -52,7 +49,7 @@ internal sealed class RuntimeDialogueConditionReader
         {
             visited.Add(nextVa);
 
-            var nodeBuf = _context.ReadBytesAtVa(nextVa, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVa), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -70,20 +67,18 @@ internal sealed class RuntimeDialogueConditionReader
     ///     Each list node contains a pointer to a TESTopic whose FormID we extract.
     ///     Returns a list of topic FormIDs that this INFO adds to the NPC's topic menu.
     /// </summary>
-    internal List<uint> WalkAddTopicsList(long infoStructOffset, int addTopicsOffset)
+    internal List<uint> WalkAddTopicsList(byte[] infoStructBuffer, int addTopicsOffset)
     {
         var results = new List<uint>();
-
-        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext)
-        var listOffset = infoStructOffset + addTopicsOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
-        if (listBuf == null)
+        if (addTopicsOffset < 0 || addTopicsOffset > infoStructBuffer.Length - 8)
         {
             return results;
         }
 
-        var firstItem = BinaryUtils.ReadUInt32BE(listBuf); // TESTopic* pointer
-        var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4); // _Node* pointer
+        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) from the
+        // already VA-safe parent buffer.
+        var firstItem = BinaryUtils.ReadUInt32BE(infoStructBuffer, addTopicsOffset); // TESTopic* pointer
+        var firstNext = BinaryUtils.ReadUInt32BE(infoStructBuffer, addTopicsOffset + 4); // _Node* pointer
 
         // Process inline first item — follow pointer to TESTopic, read FormID at +12
         var firstFormId = _context.FollowPointerVaToFormId(firstItem);
@@ -104,7 +99,7 @@ internal sealed class RuntimeDialogueConditionReader
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -150,7 +145,7 @@ internal sealed class RuntimeDialogueConditionReader
         var visited = new HashSet<uint>();
         while (nextVa != 0 && results.Count < RuntimeMemoryContext.MaxListItems && visited.Add(nextVa))
         {
-            var nodeBuf = _context.ReadBytesAtVa(nextVa, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVa), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -195,7 +190,7 @@ internal sealed class RuntimeDialogueConditionReader
         }
 
         // TESConditionItem is a 28-byte wrapper whose first field is CONDITION_ITEM_DATA.
-        var buffer = _context.ReadBytesAtVa(conditionItemVa, 28);
+        var buffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(conditionItemVa), 28);
         if (buffer == null)
         {
             return null;

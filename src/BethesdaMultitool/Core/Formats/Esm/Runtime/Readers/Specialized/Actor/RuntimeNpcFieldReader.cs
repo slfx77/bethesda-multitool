@@ -139,7 +139,7 @@ internal sealed class RuntimeNpcFieldReader
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextPtr), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -175,7 +175,7 @@ internal sealed class RuntimeNpcFieldReader
             return null;
         }
 
-        var buf = _context.ReadBytes(fileOffset.Value, 8);
+        var buf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(factionRankVA), 8);
         if (buf == null)
         {
             return null;
@@ -197,7 +197,7 @@ internal sealed class RuntimeNpcFieldReader
             return null;
         }
 
-        var formBuf = _context.ReadBytes(factionFileOffset.Value, 16);
+        var formBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pFaction), 16);
         if (formBuf == null)
         {
             return null;
@@ -256,7 +256,7 @@ internal sealed class RuntimeNpcFieldReader
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextPtr), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -316,7 +316,7 @@ internal sealed class RuntimeNpcFieldReader
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextPtr), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -413,7 +413,7 @@ internal sealed class RuntimeNpcFieldReader
             if (nodeFileOffset == null)
                 break;
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextPtr), 8);
             if (nodeBuf == null)
                 break;
 
@@ -565,7 +565,7 @@ internal sealed class RuntimeNpcFieldReader
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -715,15 +715,8 @@ internal sealed class RuntimeNpcFieldReader
             }
         }
 
-        // Convert VA to file offset (these are in module space, not heap)
-        var fileOffset = _context.VaToFileOffset(pointer);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
         var byteCount = count * 4;
-        var floatData = _context.ReadBytes(fileOffset.Value, byteCount);
+        var floatData = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pointer), byteCount);
         if (floatData == null)
         {
             return null;
@@ -767,7 +760,7 @@ internal sealed class RuntimeNpcFieldReader
             return null;
         }
 
-        var buf = _context.ReadBytes(fileOffset.Value, 8);
+        var buf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(containerObjectVA), 8);
         if (buf == null)
         {
             return null;

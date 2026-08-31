@@ -331,7 +331,7 @@ internal sealed class RuntimeMagicReader
             }
 
             // BSSimpleList node: m_item (BGSPerkEntry*, 4B) + m_pkNext (4B)
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVa), 8);
             if (nodeBuffer == null)
             {
                 break;
@@ -368,7 +368,7 @@ internal sealed class RuntimeMagicReader
         }
 
         // Read enough for: vtable(4) + rank(1) + priority(1) + pad(2) + data ptr(4) = 12 bytes
-        var entryBuffer = _context.ReadBytes(entryFileOffset.Value, 12);
+        var entryBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(entryVa), 12);
         if (entryBuffer == null)
         {
             return null;
@@ -432,7 +432,7 @@ internal sealed class RuntimeMagicReader
         var visited = new HashSet<uint>();
         while (nextVa != 0 && results.Count < MaxListNodes && visited.Add(nextVa))
         {
-            var nodeBuf = _context.ReadBytesAtVa(nextVa, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVa), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -452,7 +452,7 @@ internal sealed class RuntimeMagicReader
             return;
         }
 
-        var buffer = _context.ReadBytesAtVa(conditionItemVa, 28);
+        var buffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(conditionItemVa), 28);
         if (buffer == null)
         {
             return;

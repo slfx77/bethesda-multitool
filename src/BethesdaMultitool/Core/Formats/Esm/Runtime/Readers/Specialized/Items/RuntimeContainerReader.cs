@@ -29,17 +29,8 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + ContStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[ContStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, ContStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, ContStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -61,7 +52,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
         }
 
         // Read model path
-        var modelPath = _context.ReadBsStringT(offset, ContModelPathOffset);
+        var modelPath = _context.ReadBsStringT(buffer, ContModelPathOffset);
 
         // Read script pointer
         var scriptFormId = _context.FollowPointerToFormId(buffer, ContScriptPtrOffset);
@@ -115,7 +106,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -153,7 +144,7 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buf = _context.ReadBytes(fileOffset.Value, 8);
+        var buf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(containerObjectVA), 8);
         if (buf == null)
         {
             return null;

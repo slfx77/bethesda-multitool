@@ -64,13 +64,7 @@ internal static class RuntimeBipedOffsetProbe
 
             foreach (var sample in samples)
             {
-                var offset = sample.TesFormOffset!.Value;
-                if (offset + bufferSize > context.FileSize)
-                {
-                    continue;
-                }
-
-                var buffer = context.ReadBytes(offset, bufferSize);
+                var buffer = context.ReadTesFormBytes(sample, bufferSize);
                 if (buffer == null ||
                     BinaryUtils.ReadUInt32BE(buffer, 12) != sample.FormId)
                 {
@@ -154,13 +148,7 @@ internal static class RuntimeBipedOffsetProbe
                 break;
             }
 
-            var offset = entry.TesFormOffset.Value;
-            if (offset + bufferSize > context.FileSize)
-            {
-                continue;
-            }
-
-            var buffer = context.ReadBytes(offset, bufferSize);
+            var buffer = context.ReadTesFormBytes(entry, bufferSize);
             if (buffer == null || BinaryUtils.ReadUInt32BE(buffer, 12) != entry.FormId)
             {
                 continue;

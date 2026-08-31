@@ -66,18 +66,13 @@ internal static class RuntimeAcousticSpaceProbe
                 break;
             }
 
-            if (entry.FormType != AspcFormType || entry.TesFormOffset is not { } offset ||
-                offset + ReadSize > context.FileSize)
+            if (entry.FormType != AspcFormType || !entry.TesFormOffset.HasValue)
             {
                 continue;
             }
 
-            var buffer = new byte[ReadSize];
-            try
-            {
-                context.Accessor.ReadArray(offset, buffer, 0, ReadSize);
-            }
-            catch
+            var buffer = context.ReadTesFormBytes(entry, ReadSize);
+            if (buffer == null)
             {
                 continue;
             }

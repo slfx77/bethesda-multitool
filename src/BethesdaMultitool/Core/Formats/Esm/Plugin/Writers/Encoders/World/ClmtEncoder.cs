@@ -6,7 +6,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 /// <summary>
 ///     Encodes a Climate (CLMT) record. A worldspace points at one CLMT via WRLD CNAM; the
 ///     climate supplies the weather cycle, sun / sun-glare textures, and the sunrise / sunset /
-///     moon timing that drives the time-of-day sun curve. Without this encoder a proto-only
+///     moon timing that drives the time-of-day sun curve. Starfield's WSLT choices are emitted as
+///     WTHS references without conflating them with legacy WTHR choices. Without this encoder a proto-only
 ///     climate is stripped from the output, and any worldspace whose CNAM referenced it falls
 ///     back to engine defaults — the worldspace loses its weather list and day/night curve.
 ///     <para>
@@ -36,6 +37,11 @@ public sealed class ClmtEncoder : IRecordEncoder
         if (climate.WeatherTypes is { Count: > 0 } weathers)
         {
             subs.Add(new EncodedSubrecord("WLST", EncodeWlst(weathers)));
+        }
+
+        if (climate.WeatherSettingsTypes is { Count: > 0 } weatherSettings)
+        {
+            subs.Add(new EncodedSubrecord("WSLT", EncodeWslt(weatherSettings)));
         }
 
         if (!string.IsNullOrEmpty(climate.SunTexture))
@@ -82,7 +88,26 @@ public sealed class ClmtEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     CLMT TNAM payload (6 raw bytes, no endianness concerns). The four time fields are
+    ///     Starfield CLMT WSLT payload: an array of 12-byte little-endian entries
+    ///     (uint32 WTHS FormID, int32 Chance, uint32 GLOB FormID), per xEdit's SF1 definition.
+    /// </summary>
+    internal static byte[] EncodeWslt(IReadOnlyList<ClimateWeatherSettingsEntry> weatherSettings)
+    {
+        var bytes = new byte[weatherSettings.Count * 12];
+        for (var i = 0; i < weatherSettings.Count; i++)
+        {
+            var offset = i * 12;
+            var entry = weatherSettings[i];
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), entry.WeatherSettingsFormId);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset + 4, 4), entry.Chance);
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset + 8, 4), entry.GlobalFormId);
+        }
+
+        return bytes;
+    }
+
+    /// <summary>
+    ///     CLMT TNAM payload (five or six raw bytes, no endianness concerns). The four time fields are
     ///     stored in 10-minute units — the engine multiplies by 1/6 to get hours
     ///     (<c>TESClimate::Load</c> → <c>climate+0x60</c>, read back by
     ///     <c>Sky::GetSunriseBegin</c>). <see cref="ClimateTimingData" /> holds them raw, so this
@@ -90,6 +115,18 @@ public sealed class ClmtEncoder : IRecordEncoder
     /// </summary>
     internal static byte[] EncodeTnam(ClimateTimingData timing)
     {
+        if (!timing.HasMoonPhaseLength)
+        {
+            return
+            [
+                timing.SunriseBegin,
+                timing.SunriseEnd,
+                timing.SunsetBegin,
+                timing.SunsetEnd,
+                timing.Volatility
+            ];
+        }
+
         return
         [
             timing.SunriseBegin,

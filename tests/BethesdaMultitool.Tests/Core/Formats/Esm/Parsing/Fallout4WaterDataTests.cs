@@ -191,44 +191,4 @@ public sealed class Fallout4WaterDataTests
         Assert.Equal(0f, def.ColorDeepRange);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ReadFallout76WaterData_DecodesSharedCreationPrefixWithoutFo4Tail(bool bigEndian)
-    {
-        var d = BuildFallout4Dnam(bigEndian)[..148];
-
-        var props = MiscEnvironmentHandler.ReadFallout76WaterData(d, bigEndian);
-        var appearance = WaterAppearance
-            .FromVisualProperties(props, @"textures\water\WaterRainRipples.dds");
-
-        Assert.Equal(0x00_21_35_3Au, Assert.IsType<uint>(props["ShallowColor"]));
-        Assert.Equal(0x00_29_39_3Au, Assert.IsType<uint>(props["DeepColor"]));
-        Assert.Equal(0x00_73_62_51u, Assert.IsType<uint>(props["ReflectionColor"]));
-        Assert.Equal(951f, Assert.IsType<float>(props["SunPower"]));
-        Assert.Equal(8.803f, Assert.IsType<float>(props["SunSpecularMagnitude"]));
-        Assert.DoesNotContain("SiltAmount", props.Keys);
-        Assert.DoesNotContain("NoiseLayer1WindDir", props.Keys);
-        Assert.Equal(10f, Assert.IsType<float>(props["ModernUnknown1"]));
-        Assert.Equal(0.06f, Assert.IsType<float>(props["ModernUnknown5"]), 4);
-
-        Assert.NotNull(appearance);
-        Assert.Equal(1087f, appearance.Surface.DepthAmount);
-        Assert.Equal(8.803f, appearance.Surface.SunSpecularMagnitude);
-        Assert.False(appearance.Surface.HasAuthoredNoiseLayers);
-        Assert.Equal(@"textures\water\WaterRainRipples.dds", appearance.NoiseTexture);
-    }
-
-    [Fact]
-    public void ReadFallout76WaterData_AcceptsMinimumSharedPrefixWithoutReadingOptionalTail()
-    {
-        var d = BuildFallout4Dnam()[..108];
-
-        var props = MiscEnvironmentHandler.ReadFallout76WaterData(d, false);
-
-        Assert.Equal(8.803f, Assert.IsType<float>(props["SunSpecularMagnitude"]), 3);
-        Assert.DoesNotContain("SunSparklePower", props.Keys);
-        Assert.DoesNotContain("InteriorSpecularPower", props.Keys);
-        Assert.DoesNotContain("ModernUnknown1", props.Keys);
-    }
 }

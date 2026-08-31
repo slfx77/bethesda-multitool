@@ -26,17 +26,8 @@ internal static class RuntimeDialLayoutProbe
 
         var offset = entry.TesFormOffset.Value;
         var readSize = 96; // Read extra bytes to accommodate larger shifts
-        if (offset + readSize > context.FileSize)
-        {
-            return -1;
-        }
-
-        var buffer = new byte[readSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, readSize);
-        }
-        catch
+        var buffer = context.ReadTesFormBytes(entry, readSize);
+        if (buffer == null)
         {
             return -1;
         }

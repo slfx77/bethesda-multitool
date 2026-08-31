@@ -2,6 +2,7 @@ using System.Reflection;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
@@ -15,15 +16,18 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 public class EsmParsedRecordTypesTests
 {
     [Fact]
-    public void Codes_AreUnique()
+    public void Mappings_DoNotOverlapGloballyOrWithinAGame()
     {
-        var dupes = EsmParsedRecordTypes.All
-            .GroupBy(e => e.Code, StringComparer.OrdinalIgnoreCase)
-            .Where(g => g.Count() > 1)
-            .Select(g => g.Key)
+        var ambiguous = EsmParsedRecordTypes.All
+            .GroupBy(entry => entry.Code, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Where(group => group.Any(entry => entry.Game is null) ||
+                            group.GroupBy(entry => entry.Game).Any(gameGroup => gameGroup.Count() > 1))
+            .Select(group => group.Key)
             .ToList();
 
-        Assert.True(dupes.Count == 0, $"Duplicate parsed-type codes: {string.Join(", ", dupes)}");
+        Assert.True(ambiguous.Count == 0,
+            $"Overlapping parsed-type mappings: {string.Join(", ", ambiguous)}");
     }
 
     [Fact]
@@ -54,6 +58,59 @@ public class EsmParsedRecordTypesTests
         {
             Assert.True(EsmParsedRecordTypes.Codes.Contains(code), $"{code} should be registered as parsed");
         }
+    }
+
+    [Fact]
+    public void EntriesForGame_SeparatesGameScopedCe2EnvironmentRecords()
+    {
+        var starfield = EsmParsedRecordTypes.CodesForGame(BethesdaGame.Starfield);
+        Assert.Contains("WTHS", starfield);
+        Assert.Contains("VOLI", starfield);
+        Assert.Contains("CLDF", starfield);
+        Assert.Contains("ATMO", starfield);
+        Assert.Contains("PNDT", starfield);
+        Assert.Contains("STDT", starfield);
+        Assert.Contains("SUNP", starfield);
+        Assert.Contains("CUR3", starfield);
+
+        var fallout76 = EsmParsedRecordTypes.CodesForGame(BethesdaGame.Fallout76);
+        Assert.DoesNotContain("WTHS", fallout76);
+        Assert.Contains("VOLI", fallout76);
+        Assert.DoesNotContain("CLDF", fallout76);
+        Assert.DoesNotContain("ATMO", fallout76);
+        Assert.DoesNotContain("PNDT", fallout76);
+        Assert.DoesNotContain("STDT", fallout76);
+        Assert.DoesNotContain("SUNP", fallout76);
+        Assert.DoesNotContain("CUR3", fallout76);
+        Assert.Contains("WTHR", fallout76);
+        var fallout4 = EsmParsedRecordTypes.CodesForGame(BethesdaGame.Fallout4);
+        Assert.DoesNotContain("ATMO", fallout4);
+        Assert.DoesNotContain("PNDT", fallout4);
+        Assert.DoesNotContain("STDT", fallout4);
+        Assert.DoesNotContain("SUNP", fallout4);
+        Assert.DoesNotContain("CUR3", fallout4);
+
+        Assert.Equal(nameof(RecordCollection.VolumetricLightingSettings),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
+                .Where(entry => entry.Code == "VOLI")).Collection);
+        Assert.Equal(nameof(RecordCollection.Fallout76VolumetricLightingSettings),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Fallout76)
+                .Where(entry => entry.Code == "VOLI")).Collection);
+        Assert.Equal(nameof(RecordCollection.Atmospheres),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
+                .Where(entry => entry.Code == "ATMO")).Collection);
+        Assert.Equal(nameof(RecordCollection.PlanetData),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
+                .Where(entry => entry.Code == "PNDT")).Collection);
+        Assert.Equal(nameof(RecordCollection.StarData),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
+                .Where(entry => entry.Code == "STDT")).Collection);
+        Assert.Equal(nameof(RecordCollection.SunPresets),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
+                .Where(entry => entry.Code == "SUNP")).Collection);
+        Assert.Equal(nameof(RecordCollection.Curves3D),
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
+                .Where(entry => entry.Code == "CUR3")).Collection);
     }
 
     [Fact]

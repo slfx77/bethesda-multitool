@@ -61,6 +61,8 @@ internal sealed class BookShowRenderer : IRecordDisplayRenderer
             lines.Add(Markup.Escape(text));
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, book.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(

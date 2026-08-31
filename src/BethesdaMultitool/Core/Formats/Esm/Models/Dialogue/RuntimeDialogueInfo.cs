@@ -41,6 +41,14 @@ public record RuntimeDialogueInfo
     /// <summary>Parent quest FormID (from pOwnerQuest pointer).</summary>
     public uint? QuestFormId { get; init; }
 
+    /// <summary>
+    ///     Parent DIAL for an INFO that was recovered from a coverage gap, established from an
+    ///     independently-built topic→info map rather than from this record's own pointers, and only
+    ///     set when that map agreed with the record's decode. Null for INFOs found the normal way,
+    ///     whose parentage comes from the topic walk.
+    /// </summary>
+    public uint? RecoveredTopicFormId { get; init; }
+
     /// <summary>Speaker NPC FormID inferred from runtime conditions (e.g. GetIsID).</summary>
     public uint? ConditionSpeakerFormId { get; init; }
 

@@ -142,7 +142,18 @@ public sealed class DmpRecordSource
             ["CHIP"] = c => GenericsOfType(c, "CHIP"),
             ["IDLM"] = c => GenericsOfType(c, "IDLM"),
             ["CAMS"] = c => GenericsOfType(c, "CAMS"),
-            ["MSET"] = c => GenericsOfType(c, "MSET")
+            ["MSET"] = c => GenericsOfType(c, "MSET"),
+            // Round 3 of the same audit. EFSH/RGDL/CSNO became emittable once ReadEmbeddedStruct
+            // handed back raw bytes for >8 B structs: all three carry their payload in a single
+            // block whose runtime size matches the file schema exactly, so the existing BE→LE
+            // registry converts it. CSNO's model/texture arrays stay unreachable — see CsnoEncoder.
+            ["EFSH"] = c => GenericsOfType(c, "EFSH"),
+            ["RGDL"] = c => GenericsOfType(c, "RGDL"),
+            ["CSNO"] = c => GenericsOfType(c, "CSNO"),
+            // Reachable only after pdb_layouts.json gained LF_ARRAY resolution: both types' whole
+            // payload is an inline pointer array that used to export as size:0 / kind:"unknown".
+            ["IPDS"] = c => GenericsOfType(c, "IPDS"),
+            ["DOBJ"] = c => GenericsOfType(c, "DOBJ")
         };
 
     private readonly RecordCollection _collection;

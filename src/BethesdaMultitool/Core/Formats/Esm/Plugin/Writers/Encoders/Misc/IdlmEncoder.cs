@@ -19,11 +19,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///         <c>BGSIdleCollection.fTimerCheckForIdle</c> @76 → IDLT.
 ///     </para>
 ///     <para>
-///         IDLA is deliberately not emitted: <c>BGSIdleCollection.pIdleArray</c> @72 is a pointer
-///         to an out-of-struct array of IDLE pointers that no reader walks. Because
-///         <c>wbIdleAnimation</c> drives IDLA's element count from IDLC, emitting the runtime's
-///         <c>cIdleCount</c> with no array behind it would tell the engine to read animations that
-///         are not there — so IDLC is written as <b>0</b>, matching the absent array.
+///         IDLA comes from <c>BGSIdleCollection.pIdleArray</c> @72 — a pointer to an out-of-struct
+///         array of <c>cIdleCount</c> IDLE pointers. <c>RuntimeContainerFieldReader</c> walks it and
+///         resolves each element through the TESForm header check, all-or-nothing. Because
+///         <c>wbIdleAnimation</c> drives IDLA's element count from IDLC, the two must agree: IDLC is
+///         written as the resolved array's length, or as <b>0</b> with no IDLA when the array could
+///         not be walked. It is never written as a count with nothing behind it.
 ///     </para>
 /// </summary>
 public sealed class IdlmEncoder : IRecordEncoder
@@ -73,17 +74,27 @@ public sealed class IdlmEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeByteSubrecord("IDLF", (byte)idleFlags));
         }
 
-        // Forced to zero — see the class remarks. Warn only when animations were actually
-        // captured and are being dropped, so the diagnostic marks real data loss.
+        // IDLC and IDLA are a matched pair — see the class remarks. The walked array is the
+        // authority for both: its length becomes IDLC, so the two can never disagree.
+        var idleAnimations = GenericRecordFields.TryFormIdList(idlm, "IDLA", "BGSIdleCollection.pIdleArray");
         var capturedCount = GenericRecordFields.TryUInt(idlm, "IDLC", "BGSIdleCollection.cIdleCount") ?? 0;
-        if (capturedCount > 0)
-        {
-            warnings.Add(
-                $"IDLM 0x{idlm.FormId:X8} runtime holds {capturedCount} idle animation(s) behind " +
-                "pIdleArray, which is not walked — emitting IDLC as 0 and no IDLA.");
-        }
 
-        subs.Add(NewRecordSubrecords.EncodeByteSubrecord("IDLC", 0));
+        if (idleAnimations is { Count: > 0 } animations)
+        {
+            subs.Add(NewRecordSubrecords.EncodeByteSubrecord("IDLC", (byte)Math.Min(animations.Count, byte.MaxValue)));
+            subs.Add(NewRecordSubrecords.EncodeFormIdArraySubrecord("IDLA", animations));
+        }
+        else
+        {
+            if (capturedCount > 0)
+            {
+                warnings.Add(
+                    $"IDLM 0x{idlm.FormId:X8} runtime declares {capturedCount} idle animation(s) but " +
+                    "pIdleArray did not resolve to that many IDLE forms — emitting IDLC as 0 and no IDLA.");
+            }
+
+            subs.Add(NewRecordSubrecords.EncodeByteSubrecord("IDLC", 0));
+        }
 
         if (GenericRecordFields.TryFloat(idlm, "IDLT", "BGSIdleCollection.fTimerCheckForIdle") is { } timer)
         {

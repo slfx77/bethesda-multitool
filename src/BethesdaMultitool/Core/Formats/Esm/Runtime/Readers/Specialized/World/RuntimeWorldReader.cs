@@ -78,7 +78,9 @@ internal sealed class RuntimeWorldReader
     /// </summary>
     public RuntimeLoadedLandData? ReadRuntimeLandData(RuntimeEditorIdEntry entry)
     {
-        // Caller is responsible for filtering to LAND entries (FormType varies by build)
+        // Single-entry read: the caller chose this entry deliberately, so it is read as asked. The
+        // anti-fabrication filter lives on the batch entry point below, which is where an
+        // unfiltered table can turn into thousands of invented terrain records.
         var view = OpenLandView(entry);
         if (view == null)
         {
@@ -99,18 +101,15 @@ internal sealed class RuntimeWorldReader
 
         // Convert to file offset
         var loadedDataFileOffset = _context.VaToFileOffset(pLoadedData);
-        if (loadedDataFileOffset == null || loadedDataFileOffset.Value + LoadedDataSize > _context.FileSize)
+        if (loadedDataFileOffset == null)
         {
             return null;
         }
 
         // Read LoadedLandData struct
-        var loadedDataBuffer = new byte[LoadedDataSize];
-        try
-        {
-            _context.Accessor.ReadArray(loadedDataFileOffset.Value, loadedDataBuffer, 0, LoadedDataSize);
-        }
-        catch
+        var loadedDataBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(pLoadedData), LoadedDataSize);
+        if (loadedDataBuffer == null)
         {
             return null;
         }
@@ -275,7 +274,7 @@ internal sealed class RuntimeWorldReader
             return null;
         }
 
-        var innerPtrBytes = _context.ReadBytes(outerFileOffset.Value, 4);
+        var innerPtrBytes = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(ppVertices), 4);
         if (innerPtrBytes == null)
         {
             _meshStageVertexOuterDerefFail++;
@@ -297,7 +296,7 @@ internal sealed class RuntimeWorldReader
         }
 
         const int totalFloats = RuntimeTerrainMesh.VertexCount * 3;
-        var rawData = _context.ReadBytes(vertexFileOffset.Value, totalFloats * 4);
+        var rawData = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pVertices), totalFloats * 4);
         if (rawData == null)
         {
             _meshStageVertexDataReadFail++;
@@ -404,7 +403,7 @@ internal sealed class RuntimeWorldReader
             return result;
         }
 
-        var pointerBytes = _context.ReadBytes(outerFileOffset.Value, slotCount * 4);
+        var pointerBytes = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(outerPtr), slotCount * 4);
         if (pointerBytes == null)
         {
             return result;
@@ -426,7 +425,7 @@ internal sealed class RuntimeWorldReader
                 continue;
             }
 
-            var rawData = _context.ReadBytes(dataFileOffset.Value, byteCount);
+            var rawData = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(innerPtr), byteCount);
             if (rawData == null)
             {
                 continue;
@@ -490,7 +489,7 @@ internal sealed class RuntimeWorldReader
         }
 
         // Step 2: Dereference to get the inner pointer (T*)
-        var innerPtrBytes = _context.ReadBytes(outerFileOffset.Value, 4);
+        var innerPtrBytes = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(outerPtr), 4);
         if (innerPtrBytes == null)
         {
             return (null, 0);
@@ -511,7 +510,7 @@ internal sealed class RuntimeWorldReader
         // Step 3: Read the float array
         var totalFloats = elementCount * floatsPerElement;
         var byteCount = totalFloats * 4;
-        var rawData = _context.ReadBytes(dataFileOffset.Value, byteCount);
+        var rawData = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(innerPtr), byteCount);
         if (rawData == null)
         {
             return (null, 0);
@@ -543,7 +542,30 @@ internal sealed class RuntimeWorldReader
     ///     Read all LAND records from runtime data and extract cell coordinates.
     ///     Returns a dictionary mapping LAND FormID to LoadedLandData.
     /// </summary>
-    public Dictionary<uint, RuntimeLoadedLandData> ReadAllRuntimeLandData(IEnumerable<RuntimeEditorIdEntry> entries)
+    /// <summary>
+    ///     Marker the pAllForms LAND sweep stamps on entries it produces
+    ///     (<c>EditorIdLookupTables</c>), since a real LAND record has no EditorID to carry.
+    /// </summary>
+    private const string SyntheticLandEditorIdPrefix = "__LAND_";
+
+    /// <summary>
+    ///     True when this entry came from the LAND form-type sweep rather than the editor-ID table.
+    ///     Build-independent on purpose: the LAND FormType byte differs across the development
+    ///     builds in the corpus, so it cannot be checked against a constant or against the final
+    ///     build's PDB — but "a LAND record has no editor ID" holds in all of them.
+    /// </summary>
+    private static bool IsSyntheticLandEditorId(string? editorId)
+    {
+        return editorId is null ||
+               editorId.StartsWith(SyntheticLandEditorIdPrefix, StringComparison.Ordinal);
+    }
+
+    /// <param name="logSummary">
+    ///     False while probing candidate FormTypes to identify this build's LAND type — one summary
+    ///     per rejected candidate is noise, and the caller reports the winner instead.
+    /// </param>
+    public Dictionary<uint, RuntimeLoadedLandData> ReadAllRuntimeLandData(
+        IEnumerable<RuntimeEditorIdEntry> entries, bool logSummary = true)
     {
         var result = new Dictionary<uint, RuntimeLoadedLandData>();
         var total = 0;
@@ -565,8 +587,13 @@ internal sealed class RuntimeWorldReader
         Array.Clear(_badVertexVaHighBytes);
         Array.Clear(_goodVertexVaHighBytes);
 
-        // Entries are pre-filtered to LAND by EsmEditorIdExtractor (FormType varies by build)
-        foreach (var entry in entries)
+        // Entries should be pre-filtered to LAND by the caller (the FormType varies by build), but
+        // this is where a broken caller becomes thousands of invented records, so the one
+        // build-independent invariant is enforced here: a LAND record has no EditorID — the
+        // pAllForms sweep synthesises one — so an entry carrying a real editor ID is definitively
+        // not terrain. The enricher used to pass the entire editor-ID table here and every plausible
+        // cell coordinate it produced was added as a new LAND record (15,745 on xex44, 2026-08-30).
+        foreach (var entry in entries.Where(entry => IsSyntheticLandEditorId(entry.EditorId)))
         {
             total++;
             var landData = ReadRuntimeLandData(entry);
@@ -585,12 +612,17 @@ internal sealed class RuntimeWorldReader
         }
 
         // Count failure reasons from the entries that didn't produce results
-        foreach (var entry in entries)
+        foreach (var entry in entries.Where(entry => IsSyntheticLandEditorId(entry.EditorId)))
         {
             if (entry.TesFormOffset == null)
             {
                 noOffset++;
             }
+        }
+
+        if (!logSummary)
+        {
+            return result;
         }
 
         var log = Logger.Instance;

@@ -23,6 +23,16 @@ internal sealed class WorldRenderStats
     internal int TerrainDraws { get; set; }
     internal int TerrainQuadrantDraws { get; set; }
 
+    /// <summary>Whether the main terrain pass had a valid frustum/origin context this frame.</summary>
+    internal bool TerrainFrustumCullingActive { get; set; }
+
+    /// <summary>
+    ///     Resident terrain cells from the main cylinder gather — including cached cells in its
+    ///     one-cell draw-only hysteresis margin — rejected only from the color/depth draw by their
+    ///     conservative AABB/frustum test. Streaming/build admission is not included.
+    /// </summary>
+    internal int TerrainFrustumRejected { get; set; }
+
     /// <summary>
     ///     Terrain cells whose per-draw ring allocation soft-failed this frame — a silent
     ///     draw skip that would otherwise be un-observable (it reads as a missing cell on screen).
@@ -123,8 +133,19 @@ internal sealed class WorldRenderStats
     ///     re-runs is the difference between fixing it and guessing at it.
     /// </summary>
     internal int ReferenceBatchReuseBlocker { get; set; }
+    internal bool ReferenceBatchBuildInProgress { get; set; }
+    internal bool ReferenceCullRefreshPending { get; set; }
+    internal bool ReferenceBatchBuildIncrementalAdvanced { get; set; }
+    internal bool ReferenceBatchBuildPublished { get; set; }
+    internal bool ReferenceBatchBuildSynchronousFallback { get; set; }
+    internal int ReferenceBatchBuildTrigger { get; set; }
+    internal int ReferenceBatchBuildPhase { get; set; }
+    internal int ReferenceBatchBuildProcessed { get; set; }
+    internal int ReferenceBatchBuildTotal { get; set; }
+    internal double ReferenceBatchBuildBudgetMilliseconds { get; set; }
 
     internal int ReferenceMeshMissing { get; set; } // GetOrUpload returned null this frame
+    internal int ReferenceShadowMeshMissing { get; set; }
     internal int ReferenceTexturePending { get; set; } // mesh ready, but at least one texture still streaming
     internal int ReferenceDrawn { get; set; } // REFRs that issued ≥1 submesh draw
     internal int ReferenceSubmeshDraws { get; set; } // total DrawIndexed calls
@@ -139,6 +160,8 @@ internal sealed class WorldRenderStats
     internal int ReferenceCpuDecodedMeshCacheMisses { get; set; }
     internal int ReferenceCpuDecodedMeshNegativeHits { get; set; }
     internal int ReferenceGpuUploads { get; set; }
+    internal int ReferenceMeshMaterializationFailures { get; set; }
+    internal int ReferenceMeshMaterializationRetriesPending { get; set; }
     internal int ReferenceUploadByteBudgetDeferrals { get; set; }
     internal int ReferenceCompressedTextureUploads { get; set; }
     internal int ReferenceRgbaTextureUploads { get; set; }
@@ -150,6 +173,43 @@ internal sealed class WorldRenderStats
     internal int ReferenceInstances { get; set; }
     internal int ReferenceInstancedDraws { get; set; }
 
+    // Opaque main-scene submission shape. Active is the pre-filter batch workload; Surviving and
+    // every field below describe post-filter draws in current submission order. The mutually
+    // exclusive lane counts sum to SurvivingDraws and size a future PSO-grouped/indirect path
+    // without changing ordering today.
+    internal int ReferenceOpaqueActiveDraws { get; set; }
+    internal int ReferenceOpaqueSurvivingDraws { get; set; }
+    internal int ReferenceOpaquePsoTransitions { get; set; }
+    internal int ReferenceOpaqueUniquePsos { get; set; }
+    internal int ReferenceOpaqueOrdinaryDraws { get; set; }
+    internal int ReferenceOpaqueDecalDraws { get; set; }
+    internal int ReferenceOpaqueGrassCutoutDraws { get; set; }
+    internal int ReferenceOpaqueGrassDepthWriteDraws { get; set; }
+    internal bool ReferenceOpaqueIndirectActive { get; set; }
+    internal int ReferenceOpaqueDirectDraws { get; set; }
+    internal int ReferenceOpaqueIndirectDraws { get; set; }
+    internal int ReferenceOpaqueIndirectExecuteCalls { get; set; }
+    internal int ReferenceOpaqueIndirectArgumentBytes { get; set; }
+    internal int ReferenceOpaqueIndirectFallbackReason { get; set; }
+    internal bool ReferenceOpaqueFrontToBackActive { get; set; }
+    internal int ReferenceOpaqueFrontToBackBatches { get; set; }
+    internal int ReferenceOpaqueFrontToBackInstances { get; set; }
+    internal int ReferenceOpaqueFrontToBackFallbackReason { get; set; }
+    internal bool ReferenceModernStandardShaderActive { get; set; }
+    internal int ReferenceModernStandardBatches { get; set; }
+    internal int ReferenceModernStandardInstances { get; set; }
+    internal bool ReferenceStaticOpaquePacketActive { get; set; }
+    internal bool ReferenceStaticOpaquePacketHit { get; set; }
+    internal int ReferenceStaticOpaquePacketBatches { get; set; }
+    internal int ReferenceStaticOpaquePacketInstances { get; set; }
+    internal int ReferenceStaticOpaquePacketRuns { get; set; }
+    internal int ReferenceStaticOpaquePacketBytes { get; set; }
+    internal double ReferenceStaticOpaquePacketBuildMilliseconds { get; set; }
+    internal int ReferenceStaticOpaquePacketSavedMatrixBytes { get; set; }
+    internal int ReferenceStaticOpaquePacketSavedConstantBytes { get; set; }
+    internal int ReferenceStaticOpaquePacketSavedArgumentBytes { get; set; }
+    internal int ReferenceStaticOpaquePacketFallbackReason { get; set; }
+
     internal int ReferenceBlendedDraws { get; set; }
 
     // Dormant PS1 audit counters. Retail does not submit SLS1009/SLS1013; these must remain zero.
@@ -158,6 +218,13 @@ internal sealed class WorldRenderStats
     internal int ReferenceFnvSls1013Draws { get; set; }
     internal int ReferenceFnvSls1013Instances { get; set; }
     internal int ReferencePlacedLightCount { get; set; }
+    internal double ReferencePlacedLightTileBuildMilliseconds { get; set; }
+    internal int ReferencePlacedLightTileCount { get; set; }
+    internal int ReferencePlacedLightTileUploadBytes { get; set; }
+    internal double ReferencePlacedLightTileAverageLights { get; set; }
+    internal int ReferencePlacedLightTileMaxLights { get; set; }
+    internal double ReferencePlacedLightTileEmptyPercent { get; set; }
+    internal string? ReferencePlacedLightTileFallbackReason { get; set; }
     internal bool ReferenceFnvClassicBasicLightingEnabled { get; set; }
     internal int ReferenceFnvClassicBasicFallbackDraws { get; set; }
     internal int ReferenceFnvClassicBasicFallbackInstances { get; set; }
@@ -241,17 +308,39 @@ internal sealed class WorldRenderStats
     internal float ReferenceTallGrassTemporalPhaseRadiansMaximum { get; set; }
     internal double ReferenceStateSetupMilliseconds { get; set; }
     internal double ReferenceCullMilliseconds { get; set; } // per-REFR cylinder cull + placement-list walk
-    internal double ReferenceMeshUploadMilliseconds { get; set; } // cache-miss NIF parse + GPU upload
-    internal double ReferenceCbUpdateMilliseconds { get; set; } // per-submesh Map(WriteDiscard) on _perDrawCb
+    internal double ReferenceBatchBuildMilliseconds { get; set; }
+    internal double ReferenceMeshResolveMilliseconds { get; set; }
+    internal double ReferenceInstanceBucketingMilliseconds { get; set; }
+    internal double ReferenceBatchFinalizeMilliseconds { get; set; }
+    internal double ReferenceGpuUploadMilliseconds { get; set; }
+    internal double ReferenceBlendedRefreshMilliseconds { get; set; }
+    /// <summary>
+    ///     Coarse wall time for the complete opaque submission pass. This deliberately replaces
+    ///     per-batch stopwatch reads: on dense FO76 scenes those reads ran tens of thousands of
+    ///     times per frame and materially changed the frame time being measured.
+    /// </summary>
+    internal double ReferenceOpaqueSubmissionMilliseconds { get; set; }
+    /// <summary>
+    ///     Coarse wall time for all depth-writing and deferred blended submission passes recorded
+    ///     against this frame's stats. Measured once per pass, never once per draw.
+    /// </summary>
+    internal double ReferenceBlendedSubmissionMilliseconds { get; set; }
+    // Legacy low-frequency timing remnants. Per-draw/per-batch stopwatch reads were removed after
+    // CPU sampling proved that the observer cost dominated the work. Use the coarse submission
+    // fields above for complete pass costs; these now cover only explicitly timed reservations/binds.
+    internal double ReferenceCbUpdateMilliseconds { get; set; }
     internal double ReferenceSrvBindMilliseconds { get; set; } // BindSrvIfChanged + SetCullModeIfChanged
-    internal double ReferenceDrawCallMilliseconds { get; set; } // IASetVB/IB + DrawIndexed
+    internal double ReferenceDrawCallMilliseconds { get; set; }
 
     internal void Reset()
     {
         VisibleCandidates = 0;
         TerrainDraws = 0;
         TerrainQuadrantDraws = 0;
+        TerrainFrustumCullingActive = false;
+        TerrainFrustumRejected = 0;
         TerrainDrawsTruncated = 0;
+        CellsEvictedForBudget = 0;
         NewUploads = 0;
         NewPreUploads = 0;
         TextureCacheMisses = 0;
@@ -297,7 +386,18 @@ internal sealed class WorldRenderStats
         ReferenceCullCacheVeto = 0;
         ReferenceBatchesReused = false;
         ReferenceBatchReuseBlocker = 0;
+        ReferenceBatchBuildInProgress = false;
+        ReferenceCullRefreshPending = false;
+        ReferenceBatchBuildIncrementalAdvanced = false;
+        ReferenceBatchBuildPublished = false;
+        ReferenceBatchBuildSynchronousFallback = false;
+        ReferenceBatchBuildTrigger = 0;
+        ReferenceBatchBuildPhase = 0;
+        ReferenceBatchBuildProcessed = 0;
+        ReferenceBatchBuildTotal = 0;
+        ReferenceBatchBuildBudgetMilliseconds = 0;
         ReferenceMeshMissing = 0;
+        ReferenceShadowMeshMissing = 0;
         ReferenceTexturePending = 0;
         ReferenceDrawn = 0;
         ReferenceSubmeshDraws = 0;
@@ -312,6 +412,8 @@ internal sealed class WorldRenderStats
         ReferenceCpuDecodedMeshCacheMisses = 0;
         ReferenceCpuDecodedMeshNegativeHits = 0;
         ReferenceGpuUploads = 0;
+        ReferenceMeshMaterializationFailures = 0;
+        ReferenceMeshMaterializationRetriesPending = 0;
         ReferenceUploadByteBudgetDeferrals = 0;
         ReferenceCompressedTextureUploads = 0;
         ReferenceRgbaTextureUploads = 0;
@@ -322,12 +424,51 @@ internal sealed class WorldRenderStats
         ReferenceBatches = 0;
         ReferenceInstances = 0;
         ReferenceInstancedDraws = 0;
+        ReferenceOpaqueActiveDraws = 0;
+        ReferenceOpaqueSurvivingDraws = 0;
+        ReferenceOpaquePsoTransitions = 0;
+        ReferenceOpaqueUniquePsos = 0;
+        ReferenceOpaqueOrdinaryDraws = 0;
+        ReferenceOpaqueDecalDraws = 0;
+        ReferenceOpaqueGrassCutoutDraws = 0;
+        ReferenceOpaqueGrassDepthWriteDraws = 0;
+        ReferenceOpaqueIndirectActive = false;
+        ReferenceOpaqueDirectDraws = 0;
+        ReferenceOpaqueIndirectDraws = 0;
+        ReferenceOpaqueIndirectExecuteCalls = 0;
+        ReferenceOpaqueIndirectArgumentBytes = 0;
+        ReferenceOpaqueIndirectFallbackReason = 0;
+        ReferenceOpaqueFrontToBackActive = false;
+        ReferenceOpaqueFrontToBackBatches = 0;
+        ReferenceOpaqueFrontToBackInstances = 0;
+        ReferenceOpaqueFrontToBackFallbackReason = 0;
+        ReferenceModernStandardShaderActive = false;
+        ReferenceModernStandardBatches = 0;
+        ReferenceModernStandardInstances = 0;
+        ReferenceStaticOpaquePacketActive = false;
+        ReferenceStaticOpaquePacketHit = false;
+        ReferenceStaticOpaquePacketBatches = 0;
+        ReferenceStaticOpaquePacketInstances = 0;
+        ReferenceStaticOpaquePacketRuns = 0;
+        ReferenceStaticOpaquePacketBytes = 0;
+        ReferenceStaticOpaquePacketBuildMilliseconds = 0;
+        ReferenceStaticOpaquePacketSavedMatrixBytes = 0;
+        ReferenceStaticOpaquePacketSavedConstantBytes = 0;
+        ReferenceStaticOpaquePacketSavedArgumentBytes = 0;
+        ReferenceStaticOpaquePacketFallbackReason = 0;
         ReferenceBlendedDraws = 0;
         ReferenceFnvSls1009Draws = 0;
         ReferenceFnvSls1009Instances = 0;
         ReferenceFnvSls1013Draws = 0;
         ReferenceFnvSls1013Instances = 0;
         ReferencePlacedLightCount = 0;
+        ReferencePlacedLightTileBuildMilliseconds = 0;
+        ReferencePlacedLightTileCount = 0;
+        ReferencePlacedLightTileUploadBytes = 0;
+        ReferencePlacedLightTileAverageLights = 0;
+        ReferencePlacedLightTileMaxLights = 0;
+        ReferencePlacedLightTileEmptyPercent = 0;
+        ReferencePlacedLightTileFallbackReason = null;
         ReferenceFnvClassicBasicLightingEnabled = false;
         ReferenceFnvClassicBasicFallbackDraws = 0;
         ReferenceFnvClassicBasicFallbackInstances = 0;
@@ -390,7 +531,14 @@ internal sealed class WorldRenderStats
         ReferenceTallGrassTemporalPhaseRadiansMaximum = 0f;
         ReferenceStateSetupMilliseconds = 0;
         ReferenceCullMilliseconds = 0;
-        ReferenceMeshUploadMilliseconds = 0;
+        ReferenceBatchBuildMilliseconds = 0;
+        ReferenceMeshResolveMilliseconds = 0;
+        ReferenceInstanceBucketingMilliseconds = 0;
+        ReferenceBatchFinalizeMilliseconds = 0;
+        ReferenceGpuUploadMilliseconds = 0;
+        ReferenceBlendedRefreshMilliseconds = 0;
+        ReferenceOpaqueSubmissionMilliseconds = 0;
+        ReferenceBlendedSubmissionMilliseconds = 0;
         ReferenceCbUpdateMilliseconds = 0;
         ReferenceSrvBindMilliseconds = 0;
         ReferenceDrawCallMilliseconds = 0;
@@ -404,6 +552,8 @@ internal sealed class WorldRenderStats
             CellsEvictedForBudget = CellsEvictedForBudget,
             TerrainDraws = TerrainDraws,
             TerrainQuadrantDraws = TerrainQuadrantDraws,
+            TerrainFrustumCullingActive = TerrainFrustumCullingActive,
+            TerrainFrustumRejected = TerrainFrustumRejected,
             TerrainDrawsTruncated = TerrainDrawsTruncated,
             NewUploads = NewUploads,
             NewPreUploads = NewPreUploads,
@@ -450,7 +600,18 @@ internal sealed class WorldRenderStats
             ReferenceCullCacheVeto = ReferenceCullCacheVeto,
             ReferenceBatchesReused = ReferenceBatchesReused,
             ReferenceBatchReuseBlocker = ReferenceBatchReuseBlocker,
+            ReferenceBatchBuildInProgress = ReferenceBatchBuildInProgress,
+            ReferenceCullRefreshPending = ReferenceCullRefreshPending,
+            ReferenceBatchBuildIncrementalAdvanced = ReferenceBatchBuildIncrementalAdvanced,
+            ReferenceBatchBuildPublished = ReferenceBatchBuildPublished,
+            ReferenceBatchBuildSynchronousFallback = ReferenceBatchBuildSynchronousFallback,
+            ReferenceBatchBuildTrigger = ReferenceBatchBuildTrigger,
+            ReferenceBatchBuildPhase = ReferenceBatchBuildPhase,
+            ReferenceBatchBuildProcessed = ReferenceBatchBuildProcessed,
+            ReferenceBatchBuildTotal = ReferenceBatchBuildTotal,
+            ReferenceBatchBuildBudgetMilliseconds = ReferenceBatchBuildBudgetMilliseconds,
             ReferenceMeshMissing = ReferenceMeshMissing,
+            ReferenceShadowMeshMissing = ReferenceShadowMeshMissing,
             ReferenceTexturePending = ReferenceTexturePending,
             ReferenceDrawn = ReferenceDrawn,
             ReferenceSubmeshDraws = ReferenceSubmeshDraws,
@@ -465,6 +626,8 @@ internal sealed class WorldRenderStats
             ReferenceCpuDecodedMeshCacheMisses = ReferenceCpuDecodedMeshCacheMisses,
             ReferenceCpuDecodedMeshNegativeHits = ReferenceCpuDecodedMeshNegativeHits,
             ReferenceGpuUploads = ReferenceGpuUploads,
+            ReferenceMeshMaterializationFailures = ReferenceMeshMaterializationFailures,
+            ReferenceMeshMaterializationRetriesPending = ReferenceMeshMaterializationRetriesPending,
             ReferenceUploadByteBudgetDeferrals = ReferenceUploadByteBudgetDeferrals,
             ReferenceCompressedTextureUploads = ReferenceCompressedTextureUploads,
             ReferenceRgbaTextureUploads = ReferenceRgbaTextureUploads,
@@ -475,12 +638,51 @@ internal sealed class WorldRenderStats
             ReferenceBatches = ReferenceBatches,
             ReferenceInstances = ReferenceInstances,
             ReferenceInstancedDraws = ReferenceInstancedDraws,
+            ReferenceOpaqueActiveDraws = ReferenceOpaqueActiveDraws,
+            ReferenceOpaqueSurvivingDraws = ReferenceOpaqueSurvivingDraws,
+            ReferenceOpaquePsoTransitions = ReferenceOpaquePsoTransitions,
+            ReferenceOpaqueUniquePsos = ReferenceOpaqueUniquePsos,
+            ReferenceOpaqueOrdinaryDraws = ReferenceOpaqueOrdinaryDraws,
+            ReferenceOpaqueDecalDraws = ReferenceOpaqueDecalDraws,
+            ReferenceOpaqueGrassCutoutDraws = ReferenceOpaqueGrassCutoutDraws,
+            ReferenceOpaqueGrassDepthWriteDraws = ReferenceOpaqueGrassDepthWriteDraws,
+            ReferenceOpaqueIndirectActive = ReferenceOpaqueIndirectActive,
+            ReferenceOpaqueDirectDraws = ReferenceOpaqueDirectDraws,
+            ReferenceOpaqueIndirectDraws = ReferenceOpaqueIndirectDraws,
+            ReferenceOpaqueIndirectExecuteCalls = ReferenceOpaqueIndirectExecuteCalls,
+            ReferenceOpaqueIndirectArgumentBytes = ReferenceOpaqueIndirectArgumentBytes,
+            ReferenceOpaqueIndirectFallbackReason = ReferenceOpaqueIndirectFallbackReason,
+            ReferenceOpaqueFrontToBackActive = ReferenceOpaqueFrontToBackActive,
+            ReferenceOpaqueFrontToBackBatches = ReferenceOpaqueFrontToBackBatches,
+            ReferenceOpaqueFrontToBackInstances = ReferenceOpaqueFrontToBackInstances,
+            ReferenceOpaqueFrontToBackFallbackReason = ReferenceOpaqueFrontToBackFallbackReason,
+            ReferenceModernStandardShaderActive = ReferenceModernStandardShaderActive,
+            ReferenceModernStandardBatches = ReferenceModernStandardBatches,
+            ReferenceModernStandardInstances = ReferenceModernStandardInstances,
+            ReferenceStaticOpaquePacketActive = ReferenceStaticOpaquePacketActive,
+            ReferenceStaticOpaquePacketHit = ReferenceStaticOpaquePacketHit,
+            ReferenceStaticOpaquePacketBatches = ReferenceStaticOpaquePacketBatches,
+            ReferenceStaticOpaquePacketInstances = ReferenceStaticOpaquePacketInstances,
+            ReferenceStaticOpaquePacketRuns = ReferenceStaticOpaquePacketRuns,
+            ReferenceStaticOpaquePacketBytes = ReferenceStaticOpaquePacketBytes,
+            ReferenceStaticOpaquePacketBuildMilliseconds = ReferenceStaticOpaquePacketBuildMilliseconds,
+            ReferenceStaticOpaquePacketSavedMatrixBytes = ReferenceStaticOpaquePacketSavedMatrixBytes,
+            ReferenceStaticOpaquePacketSavedConstantBytes = ReferenceStaticOpaquePacketSavedConstantBytes,
+            ReferenceStaticOpaquePacketSavedArgumentBytes = ReferenceStaticOpaquePacketSavedArgumentBytes,
+            ReferenceStaticOpaquePacketFallbackReason = ReferenceStaticOpaquePacketFallbackReason,
             ReferenceBlendedDraws = ReferenceBlendedDraws,
             ReferenceFnvSls1009Draws = ReferenceFnvSls1009Draws,
             ReferenceFnvSls1009Instances = ReferenceFnvSls1009Instances,
             ReferenceFnvSls1013Draws = ReferenceFnvSls1013Draws,
             ReferenceFnvSls1013Instances = ReferenceFnvSls1013Instances,
             ReferencePlacedLightCount = ReferencePlacedLightCount,
+            ReferencePlacedLightTileBuildMilliseconds = ReferencePlacedLightTileBuildMilliseconds,
+            ReferencePlacedLightTileCount = ReferencePlacedLightTileCount,
+            ReferencePlacedLightTileUploadBytes = ReferencePlacedLightTileUploadBytes,
+            ReferencePlacedLightTileAverageLights = ReferencePlacedLightTileAverageLights,
+            ReferencePlacedLightTileMaxLights = ReferencePlacedLightTileMaxLights,
+            ReferencePlacedLightTileEmptyPercent = ReferencePlacedLightTileEmptyPercent,
+            ReferencePlacedLightTileFallbackReason = ReferencePlacedLightTileFallbackReason,
             ReferenceFnvClassicBasicLightingEnabled = ReferenceFnvClassicBasicLightingEnabled,
             ReferenceFnvClassicBasicFallbackDraws = ReferenceFnvClassicBasicFallbackDraws,
             ReferenceFnvClassicBasicFallbackInstances = ReferenceFnvClassicBasicFallbackInstances,
@@ -543,7 +745,14 @@ internal sealed class WorldRenderStats
             ReferenceTallGrassTemporalPhaseRadiansMaximum = ReferenceTallGrassTemporalPhaseRadiansMaximum,
             ReferenceStateSetupMilliseconds = ReferenceStateSetupMilliseconds,
             ReferenceCullMilliseconds = ReferenceCullMilliseconds,
-            ReferenceMeshUploadMilliseconds = ReferenceMeshUploadMilliseconds,
+            ReferenceBatchBuildMilliseconds = ReferenceBatchBuildMilliseconds,
+            ReferenceMeshResolveMilliseconds = ReferenceMeshResolveMilliseconds,
+            ReferenceInstanceBucketingMilliseconds = ReferenceInstanceBucketingMilliseconds,
+            ReferenceBatchFinalizeMilliseconds = ReferenceBatchFinalizeMilliseconds,
+            ReferenceGpuUploadMilliseconds = ReferenceGpuUploadMilliseconds,
+            ReferenceBlendedRefreshMilliseconds = ReferenceBlendedRefreshMilliseconds,
+            ReferenceOpaqueSubmissionMilliseconds = ReferenceOpaqueSubmissionMilliseconds,
+            ReferenceBlendedSubmissionMilliseconds = ReferenceBlendedSubmissionMilliseconds,
             ReferenceCbUpdateMilliseconds = ReferenceCbUpdateMilliseconds,
             ReferenceSrvBindMilliseconds = ReferenceSrvBindMilliseconds,
             ReferenceDrawCallMilliseconds = ReferenceDrawCallMilliseconds

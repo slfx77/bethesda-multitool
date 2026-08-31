@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Reflection;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
@@ -156,6 +157,24 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         ushort damage = 0;
         Dictionary<string, object?>? visualProps = null;
         Dictionary<string, object?>? relatedWater = null;
+        StarfieldWaterDnam? starfieldDnam = null;
+        StarfieldWaterFlags? starfieldFlags = null;
+        StarfieldWaterUnusedGnam? starfieldGnam = null;
+        (float X, float Y, float Z)? starfieldLinearVelocity = null;
+        (float X, float Y, float Z)? starfieldAngularVelocity = null;
+        uint? starfieldRiverAbsorptionCurve = null;
+        uint? starfieldOceanAbsorptionCurve = null;
+        uint? starfieldRiverScatteringCurve = null;
+        uint? starfieldOceanScatteringCurve = null;
+        uint? starfieldPhytoplanktonCurve = null;
+        uint? starfieldSedimentCurve = null;
+        uint? starfieldYellowMatterCurve = null;
+        var starfieldSeenSubrecords = Context.Game == BethesdaGame.Starfield
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : null;
+        var starfieldVisualMalformed = Context.Game == BethesdaGame.Starfield &&
+                                       (record.IsBigEndian ||
+                                        !HasCompleteLittleEndianSubrecordLayout(data, dataSize));
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -207,6 +226,18 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 {
                     waterFlags = new byte[sub.DataLength];
                     subData.CopyTo(waterFlags);
+                    if (Context.Game == BethesdaGame.Starfield)
+                    {
+                        if (sub.DataLength != 1 || !starfieldSeenSubrecords!.Add("FNAM"))
+                        {
+                            starfieldVisualMalformed = true;
+                        }
+                        else
+                        {
+                            starfieldFlags = (StarfieldWaterFlags)subData[0];
+                        }
+                    }
+
                     break;
                 }
                 case "SNAM" when sub.DataLength == 4:
@@ -247,6 +278,24 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
                     break;
                 }
+                // Starfield WATR DNAM (xEdit wbDefinitionsSF1): exact 152-byte little-endian CE2
+                // optical/displacement/noise payload. It does not contain classic shallow/deep
+                // surface colors, so retain it only as typed authored data; rendering policy remains
+                // the existing flat fallback until a separately grounded approximation is added.
+                case "DNAM" when Context.Game == BethesdaGame.Starfield:
+                {
+                    if (!starfieldSeenSubrecords!.Add("DNAM") ||
+                        TryReadStarfieldWaterDnam(subData, record.IsBigEndian) is not { } decoded)
+                    {
+                        starfieldVisualMalformed = true;
+                    }
+                    else
+                    {
+                        starfieldDnam = decoded;
+                    }
+
+                    break;
+                }
                 // Skyrim WATR DNAM (xEdit wbDefinitionsTES5): a longer struct (~228 bytes LE / 232 SSE)
                 // whose colors are shifted +4 vs FNV (an extra float at +28) and which adds Skyrim-specific
                 // specular/noise fields. Game-gated because its length (≠196) and layout differ from FNV's
@@ -267,17 +316,19 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DNAM" when Context.Game == BethesdaGame.Fallout4 && sub.DataLength >= 200:
                     visualProps = ReadFallout4WaterData(subData, record.IsBigEndian);
                     break;
-                // FO76 preserves FO4's Creation-era fog/physical/specular prefix through byte 107,
-                // then ends after a shorter game-specific tail (148 bytes in current retail records).
-                // Its shipped Shaders012.fxp Water group retains the FO4 lighting architecture, so
-                // surface exactly the shared fields without reading FO4's absent noise/silt tail.
-                case "DNAM" when Context.Game == BethesdaGame.Fallout76 && sub.DataLength >= 108:
+                // FO76's retail 148-byte DNAM is NOT a short FO4 prefix. It replaces FO4's two
+                // packed byte colors with float RGB payloads: opacity/transmission at
+                // +4 and base color at +16. Reading it as FO4 turns many shipped waters black (and
+                // some into arbitrary colors made from float bytes). Exact-size gate this recovered
+                // layout; malformed or future variants remain unresolved instead of being guessed.
+                case "DNAM" when Context.Game == BethesdaGame.Fallout76 &&
+                                      !record.IsBigEndian && sub.DataLength == 148:
                     visualProps = ReadFallout76WaterData(subData, record.IsBigEndian);
                     break;
                 // Skyrim's active set and FO4/FO76's only set ship as NAM2/NAM3/NAM4 zstrings
                 // (layer 1 first). Surface layer 1 as the compatibility noise texture, stripping
                 // the "data\" prefix authors use so the cache resolves it normally. The profile
-                // flag deliberately excludes Starfield: its WATR layout is unverified.
+                // flag deliberately excludes Starfield: CE2 WATR has no NAM2/NAM3/NAM4 paths.
                 case "NAM2" or "NAM3" or "NAM4"
                     when GameProfiles.For(Context.Game).HasVerifiedModernWatrLayout:
                 {
@@ -293,11 +344,87 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
                     break;
                 }
-                case "DNAM" when sub.DataLength == 196:
+                // The 196-byte schema is the classic FO3/FNV layout. Game-gate it so an unknown
+                // future FO76/Starfield payload with the same size cannot silently fall through to
+                // a physically unrelated decoder after failing its own exact layout gate above.
+                case "DNAM" when
+                    (Context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas) &&
+                    sub.DataLength == 196:
                 {
                     if (SubrecordSchemaView.TryRead("DNAM", "WATR", subData, record.IsBigEndian) is { } v)
                     {
                         visualProps = v.Raw;
+                    }
+
+                    break;
+                }
+                // Starfield follows DNAM with an unused 12-byte GNAM plus NAM0/NAM1 velocity
+                // vectors. Preserve GNAM as raw little-endian dwords rather than assigning the
+                // float-vector semantics xEdit reserves for NAM0/NAM1.
+                case "GNAM" when Context.Game == BethesdaGame.Starfield:
+                {
+                    if (!starfieldSeenSubrecords!.Add("GNAM") ||
+                        TryReadStarfieldWaterGnam(subData, record.IsBigEndian) is not { } gnam)
+                    {
+                        starfieldVisualMalformed = true;
+                    }
+                    else
+                    {
+                        starfieldGnam = gnam;
+                    }
+
+                    break;
+                }
+                case "NAM0" when Context.Game == BethesdaGame.Starfield:
+                {
+                    if (!starfieldSeenSubrecords!.Add("NAM0") ||
+                        TryReadStarfieldWaterVector(subData, record.IsBigEndian) is not { } vector)
+                    {
+                        starfieldVisualMalformed = true;
+                    }
+                    else
+                    {
+                        starfieldLinearVelocity = vector;
+                    }
+
+                    break;
+                }
+                case "NAM1" when Context.Game == BethesdaGame.Starfield:
+                {
+                    if (!starfieldSeenSubrecords!.Add("NAM1") ||
+                        TryReadStarfieldWaterVector(subData, record.IsBigEndian) is not { } vector)
+                    {
+                        starfieldVisualMalformed = true;
+                    }
+                    else
+                    {
+                        starfieldAngularVelocity = vector;
+                    }
+
+                    break;
+                }
+                // Seven optional CUR3 references from the Starfield WATR schema. A present field is
+                // exact-size only; malformed or duplicate input invalidates the typed envelope.
+                case "ENAM" or "HNAM" or "JNAM" or "LNAM" or "MNAM" or "QNAM" or "UNAM"
+                    when Context.Game == BethesdaGame.Starfield:
+                {
+                    if (sub.DataLength != sizeof(uint) || !starfieldSeenSubrecords!.Add(sub.Signature))
+                    {
+                        starfieldVisualMalformed = true;
+                        break;
+                    }
+
+                    var rawFormId = RecordParserContext.ReadFormId(subData, false);
+                    uint? curveFormId = rawFormId == 0 ? null : rawFormId;
+                    switch (sub.Signature)
+                    {
+                        case "ENAM": starfieldRiverAbsorptionCurve = curveFormId; break;
+                        case "HNAM": starfieldOceanAbsorptionCurve = curveFormId; break;
+                        case "JNAM": starfieldRiverScatteringCurve = curveFormId; break;
+                        case "LNAM": starfieldOceanScatteringCurve = curveFormId; break;
+                        case "MNAM": starfieldPhytoplanktonCurve = curveFormId; break;
+                        case "QNAM": starfieldSedimentCurve = curveFormId; break;
+                        case "UNAM": starfieldYellowMatterCurve = curveFormId; break;
                     }
 
                     break;
@@ -320,6 +447,31 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         {
             normalTextures.AddRange(legacyNormalTextures);
             noiseTexture = normalTextures[0];
+        }
+
+        if (Context.Game == BethesdaGame.Starfield &&
+            !starfieldVisualMalformed &&
+            starfieldDnam is not null &&
+            starfieldFlags is { } decodedStarfieldFlags)
+        {
+            visualProps = new Dictionary<string, object?>
+            {
+                ["StarfieldVisualData"] = new StarfieldWaterVisualData
+                {
+                    Dnam = starfieldDnam,
+                    Flags = decodedStarfieldFlags,
+                    Gnam = starfieldGnam,
+                    LinearVelocity = starfieldLinearVelocity,
+                    AngularVelocity = starfieldAngularVelocity,
+                    RiverAbsorptionCurveFormId = starfieldRiverAbsorptionCurve,
+                    OceanAbsorptionCurveFormId = starfieldOceanAbsorptionCurve,
+                    RiverScatteringCurveFormId = starfieldRiverScatteringCurve,
+                    OceanScatteringCurveFormId = starfieldOceanScatteringCurve,
+                    PhytoplanktonCurveFormId = starfieldPhytoplanktonCurve,
+                    SedimentCurveFormId = starfieldSedimentCurve,
+                    YellowMatterCurveFormId = starfieldYellowMatterCurve
+                }
+            };
         }
 
         return new WaterRecord
@@ -510,20 +662,260 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     /// <summary>
-    ///     FO76 WATR DNAM. Retail records are 148 bytes and preserve FO4's fog, physical, and
-    ///     specular prefix exactly through byte 107; the later FO4 noise/silt block is absent.
+    ///     Strictly decodes Starfield's exact 152-byte little-endian WATR DNAM as defined by
+    ///     xEdit's <c>wbDefinitionsSF1</c>. Every single-precision field must be finite. No range
+    ///     policy is imposed because negative fog planes and other authored values are valid CE2
+    ///     data, and no compatibility colors or shader parameters are synthesized here.
+    /// </summary>
+    internal static StarfieldWaterDnam? TryReadStarfieldWaterDnam(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        const int expectedLength = 152;
+        const int underwaterColorOffset = 32;
+        if (isBigEndian || data.Length != expectedLength) return null;
+
+        // DNAM is otherwise a dense float array. Validate every scalar first so a single NaN or
+        // infinity rejects the whole typed payload instead of leaking into later optical math.
+        for (var offset = 0; offset < expectedLength; offset += sizeof(float))
+        {
+            if (offset == underwaterColorOffset) continue;
+            if (!float.IsFinite(BinaryPrimitives.ReadSingleLittleEndian(data.Slice(offset, sizeof(float)))))
+            {
+                return null;
+            }
+        }
+
+        static float F(ReadOnlySpan<byte> source, int offset) =>
+            BinaryPrimitives.ReadSingleLittleEndian(source.Slice(offset, sizeof(float)));
+
+        return new StarfieldWaterDnam
+        {
+            DepthAmount = F(data, 0),
+            AbsorptionRanges = (F(data, 4), F(data, 8), F(data, 12)),
+            PhytoplanktonConcentration = F(data, 16),
+            SedimentConcentration = F(data, 20),
+            YellowMatterConcentration = F(data, 24),
+            Oceanness = F(data, 28),
+            UnderwaterColor = (data[32], data[33], data[34], data[35]),
+            UnderwaterFogAmount = F(data, 36),
+            UnderwaterFogNear = F(data, 40),
+            UnderwaterFogFar = F(data, 44),
+            NormalMagnitude = F(data, 48),
+            ShallowNormalFalloff = F(data, 52),
+            DeepNormalFalloff = F(data, 56),
+            SurfaceEffectFalloff = F(data, 60),
+            DisplacementForce = F(data, 64),
+            DisplacementVelocity = F(data, 68),
+            DisplacementFalloff = F(data, 72),
+            DisplacementDampener = F(data, 76),
+            DisplacementStartingSize = F(data, 80),
+            Layer1 = new StarfieldWaterNoiseLayer
+            {
+                WindDirection = F(data, 84), WindSpeed = F(data, 96),
+                AmplitudeScale = F(data, 108), UvScale = F(data, 120), NoiseFalloff = F(data, 132)
+            },
+            Layer2 = new StarfieldWaterNoiseLayer
+            {
+                WindDirection = F(data, 88), WindSpeed = F(data, 100),
+                AmplitudeScale = F(data, 112), UvScale = F(data, 124), NoiseFalloff = F(data, 136)
+            },
+            Layer3 = new StarfieldWaterNoiseLayer
+            {
+                WindDirection = F(data, 92), WindSpeed = F(data, 104),
+                AmplitudeScale = F(data, 116), UvScale = F(data, 128), NoiseFalloff = F(data, 140)
+            },
+            FlowmapScale = F(data, 144),
+            Roughness = F(data, 148)
+        };
+    }
+
+    private static StarfieldWaterUnusedGnam? TryReadStarfieldWaterGnam(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        if (isBigEndian || data.Length != 3 * sizeof(uint)) return null;
+
+        return new StarfieldWaterUnusedGnam
+        {
+            Word0 = BinaryPrimitives.ReadUInt32LittleEndian(data),
+            Word1 = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(sizeof(uint))),
+            Word2 = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(2 * sizeof(uint)))
+        };
+    }
+
+    private static (float X, float Y, float Z)? TryReadStarfieldWaterVector(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        if (isBigEndian || data.Length != 3 * sizeof(float)) return null;
+
+        var x = BinaryPrimitives.ReadSingleLittleEndian(data);
+        var y = BinaryPrimitives.ReadSingleLittleEndian(data.Slice(sizeof(float)));
+        var z = BinaryPrimitives.ReadSingleLittleEndian(data.Slice(2 * sizeof(float)));
+        return float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(z)
+            ? (x, y, z)
+            : null;
+    }
+
+    /// <summary>
+    ///     FO76 WATR DNAM (exactly 148 bytes in all 47 records in the installed retail
+    ///     SeventySix.esm audited 2026-08-30).
+    ///     The leading optical block is independently recovered by the vendored fo76utils renderer:
+    ///     depth at +0, float RGB channel opacity at +4, and float RGB base color at +16.
+    ///     The FO4-compatible physical block resumes four bytes earlier than FO4 at +32 because the
+    ///     Creation color/alpha-range block is absent. FO76 then replaces FO4's displacement/specular
+    ///     tail with five field-grouped three-layer normal vectors at +84..+140 and a terminal +144
+    ///     fingerprint. No FO4 reflection-color or sun/specular keys are projected from those bytes.
     /// </summary>
     internal static Dictionary<string, object?> ReadFallout76WaterData(ReadOnlySpan<byte> d, bool isBigEndian)
     {
-        var properties = ReadCreationWaterDataPrefix(d, isBigEndian);
-        // The retail 148-byte layout names these five trailing floats Unknown 1..5. Keep them
-        // losslessly without assigning FO4's incompatible noise-layer semantics.
-        AddOptionalCreationFloat(properties, d, "ModernUnknown1", 128, isBigEndian);
-        AddOptionalCreationFloat(properties, d, "ModernUnknown2", 132, isBigEndian);
-        AddOptionalCreationFloat(properties, d, "ModernUnknown3", 136, isBigEndian);
-        AddOptionalCreationFloat(properties, d, "ModernUnknown4", 140, isBigEndian);
-        AddOptionalCreationFloat(properties, d, "ModernUnknown5", 144, isBigEndian);
+        if (TryReadFallout76WaterVisualData(d, isBigEndian) is not { } visual) return [];
+
+        var properties = new Dictionary<string, object?>
+        {
+            ["Fallout76VisualData"] = visual,
+            ["DepthAmount"] = visual.DepthAmount,
+            // Compatibility endpoints for the existing FO4-family renderer. FO76 authors one
+            // base color plus per-channel opacity, not shallow/deep body colors, so both endpoints
+            // must be the base color. Preserve the exact float vectors separately below.
+            ["ShallowColor"] = PackNormalizedRgb(visual.BaseColor),
+            ["DeepColor"] = PackNormalizedRgb(visual.BaseColor),
+            ["Fallout76Unknown28"] = visual.Unknown28,
+            ["UnderwaterColor"] = PackRgb(visual.UnderwaterColor),
+            ["UnderwaterFogAmount"] = visual.UnderwaterFogAmount,
+            ["UnderwaterFogNear"] = visual.UnderwaterFogNear,
+            ["UnderwaterFogFar"] = visual.UnderwaterFogFar,
+            ["NormalMagnitude"] = visual.NormalMagnitude,
+            ["ShallowNormalFalloff"] = visual.ShallowNormalFalloff,
+            ["DeepNormalFalloff"] = visual.DeepNormalFalloff,
+            // Compatibility projections for the current shader. The offsets are strong structural
+            // inferences, but their FO76 SetupMaterial bindings have not yet been recovered; the
+            // typed payload keeps that qualification explicit.
+            ["ReflectivityAmount"] = visual.ReflectivityCandidate,
+            ["FresnelAmount"] = visual.FresnelCandidate,
+            ["SurfaceEffectFalloff"] = visual.SurfaceEffectFalloff,
+            ["DisplacementForce"] = visual.DisplacementForce,
+            ["DisplacementVelocity"] = visual.DisplacementVelocity,
+            ["DisplacementFalloff"] = visual.DisplacementFalloff,
+            ["NoiseLayer1WindDir"] = visual.Layer1.WindDirDegrees,
+            ["NoiseLayer2WindDir"] = visual.Layer2.WindDirDegrees,
+            ["NoiseLayer3WindDir"] = visual.Layer3.WindDirDegrees,
+            ["NoiseLayer1WindSpeed"] = visual.Layer1.WindSpeed,
+            ["NoiseLayer2WindSpeed"] = visual.Layer2.WindSpeed,
+            ["NoiseLayer3WindSpeed"] = visual.Layer3.WindSpeed,
+            ["NoiseLayer1AmpScale"] = visual.Layer1.AmpScale,
+            ["NoiseLayer2AmpScale"] = visual.Layer2.AmpScale,
+            ["NoiseLayer3AmpScale"] = visual.Layer3.AmpScale,
+            ["NoiseLayer1UVScale"] = visual.Layer1.UvScale,
+            ["NoiseLayer2UVScale"] = visual.Layer2.UvScale,
+            ["NoiseLayer3UVScale"] = visual.Layer3.UvScale,
+            ["NoiseLayer1Falloff"] = visual.Layer1.Falloff,
+            ["NoiseLayer2Falloff"] = visual.Layer2.Falloff,
+            ["NoiseLayer3Falloff"] = visual.Layer3.Falloff,
+            ["Fallout76Unknown144"] = visual.Unknown144
+        };
         return properties;
+    }
+
+    internal static Fallout76WaterVisualData? TryReadFallout76WaterVisualData(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        // FO76 has no big-endian plugin format. Treating a byte-swapped synthetic payload as this
+        // layout would hide format-detection mistakes rather than provide useful compatibility.
+        if (isBigEndian || data.Length != 148 || data[35] != 0) return null;
+
+        var depth = ReadFloat(data, 0, false);
+        var opacity = ReadNormalizedRgb(data, 4, false);
+        var baseColor = ReadNormalizedRgb(data, 16, false);
+        if (!float.IsFinite(depth) || depth <= 0f || opacity is null || baseColor is null) return null;
+
+        var layer1 = ReadFallout76NoiseLayer(data, 0);
+        var layer2 = ReadFallout76NoiseLayer(data, 1);
+        var layer3 = ReadFallout76NoiseLayer(data, 2);
+        var unknown144 = ReadFloat(data, 144, false);
+        if (layer1 is null || layer2 is null || layer3 is null ||
+            BitConverter.SingleToUInt32Bits(unknown144) != BitConverter.SingleToUInt32Bits(1f))
+        {
+            return null;
+        }
+
+        var requiredScalars = new[]
+        {
+            ReadFloat(data, 28, false), ReadFloat(data, 36, false), ReadFloat(data, 40, false),
+            ReadFloat(data, 44, false), ReadFloat(data, 48, false), ReadFloat(data, 52, false),
+            ReadFloat(data, 56, false), ReadFloat(data, 60, false), ReadFloat(data, 64, false),
+            ReadFloat(data, 68, false), ReadFloat(data, 72, false), ReadFloat(data, 76, false),
+            ReadFloat(data, 80, false)
+        };
+        if (requiredScalars.Any(value => !float.IsFinite(value))) return null;
+
+        return new Fallout76WaterVisualData(
+            depth,
+            opacity.Value,
+            baseColor.Value,
+            requiredScalars[0],
+            (data[32], data[33], data[34]),
+            requiredScalars[1],
+            requiredScalars[2],
+            requiredScalars[3],
+            requiredScalars[4],
+            requiredScalars[5],
+            requiredScalars[6],
+            requiredScalars[7],
+            requiredScalars[8],
+            requiredScalars[9],
+            requiredScalars[10],
+            requiredScalars[11],
+            requiredScalars[12],
+            layer1.Value,
+            layer2.Value,
+            layer3.Value,
+            unknown144);
+    }
+
+    private static WaterNoiseLayer? ReadFallout76NoiseLayer(ReadOnlySpan<byte> data, int layer)
+    {
+        var direction = ReadFloat(data, 84 + (layer * sizeof(float)), false);
+        var speed = ReadFloat(data, 96 + (layer * sizeof(float)), false);
+        var amplitude = ReadFloat(data, 108 + (layer * sizeof(float)), false);
+        var uvScale = ReadFloat(data, 120 + (layer * sizeof(float)), false);
+        var falloff = ReadFloat(data, 132 + (layer * sizeof(float)), false);
+        return float.IsFinite(direction) && direction is >= 0f and <= 360f &&
+               float.IsFinite(speed) && speed >= 0f &&
+               float.IsFinite(amplitude) && amplitude >= 0f &&
+               float.IsFinite(uvScale) && uvScale >= 0f &&
+               float.IsFinite(falloff) && falloff >= 0f
+            ? new WaterNoiseLayer(uvScale, direction, speed, amplitude, falloff)
+            : null;
+    }
+
+    private static (float R, float G, float B)? ReadNormalizedRgb(
+        ReadOnlySpan<byte> data,
+        int offset,
+        bool isBigEndian)
+    {
+        var r = ReadFloat(data, offset, isBigEndian);
+        var g = ReadFloat(data, offset + sizeof(float), isBigEndian);
+        var b = ReadFloat(data, offset + (2 * sizeof(float)), isBigEndian);
+        return float.IsFinite(r) && float.IsFinite(g) && float.IsFinite(b) &&
+               r is >= 0f and <= 1f && g is >= 0f and <= 1f && b is >= 0f and <= 1f
+            ? (r, g, b)
+            : null;
+    }
+
+    private static uint PackNormalizedRgb((float R, float G, float B) color)
+    {
+        static byte ToByte(float value) =>
+            (byte)Math.Clamp((int)MathF.Round(value * byte.MaxValue), byte.MinValue, byte.MaxValue);
+
+        return (uint)(ToByte(color.R) | (ToByte(color.G) << 8) | (ToByte(color.B) << 16));
+    }
+
+    private static uint PackRgb((byte R, byte G, byte B) color)
+    {
+        return (uint)(color.R | (color.G << 8) | (color.B << 16));
     }
 
     private static Dictionary<string, object?> ReadCreationWaterDataPrefix(
@@ -640,6 +1032,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         WeatherColor? sunGlareColor = null;
         WeatherColor? moonGlareColor = null;
         WeatherTimeBands<uint>? imageSpaceModifiers = null;
+        WeatherTimeBands<uint>? volumetricLightingFormIds = null;
         // Nullable slots preserve the distinction between an absent optional band (FO3 only
         // authors 00IAD..03IAD) and an explicitly authored null FormID. The evaluator falls back
         // from an absent HighNoon band to Day, while an authored zero retains the engine's neutral
@@ -763,6 +1156,12 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DALC" when sub.DataLength >= 24:
                     (directionalAmbientBands ??= []).Add(ReadDirectionalAmbientCube(subData, record.IsBigEndian));
                     break;
+                // FO76's WTHR HNAM is eight ordered VOLI FormIDs. This must remain game-scoped:
+                // Oblivion uses the same signature for an unrelated 14-float HDR structure. The audited
+                // retail SeventySix.esm carries one exact 32-byte HNAM on every one of its 121 WTHRs.
+                case "HNAM" when Context.Game == BethesdaGame.Fallout76 && sub.DataLength == 32:
+                    volumetricLightingFormIds = ReadWeatherImageSpaces(subData, record.IsBigEndian, 8);
+                    break;
                 // Oblivion carries its HDR settings on each WTHR, not in IMGS.
                 case "HNAM" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 56:
                     weatherHdr = ReadWeatherHdr(subData, record.IsBigEndian);
@@ -830,6 +1229,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ImageSpaceModifier = imageSpaceModifiers is { Day: not 0 } ? imageSpaceModifiers.Day : null,
             ImageSpaceModifiers = imageSpaceModifiers,
+            VolumetricLightingFormIds = volumetricLightingFormIds,
             Sounds = sounds,
             // Present cloud layers in source-index order. The texture list remains dense for the sky-dome
             // shape walk, but retain every original sparse index so QNAM/RNAM/PNAM/JNAM use their authored
@@ -1508,6 +1908,1730 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     #endregion
 
+    #region Fallout 76 Volumetric Lighting
+
+    /// <summary>
+    ///     Parse Fallout 76's classic VOLI schema. Starfield reuses the signature for a reflected
+    ///     object, so this path is game-gated and publishes to a separate typed collection.
+    /// </summary>
+    internal List<Fallout76VolumetricLightingRecord> ParseFallout76VolumetricLightingSettings()
+    {
+        if (Context.Game != BethesdaGame.Fallout76)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "VOLI",
+            256,
+            ParseFallout76VolumetricLightingFromAccessor,
+            record => CreateFallout76VolumetricLightingFailure(
+                record,
+                "Fallout 76 VOLI bytes are unavailable without record-byte access."));
+    }
+
+    private Fallout76VolumetricLightingRecord ParseFallout76VolumetricLightingFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return CreateFallout76VolumetricLightingFailure(
+                record,
+                "Fallout 76 VOLI record bytes could not be read.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        var editorIdPrefix = CaptureFallout76VolumetricLightingEditorIdPrefix(
+            data, dataSize, record.IsBigEndian);
+        if (!string.IsNullOrWhiteSpace(editorIdPrefix))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorIdPrefix;
+        }
+
+        if (record.IsBigEndian)
+        {
+            return CreateFallout76VolumetricLightingFailure(
+                record,
+                "Fallout 76's classic VOLI schema is supported only in little-endian records.",
+                editorIdPrefix);
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreateFallout76VolumetricLightingFailure(
+                record,
+                "Fallout 76 VOLI decoding rejects non-contiguous or partially recovered record bytes.",
+                editorIdPrefix);
+        }
+
+        if (!TryDecodeFallout76VolumetricLighting(
+                data.AsSpan(0, dataSize), out var editorId, out var settings, out var failure))
+        {
+            return CreateFallout76VolumetricLightingFailure(
+                record,
+                failure ?? "Fallout 76 VOLI schema validation failed.",
+                editorId ?? editorIdPrefix);
+        }
+
+        Context.FormIdToEditorId[record.FormId] = editorId!;
+        return new Fallout76VolumetricLightingRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            Settings = settings,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static bool TryDecodeFallout76VolumetricLighting(
+        ReadOnlySpan<byte> data,
+        out string? editorId,
+        out Fallout76VolumetricLightingSettings? settings,
+        out string? failure)
+    {
+        editorId = null;
+        settings = null;
+        failure = null;
+
+        var fields = new List<(string Signature, int DataOffset, int DataLength)>(13);
+        var offset = 0;
+        while (offset < data.Length)
+        {
+            if (offset > data.Length - EsmSubrecordUtils.SubrecordHeaderSize)
+            {
+                failure = "Fallout 76 VOLI has a truncated subrecord header.";
+                return false;
+            }
+
+            var signature = System.Text.Encoding.ASCII.GetString(
+                data.Slice(offset, sizeof(uint)));
+            var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
+            offset += EsmSubrecordUtils.SubrecordHeaderSize;
+
+            // No retail field needs XXXX: EDID is at most 49 bytes and every numeric field is four.
+            // Rejecting it keeps this decoder pinned to the audited classic schema rather than accepting
+            // an alternate envelope which has not been observed in any of the 212 retail records.
+            if (signature == "XXXX")
+            {
+                failure = "Fallout 76 VOLI does not permit an XXXX extended-length subrecord.";
+                return false;
+            }
+
+            if (dataLength > data.Length - offset)
+            {
+                failure = $"Fallout 76 VOLI {signature} extends past the record boundary.";
+                return false;
+            }
+
+            fields.Add((signature, offset, dataLength));
+            offset += dataLength;
+        }
+
+        if (fields.Count is not 12 and not 13)
+        {
+            failure =
+                $"Fallout 76 VOLI requires 12 fields, or 13 when optional LNAM is present; found {fields.Count}.";
+            return false;
+        }
+
+        var requiredPrefix = new[]
+        {
+            "EDID", "CNAM", "DNAM", "ENAM", "FNAM", "GNAM", "HNAM", "INAM", "JNAM", "KNAM"
+        };
+        for (var index = 0; index < requiredPrefix.Length; index++)
+        {
+            if (fields[index].Signature != requiredPrefix[index])
+            {
+                failure =
+                    $"Fallout 76 VOLI expected {requiredPrefix[index]} at field {index}; " +
+                    $"found {fields[index].Signature}.";
+                return false;
+            }
+        }
+
+        var tailIndex = requiredPrefix.Length;
+        var hasPhaseContribution = fields[tailIndex].Signature == "LNAM";
+        if (hasPhaseContribution)
+        {
+            tailIndex++;
+        }
+
+        if (tailIndex + 2 != fields.Count ||
+            fields[tailIndex].Signature != "MNAM" ||
+            fields[tailIndex + 1].Signature != "NNAM")
+        {
+            failure =
+                "Fallout 76 VOLI requires optional LNAM followed by exactly MNAM and NNAM.";
+            return false;
+        }
+
+        var edidField = fields[0];
+        var edidBytes = data.Slice(edidField.DataOffset, edidField.DataLength);
+        if (edidBytes.Length < 2 || edidBytes[^1] != 0 || edidBytes[..^1].IndexOf((byte)0) >= 0)
+        {
+            failure = "Fallout 76 VOLI EDID must be one non-empty null-terminated string.";
+            return false;
+        }
+
+        editorId = EsmStringUtils.DecodeGameText(edidBytes[..^1]);
+        if (string.IsNullOrWhiteSpace(editorId))
+        {
+            failure = "Fallout 76 VOLI EDID is empty.";
+            return false;
+        }
+
+        var decodedFloats = new Dictionary<string, float>(StringComparer.Ordinal);
+        for (var index = 1; index < fields.Count; index++)
+        {
+            var field = fields[index];
+            if (field.DataLength != sizeof(float))
+            {
+                failure =
+                    $"Fallout 76 VOLI {field.Signature} must be exactly four bytes; " +
+                    $"found {field.DataLength}.";
+                return false;
+            }
+
+            var value = BinaryPrimitives.ReadSingleLittleEndian(data[field.DataOffset..]);
+            if (!float.IsFinite(value))
+            {
+                failure = $"Fallout 76 VOLI {field.Signature} is non-finite.";
+                return false;
+            }
+
+            decodedFloats[field.Signature] = value;
+        }
+
+        settings = new Fallout76VolumetricLightingSettings
+        {
+            Intensity = decodedFloats["CNAM"],
+            CustomColorContribution = decodedFloats["DNAM"],
+            ColorRed = decodedFloats["ENAM"],
+            ColorGreen = decodedFloats["FNAM"],
+            ColorBlue = decodedFloats["GNAM"],
+            DensityContribution = decodedFloats["HNAM"],
+            DensitySize = decodedFloats["INAM"],
+            DensityWindSpeed = decodedFloats["JNAM"],
+            DensityFallingSpeed = decodedFloats["KNAM"],
+            PhaseFunctionContribution = hasPhaseContribution ? decodedFloats["LNAM"] : null,
+            PhaseFunctionScattering = decodedFloats["MNAM"],
+            SamplingRepartitionRangeFactor = decodedFloats["NNAM"]
+        };
+        return true;
+    }
+
+    private static string? CaptureFallout76VolumetricLightingEditorIdPrefix(
+        byte[] data,
+        int dataSize,
+        bool isBigEndian)
+    {
+        if (dataSize < EsmSubrecordUtils.SubrecordHeaderSize || dataSize > data.Length)
+        {
+            return null;
+        }
+
+        var signature = data.AsSpan(0, sizeof(uint));
+        if (!(isBigEndian ? signature.SequenceEqual("DIDE"u8) : signature.SequenceEqual("EDID"u8)))
+        {
+            return null;
+        }
+
+        var length = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(sizeof(uint)))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(sizeof(uint)));
+        if (length < 2 || EsmSubrecordUtils.SubrecordHeaderSize + length > dataSize)
+        {
+            return null;
+        }
+
+        var payload = data.AsSpan(EsmSubrecordUtils.SubrecordHeaderSize, length);
+        return payload[^1] == 0 && payload[..^1].IndexOf((byte)0) < 0
+            ? EsmStringUtils.DecodeGameText(payload[..^1])
+            : null;
+    }
+
+    private Fallout76VolumetricLightingRecord CreateFallout76VolumetricLightingFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null)
+    {
+        return new Fallout76VolumetricLightingRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield Weather Settings
+
+    /// <summary>
+    ///     Parse Starfield Creation Engine 2 Weather Settings (WTHS). These reflected records are
+    ///     deliberately kept separate from legacy WTHR records: CLMT WSLT entries reference WTHS,
+    ///     and substituting a WTHR would silently select the wrong atmosphere architecture.
+    /// </summary>
+    internal List<StarfieldWeatherSettingsRecord> ParseStarfieldWeatherSettings()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList("WTHS", 4096,
+            ParseStarfieldWeatherSettingsFromAccessor,
+            record => CreateWeatherSettingsFailure(
+                record,
+                "WTHS reflection payload is unavailable without record-byte access."));
+    }
+
+    private StarfieldWeatherSettingsRecord ParseStarfieldWeatherSettingsFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        if (record.IsBigEndian)
+        {
+            return CreateWeatherSettingsFailure(
+                record,
+                "Starfield WTHS reflection streams are supported only in little-endian records.");
+        }
+
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return CreateWeatherSettingsFailure(record, "WTHS record bytes could not be read.");
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreateWeatherSettingsFailure(
+                record,
+                "WTHS reflection decoding rejects non-contiguous or partially recovered record bytes.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        if (!HasCompleteLittleEndianSubrecordLayout(data, dataSize))
+        {
+            return CreateWeatherSettingsFailure(
+                record,
+                "WTHS has a truncated or malformed outer subrecord layout.");
+        }
+
+        string? editorId = null;
+        byte[]? fullPayload = null;
+        byte[]? diffPayload = null;
+        uint? outerParentFormId = null;
+        string? structuralFailure = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, false))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "RFDP":
+                    if (outerParentFormId.HasValue || sub.DataLength != sizeof(uint))
+                    {
+                        structuralFailure ??= "WTHS has a duplicate or malformed RFDP parent.";
+                    }
+                    else
+                    {
+                        outerParentFormId = BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    }
+
+                    break;
+                case "REFL":
+                    if (fullPayload != null)
+                    {
+                        structuralFailure ??= "WTHS has duplicate REFL payloads.";
+                    }
+                    else
+                    {
+                        fullPayload = subData.ToArray();
+                    }
+
+                    break;
+                case "RDIF":
+                    if (diffPayload != null)
+                    {
+                        structuralFailure ??= "WTHS has duplicate RDIF payloads.";
+                    }
+                    else
+                    {
+                        diffPayload = subData.ToArray();
+                    }
+
+                    break;
+                default:
+                    NoteUnmodeledSubrecord("WTHS", sub.Signature, sub.DataLength);
+                    break;
+            }
+        }
+
+        var payloadKind = (fullPayload, diffPayload) switch
+        {
+            (not null, null) => StarfieldWeatherSettingsPayloadKind.FullObject,
+            (null, not null) => StarfieldWeatherSettingsPayloadKind.Diff,
+            _ => StarfieldWeatherSettingsPayloadKind.Unknown
+        };
+        if (structuralFailure == null)
+        {
+            if ((fullPayload == null) == (diffPayload == null))
+            {
+                structuralFailure = "WTHS must contain exactly one REFL or RDIF payload.";
+            }
+            else if (fullPayload != null && outerParentFormId.HasValue)
+            {
+                structuralFailure = "A root WTHS REFL payload must not carry RFDP.";
+            }
+            else if (diffPayload != null && (!outerParentFormId.HasValue || outerParentFormId.Value == 0))
+            {
+                structuralFailure = "A WTHS RDIF payload requires a non-zero RFDP parent.";
+            }
+        }
+
+        StarfieldWeatherSettingsPatch? patch = null;
+        if (structuralFailure == null)
+        {
+            var reflectionPayload = fullPayload ?? diffPayload!;
+            if (!StarfieldWeatherSettingsDecoder.TryDecode(
+                    reflectionPayload, payloadKind, out patch, out structuralFailure))
+            {
+                structuralFailure ??= "WTHS reflection decoding failed.";
+            }
+            else if (payloadKind == StarfieldWeatherSettingsPayloadKind.FullObject &&
+                     patch!.ParentFormId != 0)
+            {
+                structuralFailure = "A root WTHS REFL payload must declare a null pParent.";
+                patch = null;
+            }
+            else if (payloadKind == StarfieldWeatherSettingsPayloadKind.Diff &&
+                     patch!.ParentFormId.HasValue &&
+                     patch.ParentFormId.Value != outerParentFormId!.Value)
+            {
+                structuralFailure = "WTHS RFDP disagrees with the reflected pParent field.";
+                patch = null;
+            }
+        }
+
+        return new StarfieldWeatherSettingsRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ParentFormId = outerParentFormId,
+            PayloadKind = payloadKind,
+            Patch = structuralFailure == null ? patch : null,
+            DecodeFailure = structuralFailure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private StarfieldWeatherSettingsRecord CreateWeatherSettingsFailure(
+        DetectedMainRecord record,
+        string failure)
+    {
+        return new StarfieldWeatherSettingsRecord
+        {
+            FormId = record.FormId,
+            EditorId = Context.GetEditorId(record.FormId),
+            PayloadKind = StarfieldWeatherSettingsPayloadKind.Unknown,
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static bool HasCompleteLittleEndianSubrecordLayout(byte[] data, int dataSize)
+    {
+        const uint extendedLengthSignature = 0x58585858; // XXXX
+        if (dataSize < 0 || dataSize > data.Length)
+        {
+            return false;
+        }
+
+        var offset = 0;
+        uint? pendingExtendedLength = null;
+        while (offset < dataSize)
+        {
+            if (offset > dataSize - EsmSubrecordUtils.SubrecordHeaderSize)
+            {
+                return false;
+            }
+
+            var signature = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset));
+            var shortLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset + 4));
+            if (signature == extendedLengthSignature)
+            {
+                if (pendingExtendedLength.HasValue || shortLength != sizeof(uint) ||
+                    offset > dataSize - EsmSubrecordUtils.SubrecordHeaderSize - sizeof(uint))
+                {
+                    return false;
+                }
+
+                pendingExtendedLength = BinaryPrimitives.ReadUInt32LittleEndian(
+                    data.AsSpan(offset + EsmSubrecordUtils.SubrecordHeaderSize));
+                offset += EsmSubrecordUtils.SubrecordHeaderSize + sizeof(uint);
+                continue;
+            }
+
+            if (pendingExtendedLength.HasValue && shortLength != 0)
+            {
+                return false;
+            }
+
+            var payloadLength = pendingExtendedLength ?? shortLength;
+            pendingExtendedLength = null;
+            var remaining = (long)dataSize - offset - EsmSubrecordUtils.SubrecordHeaderSize;
+            if (payloadLength > remaining)
+            {
+                return false;
+            }
+
+            offset += EsmSubrecordUtils.SubrecordHeaderSize + checked((int)payloadLength);
+        }
+
+        return offset == dataSize && !pendingExtendedLength.HasValue;
+    }
+
+    #endregion
+
+    #region Starfield Atmospheres
+
+    /// <summary>
+    ///     Parses the bounded Starfield ATMO structural contract. Retail records are exactly one
+    ///     non-empty EDID followed by either a full REFL root, or a non-zero RFDP followed by RDIF.
+    ///     Malformed records remain in the result as failure envelopes so a later load-order override
+    ///     cannot silently expose an earlier valid definition.
+    /// </summary>
+    internal List<StarfieldAtmosphereRecord> ParseStarfieldAtmospheres()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "ATMO",
+            4096,
+            ParseStarfieldAtmosphereFromAccessor,
+            record => CreateAtmosphereFailure(
+                record,
+                "ATMO reflection payload is unavailable without record-byte access."));
+    }
+
+    private StarfieldAtmosphereRecord ParseStarfieldAtmosphereFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return CreateAtmosphereFailure(record, "ATMO record bytes could not be read.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        var editorIdPrefix = CaptureStarfieldAtmosphereEditorIdPrefix(
+            data, dataSize, record.IsBigEndian);
+        if (!string.IsNullOrWhiteSpace(editorIdPrefix))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorIdPrefix;
+        }
+
+        if (record.IsBigEndian)
+        {
+            return CreateAtmosphereFailure(
+                record,
+                "Starfield ATMO reflection streams are supported only in little-endian records.",
+                editorIdPrefix);
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreateAtmosphereFailure(
+                record,
+                "ATMO reflection decoding rejects non-contiguous or partially recovered record bytes.",
+                editorIdPrefix);
+        }
+
+        if (!TryReadStarfieldAtmosphereEnvelope(
+                data.AsSpan(0, dataSize),
+                out var editorId,
+                out var parentFormId,
+                out var payloadKind,
+                out var reflectionPayload,
+                out var failure))
+        {
+            return CreateAtmosphereFailure(
+                record,
+                failure ?? "ATMO outer-record validation failed.",
+                editorId ?? editorIdPrefix,
+                parentFormId,
+                payloadKind);
+        }
+
+        Context.FormIdToEditorId[record.FormId] = editorId!;
+        if (!StarfieldAtmosphereDecoder.TryDecode(
+                reflectionPayload!, payloadKind, out var patch, out failure))
+        {
+            return CreateAtmosphereFailure(
+                record,
+                failure ?? "ATMO reflection decoding failed.",
+                editorId,
+                parentFormId,
+                payloadKind);
+        }
+
+        if (payloadKind == StarfieldAtmospherePayloadKind.FullObject && patch!.ParentFormId != 0)
+        {
+            return CreateAtmosphereFailure(
+                record,
+                "A root ATMO REFL payload must declare a null pParent.",
+                editorId,
+                parentFormId,
+                payloadKind);
+        }
+
+        if (payloadKind == StarfieldAtmospherePayloadKind.Diff &&
+            patch!.ParentFormId.HasValue &&
+            patch.ParentFormId.Value != parentFormId!.Value)
+        {
+            return CreateAtmosphereFailure(
+                record,
+                "ATMO RFDP disagrees with the reflected pParent field.",
+                editorId,
+                parentFormId,
+                payloadKind);
+        }
+
+        return new StarfieldAtmosphereRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            ParentFormId = parentFormId,
+            PayloadKind = payloadKind,
+            Patch = patch,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static bool TryReadStarfieldAtmosphereEnvelope(
+        ReadOnlySpan<byte> data,
+        out string? editorId,
+        out uint? parentFormId,
+        out StarfieldAtmospherePayloadKind payloadKind,
+        out byte[]? reflectionPayload,
+        out string? failure)
+    {
+        editorId = null;
+        parentFormId = null;
+        payloadKind = StarfieldAtmospherePayloadKind.Unknown;
+        reflectionPayload = null;
+        failure = null;
+
+        var fields = new List<(string Signature, int DataOffset, int DataLength)>(3);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var offset = 0;
+        while (offset < data.Length)
+        {
+            if (offset > data.Length - EsmSubrecordUtils.SubrecordHeaderSize)
+            {
+                failure = "ATMO has a truncated subrecord header.";
+                return false;
+            }
+
+            var signature = System.Text.Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
+            var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
+            offset += EsmSubrecordUtils.SubrecordHeaderSize;
+
+            // None of the audited 594 retail ATMO records uses XXXX. Rejecting an alternate outer
+            // representation keeps the structural contract evidence-bounded.
+            if (signature == "XXXX")
+            {
+                failure = "ATMO does not permit an XXXX extended-length subrecord.";
+                return false;
+            }
+
+            if (dataLength > data.Length - offset)
+            {
+                failure = $"ATMO {signature} extends past the record boundary.";
+                return false;
+            }
+
+            if (signature is not "EDID" and not "RFDP" and not "REFL" and not "RDIF")
+            {
+                failure = $"ATMO has unsupported outer subrecord '{signature}'.";
+                return false;
+            }
+
+            if (!seen.Add(signature))
+            {
+                failure = $"ATMO has duplicate {signature} subrecords.";
+                return false;
+            }
+
+            fields.Add((signature, offset, dataLength));
+            offset += dataLength;
+        }
+
+        if (fields.Count == 0 || fields[0].Signature != "EDID")
+        {
+            failure = "ATMO requires EDID as its first outer subrecord.";
+            return false;
+        }
+
+        var edidField = fields[0];
+        var edidBytes = data.Slice(edidField.DataOffset, edidField.DataLength);
+        if (edidBytes.Length < 2 || edidBytes[^1] != 0 || edidBytes[..^1].IndexOf((byte)0) >= 0)
+        {
+            failure = "ATMO EDID must be one non-empty null-terminated string.";
+            return false;
+        }
+
+        editorId = EsmStringUtils.DecodeGameText(edidBytes[..^1]);
+        if (string.IsNullOrWhiteSpace(editorId))
+        {
+            failure = "ATMO EDID is empty.";
+            return false;
+        }
+
+        if (fields.Count == 2 && fields[1].Signature == "REFL")
+        {
+            payloadKind = StarfieldAtmospherePayloadKind.FullObject;
+            reflectionPayload = data.Slice(fields[1].DataOffset, fields[1].DataLength).ToArray();
+            return true;
+        }
+
+        if (fields.Count == 3 && fields[1].Signature == "RFDP" && fields[2].Signature == "RDIF")
+        {
+            payloadKind = StarfieldAtmospherePayloadKind.Diff;
+            if (fields[1].DataLength != sizeof(uint))
+            {
+                failure = $"ATMO RFDP must be exactly four bytes; found {fields[1].DataLength}.";
+                return false;
+            }
+
+            parentFormId = BinaryPrimitives.ReadUInt32LittleEndian(data[fields[1].DataOffset..]);
+            if (parentFormId.Value == 0)
+            {
+                failure = "An ATMO RDIF payload requires a non-zero RFDP parent.";
+                return false;
+            }
+
+            reflectionPayload = data.Slice(fields[2].DataOffset, fields[2].DataLength).ToArray();
+            return true;
+        }
+
+        failure =
+            "ATMO outer fields must be exactly EDID+REFL or EDID+RFDP+RDIF in retail order.";
+        return false;
+    }
+
+    private static string? CaptureStarfieldAtmosphereEditorIdPrefix(
+        byte[] data,
+        int dataSize,
+        bool isBigEndian)
+    {
+        if (dataSize < EsmSubrecordUtils.SubrecordHeaderSize || dataSize > data.Length)
+        {
+            return null;
+        }
+
+        var signature = data.AsSpan(0, sizeof(uint));
+        if (!(isBigEndian ? signature.SequenceEqual("DIDE"u8) : signature.SequenceEqual("EDID"u8)))
+        {
+            return null;
+        }
+
+        var length = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(sizeof(uint)))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(sizeof(uint)));
+        if (length < 2 || EsmSubrecordUtils.SubrecordHeaderSize + length > dataSize)
+        {
+            return null;
+        }
+
+        var payload = data.AsSpan(EsmSubrecordUtils.SubrecordHeaderSize, length);
+        if (payload[^1] != 0 || payload[..^1].IndexOf((byte)0) >= 0)
+        {
+            return null;
+        }
+
+        var editorId = EsmStringUtils.DecodeGameText(payload[..^1]);
+        return string.IsNullOrWhiteSpace(editorId) ? null : editorId;
+    }
+
+    private StarfieldAtmosphereRecord CreateAtmosphereFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null,
+        uint? parentFormId = null,
+        StarfieldAtmospherePayloadKind payloadKind = StarfieldAtmospherePayloadKind.Unknown)
+    {
+        return new StarfieldAtmosphereRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ParentFormId = parentFormId,
+            PayloadKind = payloadKind,
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield Planet Data
+
+    /// <summary>
+    ///     Parses the source-backed PNDT selection subset. Physical records remain in load order so
+    ///     master CNAM and ordered EOVR deltas can be folded after plugin rebasing.
+    /// </summary>
+    internal List<StarfieldPlanetDataRecord> ParseStarfieldPlanetData()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "PNDT",
+            32768,
+            ParseStarfieldPlanetDataFromAccessor,
+            record => CreatePlanetDataFailure(
+                record,
+                "PNDT typed fields are unavailable without record-byte access."));
+    }
+
+    private StarfieldPlanetDataRecord ParseStarfieldPlanetDataFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData is null)
+        {
+            return CreatePlanetDataFailure(record, "PNDT record bytes could not be read.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreatePlanetDataFailure(
+                record,
+                "PNDT typed decoding rejects non-contiguous or partially recovered record bytes.");
+        }
+
+        StarfieldPlanetDataDecoder.TryDecode(
+            data.AsSpan(0, dataSize),
+            record.IsBigEndian,
+            out var decoded,
+            out var failure);
+        var editorId = decoded.EditorId ?? Context.GetEditorId(record.FormId);
+        if (!string.IsNullOrWhiteSpace(editorId))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorId;
+        }
+
+        return decoded with
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            DecodeFailure = failure ?? decoded.DecodeFailure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private StarfieldPlanetDataRecord CreatePlanetDataFailure(
+        DetectedMainRecord record,
+        string failure)
+    {
+        return new StarfieldPlanetDataRecord
+        {
+            FormId = record.FormId,
+            EditorId = Context.GetEditorId(record.FormId),
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield Star Data
+
+    /// <summary>
+    ///     Parses the bounded Starfield STDT routing subset. The large stellar-presentation payloads
+    ///     remain opaque; only EDID and the established DNAM/SNAM/PNAM/HNAM scalar/reference fields
+    ///     are projected. Malformed records remain as failure envelopes so a later broken override
+    ///     cannot expose an earlier valid definition.
+    /// </summary>
+    internal List<StarfieldStarDataRecord> ParseStarfieldStarData()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "STDT",
+            131072, // Audited retail maximum body is 0x185CD bytes.
+            ParseStarfieldStarDataFromAccessor,
+            record => CreateStarDataFailure(
+                record,
+                "STDT typed routing fields are unavailable without record-byte access."));
+    }
+
+    private StarfieldStarDataRecord ParseStarfieldStarDataFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData is null)
+        {
+            return CreateStarDataFailure(record, "STDT record bytes could not be read.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        var editorIdPrefix = CaptureLeadingStarfieldEditorId(
+            data, dataSize, record.IsBigEndian);
+        if (!string.IsNullOrWhiteSpace(editorIdPrefix))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorIdPrefix;
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreateStarDataFailure(
+                record,
+                "STDT typed decoding rejects non-contiguous or partially recovered record bytes.",
+                editorIdPrefix);
+        }
+
+        StarfieldStarDataDecoder.TryDecode(
+            data.AsSpan(0, dataSize),
+            record.IsBigEndian,
+            out var decoded,
+            out var failure);
+        var editorId = decoded.EditorId ?? editorIdPrefix ?? Context.GetEditorId(record.FormId);
+        if (!string.IsNullOrWhiteSpace(editorId))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorId;
+        }
+
+        return decoded with
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            DecodeFailure = failure ?? decoded.DecodeFailure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private StarfieldStarDataRecord CreateStarDataFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null)
+    {
+        return new StarfieldStarDataRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield Sun Presets
+
+    /// <summary>
+    ///     Parses the exact bounded Starfield SUNP outer contract: EDID+REFL for a full root, or
+    ///     EDID+RFDP+RDIF for an inheritance diff. The reflected decoder authenticates the complete
+    ///     four-class retail schema; no solar interpolation or lighting equation is inferred here.
+    /// </summary>
+    internal List<StarfieldSunPresetRecord> ParseStarfieldSunPresets()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "SUNP",
+            4096,
+            ParseStarfieldSunPresetFromAccessor,
+            record => CreateSunPresetFailure(
+                record,
+                "SUNP reflection payload is unavailable without record-byte access."));
+    }
+
+    private StarfieldSunPresetRecord ParseStarfieldSunPresetFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData is null)
+        {
+            return CreateSunPresetFailure(record, "SUNP record bytes could not be read.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        var editorIdPrefix = CaptureLeadingStarfieldEditorId(
+            data, dataSize, record.IsBigEndian);
+        if (!string.IsNullOrWhiteSpace(editorIdPrefix))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorIdPrefix;
+        }
+
+        if (record.IsBigEndian)
+        {
+            return CreateSunPresetFailure(
+                record,
+                "Starfield SUNP reflection streams are supported only in little-endian records.",
+                editorIdPrefix);
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreateSunPresetFailure(
+                record,
+                "SUNP reflection decoding rejects non-contiguous or partially recovered record bytes.",
+                editorIdPrefix);
+        }
+
+        if (!TryReadStarfieldSunPresetEnvelope(
+                data.AsSpan(0, dataSize),
+                out var editorId,
+                out var parentFormId,
+                out var payloadKind,
+                out var reflectionPayload,
+                out var failure))
+        {
+            return CreateSunPresetFailure(
+                record,
+                failure ?? "SUNP outer-record validation failed.",
+                editorId ?? editorIdPrefix,
+                parentFormId,
+                payloadKind);
+        }
+
+        Context.FormIdToEditorId[record.FormId] = editorId!;
+        if (!StarfieldSunPresetDecoder.TryDecode(
+                reflectionPayload!, payloadKind, out var patch, out failure))
+        {
+            return CreateSunPresetFailure(
+                record,
+                failure ?? "SUNP reflection decoding failed.",
+                editorId,
+                parentFormId,
+                payloadKind);
+        }
+
+        if (payloadKind == StarfieldSunPresetPayloadKind.FullObject && patch!.ParentFormId != 0)
+        {
+            return CreateSunPresetFailure(
+                record,
+                "A root SUNP REFL payload must declare a null pParent.",
+                editorId,
+                parentFormId,
+                payloadKind);
+        }
+
+        if (payloadKind == StarfieldSunPresetPayloadKind.Diff &&
+            (patch!.ParentFormId is not { } reflectedParent ||
+             reflectedParent != parentFormId!.Value))
+        {
+            return CreateSunPresetFailure(
+                record,
+                "SUNP RFDP requires an explicitly authored equal reflected pParent.",
+                editorId,
+                parentFormId,
+                payloadKind);
+        }
+
+        return new StarfieldSunPresetRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            ParentFormId = parentFormId,
+            PayloadKind = payloadKind,
+            Patch = patch,
+            Offset = record.Offset,
+            IsBigEndian = false
+        };
+    }
+
+    private static bool TryReadStarfieldSunPresetEnvelope(
+        ReadOnlySpan<byte> data,
+        out string? editorId,
+        out uint? parentFormId,
+        out StarfieldSunPresetPayloadKind payloadKind,
+        out byte[]? reflectionPayload,
+        out string? failure)
+    {
+        editorId = null;
+        parentFormId = null;
+        payloadKind = StarfieldSunPresetPayloadKind.Unknown;
+        reflectionPayload = null;
+        failure = null;
+
+        var fields = new List<(string Signature, int DataOffset, int DataLength)>(3);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var offset = 0;
+        while (offset < data.Length)
+        {
+            if (offset > data.Length - EsmSubrecordUtils.SubrecordHeaderSize)
+            {
+                failure = "SUNP has a truncated subrecord header.";
+                return false;
+            }
+
+            var signature = System.Text.Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
+            var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
+            offset += EsmSubrecordUtils.SubrecordHeaderSize;
+
+            // The complete 52-record retail inventory contains no outer XXXX marker. Rejecting a
+            // different representation keeps this structural contract bounded to observed source.
+            if (signature == "XXXX")
+            {
+                failure = "SUNP does not permit an XXXX extended-length subrecord.";
+                return false;
+            }
+
+            if (dataLength > data.Length - offset)
+            {
+                failure = $"SUNP {signature} extends past the record boundary.";
+                return false;
+            }
+
+            if (signature is not "EDID" and not "RFDP" and not "REFL" and not "RDIF")
+            {
+                failure = $"SUNP has unsupported outer subrecord '{signature}'.";
+                return false;
+            }
+
+            if (!seen.Add(signature))
+            {
+                failure = $"SUNP has duplicate {signature} subrecords.";
+                return false;
+            }
+
+            fields.Add((signature, offset, dataLength));
+            offset += dataLength;
+        }
+
+        var isFull = fields.Count == 2 &&
+                     fields[0].Signature == "EDID" &&
+                     fields[1].Signature == "REFL";
+        var isDiff = fields.Count == 3 &&
+                     fields[0].Signature == "EDID" &&
+                     fields[1].Signature == "RFDP" &&
+                     fields[2].Signature == "RDIF";
+        payloadKind = isFull
+            ? StarfieldSunPresetPayloadKind.FullObject
+            : isDiff
+                ? StarfieldSunPresetPayloadKind.Diff
+                : StarfieldSunPresetPayloadKind.Unknown;
+
+        if (!isFull && !isDiff)
+        {
+            failure =
+                "SUNP outer fields must be exactly EDID+REFL or EDID+RFDP+RDIF in retail order.";
+            return false;
+        }
+
+        var edidField = fields[0];
+        var edidBytes = data.Slice(edidField.DataOffset, edidField.DataLength);
+        if (edidBytes.Length < 2 || edidBytes[^1] != 0 ||
+            edidBytes[..^1].IndexOf((byte)0) >= 0)
+        {
+            failure = "SUNP EDID must be one non-empty null-terminated string.";
+            return false;
+        }
+
+        editorId = EsmStringUtils.DecodeGameText(edidBytes[..^1]);
+        if (string.IsNullOrWhiteSpace(editorId))
+        {
+            failure = "SUNP EDID is empty.";
+            return false;
+        }
+
+        if (isFull)
+        {
+            reflectionPayload = data.Slice(fields[1].DataOffset, fields[1].DataLength).ToArray();
+            return true;
+        }
+
+        if (fields[1].DataLength != sizeof(uint))
+        {
+            failure = $"SUNP RFDP must be exactly four bytes; found {fields[1].DataLength}.";
+            return false;
+        }
+
+        parentFormId = BinaryPrimitives.ReadUInt32LittleEndian(data[fields[1].DataOffset..]);
+        if (parentFormId.Value == 0)
+        {
+            failure = "A SUNP RDIF payload requires a non-zero RFDP parent.";
+            return false;
+        }
+
+        reflectionPayload = data.Slice(fields[2].DataOffset, fields[2].DataLength).ToArray();
+        return true;
+    }
+
+    private static string? CaptureLeadingStarfieldEditorId(
+        byte[] data,
+        int dataSize,
+        bool isBigEndian)
+    {
+        if (dataSize < EsmSubrecordUtils.SubrecordHeaderSize || dataSize > data.Length)
+        {
+            return null;
+        }
+
+        var signature = data.AsSpan(0, sizeof(uint));
+        if (!(isBigEndian ? signature.SequenceEqual("DIDE"u8) : signature.SequenceEqual("EDID"u8)))
+        {
+            return null;
+        }
+
+        var length = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(sizeof(uint)))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(sizeof(uint)));
+        if (length < 2 || EsmSubrecordUtils.SubrecordHeaderSize + length > dataSize)
+        {
+            return null;
+        }
+
+        var payload = data.AsSpan(EsmSubrecordUtils.SubrecordHeaderSize, length);
+        if (payload[^1] != 0 || payload[..^1].IndexOf((byte)0) >= 0)
+        {
+            return null;
+        }
+
+        var editorId = EsmStringUtils.DecodeGameText(payload[..^1]);
+        return string.IsNullOrWhiteSpace(editorId) ? null : editorId;
+    }
+
+    private StarfieldSunPresetRecord CreateSunPresetFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null,
+        uint? parentFormId = null,
+        StarfieldSunPresetPayloadKind payloadKind = StarfieldSunPresetPayloadKind.Unknown)
+    {
+        return new StarfieldSunPresetRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ParentFormId = parentFormId,
+            PayloadKind = payloadKind,
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield 3D Curves
+
+    /// <summary>
+    ///     Parses the bounded Starfield CUR3 outer contract. Retail CUR3 records are standalone
+    ///     <c>EDID+REFL</c> objects. The reflected decoder retains the three authored axes exactly;
+    ///     this path does not define curve sampling or water-shader semantics.
+    /// </summary>
+    internal List<StarfieldCurve3DRecord> ParseStarfieldCurves3D()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "CUR3",
+            2048, // Audited retail maximum REFL body is 1017 bytes.
+            ParseStarfieldCurve3DFromAccessor,
+            record => CreateCurve3DFailure(
+                record,
+                "CUR3 reflection payload is unavailable without record-byte access."));
+    }
+
+    private StarfieldCurve3DRecord ParseStarfieldCurve3DFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData is null)
+        {
+            return CreateCurve3DFailure(record, "CUR3 record bytes could not be read.");
+        }
+
+        var (data, dataSize) = recordData.Value;
+        var editorIdPrefix = CaptureLeadingStarfieldEditorId(
+            data, dataSize, record.IsBigEndian);
+        if (!string.IsNullOrWhiteSpace(editorIdPrefix))
+        {
+            Context.FormIdToEditorId[record.FormId] = editorIdPrefix;
+        }
+
+        if (record.IsBigEndian)
+        {
+            return CreateCurve3DFailure(
+                record,
+                "Starfield CUR3 reflection streams are supported only in little-endian records.",
+                editorIdPrefix);
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            return CreateCurve3DFailure(
+                record,
+                "CUR3 reflection decoding rejects non-contiguous or partially recovered record bytes.",
+                editorIdPrefix);
+        }
+
+        if (!TryReadStarfieldCurve3DEnvelope(
+                data.AsSpan(0, dataSize),
+                out var editorId,
+                out var reflectionPayload,
+                out var failure))
+        {
+            return CreateCurve3DFailure(
+                record,
+                failure ?? "CUR3 outer-record validation failed.",
+                editorId ?? editorIdPrefix);
+        }
+
+        Context.FormIdToEditorId[record.FormId] = editorId!;
+        if (!StarfieldCurve3DDecoder.TryDecode(
+                reflectionPayload!, out var definition, out failure))
+        {
+            return CreateCurve3DFailure(
+                record,
+                failure ?? "CUR3 reflection decoding failed.",
+                editorId);
+        }
+
+        return new StarfieldCurve3DRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            Definition = definition,
+            Offset = record.Offset,
+            IsBigEndian = false
+        };
+    }
+
+    private static bool TryReadStarfieldCurve3DEnvelope(
+        ReadOnlySpan<byte> data,
+        out string? editorId,
+        out byte[]? reflectionPayload,
+        out string? failure)
+    {
+        editorId = null;
+        reflectionPayload = null;
+        failure = null;
+
+        var fields = new List<(string Signature, int DataOffset, int DataLength)>(2);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var offset = 0;
+        while (offset < data.Length)
+        {
+            if (offset > data.Length - EsmSubrecordUtils.SubrecordHeaderSize)
+            {
+                failure = "CUR3 has a truncated subrecord header.";
+                return false;
+            }
+
+            var signature = System.Text.Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
+            var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
+            offset += EsmSubrecordUtils.SubrecordHeaderSize;
+
+            if (signature == "XXXX")
+            {
+                failure = "CUR3 does not permit an XXXX extended-length subrecord.";
+                return false;
+            }
+
+            if (dataLength > data.Length - offset)
+            {
+                failure = $"CUR3 {signature} extends past the record boundary.";
+                return false;
+            }
+
+            if (signature is not "EDID" and not "REFL")
+            {
+                failure = $"CUR3 has unsupported outer subrecord '{signature}'.";
+                return false;
+            }
+
+            if (!seen.Add(signature))
+            {
+                failure = $"CUR3 has duplicate {signature} subrecords.";
+                return false;
+            }
+
+            fields.Add((signature, offset, dataLength));
+            offset += dataLength;
+        }
+
+        if (fields.Count != 2 || fields[0].Signature != "EDID" || fields[1].Signature != "REFL")
+        {
+            failure = "CUR3 outer fields must be exactly EDID+REFL in retail order.";
+            return false;
+        }
+
+        var edidField = fields[0];
+        var edidBytes = data.Slice(edidField.DataOffset, edidField.DataLength);
+        if (edidBytes.Length < 2 || edidBytes[^1] != 0 ||
+            edidBytes[..^1].IndexOf((byte)0) >= 0)
+        {
+            failure = "CUR3 EDID must be one non-empty null-terminated string.";
+            return false;
+        }
+
+        foreach (var value in edidBytes[..^1])
+        {
+            if (value <= 0x7F)
+            {
+                continue;
+            }
+
+            failure = "CUR3 EDID must contain ASCII bytes only.";
+            return false;
+        }
+
+        editorId = System.Text.Encoding.ASCII.GetString(edidBytes[..^1]);
+        if (string.IsNullOrWhiteSpace(editorId))
+        {
+            failure = "CUR3 EDID is empty.";
+            return false;
+        }
+
+        var reflectionField = fields[1];
+        if (reflectionField.DataLength == 0)
+        {
+            failure = "CUR3 REFL must not be empty.";
+            return false;
+        }
+
+        reflectionPayload = data.Slice(
+            reflectionField.DataOffset, reflectionField.DataLength).ToArray();
+        return true;
+    }
+
+    private StarfieldCurve3DRecord CreateCurve3DFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null)
+    {
+        return new StarfieldCurve3DRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield Volumetric Lighting
+
+    /// <summary>
+    ///     Parse complete Starfield volumetric-lighting definitions (VOLI). Retail VOLI records
+    ///     carry one full REFL object and have no reflected-diff inheritance representation.
+    /// </summary>
+    internal List<StarfieldVolumetricLightingRecord> ParseStarfieldVolumetricLightingSettings()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "VOLI",
+            4096,
+            ParseStarfieldVolumetricLightingFromAccessor,
+            record => CreateVolumetricLightingFailure(
+                record,
+                "VOLI reflection payload is unavailable without record-byte access."));
+    }
+
+    private StarfieldVolumetricLightingRecord ParseStarfieldVolumetricLightingFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        if (!TryReadStandaloneStarfieldReflection(
+                record, buffer, "VOLI", out var editorId, out var reflectionPayload, out var failure))
+        {
+            return CreateVolumetricLightingFailure(
+                record,
+                failure ?? "VOLI outer-record validation failed.",
+                editorId);
+        }
+
+        if (!StarfieldVolumetricLightingDecoder.TryDecode(
+                reflectionPayload!, out var settings, out failure))
+        {
+            return CreateVolumetricLightingFailure(
+                record,
+                failure ?? "VOLI reflection decoding failed.",
+                editorId);
+        }
+
+        return new StarfieldVolumetricLightingRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            Settings = settings,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private StarfieldVolumetricLightingRecord CreateVolumetricLightingFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null)
+    {
+        return new StarfieldVolumetricLightingRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Starfield Cloud Forms
+
+    /// <summary>
+    ///     Parse complete Starfield cloud definitions (CLDF). Retail CLDF records carry one full
+    ///     REFL object and have no reflected-diff inheritance representation.
+    /// </summary>
+    internal List<StarfieldCloudFormRecord> ParseStarfieldCloudForms()
+    {
+        if (Context.Game != BethesdaGame.Starfield)
+        {
+            return [];
+        }
+
+        return ParseRecordList(
+            "CLDF",
+            8192, // Retail bodies reach 0x1285; keep the shared buffer above that boundary.
+            ParseStarfieldCloudFormFromAccessor,
+            record => CreateCloudFormFailure(
+                record,
+                "CLDF reflection payload is unavailable without record-byte access."));
+    }
+
+    private StarfieldCloudFormRecord ParseStarfieldCloudFormFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        if (!TryReadStandaloneStarfieldReflection(
+                record, buffer, "CLDF", out var editorId, out var reflectionPayload, out var failure))
+        {
+            return CreateCloudFormFailure(
+                record,
+                failure ?? "CLDF outer-record validation failed.",
+                editorId);
+        }
+
+        if (!StarfieldCloudFormDecoder.TryDecode(
+                reflectionPayload!, out var definition, out failure))
+        {
+            return CreateCloudFormFailure(
+                record,
+                failure ?? "CLDF reflection decoding failed.",
+                editorId);
+        }
+
+        return new StarfieldCloudFormRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            Definition = definition,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private StarfieldCloudFormRecord CreateCloudFormFailure(
+        DetectedMainRecord record,
+        string failure,
+        string? editorId = null)
+    {
+        return new StarfieldCloudFormRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            DecodeFailure = failure,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    /// <summary>
+    ///     Reads the exact outer subrecord envelope shared by standalone Starfield reflection
+    ///     definitions. The typed decoder receives bytes only after the complete little-endian
+    ///     framing and the one-full-REFL/no-inheritance contract have been established.
+    /// </summary>
+    private bool TryReadStandaloneStarfieldReflection(
+        DetectedMainRecord record,
+        byte[] buffer,
+        string recordType,
+        out string? editorId,
+        out byte[]? reflectionPayload,
+        out string? failure)
+    {
+        editorId = Context.GetEditorId(record.FormId);
+        reflectionPayload = null;
+        failure = null;
+
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            failure = $"{recordType} record bytes could not be read.";
+            return false;
+        }
+
+        var (data, dataSize) = recordData.Value;
+        CaptureStandaloneReflectionEditorIdPrefix(
+            data, dataSize, record.IsBigEndian, record.FormId, ref editorId);
+
+        if (record.IsBigEndian)
+        {
+            failure = $"Starfield {recordType} reflection streams are supported only in little-endian records.";
+            return false;
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            failure =
+                $"{recordType} reflection decoding rejects non-contiguous or partially recovered record bytes.";
+            return false;
+        }
+
+        if (!HasCompleteLittleEndianSubrecordLayout(data, dataSize))
+        {
+            failure = $"{recordType} has a truncated or malformed outer subrecord layout.";
+            return false;
+        }
+
+        var editorIdSeen = false;
+        var reflectionPayloadCount = 0;
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, false))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    if (editorIdSeen)
+                    {
+                        failure ??= $"{recordType} has duplicate EDID subrecords.";
+                        break;
+                    }
+
+                    editorIdSeen = true;
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "REFL":
+                    reflectionPayloadCount++;
+                    reflectionPayload ??= subData.ToArray();
+                    break;
+                case "RDIF":
+                    failure ??= $"{recordType} does not support RDIF reflection diffs.";
+                    break;
+                case "RFDP":
+                    failure ??= $"{recordType} does not support RFDP reflection inheritance.";
+                    break;
+                default:
+                    NoteUnmodeledSubrecord(recordType, sub.Signature, sub.DataLength);
+                    failure ??=
+                        $"{recordType} has unsupported outer subrecord '{sub.Signature}'.";
+                    break;
+            }
+        }
+
+        if (reflectionPayloadCount != 1)
+        {
+            failure ??= $"{recordType} must contain exactly one REFL payload.";
+        }
+
+        return failure == null;
+    }
+
+    /// <summary>
+    ///     Preserves a complete leading EDID even when a later subrecord is malformed or truncated.
+    ///     The ordinary iterator yields only wholly resident subrecords, so this never consumes the
+    ///     damaged tail and does not weaken the complete-layout gate above.
+    /// </summary>
+    private void CaptureStandaloneReflectionEditorIdPrefix(
+        byte[] data,
+        int dataSize,
+        bool isBigEndian,
+        uint formId,
+        ref string? editorId)
+    {
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, isBigEndian))
+        {
+            if (sub.Signature != "EDID")
+            {
+                continue;
+            }
+
+            editorId = EsmStringUtils.ReadNullTermString(
+                data.AsSpan(sub.DataOffset, sub.DataLength));
+            if (!string.IsNullOrEmpty(editorId))
+            {
+                Context.FormIdToEditorId[formId] = editorId;
+            }
+
+            return;
+        }
+    }
+
     #region Climate
 
     /// <summary>
@@ -1545,6 +3669,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
         string? editorId = null, sunTexture = null, sunGlare = null, modelPath = null;
         IReadOnlyList<ClimateWeatherEntry>? weatherTypes = null;
+        IReadOnlyList<ClimateWeatherSettingsEntry>? weatherSettingsTypes = null;
         ClimateTimingData? timing = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -1578,10 +3703,23 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     weatherTypes = ReadClimateWeatherList(
                         subData, record.IsBigEndian, Context.Game == BethesdaGame.Oblivion ? 8 : 12);
                     break;
-                // TNAM: 6-byte timing (sunrise/sunset begin+end, volatility, moon phase length).
-                case "TNAM" when sub.DataLength >= 6:
+                // Starfield separates CE2 reflected weather settings (WTHS) from the three retained
+                // legacy WTHR records. WSLT uses the same 12-byte (FormID, chance, global) tuple as
+                // WLST, but its FormIDs MUST stay in a separate domain: resolving one through the WTHR
+                // index would silently substitute the wrong atmosphere architecture.
+                case "WSLT" when Context.Game == BethesdaGame.Starfield && sub.DataLength >= 12:
+                    weatherSettingsTypes = ReadClimateWeatherSettingsList(subData, record.IsBigEndian);
+                    break;
+                // TNAM: five common bytes (sunrise/sunset begin+end, volatility), followed by the
+                // legacy moon/phase byte when present. Retail Starfield CLMT authors exactly five;
+                // xEdit's SF1 definition deliberately omits the phase field.
+                case "TNAM" when sub.DataLength >= 5:
                     timing = new ClimateTimingData(
-                        subData[0], subData[1], subData[2], subData[3], subData[4], subData[5]);
+                        subData[0], subData[1], subData[2], subData[3], subData[4],
+                        sub.DataLength >= 6 ? subData[5] : (byte)0)
+                    {
+                        HasMoonPhaseLength = sub.DataLength >= 6
+                    };
                     break;
             }
         }
@@ -1594,6 +3732,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             SunGlareTexture = sunGlare,
             ModelPath = modelPath,
             WeatherTypes = weatherTypes ?? [],
+            WeatherSettingsTypes = weatherSettingsTypes ?? [],
             Timing = timing,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
@@ -1616,6 +3755,27 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             // ungated (correct: TES4 carries no conditional-weather global here). FO3/FNV read it at +8.
             var global = entryBytes >= 12 ? RecordParserContext.ReadFormId(data.Slice(b + 8, 4), isBigEndian) : 0u;
             list.Add(new ClimateWeatherEntry(weather, chance, global));
+        }
+
+        return list;
+    }
+
+    private static List<ClimateWeatherSettingsEntry> ReadClimateWeatherSettingsList(
+        ReadOnlySpan<byte> data,
+        bool isBigEndian)
+    {
+        const int entryBytes = 12;
+        var count = data.Length / entryBytes;
+        var list = new List<ClimateWeatherSettingsEntry>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var b = i * entryBytes;
+            var weatherSettings = RecordParserContext.ReadFormId(data.Slice(b, 4), isBigEndian);
+            var chance = isBigEndian
+                ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(b + 4, 4))
+                : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(b + 4, 4));
+            var global = RecordParserContext.ReadFormId(data.Slice(b + 8, 4), isBigEndian);
+            list.Add(new ClimateWeatherSettingsEntry(weatherSettings, chance, global));
         }
 
         return list;

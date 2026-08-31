@@ -136,6 +136,31 @@ public sealed class WorldRenderStatsSnapshotCompletenessTests
     }
 
     [Fact]
+    public void Reset_clears_every_settable_property_to_the_canonical_frame_default()
+    {
+        var properties = SettableProperties();
+        var source = new WorldRenderStats();
+        var expected = new WorldRenderStats();
+
+        var seed = 1;
+        foreach (var property in properties)
+        {
+            property.SetValue(source, MakeValue(property.PropertyType, seed));
+            seed += 7;
+        }
+
+        source.Reset();
+        expected.Reset();
+        var stale = properties
+            .Where(p => !ValuesMatch(p.GetValue(expected), p.GetValue(source)))
+            .Select(p => p.Name)
+            .ToArray();
+
+        Assert.True(stale.Length == 0,
+            "Reset() left prior-frame values in these properties: " + string.Join(", ", stale));
+    }
+
+    [Fact]
     public void Snapshot_copies_collections_instead_of_aliasing_them()
     {
         // A snapshot that shares its backing arrays is not a snapshot: the renderer clears and

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -20,10 +21,33 @@ internal static class RuntimeDataEnricher
             return;
         }
 
-        // Use pAllForms entries (LAND records lack editor IDs, so they're absent from RuntimeEditorIds)
+        // LAND records have no editor ID, so they are absent from RuntimeEditorIds by construction —
+        // that is precisely why RuntimeLandFormEntries exists as a separate pAllForms-derived list.
+        //
+        // ⚠ This used to fall back to the WHOLE RuntimeEditorIds table when LAND FormType detection
+        // was low-confidence, which broke the reader's stated contract ("caller is responsible for
+        // filtering to LAND entries"). RuntimeWorldReader had no guard of its own, so every NPC,
+        // weapon and static in the table was read as a TESObjectLAND and any that produced a
+        // plausible cell coordinate was ADDED as a new ExtractedLandRecord. Measured on xex44
+        // (2026-08-30): 63,239 entries in, **15,745 fabricated LAND records out**, none of which can
+        // be genuine because an entry in that table has an editor ID and a LAND never does.
+        //
+        // Falling back to nothing is the honest answer: no runtime terrain beats invented terrain
+        // attached to real cells. Detection stays empirical — the corpus spans development builds
+        // whose record enumeration was still changing, so the final build's PDB cannot stand in for
+        // it — which means a dump with too few carved LAND records to calibrate against simply
+        // yields no runtime terrain.
         var landEntries = context.ScanResult.RuntimeLandFormEntries.Count > 0
             ? context.ScanResult.RuntimeLandFormEntries
-            : context.ScanResult.RuntimeEditorIds; // Fallback for compatibility
+            : ResolveLandFormTypeByMeshYield(context);
+        if (landEntries.Count == 0)
+        {
+            Logger.Instance.Debug(
+                "  [Semantic] No runtime LAND entries; skipping terrain enrichment rather than " +
+                "reinterpreting unrelated records as LAND.");
+            return;
+        }
+
         var runtimeLandData = context.RuntimeReader.ReadAllRuntimeLandData(landEntries);
         if (runtimeLandData.Count > 0)
         {
@@ -34,6 +58,63 @@ internal static class RuntimeDataEnricher
                 $"  [Semantic] Enriched LAND records: {runtimeLandData.Count} with terrain data " +
                 $"({existingCount} existing + {addedCount} runtime-only = {context.ScanResult.LandRecords.Count} total)");
         }
+    }
+
+    /// <summary>
+    ///     Identify this build's LAND FormType from the dump itself when the FormID-correlation
+    ///     heuristic could not, by asking which candidate type actually yields terrain meshes.
+    ///     <para>
+    ///         The record enumeration changed during development, so the byte differs between dumps
+    ///         and the final build's PDB cannot arbitrate — measured 2026-08-30, the Release_Beta
+    ///         dumps carry LAND at <c>0x42</c> while the shipped PDB maps <c>TESObjectLAND</c> to
+    ///         <c>0x44</c>. What does hold everywhere is that a genuine LAND resolves a terrain
+    ///         mesh, and nothing else does.
+    ///     </para>
+    ///     <para>
+    ///         ⚠ A mesh is the gate, not merely "parsed with plausible coordinates". Reading an
+    ///         unrelated record as a <c>TESObjectLAND</c> yields believable cell coordinates
+    ///         surprisingly often — <c>Fallout_Debug.xex2</c> has a candidate type with 130 such
+    ///         false positives and zero meshes — and accepting those is exactly how the old
+    ///         whole-table fallback fabricated 15,745 terrain records.
+    ///     </para>
+    /// </summary>
+    private static List<RuntimeEditorIdEntry> ResolveLandFormTypeByMeshYield(RecordParserContext context)
+    {
+        var candidates = context.ScanResult.RuntimeLandCandidateEntries;
+        if (candidates.Count == 0 || context.RuntimeReader == null)
+        {
+            return [];
+        }
+
+        List<RuntimeEditorIdEntry> best = [];
+        var bestMeshCount = 0;
+        byte bestFormType = 0;
+
+        foreach (var group in candidates.GroupBy(entry => entry.FormType))
+        {
+            var entries = group.ToList();
+            var data = context.RuntimeReader.ReadAllRuntimeLandData(entries, false);
+            var meshCount = data.Values.Count(land => land.TerrainMesh != null);
+            if (meshCount > bestMeshCount)
+            {
+                bestMeshCount = meshCount;
+                bestFormType = group.Key;
+                best = entries;
+            }
+        }
+
+        if (bestMeshCount == 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] No LAND FormType among {candidates.Count} candidate entry(s) yielded a " +
+                "terrain mesh; this build's dump carries no runtime terrain.");
+            return [];
+        }
+
+        Logger.Instance.Info(
+            $"[Semantic Parse] Runtime LAND FormType resolved to 0x{bestFormType:X2} by mesh yield " +
+            $"({bestMeshCount} of {best.Count} entries produced a terrain mesh).");
+        return best;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
@@ -89,6 +90,21 @@ public static class RecordCatalog
             if (!keptDmpModels.TryAdd((type, formId), model))
             {
                 var kept = keptDmpModels[(type, formId)];
+                var differs = DescribeDiscardedModelDelta(kept, model);
+
+                // Two snapshots of one record fail in different places, so first-wins by
+                // enumeration order threw away recoverable content — a capture whose EditorID never
+                // resolved could beat one that named the record, purely because it came first. The
+                // richer capture leads, the other fills whatever it left unset, and the entry the
+                // pipeline sees is the union.
+                var (primary, secondary) = RecordModelUnion.Score(model) > RecordModelUnion.Score(kept)
+                    ? (model, kept)
+                    : (kept, model);
+                var merged = RecordModelUnion.Fill(primary, secondary);
+                keptDmpModels[(type, formId)] = merged;
+                ReplaceKeptModel(entries, type, formId, kept, merged);
+
+                var mergedSomething = !ReferenceEquals(merged, kept);
                 diagnosticList.Add(new PlanDiagnostic
                 {
                     Kind = PlanDiagnosticKind.Warning,
@@ -96,13 +112,17 @@ public static class RecordCatalog
                     Code = "catalog.duplicate-dmp-record",
                     RecordType = type,
                     FormId = formId,
-                    Message = $"Duplicate DMP capture of {type} 0x{formId:X8} discarded; " +
-                              "first capture wins (repeated runtime GRUP snapshot).",
+                    Message = mergedSomething
+                        ? $"Duplicate DMP capture of {type} 0x{formId:X8} merged into the richer " +
+                          "capture (repeated runtime GRUP snapshot)."
+                        : $"Duplicate DMP capture of {type} 0x{formId:X8} added nothing to the kept " +
+                          "capture (repeated runtime GRUP snapshot).",
                     Metadata = new Dictionary<string, string?>
                     {
                         ["type"] = type,
                         ["formId"] = $"0x{formId:X8}",
-                        ["differs"] = DescribeDiscardedModelDelta(kept, model)
+                        ["differs"] = differs,
+                        ["merged"] = mergedSomething ? "true" : "false"
                     }
                 });
                 continue;
@@ -190,6 +210,32 @@ public static class RecordCatalog
 
         validatedMasterFormIdAliases = validatedAliases;
         return entries;
+    }
+
+    /// <summary>
+    ///     Point the already-created catalog entry at the merged model. The first capture was
+    ///     entered before the duplicate arrived, so without this the entry would keep holding the
+    ///     un-merged instance and the union would be invisible downstream.
+    /// </summary>
+    private static void ReplaceKeptModel(
+        List<CatalogEntry> entries, string type, uint formId, object kept, object merged)
+    {
+        if (ReferenceEquals(kept, merged))
+        {
+            return;
+        }
+
+        for (var i = entries.Count - 1; i >= 0; i--)
+        {
+            var entry = entries[i];
+            if (ReferenceEquals(entry.Model, kept) &&
+                string.Equals(entry.Type, type, StringComparison.Ordinal) &&
+                entry.DmpFormId == formId)
+            {
+                entries[i] = entry with { Model = merged };
+                return;
+            }
+        }
     }
 
     /// <summary>

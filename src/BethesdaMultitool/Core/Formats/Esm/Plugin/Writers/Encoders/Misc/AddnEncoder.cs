@@ -44,6 +44,8 @@ public sealed class AddnEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", addn.ModelPath));
         }
 
+        NewRecordSubrecords.AppendAlternateTextures(subs, addn);
+
         // DATA is the node index (BGSAddonNode.iIndex @96), required by the schema.
         var nodeIndex = GenericRecordFields.TryUInt(addn, "DATA", "BGSAddonNode.iIndex");
         if (nodeIndex is null)

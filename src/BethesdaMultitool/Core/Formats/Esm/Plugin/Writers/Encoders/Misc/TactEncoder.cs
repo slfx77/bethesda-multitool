@@ -48,13 +48,15 @@ public sealed class TactEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", tact.ModelPath));
         }
 
+        // MODS closes xEdit's wbGenericModel group (MODL/MODB/MODT/MODS/MODD).
+        NewRecordSubrecords.AppendAlternateTextures(subs, tact);
+
         if (GenericRecordFields.TryFormId(tact, "SCRI", "TESScriptableForm.pFormScript") is { } script)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", script));
         }
 
-        // DEST omitted for the same reason as MSTT: BGSDestructibleObjectForm.pData points at a
-        // separate allocation the generic reader never walks, so no destruction data was captured.
+        NewRecordSubrecords.AppendDestruction(subs, tact);
 
         // SNAM is the looping sound. Note TESObjectACTI.pSoundActivate (@136) has no TACT
         // subrecord in the FNV schema — only ACTI carries an activation sound — so it is not

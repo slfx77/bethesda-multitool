@@ -58,6 +58,8 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
             }
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, match.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(

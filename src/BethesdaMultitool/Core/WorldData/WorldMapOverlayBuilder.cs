@@ -143,7 +143,17 @@ internal static class WorldMapOverlayBuilder
             BaseMaterialSwapsByFormId = semantic.BaseMaterialSwapFormIds,
             BaseColorRemapsByFormId = semantic.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(semantic.Water),
+            Curves3DByFormId = BuildCurve3DIndex(semantic.Curves3D),
             WeathersByFormId = BuildWeatherIndex(weatherRecords),
+            WeatherSettingsByFormId = BuildWeatherSettingsIndex(semantic.WeatherSettings),
+            VolumetricLightingByFormId = BuildVolumetricLightingIndex(semantic.VolumetricLightingSettings),
+            Fallout76VolumetricLightingByFormId = BuildFallout76VolumetricLightingIndex(
+                semantic.Fallout76VolumetricLightingSettings),
+            CloudFormsByFormId = BuildCloudFormIndex(semantic.CloudForms),
+            AtmospheresByFormId = BuildAtmosphereIndex(semantic.Atmospheres),
+            PlanetWorldspaceIndex = StarfieldPlanetWorldspaceIndex.Build(semantic.PlanetData),
+            StarDataIndex = StarfieldStarDataIndex.Build(semantic.StarData),
+            SunPresetsByFormId = BuildSunPresetIndex(semantic.SunPresets),
             RegionsByFormId = BuildRegionIndex(semantic.Regions),
             RuntimeWeatherTransition = semantic.RuntimeWeatherTransition,
             ClimatesByFormId = BuildClimateIndex(climateRecords),
@@ -339,7 +349,17 @@ internal static class WorldMapOverlayBuilder
             BaseMaterialSwapsByFormId = suppRecords.BaseMaterialSwapFormIds,
             BaseColorRemapsByFormId = suppRecords.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
+            Curves3DByFormId = BuildCurve3DIndex(suppRecords.Curves3D),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
+            WeatherSettingsByFormId = BuildWeatherSettingsIndex(suppRecords.WeatherSettings),
+            VolumetricLightingByFormId = BuildVolumetricLightingIndex(suppRecords.VolumetricLightingSettings),
+            Fallout76VolumetricLightingByFormId = BuildFallout76VolumetricLightingIndex(
+                suppRecords.Fallout76VolumetricLightingSettings),
+            CloudFormsByFormId = BuildCloudFormIndex(suppRecords.CloudForms),
+            AtmospheresByFormId = BuildAtmosphereIndex(suppRecords.Atmospheres),
+            PlanetWorldspaceIndex = StarfieldPlanetWorldspaceIndex.Build(suppRecords.PlanetData),
+            StarDataIndex = StarfieldStarDataIndex.Build(suppRecords.StarData),
+            SunPresetsByFormId = BuildSunPresetIndex(suppRecords.SunPresets),
             RegionsByFormId = BuildRegionIndex(suppRecords.Regions),
             RuntimeWeatherTransition = suppRecords.RuntimeWeatherTransition,
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
@@ -530,12 +550,96 @@ internal static class WorldMapOverlayBuilder
         return dict;
     }
 
+    private static Dictionary<uint, StarfieldCurve3DRecord> BuildCurve3DIndex(
+        List<StarfieldCurve3DRecord> records)
+    {
+        var dict = new Dictionary<uint, StarfieldCurve3DRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
+        }
+
+        return dict;
+    }
+
     private static Dictionary<uint, WeatherRecord> BuildWeatherIndex(List<WeatherRecord> records)
     {
         var dict = new Dictionary<uint, WeatherRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, StarfieldWeatherSettingsRecord> BuildWeatherSettingsIndex(
+        List<StarfieldWeatherSettingsRecord> records)
+    {
+        var dict = new Dictionary<uint, StarfieldWeatherSettingsRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, StarfieldVolumetricLightingRecord> BuildVolumetricLightingIndex(
+        List<StarfieldVolumetricLightingRecord> records)
+    {
+        var dict = new Dictionary<uint, StarfieldVolumetricLightingRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, Fallout76VolumetricLightingRecord> BuildFallout76VolumetricLightingIndex(
+        List<Fallout76VolumetricLightingRecord> records)
+    {
+        var dict = new Dictionary<uint, Fallout76VolumetricLightingRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, StarfieldCloudFormRecord> BuildCloudFormIndex(
+        List<StarfieldCloudFormRecord> records)
+    {
+        var dict = new Dictionary<uint, StarfieldCloudFormRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, StarfieldAtmosphereRecord> BuildAtmosphereIndex(
+        List<StarfieldAtmosphereRecord> records)
+    {
+        var dict = new Dictionary<uint, StarfieldAtmosphereRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, StarfieldSunPresetRecord> BuildSunPresetIndex(
+        List<StarfieldSunPresetRecord> records)
+    {
+        var dict = new Dictionary<uint, StarfieldSunPresetRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
         }
 
         return dict;

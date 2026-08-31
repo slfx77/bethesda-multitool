@@ -68,17 +68,8 @@ internal sealed class RuntimeItemReader(
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + Layouts.WeapStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[Layouts.WeapStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, Layouts.WeapStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, Layouts.WeapStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -97,17 +88,17 @@ internal sealed class RuntimeItemReader(
         var modSlotFields = FieldHelpers.ReadWeaponModSlots(buffer);
         var phase3 = FieldHelpers.ReadWeaponPhase3Fields(buffer);
         var vatsAttack = FieldHelpers.ReadWeaponVatsAttack(buffer);
-        var modelVariants = FieldHelpers.ReadWeaponModelVariants(buffer, offset);
+        var modelVariants = FieldHelpers.ReadWeaponModelVariants(buffer);
 
         // Follow ammo pointer to get ammo FormID
         var ammoFormId = _context.FollowPointerToFormId(buffer, Layouts.WeapAmmoPtrOffset);
 
         // Read model path via BSStringT at TESModel offset
-        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
-        var inventoryIconPath = _context.ReadBsStringT(offset, Layouts.WeapInventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, Layouts.WeapMessageIconPathOffset);
-        var shellCasingModelPath = _context.ReadBsStringT(offset, Layouts.WeapShellCasingModelPathOffset);
-        var embeddedWeaponNode = ReadBSStringTSafe(offset, Layouts.WeapEmbeddedWeaponNodeOffset);
+        var modelPath = _context.ReadBsStringT(buffer, Layouts.WeapModelPathOffset);
+        var inventoryIconPath = _context.ReadBsStringT(buffer, Layouts.WeapInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, Layouts.WeapMessageIconPathOffset);
+        var shellCasingModelPath = _context.ReadBsStringT(buffer, Layouts.WeapShellCasingModelPathOffset);
+        var embeddedWeaponNode = ReadBSStringTSafe(buffer, Layouts.WeapEmbeddedWeaponNodeOffset);
         var repairItemListFormId = _context.FollowPointerToFormId(buffer, Layouts.WeapRepairItemListOffset);
 
         // Read sound pointers (TESSound* at various offsets). Offsets may be -1 for fields
@@ -221,17 +212,8 @@ internal sealed class RuntimeItemReader(
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + Layouts.ArmoStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[Layouts.ArmoStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, Layouts.ArmoStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, Layouts.ArmoStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -278,9 +260,9 @@ internal sealed class RuntimeItemReader(
             : EquipmentType.None;
 
         // Model paths from TESBipedModelForm.bipedModel / worldModel (TESModelTextureSwap.cModel at +4)
-        var modelPath = ReadArmorModelPath(offset, buffer);
-        var iconPath = _context.ReadBsStringT(offset, Layouts.ArmoInventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, Layouts.ArmoMessageIconPathOffset);
+        var modelPath = ReadArmorModelPath(buffer);
+        var iconPath = _context.ReadBsStringT(buffer, Layouts.ArmoInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, Layouts.ArmoMessageIconPathOffset);
 
         return new ArmorRecord
         {
@@ -315,17 +297,8 @@ internal sealed class RuntimeItemReader(
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + Layouts.AmmoStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[Layouts.AmmoStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, Layouts.AmmoStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, Layouts.AmmoStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -343,9 +316,9 @@ internal sealed class RuntimeItemReader(
         }
 
         // Read world model path via BSStringT at TESModel offset (+80)
-        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
-        var iconPath = _context.ReadBsStringT(offset, Layouts.AmmoInventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, Layouts.AmmoMessageIconPathOffset);
+        var modelPath = _context.ReadBsStringT(buffer, Layouts.WeapModelPathOffset);
+        var iconPath = _context.ReadBsStringT(buffer, Layouts.AmmoInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, Layouts.AmmoMessageIconPathOffset);
 
         // AMMO_DATA: speed (float) + flags (uint32) + pProjectile (BGSProjectile*, AMMO_DATA_NV). The block's
         // start drifts per build, so use the probed offset when available (Flags = +4, pProjectile = +8),
@@ -389,17 +362,8 @@ internal sealed class RuntimeItemReader(
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + Layouts.MiscStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[Layouts.MiscStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, Layouts.MiscStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, Layouts.MiscStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -419,9 +383,9 @@ internal sealed class RuntimeItemReader(
         var weight = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.MiscWeightOffset, 0, 500);
 
         // Read model path via BSStringT at TESModel offset (+80)
-        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
-        var iconPath = _context.ReadBsStringT(offset, Layouts.MiscInventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, Layouts.MiscMessageIconPathOffset);
+        var modelPath = _context.ReadBsStringT(buffer, Layouts.WeapModelPathOffset);
+        var iconPath = _context.ReadBsStringT(buffer, Layouts.MiscInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, Layouts.MiscMessageIconPathOffset);
 
         return new MiscItemRecord
         {
@@ -452,17 +416,8 @@ internal sealed class RuntimeItemReader(
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + Layouts.MiscStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[Layouts.MiscStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, Layouts.MiscStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, Layouts.MiscStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -483,9 +438,9 @@ internal sealed class RuntimeItemReader(
 
         // Read model path via BSStringT at TESModel offset (+80) — TESKey shares MISC's
         // ICON offsets (TESKey inherits TESObjectMISC).
-        var modelPath = _context.ReadBsStringT(offset, Layouts.WeapModelPathOffset);
-        var iconPath = _context.ReadBsStringT(offset, Layouts.MiscInventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, Layouts.MiscMessageIconPathOffset);
+        var modelPath = _context.ReadBsStringT(buffer, Layouts.WeapModelPathOffset);
+        var iconPath = _context.ReadBsStringT(buffer, Layouts.MiscInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, Layouts.MiscMessageIconPathOffset);
 
         return new KeyRecord
         {
@@ -522,17 +477,8 @@ internal sealed class RuntimeItemReader(
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + Layouts.AlchStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[Layouts.AlchStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, Layouts.AlchStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, Layouts.AlchStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -563,9 +509,9 @@ internal sealed class RuntimeItemReader(
         // Walk EffectItem list (BSSimpleList<EffectItem*> at offset 80)
         var effects = RuntimeEffectItemListReader.Read(_context, buffer, Layouts.AlchEffectListOffset, 32);
 
-        var modelPath = _context.ReadBsStringT(offset, Layouts.AlchModelPathOffset);
-        var iconPath = _context.ReadBsStringT(offset, Layouts.AlchInventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, Layouts.AlchMessageIconPathOffset);
+        var modelPath = _context.ReadBsStringT(buffer, Layouts.AlchModelPathOffset);
+        var iconPath = _context.ReadBsStringT(buffer, Layouts.AlchInventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, Layouts.AlchMessageIconPathOffset);
 
         return new ConsumableRecord
         {
@@ -600,10 +546,10 @@ internal sealed class RuntimeItemReader(
         return bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 } ? null : bounds;
     }
 
-    private string? ReadArmorModelPath(long structFileOffset, byte[] buffer)
+    private string? ReadArmorModelPath(byte[] buffer)
     {
-        var direct = _context.ReadBsStringT(structFileOffset, Layouts.ArmoBipedModelPathOffset)
-                     ?? _context.ReadBsStringT(structFileOffset, Layouts.ArmoWorldModelPathOffset);
+        var direct = _context.ReadBsStringT(buffer, Layouts.ArmoBipedModelPathOffset)
+                     ?? _context.ReadBsStringT(buffer, Layouts.ArmoWorldModelPathOffset);
         if (LooksLikeModelPath(direct))
         {
             return direct;
@@ -613,7 +559,7 @@ internal sealed class RuntimeItemReader(
         // Probe nearby BSStringT slots and keep only obvious NIF paths.
         for (var fieldOffset = 48; fieldOffset + 8 <= buffer.Length; fieldOffset += 4)
         {
-            var candidate = _context.ReadBsStringT(structFileOffset, fieldOffset);
+            var candidate = _context.ReadBsStringT(buffer, fieldOffset);
             if (LooksLikeModelPath(candidate))
             {
                 return candidate;
@@ -642,8 +588,8 @@ internal sealed class RuntimeItemReader(
     /// <summary>
     ///     Read a BSStringT, but skip the read if the offset is negative.
     /// </summary>
-    private string? ReadBSStringTSafe(long structFileOffset, int relOffset)
+    private string? ReadBSStringTSafe(byte[] buffer, int relOffset)
     {
-        return relOffset < 0 ? null : _context.ReadBsStringT(structFileOffset, relOffset);
+        return relOffset < 0 ? null : _context.ReadBsStringT(buffer, relOffset);
     }
 }

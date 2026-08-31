@@ -18,7 +18,7 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
         }
 
         AnsiConsole.WriteLine();
-        var panel = new Panel(BuildContent(creature, resolver))
+        var panel = new Panel(BuildContent(creature, records, resolver))
         {
             Header = new PanelHeader(
                 $"[bold]CREA[/] {Markup.Escape(creature.EditorId ?? "")} — {Markup.Escape(creature.FullName ?? "")}")
@@ -27,7 +27,8 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
         return true;
     }
 
-    private static string BuildContent(CreatureRecord creature, FormIdResolver resolver)
+    private static string BuildContent(
+        CreatureRecord creature, RecordCollection records, FormIdResolver resolver)
     {
         var lines = new List<string>
         {
@@ -115,6 +116,8 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
         {
             lines.Add($"[cyan]Model:[/]        {Markup.Escape(creature.ModelPath)}");
         }
+
+        ShowHelpers.AppendNestedPayloads(lines, records, creature.FormId, resolver);
 
         return string.Join("\n", lines);
     }

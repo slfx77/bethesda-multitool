@@ -39,7 +39,7 @@ internal static class RuntimeEffectItemListReader
             return null;
         }
 
-        var buffer = context.ReadBytes(itemOffset.Value, EffectItemSize);
+        var buffer = context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(itemVa), EffectItemSize);
         if (buffer == null)
         {
             return null;

@@ -81,6 +81,20 @@ public record EsmRecordScanResult
     // Runtime LAND form entries from pAllForms hash table (LAND records lack editor IDs)
     public List<RuntimeEditorIdEntry> RuntimeLandFormEntries { get; init; } = [];
 
+    /// <summary>
+    ///     pAllForms entries whose FormType *could* be this build's LAND, populated only when the
+    ///     FormID-correlation heuristic could not identify it (too few carved LAND records to
+    ///     calibrate against).
+    ///     <para>
+    ///         The record enumeration moved during development, so the LAND FormType byte differs
+    ///         between dumps and cannot be read off the final build's PDB. Candidates here are
+    ///         narrowed by the one invariant that holds in every build — a LAND record has no
+    ///         EditorID — and the winner is chosen later by <c>RuntimeDataEnricher</c>, which has the
+    ///         runtime reader needed to test which candidate actually yields terrain meshes.
+    ///     </para>
+    /// </summary>
+    public List<RuntimeEditorIdEntry> RuntimeLandCandidateEntries { get; init; } = [];
+
     // Runtime REFR/ACHR/ACRE form entries from pAllForms hash table
     public List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; init; } = [];
 

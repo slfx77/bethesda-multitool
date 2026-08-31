@@ -93,7 +93,7 @@ internal sealed class RuntimeCollectionReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buffer = _context.ReadBytes(fileOffset.Value, 12);
+        var buffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(objectVa), 12);
         if (buffer == null)
         {
             return null;

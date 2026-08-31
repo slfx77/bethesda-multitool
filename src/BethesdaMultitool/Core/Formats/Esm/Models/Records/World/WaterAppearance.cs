@@ -18,6 +18,37 @@ public readonly record struct WaterNoiseLayer(
     float Falloff = 0f);
 
 /// <summary>
+///     FO76's distinct 148-byte WATR optical/normal model. Unlike FO4, it authors one float RGB
+///     base color plus a separate float RGB channel-opacity vector; it does not author shallow and
+///     deep byte-color endpoints. Keeping this typed prevents the compatibility projection used by
+///     the current FO4-family shader from erasing that distinction.
+/// </summary>
+public readonly record struct Fallout76WaterVisualData(
+    float DepthAmount,
+    (float R, float G, float B) ChannelOpacity,
+    (float R, float G, float B) BaseColor,
+    float Unknown28,
+    (byte R, byte G, byte B) UnderwaterColor,
+    float UnderwaterFogAmount,
+    float UnderwaterFogNear,
+    float UnderwaterFogFar,
+    float NormalMagnitude,
+    float ShallowNormalFalloff,
+    float DeepNormalFalloff,
+    // Strong structural inferences from the shifted FO4 physical block. They stay explicitly
+    // qualified until FO76 BSWaterShader::SetupMaterial is recovered.
+    float ReflectivityCandidate,
+    float FresnelCandidate,
+    float SurfaceEffectFalloff,
+    float DisplacementForce,
+    float DisplacementVelocity,
+    float DisplacementFalloff,
+    WaterNoiseLayer Layer1,
+    WaterNoiseLayer Layer2,
+    WaterNoiseLayer Layer3,
+    float Unknown144);
+
+/// <summary>
 ///     The non-color WATR DNAM shading parameters that drive the water surface shader, parsed
 ///     from the same <c>DNAM/WATR</c> schema the converter uses (field names match
 ///     <c>SubrecordCellAndMiscSchemas</c>). These are the engine's real per-water values, so the
@@ -187,7 +218,13 @@ public sealed record WaterAppearance(
     (byte R, byte G, byte B)? Underwater = null,
     // TES4 WATR TNAM. This is WATER000's per-water detail/surface input, not its global animated
     // water00..31 normal sequence, so it must never enter NormalTextures as a compatibility fallback.
-    string? SurfaceTexture = null)
+    string? SurfaceTexture = null,
+    // Exact FO76 optical model retained alongside the byte-color compatibility projection.
+    Fallout76WaterVisualData? Fallout76VisualData = null,
+    // Exact Starfield WATR data retained only when an appearance already has independently authored
+    // compatibility colors. Starfield DNAM itself has no shallow/deep endpoints, so its presence
+    // never manufactures colors or changes the current flat-fallback rendering policy.
+    StarfieldWaterVisualData? StarfieldVisualData = null)
 {
     // Fallback molten palette for lava records whose DATA carries no colors — bright orange crust grading
     // to dark red by depth (the shader's lava branch boosts + pulses these).
@@ -263,7 +300,10 @@ public sealed record WaterAppearance(
 
     /// <summary>
     ///     Builds appearance from a WATR DNAM properties dictionary + the NNAM path. Returns null
-    ///     when neither ShallowColor nor DeepColor is present (or both are zero).
+    ///     when neither ShallowColor nor DeepColor is present (or both are zero), unless a typed
+    ///     FO76 payload establishes that an authored black base color is genuinely present.
+    ///     Starfield's typed optical payload does not author those endpoints and therefore does not
+    ///     create an appearance by itself.
     /// </summary>
     public static WaterAppearance? FromVisualProperties(
         IReadOnlyDictionary<string, object?>? props, string? noiseTexture,
@@ -271,18 +311,38 @@ public sealed record WaterAppearance(
     {
         if (props is null) return null;
 
+        var fallout76 = props.TryGetValue("Fallout76VisualData", out var fallout76Value) &&
+                        fallout76Value is Fallout76WaterVisualData decoded
+            ? decoded
+            : (Fallout76WaterVisualData?)null;
+        var starfield = props.TryGetValue("StarfieldVisualData", out var starfieldValue) &&
+                        starfieldValue is StarfieldWaterVisualData starfieldDecoded
+            ? starfieldDecoded
+            : null;
         var shallow = ExtractColor(props, "ShallowColor");
         var deep = ExtractColor(props, "DeepColor");
         var reflection = ExtractColor(props, "ReflectionColor");
+        if (fallout76 is { } f76)
+        {
+            // Packed zero is the legacy "missing color" sentinel, but black is valid in FO76's
+            // typed float base color. Derive the compatibility endpoints from typed presence so a
+            // valid black water never disappears merely because it quantizes to 0x000000.
+            var baseColor = QuantizeNormalizedColor(f76.BaseColor);
+            shallow ??= baseColor;
+            deep ??= baseColor;
+        }
+
         if (shallow is null && deep is null) return null;
 
         var s = shallow ?? deep!.Value;
         var d = deep ?? shallow!.Value;
         var r = reflection ?? s;
-        return new WaterAppearance(s, d, r, noiseTexture, ExtractSurface(props),
+        return new WaterAppearance(s, d, r, noiseTexture, ExtractSurface(props, fallout76),
             DarkSilt: ExtractColor(props, "DarkSiltColor"), NormalTextures: normalTextures,
             LightSilt: ExtractColor(props, "LightSiltColor"),
-            Underwater: ExtractColor(props, "UnderwaterColor"));
+            Underwater: ExtractColor(props, "UnderwaterColor"),
+            Fallout76VisualData: fallout76,
+            StarfieldVisualData: starfield);
     }
 
     /// <summary>
@@ -290,9 +350,25 @@ public sealed record WaterAppearance(
     ///     falling back per-field to <see cref="WaterSurfaceParams.Default" /> when a key is absent
     ///     (so partial/proto DNAM still yields a sane surface).
     /// </summary>
-    private static WaterSurfaceParams ExtractSurface(IReadOnlyDictionary<string, object?> props)
+    private static WaterSurfaceParams ExtractSurface(
+        IReadOnlyDictionary<string, object?> props,
+        Fallout76WaterVisualData? fallout76)
     {
         var def = WaterSurfaceParams.Default;
+        // FO76's exact optical composite has three independent transmission channels and therefore
+        // cannot be represented by fixed-function scalar alpha blending. Until the renderer samples
+        // the scene color, use an explicitly heuristic arithmetic-mean coverage while preserving
+        // the exact vector on WaterAppearance. fo76utils establishes the 0.5/0.9375 alpha endpoints,
+        // but not this scalar aggregation; the latter is only a compatibility projection.
+        var fallout76Opacity = fallout76 is { } f76
+            ? (f76.ChannelOpacity.R + f76.ChannelOpacity.G + f76.ChannelOpacity.B) / 3f
+            : (float?)null;
+        var projectedShallowAlpha = fallout76Opacity is { } shallowOpacity
+            ? 0.5f + (0.5f * shallowOpacity)
+            : def.ShallowAlpha;
+        var projectedDeepAlpha = fallout76Opacity is { } deepOpacity
+            ? 0.9375f + (0.0625f * deepOpacity)
+            : def.DeepAlpha;
         return new WaterSurfaceParams(
             ExtractFloat(props, "NormalsUVScale", def.NormalsUvScale),
             ExtractFloat(props, "FresnelAmount", def.FresnelAmount),
@@ -307,10 +383,10 @@ public sealed record WaterAppearance(
             ExtractFloat(props, "NoiseScale", def.NoiseScale),
             SunSpecularMagnitude: ExtractFloat(props, "SunSpecularMagnitude", def.SunSpecularMagnitude),
             SiltAmount: ExtractFloat(props, "SiltAmount", def.SiltAmount),
-            ShallowAlpha: ExtractFloat(props, "ShallowAlpha", def.ShallowAlpha),
-            DeepAlpha: ExtractFloat(props, "DeepAlpha", def.DeepAlpha),
+            ShallowAlpha: ExtractFloat(props, "ShallowAlpha", projectedShallowAlpha),
+            DeepAlpha: ExtractFloat(props, "DeepAlpha", projectedDeepAlpha),
             AlphaShallowRange: ExtractFloat(props, "AlphaShallowRange", def.AlphaShallowRange),
-            AlphaDeepRange: ExtractFloat(props, "AlphaDeepRange", def.AlphaDeepRange),
+            AlphaDeepRange: ExtractFloat(props, "AlphaDeepRange", fallout76 is not null ? 1f : def.AlphaDeepRange),
             ColorShallowRange: ExtractFloat(props, "ColorShallowRange", def.ColorShallowRange),
             ColorDeepRange: ExtractFloat(props, "ColorDeepRange", def.ColorDeepRange),
             DepthAmount: ExtractFloat(props, "DepthAmount", def.DepthAmount),
@@ -410,6 +486,15 @@ public sealed record WaterAppearance(
         };
         if (packed == 0) return null;
         return ((byte)(packed & 0xFF), (byte)((packed >> 8) & 0xFF), (byte)((packed >> 16) & 0xFF));
+    }
+
+    private static (byte R, byte G, byte B) QuantizeNormalizedColor(
+        (float R, float G, float B) color)
+    {
+        static byte ToByte(float value) =>
+            (byte)Math.Clamp((int)MathF.Round(value * byte.MaxValue), byte.MinValue, byte.MaxValue);
+
+        return (ToByte(color.R), ToByte(color.G), ToByte(color.B));
     }
 
     /// <summary>

@@ -24,11 +24,6 @@ internal sealed class RuntimeGenericReader(
     /// </summary>
     public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
     {
-        if (!entry.TesFormOffset.HasValue)
-        {
-            return null;
-        }
-
         var formType = entry.FormType;
         var layout = PdbStructLayouts.Get(formType);
         if (layout == null)
@@ -42,61 +37,10 @@ internal sealed class RuntimeGenericReader(
             return null;
         }
 
-        // pAllForms is NiTMapBase<uint, TESForm*>, so the retained file offset / VA identifies
-        // the TESForm subobject, not necessarily the complete-object base. Identity was read at
-        // canonical TESForm-relative +4/+12 upstream. PDB field offsets, however, are relative
-        // to the complete object: MSTT's TESForm begins at +20 and FLOR's at +12 in the verified
-        // layout. Recover that base before applying any PDB field offset. TESForm-first classes
-        // such as WRLD and ASPC have an interior offset of zero, making this a no-op for them.
-        var interiorOffset = PdbStructLayouts.GetTesFormInteriorOffset(layout);
-        // Resolve the complete object in VA space when the dump provides a mapping. The hash-table
-        // entry points at the TESForm subobject, so apply the same interior-base correction to its
-        // VA before mapping the real object base back to a file offset. Prefer the captured pointer;
-        // TesFormOffset is only used to recover the VA when no pointer was retained on the entry.
-        var tesFormVa = entry.TesFormPointer is { } pointer && pointer != 0
-            ? pointer
-            : _context.MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
-        long? objectVa = tesFormVa.HasValue ? tesFormVa.Value - interiorOffset : null;
-        var objectBase = entry.TesFormOffset.Value - interiorOffset;
-        if (objectVa.HasValue)
-        {
-            var mappedObjectBase = _context.MinidumpInfo.VirtualAddressToFileOffset(objectVa.Value);
-            if (!mappedObjectBase.HasValue)
-            {
-                return null;
-            }
-
-            // Keep a file offset as the downstream base: BSStringT diagnostics and the recovered
-            // record's Offset are file-oriented even though the top-level read is VA-oriented.
-            objectBase = mappedObjectBase.Value;
-        }
-
-        // Read the type-shift range before probing per-record correction. This makes the VA-range
-        // check authoritative: a validator must never inspect flat bytes across a capture gap.
-        var shift = _typeShifts.TryGetValue(formType, out var s) ? s : 0;
-        var effectiveSize = GetEffectiveSize(layout, shift);
-        var structData = objectVa.HasValue
-            ? _context.ReadBytesAtVa(objectVa.Value, effectiveSize)
-            : _context.ReadBytes(objectBase, effectiveSize);
-        if (structData == null)
+        if (ResolveStruct(entry, layout) is not var (structData, objectBase, shift))
         {
             return null;
         }
-
-        var correctedShift = TryCorrectShift(layout, shift, structData);
-        var correctedSize = GetEffectiveSize(layout, correctedShift);
-        if (correctedSize > structData.Length)
-        {
-            structData = objectVa.HasValue
-                ? _context.ReadBytesAtVa(objectVa.Value, correctedSize)
-                : _context.ReadBytes(objectBase, correctedSize);
-            if (structData == null)
-            {
-                return null;
-            }
-        }
-
-        shift = correctedShift;
 
         var fields = ReadFields(structData, readableFields, objectBase, shift);
 
@@ -161,6 +105,139 @@ internal sealed class RuntimeGenericReader(
     }
 
     /// <summary>
+    ///     Read only the nested payloads a record carries behind a container or an indirection —
+    ///     MODT texture hashes, MODS alternate textures, and the DEST destruction block.
+    ///     <para>
+    ///         Separate from <see cref="ReadGenericRecord" /> because these three live on
+    ///         <b>every</b> type that inherits the corresponding engine base class, including the
+    ///         ~20 types routed to hand-written specialized readers that never call the generic
+    ///         reader at all. WEAP, ARMO, STAT, MISC, DOOR, NPC_ and CREA all carry them and all
+    ///         bypass the generic path, so without this entry point the payloads stay invisible on
+    ///         exactly the types most worth browsing.
+    ///     </para>
+    ///     <para>
+    ///         Returns null when this record's layout carries none of the three, so a caller can
+    ///         skip the struct read entirely for the majority of FormTypes.
+    ///     </para>
+    /// </summary>
+    public RuntimeNestedPayloads? ReadNestedPayloads(RuntimeEditorIdEntry entry)
+    {
+        var layout = PdbStructLayouts.Get(entry.FormType);
+        if (layout == null || !PdbStructLayouts.CarriesNestedPayload(entry.FormType))
+        {
+            return null;
+        }
+
+        if (ResolveStruct(entry, layout) is not var (structData, _, shift))
+        {
+            return null;
+        }
+
+        var textureHashes = ReadNestedField(
+            layout, structData, shift, "TESModel", "TextureList") as RuntimeTextureHashList;
+        var alternateTextures = ReadNestedField(
+            layout, structData, shift, "TESModelTextureSwap", "TextureSwapList")
+            as IReadOnlyList<AlternateTextureEntry>;
+        var destruction = ReadNestedField(
+            layout, structData, shift, "BGSDestructibleObjectForm", "pData") as DestructionData;
+
+        if (textureHashes == null && alternateTextures == null && destruction == null)
+        {
+            return null;
+        }
+
+        return new RuntimeNestedPayloads(textureHashes, alternateTextures, destruction);
+    }
+
+    private object? ReadNestedField(
+        PdbTypeLayout layout, byte[] structData, int shift, string owner, string name)
+    {
+        var field = layout.Fields.FirstOrDefault(f => f.Owner == owner && f.Name == name);
+        if (field == null)
+        {
+            return null;
+        }
+
+        var offset = ApplyFieldShift(field, shift);
+        if (offset < 0 || offset + field.Size > structData.Length)
+        {
+            return null;
+        }
+
+        return RuntimeContainerFieldReader.Read(_context, structData, field, offset, layout.Fields);
+    }
+
+    /// <summary>
+    ///     Locate and read a record's complete-object struct, applying the interior-base correction
+    ///     and the per-type / per-record layout shift. Shared by every entry point so they cannot
+    ///     drift apart on the one piece of logic that is genuinely subtle here.
+    /// </summary>
+    private (byte[] Data, long ObjectBase, int Shift)? ResolveStruct(
+        RuntimeEditorIdEntry entry, PdbTypeLayout layout)
+    {
+        if (!entry.TesFormOffset.HasValue)
+        {
+            return null;
+        }
+
+        // pAllForms is NiTMapBase<uint, TESForm*>, so the retained file offset / VA identifies
+        // the TESForm subobject, not necessarily the complete-object base. Identity was read at
+        // canonical TESForm-relative +4/+12 upstream. PDB field offsets, however, are relative
+        // to the complete object: MSTT's TESForm begins at +20 and FLOR's at +12 in the verified
+        // layout. Recover that base before applying any PDB field offset. TESForm-first classes
+        // such as WRLD and ASPC have an interior offset of zero, making this a no-op for them.
+        var interiorOffset = PdbStructLayouts.GetTesFormInteriorOffset(layout);
+        // Resolve the complete object in VA space when the dump provides a mapping. The hash-table
+        // entry points at the TESForm subobject, so apply the same interior-base correction to its
+        // VA before mapping the real object base back to a file offset. Prefer the captured pointer;
+        // TesFormOffset is only used to recover the VA when no pointer was retained on the entry.
+        var tesFormVa = entry.TesFormPointer is { } pointer && pointer != 0
+            ? pointer
+            : _context.MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
+        long? objectVa = tesFormVa.HasValue ? tesFormVa.Value - interiorOffset : null;
+        var objectBase = entry.TesFormOffset.Value - interiorOffset;
+        if (objectVa.HasValue)
+        {
+            var mappedObjectBase = _context.MinidumpInfo.VirtualAddressToFileOffset(objectVa.Value);
+            if (!mappedObjectBase.HasValue)
+            {
+                return null;
+            }
+
+            // Keep a file offset as the downstream base: BSStringT diagnostics and the recovered
+            // record's Offset are file-oriented even though the top-level read is VA-oriented.
+            objectBase = mappedObjectBase.Value;
+        }
+
+        // Read the type-shift range before probing per-record correction. This makes the VA-range
+        // check authoritative: a validator must never inspect flat bytes across a capture gap.
+        var shift = _typeShifts.TryGetValue(entry.FormType, out var s) ? s : 0;
+        var effectiveSize = GetEffectiveSize(layout, shift);
+        var structData = objectVa.HasValue
+            ? _context.ReadBytesAtVa(objectVa.Value, effectiveSize)
+            : _context.ReadBytes(objectBase, effectiveSize);
+        if (structData == null)
+        {
+            return null;
+        }
+
+        var correctedShift = TryCorrectShift(layout, shift, structData);
+        var correctedSize = GetEffectiveSize(layout, correctedShift);
+        if (correctedSize > structData.Length)
+        {
+            structData = objectVa.HasValue
+                ? _context.ReadBytesAtVa(objectVa.Value, correctedSize)
+                : _context.ReadBytes(objectBase, correctedSize);
+            if (structData == null)
+            {
+                return null;
+            }
+        }
+
+        return (structData, objectBase, correctedShift);
+    }
+
+    /// <summary>
     ///     Read all readable fields from a struct data buffer using PDB field layouts.
     /// </summary>
     private Dictionary<string, object?> ReadFields(
@@ -177,7 +254,7 @@ internal sealed class RuntimeGenericReader(
             }
 
             var key = field.Owner != null ? $"{field.Owner}.{field.Name}" : field.Name;
-            var value = ReadFieldValue(structData, field, tesFormFileOffset, effectiveOffset);
+            var value = ReadFieldValue(structData, field, tesFormFileOffset, effectiveOffset, fields);
             if (value != null)
             {
                 result[key] = value;
@@ -195,9 +272,15 @@ internal sealed class RuntimeGenericReader(
     /// </summary>
     private int TryCorrectShift(PdbTypeLayout layout, int typeShift, byte[] structData)
     {
-        // Find a BSStringT field to use as a validator (prefer cModel — higher success rate)
+        // Find a BSStringT field to use as a validator (prefer cModel — higher success rate).
+        // Falling back to ANY BSStringT matters: a type with neither cModel nor cFullName —
+        // LSCR, GLOB, LSCT and friends — otherwise gets no per-record correction at all, because
+        // the two named members are the only validators this ever looked for. LSCR carries
+        // TESTexture.TextureName and TESLoadScreen.cDescText, either of which validates fine.
         var probeField = layout.Fields.FirstOrDefault(f => f is { Name: "cModel", Owner: "TESModel" })
-                         ?? layout.Fields.FirstOrDefault(f => f is { Name: "cFullName", Owner: "TESFullName" });
+                         ?? layout.Fields.FirstOrDefault(f => f is { Name: "cFullName", Owner: "TESFullName" })
+                         ?? layout.Fields.FirstOrDefault(f =>
+                             f.Kind == "struct" && f.TypeDetail == "BSStringT<char>" && f.Owner != "TESForm");
         if (probeField == null)
         {
             return typeShift;
@@ -305,15 +388,15 @@ internal sealed class RuntimeGenericReader(
                     continue; // Anchored, don't probe
                 }
 
-                var check = GetFieldProbeCheck(field);
+                var probe = GetFieldProbe(field);
 
-                if (check == null)
+                if (probe == null)
                 {
                     continue; // Only probe fields with strong validation signals
                 }
 
                 fieldSpecs.Add(new RuntimeReaderFieldProbe.FieldSpec(
-                    field.Name, field.Offset, 1, check.Value));
+                    field.Name, field.Offset, 1, probe.Value.Check, CheckArg: probe.Value.Arg));
             }
 
             if (fieldSpecs.Count < 2)
@@ -339,23 +422,116 @@ internal sealed class RuntimeGenericReader(
 
     internal static RuntimeReaderFieldProbe.FieldCheck? GetFieldProbeCheck(PdbFieldLayout field)
     {
-        return field.Kind switch
+        return GetFieldProbe(field)?.Check;
+    }
+
+    /// <summary>
+    ///     Pick the probe check for a field, with the argument it needs.
+    ///     <para>
+    ///         A check that can never pass is not free: <c>ScoreSample</c> adds every declared field
+    ///         to the denominator and only a passing one to the numerator, so a check that fails at
+    ///         <i>every</i> candidate shift dilutes the margin the caller gates on
+    ///         (<c>Margin &gt;= 2</c>) and makes a real layout shift harder to detect. Fields
+    ///         therefore get a check only when it is discriminating for that field's actual shape.
+    ///     </para>
+    ///     <para>
+    ///         That is why a <c>BSSimpleList&lt;TEX_SWAP *&gt;</c> or a <c>TESTextureList</c> gets
+    ///         none even though the reader now walks both: the first word of a TESTextureList is a
+    ///         count, and a TEX_SWAP node is a plain allocation, so neither head is a form pointer
+    ///         and no available check would do anything but add noise.
+    ///     </para>
+    /// </summary>
+    internal static (RuntimeReaderFieldProbe.FieldCheck Check, object? Arg)? GetFieldProbe(
+        PdbFieldLayout field)
+    {
+        if (field.Kind is "float32" or "float")
         {
-            "pointer" => RuntimeReaderFieldProbe.FieldCheck.PointerToForm,
-            "float32" or "float" => RuntimeReaderFieldProbe.FieldCheck.NormalFloat,
-            "struct" when field.TypeDetail is "BSStringT<char>" =>
-                RuntimeReaderFieldProbe.FieldCheck.BSStringT,
-            _ => null
-        };
+            return (RuntimeReaderFieldProbe.FieldCheck.NormalFloat, null);
+        }
+
+        if (field.Kind == "struct")
+        {
+            if (field.TypeDetail is "BSStringT<char>")
+            {
+                return (RuntimeReaderFieldProbe.FieldCheck.BSStringT, null);
+            }
+
+            // A BSSimpleList head's first word points at the first item, so when the element type
+            // is a record class the strongest available check applies — and unlike a bare
+            // PointerToForm it also rejects a pointer that lands on a form of the wrong type.
+            return TryGetListElementFormType(field.TypeDetail) is { } listFormType
+                ? (RuntimeReaderFieldProbe.FieldCheck.PointerToFormType, listFormType)
+                : null;
+        }
+
+        if (field.Kind != "pointer")
+        {
+            return null;
+        }
+
+        // A pointer whose target the layout database knows is not a record class — a
+        // DestructibleObjectData allocation, a BaseProcess, an NiNode — can never resolve to a
+        // TESForm, so PointerToForm on it was pure dilution on every type carrying one.
+        if (field.TypeDetail is not { Length: > 0 } target)
+        {
+            return (RuntimeReaderFieldProbe.FieldCheck.PointerToForm, null);
+        }
+
+        if (PdbStructLayouts.TryGetFormTypeByClassName(target, out var formType))
+        {
+            return (RuntimeReaderFieldProbe.FieldCheck.PointerToFormType, formType);
+        }
+
+        return PdbStructLayouts.TryGetAuxStruct(target, out _)
+            ? null
+            : (RuntimeReaderFieldProbe.FieldCheck.PointerToForm, null);
+    }
+
+    /// <summary>
+    ///     FormType of a <c>BSSimpleList&lt;X *&gt;</c>'s element class, when X is a record class.
+    /// </summary>
+    private static byte? TryGetListElementFormType(string? typeDetail)
+    {
+        if (typeDetail is null || !typeDetail.StartsWith("BSSimpleList<", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var open = typeDetail.IndexOf('<', StringComparison.Ordinal);
+        var close = typeDetail.LastIndexOf('>');
+        if (open < 0 || close <= open)
+        {
+            return null;
+        }
+
+        var element = typeDetail[(open + 1)..close].Trim().TrimEnd('*').Trim();
+        return PdbStructLayouts.TryGetFormTypeByClassName(element, out var formType) ? formType : null;
     }
 
     /// <summary>
     ///     Read a single field value from the struct data based on its PDB type kind.
     /// </summary>
     internal object? ReadFieldValue(byte[] data, PdbFieldLayout field, long tesFormFileOffset,
-        int effectiveOffset = -1)
+        int effectiveOffset = -1, IReadOnlyList<PdbFieldLayout>? siblingFields = null)
     {
         var offset = effectiveOffset >= 0 ? effectiveOffset : field.Offset;
+
+        // Containers are checked before the Kind switch because they do not have a Kind of their
+        // own: a BSSimpleList arrives as kind:"struct" and a counted pointer array as
+        // kind:"pointer", so both would otherwise be handled as the scalar they are shaped like.
+        if (RuntimeContainerFieldReader.Handles(field))
+        {
+            var container = RuntimeContainerFieldReader.Read(
+                _context, data, field, offset, siblingFields ?? []);
+            if (container != null)
+            {
+                return container;
+            }
+
+            // An unresolvable container falls through: a BSSimpleList head is still an 8-byte
+            // struct and a counted array is still a pointer, so the existing arms keep whatever
+            // diagnostic value the raw value had.
+        }
 
         return field.Kind switch
         {
@@ -369,8 +545,30 @@ internal sealed class RuntimeGenericReader(
             "float32" or "float" => ReadValidatedFloat(data, offset),
             "pointer" => ReadPointerField(data, field, offset),
             "struct" => ReadEmbeddedStruct(data, field, offset),
+            // An array the container reader did not claim has no typed walk, but it still has
+            // bytes. Without this arm the switch fell through to null and the field vanished
+            // silently — the same shape of loss as the MODT all-or-nothing bail. 43 of the
+            // layout's 54 array fields land here, including RACE's head/body model and texture
+            // lists, NPC_ FaceGen offsets, WTHR colour data and the ARMO/ARMA/CLOT biped models.
+            // Raw bytes are what ReadEmbeddedStruct already hands back for a struct over 8 bytes,
+            // and ShowHelpers renders them through the same hex preview.
+            "array" => ReadRawArray(data, field, offset),
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Return an unclaimed array field's raw bytes, or null when it is entirely zero.
+    ///     <para>
+    ///         An all-zero array is an allocation the engine never populated, and reporting it would
+    ///         put a page of "00" in front of a reader for every unset field. A non-zero one is real
+    ///         captured content whose typed decode simply does not exist yet.
+    ///     </para>
+    /// </summary>
+    private static byte[]? ReadRawArray(byte[] data, PdbFieldLayout field, int offset)
+    {
+        var span = data.AsSpan(offset, field.Size);
+        return span.IndexOfAnyExcept((byte)0) < 0 ? null : span.ToArray();
     }
 
     /// <summary>
@@ -399,17 +597,38 @@ internal sealed class RuntimeGenericReader(
             return null;
         }
 
+        // For BSStringT pointers (cFullName, cModel, etc.) — skip, handled separately
+        if (field.TypeDetail is "BSStringT<char>")
+        {
+            return null;
+        }
+
+        // When the layout names the target's class, DEMAND that FormType.
+        //
+        // The untyped follow is far weaker than it looks: it accepts any pointer into captured
+        // memory whose byte at +4 is <= 200 and whose word at +12 is non-zero. Every ASCII
+        // character satisfies the first and most text satisfies the second, so a stale pointer
+        // landing in a string returns that string's bytes as a "FormID". LSCR.pLoadScreenType is
+        // the worked example — it reported 0x20736B69, which is the ASCII " ski". The layout has
+        // said "TESLoadScreenType" all along; nothing was using it.
+        // The demanded set is the declared class PLUS every record class deriving from it, because
+        // C++ pointer assignment is covariant: TESObjectREFR* pShooter holds a Character (ACHR) or
+        // Creature (ACRE) in practice and a bare REFR almost never, so insisting on the declared
+        // class alone would reject the correct answer on 15 of the 248 typed fields.
+        if (field.TypeDetail is { Length: > 0 } target &&
+            PdbStructLayouts.TryGetAssignableFormTypes(target, out var acceptableFormTypes))
+        {
+            // Null rather than the raw word: a pointer declared as a record class that does not
+            // resolve to one is a misread, and reporting the word would make it indistinguishable
+            // from a recovered reference.
+            return _context.FollowPointerToFormId(data, effectiveOffset, acceptableFormTypes);
+        }
+
         // Try to follow as a TESForm pointer and get the target's FormID
         var formId = _context.FollowPointerToFormId(data, effectiveOffset);
         if (formId.HasValue)
         {
             return formId.Value;
-        }
-
-        // For BSStringT pointers (cFullName, cModel, etc.) — skip, handled separately
-        if (field.TypeDetail is "BSStringT<char>")
-        {
-            return null;
         }
 
         // Return raw VA for non-TESForm pointers (only if valid)
@@ -460,6 +679,16 @@ internal sealed class RuntimeGenericReader(
             }
 
             return null; // Null pointer or empty string — skip rather than showing hex
+        }
+
+        // A TESTexture MEMBER (12 bytes: vtable + BSStringT). The layout database never exports
+        // nested struct layouts, but it does not have to here: 28 types carry TESTexture as a BASE
+        // class, and in every one of them the flattened `TESTexture.TextureName` BSStringT sits
+        // exactly 4 bytes past where the base begins (LSCR: TESForm ends at 40, TextureName @44;
+        // MICN, CHIP, WEAP, … all agree). So the string is at +4 within the member too.
+        if (field.TypeDetail is "TESTexture" && field.Size == 12)
+        {
+            return _context.ReadBSStringTDiag(data, effectiveOffset + 4, out _);
         }
 
         // For very small structs (up to 8 bytes), show as hex

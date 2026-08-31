@@ -24,7 +24,11 @@ public sealed class StreamingQuiescenceTests
     }
 
     [Theory]
+    [InlineData("batchBuild")]
+    [InlineData("cullRefresh")]
     [InlineData("uploads")]
+    [InlineData("materializationFailures")]
+    [InlineData("materializationPending")]
     [InlineData("queuedDecodes")]
     [InlineData("activeDecodes")]
     [InlineData("pendingResolves")]
@@ -34,7 +38,11 @@ public sealed class StreamingQuiescenceTests
         var r = Quiet();
         switch (counter)
         {
+            case "batchBuild": r.ReferenceBatchBuildInProgress = true; break;
+            case "cullRefresh": r.ReferenceCullRefreshPending = true; break;
             case "uploads": r.ReferenceGpuUploads = 1; break;
+            case "materializationFailures": r.ReferenceMeshMaterializationFailures = 1; break;
+            case "materializationPending": r.ReferenceMeshMaterializationRetriesPending = 1; break;
             case "queuedDecodes": r.ReferenceQueuedDecodes = 1; break;
             case "activeDecodes": r.ReferenceActiveDecodes = 1; break;
             case "pendingResolves": r.ReferenceTexturePendingResolves = 1; break;

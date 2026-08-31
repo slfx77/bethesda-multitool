@@ -9,8 +9,8 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
-///     The five FormTypes the generic runtime sweep has always read out of dumps but that nothing
-///     could emit until 2026-08-26: LSCR, CHIP, IDLM, CAMS, MSET. Each arrives as a
+///     The FormTypes the generic runtime sweep has always read out of dumps but that nothing could
+///     emit until 2026-08-26: LSCR, CHIP, IDLM, CAMS, MSET, then EFSH, RGDL and CSNO. Each arrives as a
 ///     <see cref="GenericEsmRecord" /> whose <c>Fields</c> are keyed by PDB identifier
 ///     ("Owner.Name") on the runtime path and by subrecord signature on the ESM carve path — the
 ///     dual-key lookup is the main regression risk these tests pin, alongside the exact emitted
@@ -225,11 +225,36 @@ public class GenericSweepWiredEncoderTests
     // ===================================================================================
 
     [Fact]
-    public void Idlm_EmitsFlagsCountAndTimer_WithCountForcedToZero()
+    public void Idlm_EmitsResolvedAnimations_WithIdlcMatchingIdlaLength()
     {
-        // IDLC drives IDLA's element count in the schema. IDLA cannot be recovered (pIdleArray is
-        // an out-of-struct pointer array), so writing the runtime's count would point the engine at
-        // animations that are not there.
+        // The walked array is the authority for both members: RuntimeContainerFieldReader resolves
+        // pIdleArray all-or-nothing, and IDLC is written as that array's length so the pair the
+        // schema requires to agree cannot disagree.
+        var result = IdlmEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000903,
+            RecordType = "IDLM",
+            EditorId = "WalkedIdleMarker",
+            Fields = new Dictionary<string, object?>
+            {
+                ["BGSIdleCollection.cIdleCount"] = (byte)2,
+                ["BGSIdleCollection.pIdleArray"] = new List<uint> { 0x00033001, 0x00033002 }
+            }
+        });
+
+        Assert.Equal([0x02], result.Subrecords.Single(s => s.Signature == "IDLC").Bytes);
+        var idla = result.Subrecords.Single(s => s.Signature == "IDLA").Bytes;
+        Assert.Equal(8, idla.Length);
+        Assert.Equal(0x00033001u, BitConverter.ToUInt32(idla, 0)); // little-endian on the PC side
+        Assert.Equal(0x00033002u, BitConverter.ToUInt32(idla, 4));
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("pIdleArray"));
+    }
+
+    [Fact]
+    public void Idlm_ForcesCountToZero_WhenTheArrayCouldNotBeWalked()
+    {
+        // IDLC drives IDLA's element count in the schema, so a declared count with no array behind
+        // it would point the engine at animations that are not there.
         var result = IdlmEncoder.EncodeNew(new GenericEsmRecord
         {
             FormId = 0x01000900,
@@ -559,5 +584,265 @@ public class GenericSweepWiredEncoderTests
         }).Subrecords;
 
         Assert.DoesNotContain(subs, s => s.Signature is "HNAM" or "INAM");
+    }
+
+    // ===================================================================================
+    // EFSH — xEdit wbRecord(EFSH): EDID, ICON, ICO2, NAM7, DATA(308 in the runtime form).
+    // ===================================================================================
+
+    [Fact]
+    public void Efsh_EmitsThreeTexturesAndSchemaConvertedData()
+    {
+        var raw = new byte[308];
+        raw[0] = 0x21; // Flags — a u8 the schema leaves unswapped, so it must survive verbatim.
+        BinaryPrimitives.WriteUInt32BigEndian(raw.AsSpan(4), 6); // Membrane source blend mode
+
+        var result = EfshEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000A00,
+            RecordType = "EFSH",
+            EditorId = "ProtoEffectShader",
+            Fields = new Dictionary<string, object?>
+            {
+                ["TESEffectShader.TextureShaderTexture"] = @"effects\fillfx.dds",
+                ["TESEffectShader.ParticleShaderTexture"] = @"effects\particle.dds",
+                ["TESEffectShader.BlockOutTexture"] = @"effects\holes.dds",
+                ["TESEffectShader.Data"] = raw
+            }
+        });
+
+        Assert.Equal(
+            ["EDID", "ICON", "ICO2", "NAM7", "DATA"],
+            result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.Equal(@"effects\fillfx.dds", ZString(result.Subrecords.Single(s => s.Signature == "ICON")));
+        Assert.Equal(@"effects\particle.dds", ZString(result.Subrecords.Single(s => s.Signature == "ICO2")));
+        Assert.Equal(@"effects\holes.dds", ZString(result.Subrecords.Single(s => s.Signature == "NAM7")));
+
+        var data = result.Subrecords.Single(s => s.Signature == "DATA").Bytes;
+        Assert.Equal(308, data.Length);
+        Assert.Equal(0x21, data[0]);
+        Assert.Equal(6u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4))); // swapped BE -> LE
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void Efsh_OmitsDataAndWarns_WhenTheBlockIsTheWrongLength()
+    {
+        // Emitting bytes the schema cannot describe would be reinterpretation, not recovery.
+        var result = EfshEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000A01,
+            RecordType = "EFSH",
+            EditorId = "TruncatedEffectShader",
+            Fields = new Dictionary<string, object?> { ["TESEffectShader.Data"] = new byte[12] }
+        });
+
+        Assert.Equal(["EDID"], result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.Contains(result.Warnings, w => w.Contains("EffectShaderData"));
+    }
+
+    // ===================================================================================
+    // RGDL — xEdit wbRecord(RGDL): EDID, NVER, DATA(14), XNAM, TNAM, RAFD, RAFB, RAPS, ANAM.
+    // ===================================================================================
+
+    [Fact]
+    public void Rgdl_EmitsGeneralDataAndBothRequiredReferences()
+    {
+        var raw = new byte[14];
+        BinaryPrimitives.WriteUInt32BigEndian(raw, 7); // Dynamic Bone Count
+        raw[8] = 1; // Feedback enabled
+
+        var result = RgdlEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000B00,
+            RecordType = "RGDL",
+            EditorId = "ProtoRagdoll",
+            Fields = new Dictionary<string, object?>
+            {
+                ["BGSRagdoll.SaveStruct"] = raw,
+                ["BGSRagdoll.pPreviewActor"] = 0x0004A1B2u,
+                ["BGSRagdoll.pBodyPartData"] = 0x0004A1B3u
+            }
+        });
+
+        Assert.Equal(
+            ["EDID", "DATA", "XNAM", "TNAM"],
+            result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.Equal(0x0004A1B2u, FormId(result.Subrecords.Single(s => s.Signature == "XNAM")));
+        Assert.Equal(0x0004A1B3u, FormId(result.Subrecords.Single(s => s.Signature == "TNAM")));
+
+        var data = result.Subrecords.Single(s => s.Signature == "DATA").Bytes;
+        Assert.Equal(14, data.Length);
+        Assert.Equal(7u, BinaryPrimitives.ReadUInt32LittleEndian(data));
+        Assert.Equal(1, data[8]);
+    }
+
+    [Fact]
+    public void Rgdl_OmitsData_WhenTheBoneCountIsImplausible()
+    {
+        // Guards the deliberate divergence pinned above: the runtime block is read as a plain
+        // big-endian u32, NOT through the file schema's UInt32WordSwapped field, so a misaligned
+        // capture shows up as an absurd count rather than a quietly halved-and-swapped one.
+        var raw = new byte[14];
+        BinaryPrimitives.WriteUInt32BigEndian(raw, 0x00CAFE00);
+
+        var result = RgdlEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000B02,
+            RecordType = "RGDL",
+            EditorId = "MisalignedRagdoll",
+            Fields = new Dictionary<string, object?> { ["BGSRagdoll.SaveStruct"] = raw }
+        });
+
+        Assert.DoesNotContain(result.Subrecords, s => s.Signature == "DATA");
+        Assert.Contains(result.Warnings, w => w.Contains("RagdollSaveStruct"));
+    }
+
+    [Fact]
+    public void Rgdl_WarnsForEachRequiredMemberItCannotRecover()
+    {
+        var result = RgdlEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000B01,
+            RecordType = "RGDL",
+            EditorId = "BareRagdoll"
+        });
+
+        Assert.Equal(["EDID"], result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.Contains(result.Warnings, w => w.Contains("DATA"));
+        Assert.Contains(result.Warnings, w => w.Contains("XNAM"));
+        Assert.Contains(result.Warnings, w => w.Contains("TNAM"));
+    }
+
+    // ===================================================================================
+    // CSNO — xEdit wbRecord(CSNO): EDID(req), FULL, DATA(56), then MODL/ICON groups.
+    // ===================================================================================
+
+    [Fact]
+    public void Csno_EmitsFullNameAndSchemaConvertedData()
+    {
+        var raw = new byte[56];
+        BinaryPrimitives.WriteSingleBigEndian(raw, 0.75f); // Decks % Before Shuffle
+        BinaryPrimitives.WriteUInt32BigEndian(raw.AsSpan(36), 8); // Number of Decks
+
+        var result = CsnoEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000C00,
+            RecordType = "CSNO",
+            EditorId = "ProtoCasino",
+            FullName = "The Tops",
+            Fields = new Dictionary<string, object?> { ["TESCasino.data"] = raw }
+        });
+
+        Assert.Equal(["EDID", "FULL", "DATA"], result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.Equal("The Tops", ZString(result.Subrecords.Single(s => s.Signature == "FULL")));
+
+        var data = result.Subrecords.Single(s => s.Signature == "DATA").Bytes;
+        Assert.Equal(56, data.Length);
+        Assert.Equal(0.75f, BinaryPrimitives.ReadSingleLittleEndian(data));
+        Assert.Equal(8u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(36)));
+    }
+
+    [Fact]
+    public void Csno_ReadsTheCarvePathKeyToo()
+    {
+        // The ESM carve path stores the block under the subrecord signature rather than the PDB
+        // identifier; both key forms must reach the same encoder branch.
+        var result = CsnoEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000C01,
+            RecordType = "CSNO",
+            EditorId = "CarvedCasino",
+            Fields = new Dictionary<string, object?> { ["DATA"] = new byte[56] }
+        });
+
+        Assert.Contains(result.Subrecords, s => s.Signature == "DATA");
+        Assert.Empty(result.Warnings);
+    }
+
+    // ===================================================================================
+    // IPDS / DOBJ — both are a single positional FormID slot table, reachable only since
+    // pdb_layouts.json gained LF_ARRAY resolution.
+    // ===================================================================================
+
+    [Fact]
+    public void Ipds_EmitsAllTwelveMaterialSlotsIncludingTheEmptyOnes()
+    {
+        // Slot order IS the material (Stone, Dirt, Grass, …), so an unused material must stay a
+        // NULL in place. Compacting the list would silently reassign every later impact.
+        var slots = new List<uint> { 0x001A0001, 0, 0x001A0003, 0, 0, 0, 0, 0, 0, 0, 0, 0x001A000C };
+
+        var result = IpdsEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000D00,
+            RecordType = "IPDS",
+            EditorId = "ProtoImpactSet",
+            Fields = new Dictionary<string, object?> { ["BGSImpactDataSet.ppImpactData"] = slots }
+        });
+
+        Assert.Equal(["EDID", "DATA"], result.Subrecords.Select(s => s.Signature).ToArray());
+        var data = result.Subrecords.Single(s => s.Signature == "DATA").Bytes;
+        Assert.Equal(48, data.Length);
+        Assert.Equal(0x001A0001u, BinaryPrimitives.ReadUInt32LittleEndian(data));
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)));
+        Assert.Equal(0x001A0003u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8)));
+        Assert.Equal(0x001A000Cu, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(44)));
+    }
+
+    [Fact]
+    public void Ipds_OmitsData_WhenTheSlotCountDoesNotMatchTheSchema()
+    {
+        var result = IpdsEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000D01,
+            RecordType = "IPDS",
+            EditorId = "ShortImpactSet",
+            Fields = new Dictionary<string, object?>
+            {
+                ["BGSImpactDataSet.ppImpactData"] = new List<uint> { 0x001A0001, 0x001A0002 }
+            }
+        });
+
+        Assert.DoesNotContain(result.Subrecords, s => s.Signature == "DATA");
+        Assert.Contains(result.Warnings, w => w.Contains("material"));
+    }
+
+    [Fact]
+    public void Dobj_EmitsAllThirtyFourDefaultObjectSlots()
+    {
+        var slots = new List<uint>(new uint[34]) { [0] = 0x00015169, [33] = 0x000A1234 };
+
+        var result = DobjEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000E00,
+            RecordType = "DOBJ",
+            EditorId = "DefaultObjectManager",
+            Fields = new Dictionary<string, object?> { ["BGSDefaultObjectManager.pObjectArray"] = slots }
+        });
+
+        var data = result.Subrecords.Single(s => s.Signature == "DATA").Bytes;
+        Assert.Equal(136, data.Length);
+        Assert.Equal(0x00015169u, BinaryPrimitives.ReadUInt32LittleEndian(data));
+        Assert.Equal(0x000A1234u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(132)));
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void Dobj_RejectsATableWithAnImpossibleLoadOrderIndex()
+    {
+        // A non-zero slot whose plugin byte is out of range means the read was misaligned, which
+        // invalidates the whole positional table — not just that one entry.
+        var slots = new List<uint>(new uint[34]) { [5] = 0xFE000123 };
+
+        var result = DobjEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000E01,
+            RecordType = "DOBJ",
+            EditorId = "MisalignedDefaultObjects",
+            Fields = new Dictionary<string, object?> { ["BGSDefaultObjectManager.pObjectArray"] = slots }
+        });
+
+        Assert.DoesNotContain(result.Subrecords, s => s.Signature == "DATA");
+        Assert.Contains(result.Warnings, w => w.Contains("slots"));
     }
 }

@@ -68,7 +68,7 @@ public sealed class RuntimePdbFieldAccessorRebaseTests
         Assert.Equal(formId, view.UInt32("iFormID", "TESForm"));
         Assert.Equal(fullName, view.BsString("cFullName", "TESFullName"));
         Assert.Equal(modelPath, view.BsString("cModel", "TESModel"));
-        Assert.Null(context.ReadBSStringTDiag(view.FileOffset, 88, out _));
+        Assert.Equal(modelPath, context.ReadBSStringTDiag(view.FileOffset, 88, out _));
     }
 
     [Fact]
@@ -128,10 +128,10 @@ public sealed class RuntimePdbFieldAccessorRebaseTests
         Assert.Equal(fullName, view.BsString("cFullName", "TESFullName"));
         Assert.Equal(modelPath, view.BsString("cModel", "TESModel"));
         Assert.Equal(formId, view.UInt32("iFormID", "TESForm"));
-        // The old PdbStructView path reopened both headers from FileOffset + PDB offset.
-        // Those physical bytes are deliberately unrelated to the VA-stitched object buffer.
-        Assert.Null(context.ReadBSStringTDiag(view.FileOffset, 80, out _));
-        Assert.Null(context.ReadBSStringTDiag(view.FileOffset, 92, out _));
+        // The file-offset overload must add the member offset in VA space. The physical
+        // FileOffset + member-offset bytes are deliberately unrelated to this stitched object.
+        Assert.Equal(fullName, context.ReadBSStringTDiag(view.FileOffset, 80, out _));
+        Assert.Equal(modelPath, context.ReadBSStringTDiag(view.FileOffset, 92, out _));
     }
 
     [Fact]
@@ -176,8 +176,10 @@ public sealed class RuntimePdbFieldAccessorRebaseTests
         Assert.Equal(fullName, result.FullName);
         Assert.Equal(modelPath, result.ModelPath);
         Assert.Equal(objectPrefixFileOffset, result.Offset);
-        Assert.Null(context.ReadBSStringTDiag(objectPrefixFileOffset, fullNameOffset, out _));
-        Assert.Null(context.ReadBSStringTDiag(objectPrefixFileOffset, modelOffset, out _));
+        Assert.Equal(fullName,
+            context.ReadBSStringTDiag(objectPrefixFileOffset, fullNameOffset, out _));
+        Assert.Equal(modelPath,
+            context.ReadBSStringTDiag(objectPrefixFileOffset, modelOffset, out _));
     }
 
     [Fact]

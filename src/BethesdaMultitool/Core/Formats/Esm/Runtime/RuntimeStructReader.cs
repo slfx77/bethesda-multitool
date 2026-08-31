@@ -472,6 +472,20 @@ public sealed class RuntimeStructReader
     }
 
     /// <summary>
+    ///     Read the nested payloads (MODT hashes, MODS alternate textures, DEST destruction block)
+    ///     for any entry, whatever reader owns that FormType's typed model.
+    ///     <para>
+    ///         Deliberately not routed through the <see cref="ReadGenericRecord" /> switch: these
+    ///         members live on engine base classes, so the ~20 FormTypes with hand-written readers
+    ///         carry them just as the generic ones do and would otherwise never be asked.
+    ///     </para>
+    /// </summary>
+    public RuntimeNestedPayloads? ReadNestedPayloads(RuntimeEditorIdEntry entry)
+    {
+        return _generic.ReadNestedPayloads(entry);
+    }
+
+    /// <summary>
     ///     Read a runtime MSTT (BGSMovableStatic) base form. Its retained TESForm
     ///     subobject pointer is rebased to the complete object by the PDB field accessor.
     /// </summary>
@@ -959,9 +973,9 @@ public sealed class RuntimeStructReader
 
     /// <summary>Reads runtime landscape data for many entries, keyed by FormID.</summary>
     public Dictionary<uint, RuntimeLoadedLandData> ReadAllRuntimeLandData(
-        IEnumerable<RuntimeEditorIdEntry> entries)
+        IEnumerable<RuntimeEditorIdEntry> entries, bool logSummary = true)
     {
-        return _world.ReadAllRuntimeLandData(entries);
+        return _world.ReadAllRuntimeLandData(entries, logSummary);
     }
 
     /// <summary>Probes the runtime dialogue-topic struct layout, returning the detected variant.</summary>

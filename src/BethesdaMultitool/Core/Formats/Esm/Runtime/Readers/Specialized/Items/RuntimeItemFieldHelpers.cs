@@ -173,7 +173,7 @@ internal sealed class RuntimeItemFieldHelpers
     ///     TESModelTextureSwap struct (PDB 640+i*32, cModel BSStringT at +4 within).
     ///     Returns the base + variants that have non-null model paths or non-zero STAT pointers.
     /// </summary>
-    internal List<WeaponModelVariant> ReadWeaponModelVariants(byte[] buffer, long structFileOffset)
+    internal List<WeaponModelVariant> ReadWeaponModelVariants(byte[] buffer)
     {
         var result = new List<WeaponModelVariant>();
 
@@ -214,7 +214,7 @@ internal sealed class RuntimeItemFieldHelpers
                 var bsStringOffset = modelStructOffset + 4;
                 if (bsStringOffset >= 0 && bsStringOffset + 8 <= buffer.Length)
                 {
-                    thirdPersonPath = _context.ReadBsStringT(structFileOffset, bsStringOffset);
+                    thirdPersonPath = _context.ReadBsStringT(buffer, bsStringOffset);
                 }
             }
 

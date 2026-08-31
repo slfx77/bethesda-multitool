@@ -44,6 +44,8 @@ internal sealed class WeaponShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Skill Req:[/] {weapon.SkillRequirement}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, weapon.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(

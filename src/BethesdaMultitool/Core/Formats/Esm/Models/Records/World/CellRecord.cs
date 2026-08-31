@@ -79,6 +79,13 @@ public record CellRecord
     /// </summary>
     public uint? WaterFormId { get; init; }
 
+    /// <summary>
+    ///     Starfield's authored CELL water-type string (XCWM subrecord). This is distinct from
+    ///     <see cref="WaterFormId" />: XCWM is not a WATR FormID. An empty string is retained as an
+    ///     authored value; <see langword="null" /> means the subrecord was absent.
+    /// </summary>
+    public string? StarfieldWaterType { get; init; }
+
     /// <summary>Encounter zone FormID (XEZN subrecord).</summary>
     public uint? EncounterZoneFormId { get; init; }
 

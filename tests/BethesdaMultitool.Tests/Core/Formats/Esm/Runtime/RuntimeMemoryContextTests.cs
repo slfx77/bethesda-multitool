@@ -124,6 +124,299 @@ public sealed class RuntimeMemoryContextTests
         Assert.Null(result);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReadTesFormBytes_StitchesFileDisjointRegions_WithOrWithoutRetainedPointer(
+        bool retainPointer)
+    {
+        const long structVa = 0x4000;
+        const long firstFileOffset = 24;
+        const long secondFileOffset = 192;
+        const int splitOffset = 24;
+        var expected = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var data = Enumerable.Repeat((byte)0xEE, 320).ToArray();
+        Array.Copy(expected, 0, data, firstFileOffset, splitOffset);
+        Array.Copy(expected, splitOffset, data, secondFileOffset, expected.Length - splitOffset);
+        var context = CreateContext(
+            data,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa,
+                Size = splitOffset,
+                FileOffset = firstFileOffset
+            },
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa + splitOffset,
+                Size = expected.Length - splitOffset,
+                FileOffset = secondFileOffset
+            });
+        var entry = new RuntimeEditorIdEntry
+        {
+            EditorId = "StitchedEntry",
+            FormId = 0x00123456,
+            FormType = 0x19,
+            TesFormOffset = firstFileOffset,
+            TesFormPointer = retainPointer ? structVa : null
+        };
+
+        var result = context.ReadTesFormBytes(entry, expected.Length);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ReadTesFormBytes_FailsClosedAcrossVaGapWithoutTouchingFlatBait()
+    {
+        const long structVa = 0x5000;
+        const long firstFileOffset = 16;
+        const int splitOffset = 24;
+        var flatStruct = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var data = new byte[128];
+        Array.Copy(flatStruct, 0, data, firstFileOffset, flatStruct.Length);
+        var accessor = new TrackingMemoryAccessor(data);
+        var context = CreateContext(
+            accessor,
+            data.Length,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa,
+                Size = splitOffset,
+                FileOffset = firstFileOffset
+            },
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa + splitOffset + 1,
+                Size = flatStruct.Length - splitOffset,
+                FileOffset = firstFileOffset + splitOffset
+            });
+        var entry = new RuntimeEditorIdEntry
+        {
+            EditorId = "GappedEntry",
+            FormId = 0x00654321,
+            FormType = 0x19,
+            TesFormOffset = firstFileOffset
+        };
+
+        Assert.Null(context.ReadTesFormBytes(entry, flatStruct.Length));
+        Assert.Empty(accessor.Reads);
+    }
+
+    [Fact]
+    public void ReadTesFormBytes_PrefersRetainedPointerOverContradictoryFileOffset()
+    {
+        const long staleVa = 0x5400;
+        const long authoritativeVa = 0x5800;
+        const int staleFileOffset = 16;
+        const int authoritativeFileOffset = 96;
+        var data = new byte[160];
+        Array.Fill(data, (byte)0x11, staleFileOffset, 32);
+        Array.Fill(data, (byte)0x22, authoritativeFileOffset, 32);
+        var context = CreateContext(
+            data,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = staleVa,
+                Size = 32,
+                FileOffset = staleFileOffset
+            },
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = authoritativeVa,
+                Size = 32,
+                FileOffset = authoritativeFileOffset
+            });
+        var entry = new RuntimeEditorIdEntry
+        {
+            EditorId = "PointerWins",
+            FormId = 0x00112233,
+            FormType = 0x19,
+            TesFormOffset = staleFileOffset,
+            TesFormPointer = authoritativeVa
+        };
+
+        var result = Assert.IsType<byte[]>(context.ReadTesFormBytes(entry, 32));
+
+        Assert.All(result, value => Assert.Equal((byte)0x22, value));
+    }
+
+    [Fact]
+    public void ReadTesFormBytes_UsesFlatFallbackOnlyWhenContextHasNoRegionMap()
+    {
+        const int fileOffset = 12;
+        var expected = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray();
+        var data = new byte[64];
+        Array.Copy(expected, 0, data, fileOffset, expected.Length);
+        var context = CreateContext(data);
+        var entry = new RuntimeEditorIdEntry
+        {
+            EditorId = "FlatSyntheticEntry",
+            FormId = 0x00445566,
+            FormType = 0x19,
+            TesFormOffset = fileOffset
+        };
+
+        Assert.Equal(expected, context.ReadTesFormBytes(entry, expected.Length));
+    }
+
+    [Fact]
+    public void ReadTesFormBytes_RejectsNegativeFlatFallbackCountWithoutReading()
+    {
+        var data = new byte[32];
+        var accessor = new TrackingMemoryAccessor(data);
+        var context = CreateContext(accessor, data.Length);
+        var entry = new RuntimeEditorIdEntry
+        {
+            EditorId = "InvalidCount",
+            FormId = 0x00445566,
+            FormType = 0x19,
+            TesFormOffset = 8
+        };
+
+        Assert.Null(context.ReadTesFormBytes(entry, -1));
+        Assert.Empty(accessor.Reads);
+    }
+
+    [Fact]
+    public void ReadTesFormBytes_DoesNotFallBackWhenAuthoritativePointerIsUnmapped()
+    {
+        const long mappedVa = 0x5900;
+        const long staleFileOffset = 16;
+        var data = Enumerable.Repeat((byte)0x44, 64).ToArray();
+        var accessor = new TrackingMemoryAccessor(data);
+        var context = CreateContext(
+            accessor,
+            data.Length,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = mappedVa,
+                Size = 32,
+                FileOffset = staleFileOffset
+            });
+        var entry = new RuntimeEditorIdEntry
+        {
+            EditorId = "UnmappedPointer",
+            FormId = 0x00445566,
+            FormType = 0x19,
+            TesFormOffset = staleFileOffset,
+            TesFormPointer = 0x5A00
+        };
+
+        Assert.Null(context.ReadTesFormBytes(entry, 32));
+        Assert.Empty(accessor.Reads);
+    }
+
+    [Fact]
+    public void ReadBytesAtVa_UIntOverloadSignExtendsModulePointer()
+    {
+        const uint moduleVa = 0x82001000;
+        const int fileOffset = 12;
+        byte[] expected = [1, 2, 3, 4];
+        var data = new byte[32];
+        expected.CopyTo(data, fileOffset);
+        var context = CreateContext(
+            data,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = unchecked((int)moduleVa),
+                Size = expected.Length,
+                FileOffset = fileOffset
+            });
+
+        Assert.Equal(expected, context.ReadBytesAtVa(moduleVa, expected.Length));
+    }
+
+    [Fact]
+    public void FileBasedBsStringRead_AddsFieldOffsetInVaSpaceAndStitchesHeader()
+    {
+        const long structVa = 0x6000;
+        const long firstFileOffset = 16;
+        const long secondFileOffset = 160;
+        const int firstRegionSize = 32;
+        const int fieldOffset = 30;
+        const uint stringVa = 0x7000;
+        const long stringFileOffset = 260;
+        const string expected = "CrossRegionHeader";
+        var stringBytes = Encoding.ASCII.GetBytes(expected);
+        var header = new byte[8];
+        WriteUInt32BigEndian(header, 0, stringVa);
+        BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(4), checked((ushort)stringBytes.Length));
+        var data = Enumerable.Repeat((byte)0xEE, 320).ToArray();
+        Array.Copy(header, 0, data, firstFileOffset + fieldOffset, 2);
+        Array.Copy(header, 2, data, secondFileOffset, header.Length - 2);
+        Array.Copy(stringBytes, 0, data, stringFileOffset, stringBytes.Length);
+        var context = CreateContext(
+            data,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa,
+                Size = firstRegionSize,
+                FileOffset = firstFileOffset
+            },
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa + firstRegionSize,
+                Size = 32,
+                FileOffset = secondFileOffset
+            },
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = stringVa,
+                Size = stringBytes.Length,
+                FileOffset = stringFileOffset
+            });
+
+        Assert.Equal(expected, context.ReadBsStringT(firstFileOffset, fieldOffset));
+        var info = context.ReadBSStringTInfo(firstFileOffset, fieldOffset);
+        Assert.Equal((stringFileOffset, stringVa), info);
+    }
+
+    [Fact]
+    public void FileBasedBsStringRead_FailsClosedWhenHeaderCrossesVaGap()
+    {
+        const long structVa = 0x6800;
+        const long fileOffset = 16;
+        const int fieldOffset = 14;
+        var data = new byte[64];
+        var accessor = new TrackingMemoryAccessor(data);
+        var context = CreateContext(
+            accessor,
+            data.Length,
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa,
+                Size = 16,
+                FileOffset = fileOffset
+            },
+            new MinidumpMemoryRegion
+            {
+                VirtualAddress = structVa + 17,
+                Size = 16,
+                FileOffset = fileOffset + 16
+            });
+
+        Assert.Null(context.ReadBSStringTInfo(fileOffset, fieldOffset));
+        Assert.Null(context.ReadBSStringTDiag(fileOffset, fieldOffset, out var failure));
+        Assert.Equal(RuntimeMemoryContext.BSStringFailure.StructOutOfBounds, failure);
+        Assert.Empty(accessor.Reads);
+    }
+
+    [Fact]
+    public void FileBasedBsStringRead_RejectsOverflowingFlatHeaderWithoutReading()
+    {
+        var data = new byte[32];
+        var accessor = new TrackingMemoryAccessor(data);
+        var context = CreateContext(accessor, data.Length);
+        const long baseOffset = long.MaxValue - 10;
+        const int fieldOffset = 4;
+
+        Assert.Null(context.ReadBSStringTInfo(baseOffset, fieldOffset));
+        Assert.Null(context.ReadBSStringTDiag(baseOffset, fieldOffset, out var failure));
+        Assert.Equal(RuntimeMemoryContext.BSStringFailure.StructOutOfBounds, failure);
+        Assert.Empty(accessor.Reads);
+    }
+
     [Fact]
     public void FormPointerReaders_StitchVaContiguousHeaderAtNonContiguousFileOffsets()
     {

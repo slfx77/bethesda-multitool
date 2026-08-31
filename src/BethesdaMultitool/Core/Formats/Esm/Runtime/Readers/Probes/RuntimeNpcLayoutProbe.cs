@@ -95,10 +95,7 @@ internal static class RuntimeNpcLayoutProbe
                 continue;
             }
 
-            var buffer = entry.TesFormPointer.HasValue
-                ? context.ReadBytesAtVa(entry.TesFormPointer.Value, ProbeReadSize)
-                : context.ReadBytes(entry.TesFormOffset.Value, ProbeReadSize);
-
+            var buffer = context.ReadTesFormBytes(entry, ProbeReadSize);
             if (buffer == null)
             {
                 continue;

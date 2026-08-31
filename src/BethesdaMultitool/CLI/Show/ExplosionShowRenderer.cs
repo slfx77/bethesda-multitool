@@ -58,6 +58,8 @@ internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
             lines.Add($"  [cyan]Model:[/]      {Markup.Escape(expl.ModelPath)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, expl.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(

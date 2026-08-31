@@ -49,6 +49,8 @@ internal sealed class ActivatorShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Script:[/]      {resolver.FormatWithEditorId(acti.Script.Value)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, acti.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader($"[bold]ACTI[/] {Markup.Escape(acti.EditorId ?? "")}")

@@ -200,6 +200,15 @@ public sealed class RecordEncoderRegistry
             new IdlmEncoder(),
             new CamsEncoder(),
             new MsetEncoder(),
+            // Round 3: RGDL.XNAM points at a CREA/NPC_ and RGDL.TNAM at a BPTD, both of which the
+            // pipeline yields earlier; EFSH and CSNO reference nothing outside their own DATA.
+            new EfshEncoder(),
+            new RgdlEncoder(),
+            new CsnoEncoder(),
+            // IPDS.DATA points at IPCTs and DOBJ.DATA at a mix of ALCH/SPEL/FACT/NPC_/MUSC/VTYP —
+            // all yielded earlier, so the forward-reference rule holds.
+            new IpdsEncoder(),
+            new DobjEncoder(),
             new DebrEncoder(),
             new EczEncoder(),
             new CpthEncoder(),

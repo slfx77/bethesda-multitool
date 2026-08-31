@@ -45,7 +45,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             }
 
             // Read the BSExtraData header first: vfptr(4) + cEtype(1) + pad(3) + pNext(4).
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, ExtraNodeSize);
+            var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(currentVa), ExtraNodeSize);
             if (nodeBuffer == null)
             {
                 break;
@@ -60,7 +60,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             {
                 case ExtraMapMarkerType:
                 {
-                    var mapMarker = ReadMapMarkerExtra(nodeFileOffset.Value);
+                    var mapMarker = ReadMapMarkerExtra(currentVa);
                     if (mapMarker.IsMapMarker)
                     {
                         result.IsMapMarker = true;
@@ -71,26 +71,26 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                     break;
                 }
                 case ExtraStartingPositionType:
-                    result.StartingPosition ??= ReadStartingPosition(nodeFileOffset.Value);
+                    result.StartingPosition ??= ReadStartingPosition(currentVa, nodeFileOffset.Value);
                     break;
                 case ExtraOwnershipType:
-                    result.OwnerFormId ??= ReadOwnerFormId(nodeFileOffset.Value);
+                    result.OwnerFormId ??= ReadOwnerFormId(currentVa);
                     break;
                 case ExtraPackageStartLocationType:
-                    result.PackageStartLocation ??= ReadPackageStartLocation(nodeFileOffset.Value);
+                    result.PackageStartLocation ??= ReadPackageStartLocation(currentVa);
                     break;
                 case ExtraMerchantContainerType:
-                    result.MerchantContainerFormId ??= ReadMerchantContainerFormId(nodeFileOffset.Value);
+                    result.MerchantContainerFormId ??= ReadMerchantContainerFormId(currentVa);
                     break;
                 case ExtraPersistentCellType:
-                    result.PersistentCellFormId ??= ReadPersistentCellFormId(nodeFileOffset.Value);
+                    result.PersistentCellFormId ??= ReadPersistentCellFormId(currentVa);
                     break;
                 case ExtraEncounterZoneType:
-                    result.EncounterZoneFormId ??= ReadEncounterZoneFormId(nodeFileOffset.Value);
+                    result.EncounterZoneFormId ??= ReadEncounterZoneFormId(currentVa);
                     break;
                 case ExtraLockType:
                 {
-                    var lockData = ReadLockData(nodeFileOffset.Value);
+                    var lockData = ReadLockData(currentVa);
                     result.LockLevel ??= lockData.LockLevel;
                     result.LockKeyFormId ??= lockData.LockKeyFormId;
                     result.LockFlags ??= lockData.LockFlags;
@@ -101,7 +101,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                 case ExtraTeleportType:
                 {
                     var (destinationDoorFormId, teleportPosRot, teleportFlags) =
-                        ReadTeleportData(nodeFileOffset.Value);
+                        ReadTeleportData(currentVa);
                     if (result.DestinationDoorFormId is null)
                     {
                         result.DestinationDoorFormId = destinationDoorFormId;
@@ -113,7 +113,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                 }
                 case ExtraEnableStateParentType:
                 {
-                    var (enableParentFormId, enableParentFlags) = ReadEnableStateParent(nodeFileOffset.Value);
+                    var (enableParentFormId, enableParentFlags) = ReadEnableStateParent(currentVa);
                     if (!result.EnableParentFormId.HasValue && enableParentFormId.HasValue)
                     {
                         result.EnableParentFormId = enableParentFormId;
@@ -123,14 +123,14 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                     break;
                 }
                 case ExtraStartingWorldOrCellType:
-                    result.StartingWorldOrCellFormId ??= ReadStartingWorldOrCellFormId(nodeFileOffset.Value);
+                    result.StartingWorldOrCellFormId ??= ReadStartingWorldOrCellFormId(currentVa);
                     break;
                 case ExtraLinkedRefType:
-                    result.LinkedRefFormId ??= ReadLinkedRefFormId(nodeFileOffset.Value);
+                    result.LinkedRefFormId ??= ReadLinkedRefFormId(currentVa);
                     break;
                 case ExtraLinkedRefChildrenType:
                 {
-                    var childFormIds = ReadLinkedRefChildrenFormIds(nodeFileOffset.Value);
+                    var childFormIds = ReadLinkedRefChildrenFormIds(currentVa);
                     if (result.LinkedRefChildrenFormIds == null && childFormIds.Count > 0)
                     {
                         result.LinkedRefChildrenFormIds = childFormIds;
@@ -140,19 +140,19 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                 }
                 case ExtraLeveledCreatureType:
                 {
-                    var leveledCreatureData = ReadLeveledCreatureData(nodeFileOffset.Value);
+                    var leveledCreatureData = ReadLeveledCreatureData(currentVa);
                     result.LeveledCreatureOriginalBaseFormId ??= leveledCreatureData.OriginalBaseFormId;
                     result.LeveledCreatureTemplateFormId ??= leveledCreatureData.TemplateFormId;
                     break;
                 }
                 case ExtraRadiusType:
-                    result.Radius ??= ReadRadius(nodeFileOffset.Value);
+                    result.Radius ??= ReadRadius(currentVa);
                     break;
                 case ExtraRadioDataType:
-                    result.RadioData ??= ReadRadioData(nodeFileOffset.Value);
+                    result.RadioData ??= ReadRadioData(currentVa);
                     break;
                 case ExtraCountType:
-                    result.Count ??= ReadCount(nodeFileOffset.Value);
+                    result.Count ??= ReadCount(currentVa);
                     break;
                 case ExtraEditorIDType:
                     result.EditorId ??= ReadEditorId(nodeFileOffset.Value);
@@ -167,9 +167,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
 
     #region Individual Extra Data Type Readers
 
-    private (bool IsMapMarker, ushort? MarkerType, string? MarkerName) ReadMapMarkerExtra(long nodeFileOffset)
+    private (bool IsMapMarker, ushort? MarkerType, string? MarkerName) ReadMapMarkerExtra(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return (true, null, null);
@@ -184,16 +184,18 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         var mapDataFileOffset = _context.VaToFileOffset(pMapData);
         return mapDataFileOffset == null
             ? (true, null, null)
-            : ReadMapMarkerData(mapDataFileOffset.Value);
+            : ReadMapMarkerData(pMapData, mapDataFileOffset.Value);
     }
 
     /// <summary>
-    ///     Read MapMarkerData struct at the given file offset.
+    ///     Read MapMarkerData struct at the given virtual address.
     ///     Layout: TESFullName(0-11) + cFlags(12) + cOriginalFlags(13) + sType(14, uint16) + pReputation(16)
     /// </summary>
-    private (bool IsMapMarker, ushort? MarkerType, string? MarkerName) ReadMapMarkerData(long mapDataFileOffset)
+    private (bool IsMapMarker, ushort? MarkerType, string? MarkerName) ReadMapMarkerData(
+        uint mapDataVa,
+        long mapDataFileOffset)
     {
-        var mapBuffer = _context.ReadBytes(mapDataFileOffset, 20);
+        var mapBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(mapDataVa), 20);
         if (mapBuffer == null)
         {
             return (true, null, null);
@@ -205,9 +207,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return (true, markerType, markerName);
     }
 
-    private uint? ReadOwnerFormId(long nodeFileOffset)
+    private uint? ReadOwnerFormId(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -217,9 +219,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return _context.FollowPointerVaToFormId(ownerVa);
     }
 
-    private PositionSubrecord? ReadStartingPosition(long nodeFileOffset)
+    private PositionSubrecord? ReadStartingPosition(uint nodeVa, long nodeFileOffset)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraStartingPositionNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(nodeVa), ExtraStartingPositionNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -242,9 +245,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             nodeFileOffset + ExtraPayloadPtrOffset, true);
     }
 
-    private RuntimePackageStartLocation? ReadPackageStartLocation(long nodeFileOffset)
+    private RuntimePackageStartLocation? ReadPackageStartLocation(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPackageStartLocationNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPackageStartLocationNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -269,9 +273,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return new RuntimePackageStartLocation(locationFormId, x.Value, y.Value, z.Value, rotZ.Value);
     }
 
-    private uint? ReadMerchantContainerFormId(long nodeFileOffset)
+    private uint? ReadMerchantContainerFormId(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -281,9 +285,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return ReadPlacedRefFormId(containerVa);
     }
 
-    private uint? ReadPersistentCellFormId(long nodeFileOffset)
+    private uint? ReadPersistentCellFormId(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -293,9 +297,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return _context.FollowPointerVaToFormId(cellVa, 0x39);
     }
 
-    private uint? ReadStartingWorldOrCellFormId(long nodeFileOffset)
+    private uint? ReadStartingWorldOrCellFormId(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraStartingWorldOrCellNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(nodeVa), ExtraStartingWorldOrCellNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -305,9 +310,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return _context.FollowPointerVaToFormId(formVa);
     }
 
-    private uint? ReadEncounterZoneFormId(long nodeFileOffset)
+    private uint? ReadEncounterZoneFormId(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -317,9 +322,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return _context.FollowPointerVaToFormId(zoneVa, 0x61);
     }
 
-    private RuntimeLeveledCreatureData ReadLeveledCreatureData(long nodeFileOffset)
+    private RuntimeLeveledCreatureData ReadLeveledCreatureData(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraLeveledCreatureNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(nodeVa), ExtraLeveledCreatureNodeSize);
         if (nodeBuffer == null)
         {
             return new RuntimeLeveledCreatureData();
@@ -334,9 +340,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         };
     }
 
-    private float? ReadRadius(long nodeFileOffset)
+    private float? ReadRadius(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -355,9 +361,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
     ///     16-byte <c>RADIO_DATA</c>). Returns null when the block fails validation rather than
     ///     handing the encoder a partly-garbage broadcast configuration.
     /// </summary>
-    private RadioData? ReadRadioData(long nodeFileOffset)
+    private RadioData? ReadRadioData(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraRadioDataNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraRadioDataNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -396,9 +402,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         };
     }
 
-    private short? ReadCount(long nodeFileOffset)
+    private short? ReadCount(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -424,9 +430,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
     ///     </para>
     /// </summary>
     private (uint? DestinationDoorFormId, PositionSubrecord? PosRot, byte? Flags) ReadTeleportData(
-        long nodeFileOffset)
+        uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return (null, null, null);
@@ -444,7 +450,8 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             return (null, null, null);
         }
 
-        var teleportBuffer = _context.ReadBytes(teleportDataFileOffset.Value, DoorTeleportDataSize);
+        var teleportBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(teleportDataVa), DoorTeleportDataSize);
         if (teleportBuffer == null)
         {
             return (null, null, null);
@@ -487,9 +494,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return (destinationDoorFormId, posRot, teleportBuffer[DoorTeleportFlagsOffset]);
     }
 
-    private (uint? ParentFormId, byte? Flags) ReadEnableStateParent(long nodeFileOffset)
+    private (uint? ParentFormId, byte? Flags) ReadEnableStateParent(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraEnableStateParentNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(nodeVa), ExtraEnableStateParentNodeSize);
         if (nodeBuffer == null)
         {
             return (null, null);
@@ -502,9 +510,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             : (null, null);
     }
 
-    private uint? ReadLinkedRefFormId(long nodeFileOffset)
+    private uint? ReadLinkedRefFormId(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return null;
@@ -514,9 +522,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return ReadPlacedRefFormId(linkedRefVa);
     }
 
-    private List<uint> ReadLinkedRefChildrenFormIds(long nodeFileOffset)
+    private List<uint> ReadLinkedRefChildrenFormIds(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraLinkedRefChildrenNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(nodeVa), ExtraLinkedRefChildrenNodeSize);
         if (nodeBuffer == null)
         {
             return [];
@@ -525,9 +534,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return ReadPlacedRefSimpleList(nodeBuffer, ExtraPayloadPtrOffset);
     }
 
-    private RuntimeLockData ReadLockData(long nodeFileOffset)
+    private RuntimeLockData ReadLockData(uint nodeVa)
     {
-        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
+        var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nodeVa), ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
             return new RuntimeLockData();
@@ -539,13 +548,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             return new RuntimeLockData();
         }
 
-        var lockFileOffset = _context.VaToFileOffset(lockVa);
-        if (lockFileOffset == null)
-        {
-            return new RuntimeLockData();
-        }
-
-        var lockBuffer = _context.ReadBytes(lockFileOffset.Value, RefrLockSize);
+        var lockBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(lockVa), RefrLockSize);
         if (lockBuffer == null)
         {
             return new RuntimeLockData();
@@ -573,13 +576,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             return null;
         }
 
-        var fileOffset = _context.VaToFileOffset(va);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
-        var formBuffer = _context.ReadBytes(fileOffset.Value, 16);
+        var formBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(va), 16);
         if (formBuffer == null)
         {
             return null;
@@ -614,13 +611,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                _context.IsValidPointer(nextPtr) &&
                visited.Add(nextPtr))
         {
-            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextPtr), 8);
             if (nodeBuffer == null)
             {
                 break;

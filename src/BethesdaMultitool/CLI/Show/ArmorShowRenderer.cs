@@ -28,6 +28,8 @@ internal sealed class ArmorShowRenderer : IRecordDisplayRenderer
             $"[cyan]Health:[/]    {armor.Health}"
         };
 
+        ShowHelpers.AppendNestedPayloads(lines, records, armor.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(

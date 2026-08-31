@@ -67,7 +67,7 @@ internal sealed class RuntimeActorReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        var buffer = ReadNpcStructBuffer(entry, offset);
+        var buffer = ReadNpcStructBuffer(entry);
         if (buffer == null)
         {
             return null;
@@ -239,14 +239,9 @@ internal sealed class RuntimeActorReader
         };
     }
 
-    private byte[]? ReadNpcStructBuffer(RuntimeEditorIdEntry entry, long fileOffset)
+    private byte[]? ReadNpcStructBuffer(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormPointer.HasValue)
-        {
-            return _context.ReadBytesAtVa(entry.TesFormPointer.Value, NpcFields.NpcStructSize);
-        }
-
-        return _context.ReadBytes(fileOffset, NpcFields.NpcStructSize);
+        return _context.ReadTesFormBytes(entry, NpcFields.NpcStructSize);
     }
 
     /// <summary>
@@ -261,17 +256,8 @@ internal sealed class RuntimeActorReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + NpcFields.CreaStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[NpcFields.CreaStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, NpcFields.CreaStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, NpcFields.CreaStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -397,17 +383,8 @@ internal sealed class RuntimeActorReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + FactStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[FactStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, FactStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, FactStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -422,7 +399,7 @@ internal sealed class RuntimeActorReader
         var relations = ReadFactionRelations(buffer);
 
         // Read display name — hash table already has it from FullNameOffset=44
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, FactFullNameOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, FactFullNameOffset);
 
         return new FactionRecord
         {
@@ -671,12 +648,12 @@ internal sealed class RuntimeActorReader
 
     #region Actor Value Info (AVIF) — Runtime Struct Layout
 
-    // ActorValueInfo: PDB size 212
+    // ActorValueInfo: PDB size 212. The fields recovered here end at byte 84.
     // Key fields for skill name resolution: FullName, Abbreviation, Icon
-    private const int AvifStructSize = 212;
     private const int AvifFullNameOffset = 44; // TESFullName.cFullName (BSStringT)
     private const int AvifTextureOffset = 64; // TESTexture.TextureName (BSStringT) — icon path
     private const int AvifAbbreviationOffset = 76; // ActorValueInfo.sAbbreviation (BSStringT)
+    private const int AvifReadSize = AvifAbbreviationOffset + 8;
 
     /// <summary>
     ///     Read an ActorValueInfo record from a runtime C++ struct.
@@ -690,18 +667,10 @@ internal sealed class RuntimeActorReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + AvifStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        // Validate FormID at +12
-        var buffer = new byte[16];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, 16);
-        }
-        catch
+        // Read through the last BSStringT header as one VA-safe window. A 16-byte TESForm-only
+        // read validates the FormID but cannot back the buffered AVIF string fields below.
+        var buffer = _context.ReadTesFormBytes(entry, AvifReadSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -712,9 +681,9 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, AvifFullNameOffset);
-        var icon = _context.ReadBsStringT(offset, AvifTextureOffset);
-        var abbreviation = _context.ReadBsStringT(offset, AvifAbbreviationOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, AvifFullNameOffset);
+        var icon = _context.ReadBsStringT(buffer, AvifTextureOffset);
+        var abbreviation = _context.ReadBsStringT(buffer, AvifAbbreviationOffset);
 
         return new ActorValueInfoRecord
         {

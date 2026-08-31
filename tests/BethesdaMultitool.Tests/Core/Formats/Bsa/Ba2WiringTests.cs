@@ -49,6 +49,19 @@ public class Ba2WiringTests
                 var source = Assert.Single(sources);
                 Assert.IsType<Ba2TextureArchiveSource>(source);
 
+                Assert.True(source.TryGetAssetMetadata("textures\\test.dds", out var metadata));
+                var archiveInfo = new FileInfo(ba2);
+                Assert.Equal(archiveInfo.FullName, metadata.SourcePath);
+                Assert.Equal(archiveInfo.Length, metadata.SourceLength);
+                Assert.Equal(archiveInfo.LastWriteTimeUtc.Ticks, metadata.SourceLastWriteUtcTicks);
+                Assert.Equal<ulong?>(60, metadata.EntryOffset);
+                Assert.Equal<ulong?>(0, metadata.EntryRawSize);
+                Assert.Equal<ulong?>((ulong)payload.Length, metadata.EntrySize);
+                Assert.Equal<ulong?>(0x1111, metadata.EntryNameHash);
+                Assert.Equal<uint?>(0x2222, metadata.EntryDirectoryHash);
+                Assert.Equal<int?>(0, metadata.EntryIndex);
+                Assert.False(source.TryGetAssetMetadata("textures\\missing.dds", out _));
+
                 Assert.Equal(payload, source.TryLoadRaw("textures\\test.dds"));
                 Assert.Equal(payload, source.TryLoadRaw("textures/test.dds".Replace('/', '\\')));
                 Assert.Null(source.TryLoadRaw("textures\\missing.dds"));

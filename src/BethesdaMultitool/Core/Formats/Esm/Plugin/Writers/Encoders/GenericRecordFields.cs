@@ -96,6 +96,140 @@ internal static class GenericRecordFields
     }
 
     /// <summary>
+    ///     Resolve a FormID list produced by <c>RuntimeContainerFieldReader</c> from a walked
+    ///     <c>BSSimpleList</c> or counted pointer array. Applies the same load-order-index guard as
+    ///     <see cref="TryFormId" /> to every element, and returns null rather than a partially
+    ///     filtered list — a list subrecord whose length no longer matches its declared count is
+    ///     worse than an omitted one.
+    /// </summary>
+    public static IReadOnlyList<uint>? TryFormIdList(GenericEsmRecord record, params string[] keys)
+    {
+        if (Find(record, keys) is not IReadOnlyList<uint> { Count: > 0 } list)
+        {
+            return null;
+        }
+
+        foreach (var formId in list)
+        {
+            if (formId == 0 || formId >> 24 > MaxFormIdIndex)
+            {
+                return null;
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    ///     Resolve a <b>positional</b> FormID slot table — DOBJ's 34 default objects, IPDS's 12
+    ///     material impacts — where index carries the meaning and an empty slot is a legitimate NULL
+    ///     that xEdit's schema allows. Unlike <see cref="TryFormIdList" />, zeros are kept rather
+    ///     than treated as corruption; a non-zero entry with an impossible load-order index still
+    ///     rejects the whole table, since that means the read was misaligned.
+    /// </summary>
+    public static IReadOnlyList<uint>? TryFormIdSlots(
+        GenericEsmRecord record, int expectedSlots, params string[] keys)
+    {
+        if (Find(record, keys) is not IReadOnlyList<uint> list || list.Count != expectedSlots)
+        {
+            return null;
+        }
+
+        foreach (var formId in list)
+        {
+            if (formId != 0 && formId >> 24 > MaxFormIdIndex)
+            {
+                return null;
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    ///     Resolve a walked <c>MODS</c> alternate-texture list.
+    ///     <para>
+    ///         All-or-nothing on the texture set: every entry names a TXST, and an entry whose
+    ///         pointer did not resolve carries FormID 0. Writing that would leave the engine with a
+    ///         swap that names a shape but no replacement, so one unresolved entry drops the whole
+    ///         subrecord rather than silently changing which shapes get swapped.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyList<AlternateTextureEntry>? TryAlternateTextures(
+        GenericEsmRecord record, params string[] keys)
+    {
+        if (Find(record, keys) is not IReadOnlyList<AlternateTextureEntry> { Count: > 0 } list)
+        {
+            return null;
+        }
+
+        foreach (var entry in list)
+        {
+            if (entry.TextureSetFormId == 0 ||
+                entry.TextureSetFormId >> 24 > MaxFormIdIndex ||
+                string.IsNullOrEmpty(entry.ShapeName))
+            {
+                return null;
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    ///     Resolve a walked LSCR <c>LNAM</c> location list, dropping entries whose FormIDs could not
+    ///     have come from a real reference. Unlike the alternate textures above these are
+    ///     independent of one another — LNAM repeats, one subrecord per location — so a bad entry
+    ///     costs only itself.
+    /// </summary>
+    public static IReadOnlyList<LoadScreenLocationEntry>? TryLoadScreenLocations(
+        GenericEsmRecord record, params string[] keys)
+    {
+        if (Find(record, keys) is not IReadOnlyList<LoadScreenLocationEntry> { Count: > 0 } list)
+        {
+            return null;
+        }
+
+        var kept = new List<LoadScreenLocationEntry>(list.Count);
+        foreach (var entry in list)
+        {
+            if (entry.DirectFormId >> 24 > MaxFormIdIndex ||
+                entry.IndirectWorldspaceFormId >> 24 > MaxFormIdIndex)
+            {
+                continue;
+            }
+
+            kept.Add(entry);
+        }
+
+        return kept.Count > 0 ? kept : null;
+    }
+
+    /// <summary>
+    ///     Resolve a walked destruction block. Stages whose explosion or debris reference is
+    ///     impossible are rejected wholesale rather than blanked, because a stage's index is its
+    ///     position and dropping one renumbers every stage after it.
+    /// </summary>
+    public static DestructionData? TryDestruction(GenericEsmRecord record, params string[] keys)
+    {
+        if (Find(record, keys) is not DestructionData destruction)
+        {
+            return null;
+        }
+
+        foreach (var stage in destruction.Stages)
+        {
+            if (stage.ExplosionFormId >> 24 > MaxFormIdIndex ||
+                stage.DebrisFormId >> 24 > MaxFormIdIndex)
+            {
+                return null;
+            }
+        }
+
+        return destruction;
+    }
+
+    /// <summary>
     ///     True when captured object bounds look like real bounds rather than a misaligned read.
     ///     A legitimate OBND has each minimum ≤ its maximum; a struct read at the wrong offset
     ///     (the v138 MSTT/ASPC failure mode) produces inverted or wildly out-of-range extents.

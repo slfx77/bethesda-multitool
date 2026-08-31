@@ -28,7 +28,10 @@ internal static class CtdaParser
     {
         return game switch
         {
-            BethesdaGame.Oblivion => length == 20,
+            // 24 is the shipping width — patched Oblivion appends 4 unused bytes to the pre-1.1
+            // 20-byte body. Retail Oblivion.esm is 24 throughout; accepting only 20 made
+            // GetLayoutStatus report "game_width_mismatch" for every real Oblivion condition.
+            BethesdaGame.Oblivion => length is 20 or 24,
             BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => length is 20 or 24 or 28,
             BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or
                 BethesdaGame.Starfield => length == 32,

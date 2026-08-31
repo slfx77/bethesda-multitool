@@ -31,7 +31,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         }
 
         var offset = entry.TesFormOffset.Value;
-        var buffer = ReadRefrStructBuffer(entry, offset);
+        var buffer = ReadRefrStructBuffer(entry);
         if (buffer == null)
         {
             return null;
@@ -388,7 +388,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             return null;
         }
 
-        var buffer = ReadRefrStructBuffer(entry, entry.TesFormOffset.Value);
+        var buffer = ReadRefrStructBuffer(entry);
         if (buffer == null)
         {
             return null;
@@ -425,19 +425,9 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     /// <summary>
     ///     Read the TESObjectREFR struct (120 bytes final, 116 bytes early) using VA-based region validation.
     /// </summary>
-    private byte[]? ReadRefrStructBuffer(RuntimeEditorIdEntry entry, long fileOffset)
+    private byte[]? ReadRefrStructBuffer(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormPointer.HasValue)
-        {
-            return _context.ReadBytesAtVa(entry.TesFormPointer.Value, RefrStructSize);
-        }
-
-        if (fileOffset + RefrStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        return _context.ReadBytes(fileOffset, RefrStructSize);
+        return _context.ReadTesFormBytes(entry, RefrStructSize);
     }
 
     /// <summary>

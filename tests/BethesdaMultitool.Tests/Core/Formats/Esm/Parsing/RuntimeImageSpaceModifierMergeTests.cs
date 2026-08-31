@@ -13,32 +13,49 @@ public sealed class RuntimeImageSpaceModifierMergeTests
     private const uint FormId = 0x000CDA79;
 
     [Fact]
-    public void RawRecordWithSameFormId_WinsWithoutInvokingRuntimeReader()
+    public void RawRecordWithSameFormId_KeepsEverySerializedValue()
     {
+        // Contract changed 2026-08-26. This used to pin factoryCalls == 0 — the runtime object for
+        // an ESM-backed FormID was never read at all, so it could not repair anything the ESM copy
+        // had lost. It is read now; what must still hold is that nothing the ESM supplied changes.
         var context = CreateContext([RuntimeEntry(), RuntimeEntry()]);
         var raw = ImageSpaceModifierTestFactory.Complete();
         var records = new List<ImageSpaceModifierRecord> { raw };
-        var factoryCalls = 0;
 
         context.MergeRuntimeRecords(
             records,
             0x54,
             static record => record.FormId,
-            (_, _) =>
-            {
-                factoryCalls++;
-                return ImageSpaceModifierTestFactory.Complete() with { FromRuntime = true };
-            },
+            (_, _) => ImageSpaceModifierTestFactory.Complete() with { FromRuntime = true },
             "image-space modifiers");
 
-        Assert.Equal(0, factoryCalls);
-        Assert.Same(raw, Assert.Single(records));
-        Assert.False(records[0].FromRuntime);
+        var merged = Assert.Single(records);
+        Assert.Equal(raw, merged); // every field the ESM supplied is untouched
+        Assert.False(merged.FromRuntime);
     }
 
     [Fact]
-    public void DuplicateRuntimeEntries_AddOneRecordAndReadOnce()
+    public void RawRecordMissingAField_HasItFilledFromTheRuntimeCapture()
     {
+        var context = CreateContext([RuntimeEntry()]);
+        var raw = ImageSpaceModifierTestFactory.Complete() with { EditorId = null };
+        var records = new List<ImageSpaceModifierRecord> { raw };
+
+        context.MergeRuntimeRecords(
+            records,
+            0x54,
+            static record => record.FormId,
+            (_, _) => ImageSpaceModifierTestFactory.Complete() with { EditorId = "HVSimISFX" },
+            "image-space modifiers");
+
+        Assert.Equal("HVSimISFX", Assert.Single(records).EditorId);
+    }
+
+    [Fact]
+    public void DuplicateRuntimeEntries_StillProduceExactlyOneRecord()
+    {
+        // Both entries are read now (the second can fill gaps the first left), but they still
+        // collapse to one record for the FormID.
         var context = CreateContext([RuntimeEntry(), RuntimeEntry()]);
         var runtime = ImageSpaceModifierTestFactory.Complete() with { FromRuntime = true };
         var records = new List<ImageSpaceModifierRecord>();
@@ -55,7 +72,7 @@ public sealed class RuntimeImageSpaceModifierMergeTests
             },
             "image-space modifiers");
 
-        Assert.Equal(1, factoryCalls);
+        Assert.Equal(2, factoryCalls);
         Assert.Same(runtime, Assert.Single(records));
     }
 

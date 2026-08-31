@@ -43,18 +43,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + RuntimeDialogueLayouts.DialStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[RuntimeDialogueLayouts.DialStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, RuntimeDialogueLayouts.DialStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, RuntimeDialogueLayouts.DialStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -98,10 +88,11 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         // Read FullName via BSStringT
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, RuntimeDialogueLayouts.DialFullNameOffset);
+        var fullName = entry.DisplayName ??
+                       _context.ReadBsStringT(buffer, RuntimeDialogueLayouts.DialFullNameOffset);
 
         // Read DummyPrompt via BSStringT
-        var dummyPrompt = _context.ReadBsStringT(offset, RuntimeDialogueLayouts.DialDummyPromptOffset);
+        var dummyPrompt = _context.ReadBsStringT(buffer, RuntimeDialogueLayouts.DialDummyPromptOffset);
 
         return new RuntimeDialogTopicInfo
         {
@@ -129,17 +120,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + _info.StructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[_info.StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, _info.StructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, _info.StructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -151,7 +133,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var infoFields = ReadInfoFields(buffer, offset);
+        var infoFields = ReadInfoFields(buffer);
 
         return new RuntimeDialogueInfo
         {
@@ -164,12 +146,16 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             SpeakerFormId = infoFields.SpeakerFormId,
             PerkSkillStatFormId = infoFields.PerkSkillStatFormId,
             Difficulty = infoFields.Difficulty,
-            QuestFormId = infoFields.QuestFormId,
+            // A gap-recovered INFO carries a parent quest resolved from an independently-built
+            // topic→info map, gated on that map agreeing with this record's own decode. Prefer it
+            // only where the struct itself came up empty — the struct is the primary source.
+            QuestFormId = infoFields.QuestFormId ?? entry.RecoveredQuestFormId,
             ConditionSpeakerFormId = infoFields.ConditionData.ConditionSpeakerFormId,
             SpeakerFactionFormId = infoFields.ConditionData.SpeakerFactionFormId,
             SpeakerRaceFormId = infoFields.ConditionData.SpeakerRaceFormId,
             SpeakerVoiceTypeFormId = infoFields.ConditionData.SpeakerVoiceTypeFormId,
-            PromptText = entry.DialogueLine ?? _context.ReadBsStringT(offset, _info.PromptOffset),
+            RecoveredTopicFormId = entry.RecoveredTopicFormId,
+            PromptText = entry.DialogueLine ?? _context.ReadBsStringT(buffer, _info.PromptOffset),
             DumpOffset = offset,
             SaidOnce = infoFields.SaidOnce,
             TesFileOffset = infoFields.TesFileOffset,
@@ -190,17 +176,13 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     public RuntimeDialogueInfo? ReadRuntimeDialogueInfoFromVA(uint va)
     {
         var fileOffset = _context.VaToFileOffset(va);
-        if (fileOffset == null || fileOffset.Value + _info.StructSize > _context.FileSize)
+        if (fileOffset == null)
         {
             return null;
         }
 
-        var buffer = new byte[_info.StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(fileOffset.Value, buffer, 0, _info.StructSize);
-        }
-        catch
+        var buffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(va), _info.StructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -212,10 +194,10 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var infoFields = ReadInfoFields(buffer, fileOffset.Value);
+        var infoFields = ReadInfoFields(buffer);
 
         // Read cPrompt BSStringT
-        var promptText = _context.ReadBsStringT(fileOffset.Value, _info.PromptOffset);
+        var promptText = _context.ReadBsStringT(buffer, _info.PromptOffset);
 
         return new RuntimeDialogueInfo
         {
@@ -289,22 +271,18 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return results;
         }
 
-        var offset = entry.TesFormOffset.Value;
-        if (offset + RuntimeDialogueLayouts.DialStructSize > _context.FileSize)
+        var topicBuffer = _context.ReadTesFormBytes(entry, RuntimeDialogueLayouts.DialStructSize);
+        if (topicBuffer == null ||
+            RuntimeDialogueLayouts.DialQuestInfoListOffset > topicBuffer.Length - 8)
         {
             return results;
         }
 
-        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext)
-        var listOffset = offset + RuntimeDialogueLayouts.DialQuestInfoListOffset;
-        var listBuf = _context.ReadBytes(listOffset, 8);
-        if (listBuf == null)
-        {
-            return results;
-        }
-
-        var firstItem = BinaryUtils.ReadUInt32BE(listBuf); // QUEST_INFO* pointer
-        var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4); // _Node* pointer
+        // Read the BSSimpleList inline node from the already VA-safe topic buffer.
+        var firstItem = BinaryUtils.ReadUInt32BE(
+            topicBuffer, RuntimeDialogueLayouts.DialQuestInfoListOffset); // QUEST_INFO* pointer
+        var firstNext = BinaryUtils.ReadUInt32BE(
+            topicBuffer, RuntimeDialogueLayouts.DialQuestInfoListOffset + 4); // _Node* pointer
 
         // Process inline first item
         var firstLink = ReadQuestInfo(firstItem);
@@ -325,7 +303,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
                 break;
             }
 
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextVA), 8);
             if (nodeBuf == null)
             {
                 break;
@@ -347,9 +325,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     }
 
     /// <summary>
-    ///     Shared extraction of TESTopicInfo fields from a raw buffer at a known file offset.
+    ///     Shared extraction of TESTopicInfo fields from a safely captured raw buffer.
     /// </summary>
-    private InfoFieldsResult ReadInfoFields(byte[] buffer, long offset)
+    private InfoFieldsResult ReadInfoFields(byte[] buffer)
     {
         // Read iInfoIndex (uint16 BE)
         var infoIndex = BinaryUtils.ReadUInt16BE(buffer, _info.IndexOffset);
@@ -393,10 +371,10 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         var saidOnce = buffer[InfoSaidOnceOffset] != 0;
         var tesFileOffset = BinaryUtils.ReadUInt32BE(buffer, InfoFileOffsetOffset);
 
-        var conditionData = ConditionReader.ReadConditions(offset, _info.ConditionsOffset);
-        var addTopicFormIds = ConditionReader.WalkAddTopicsList(offset, InfoAddTopicsOffset);
+        var conditionData = ConditionReader.ReadConditions(buffer, _info.ConditionsOffset);
+        var addTopicFormIds = ConditionReader.WalkAddTopicsList(buffer, InfoAddTopicsOffset);
         var conversationData = ReadConversationData(buffer);
-        var formEditorId = _context.ReadBsStringT(offset, FormEditorIdOffset);
+        var formEditorId = _context.ReadBsStringT(buffer, FormEditorIdOffset);
 
         return new InfoFieldsResult
         {
@@ -434,7 +412,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buf = _context.ReadBytes(fileOffset.Value, 52);
+        var buf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(questInfoVA), 52);
         if (buf == null)
         {
             return null;
@@ -457,21 +435,18 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
         if (pBase != 0 && arraySize > 0 && arraySize <= 2000)
         {
-            var baseFileOffset = _context.VaToFileOffset(pBase);
-            if (baseFileOffset != null)
+            var elementCount = (int)Math.Min(arraySize, 1024);
+            var elementBytes = _context.ReadBytesAtVa(
+                Xbox360MemoryUtils.VaToLong(pBase), elementCount * 4);
+            if (elementBytes != null)
             {
-                var elementCount = (int)Math.Min(arraySize, 1024);
-                var elementBytes = _context.ReadBytes(baseFileOffset.Value, elementCount * 4);
-                if (elementBytes != null)
+                for (var i = 0; i < elementCount; i++)
                 {
-                    for (var i = 0; i < elementCount; i++)
+                    var pInfo = BinaryUtils.ReadUInt32BE(elementBytes, i * 4);
+                    var infoFormId = _context.FollowPointerVaToFormId(pInfo);
+                    if (infoFormId != null)
                     {
-                        var pInfo = BinaryUtils.ReadUInt32BE(elementBytes, i * 4);
-                        var infoFormId = _context.FollowPointerVaToFormId(pInfo);
-                        if (infoFormId != null)
-                        {
-                            infoEntries.Add(new InfoPointerEntry(infoFormId.Value, pInfo));
-                        }
+                        infoEntries.Add(new InfoPointerEntry(infoFormId.Value, pInfo));
                     }
                 }
             }
@@ -499,7 +474,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return results;
         }
 
-        var conversationBuf = _context.ReadBytesAtVa(conversationVa, ConversationDataSize);
+        var conversationBuf = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(conversationVa), ConversationDataSize);
         if (conversationBuf == null)
         {
             return results;

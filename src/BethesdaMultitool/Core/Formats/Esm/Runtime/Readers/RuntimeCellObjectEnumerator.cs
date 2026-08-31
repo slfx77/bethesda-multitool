@@ -64,7 +64,18 @@ internal sealed class RuntimeCellObjectEnumerator
             entry.OriginalFormType);
     }
 
-    internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(long fileOffset, uint? expectedFormId,
+    /// <summary>
+    ///     Read a 192-byte <c>TESObjectCELL</c> that is only known by pointer.
+    ///     <para>
+    ///         VA-based on purpose. Callers hold a heap pointer, and translating it to a file offset
+    ///         to flat-read the struct is wrong in both directions: the struct can straddle two
+    ///         regions that are file-adjacent but VA-disjoint (splicing an unrelated allocation into
+    ///         the cell's tail), or VA-adjacent but file-disjoint (a flat read misses the tail
+    ///         entirely). <see cref="RuntimeMemoryContext.ReadBytesAtVa(long, int)" /> handles both and fails
+    ///         closed. The file offset is still derived for the snapshot's provenance field.
+    ///     </para>
+    /// </summary>
+    internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshotAtVa(uint cellVa, uint? expectedFormId,
         string? displayName)
     {
         var layout = PdbStructLayouts.Get(0x39);
@@ -73,7 +84,7 @@ internal sealed class RuntimeCellObjectEnumerator
             return null;
         }
 
-        var buffer = _context.ReadBytes(fileOffset, layout.StructSize);
+        var buffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(cellVa), layout.StructSize);
         if (buffer == null)
         {
             return null;
@@ -81,7 +92,7 @@ internal sealed class RuntimeCellObjectEnumerator
 
         return ReadRuntimeCellProbeSnapshotFromBuffer(
             buffer,
-            fileOffset,
+            _context.VaToFileOffset(cellVa) ?? 0,
             expectedFormId,
             displayName,
             layout);
@@ -262,7 +273,8 @@ internal sealed class RuntimeCellObjectEnumerator
                 break;
             }
 
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, CellExtraNodeReadSize);
+            var nodeBuffer = _context.ReadBytesAtVa(
+                Xbox360MemoryUtils.VaToLong(currentVa), CellExtraNodeReadSize);
             if (nodeBuffer == null)
             {
                 break;

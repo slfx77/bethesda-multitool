@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
@@ -6,7 +7,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 ///     Single source of truth for which ESM record types the semantic parser produces typed records for.
 ///     <para>
 ///         Drives the "Other (not parsed)" / "Other (not reconstructed)" display categorization: any
-///         scanned record type whose code is NOT in <see cref="Codes" /> is reported as unparsed
+///         scanned record type whose code is NOT returned by <see cref="CodesForGame" /> is reported as unparsed
 ///         (see <c>RecordParser</c>'s <c>UnparsedTypeCounts</c> computation).
 ///     </para>
 ///     <para>
@@ -134,6 +135,17 @@ public static class EsmParsedRecordTypes
         new("CSTY", nameof(RecordCollection.CombatStyles)),
         new("LGTM", nameof(RecordCollection.LightingTemplates)),
         new("WTHR", nameof(RecordCollection.Weather)),
+        new("WTHS", nameof(RecordCollection.WeatherSettings), BethesdaGame.Starfield),
+        // FO76 and Starfield reuse VOLI for unrelated classic/reflection schemas. Both mappings are
+        // game-scoped so neither typed representation can claim the other game's records.
+        new("VOLI", nameof(RecordCollection.Fallout76VolumetricLightingSettings), BethesdaGame.Fallout76),
+        new("VOLI", nameof(RecordCollection.VolumetricLightingSettings), BethesdaGame.Starfield),
+        new("CLDF", nameof(RecordCollection.CloudForms), BethesdaGame.Starfield),
+        new("ATMO", nameof(RecordCollection.Atmospheres), BethesdaGame.Starfield),
+        new("PNDT", nameof(RecordCollection.PlanetData), BethesdaGame.Starfield),
+        new("STDT", nameof(RecordCollection.StarData), BethesdaGame.Starfield),
+        new("SUNP", nameof(RecordCollection.SunPresets), BethesdaGame.Starfield),
+        new("CUR3", nameof(RecordCollection.Curves3D), BethesdaGame.Starfield),
         new("CLMT", nameof(RecordCollection.Climate)),
         new("IMGS", nameof(RecordCollection.ImageSpaces)),
         new("IMAD", nameof(RecordCollection.ImageSpaceModifiers)),
@@ -170,11 +182,50 @@ public static class EsmParsedRecordTypes
     public static readonly IReadOnlySet<string> Codes =
         All.Select(e => e.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    static EsmParsedRecordTypes()
+    {
+        // A signature may have distinct typed schemas only when every mapping is explicitly game-scoped
+        // and no two mappings apply to the same game. A global entry plus any scoped entry would overlap,
+        // as would duplicate entries for one game, so fail during type initialization instead of letting
+        // UI accounting silently choose an arbitrary collection.
+        foreach (var group in All.GroupBy(entry => entry.Code, StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() <= 1)
+            {
+                continue;
+            }
+
+            if (group.Any(entry => entry.Game is null) ||
+                group.GroupBy(entry => entry.Game).Any(gameGroup => gameGroup.Count() > 1))
+            {
+                throw new InvalidOperationException(
+                    $"Parsed record type {group.Key} has overlapping global/game-scoped mappings.");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Type codes the semantic parser actually handles for <paramref name="game" />. Most handlers
+    ///     are cross-game; CE2 reflection records are explicitly scoped so a same-signature record in an
+    ///     older game cannot be falsely claimed as that typed representation.
+    /// </summary>
+    public static IReadOnlySet<string> CodesForGame(BethesdaGame game) =>
+        EntriesForGame(game)
+            .Select(entry => entry.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     Typed-output mappings applicable to <paramref name="game" />. At most one entry per signature
+    ///     is possible for a game; the static registry invariant rejects overlapping mappings.
+    /// </summary>
+    public static IEnumerable<Entry> EntriesForGame(BethesdaGame game) =>
+        All.Where(entry => entry.Game is null || entry.Game == game);
+
     /// <summary>
     ///     A parsed record type: its 4-char signature and the <see cref="RecordCollection" /> property its
     ///     records land in. <paramref name="Collection" /> is <c>null</c> for the file header and for records
     ///     nested inside other structures (placed refs live inside cells, terrain inside cells) that have no
     ///     dedicated top-level list.
     /// </summary>
-    public readonly record struct Entry(string Code, string? Collection);
+    public readonly record struct Entry(string Code, string? Collection, BethesdaGame? Game = null);
 }

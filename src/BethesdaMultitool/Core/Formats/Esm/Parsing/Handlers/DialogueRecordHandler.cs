@@ -107,10 +107,18 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                                     ? BinaryPrimitives.ReadSingleBigEndian(subData)
                                     : BinaryPrimitives.ReadSingleLittleEndian(subData);
                                 break;
-                            case "DATA" when sub.DataLength >= 2:
-                                // Topic type and flags -- raw bytes, no endian swap needed
+                            case "DATA" when sub.DataLength >= 1:
+                                // Topic type and flags -- raw bytes, no endian swap needed.
+                                //
+                                // Flags is OPTIONAL: xEdit declares this struct as
+                                // wbStruct(DATA, '', [Type, Flags], cpNormal, True, nil, 1) — the
+                                // trailing 1 is the required-element count, so only Type must be
+                                // present. FalloutNV.esm's engine-reserved topics (ANY, SPELLHELP,
+                                // ServiceRefusal, …) ship a 1-byte DATA, and requiring 2 skipped
+                                // the subrecord outright, leaving every one of them typed as
+                                // "Topic" instead of its real type.
                                 topicType = subData[0];
-                                topicFlags = subData[1];
+                                topicFlags = sub.DataLength >= 2 ? subData[1] : (byte)0;
                                 break;
                         }
                     }

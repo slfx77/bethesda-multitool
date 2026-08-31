@@ -37,6 +37,14 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     private readonly RecordParserContext _context = context;
     private readonly List<DialogueRecord> _infos = [];
 
+    /// <summary>
+    ///     The lazy decoder every parsed record points at, or null when the record set has no file
+    ///     behind it (synthesized DMP records, hand-built test fixtures) and trees must therefore be
+    ///     materialized during the parse as before.
+    /// </summary>
+    private readonly DecodedTreeSource? _treeSource =
+        DecodedTreeSource.CanServe(context) ? new DecodedTreeSource(context, BuildIndex(schema)) : null;
+
     // Typed dialogue, built game-aware from DIAL/INFO so the Dialogue tab works (the shared
     // DialogueTreeBuilder consumes these). Populated as a side effect while decoding records.
     private readonly List<DialogTopicRecord> _topics = [];
@@ -157,8 +165,12 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
             subrecords.Add(new RawSubrecord(sub.Signature, subData.ToArray()));
         }
 
+        // Decode now only when there is no file to re-read later. With an accessor the tree is left to
+        // DecodedTreeSource: these are read one record at a time by the browser, the CLI show
+        // renderers and the presentation profiles, and never by the render path, so materializing all
+        // of them up front bought nothing and cost 1,873 MB on Fallout 76.
         IReadOnlyList<DecodedNode>? tree = null;
-        if (_byType.TryGetValue(record.RecordType, out var def))
+        if (_treeSource is null && _byType.TryGetValue(record.RecordType, out var def))
         {
             tree = SchemaRecordDecoder.Decode(
                 def, subrecords, record.IsBigEndian, game: _context.Game, formVersion: record.FormVersion);
@@ -180,6 +192,8 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
             ModelPath = modelPath,
             Bounds = bounds,
             DecodedTree = tree,
+            TreeSource = _treeSource,
+            Descriptor = _treeSource is null ? null : record,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

@@ -158,10 +158,19 @@ public static class EsmRecordTypes
             ["SLPD"] = new("Sleep Deprivation Stage", RecordCategory.GameData, 0x78),
 
             // Other-game types parsed by the multi-game semantic parser. No FormTypeId: the ids above
-            // come from the FNV PDB ENUM_FORM_ID, which these types postdate (MSWP) or predate (PGRD —
-            // TES4-era pathgrids, normalized into the NavMeshes collection).
+            // come from the FNV PDB ENUM_FORM_ID, which these types postdate
+            // (MSWP/WTHS/VOLI/CLDF/ATMO/PNDT/STDT/SUNP/CUR3) or predate
+            // (PGRD — TES4-era pathgrids, normalized into the NavMeshes collection).
             ["MSWP"] = new("Material Swap", RecordCategory.Graphics),
-            ["PGRD"] = new("Pathgrid", RecordCategory.Navigation)
+            ["PGRD"] = new("Pathgrid", RecordCategory.Navigation),
+            ["WTHS"] = new("Weather Settings", RecordCategory.World),
+            ["VOLI"] = new("Volumetric Lighting", RecordCategory.World),
+            ["CLDF"] = new("Cloud Form", RecordCategory.World),
+            ["ATMO"] = new("Atmosphere", RecordCategory.World),
+            ["PNDT"] = new("Planet Data", RecordCategory.World),
+            ["STDT"] = new("Star Data", RecordCategory.World),
+            ["SUNP"] = new("Sun Preset", RecordCategory.World),
+            ["CUR3"] = new("3D Curve", RecordCategory.World)
         };
 
     /// <summary>

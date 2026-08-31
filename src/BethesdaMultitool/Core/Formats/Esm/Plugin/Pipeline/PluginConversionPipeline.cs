@@ -2086,8 +2086,18 @@ public sealed class PluginConversionPipeline
         yield return ("IDLM", records.GenericRecords.Where(g => g.RecordType == "IDLM"));
         yield return ("CAMS", records.GenericRecords.Where(g => g.RecordType == "CAMS"));
         yield return ("MSET", records.GenericRecords.Where(g => g.RecordType == "MSET"));
+        // Round 3 of the M1 wiring. Placed here for the same forward-reference reason: RGDL's XNAM
+        // points at an NPC_/CREA and its TNAM at a BPTD, all three yielded well above. EFSH and
+        // CSNO reference nothing outside their own DATA block.
+        yield return ("EFSH", records.GenericRecords.Where(g => g.RecordType == "EFSH"));
+        yield return ("RGDL", records.GenericRecords.Where(g => g.RecordType == "RGDL"));
+        yield return ("CSNO", records.GenericRecords.Where(g => g.RecordType == "CSNO"));
         yield return ("IDLE", records.IdleAnimations);
         yield return ("IPCT", records.ImpactData);
+        // IPDS's whole payload is a 12-slot table of IPCT references, so it must follow IPCT.
+        // DOBJ's 34 slots point at ALCH/SPEL/FACT/NPC_/MUSC/VTYP, all yielded far above.
+        yield return ("IPDS", records.GenericRecords.Where(g => g.RecordType == "IPDS"));
+        yield return ("DOBJ", records.GenericRecords.Where(g => g.RecordType == "DOBJ"));
         yield return ("HDPT", records.HeadParts);
         yield return ("CPTH", records.CameraPaths);
         yield return ("ALOC", records.AudioLocationControllers);

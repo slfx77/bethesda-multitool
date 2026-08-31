@@ -62,6 +62,15 @@ public record BsaHeader
     ///     Xbox 360 build), so the two parameters a decoder needs — the LZX window size and whether
     ///     an entry is one XMemCompress stream or several — cannot be validated against real data.
     ///     Detected only so extraction can fail with a named error rather than a confusing zlib one.
+    ///     <para>
+    ///         ⚠ Gated to v104+ for exactly the reason <see cref="EmbedFileNames" /> above is: the
+    ///         0x200 bit carries no such meaning in Oblivion's v103 archives, and they set it —
+    ///         <c>Oblivion - Meshes.bsa</c> has flags <c>0x787</c>, which includes 0x200. Without
+    ///         the gate, every compressed Oblivion entry threw "uses the XMem/LZX codec" and the
+    ///         whole Oblivion mesh corpus became unreadable. Caught by the Bucket-B sweep
+    ///         (<c>NifTextureEffectRetailTests</c>, <c>OblivionHavokCollisionIntegrationTests</c>,
+    ///         <c>OblivionNifBrowserTextureIntegrationTests</c>), which is why that gate exists.
+    ///     </para>
     /// </summary>
-    public bool UsesXMemCodec => ArchiveFlags.HasFlag(BsaArchiveFlags.XMemCodec);
+    public bool UsesXMemCodec => Version >= 104 && ArchiveFlags.HasFlag(BsaArchiveFlags.XMemCodec);
 }

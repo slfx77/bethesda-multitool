@@ -133,7 +133,8 @@ internal sealed class RuntimeCellReader
             if (fileOffset.HasValue)
             {
                 cell = RuntimeCellObjectEnumerator.BuildCellRecord(
-                    _cellEnumerator.ReadRuntimeCellProbeSnapshot(fileOffset.Value, entry.CellFormId, displayName),
+                    _cellEnumerator.ReadRuntimeCellProbeSnapshotAtVa(
+                        entry.CellPointer.Value, entry.CellFormId, displayName),
                     fileOffset.Value,
                     editorId,
                     displayName);
@@ -669,18 +670,7 @@ internal sealed class RuntimeCellReader
 
     private byte[]? ReadStructBuffer(RuntimeEditorIdEntry entry, int size)
     {
-        if (entry.TesFormPointer.HasValue)
-        {
-            return _context.ReadBytesAtVa(entry.TesFormPointer.Value, size);
-        }
-
-        var offset = entry.TesFormOffset!.Value;
-        if (offset + size > _context.FileSize)
-        {
-            return null;
-        }
-
-        return _context.ReadBytes(offset, size);
+        return _context.ReadTesFormBytes(entry, size);
     }
 
     /// <summary>

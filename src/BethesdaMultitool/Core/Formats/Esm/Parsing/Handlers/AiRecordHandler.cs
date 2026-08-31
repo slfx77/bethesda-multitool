@@ -111,7 +111,9 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                case "PKDT" when sub.DataLength >= 10:
+                // >= 5, not >= 10: General Flags (4) + Type (1) are the only required members —
+                // see ParsePackageData. Retail ships 8-byte PKDTs.
+                case "PKDT" when sub.DataLength >= 5:
                     packageData = ParsePackageData(subData, record.IsBigEndian);
                     break;
                 case "PSDT" when sub.DataLength >= 8:
@@ -143,7 +145,11 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                     }
 
                     break;
-                case "PKPT" when sub.DataLength >= 2:
+                // >= 1: the one-byte form (Repeatable only) is legal and retail ships it — the
+                // BE->LE registry already carries a PKPT/PACK schema at length 1 for exactly that
+                // reason. Requiring 2 dropped the subrecord and reported those packages as
+                // non-repeating.
+                case "PKPT" when sub.DataLength >= 1:
                     (isRepeatable, isStartingLocationLinkedRef) = ParsePatrolData(subData);
                     break;
                 case "PKED":
@@ -211,13 +217,21 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
     }
 
     /// <summary>
-    ///     Parse PKDT subrecord (12 bytes). Layout from PDB PACKAGE_DATA:
+    ///     Parse PKDT subrecord. Layout from PDB PACKAGE_DATA:
     ///     [0-3] iPackFlags (uint32) — endian-dependent
     ///     [4]   cPackType (byte) — no endian swap
     ///     [5]   unused
     ///     [6-7] iFOBehaviorFlags (uint16) — endian-dependent
     ///     [8-9] iPackageSpecificFlags (uint16) — endian-dependent
     ///     [10-11] unknown
+    ///     <para>
+    ///         <b>Only the first five bytes are required.</b> xEdit declares this as
+    ///         <c>wbStruct(PKDT, 'General', […], cpNormal, True, nil, 2)</c> — the trailing 2 is the
+    ///         required-element count, so a record may stop after General Flags and Type. Retail
+    ///         FalloutNV.esm ships 8-byte PKDTs (no type-specific flags, no trailing unused), and
+    ///         demanding 12 — or even 10 — dropped the subrecord whole, leaving those packages typed
+    ///         as the "AI Package" fallback instead of Find/Travel/…
+    ///     </para>
     /// </summary>
     internal static PackageData ParsePackageData(ReadOnlySpan<byte> data, bool isBigEndian)
     {
@@ -227,21 +241,29 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
 
         var type = data[4];
 
-        var foBehavior = isBigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data[6..])
-            : BinaryPrimitives.ReadUInt16LittleEndian(data[6..]);
-
-        var typeSpecific = isBigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data[8..])
-            : BinaryPrimitives.ReadUInt16LittleEndian(data[8..]);
-
         return new PackageData
         {
             Type = type,
             GeneralFlags = generalFlags,
-            FalloutBehaviorFlags = foBehavior,
-            TypeSpecificFlags = typeSpecific
+            FalloutBehaviorFlags = ReadOptionalUInt16(data, 6, isBigEndian),
+            TypeSpecificFlags = ReadOptionalUInt16(data, 8, isBigEndian)
         };
+    }
+
+    /// <summary>
+    ///     Read a little/big-endian ushort at <paramref name="offset" />, or 0 when the subrecord
+    ///     stopped before it — which is legal for every PKDT member past Type.
+    /// </summary>
+    private static ushort ReadOptionalUInt16(ReadOnlySpan<byte> data, int offset, bool isBigEndian)
+    {
+        if (offset + 2 > data.Length)
+        {
+            return 0;
+        }
+
+        return isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data[offset..])
+            : BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]);
     }
 
     /// <summary>Detect and zero out uninitialized memory patterns in 32-bit flags.</summary>
@@ -278,7 +300,9 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
     internal static (bool IsRepeatable, bool IsStartingLocationLinkedRef) ParsePatrolData(
         ReadOnlySpan<byte> data)
     {
-        return (data[0] != 0, data[1] != 0);
+        // The second byte is optional — xEdit's full form pads it as Unused(1) and retail records
+        // routinely stop after Repeatable.
+        return (data[0] != 0, data.Length >= 2 && data[1] != 0);
     }
 
     /// <summary>

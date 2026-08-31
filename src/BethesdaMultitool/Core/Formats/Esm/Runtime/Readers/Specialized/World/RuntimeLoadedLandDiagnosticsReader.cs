@@ -56,12 +56,13 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
     {
         var outer = ReadPointerDiagnostic(buffer, ptrOffset);
         var results = new List<RuntimePointerDiagnostic>(slotCount);
-        if (outer.FileOffset is not long outerFileOffset)
+        if (outer.FileOffset is null)
         {
             return results;
         }
 
-        var pointerBytes = _context.ReadBytes(outerFileOffset, slotCount * 4);
+        var pointerBytes = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(outer.Pointer), slotCount * 4);
         if (pointerBytes == null)
         {
             return results;
@@ -100,12 +101,12 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
     private RuntimePointerDiagnostic ReadDoublePointerDiagnostic(byte[] buffer, int ptrOffset)
     {
         var trace = ReadPointerDiagnostic(buffer, ptrOffset);
-        if (trace.FileOffset is not long outerFileOffset)
+        if (trace.FileOffset is null)
         {
             return trace;
         }
 
-        var innerBytes = _context.ReadBytes(outerFileOffset, 4);
+        var innerBytes = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(trace.Pointer), 4);
         if (innerBytes == null)
         {
             return trace;
@@ -129,8 +130,8 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
             {
                 Quadrant = quadrant,
                 Pointer = pointer,
-                TextureFormId = pointer.FileOffset.HasValue
-                    ? ReadFormIdAtFileOffset(pointer.FileOffset.Value, LandTextureFormType)
+                TextureFormId = pointer.Pointer != 0
+                    ? ReadFormIdAtVa(pointer.Pointer, LandTextureFormType)
                     : null
             });
         }
@@ -147,9 +148,10 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
             var sampledPointerCount = 0;
             var textureFormIds = new List<uint>();
 
-            if (pointer.FileOffset is long arrayFileOffset)
+            if (pointer.FileOffset is not null)
             {
-                var bytes = _context.ReadBytes(arrayFileOffset, MaxAlphaTextureSlots * 4);
+                var bytes = _context.ReadBytesAtVa(
+                    Xbox360MemoryUtils.VaToLong(pointer.Pointer), MaxAlphaTextureSlots * 4);
                 if (bytes != null)
                 {
                     for (var i = 0; i < MaxAlphaTextureSlots; i++)
@@ -196,21 +198,22 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
             float? minValue = null;
             float? maxValue = null;
 
-            if (pointer.FileOffset is long pointerArrayFileOffset)
+            if (pointer.FileOffset is not null)
             {
-                var pointerBytes = _context.ReadBytes(pointerArrayFileOffset, TextureWeightVertexCount * 4);
+                var pointerBytes = _context.ReadBytesAtVa(
+                    Xbox360MemoryUtils.VaToLong(pointer.Pointer), TextureWeightVertexCount * 4);
                 if (pointerBytes != null)
                 {
                     for (var position = 0; position < TextureWeightVertexCount; position++)
                     {
                         var vertexWeightsPointer = BinaryUtils.ReadUInt32BE(pointerBytes, position * 4);
-                        var vertexWeightsFileOffset = _context.VaToFileOffset(vertexWeightsPointer);
-                        if (vertexWeightsFileOffset is not long vertexWeightsOffset)
+                        if (_context.VaToFileOffset(vertexWeightsPointer) is null)
                         {
                             continue;
                         }
 
-                        var weightBytes = _context.ReadBytes(vertexWeightsOffset, TextureWeightSlotCount * 4);
+                        var weightBytes = _context.ReadBytesAtVa(
+                            Xbox360MemoryUtils.VaToLong(vertexWeightsPointer), TextureWeightSlotCount * 4);
                         if (weightBytes == null)
                         {
                             continue;
@@ -276,9 +279,9 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
         return words;
     }
 
-    private uint? ReadFormIdAtFileOffset(long fileOffset, byte expectedFormType)
+    private uint? ReadFormIdAtVa(uint va, byte expectedFormType)
     {
-        var buffer = _context.ReadBytes(fileOffset, TesFormHeaderReadSize);
+        var buffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(va), TesFormHeaderReadSize);
         if (buffer == null)
         {
             return null;

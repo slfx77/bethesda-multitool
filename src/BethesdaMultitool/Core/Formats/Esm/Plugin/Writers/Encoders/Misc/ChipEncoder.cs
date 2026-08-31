@@ -21,11 +21,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///         those three read from properties.
 ///     </para>
 ///     <para>
-///         DEST is deliberately not emitted, for the same reason MSTT omits it:
-///         <c>BGSDestructibleObjectForm.pData</c> @148 points at a separate
-///         <c>DestructibleObjectData</c> allocation that no reader walks, so there is no captured
-///         destruction data and a synthesized DEST would invent content. It is optional in the
-///         schema.
+///         DEST comes from the <c>DestructibleObjectData</c> allocation behind
+///         <c>BGSDestructibleObjectForm.pData</c> @148, and MODS from the
+///         <c>BSSimpleList&lt;TEX_SWAP *&gt;</c> at <c>TextureSwapList</c> @100 — both now walked
+///         through the exported auxiliary struct layouts.
 ///     </para>
 /// </summary>
 public sealed class ChipEncoder : IRecordEncoder
@@ -67,10 +66,15 @@ public sealed class ChipEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", chip.ModelPath));
         }
 
+        // MODS closes xEdit's wbGenericModel group (MODL/MODB/MODT/MODS/MODD) and so precedes ICON.
+        NewRecordSubrecords.AppendAlternateTextures(subs, chip);
+
         if (GenericRecordFields.TryString(chip, "ICON", "TESTexture.TextureName") is { } icon)
         {
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ICON", icon));
         }
+
+        NewRecordSubrecords.AppendDestruction(subs, chip);
 
         // TESCasinoChips.cDesc @164 is read by the generic sweep but has no CHIP subrecord in the
         // FNV schema — wbRecord(CHIP) has no DESC — so it is deliberately not emitted. Writing it

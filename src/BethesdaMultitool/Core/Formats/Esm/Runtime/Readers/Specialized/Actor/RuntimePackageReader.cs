@@ -30,17 +30,8 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + PackStructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[PackStructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, PackStructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, PackStructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -92,7 +83,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             buffer, CombatStylePtrOffset, CstyFormType);
 
         var conditions = new RuntimeDialogueConditionReader(_context)
-            .ReadConditions(offset, PackConditionsOffset)
+            .ReadConditions(buffer, PackConditionsOffset)
             .Conditions;
 
         return new PackageRecord
@@ -195,7 +186,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var locBuf = _context.ReadBytes(locFileOffset.Value, 12);
+        var locBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(locPtr), 12);
         if (locBuf == null)
         {
             return null;
@@ -214,7 +205,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             var targetFileOffset = _context.VaToFileOffset(unionPtr);
             if (targetFileOffset != null)
             {
-                var targetBuf = _context.ReadBytes(targetFileOffset.Value, 16);
+                var targetBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(unionPtr), 16);
                 if (targetBuf != null)
                 {
                     unionValue = BinaryUtils.ReadUInt32BE(targetBuf, 12);
@@ -254,7 +245,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var targBuf = _context.ReadBytes(targFileOffset.Value, 16);
+        var targBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(targPtr), 16);
         if (targBuf == null)
         {
             return null;
@@ -272,7 +263,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             var targetFileOffset = _context.VaToFileOffset(unionPtr);
             if (targetFileOffset != null)
             {
-                var targetBuf = _context.ReadBytes(targetFileOffset.Value, 16);
+                var targetBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(unionPtr), 16);
                 if (targetBuf != null)
                 {
                     formIdOrType = BinaryUtils.ReadUInt32BE(targetBuf, 12);
@@ -317,7 +308,8 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var collectionBuf = _context.ReadBytes(collectionOffset.Value, IdleCollectionStructMinSize);
+        var collectionBuf = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(collectionPtr), IdleCollectionStructMinSize);
         if (collectionBuf == null)
         {
             return null;
@@ -359,13 +351,7 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             return [];
         }
 
-        var arrayOffset = _context.VaToFileOffset(arrayPtr);
-        if (arrayOffset == null)
-        {
-            return [];
-        }
-
-        var arrayBuf = _context.ReadBytes(arrayOffset.Value, count * 4);
+        var arrayBuf = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(arrayPtr), count * 4);
         if (arrayBuf == null)
         {
             return [];

@@ -169,8 +169,10 @@ internal static class EncodedSubrecordFormIdRemapper
             "PWAT" => signature == "DNAM" && subrecord.Bytes.Length >= 8 ? [4] : [],
             // ANIO DATA is the IDLE animation FormID (not a data blob, despite the signature).
             "ANIO" => signature == "DATA" ? Offset0WhenAtLeast4(subrecord) : [],
-            // CLMT WLST is an array of 12-byte entries: WTHR FormID @0, chance @4, GLOB FormID @8.
-            "CLMT" => signature == "WLST" ? WlstFormIdOffsets(subrecord) : [],
+            // CLMT choice arrays are 12-byte entries: target FormID @0, chance @4, GLOB FormID @8.
+            // WLST targets legacy WTHR; Starfield WSLT targets reflected WTHS. Both domains need alias
+            // remapping, but their signatures remain distinct so callers cannot resolve WTHS as WTHR.
+            "CLMT" => signature is "WLST" or "WSLT" ? ClimateChoiceFormIdOffsets(subrecord) : [],
             _ => signature == "SCRI" ? Offset0WhenAtLeast4(subrecord) : []
         };
     }
@@ -180,8 +182,8 @@ internal static class EncodedSubrecordFormIdRemapper
         return subrecord.Bytes.Length >= 4 ? [0] : [];
     }
 
-    /// <summary>CLMT WLST: per 12-byte entry, FormIDs sit at +0 (WTHR) and +8 (GLOB).</summary>
-    private static List<int> WlstFormIdOffsets(EncodedSubrecord subrecord)
+    /// <summary>CLMT WLST/WSLT: per 12-byte entry, FormIDs sit at +0 (WTHR/WTHS) and +8 (GLOB).</summary>
+    private static List<int> ClimateChoiceFormIdOffsets(EncodedSubrecord subrecord)
     {
         if (subrecord.Bytes.Length < 12 || subrecord.Bytes.Length % 12 != 0)
         {

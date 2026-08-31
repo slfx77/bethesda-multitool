@@ -44,6 +44,126 @@ public sealed class CaptureSceneCensusTests
         Assert.Contains("TexturesWithheld=3", census.DescribeDirt(census), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Active_texture_resolve_makes_census_dirty_and_is_named(bool terrainResolve)
+    {
+        var refs = CleanRefs();
+        var terrain = CleanTerrain();
+        if (terrainResolve)
+        {
+            terrain.TextureActiveResolves = 2;
+        }
+        else
+        {
+            refs.ReferenceTextureActiveResolves = 3;
+        }
+
+        var census = CaptureSceneCensus.From(refs, terrain);
+
+        Assert.False(census.IsClean);
+        Assert.NotEqual(CaptureSceneCensus.From(CleanRefs(), CleanTerrain()), census);
+        Assert.Contains(
+            terrainResolve
+                ? "TerrainTextureActiveResolves=2"
+                : "TextureActiveResolves=3",
+            census.DescribeDirt(census),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void In_progress_reference_batch_build_is_pending_work_and_is_named()
+    {
+        var refs = CleanRefs();
+        refs.ReferenceBatchBuildInProgress = true;
+
+        var census = CaptureSceneCensus.From(refs, CleanTerrain());
+
+        Assert.False(census.IsClean);
+        Assert.Contains("ReferenceBatchBuildInProgress=true", census.DescribeDirt(census),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Frame_ceiling_build_is_allowed_when_it_is_the_only_pending_work()
+    {
+        var refs = CleanRefs();
+        refs.ReferenceBatchBuildInProgress = true;
+        refs.ReferenceBatchBuildTrigger = CaptureSceneCensus.FrameCeilingBatchBuildTriggerCode;
+
+        var census = CaptureSceneCensus.From(refs, CleanTerrain());
+
+        Assert.False(census.IsClean);
+        Assert.True(census.IsCleanOrFrameCeilingMaintenance(refs.ReferenceBatchBuildTrigger));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void In_progress_build_with_any_other_trigger_is_not_maintenance(int trigger)
+    {
+        var refs = CleanRefs();
+        refs.ReferenceBatchBuildInProgress = true;
+        refs.ReferenceBatchBuildTrigger = trigger;
+
+        var census = CaptureSceneCensus.From(refs, CleanTerrain());
+
+        Assert.False(census.IsCleanOrFrameCeilingMaintenance(refs.ReferenceBatchBuildTrigger));
+    }
+
+    [Fact]
+    public void Frame_ceiling_build_does_not_hide_other_pending_work()
+    {
+        var refs = CleanRefs();
+        refs.ReferenceBatchBuildInProgress = true;
+        refs.ReferenceBatchBuildTrigger = CaptureSceneCensus.FrameCeilingBatchBuildTriggerCode;
+        refs.ReferenceQueuedDecodes = 1;
+
+        var census = CaptureSceneCensus.From(refs, CleanTerrain());
+
+        Assert.False(census.IsCleanOrFrameCeilingMaintenance(refs.ReferenceBatchBuildTrigger));
+    }
+
+    [Fact]
+    public void Required_cull_refresh_is_pending_work_and_is_named()
+    {
+        var refs = CleanRefs();
+        refs.ReferenceCullRefreshPending = true;
+
+        var census = CaptureSceneCensus.From(refs, CleanTerrain());
+
+        Assert.False(census.IsClean);
+        Assert.Contains("ReferenceCullRefreshPending=true", census.DescribeDirt(census),
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Retryable_mesh_materialization_is_pending_work_and_is_named(bool persistent)
+    {
+        var refs = CleanRefs();
+        if (persistent)
+        {
+            refs.ReferenceMeshMaterializationRetriesPending = 1;
+        }
+        else
+        {
+            refs.ReferenceMeshMaterializationFailures = 1;
+        }
+
+        var census = CaptureSceneCensus.From(refs, CleanTerrain());
+
+        Assert.False(census.IsClean);
+        Assert.Contains(persistent
+                ? "MeshMaterializationRetriesPending=1"
+                : "MeshMaterializationFailures=1",
+            census.DescribeDirt(census), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TruncatedTerrainDraw_IsDirty()
     {
@@ -90,7 +210,11 @@ public sealed class CaptureSceneCensusTests
         var census = CaptureSceneCensus.From(null, CleanTerrain());
 
         Assert.True(census.IsClean);
+        Assert.False(census.ReferenceBatchBuildInProgress);
+        Assert.False(census.ReferenceCullRefreshPending);
         Assert.Equal(0, census.QueuedDecodes);
+        Assert.Equal(0, census.MeshMaterializationRetriesPending);
+        Assert.Equal(0, census.TextureActiveResolves);
         Assert.Equal(0, census.TexturesWithheld);
         Assert.Equal(0, census.ReferenceInstances);
         Assert.Equal(0, census.ReferenceDrawn);

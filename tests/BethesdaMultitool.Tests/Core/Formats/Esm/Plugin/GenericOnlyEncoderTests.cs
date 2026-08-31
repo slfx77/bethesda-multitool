@@ -228,12 +228,55 @@ public class GenericOnlyEncoderTests
     }
 
     [Fact]
+    public void Clmt_StarfieldWsltEntriesRemainDistinctFromLegacyWeather()
+    {
+        var result = ClmtEncoder.EncodeNew(new ClimateRecord
+        {
+            FormId = 0x01000302,
+            EditorId = "StarfieldClimate",
+            WeatherTypes = [new ClimateWeatherEntry(0x0000015E, 100, 0)],
+            WeatherSettingsTypes =
+            [
+                new ClimateWeatherSettingsEntry(0x0002B544, 75, 0),
+                new ClimateWeatherSettingsEntry(0x0002B545, 25, 0x00000ABC)
+            ],
+            Timing = new ClimateTimingData(30, 54, 102, 126, 0, 0)
+            {
+                HasMoonPhaseLength = false
+            }
+        });
+
+        Assert.Equal(["EDID", "WLST", "WSLT", "TNAM"],
+            result.Subrecords.Select(s => s.Signature).ToArray());
+        var wslt = Assert.Single(result.Subrecords, s => s.Signature == "WSLT").Bytes;
+        Assert.Equal(24, wslt.Length);
+        Assert.Equal(0x0002B544u, BinaryPrimitives.ReadUInt32LittleEndian(wslt.AsSpan(0, 4)));
+        Assert.Equal(75, BinaryPrimitives.ReadInt32LittleEndian(wslt.AsSpan(4, 4)));
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(wslt.AsSpan(8, 4)));
+        Assert.Equal(0x0002B545u, BinaryPrimitives.ReadUInt32LittleEndian(wslt.AsSpan(12, 4)));
+        Assert.Equal(25, BinaryPrimitives.ReadInt32LittleEndian(wslt.AsSpan(16, 4)));
+        Assert.Equal(0x00000ABCu, BinaryPrimitives.ReadUInt32LittleEndian(wslt.AsSpan(20, 4)));
+        Assert.Equal(5, Assert.Single(result.Subrecords, s => s.Signature == "TNAM").Bytes.Length);
+    }
+
+    [Fact]
     public void Clmt_TnamIsSixRawBytesInEngineOrder()
     {
         // Raw 10-minute units — the engine multiplies by 1/6 for hours, so no scaling here.
         var tnam = ClmtEncoder.EncodeTnam(new ClimateTimingData(30, 42, 90, 102, 20, 24));
 
         Assert.Equal([30, 42, 90, 102, 20, 24], tnam);
+    }
+
+    [Fact]
+    public void Clmt_StarfieldTnamOmitsUnauthoredMoonPhaseByte()
+    {
+        var timing = new ClimateTimingData(30, 54, 102, 126, 0, 0)
+        {
+            HasMoonPhaseLength = false
+        };
+
+        Assert.Equal([30, 54, 102, 126, 0], ClmtEncoder.EncodeTnam(timing));
     }
 
     [Fact]
@@ -425,7 +468,7 @@ public class GenericOnlyEncoderTests
     }
 
     [Fact]
-    public void Remapper_RewritesNewTypeRefs_MsttSnamAnioDataClmtWlst()
+    public void Remapper_RewritesNewTypeRefs_MsttSnamAnioDataAndBothClmtChoiceDomains()
     {
         var aliases = new Dictionary<uint, uint>
         {
@@ -452,6 +495,19 @@ public class GenericOnlyEncoderTests
         Assert.Equal(0x01002001u, BinaryPrimitives.ReadUInt32LittleEndian(clmt[0].Bytes.AsSpan(0, 4)));
         Assert.Equal(40, BinaryPrimitives.ReadInt32LittleEndian(clmt[0].Bytes.AsSpan(4, 4)));
         Assert.Equal(0x01002003u, BinaryPrimitives.ReadUInt32LittleEndian(clmt[0].Bytes.AsSpan(8, 4)));
+
+        // WSLT has the same byte layout but its first FormID targets WTHS, not WTHR.
+        var wslt = new byte[12];
+        BinaryPrimitives.WriteUInt32LittleEndian(wslt.AsSpan(0, 4), 0x000B2222);
+        BinaryPrimitives.WriteInt32LittleEndian(wslt.AsSpan(4, 4), 75);
+        BinaryPrimitives.WriteUInt32LittleEndian(wslt.AsSpan(8, 4), 0x000C3333);
+        var starfieldClmt = EncodedSubrecordFormIdRemapper.Remap("CLMT",
+            [new EncodedSubrecord("WSLT", wslt)], aliases);
+        Assert.Equal(0x01002002u,
+            BinaryPrimitives.ReadUInt32LittleEndian(starfieldClmt[0].Bytes.AsSpan(0, 4)));
+        Assert.Equal(75, BinaryPrimitives.ReadInt32LittleEndian(starfieldClmt[0].Bytes.AsSpan(4, 4)));
+        Assert.Equal(0x01002003u,
+            BinaryPrimitives.ReadUInt32LittleEndian(starfieldClmt[0].Bytes.AsSpan(8, 4)));
     }
 
     // ===================================================================================

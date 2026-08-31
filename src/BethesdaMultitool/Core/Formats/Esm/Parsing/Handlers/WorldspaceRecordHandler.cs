@@ -142,6 +142,7 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
         uint? parentWorldspace = null;
         uint? climate = null;
         uint? water = null;
+        string? starfieldWaterMaterial = null;
         float? defaultLandHeight = null;
         float? defaultWaterHeight = null;
         int? mapUsableWidth = null;
@@ -183,6 +184,12 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
                     break;
                 case "NAM2" when sub.DataLength == 4:
                     water = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "NAM7" when Context.Game == BethesdaGame.Starfield:
+                    // Starfield NAM7 is an authored water-material string, not a WATR FormID.
+                    // Preserve an empty string as distinct from an absent subrecord; no rendering
+                    // semantics are inferred at parse time.
+                    starfieldWaterMaterial = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DNAM" when sub.DataLength >= 8:
                     defaultLandHeight = record.IsBigEndian
@@ -284,6 +291,7 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
             ParentWorldspaceFormId = parentWorldspace,
             ClimateFormId = climate,
             WaterFormId = water,
+            StarfieldWaterMaterial = starfieldWaterMaterial,
             DefaultLandHeight = defaultLandHeight,
             DefaultWaterHeight = defaultWaterHeight,
             MapUsableWidth = mapUsableWidth,
@@ -560,6 +568,7 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
             ParentWorldspaceFormId = esm.ParentWorldspaceFormId ?? runtime.ParentWorldspaceFormId,
             ClimateFormId = esm.ClimateFormId ?? runtime.ClimateFormId,
             WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
+            StarfieldWaterMaterial = esm.StarfieldWaterMaterial ?? runtime.StarfieldWaterMaterial,
             DefaultLandHeight = esm.DefaultLandHeight ?? runtime.DefaultLandHeight,
             // PreserveSentinelOrNormalize, NOT NormalizeReportableHeight: a cleanly parsed ESM DNAM
             // sentinel ("no default water") arrives intact here, and normalizing collapsed it to 0f

@@ -51,15 +51,12 @@ internal sealed class RuntimeCellMapWalker(
             return cells;
         }
 
-        // Read the bucket array (hashSize x 4 bytes of pointers)
+        // Read the bucket array (hashSize x 4 bytes of pointers). VA-based: the array can be up to
+        // MaxBuckets*4 bytes and a flat file read would run straight through a region boundary into
+        // an unrelated allocation, turning foreign bytes into bucket-head pointers.
         var bucketArraySize = (int)hashSize * 4;
-        var bucketArrayOffset = _context.VaToFileOffset(bucketArrayVa);
-        if (bucketArrayOffset == null)
-        {
-            return cells;
-        }
-
-        var bucketArray = _context.ReadBytes(bucketArrayOffset.Value, bucketArraySize);
+        var bucketArray = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(bucketArrayVa), bucketArraySize);
         if (bucketArray == null)
         {
             return cells;
@@ -85,19 +82,11 @@ internal sealed class RuntimeCellMapWalker(
 
         while (itemVa != 0 && depth < MaxChainDepth && visited.Add(itemVa))
         {
-            var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);
-            if (!_context.MinidumpInfo.IsVaRangeCaptured(itemVaLong, ItemSize))
-            {
-                break;
-            }
-
-            var itemOffset = _context.VaToFileOffset(itemVa);
-            if (itemOffset == null)
-            {
-                break;
-            }
-
-            var itemBuffer = _context.ReadBytes(itemOffset.Value, ItemSize);
+            // ReadBytesAtVa, not IsVaRangeCaptured + a flat read: IsVaRangeCaptured is a residency
+            // predicate that deliberately spans several VA-contiguous regions, and those regions'
+            // file offsets need not be adjacent — so the guard passed while the read still returned
+            // bytes from the wrong place. ReadBytesAtVa re-derives the file offset per region.
+            var itemBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(itemVa), ItemSize);
             if (itemBuffer == null)
             {
                 break;
@@ -131,19 +120,10 @@ internal sealed class RuntimeCellMapWalker(
     /// </summary>
     private RuntimeCellMapEntry? ReadCellFromPointer(uint cellVa, int gridX, int gridY)
     {
-        var cellVaLong = Xbox360MemoryUtils.VaToLong(cellVa);
-        if (!_context.MinidumpInfo.IsVaRangeCaptured(cellVaLong, CellStructSize))
-        {
-            return null;
-        }
-
-        var cellOffset = _context.VaToFileOffset(cellVa);
-        if (cellOffset == null)
-        {
-            return null;
-        }
-
-        var snapshot = _cellEnumerator.ReadRuntimeCellProbeSnapshot(cellOffset.Value, null, null);
+        // ReadRuntimeCellProbeSnapshotAtVa performs its own VA residency check and stitches across
+        // region boundaries, so the separate IsVaRangeCaptured guard + file-offset flat read that
+        // used to sit here is both redundant and (for a straddling struct) wrong.
+        var snapshot = _cellEnumerator.ReadRuntimeCellProbeSnapshotAtVa(cellVa, null, null);
         if (snapshot == null || snapshot.FormId == 0)
         {
             return null;
@@ -192,7 +172,9 @@ internal sealed class RuntimeCellMapWalker(
 
     private const int MaxBuckets = 4096;
     private const int MaxChainDepth = 200;
-    private const int CellStructSize = 192;
+
+    // The TESObjectCELL size that used to live here is no longer duplicated: the cell read now
+    // goes through ReadRuntimeCellProbeSnapshotAtVa, which takes it from the PDB layout.
 
     #endregion
 }

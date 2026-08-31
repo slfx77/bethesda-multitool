@@ -28,6 +28,8 @@ internal sealed class StaticShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Model:[/]       {Markup.Escape(stat.ModelPath)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, stat.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader($"[bold]STAT[/] {Markup.Escape(stat.EditorId ?? "")}")

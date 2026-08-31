@@ -131,7 +131,6 @@ public static class DmpToEsmCommand
         };
 
         var command = new Command("to-esm", "Convert a DMP to a PC plugin ESM overlay against a master ESM");
-        command.Aliases.Add("to-esp"); // back-compat: was 'to-esp' before the output became ESM-flagged
         command.Arguments.Add(dmpArg);
         command.Options.Add(pcEsmOpt);
         command.Options.Add(outputOpt);

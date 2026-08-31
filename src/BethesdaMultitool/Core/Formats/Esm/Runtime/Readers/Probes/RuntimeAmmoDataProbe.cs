@@ -42,18 +42,13 @@ internal static class RuntimeAmmoDataProbe
                 break;
             }
 
-            if (entry.FormType != AmmoFormType || entry.TesFormOffset is not { } offset ||
-                offset + ReadSize > context.FileSize)
+            if (entry.FormType != AmmoFormType || !entry.TesFormOffset.HasValue)
             {
                 continue;
             }
 
-            var buffer = new byte[ReadSize];
-            try
-            {
-                context.Accessor.ReadArray(offset, buffer, 0, ReadSize);
-            }
-            catch
+            var buffer = context.ReadTesFormBytes(entry, ReadSize);
+            if (buffer == null)
             {
                 continue;
             }

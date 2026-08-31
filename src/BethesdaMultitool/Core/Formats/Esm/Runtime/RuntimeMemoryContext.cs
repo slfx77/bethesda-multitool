@@ -92,7 +92,7 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public byte[]? ReadBytes(long fileOffset, int count)
     {
-        if (fileOffset + count > FileSize)
+        if (fileOffset < 0 || count < 0 || count > FileSize || fileOffset > FileSize - count)
         {
             return null;
         }
@@ -107,6 +107,35 @@ internal sealed class RuntimeMemoryContext(
         {
             return null;
         }
+    }
+
+    /// <summary>
+    ///     Read bytes starting at the <c>TESForm</c> subobject retained on a runtime entry.
+    ///     A retained file offset is required for provenance and fallback. The entry's captured
+    ///     pointer is authoritative; when it is unavailable, recover the equivalent VA from that
+    ///     offset. A mapped entry is always read in VA space so a struct spanning VA-adjacent
+    ///     regions is reassembled from each region's own file offset. Flat reads are reserved for
+    ///     lightweight synthetic contexts that have no region map.
+    /// </summary>
+    public byte[]? ReadTesFormBytes(RuntimeEditorIdEntry entry, int count)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (count < 0 || !entry.TesFormOffset.HasValue)
+        {
+            return null;
+        }
+
+        var tesFormVa = entry.TesFormPointer is { } pointer && pointer != 0
+            ? pointer
+            : MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
+        if (tesFormVa.HasValue)
+        {
+            return ReadBytesAtVa(tesFormVa.Value, count);
+        }
+
+        return MinidumpInfo.MemoryRegions.Count == 0
+            ? ReadBytes(entry.TesFormOffset.Value, count)
+            : null;
     }
 
     /// <summary>
@@ -127,18 +156,55 @@ internal sealed class RuntimeMemoryContext(
             return [];
         }
 
-        if (va > long.MaxValue - count)
-        {
-            return null;
-        }
-
-        var endVa = va + count;
-        if (!MinidumpInfo.IsVaRangeCaptured(va, count))
+        // Validate before allocating. Besides failing closed across capture gaps, this keeps a
+        // malformed or adversarially large request from allocating a result that can never be read.
+        if (va > long.MaxValue - count || !MinidumpInfo.IsVaRangeCaptured(va, count))
         {
             return null;
         }
 
         var result = new byte[count];
+        return ReadBytesAtVaInto(va, result, 0, count) ? result : null;
+    }
+
+    /// <summary>
+    ///     Read from a raw 32-bit Xbox 360 pointer. Module-space addresses must be sign-extended
+    ///     before lookup because minidump descriptors store addresses such as 0x82XXXXXX as Int64.
+    /// </summary>
+    public byte[]? ReadBytesAtVa(uint va, int count)
+    {
+        return ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(va), count);
+    }
+
+    /// <summary>
+    ///     Same contract as <see cref="ReadBytesAtVa(long, int)" />, but copies into a caller-owned buffer so
+    ///     scanning loops can reuse one allocation. Returns false — leaving the buffer untouched
+    ///     past whatever it managed to copy — when the range is not fully captured or a read fails.
+    /// </summary>
+    public bool ReadBytesAtVaInto(long va, byte[] target, int offset, int count)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (count < 0 || offset < 0 || offset > target.Length - count)
+        {
+            return false;
+        }
+
+        if (count == 0)
+        {
+            return true;
+        }
+
+        if (va > long.MaxValue - count)
+        {
+            return false;
+        }
+
+        var endVa = va + count;
+        if (!MinidumpInfo.IsVaRangeCaptured(va, count))
+        {
+            return false;
+        }
+
         var copied = 0;
         var currentVa = va;
 
@@ -156,7 +222,7 @@ internal sealed class RuntimeMemoryContext(
                 if (currentVa < region.VirtualAddress ||
                     currentVa >= region.VirtualAddress + region.Size)
                 {
-                    return null;
+                    return false;
                 }
 
                 var available = region.VirtualAddress + region.Size - currentVa;
@@ -164,13 +230,13 @@ internal sealed class RuntimeMemoryContext(
                 var fileOffset = region.FileOffset + (currentVa - region.VirtualAddress);
                 if (fileOffset < 0 || fileOffset > FileSize - chunkSize)
                 {
-                    return null;
+                    return false;
                 }
 
-                var bytesRead = Accessor.ReadArray(fileOffset, result, copied, chunkSize);
+                var bytesRead = Accessor.ReadArray(fileOffset, target, offset + copied, chunkSize);
                 if (bytesRead != chunkSize)
                 {
-                    return null;
+                    return false;
                 }
 
                 copied += chunkSize;
@@ -179,10 +245,44 @@ internal sealed class RuntimeMemoryContext(
         }
         catch
         {
-            return null;
+            return false;
         }
 
-        return copied == count ? result : null;
+        return copied == count;
+    }
+
+    /// <summary>
+    ///     How many bytes starting at <paramref name="va" /> are captured as one VA-contiguous run,
+    ///     capped at <paramref name="max" />. Lets a caller that wants "as much as is there" — a
+    ///     null-terminated string, a variable-length scan — shrink its request instead of failing
+    ///     the whole read the way <see cref="ReadBytesAtVa(long, int)" /> does.
+    /// </summary>
+    public int GetCapturedVaRunLength(long va, int max)
+    {
+        if (max <= 0 || va > long.MaxValue - max)
+        {
+            return 0;
+        }
+
+        var run = 0L;
+        var currentVa = va;
+        foreach (var region in MinidumpInfo.GetRegionsInRange(va, va + max))
+        {
+            if (currentVa < region.VirtualAddress || currentVa >= region.VirtualAddress + region.Size)
+            {
+                break; // VA gap (or a region starting past our cursor) — the run ends here.
+            }
+
+            var regionEnd = region.VirtualAddress + region.Size;
+            run += regionEnd - currentVa;
+            currentVa = regionEnd;
+            if (run >= max)
+            {
+                return max;
+            }
+        }
+
+        return (int)Math.Min(run, max);
     }
 
     /// <summary>
@@ -195,13 +295,18 @@ internal sealed class RuntimeMemoryContext(
             return null;
         }
 
-        var fileOffset = VaToFileOffset(ptr);
-        if (fileOffset == null)
+        // VA-based, and clamped to the captured run rather than fail-closed: this is a
+        // null-terminated read, so a string that ends before the region does is a complete
+        // success. A flat file read here used to run past the region boundary and pick up
+        // printable bytes from an unrelated allocation, producing a real-looking wrong string.
+        var va = Xbox360MemoryUtils.VaToLong(ptr);
+        var available = GetCapturedVaRunLength(va, maxBytes);
+        if (available <= 0)
         {
             return null;
         }
 
-        var buffer = ReadBytes(fileOffset.Value, maxBytes);
+        var buffer = ReadBytesAtVa(va, available);
         if (buffer == null)
         {
             return null;
@@ -326,10 +431,25 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public uint? FollowPointerToFormId(byte[] buffer, int pointerOffset, byte expectedFormType)
     {
-        return FollowPointerToFormIdCore(buffer, pointerOffset, expectedFormType);
+        return FollowPointerToFormIdCore(buffer, pointerOffset, formType => formType == expectedFormType);
     }
 
-    private uint? FollowPointerToFormIdCore(byte[] buffer, int pointerOffset, byte? expectedFormType)
+    /// <summary>
+    ///     Follow a pointer to a TESForm and accept any of <paramref name="acceptableFormTypes" />.
+    ///     For a pointer declared as a C++ base class, the accepted set is that class plus every
+    ///     record class deriving from it — a single-FormType demand would reject the derived
+    ///     instance the field normally holds.
+    /// </summary>
+    public uint? FollowPointerToFormId(byte[] buffer, int pointerOffset, IReadOnlySet<byte> acceptableFormTypes)
+    {
+        ArgumentNullException.ThrowIfNull(acceptableFormTypes);
+
+        return acceptableFormTypes.Count == 0
+            ? null
+            : FollowPointerToFormIdCore(buffer, pointerOffset, acceptableFormTypes.Contains);
+    }
+
+    private uint? FollowPointerToFormIdCore(byte[] buffer, int pointerOffset, Func<byte, bool>? isAcceptableFormType)
     {
         if (pointerOffset + 4 > buffer.Length)
         {
@@ -354,9 +474,9 @@ internal sealed class RuntimeMemoryContext(
         }
 
         var formType = tesFormBuffer[4];
-        if (expectedFormType.HasValue)
+        if (isAcceptableFormType != null)
         {
-            if (formType != expectedFormType.Value)
+            if (!isAcceptableFormType(formType))
             {
                 return null;
             }
@@ -430,31 +550,38 @@ internal sealed class RuntimeMemoryContext(
 
     /// <summary>
     ///     Read BSStringT header to extract the string file offset and VA.
-    ///     When the header file offset maps to a captured VA, the full header is read through
-    ///     that VA and fails closed across capture gaps. Flat header reads are attempted only
-    ///     by lightweight synthetic contexts with no memory-region map.
+    ///     When the containing struct's file offset maps to a captured VA, the member offset is
+    ///     applied in VA space and the full header fails closed across capture gaps. Flat header
+    ///     reads are attempted only by lightweight synthetic contexts with no memory-region map.
     /// </summary>
     public (long StringFileOffset, uint StringVa)? ReadBSStringTInfo(long tesFormFileOffset, int fieldOffset)
     {
-        if (fieldOffset < 0 || tesFormFileOffset < 0 || tesFormFileOffset > long.MaxValue - fieldOffset)
+        if (fieldOffset < 0 || tesFormFileOffset < 0)
         {
             return null;
         }
 
-        var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset > FileSize - 8)
-        {
-            return null;
-        }
-
-        var headerVa = MinidumpInfo.FileOffsetToVirtualAddress(bstOffset);
+        var tesFormVa = MinidumpInfo.FileOffsetToVirtualAddress(tesFormFileOffset);
         byte[]? bstBuffer;
-        if (headerVa.HasValue)
+        if (tesFormVa.HasValue)
         {
-            bstBuffer = ReadBytesAtVa(headerVa.Value, 8);
+            if (tesFormVa.Value > long.MaxValue - fieldOffset)
+            {
+                return null;
+            }
+
+            // Add the member offset in VA space. Adding it to the starting file offset is wrong
+            // when the struct crosses VA-adjacent regions stored at disjoint dump offsets.
+            bstBuffer = ReadBytesAtVa(tesFormVa.Value + fieldOffset, 8);
         }
         else if (MinidumpInfo.MemoryRegions.Count == 0)
         {
+            if (tesFormFileOffset > long.MaxValue - fieldOffset)
+            {
+                return null;
+            }
+
+            var bstOffset = tesFormFileOffset + fieldOffset;
             bstBuffer = ReadBytes(bstOffset, 8);
         }
         else
@@ -511,6 +638,14 @@ internal sealed class RuntimeMemoryContext(
     }
 
     /// <summary>
+    ///     Read a BSStringT whose header is already present in a safely captured struct buffer.
+    /// </summary>
+    public string? ReadBsStringT(byte[] structData, int fieldOffset)
+    {
+        return ReadBSStringTDiag(structData, fieldOffset, out _);
+    }
+
+    /// <summary>
     ///     Read a BSStringT with diagnostic failure reason.
     /// </summary>
     public string? ReadBSStringTDiag(long tesFormFileOffset, int fieldOffset, out BSStringFailure failureReason)
@@ -525,8 +660,7 @@ internal sealed class RuntimeMemoryContext(
     public string? ReadBSStringTDiag(long tesFormFileOffset, int fieldOffset, out BSStringFailure failureReason,
         out uint rawPointer, out ushort rawLength, out string? rawHex, out string? partialData)
     {
-        var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset < 0 || bstOffset > FileSize - 8)
+        if (fieldOffset < 0 || tesFormFileOffset < 0)
         {
             failureReason = BSStringFailure.StructOutOfBounds;
             rawPointer = 0;
@@ -536,8 +670,40 @@ internal sealed class RuntimeMemoryContext(
             return null;
         }
 
-        var bstBuffer = new byte[8];
-        Accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+        var tesFormVa = MinidumpInfo.FileOffsetToVirtualAddress(tesFormFileOffset);
+        byte[]? bstBuffer;
+        if (tesFormVa.HasValue)
+        {
+            if (tesFormVa.Value > long.MaxValue - fieldOffset)
+            {
+                bstBuffer = null;
+            }
+            else
+            {
+                // The relative member offset belongs to the virtual object, not to its first
+                // region's file location. Resolve the header after adding in VA space.
+                bstBuffer = ReadBytesAtVa(tesFormVa.Value + fieldOffset, 8);
+            }
+        }
+        else if (MinidumpInfo.MemoryRegions.Count == 0 && tesFormFileOffset <= long.MaxValue - fieldOffset)
+        {
+            bstBuffer = ReadBytes(tesFormFileOffset + fieldOffset, 8);
+        }
+        else
+        {
+            bstBuffer = null;
+        }
+
+        if (bstBuffer == null)
+        {
+            failureReason = BSStringFailure.StructOutOfBounds;
+            rawPointer = 0;
+            rawLength = 0;
+            rawHex = null;
+            partialData = null;
+            return null;
+        }
+
         return DecodeBSStringTHeader(bstBuffer, out failureReason,
             out rawPointer, out rawLength, out rawHex, out partialData);
     }

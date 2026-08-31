@@ -18,10 +18,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 ///         resolves to real text before the encoder sees it.
 ///     </para>
 ///     <para>
-///         LNAM is deliberately not emitted. <c>TESLoadScreen.LoadFormList</c> @60 is a
-///         <c>BSSimpleList&lt;LOAD_FORM_DATA *&gt;</c>; the generic reader never walks list heads,
-///         so there is no captured location data to write and a synthesized entry would invent
-///         content. The member is optional in the schema, so omitting it still loads.
+///         LNAM comes from <c>TESLoadScreen.LoadFormList</c> @60, a
+///         <c>BSSimpleList&lt;LOAD_FORM_DATA *&gt;</c> that the container walker follows into
+///         12-byte nodes. <c>LOAD_FORM_DATA</c> is three consecutive <c>uint32</c>s and the LNAM
+///         subrecord is three words of the same meanings in the same order, so the nodes pass
+///         through unreinterpreted. LNAM repeats — one subrecord per location, not one array.
 ///     </para>
 /// </summary>
 public sealed class LscrEncoder : IRecordEncoder
@@ -65,6 +66,15 @@ public sealed class LscrEncoder : IRecordEncoder
         // (EsmStringUtils.DecodeGameText). Re-encoding through Latin-1 would drop every character
         // that came from a 0x80-0x9F byte, so the game-text writer is the lossless round trip here.
         subs.Add(NewRecordSubrecords.EncodeGameTextSubrecord("DESC", desc ?? string.Empty));
+
+        if (GenericRecordFields.TryLoadScreenLocations(
+                lscr, "LNAM", "TESLoadScreen.LoadFormList") is { } locations)
+        {
+            foreach (var location in locations)
+            {
+                subs.Add(NewRecordSubrecords.EncodeLoadScreenLocationSubrecord(location));
+            }
+        }
 
         // WMI1 names an LSCT (load-screen type). Optional, so a slot the capture could not resolve
         // is simply left out rather than written as a null reference.

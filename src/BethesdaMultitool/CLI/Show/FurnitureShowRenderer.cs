@@ -39,6 +39,8 @@ internal sealed class FurnitureShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Script:[/]      {resolver.FormatWithEditorId(furn.Script.Value)}");
         }
 
+        ShowHelpers.AppendNestedPayloads(lines, records, furn.FormId, resolver);
+
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader($"[bold]FURN[/] {Markup.Escape(furn.EditorId ?? "")}")

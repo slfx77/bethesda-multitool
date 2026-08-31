@@ -97,13 +97,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
                 continue;
             }
 
-            var textureArrayFileOffset = _context.VaToFileOffset(textureArrayPointer);
-            if (textureArrayFileOffset is not long textureArrayOffset)
-            {
-                continue;
-            }
-
-            var texturePointerBytes = _context.ReadBytes(textureArrayOffset, MaxAlphaTextureSlots * 4);
+            var texturePointerBytes = _context.ReadBytesAtVa(
+                Xbox360MemoryUtils.VaToLong(textureArrayPointer), MaxAlphaTextureSlots * 4);
             var textureWeights = ReadRuntimeTextureWeights(percentArrayPointer);
             if (texturePointerBytes == null || textureWeights == null)
             {
@@ -166,16 +161,11 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var pointerArrayFileOffset = _context.VaToFileOffset(vertexPointerArrayPointer);
-        if (pointerArrayFileOffset is not long pointerArrayOffset)
-        {
-            return null;
-        }
-
         // LoadedLandData.ppPercentArrays[q] points to 289 per-vertex pointers.
         // Each pointee is an eight-float allocation; the engine reads the first
         // six floats as default + five alpha weights.
-        var pointerBytes = _context.ReadBytes(pointerArrayOffset, TextureWeightVertexCount * 4);
+        var pointerBytes = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(vertexPointerArrayPointer), TextureWeightVertexCount * 4);
         if (pointerBytes == null)
         {
             return null;
@@ -185,13 +175,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
         for (var position = 0; position < TextureWeightVertexCount; position++)
         {
             var vertexWeightsPointer = BinaryUtils.ReadUInt32BE(pointerBytes, position * 4);
-            var vertexWeightsFileOffset = _context.VaToFileOffset(vertexWeightsPointer);
-            if (vertexWeightsFileOffset is not long vertexWeightsOffset)
-            {
-                return null;
-            }
-
-            var weightBytes = _context.ReadBytes(vertexWeightsOffset, TextureWeightSlotCount * 4);
+            var weightBytes = _context.ReadBytesAtVa(
+                Xbox360MemoryUtils.VaToLong(vertexWeightsPointer), TextureWeightSlotCount * 4);
             if (weightBytes == null)
             {
                 return null;
@@ -251,7 +236,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buffer = _context.ReadBytes(textureFileOffset, RuntimeLandTextureSize);
+        var buffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(texturePointer), RuntimeLandTextureSize);
         if (buffer == null || buffer[4] != LandTextureFormType)
         {
             _runtimeLandTextureByPointer[texturePointer] = null;
@@ -326,7 +312,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var buffer = _context.ReadBytes(textureSetFileOffset, RuntimeTextureSetSize);
+        var buffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(textureSetPointer), RuntimeTextureSetSize);
         if (buffer == null || buffer[4] != TextureSetFormType)
         {
             _runtimeTextureSetByPointer[textureSetPointer] = null;
@@ -545,13 +532,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var fileOffset = _context.VaToFileOffset(texturePointer);
-        if (fileOffset is not long textureFileOffset)
-        {
-            return null;
-        }
-
-        var buffer = _context.ReadBytes(textureFileOffset, NiSourceTextureSize);
+        var buffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(texturePointer), NiSourceTextureSize);
         if (buffer == null)
         {
             return null;
@@ -582,13 +564,8 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             return direct;
         }
 
-        var entryFileOffset = _context.VaToFileOffset(entryPointer);
-        if (entryFileOffset is not long fileOffset)
-        {
-            return null;
-        }
-
-        var entryBuffer = _context.ReadBytes(fileOffset, TextureFileEntryProbeSize);
+        var entryBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(entryPointer), TextureFileEntryProbeSize);
         if (entryBuffer == null)
         {
             return null;

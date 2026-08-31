@@ -24,7 +24,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         SyntheticStructFactory.WriteFormHeader(buffer, GlobalOffset, 0x06, GlobalFormId);
         BinaryTestWriter.WriteUInt32BE(buffer, ConditionOffset + 4, HeapVa + GlobalOffset);
 
-        var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0);
+        var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0);
 
         var condition = Assert.Single(result.Conditions);
         Assert.Equal(GlobalFormId, BitConverter.SingleToUInt32Bits(condition.ComparisonValue));
@@ -37,7 +37,7 @@ public sealed class RuntimeDialogueConditionReaderTests
     {
         var buffer = BuildConditionDump(0x00, 1f);
 
-        var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0);
+        var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0);
 
         var condition = Assert.Single(result.Conditions);
         Assert.Equal(1f, condition.ComparisonValue);
@@ -50,7 +50,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         var buffer = BuildConditionDump(0x04, 0f);
         BinaryTestWriter.WriteUInt32BE(buffer, ConditionOffset + 4, HeapVa + SpeakerOffset);
 
-        var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0);
+        var result = new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0);
 
         var condition = Assert.Single(result.Conditions);
         Assert.Equal(0u, BitConverter.SingleToUInt32Bits(condition.ComparisonValue));
@@ -63,7 +63,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         SyntheticStructFactory.WriteFormHeader(buffer, ReferenceOffset, 0x3B, ReferenceFormId);
 
         var condition = Assert.Single(
-            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0).Conditions);
+            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0).Conditions);
 
         Assert.Equal(ReferenceFormId, condition.Reference);
     }
@@ -83,7 +83,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         SyntheticStructFactory.WriteFormHeader(buffer, ReferenceOffset, 0x3B, ReferenceFormId);
 
         var condition = Assert.Single(
-            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0).Conditions);
+            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0).Conditions);
 
         Assert.Equal(0u, condition.Reference);
     }
@@ -94,7 +94,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         var buffer = BuildConditionDump(0, 1f, 0x1001);
 
         var condition = Assert.Single(
-            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0).Conditions);
+            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0).Conditions);
 
         Assert.Equal(HeapVa + SpeakerOffset, condition.Parameter1);
     }
@@ -108,7 +108,7 @@ public sealed class RuntimeDialogueConditionReaderTests
         var buffer = BuildConditionDump(0, 1f, 0x000E);
 
         var condition = Assert.Single(
-            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(0, 0).Conditions);
+            new RuntimeDialogueConditionReader(CreateContext(buffer)).ReadConditions(buffer, 0).Conditions);
 
         Assert.Equal(HeapVa + SpeakerOffset, condition.Parameter1);
         Assert.NotEqual(SpeakerFormId, condition.Parameter1);

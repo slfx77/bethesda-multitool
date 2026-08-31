@@ -33,7 +33,7 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
             return null;
         }
 
-        var actorBuffer = _context.ReadBytes(entry.TesFormOffset.Value, _characterReadSize);
+        var actorBuffer = _context.ReadTesFormBytes(entry, _characterReadSize);
         if (actorBuffer == null)
         {
             return null;
@@ -92,7 +92,7 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
             return null;
         }
 
-        var actorBuffer = _context.ReadBytes(entry.TesFormOffset.Value, _characterReadSize);
+        var actorBuffer = _context.ReadTesFormBytes(entry, _characterReadSize);
         if (actorBuffer == null)
         {
             return null;

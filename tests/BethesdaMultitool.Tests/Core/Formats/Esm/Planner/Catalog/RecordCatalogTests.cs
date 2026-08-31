@@ -211,10 +211,69 @@ public sealed class RecordCatalogTests
             out _,
             out var diagnostics);
 
-        Assert.Same(first, Assert.Single(entries).Model);
+        // Contract changed 2026-08-26: the loser is no longer discarded. The richer capture leads
+        // and the other fills what it left unset, so the entry is the union of the two — here the
+        // second capture's Fields, which the first never had.
+        var model = Assert.IsType<GenericEsmRecord>(Assert.Single(entries).Model);
+        Assert.Equal("ProtoMovableStatic", model.EditorId);
+        Assert.Single(model.Fields);
+
         var diagnostic = Assert.Single(diagnostics);
         Assert.Equal("catalog.duplicate-dmp-record", diagnostic.Code);
         Assert.Equal("true", diagnostic.Metadata!["differs"]);
+        Assert.Equal("true", diagnostic.Metadata["merged"]);
+    }
+
+    [Fact]
+    public void Duplicate_Dmp_Records_Prefer_The_Capture_That_Resolved_An_EditorId()
+    {
+        // Enumeration order is not a quality ordering. A capture whose EditorID never resolved used
+        // to win purely by arriving first, which discarded the only copy that could name the record.
+        const uint formId = 0x00ABCDF0;
+        var anonymous = new GenericEsmRecord
+        {
+            FormId = formId,
+            RecordType = "MSTT",
+            EditorId = null,
+            Offset = 0x1000
+        };
+        var named = anonymous with { EditorId = "ProtoMovableStatic", Offset = 0x2000 };
+
+        var entries = RecordCatalog.Build(
+            new MasterRecordSource([]),
+            new DmpRecordSource(new RecordCollection { GenericRecords = [anonymous, named] }),
+            EnabledTypes("MSTT"),
+            null,
+            out _,
+            out var diagnostics);
+
+        var model = Assert.IsType<GenericEsmRecord>(Assert.Single(entries).Model);
+        Assert.Equal("ProtoMovableStatic", model.EditorId);
+        Assert.Equal("true", Assert.Single(diagnostics).Metadata!["merged"]);
+    }
+
+    [Fact]
+    public void Duplicate_Dmp_Records_That_Add_Nothing_Report_Merged_False()
+    {
+        const uint formId = 0x00ABCDF1;
+        var first = new GenericEsmRecord
+        {
+            FormId = formId,
+            RecordType = "MSTT",
+            EditorId = "ProtoMovableStatic",
+            Offset = 0x1000
+        };
+
+        var entries = RecordCatalog.Build(
+            new MasterRecordSource([]),
+            new DmpRecordSource(new RecordCollection { GenericRecords = [first, first with { Offset = 0x2000 }] }),
+            EnabledTypes("MSTT"),
+            null,
+            out _,
+            out var diagnostics);
+
+        Assert.Same(first, Assert.Single(entries).Model);
+        Assert.Equal("false", Assert.Single(diagnostics).Metadata!["merged"]);
     }
 
     [Fact]

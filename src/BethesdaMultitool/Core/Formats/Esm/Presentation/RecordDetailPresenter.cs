@@ -15,7 +15,33 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation;
 /// </summary>
 internal static class RecordDetailPresenter
 {
+    /// <summary>
+    ///     Build the detail model for a record, then append whatever nested payloads the collection
+    ///     holds for it.
+    ///     <para>
+    ///         The append happens here, once, rather than inside each <c>RecordDetailBuilders.BuildX</c>
+    ///         because the payloads hang off engine base classes shared by dozens of record types —
+    ///         adding them per builder would mean the same block in twenty places, and every builder
+    ///         added later would silently omit them.
+    ///     </para>
+    /// </summary>
     internal static bool TryBuildForLookup(
+        RecordCollection records,
+        FormIdResolver resolver,
+        uint? formId,
+        string? editorId,
+        out RecordDetailModel? model)
+    {
+        if (!TryBuildTypedModel(records, resolver, formId, editorId, out model) || model == null)
+        {
+            return false;
+        }
+
+        model = RecordDetailNestedPayloads.Append(model, records, resolver);
+        return true;
+    }
+
+    private static bool TryBuildTypedModel(
         RecordCollection records,
         FormIdResolver resolver,
         uint? formId,

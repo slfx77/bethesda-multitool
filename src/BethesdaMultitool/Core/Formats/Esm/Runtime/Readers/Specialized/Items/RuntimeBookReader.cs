@@ -33,17 +33,8 @@ internal sealed class RuntimeBookReader
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + _layout.StructSize > _context.FileSize)
-        {
-            return null;
-        }
-
-        var buffer = new byte[_layout.StructSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, _layout.StructSize);
-        }
-        catch
+        var buffer = _context.ReadTesFormBytes(entry, _layout.StructSize);
+        if (buffer == null)
         {
             return null;
         }
@@ -54,10 +45,10 @@ internal sealed class RuntimeBookReader
             return null;
         }
 
-        var fullName = entry.DisplayName ?? _context.ReadBsStringT(offset, _layout.FullNameOffset);
-        var modelPath = _context.ReadBsStringT(offset, _layout.ModelOffset);
-        var iconPath = _context.ReadBsStringT(offset, _layout.InventoryIconPathOffset);
-        var messageIconPath = _context.ReadBsStringT(offset, _layout.MessageIconPathOffset);
+        var fullName = entry.DisplayName ?? _context.ReadBsStringT(buffer, _layout.FullNameOffset);
+        var modelPath = _context.ReadBsStringT(buffer, _layout.ModelOffset);
+        var iconPath = _context.ReadBsStringT(buffer, _layout.InventoryIconPathOffset);
+        var messageIconPath = _context.ReadBsStringT(buffer, _layout.MessageIconPathOffset);
 
         var value = RuntimeMemoryContext.ReadInt32BE(buffer, _layout.ValueOffset);
         if (value < 0 || value > 1_000_000)

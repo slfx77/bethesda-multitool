@@ -117,7 +117,10 @@ internal sealed class OblivionDialogueExtractor : IDialogueExtractor
                     });
                     haveTrdt = false;
                     break;
-                case "CTDA" when sub.Data.Length == 20:
+                // 20 OR 24 — see ParseCondition. Retail Oblivion.esm is entirely 24, and pinning
+                // this at 20 meant the case never matched on the shipping game: no condition was
+                // ever parsed, so no INFO attributed a speaker.
+                case "CTDA" when sub.Data.Length is 20 or 24:
                     ParseCondition(sub.Data, conditions, conditionFunctions,
                         ref speakerFormId, ref speakerFactionFormId, ref speakerRaceFormId);
                     break;
@@ -152,6 +155,14 @@ internal sealed class OblivionDialogueExtractor : IDialogueExtractor
     ///     optional TES4-family Run On/Reference tail, so a positive numeric condition asserts the subject directly.
     ///     These particular predicate indices also match FNV's; the two complete tables do not:
     ///     GetIsRace=0x45, GetInFaction=0x47, GetIsID=0x48 (Oblivion has no GetIsVoiceType).
+    ///     <para>
+    ///         ⚠ <b>The body is 24 bytes, not 20.</b> The 20-byte form is the pre-1.1 layout (and the
+    ///         older <c>CTDT</c> subrecord); patched Oblivion appends 4 unused bytes. Measured on
+    ///         retail Oblivion.esm: 20,000 of 20,000 sampled CTDA bodies are 24 bytes and not one is
+    ///         20. Everything this method reads lives in the first 20, so both widths decode
+    ///         identically — but the caller must admit both, or the shipping game parses no
+    ///         conditions at all.
+    ///     </para>
     /// </summary>
     private static void ParseCondition(
         byte[] data,

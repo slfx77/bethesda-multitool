@@ -97,6 +97,12 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["IDLM"] = (model, _) => IdlmEncoder.EncodeNew((GenericEsmRecord)model),
             ["CAMS"] = (model, _) => CamsEncoder.EncodeNew((GenericEsmRecord)model),
             ["MSET"] = (model, _) => MsetEncoder.EncodeNew((GenericEsmRecord)model),
+            // Round 3 — same shape again.
+            ["EFSH"] = (model, _) => EfshEncoder.EncodeNew((GenericEsmRecord)model),
+            ["RGDL"] = (model, _) => RgdlEncoder.EncodeNew((GenericEsmRecord)model),
+            ["CSNO"] = (model, _) => CsnoEncoder.EncodeNew((GenericEsmRecord)model),
+            ["IPDS"] = (model, _) => IpdsEncoder.EncodeNew((GenericEsmRecord)model),
+            ["DOBJ"] = (model, _) => DobjEncoder.EncodeNew((GenericEsmRecord)model),
             ["COBJ"] = (model, _) => CobjEncoder.EncodeNew((ConstructibleObjectRecord)model),
             ["EYES"] = (model, _) => EyesEncoder.EncodeNew((EyesRecord)model),
             ["HAIR"] = (model, _) => HairEncoder.EncodeNew((HairRecord)model),

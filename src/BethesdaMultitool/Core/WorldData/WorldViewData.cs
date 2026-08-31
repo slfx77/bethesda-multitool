@@ -219,11 +219,78 @@ internal sealed class WorldViewData
         new Dictionary<uint, WaterRecord>();
 
     /// <summary>
+    ///     Starfield three-dimensional curve (CUR3) source records keyed by FormID. Definitions are
+    ///     retained for reference resolution only; this index does not select or sample a curve.
+    /// </summary>
+    public IReadOnlyDictionary<uint, StarfieldCurve3DRecord> Curves3DByFormId { get; init; } =
+        new Dictionary<uint, StarfieldCurve3DRecord>();
+
+    /// <summary>
     ///     Weather (WTHR) records keyed by FormID. Used by the 3D viewer's atmosphere layer to resolve
     ///     a worldspace climate's weather candidates and to drive the time-of-day/weather color blend.
     /// </summary>
     public IReadOnlyDictionary<uint, WeatherRecord> WeathersByFormId { get; init; } =
         new Dictionary<uint, WeatherRecord>();
+
+    /// <summary>
+    ///     Starfield Creation Engine 2 Weather Settings (WTHS) keyed by FormID. CLMT WSLT entries
+    ///     resolve through this index; callers must use <see cref="StarfieldWeatherSettingsResolver" />
+    ///     before consuming a DIFF record.
+    /// </summary>
+    public IReadOnlyDictionary<uint, StarfieldWeatherSettingsRecord> WeatherSettingsByFormId { get; init; } =
+        new Dictionary<uint, StarfieldWeatherSettingsRecord>();
+
+    /// <summary>
+    ///     Starfield volumetric-lighting presets (VOLI) keyed by FormID. Effective WTHS
+    ///     <c>pVolumeticLighting</c> references resolve through this index.
+    /// </summary>
+    public IReadOnlyDictionary<uint, StarfieldVolumetricLightingRecord> VolumetricLightingByFormId { get; init; } =
+        new Dictionary<uint, StarfieldVolumetricLightingRecord>();
+
+    /// <summary>
+    ///     Fallout 76 classic volumetric-lighting presets (VOLI) keyed by FormID. WTHR HNAM time-band
+    ///     references resolve through this index; it is separate from Starfield's reflected VOLI schema.
+    /// </summary>
+    public IReadOnlyDictionary<uint, Fallout76VolumetricLightingRecord>
+        Fallout76VolumetricLightingByFormId { get; init; } =
+        new Dictionary<uint, Fallout76VolumetricLightingRecord>();
+
+    /// <summary>
+    ///     Starfield cloud forms (CLDF) keyed by FormID. Effective WTHS <c>pClouds</c> references
+    ///     resolve through this index.
+    /// </summary>
+    public IReadOnlyDictionary<uint, StarfieldCloudFormRecord> CloudFormsByFormId { get; init; } =
+        new Dictionary<uint, StarfieldCloudFormRecord>();
+
+    /// <summary>
+    ///     Starfield atmosphere records (ATMO) keyed by FormID. DIFF entries are source patches;
+    ///     callers must resolve them through <see cref="StarfieldAtmosphereResolver" />. This index
+    ///     exposes decoded structural source data only, not Creation Engine 2 scattering equations
+    ///     or runtime planet-weather selection.
+    /// </summary>
+    public IReadOnlyDictionary<uint, StarfieldAtmosphereRecord> AtmospheresByFormId { get; init; } =
+        new Dictionary<uint, StarfieldAtmosphereRecord>();
+
+    /// <summary>
+    ///     Load-order-folded PNDT records and ambiguity-preserving inverse WRLD candidates. Internal
+    ///     because this is selection plumbing rather than a stable public rendering contract.
+    /// </summary>
+    internal StarfieldPlanetWorldspaceIndexResult PlanetWorldspaceIndex { get; init; } =
+        StarfieldPlanetWorldspaceIndex.Build([]);
+
+    /// <summary>
+    ///     Ambiguity-preserving Starfield STDT lookup by both record FormID and scalar system ID.
+    ///     Internal because it is static celestial-routing data, not a rendering equation.
+    /// </summary>
+    internal StarfieldStarDataIndex StarDataIndex { get; init; } =
+        StarfieldStarDataIndex.Build([]);
+
+    /// <summary>
+    ///     Load-order-merged Starfield SUNP records keyed by FormID. Entries remain raw roots/diffs;
+    ///     callers must use <see cref="StarfieldSunPresetResolver" /> before consuming effective data.
+    /// </summary>
+    public IReadOnlyDictionary<uint, StarfieldSunPresetRecord> SunPresetsByFormId { get; init; } =
+        new Dictionary<uint, StarfieldSunPresetRecord>();
 
     /// <summary>
     ///     Region (REGN) records keyed by FormID. Exterior CELL XCLR entries resolve through this

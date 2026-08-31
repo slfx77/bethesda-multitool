@@ -300,6 +300,44 @@ public record RecordCollection
     /// <summary>Parsed Weather (WTHR) records.</summary>
     public List<WeatherRecord> Weather { get; init; } = [];
 
+    /// <summary>Parsed Starfield Creation Engine 2 Weather Settings (WTHS) records.</summary>
+    public List<StarfieldWeatherSettingsRecord> WeatherSettings { get; init; } = [];
+
+    /// <summary>Parsed Starfield volumetric-lighting settings (VOLI) records.</summary>
+    public List<StarfieldVolumetricLightingRecord> VolumetricLightingSettings { get; init; } = [];
+
+    /// <summary>Parsed Fallout 76 classic volumetric-lighting (VOLI) records.</summary>
+    public List<Fallout76VolumetricLightingRecord> Fallout76VolumetricLightingSettings { get; init; } = [];
+
+    /// <summary>Parsed Starfield cloud-form (CLDF) records.</summary>
+    public List<StarfieldCloudFormRecord> CloudForms { get; init; } = [];
+
+    /// <summary>Parsed Starfield atmosphere (ATMO) records.</summary>
+    public List<StarfieldAtmosphereRecord> Atmospheres { get; init; } = [];
+
+    /// <summary>
+    ///     Physical Starfield planet-data (PNDT) records in load order. Unlike ordinary typed
+    ///     records, repeated FormIDs remain here because EOVR carries ordered deltas over a master
+    ///     CNAM list; consumers fold them through <see cref="StarfieldPlanetDataMerger" />.
+    /// </summary>
+    public List<StarfieldPlanetDataRecord> PlanetData { get; init; } = [];
+
+    /// <summary>
+    ///     Parsed Starfield star-data (STDT) records. Load-order merging is last-wins by FormID;
+    ///     distinct FormIDs that author the same scalar system ID remain separate so the celestial
+    ///     route can report ambiguity instead of choosing one implicitly.
+    /// </summary>
+    public List<StarfieldStarDataRecord> StarData { get; init; } = [];
+
+    /// <summary>Parsed Starfield sun-preset (SUNP) roots and inheritance diffs.</summary>
+    public List<StarfieldSunPresetRecord> SunPresets { get; init; } = [];
+
+    /// <summary>
+    ///     Parsed Starfield three-dimensional curve (CUR3) definitions. These retain authored curve
+    ///     data only; no interpolation or shader-use semantics are inferred by the semantic parser.
+    /// </summary>
+    public List<StarfieldCurve3DRecord> Curves3D { get; init; } = [];
+
     /// <summary>Parsed Climate (CLMT) records.</summary>
     public List<ClimateRecord> Climate { get; init; } = [];
 
@@ -323,6 +361,33 @@ public record RecordCollection
     /// </summary>
     public IReadOnlyDictionary<uint, IReadOnlyList<AlternateTextureEntry>> AlternateTexturesByFormId { get; init; } =
         new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>();
+
+    /// <summary>
+    ///     Base-object FormID → its recovered <c>DEST</c> destruction block (health, flags and the
+    ///     ordered <c>DSTD</c> stages). Sourced from the runtime
+    ///     <c>BGSDestructibleObjectForm.pData</c> allocation, which 26 record types inherit — over
+    ///     half of them behind hand-written readers that carry no model property for it, which is
+    ///     why this is a side-index rather than a field on each record.
+    /// </summary>
+    public IReadOnlyDictionary<uint, DestructionData> DestructionByFormId { get; init; } =
+        new Dictionary<uint, DestructionData>();
+
+    /// <summary>
+    ///     Base-object FormID → the <c>MODT</c> texture hashes its model resolved, one 8-byte
+    ///     <c>BSHash</c> per texture, formatted as hex and held in declared slot order.
+    ///     <para>
+    ///         Diagnostic rather than portable: these hash the source build's texture paths, and
+    ///         the Xbox and PC builds do not share them (different extensions, different archives).
+    ///         Useful for "how many textures did this model resolve, and are two records using the
+    ///         same set"; not something to write into a plugin.
+    ///     </para>
+    ///     <para>
+    ///         A list may be partially captured — see <see cref="RuntimeTextureHashList" />. Consult
+    ///         <c>IsComplete</c> before treating the slots as a full manifest.
+    ///     </para>
+    /// </summary>
+    public IReadOnlyDictionary<uint, RuntimeTextureHashList> TextureHashesByFormId { get; init; } =
+        new Dictionary<uint, RuntimeTextureHashList>();
 
     /// <summary>
     ///     Base-object FormID → its default Material Swap (MSWP) FormID, from the FO4-family
@@ -418,7 +483,10 @@ public record RecordCollection
         Sounds.Count + MusicTypes.Count + TextureSets.Count + MaterialSwaps.Count + LandTextures.Count + Grasses.Count +
         ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
-        LightingTemplates.Count + NavMeshes.Count + Weather.Count + Climate.Count +
+        LightingTemplates.Count + NavMeshes.Count + Weather.Count + WeatherSettings.Count +
+        VolumetricLightingSettings.Count + Fallout76VolumetricLightingSettings.Count +
+        CloudForms.Count + Atmospheres.Count + PlanetData.Count + StarData.Count +
+        SunPresets.Count + Curves3D.Count + Climate.Count +
         ImageSpaces.Count + ImageSpaceModifiers.Count;
 
     /// <summary>
@@ -543,6 +611,21 @@ public record RecordCollection
             LightingTemplates = MergeList(LightingTemplates, overlay.LightingTemplates, r => r.FormId),
             NavMeshes = MergeList(NavMeshes, overlay.NavMeshes, r => r.FormId),
             Weather = MergeList(Weather, overlay.Weather, r => r.FormId),
+            WeatherSettings = MergeList(WeatherSettings, overlay.WeatherSettings, r => r.FormId),
+            VolumetricLightingSettings = MergeList(
+                VolumetricLightingSettings, overlay.VolumetricLightingSettings, r => r.FormId),
+            Fallout76VolumetricLightingSettings = MergeList(
+                Fallout76VolumetricLightingSettings,
+                overlay.Fallout76VolumetricLightingSettings,
+                r => r.FormId),
+            CloudForms = MergeList(CloudForms, overlay.CloudForms, r => r.FormId),
+            Atmospheres = MergeList(Atmospheres, overlay.Atmospheres, r => r.FormId),
+            // PNDT EOVR is an ordered delta representation. Last-wins would discard the base CNAM
+            // or an earlier delta, so retain physical records and fold them only when indexing.
+            PlanetData = [.. PlanetData, .. overlay.PlanetData],
+            StarData = MergeList(StarData, overlay.StarData, r => r.FormId),
+            SunPresets = MergeList(SunPresets, overlay.SunPresets, r => r.FormId),
+            Curves3D = MergeList(Curves3D, overlay.Curves3D, r => r.FormId),
             Climate = MergeList(Climate, overlay.Climate, r => r.FormId),
             ImageSpaces = MergeList(ImageSpaces, overlay.ImageSpaces, r => r.FormId),
             ImageSpaceModifiers = MergeList(ImageSpaceModifiers, overlay.ImageSpaceModifiers, r => r.FormId),
@@ -557,6 +640,12 @@ public record RecordCollection
             AlternateTexturesByFormId = MergeDictionary(
                 new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(AlternateTexturesByFormId),
                 new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(overlay.AlternateTexturesByFormId)),
+            DestructionByFormId = MergeDictionary(
+                new Dictionary<uint, DestructionData>(DestructionByFormId),
+                new Dictionary<uint, DestructionData>(overlay.DestructionByFormId)),
+            TextureHashesByFormId = MergeDictionary(
+                new Dictionary<uint, RuntimeTextureHashList>(TextureHashesByFormId),
+                new Dictionary<uint, RuntimeTextureHashList>(overlay.TextureHashesByFormId)),
             BaseMaterialSwapFormIds = MergeDictionary(
                 new Dictionary<uint, uint>(BaseMaterialSwapFormIds),
                 new Dictionary<uint, uint>(overlay.BaseMaterialSwapFormIds)),
@@ -1165,6 +1254,7 @@ public record RecordCollection
             !overrideCell.CellWorldSize.Equals(0f) ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
             WaterHeight = overrideCell.WaterHeight ?? baseCell.WaterHeight,
             WaterFormId = overrideCell.WaterFormId ?? baseCell.WaterFormId,
+            StarfieldWaterType = overrideCell.StarfieldWaterType ?? baseCell.StarfieldWaterType,
             EncounterZoneFormId = overrideCell.EncounterZoneFormId ?? baseCell.EncounterZoneFormId,
             MusicTypeFormId = overrideCell.MusicTypeFormId ?? baseCell.MusicTypeFormId,
             AcousticSpaceFormId = overrideCell.AcousticSpaceFormId ?? baseCell.AcousticSpaceFormId,

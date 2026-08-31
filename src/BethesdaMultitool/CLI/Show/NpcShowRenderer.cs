@@ -18,7 +18,7 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
         }
 
         AnsiConsole.WriteLine();
-        var panel = new Panel(BuildContent(npc, resolver))
+        var panel = new Panel(BuildContent(npc, records, resolver))
         {
             Header = new PanelHeader(
                 $"[bold]NPC_[/] {Markup.Escape(npc.EditorId ?? "")} — {Markup.Escape(npc.FullName ?? "")}")
@@ -27,7 +27,8 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
         return true;
     }
 
-    private static string BuildContent(NpcRecord npc, FormIdResolver resolver)
+    private static string BuildContent(
+        NpcRecord npc, RecordCollection records, FormIdResolver resolver)
     {
         var isFemale = (npc.Stats?.Flags & 1) != 0;
         var lines = new List<string>
@@ -161,6 +162,8 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
                 }
             }
         }
+
+        ShowHelpers.AppendNestedPayloads(lines, records, npc.FormId, resolver);
 
         return string.Join("\n", lines);
     }
