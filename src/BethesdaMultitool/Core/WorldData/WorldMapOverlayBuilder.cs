@@ -137,6 +137,7 @@ internal static class WorldMapOverlayBuilder
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
             GrassesByFormId = BuildGrassIndex(semantic.Grasses),
             TextureSetsByFormId = textureSetsByFormId,
+            BendableSplinesByFormId = BuildBendableSplineIndex(semantic.BendableSplines),
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 semantic.AlternateTexturesByFormId, textureSetsByFormId),
             MaterialSwapsByFormId = BuildMaterialSwapIndex(semantic.MaterialSwaps),
@@ -343,6 +344,7 @@ internal static class WorldMapOverlayBuilder
             LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
             GrassesByFormId = BuildGrassIndex(suppRecords.Grasses),
             TextureSetsByFormId = textureSetsByFormId,
+            BendableSplinesByFormId = BuildBendableSplineIndex(suppRecords.BendableSplines),
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 suppRecords.AlternateTexturesByFormId, textureSetsByFormId),
             MaterialSwapsByFormId = BuildMaterialSwapIndex(suppRecords.MaterialSwaps),
@@ -545,6 +547,18 @@ internal static class WorldMapOverlayBuilder
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<uint, BendableSplineRecord> BuildBendableSplineIndex(
+        List<BendableSplineRecord> records)
+    {
+        var dict = new Dictionary<uint, BendableSplineRecord>(records.Count);
+        foreach (var record in records)
+        {
+            dict.TryAdd(record.FormId, record);
         }
 
         return dict;

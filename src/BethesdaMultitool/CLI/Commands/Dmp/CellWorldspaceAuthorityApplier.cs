@@ -351,7 +351,11 @@ internal static class CellWorldspaceAuthorityApplier
         for (var i = 0; i < records.Cells.Count; i++)
         {
             var existingCell = records.Cells[i];
+            // !IsVirtual matters: the offset-cluster pass runs earlier in Apply and fabricates
+            // IsVirtual tiles at these same grids. Reusing one parks the ref in a tile the planner
+            // deletes — exactly the fate this pass's IsVirtual=false design exists to avoid.
             if (!existingCell.IsUnresolvedBucket &&
+                !existingCell.IsVirtual &&
                 existingCell.WorldspaceFormId == worldspaceFormId &&
                 existingCell.GridX == gridX &&
                 existingCell.GridY == gridY &&

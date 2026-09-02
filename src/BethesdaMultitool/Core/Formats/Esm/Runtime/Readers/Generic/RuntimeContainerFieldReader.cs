@@ -77,6 +77,17 @@ internal static class RuntimeContainerFieldReader
     private const string TextureArrayTypeDetail = "TESTexture[]";
 
     /// <summary>
+    ///     Fixed-size array of inline 32-byte <c>TESModelTextureSwap</c> values — CSNO's
+    ///     <c>modelArrayList</c> (10 slots: 7 chips, slot machine, blackjack table, roulette
+    ///     table). Each element's model path is the <c>cModel</c> BSStringT at +4. Unlike the
+    ///     TESTexture walker there is NO hard-coded fallback: the aux-struct layout is required,
+    ///     and its absence fails closed to the raw-bytes arm.
+    /// </summary>
+    private const string ModelSwapArrayTypeDetail = "TESModelTextureSwap[]";
+
+    private const string ModelSwapClassName = "TESModelTextureSwap";
+
+    /// <summary>
     ///     Byte size of one <c>TESTexture</c>, and where its <c>BSStringT</c> path sits inside it.
     ///     Used only as the fallback for a layout file predating the auxiliary struct table; the
     ///     exported <c>TESTexture</c> layout is preferred and agrees with both values (vtable at 0,
@@ -100,8 +111,13 @@ internal static class RuntimeContainerFieldReader
         [("BGSIdleCollection", "pIdleArray")] = "cIdleCount"
     };
 
-    /// <summary>Upper bound on a counted array, mirroring the BSSimpleList node budget.</summary>
-    private const int MaxCountedArrayItems = RuntimeMemoryContext.MaxListItems;
+    /// <summary>
+    ///     Upper bound on a counted array: the count field's own u8 range. NOT the BSSimpleList node
+    ///     budget — that is a linked-list walk's patience limit with no bearing on a counted array
+    ///     (R5 ruling; the same borrowed cap silently dropped whole MODT lists at counts 51-53
+    ///     before ReadTextureHashes shed it). An IDLM with more than 50 idles is real data.
+    /// </summary>
+    private const int MaxCountedArrayItems = byte.MaxValue;
 
 
     /// <summary>
@@ -114,7 +130,14 @@ internal static class RuntimeContainerFieldReader
 
         if (field.TypeDetail is { } detail)
         {
-            if (detail.StartsWith(SimpleListPrefix, StringComparison.Ordinal) &&
+            // Only an INLINE list head (kind struct, 8 bytes) can be walked at the field's own
+            // offset. A pointer-kind field with a BSSimpleList type detail (ENCH/SPEL m_pkNext,
+            // ARMO pFoleySoundList, CDCK pDeck, …) stores a pointer TO a list — walking it here
+            // treats the pointer value as the first item and the adjacent struct member as the
+            // next-node pointer, chasing unrelated memory as a chain. Those fall through to the
+            // pointer arm instead.
+            if (field.Kind != "pointer" &&
+                detail.StartsWith(SimpleListPrefix, StringComparison.Ordinal) &&
                 !string.Equals(detail, SourceFilesTypeDetail, StringComparison.Ordinal))
             {
                 return true;
@@ -122,7 +145,8 @@ internal static class RuntimeContainerFieldReader
 
             if (field.Kind == "array" &&
                 (detail.EndsWith(PointerArraySuffix, StringComparison.Ordinal) ||
-                 string.Equals(detail, TextureArrayTypeDetail, StringComparison.Ordinal)))
+                 string.Equals(detail, TextureArrayTypeDetail, StringComparison.Ordinal) ||
+                 string.Equals(detail, ModelSwapArrayTypeDetail, StringComparison.Ordinal)))
             {
                 return true;
             }
@@ -178,9 +202,17 @@ internal static class RuntimeContainerFieldReader
 
         if (field.Kind == "array")
         {
-            return string.Equals(detail, TextureArrayTypeDetail, StringComparison.Ordinal)
-                ? ReadTextureArray(context, data, field, effectiveOffset)
-                : ReadInlinePointerArray(context, data, field, effectiveOffset, detail);
+            if (string.Equals(detail, TextureArrayTypeDetail, StringComparison.Ordinal))
+            {
+                return ReadTextureArray(context, data, field, effectiveOffset);
+            }
+
+            if (string.Equals(detail, ModelSwapArrayTypeDetail, StringComparison.Ordinal))
+            {
+                return ReadModelSwapArray(context, data, field, effectiveOffset);
+            }
+
+            return ReadInlinePointerArray(context, data, field, effectiveOffset, detail);
         }
 
         // Nested payloads, each decoded through its exported member layout.
@@ -676,6 +708,47 @@ internal static class RuntimeContainerFieldReader
         {
             var path = context.ReadBSStringTDiag(
                 data, effectiveOffset + i * stride + nameOffset, out _);
+            paths.Add(path ?? string.Empty);
+            if (!string.IsNullOrEmpty(path))
+            {
+                resolved++;
+            }
+        }
+
+        return resolved > 0 ? paths : null;
+    }
+
+    /// <summary>
+    ///     Read a fixed-size array of inline <c>TESModelTextureSwap</c> values, resolving each
+    ///     element's <c>cModel</c> path. Positional like the texture array: an empty slot keeps its
+    ///     place as an empty string, because slot index IS the meaning (CSNO's chip denominations,
+    ///     slot machine, blackjack and roulette tables). No pre-aux fallback — a layout file
+    ///     without the exported struct fails closed to the raw-bytes arm rather than guessing a
+    ///     stride.
+    /// </summary>
+    private static List<string>? ReadModelSwapArray(
+        RuntimeMemoryContext context, byte[] data, PdbFieldLayout field, int effectiveOffset)
+    {
+        if (!PdbStructLayouts.TryGetAuxStruct(ModelSwapClassName, out var swapLayout)
+            || swapLayout.StructSize <= 0
+            || swapLayout.OffsetOf("cModel") is not { } modelOffset)
+        {
+            return null;
+        }
+
+        var stride = swapLayout.StructSize;
+        var slots = field.Size / stride;
+        if (slots <= 0 || effectiveOffset < 0 || effectiveOffset > data.Length - field.Size)
+        {
+            return null;
+        }
+
+        var paths = new List<string>(slots);
+        var resolved = 0;
+        for (var i = 0; i < slots; i++)
+        {
+            var path = context.ReadBSStringTDiag(
+                data, effectiveOffset + i * stride + modelOffset, out _);
             paths.Add(path ?? string.Empty);
             if (!string.IsNullOrEmpty(path))
             {

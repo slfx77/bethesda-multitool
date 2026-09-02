@@ -51,14 +51,12 @@ public static class ListCommand
     private static async Task<int> RunListAsync(string filePath, string? typeFilter,
         string? nameFilter, int limit, CancellationToken cancellationToken)
     {
-        if (!File.Exists(filePath))
+        if (CliHelpers.ResolveAnalysisInput(filePath) is not { } fileType)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {filePath}");
             return 1;
         }
 
-        var fileType = FileTypeDetector.Detect(filePath);
-        AnsiConsole.MarkupLine($"[bold]List:[/] [cyan]{Path.GetFileName(filePath)}[/] ({fileType})");
+        AnsiConsole.MarkupLine($"[bold]List:[/] [cyan]{CliHelpers.InputLabel(filePath)}[/] ({fileType})");
 
         try
         {

@@ -352,6 +352,7 @@ public sealed class RecordParser
         var statics = _miscStaticObjects.ParseStatics();
         var staticCollections = _miscStaticObjects.ParseStaticCollections();
         var placeableWaters = _miscStaticObjects.ParsePlaceableWaters();
+        var bendableSplines = _miscStaticObjects.ParseBendableSplines();
         var trees = _miscStaticObjects.ParseTrees();
         var sounds = _miscEnvironment.ParseSounds();
         var genericTypes = new[]
@@ -394,7 +395,7 @@ public sealed class RecordParser
         var modelIndex = new Dictionary<uint, string>();
         var boundsIndex = ObjectIndexBuilder.BuildIndexes(
             statics, activators, doors, lights, furniture,
-            staticCollections, placeableWaters, trees,
+            staticCollections, placeableWaters, bendableSplines, trees,
             weapons, armor, ammo, consumables, miscItems, books,
             containers, keys, notes, weaponMods, sounds, genericRecords,
             modelIndex);
@@ -722,6 +723,7 @@ public sealed class RecordParser
             Statics = statics,
             StaticCollections = staticCollections,
             PlaceableWaters = placeableWaters,
+            BendableSplines = bendableSplines,
             Trees = trees,
             Furniture = furniture,
 
@@ -820,6 +822,7 @@ public sealed class RecordParser
                 Lights = result.Lights,
                 Furniture = result.Furniture,
                 StaticCollections = result.StaticCollections,
+                BendableSplines = result.BendableSplines,
                 ModelPathIndex = result.ModelPathIndex,
                 AlternateTexturesByFormId = result.AlternateTexturesByFormId,
                 BaseMaterialSwapFormIds = result.BaseMaterialSwapFormIds,
@@ -1240,6 +1243,12 @@ public sealed class RecordParser
     public List<StaticCollectionRecord> ParseStaticCollections()
     {
         return _miscStaticObjects.ParseStaticCollections();
+    }
+
+    /// <summary>Parses Fallout 4-family bendable-spline (BNDS) base objects.</summary>
+    public List<BendableSplineRecord> ParseBendableSplines()
+    {
+        return _miscStaticObjects.ParseBendableSplines();
     }
 
     /// <summary>Parses all tree (TREE) records.</summary>

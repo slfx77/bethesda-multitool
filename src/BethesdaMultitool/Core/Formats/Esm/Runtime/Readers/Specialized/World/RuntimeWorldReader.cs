@@ -622,6 +622,18 @@ internal sealed class RuntimeWorldReader
 
         if (!logSummary)
         {
+            // The quiet path still leaves one Debug breadcrumb: during the mesh-yield candidate
+            // sweep this is the only place the per-stage counters exist, and without it "no
+            // candidate yielded a terrain mesh" is unfalsifiable from logs — a systematic
+            // pointer-shift failure and genuinely-absent terrain look identical.
+            Logger.Instance.Debug(
+                "LAND probe batch: {0} entries → {1} with data ({2} mesh); stages quadOk={3}, " +
+                "singleOk={4}, vertexPtrNull={5}, vertexPtrBad={6}, outerDerefFail={7}, " +
+                "innerPtrNullOrBad={8}, dataReadFail={9}, floatFail={10}, gridFail={11}",
+                total, result.Count, withMesh, _meshStageQuadrantOk, _meshStageSingleArrayOk,
+                _meshStageVertexPtrNull, _meshStageVertexPtrBad, _meshStageVertexOuterDerefFail,
+                _meshStageVertexInnerPtrNullOrBad, _meshStageVertexDataReadFail,
+                _meshStageVertexFloatValidationFail, _meshStageGridReconstructFail);
             return result;
         }
 

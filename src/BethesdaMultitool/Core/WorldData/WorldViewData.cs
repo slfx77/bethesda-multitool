@@ -211,6 +211,13 @@ internal sealed class WorldViewData
         new Dictionary<uint, TextureSetRecord>();
 
     /// <summary>
+    ///     Fallout 4-family BNDS definitions keyed by base FormID. A procedural spline renderer
+    ///     resolves a placement's BaseFormId here, then its TNAM through <see cref="TextureSetsByFormId" />.
+    /// </summary>
+    public IReadOnlyDictionary<uint, BendableSplineRecord> BendableSplinesByFormId { get; init; } =
+        new Dictionary<uint, BendableSplineRecord>();
+
+    /// <summary>
     ///     Water (WATR) records keyed by FormID. Used by the 2D map's water overlay so each
     ///     worldspace can sample its own NNAM noise tile (Potomac muddy brown vs Lake Mead
     ///     clean blue, etc.) instead of a hardcoded blue tint.

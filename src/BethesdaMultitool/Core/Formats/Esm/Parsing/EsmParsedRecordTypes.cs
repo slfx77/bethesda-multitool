@@ -109,6 +109,10 @@ public static class EsmParsedRecordTypes
         new("DOOR", nameof(RecordCollection.Doors)),
         new("STAT", nameof(RecordCollection.Statics)),
         new("SCOL", nameof(RecordCollection.StaticCollections)),
+        // BNDS exists in the FO4 family only. It is a texture-backed procedural spline base,
+        // not a NIF-bearing static.
+        new("BNDS", nameof(RecordCollection.BendableSplines), BethesdaGame.Fallout4),
+        new("BNDS", nameof(RecordCollection.BendableSplines), BethesdaGame.Fallout76),
         new("FURN", nameof(RecordCollection.Furniture)),
         new("DEBR", nameof(RecordCollection.Debris)),
         // FLOR lands in GenericRecords — parsed ESM-side via the genericTypes loop and (when a DMP

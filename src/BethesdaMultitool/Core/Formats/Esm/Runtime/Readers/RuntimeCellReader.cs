@@ -638,8 +638,15 @@ internal sealed class RuntimeCellReader
             ? RuntimePdbFieldAccessor.ReadUInt16(buffer, parentUseFlagsOffset.Value)
             : null;
 
-        var imageSpaceFormId = view.FormIdPointer("pImageSpace", "TESWorldSpace", 0x56);
-        var musicTypeFormId = view.FormIdPointer("pMusicType", "TESWorldSpace", 0x6B);
+        // Gate bytes from the layout DB (TESImageSpace = 0x53, BGSMusicType = 0x66). The old
+        // hardcoded 0x56/0x6B (BGSPerk/TESRecipeCategory) never matched — measured 2026-09-01 on
+        // xex44: 19/19 pImageSpace targets carry 0x53 and 4/4 pMusicType targets carry 0x66, so
+        // both fields were silently null on every worldspace. The neighbouring gates in this
+        // method were always correct and stay as-is.
+        var imageSpaceFormId = view.FormIdPointer("pImageSpace", "TESWorldSpace",
+            PdbStructLayouts.TryGetFormTypeByClassName("TESImageSpace", out var imgsType) ? imgsType : (byte)0x53);
+        var musicTypeFormId = view.FormIdPointer("pMusicType", "TESWorldSpace",
+            PdbStructLayouts.TryGetFormTypeByClassName("BGSMusicType", out var muscType) ? muscType : (byte)0x66);
 
         var offsetDataOffset = view.Offset("WorldMapOffsetData", "TESWorldSpace");
         float? mapOffsetScaleX = null;

@@ -68,6 +68,15 @@ internal sealed class WorldRenderCache : ITrackableResource
     internal IReadOnlyDictionary<uint, PlacedObjectCategory>? CategoryIndex { get; set; }
 
     /// <summary>
+    ///     FO4-family BNDS base definitions and their TNAM texture sets. These are seeded before the
+    ///     first cell bake because spline placements carry XBSD but deliberately have no ModelPath;
+    ///     without the indexes the ordinary missing-model guard would correctly filter them out.
+    /// </summary>
+    internal IReadOnlyDictionary<uint, BendableSplineRecord>? BendableSplineIndex { get; set; }
+
+    internal IReadOnlyDictionary<uint, TextureSetRecord>? TextureSetIndex { get; set; }
+
+    /// <summary>
     ///     Base-FormID → resolved alternate-texture set (the owning
     ///     <see cref="WorldViewData.AlternateTexturesByFormId" />). Set once at LoadData alongside
     ///     <see cref="CategoryIndex" />, before any placement list is baked, so each placement of a
@@ -370,6 +379,8 @@ internal sealed class WorldRenderCache : ITrackableResource
         var baseMaterialSwapIndex = BaseMaterialSwapIndex;
         var baseColorRemapIndex = BaseColorRemapIndex;
         var lightIndex = LightIndex;
+        var bendableSplineIndex = BendableSplineIndex;
+        var textureSetIndex = TextureSetIndex;
         // Interns the merged base-MODS + MSWP + MODC set per (base, swap) pair for this cell's bake,
         // so the hundreds of placements sharing one colorway don't each rebuild an identical set
         // (and the mesh cache sees one shared VariantKey instance per combination). The MODC remap
@@ -394,6 +405,32 @@ internal sealed class WorldRenderCache : ITrackableResource
                                     alternateTextureIndex.TryGetValue(p.BaseFormId, out var alt)
                 ? alt
                 : null;
+
+            // FO4-family BNDS records have no MODL. XBSD supplies the per-placement endpoints,
+            // thickness, and slack; resolve the BNDS/TNAM records and emit the recovered retail
+            // tube before the ordinary model-path factory gets its chance to reject the null path.
+            if (p.BendableSpline is not null &&
+                bendableSplineIndex is not null &&
+                bendableSplineIndex.TryGetValue(p.BaseFormId, out var splineDefinition))
+            {
+                TextureSetRecord? splineTextureSet = null;
+                if (splineDefinition.TextureSetFormId is { } textureSetFormId &&
+                    textureSetIndex is not null)
+                {
+                    textureSetIndex.TryGetValue(textureSetFormId, out splineTextureSet);
+                }
+
+                var splineRenderable = RenderableReference.TryBuildBendableSpline(
+                    p, splineDefinition, splineTextureSet, category, xespDisabled);
+                if (splineRenderable.HasValue)
+                {
+                    built.Add(splineRenderable.Value);
+                }
+
+                // XBSD identifies this as generated geometry. Falling through cannot recover a
+                // missing/invalid spline because BNDS intentionally has no archive model.
+                continue;
+            }
 
             // FO4/FO76 material swap: the placement's own REFR XMSP wins; a base record's default
             // swap (FO4-family MODS = bare MSWP FormID) covers every placement without one. The

@@ -239,6 +239,9 @@ public record RecordCollection
     /// <summary>Parsed Placeable Water (PWAT) records.</summary>
     public List<PlaceableWaterRecord> PlaceableWaters { get; init; } = [];
 
+    /// <summary>Parsed Fallout 4-family Bendable Spline (BNDS) base objects.</summary>
+    public List<BendableSplineRecord> BendableSplines { get; init; } = [];
+
     /// <summary>Parsed Tree (TREE) records.</summary>
     public List<TreeRecord> Trees { get; init; } = [];
 
@@ -476,6 +479,7 @@ public record RecordCollection
         RadiationStages.Count + DehydrationStages.Count + HungerStages.Count + SleepDeprivationStages.Count +
         FormLists.Count + Activators.Count +
         Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + PlaceableWaters.Count +
+        BendableSplines.Count +
         Trees.Count +
         Furniture.Count +
         Packages.Count +
@@ -500,7 +504,15 @@ public record RecordCollection
     ///     another collection. For duplicate FormIDs, records from <paramref name="overlay" />
     ///     (the later load order entry) take precedence.
     /// </summary>
-    public RecordCollection MergeWith(RecordCollection overlay)
+    /// <param name="overlay">The later load-order entry; wins duplicate FormIDs.</param>
+    /// <param name="carryBaseTerrainIntoCells">
+    ///     When true (the default, engine load-order semantics), a CELL override that ships no
+    ///     LAND child inherits the base record's terrain (heightmap / LAND visuals / runtime
+    ///     terrain mesh) — an override without a LAND child does not delete terrain. The
+    ///     DMP-primary viewer path passes false when the user's "Master ESM terrain" preview
+    ///     toggle is OFF, so a dump cell shows exactly the terrain the dump itself preserved.
+    /// </param>
+    public RecordCollection MergeWith(RecordCollection overlay, bool carryBaseTerrainIntoCells = true)
     {
         return new RecordCollection
         {
@@ -536,8 +548,8 @@ public record RecordCollection
             Spells = MergeList(Spells, overlay.Spells, r => r.FormId),
 
             // World
-            Cells = MergeCells(Cells, overlay.Cells),
-            Worldspaces = MergeWorldspaces(Worldspaces, overlay.Worldspaces),
+            Cells = MergeCells(Cells, overlay.Cells, carryBaseTerrainIntoCells),
+            Worldspaces = MergeWorldspaces(Worldspaces, overlay.Worldspaces, carryBaseTerrainIntoCells),
             MapMarkers = MergeList(MapMarkers, overlay.MapMarkers, r => r.FormId),
             LeveledLists = MergeList(LeveledLists, overlay.LeveledLists, r => r.FormId),
 
@@ -587,6 +599,7 @@ public record RecordCollection
             Statics = MergeList(Statics, overlay.Statics, r => r.FormId),
             StaticCollections = MergeList(StaticCollections, overlay.StaticCollections, r => r.FormId),
             PlaceableWaters = MergeList(PlaceableWaters, overlay.PlaceableWaters, r => r.FormId),
+            BendableSplines = MergeList(BendableSplines, overlay.BendableSplines, r => r.FormId),
             Trees = MergeList(Trees, overlay.Trees, r => r.FormId),
             Furniture = MergeList(Furniture, overlay.Furniture, r => r.FormId),
 
@@ -1090,7 +1103,8 @@ public record RecordCollection
     /// </summary>
     private static List<WorldspaceRecord> MergeWorldspaces(
         List<WorldspaceRecord> baseList,
-        List<WorldspaceRecord> overlay)
+        List<WorldspaceRecord> overlay,
+        bool carryBaseTerrain = true)
     {
         if (baseList.Count == 0) return new List<WorldspaceRecord>(overlay);
         if (overlay.Count == 0) return new List<WorldspaceRecord>(baseList);
@@ -1136,8 +1150,10 @@ public record RecordCollection
             var cells = new List<CellRecord>(ws.Cells.Count + baseWs.Cells.Count);
             foreach (var cell in ws.Cells)
             {
+                // carryBaseTerrain threads through so ws.Cells (read by consumers that never call
+                // RelinkWorldspaceCells) can never disagree with the gated flat Cells list.
                 cells.Add(cell.FormId != 0 && baseCellsByFormId.TryGetValue(cell.FormId, out var baseCell)
-                    ? MergeCellPair(baseCell, cell)
+                    ? MergeCellPair(baseCell, cell, carryBaseTerrain)
                     : cell);
             }
 
@@ -1163,7 +1179,8 @@ public record RecordCollection
     ///     whole-record replacement therefore erased the terrain and objects of every overridden cell
     ///     (the missing downtown-Boston rectangle when all DLC ESMs are loaded).
     /// </summary>
-    private static List<CellRecord> MergeCells(List<CellRecord> baseList, List<CellRecord> overlay)
+    private static List<CellRecord> MergeCells(
+        List<CellRecord> baseList, List<CellRecord> overlay, bool carryBaseTerrain = true)
     {
         if (baseList.Count == 0) return new List<CellRecord>(overlay);
         if (overlay.Count == 0) return new List<CellRecord>(baseList);
@@ -1185,7 +1202,7 @@ public record RecordCollection
         {
             if (baseCell.FormId != 0 && overlayByFormId.TryGetValue(baseCell.FormId, out var overrideCell))
             {
-                merged.Add(MergeCellPair(baseCell, overrideCell));
+                merged.Add(MergeCellPair(baseCell, overrideCell, carryBaseTerrain));
                 consumed.Add(baseCell.FormId);
             }
             else
@@ -1212,7 +1229,8 @@ public record RecordCollection
     ///     while children (placed references, LAND heightmap/visual data) merge — base children
     ///     survive unless the override re-ships them (per-REFR override by FormID).
     /// </summary>
-    private static CellRecord MergeCellPair(CellRecord baseCell, CellRecord overrideCell)
+    private static CellRecord MergeCellPair(
+        CellRecord baseCell, CellRecord overrideCell, bool carryBaseTerrain = true)
     {
         List<PlacedReference> placed;
         if (baseCell.PlacedObjects.Count == 0)
@@ -1269,9 +1287,13 @@ public record RecordCollection
                 : baseCell.RadiationRegionFormIds,
             PlacedObjects = placed,
             LinkedCellFormIds = linkedCells,
-            Heightmap = overrideCell.Heightmap ?? baseCell.Heightmap,
-            LandVisualData = overrideCell.LandVisualData ?? baseCell.LandVisualData,
-            RuntimeTerrainMesh = overrideCell.RuntimeTerrainMesh ?? baseCell.RuntimeTerrainMesh,
+            // carryBaseTerrain=false is the DMP viewer's "dump-preserved terrain only" mode: the
+            // override (dump) cell keeps exactly its own terrain and never inherits the base
+            // (master ESM) cell's. Every other caller keeps engine semantics (base fills in).
+            Heightmap = overrideCell.Heightmap ?? (carryBaseTerrain ? baseCell.Heightmap : null),
+            LandVisualData = overrideCell.LandVisualData ?? (carryBaseTerrain ? baseCell.LandVisualData : null),
+            RuntimeTerrainMesh =
+            overrideCell.RuntimeTerrainMesh ?? (carryBaseTerrain ? baseCell.RuntimeTerrainMesh : null),
             HasPersistentObjects = overrideCell.HasPersistentObjects || baseCell.HasPersistentObjects
         };
     }

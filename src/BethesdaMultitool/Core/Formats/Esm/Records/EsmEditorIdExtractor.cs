@@ -350,9 +350,18 @@ internal static class EsmEditorIdExtractor
         var extracted = 0;
         var chainDepth = 0;
         var stringBuffer = new byte[256];
+        // Same cycle guard as WalkAllFormsBucketChainCollect: a corrupt next-pointer looping back
+        // into the chain must count as a chain error, not re-extract entries until the depth cap.
+        var visited = new HashSet<uint>();
 
         while (itemVa != 0 && chainDepth < 1000)
         {
+            if (!visited.Add(itemVa))
+            {
+                chainErrors++;
+                break;
+            }
+
             chainDepth++;
 
             var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);

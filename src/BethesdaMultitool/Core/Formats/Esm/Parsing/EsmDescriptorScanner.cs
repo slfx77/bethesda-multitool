@@ -607,6 +607,9 @@ internal static class EsmDescriptorScanner
             case "XLKR" when subData.Length == 4:
                 state.LinkedRefFormId = ReadUInt32(subData, 0, record.IsBigEndian);
                 break;
+            case "XBSD" when subData.Length >= 20:
+                state.BendableSpline = BendableSplineDataReader.ReadPlacement(subData, record.IsBigEndian);
+                break;
             case "XMRK":
                 state.IsMapMarker = true;
                 break;
@@ -669,7 +672,8 @@ internal static class EsmDescriptorScanner
                 MarkerNameRaw = state.MarkerNameRaw,
                 EditorId = state.EditorId,
                 LinkedRefKeywordFormId = state.LinkedRefKeywordFormId,
-                LinkedRefFormId = state.LinkedRefFormId
+                LinkedRefFormId = state.LinkedRefFormId,
+                BendableSpline = state.BendableSpline
             });
         }
 
@@ -784,6 +788,7 @@ internal static class EsmDescriptorScanner
         public uint? SpecialRenderingFlags { get; set; }
         public uint? LinkedRefKeywordFormId { get; set; }
         public uint? LinkedRefFormId { get; set; }
+        public BendableSplinePlacementData? BendableSpline { get; set; }
         public bool IsMapMarker { get; set; }
         public ushort? MarkerType { get; set; }
         public string? MarkerName { get; set; }

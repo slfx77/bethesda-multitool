@@ -468,12 +468,18 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             return null;
         }
 
+        // These are the plugin's own authored subrecords — stamp them Dmp so a merge treats them as
+        // authored data rather than an unstamped (None) source.
         return new LandVisualData
         {
             VertexColors = colors,
+            VertexColorsSource = colors is null ? VisualDataSource.None : VisualDataSource.Dmp,
             TextureLayers = layers,
+            TextureLayersSource = layers.Count > 0 ? VisualDataSource.Dmp : VisualDataSource.None,
             TextureIndices = land.TextureIndices?.Select(v => (uint)v).ToArray(),
-            VtexTextureFormIds = vtexFormIds
+            TextureIndicesSource = land.TextureIndices is null ? VisualDataSource.None : VisualDataSource.Dmp,
+            VtexTextureFormIds = vtexFormIds,
+            Source = VisualDataSource.Dmp
         };
     }
 

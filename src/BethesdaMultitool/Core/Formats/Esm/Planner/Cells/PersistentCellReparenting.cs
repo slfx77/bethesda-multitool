@@ -355,42 +355,11 @@ public static class PersistentCellReparenting
 
         // Orphan buckets never emit: any child worth keeping moved above; the bucket cell is
         // a parse-time synthesis whose invented EditorId ("[Virtual x,y]" / "[Unresolved …]")
-        // must never reach the output ESM. Children that did NOT move die with the bucket —
-        // each death is named (these removals were fully silent until 2026-08-05).
-        foreach (var formId in orphanBuckets)
-        {
-            if (result.TryGetValue(formId, out var bucket))
-            {
-                foreach (var child in bucket.PersistentChildren
-                             .Concat(bucket.TemporaryChildren)
-                             .Concat(bucket.VwdChildren))
-                {
-                    if (child.Disposition == RecordDisposition.Skip)
-                    {
-                        continue;
-                    }
-
-                    diagnosticsBuilder.Add(new PlanDiagnostic
-                    {
-                        Kind = PlanDiagnosticKind.Warning,
-                        Phase = "Cells",
-                        Code = "refr.orphan-bucket-dropped",
-                        RecordType = child.Type,
-                        FormId = child.FormId,
-                        Message = $"{child.Type} 0x{child.FormId:X8} was captured in unresolved-parent " +
-                                  $"bucket 0x{formId:X8} and did not qualify for container rescue — dropped " +
-                                  "with the bucket.",
-                        Metadata = new Dictionary<string, string?>
-                        {
-                            ["bucket"] = $"0x{formId:X8}",
-                            ["disposition"] = child.Disposition.ToString()
-                        }
-                    });
-                }
-            }
-
-            result.Remove(formId);
-        }
+        // must never reach the output ESM. Remaining children are re-homed to their
+        // master-authored cells where the census allows, else dropped with a named diagnostic —
+        // see OrphanBucketResolution.
+        OrphanBucketResolution.ResolveAndRemove(
+            result, orphanBuckets, masterRecordsByFormId, masterRefToCell, diagnosticsBuilder);
 
         diagnostics = diagnosticsBuilder.ToImmutable();
         return result.ToImmutable();

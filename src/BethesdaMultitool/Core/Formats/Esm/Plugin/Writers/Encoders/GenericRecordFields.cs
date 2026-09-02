@@ -147,6 +147,20 @@ internal static class GenericRecordFields
     }
 
     /// <summary>
+    ///     Resolve a <b>positional</b> string slot table — CSNO's 10 model slots and 11 texture
+    ///     slots — where index carries the meaning and an empty slot is a legitimate hole. The
+    ///     exact-count demand rejects a misaligned or legacy capture the same way
+    ///     <see cref="TryFormIdSlots" /> does.
+    /// </summary>
+    public static IReadOnlyList<string>? TryStringSlots(
+        GenericEsmRecord record, int expectedSlots, params string[] keys)
+    {
+        return Find(record, keys) is IReadOnlyList<string> list && list.Count == expectedSlots
+            ? list
+            : null;
+    }
+
+    /// <summary>
     ///     Resolve a walked <c>MODS</c> alternate-texture list.
     ///     <para>
     ///         All-or-nothing on the texture set: every entry names a TXST, and an entry whose

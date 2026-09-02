@@ -83,6 +83,15 @@ internal static class ObjectBoundsIndex
         // ParsePlaceableWaters() path; the "PWAT" => Landscape arm below is now unreachable for TES4+.
         Process(records.PlaceableWaters, p => (p.FormId, p.Bounds), PlacedObjectCategory.Landscape, bounds,
             categories);
+        // BNDS has authored bounds but no MODL. Preserve those bounds without guessing which
+        // existing UI category a future procedural-spline renderer should occupy.
+        foreach (var spline in records.BendableSplines)
+        {
+            if (spline.FormId != 0 && spline.Bounds is { } splineBounds)
+            {
+                bounds.TryAdd(spline.FormId, splineBounds);
+            }
+        }
         // Same story for TREE — the "TREE" => Tree arm below still serves schema-primary games
         // (TES3/TES4/Skyrim/FO4), which continue to route trees through GenericRecords.
         Process(records.Trees, t => (t.FormId, t.Bounds), PlacedObjectCategory.Tree, bounds, categories);

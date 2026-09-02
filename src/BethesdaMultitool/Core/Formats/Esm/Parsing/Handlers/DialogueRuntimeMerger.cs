@@ -178,7 +178,10 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
     ///     Enrich dialogue records with runtime TESTopicInfo data from the hash table.
     ///     Matches dialogue FormIDs against RuntimeEditorIds to find corresponding entries,
     ///     then reads the TESTopicInfo struct to get speaker, quest, flags, difficulty, and prompt.
-    ///     Only enriches existing records - new entries are created by MergeRuntimeDialogueTopicLinks.
+    ///     Also CREATES records for gap-recovery-promoted runtime-only INFOs (agreement-gated
+    ///     parentage, no carved counterpart) — the topic walk cannot, because it early-returns
+    ///     when DIAL FormType detection fails, which is exactly the gapped-dump case that
+    ///     orphaned them.
     /// </summary>
     internal void MergeRuntimeDialogueData(List<DialogueRecord> dialogues)
     {
@@ -213,12 +216,80 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
             mergedCount++;
         }
 
+        // Creation runs after the enrich loop (so freshly created records are not re-enriched
+        // with data they were just built from) and before the TES-file script backfill (so they
+        // participate in segment calibration and result-script recovery like any carved INFO).
+        var createdCount = CreateGapRecoveredDialogues(dialogues);
+
         var tesFileScriptEnrichedCount = BackfillResultScriptsFromTesFilePages(dialogues);
 
         Logger.Instance.Debug(
             $"  [Semantic] Runtime INFO enrich: {mergedCount}/{dialogues.Count} enriched " +
             $"(hashEntries={runtimeByFormId.Count}, TES-file segments={_tesFileSegments.Count}, " +
-            $"scripts enriched={tesFileScriptEnrichedCount})");
+            $"scripts enriched={tesFileScriptEnrichedCount}, gap-recovered created={createdCount})");
+    }
+
+    /// <summary>
+    ///     Create dialogue records for gap-recovery-promoted runtime-only INFOs. The promoter
+    ///     stamps these entries with agreement-gated parentage (`RecoveredTopicFormId` is set only
+    ///     when the independent parentage walk agreed on BOTH topic and quest), so a non-null
+    ///     recovered topic is a precise marker for "promoted INFO" — DIAL promotions and ordinary
+    ///     hash-table entries never carry it. Topic-less INFOs are deliberately never created:
+    ///     an unbound INFO in a shared master topic hijacks vanilla NPCs
+    ///     (`info.master-topic-unbound`), and the emission-side gate stays the backstop.
+    /// </summary>
+    private int CreateGapRecoveredDialogues(List<DialogueRecord> dialogues)
+    {
+        var considered = 0;
+        var created = 0;
+        var duplicate = 0;
+        var decodeFailed = 0;
+        HashSet<uint>? existingFormIds = null;
+
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.RecoveredTopicFormId is not > 0 || !entry.TesFormOffset.HasValue || entry.FormId == 0)
+            {
+                continue;
+            }
+
+            considered++;
+            existingFormIds ??= new HashSet<uint>(dialogues.Select(d => d.FormId));
+            if (!existingFormIds.Add(entry.FormId))
+            {
+                // Already carved (the enrich loop owns it) or a second promoted snapshot of the
+                // same FormID at a different offset — either way, one record per FormID.
+                duplicate++;
+                continue;
+            }
+
+            var runtimeInfo = Context.RuntimeReader!.ReadRuntimeDialogueInfo(entry);
+            if (runtimeInfo == null)
+            {
+                // Decoded at scan time via the VA path but not via the offset path — a parity
+                // anomaly worth seeing, not a create.
+                decodeFailed++;
+                existingFormIds.Remove(entry.FormId);
+                continue;
+            }
+
+            dialogues.Add(BuildDialogueFromRuntimeInfo(
+                runtimeInfo,
+                entry.FormId,
+                entry.RecoveredTopicFormId,
+                runtimeInfo.QuestFormId,
+                runtimeInfo.FormEditorId ?? entry.EditorId));
+            created++;
+        }
+
+        if (considered > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Gap-recovered INFO creation: {created} created, {duplicate} already " +
+                $"present, {decodeFailed} decode-failed ({considered} promoted entries)");
+        }
+
+        return created;
     }
 
     /// <summary>
@@ -297,12 +368,49 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
             }
         }
 
-        // Fallback: use 0x45 (empirically verified shared DIAL+INFO FormType)
+        // Fallback: try 0x45 (the shared DIAL+INFO FormType on most corpus builds), but only after
+        // it survives the same probe validation the topic-data merge applies. The old
+        // mere-existence check fired exactly when the vote above had failed — i.e. on gapped or
+        // enum-drifted dumps — and on a drifted build 0x45 is a different record type entirely:
+        // every entry then gets WalkTopicQuestInfoList, which chases whatever pointer pair sits at
+        // that offset and fabricates topic/quest links keyed to real FormIDs.
         const byte candidateFormType = 0x45;
-        var hasEntries = Context.ScanResult.RuntimeEditorIds
-            .Any(e => e.FormType == candidateFormType && e.TesFormOffset.HasValue);
+        var validCount = 0;
+        var testedCount = 0;
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != candidateFormType || !entry.TesFormOffset.HasValue)
+            {
+                continue;
+            }
 
-        return hasEntries ? candidateFormType : null;
+            if (++testedCount > 20)
+            {
+                break;
+            }
+
+            if (Context.RuntimeReader!.ReadRuntimeDialogTopic(entry) != null)
+            {
+                validCount++;
+            }
+        }
+
+        if (validCount < 3)
+        {
+            if (testedCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] DIAL FormType fallback 0x{candidateFormType:X2} rejected for topic linking " +
+                    $"({validCount}/{testedCount} passed ReadRuntimeDialogTopic validation)");
+            }
+
+            return null;
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] DIAL FormType fallback for topic linking: 0x{candidateFormType:X2} " +
+            $"({validCount}/{testedCount} passed ReadRuntimeDialogTopic validation)");
+        return candidateFormType;
     }
 
     /// <summary>
@@ -407,6 +515,7 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
         }
 
         var backfilledCount = 0;
+        var tiedCount = 0;
         foreach (var (topicFormId, questCounts) in questIdsByTopic)
         {
             if (!topicByFormId.TryGetValue(topicFormId, out var index))
@@ -420,10 +529,26 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
                 continue; // Already has a quest
             }
 
-            // Use the most common QuestFormId among this topic's INFOs
+            // Use the most common QuestFormId among this topic's INFOs — but only when the vote is
+            // decisive. A tie would be settled by dictionary enumeration order (i.e. which INFO the
+            // parse happened to encounter first), which is not evidence; the direct-walk sibling
+            // (UpdateTopicFromQuestLinks) demands unanimity for the same link, so at minimum the
+            // plurality here must be unique.
             var bestQuest = questCounts.MaxBy(kv => kv.Value);
+            if (questCounts.Count(kv => kv.Value == bestQuest.Value) > 1)
+            {
+                tiedCount++;
+                continue;
+            }
+
             topics[index] = topic with { QuestFormId = bestQuest.Key };
             backfilledCount++;
+        }
+
+        if (tiedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Topic QuestFormId backfill skipped {tiedCount} topic(s) with tied quest votes");
         }
 
         return backfilledCount;
@@ -511,10 +636,29 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
             return;
         }
 
-        var newDialogue = new DialogueRecord
+        dialogues.Add(BuildDialogueFromRuntimeInfo(
+            runtimeInfo, infoEntry.FormId, topicFormId, questFormId, runtimeInfo.FormEditorId));
+        dialogueByFormId.TryAdd(infoEntry.FormId, dialogues.Count - 1);
+        stats.NewInfoCount++;
+        stats.TopicLinked++;
+        stats.QuestLinked++;
+    }
+
+    /// <summary>
+    ///     Shared from-scratch construction for runtime-created INFOs — the topic-walk path and
+    ///     the gap-recovery creation pass must populate identical field sets or they drift.
+    /// </summary>
+    private static DialogueRecord BuildDialogueFromRuntimeInfo(
+        RuntimeDialogueInfo runtimeInfo,
+        uint formId,
+        uint? topicFormId,
+        uint? questFormId,
+        string? editorId)
+    {
+        return new DialogueRecord
         {
-            FormId = infoEntry.FormId,
-            EditorId = runtimeInfo.FormEditorId,
+            FormId = formId,
+            EditorId = editorId,
             TopicFormId = topicFormId,
             QuestFormId = questFormId,
             PromptText = runtimeInfo.PromptText,
@@ -539,12 +683,6 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
             TesFileOffset = runtimeInfo.TesFileOffset,
             IsBigEndian = true
         };
-
-        dialogues.Add(newDialogue);
-        dialogueByFormId.TryAdd(infoEntry.FormId, dialogues.Count - 1);
-        stats.NewInfoCount++;
-        stats.TopicLinked++;
-        stats.QuestLinked++;
     }
 
     /// <summary>
@@ -572,6 +710,15 @@ internal sealed class DialogueRuntimeMerger(RecordParserContext context) : Recor
             SpeakerRaceFormId = dialogue.SpeakerRaceFormId ?? runtimeInfo.SpeakerRaceFormId,
             SpeakerVoiceTypeFormId = dialogue.SpeakerVoiceTypeFormId ?? runtimeInfo.SpeakerVoiceTypeFormId,
             QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId,
+            // Gap-recovery parentage: an INFO whose parent DIAL walk was missed (lost GRUP
+            // ancestry, no detectable DIAL FormType) still carries the topic the independent
+            // DmpGapRecoveryScanner parentage walk agreed on. The quest half of that repair has
+            // flowed through runtimeInfo.QuestFormId since the promoter landed; the topic half was
+            // written onto the model and consumed by nothing — the tree builder and every emitter
+            // key on TopicFormId. Walk- or carve-derived topics stay authoritative.
+            TopicFormId = dialogue.TopicFormId is > 0
+                ? dialogue.TopicFormId
+                : runtimeInfo.RecoveredTopicFormId ?? dialogue.TopicFormId,
             RuntimeStructOffset = dialogue.RuntimeStructOffset > 0
                 ? dialogue.RuntimeStructOffset
                 : runtimeInfo.DumpOffset,

@@ -77,14 +77,12 @@ public static class ShowCommand
 
     private static async Task<int> RunShowAsync(string filePath, string id, CancellationToken cancellationToken)
     {
-        if (!File.Exists(filePath))
+        if (CliHelpers.ResolveAnalysisInput(filePath) is not { } fileType)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {filePath}");
             return 1;
         }
 
-        var fileType = FileTypeDetector.Detect(filePath);
-        AnsiConsole.MarkupLine($"[bold]Show:[/] [cyan]{Path.GetFileName(filePath)}[/] ({fileType}) — {id}");
+        AnsiConsole.MarkupLine($"[bold]Show:[/] [cyan]{CliHelpers.InputLabel(filePath)}[/] ({fileType}) — {id}");
 
         try
         {

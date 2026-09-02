@@ -959,6 +959,7 @@ internal static class CellLinkageHandler
             LinkedRefKeywordFormId = r.LinkedRefKeywordFormId,
             LinkedRefFormId = r.LinkedRefFormId,
             LinkedRefChildrenFormIds = r.LinkedRefChildrenFormIds,
+            BendableSpline = r.BendableSpline,
             StructuralData = r.StructuralData,
             EditorId = r.EditorId,
             Offset = r.Header.Offset,

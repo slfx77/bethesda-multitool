@@ -19,8 +19,17 @@ internal static class PdbStructLayouts
         foreach (var layout in LazyLayouts.Value.Values)
         {
             // TryAdd, not indexer: a duplicate class name would otherwise silently pick whichever
-            // FormType enumerated last.
-            map.TryAdd(layout.ClassName, layout.FormType);
+            // FormType enumerated last — but a duplicate must be LOUD either way, because every
+            // PointerToFormType probe and container element check keyed on the name would then
+            // narrow to an arbitrary byte. The live layout DB has zero duplicates (verified
+            // 2026-08-31); this guards the next regeneration.
+            if (!map.TryAdd(layout.ClassName, layout.FormType))
+            {
+                Logger.Instance.Warn(
+                    $"pdb_layouts: duplicate class name '{layout.ClassName}' " +
+                    $"(kept 0x{map[layout.ClassName]:X2}, ignored 0x{layout.FormType:X2}) — " +
+                    "name-keyed FormType narrowing is unreliable for this class.");
+            }
         }
 
         return map;

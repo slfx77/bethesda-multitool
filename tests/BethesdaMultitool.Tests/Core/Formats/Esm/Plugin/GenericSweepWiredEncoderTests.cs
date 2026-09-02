@@ -760,6 +760,104 @@ public class GenericSweepWiredEncoderTests
         Assert.Empty(result.Warnings);
     }
 
+    [Fact]
+    public void Csno_EmitsModelAndTextureGroupsInVanillaOrder()
+    {
+        // Every retail CSNO carries exactly this shape after DATA: MODL x8 (chips + slot
+        // machine), MOD2 duplicating the slot-machine path, MOD3/MOD4 tables, ICON x7 reels,
+        // ICO2 x4 deck backs (vanilla repeats one path — preserved, not de-duplicated).
+        string[] models =
+        [
+            @"chips\chip001.nif", @"chips\chip005.nif", @"chips\chip010.nif", @"chips\chip025.nif",
+            @"chips\chip100.nif", @"chips\chip500.nif", @"chips\roulettechip.nif",
+            @"casino\slotmachine.nif", @"casino\blackjacktable.nif", @"casino\roulettetable.nif"
+        ];
+        string[] textures =
+        [
+            @"reel\sym1.dds", @"reel\sym2.dds", @"reel\sym3.dds", @"reel\sym4.dds",
+            @"reel\sym5.dds", @"reel\sym6.dds", @"reel\sym7.dds",
+            @"cards\back.dds", @"cards\back.dds", @"cards\back.dds", @"cards\back.dds"
+        ];
+
+        var result = CsnoEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000C02,
+            RecordType = "CSNO",
+            EditorId = "FullCasino",
+            Fields = new Dictionary<string, object?>
+            {
+                ["TESCasino.modelArrayList"] = models.ToList(),
+                ["TESCasino.textureArrayList"] = textures.ToList()
+            }
+        });
+
+        string[] expected =
+        [
+            "EDID",
+            "MODL", "MODL", "MODL", "MODL", "MODL", "MODL", "MODL", "MODL",
+            "MOD2", "MOD3", "MOD4",
+            "ICON", "ICON", "ICON", "ICON", "ICON", "ICON", "ICON",
+            "ICO2", "ICO2", "ICO2", "ICO2"
+        ];
+        Assert.Equal(expected, result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.Equal(
+            ZString(result.Subrecords.Where(s => s.Signature == "MODL").Last()),
+            ZString(result.Subrecords.Single(s => s.Signature == "MOD2")));
+        Assert.Equal(@"casino\blackjacktable.nif", ZString(result.Subrecords.Single(s => s.Signature == "MOD3")));
+        Assert.All(
+            result.Subrecords.Where(s => s.Signature == "ICO2"),
+            s => Assert.Equal(@"cards\back.dds", ZString(s)));
+    }
+
+    [Fact]
+    public void Csno_HoleInChipSlotsDropsTheWholeModlGroupButKeepsTheTables()
+    {
+        // MODL is positional-by-repetition: a hole mid-group would shift every later chip onto
+        // the wrong denomination, so the group is all-or-nothing. MOD3/MOD4 are independently
+        // addressable signatures and survive on their own.
+        var models = new List<string>
+        {
+            @"chips\chip001.nif", @"chips\chip005.nif", string.Empty, @"chips\chip025.nif",
+            @"chips\chip100.nif", @"chips\chip500.nif", @"chips\roulettechip.nif",
+            @"casino\slotmachine.nif", @"casino\blackjacktable.nif", @"casino\roulettetable.nif"
+        };
+
+        var result = CsnoEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000C03,
+            RecordType = "CSNO",
+            EditorId = "HoleyCasino",
+            Fields = new Dictionary<string, object?> { ["TESCasino.modelArrayList"] = models }
+        });
+
+        Assert.DoesNotContain(result.Subrecords, s => s.Signature is "MODL" or "MOD2");
+        Assert.Contains(result.Subrecords, s => s.Signature == "MOD3");
+        Assert.Contains(result.Subrecords, s => s.Signature == "MOD4");
+        Assert.Contains(result.Warnings, w => w.Contains("7/8"));
+    }
+
+    [Fact]
+    public void Csno_WrongSlotCountIsRejectedAsMisaligned()
+    {
+        // 9 entries cannot be a TESCasino model array — a short list means the capture was
+        // misaligned or predates the layout regeneration, and positional emission from it would
+        // attach wrong meanings. Rejected wholesale, silently (nothing to warn about — the
+        // record simply has no usable array).
+        var result = CsnoEncoder.EncodeNew(new GenericEsmRecord
+        {
+            FormId = 0x01000C04,
+            RecordType = "CSNO",
+            EditorId = "ShortCasino",
+            Fields = new Dictionary<string, object?>
+            {
+                ["TESCasino.modelArrayList"] = Enumerable.Repeat(@"m.nif", 9).ToList()
+            }
+        });
+
+        Assert.Equal(["EDID"], result.Subrecords.Select(s => s.Signature).ToArray());
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("MODL"));
+    }
+
     // ===================================================================================
     // IPDS / DOBJ — both are a single positional FormID slot table, reachable only since
     // pdb_layouts.json gained LF_ARRAY resolution.

@@ -125,6 +125,132 @@ public sealed class DialogueTesFileRecoveryTests
     }
 
     [Fact]
+    public void MergeRuntimeDialogueData_CreatesPromotedRuntimeOnlyInfos()
+    {
+        // A gap-recovery-promoted INFO has no carved counterpart and the topic walk missed it
+        // (that is why it was promoted). The creation pass must materialize it with the
+        // agreement-gated parentage — the RecoveredTopicFormId that dead-ended for months.
+        const long fileSize = 0x5000;
+        const long runtimeOffset = 0x3000;
+        const uint formId = 0x0000D004;
+
+        var accessor = new SparseMemoryAccessor();
+        accessor.AddRange(runtimeOffset, BuildRuntimeInfoStruct(formId, 0x900));
+
+        var scanResult = MakeScanResult(
+            runtimeEditorIds:
+            [
+                new RuntimeEditorIdEntry
+                {
+                    FormId = formId,
+                    EditorId = "__RECOVERED_INFO_0000D004",
+                    FormType = 0x45,
+                    TesFormOffset = runtimeOffset,
+                    DialogueLine = "Recovered line",
+                    RecoveredTopicFormId = 0x00012345,
+                    RecoveredQuestFormId = 0x00054321
+                }
+            ]);
+
+        var merger = new DialogueRuntimeMerger(new RecordParserContext(
+            scanResult, null, accessor, fileSize, CreateMinidumpInfo(fileSize)));
+        var dialogues = new List<DialogueRecord>();
+
+        merger.MergeRuntimeDialogueData(dialogues);
+
+        var created = Assert.Single(dialogues);
+        Assert.Equal(formId, created.FormId);
+        Assert.Equal(0x00012345u, created.TopicFormId);
+        Assert.Equal(0x00054321u, created.QuestFormId);
+        Assert.Equal(0x900u, created.TesFileOffset);
+        Assert.True(created.IsBigEndian);
+    }
+
+    [Fact]
+    public void MergeRuntimeDialogueData_NeverDuplicatesACarvedInfoOrASecondSnapshot()
+    {
+        // One record per FormID: a promoted entry whose FormID was carved belongs to the enrich
+        // path, and a second promoted snapshot of the same FormID at a different offset is the
+        // same INFO captured twice.
+        const long fileSize = 0x5000;
+        const long carvedRuntimeOffset = 0x3000;
+        const long duplicateOffset = 0x3200;
+        const uint carvedFormId = 0x0000E005;
+
+        var accessor = new SparseMemoryAccessor();
+        accessor.AddRange(carvedRuntimeOffset, BuildRuntimeInfoStruct(carvedFormId, 0x910));
+        accessor.AddRange(duplicateOffset, BuildRuntimeInfoStruct(carvedFormId, 0x910));
+
+        var scanResult = MakeScanResult(
+            runtimeEditorIds:
+            [
+                new RuntimeEditorIdEntry
+                {
+                    FormId = carvedFormId,
+                    EditorId = "__RECOVERED_INFO_0000E005",
+                    FormType = 0x45,
+                    TesFormOffset = carvedRuntimeOffset,
+                    RecoveredTopicFormId = 0x00012345,
+                    RecoveredQuestFormId = 0x00054321
+                },
+                new RuntimeEditorIdEntry
+                {
+                    FormId = carvedFormId,
+                    EditorId = "__RECOVERED_INFO_0000E005",
+                    FormType = 0x45,
+                    TesFormOffset = duplicateOffset,
+                    RecoveredTopicFormId = 0x00012345,
+                    RecoveredQuestFormId = 0x00054321
+                }
+            ]);
+
+        var merger = new DialogueRuntimeMerger(new RecordParserContext(
+            scanResult, null, accessor, fileSize, CreateMinidumpInfo(fileSize)));
+        var dialogues = new List<DialogueRecord>
+        {
+            new() { FormId = carvedFormId, EditorId = "CarvedInfo", IsBigEndian = true }
+        };
+
+        merger.MergeRuntimeDialogueData(dialogues);
+
+        Assert.Single(dialogues, d => d.FormId == carvedFormId);
+    }
+
+    [Fact]
+    public void MergeRuntimeDialogueData_NeverCreatesATopicLessPromotion()
+    {
+        // An INFO without agreement-gated topic parentage must not be created: an unbound INFO
+        // in a shared master topic hijacks vanilla NPCs (the info.master-topic-unbound hazard).
+        const long fileSize = 0x5000;
+        const long runtimeOffset = 0x3000;
+        const uint formId = 0x0000F006;
+
+        var accessor = new SparseMemoryAccessor();
+        accessor.AddRange(runtimeOffset, BuildRuntimeInfoStruct(formId, 0x920));
+
+        var scanResult = MakeScanResult(
+            runtimeEditorIds:
+            [
+                new RuntimeEditorIdEntry
+                {
+                    FormId = formId,
+                    EditorId = "__RECOVERED_INFO_0000F006",
+                    FormType = 0x45,
+                    TesFormOffset = runtimeOffset,
+                    RecoveredQuestFormId = 0x00054321
+                }
+            ]);
+
+        var merger = new DialogueRuntimeMerger(new RecordParserContext(
+            scanResult, null, accessor, fileSize, CreateMinidumpInfo(fileSize)));
+        var dialogues = new List<DialogueRecord>();
+
+        merger.MergeRuntimeDialogueData(dialogues);
+
+        Assert.Empty(dialogues);
+    }
+
+    [Fact]
     public void TryRecover_WithoutTesFileOffset_ReturnsNoTesFileOffset()
     {
         var result = DialogueTesFileScriptRecovery.TryRecover(

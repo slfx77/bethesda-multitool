@@ -3,12 +3,93 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class MiscStaticObjectHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
+    /// <summary>
+    ///     Parse Fallout 4-family BNDS base objects. BNDS deliberately has no MODL; its placements
+    ///     are generated procedurally from DNAM, TNAM, and each REFR's XBSD.
+    /// </summary>
+    internal List<BendableSplineRecord> ParseBendableSplines()
+    {
+        return ParseRecordList("BNDS", 512,
+            ParseBendableSplineFromAccessor,
+            record => new BendableSplineRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private BendableSplineRecord? ParseBendableSplineFromAccessor(
+        DetectedMainRecord record,
+        byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new BendableSplineRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+        string? editorId = null;
+        ObjectBounds? bounds = null;
+        BendableSplineDefinitionData? splineData = null;
+        uint? textureSetFormId = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DNAM" when sub.DataLength == 32:
+                    splineData = BendableSplineDataReader.ReadDefinition(subData, record.IsBigEndian);
+                    break;
+                case "TNAM" when sub.DataLength == 4:
+                    var textureFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    textureSetFormId = textureFormId != 0 ? textureFormId : null;
+                    break;
+                default:
+                    NoteUnmodeledSubrecord("BNDS", sub.Signature, sub.DataLength);
+                    break;
+            }
+        }
+
+        return new BendableSplineRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Bounds = bounds,
+            Data = splineData,
+            TextureSetFormId = textureSetFormId,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     /// <summary>
     ///     Parse all Static (STAT) records.
     /// </summary>

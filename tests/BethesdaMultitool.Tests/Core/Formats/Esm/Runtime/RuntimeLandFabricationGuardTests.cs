@@ -68,9 +68,12 @@ public sealed class RuntimeLandFabricationGuardTests
 
     private static RuntimeEditorIdEntry Entry(string? editorId)
     {
+        // The null case deliberately violates the property's non-nullable annotation: annotations
+        // don't survive deserialization or reflection, and the filter must treat a null editor ID
+        // as synthetic (admit it) rather than throw.
         return new RuntimeEditorIdEntry
         {
-            EditorId = editorId,
+            EditorId = editorId!,
             FormId = 0x0009A283,
             FormType = 0x42,
             StringOffset = 0,

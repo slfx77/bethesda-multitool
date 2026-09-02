@@ -362,6 +362,16 @@ public record PlacedReference
         }
     }
 
+    /// <summary>
+    ///     FO4-family procedural spline parameters from XBSD. A reference with this data normally
+    ///     places a BNDS base object and therefore has no <see cref="ModelPath" /> by design.
+    /// </summary>
+    public BendableSplinePlacementData? BendableSpline
+    {
+        get => _extras?.BendableSpline;
+        init { if (value is not null || _extras is not null) _extras = Seed with { BendableSpline = value }; }
+    }
+
     /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
     public PlacedReferenceStructuralData? StructuralData
     {

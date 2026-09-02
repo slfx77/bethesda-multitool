@@ -65,7 +65,62 @@ public sealed class LandTextureLayerPrecedenceTests
         Assert.Equal(VisualDataSource.Dmp, merged.TextureLayersSource);
     }
 
-    private static LandVisualData Data(VisualDataSource source, int layerCount)
+    [Fact]
+    public void AggregateOnlyMasterStamp_CountsAsAuthored()
+    {
+        // BTD injection and the Morrowind parser used to set only the aggregate Source; the merge's
+        // `?? Source` fallback was dead code (the per-field stamps are non-nullable), so their
+        // authored layers merged as None. The effective-source properties make the fallback real:
+        // an aggregate-only MasterEsm instance must outrank a runtime capture.
+        var runtime = Data(VisualDataSource.Runtime, 5);
+        var master = Data(VisualDataSource.MasterEsm, 6, stampPerField: false);
+
+        var merged = LandVisualData.MergeCategories(runtime, master);
+
+        Assert.Equal(6, merged!.TextureLayers.Count);
+        Assert.Equal(VisualDataSource.MasterEsm, merged.TextureLayersSource);
+    }
+
+    [Fact]
+    public void AggregateOnlyRuntimeStamp_IsStillDemoted()
+    {
+        // The demotion must not be dodgeable by omitting the per-field stamp on a runtime capture:
+        // pass 1 is an authored allowlist, so an effective-Runtime (or effective-None) candidate
+        // cannot win it.
+        var runtime = Data(VisualDataSource.Runtime, 5, stampPerField: false);
+        var master = Data(VisualDataSource.MasterEsm, 3);
+
+        var merged = LandVisualData.MergeCategories(runtime, master);
+
+        Assert.Equal(3, merged!.TextureLayers.Count);
+        Assert.Equal(VisualDataSource.MasterEsm, merged.TextureLayersSource);
+    }
+
+    [Fact]
+    public void LargerRuntimeSet_StillLosesToAuthored()
+    {
+        // The interesting direction: even when the runtime capture carries MORE layers than the
+        // authored set, authored wins — the count difference is residency, not authorship.
+        var merged = LandVisualData.MergeCategories(Data(VisualDataSource.Runtime, 10), Data(VisualDataSource.Dmp, 2));
+
+        Assert.Equal(2, merged!.TextureLayers.Count);
+        Assert.Equal(VisualDataSource.Dmp, merged.TextureLayersSource);
+    }
+
+    [Fact]
+    public void MergeCarriesTheWinnersUnattachedVtxtCounts()
+    {
+        // VtxtCount/VtxtByteCount include the unattached tally; before this the merge dropped both,
+        // so any merged record under-reported its VTXT diagnostics.
+        var primary = Data(VisualDataSource.Dmp, 2) with { UnattachedVtxtCount = 3, UnattachedVtxtByteCount = 24 };
+
+        var merged = LandVisualData.MergeCategories(primary, Data(VisualDataSource.MasterEsm, 6));
+
+        Assert.Equal(3, merged!.UnattachedVtxtCount);
+        Assert.Equal(24, merged.UnattachedVtxtByteCount);
+    }
+
+    private static LandVisualData Data(VisualDataSource source, int layerCount, bool stampPerField = true)
     {
         var layers = new List<LandTextureLayer>();
         for (var i = 0; i < layerCount; i++)
@@ -78,6 +133,8 @@ public sealed class LandTextureLayerPrecedenceTests
             });
         }
 
-        return new LandVisualData { TextureLayers = layers, TextureLayersSource = source };
+        return stampPerField
+            ? new LandVisualData { TextureLayers = layers, TextureLayersSource = source }
+            : new LandVisualData { TextureLayers = layers, Source = source };
     }
 }

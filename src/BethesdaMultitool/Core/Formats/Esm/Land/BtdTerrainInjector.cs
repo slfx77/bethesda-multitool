@@ -337,6 +337,7 @@ public static class BtdTerrainInjector
                     cell.LandVisualData = new LandVisualData
                     {
                         TextureLayers = layers,
+                        TextureLayersSource = VisualDataSource.MasterEsm,
                         Source = VisualDataSource.MasterEsm
                     };
                 }
@@ -376,6 +377,7 @@ public static class BtdTerrainInjector
             {
                 TextureLayersProvider = () => source!.GetTextureLayers(gx, gy),
                 HasLazyTextureLayers = true,
+                TextureLayersSource = VisualDataSource.MasterEsm,
                 Source = VisualDataSource.MasterEsm
             };
         }

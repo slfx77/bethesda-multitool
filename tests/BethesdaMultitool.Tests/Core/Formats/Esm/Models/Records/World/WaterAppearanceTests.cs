@@ -244,6 +244,28 @@ public sealed class WaterAppearanceTests
         Assert.NotNull(appearance);
         Assert.False(appearance!.CausesDamage);
         Assert.False(appearance.IsLava);
+        Assert.True(appearance.IsReflective);
+    }
+
+    [Theory]
+    [InlineData(0x00, false)]
+    [InlineData(0x01, false)]
+    [InlineData(0x02, true)]
+    [InlineData(0x03, true)]
+    public void FromWaterRecord_ProjectsFnamBit1AsReflective(byte flags, bool expected)
+    {
+        var appearance = WaterAppearance.FromWaterRecord(WaterWith("DefaultWater", flags));
+
+        Assert.NotNull(appearance);
+        Assert.Equal(expected, appearance!.IsReflective);
+    }
+
+    [Fact]
+    public void FromWaterRecord_MissingFnamPreservesReflectiveCompatibilityFallback()
+    {
+        var water = WaterWith("PartialWater", 0x00) with { WaterFlags = [] };
+
+        Assert.True(WaterAppearance.FromWaterRecord(water)!.IsReflective);
     }
 
     [Fact]
@@ -264,6 +286,7 @@ public sealed class WaterAppearanceTests
         Assert.NotNull(a);
         Assert.True(a!.IsLava);
         Assert.True(a.CausesDamage);
+        Assert.False(a.IsReflective);
         Assert.True(a.Shallow.R > a.Shallow.B); // molten (reddish), not a default blue water tint
     }
 

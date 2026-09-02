@@ -67,8 +67,9 @@ public static class LandEncoder
         {
             foreach (var layer in layersForDataFlags)
             {
+                // No TextureFormId != 0 filter: FormID 0 is the engine-default land texture, not a
+                // dangling reference, and this loop must mirror what the emission loop below writes.
                 if (layer.Kind == LandTextureLayerKind.Base
-                    && layer.TextureFormId != 0
                     && layer.Quadrant <= 3)
                 {
                     dataFlags |= (byte)(1 << layer.Quadrant);
@@ -108,11 +109,10 @@ public static class LandEncoder
         {
             foreach (var layer in textureLayers)
             {
-                if (layer.TextureFormId == 0)
-                {
-                    continue;
-                }
-
+                // FormID 0 layers are emitted: retail authors ATXT whose texture is the
+                // engine-default land texture (FalloutNV.esm LAND 0x000DB102 quadrant 0 layer 1,
+                // VTXT and all), and skipping them here deleted that authored blend layer from
+                // every re-encoded LAND (the 794-vs-793 residual).
                 subs.Add(new EncodedSubrecord(layer.SubrecordSignature, EncodeTextureLayer(layer)));
 
                 if (layer.Kind == LandTextureLayerKind.Alpha && layer.BlendEntries.Count > 0)

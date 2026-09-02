@@ -146,7 +146,8 @@ public sealed class DmpRecordSource
             // Round 3 of the same audit. EFSH/RGDL/CSNO became emittable once ReadEmbeddedStruct
             // handed back raw bytes for >8 B structs: all three carry their payload in a single
             // block whose runtime size matches the file schema exactly, so the existing BE→LE
-            // registry converts it. CSNO's model/texture arrays stay unreachable — see CsnoEncoder.
+            // registry converts it. CSNO's model/texture arrays became readable with the
+            // 2026-08-31 layout regeneration and now emit too — see CsnoEncoder.
             ["EFSH"] = c => GenericsOfType(c, "EFSH"),
             ["RGDL"] = c => GenericsOfType(c, "RGDL"),
             ["CSNO"] = c => GenericsOfType(c, "CSNO"),

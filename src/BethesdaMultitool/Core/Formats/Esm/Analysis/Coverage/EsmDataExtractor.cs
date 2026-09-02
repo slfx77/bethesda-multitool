@@ -174,6 +174,7 @@ internal static class EsmDataExtractor
             uint? specialRenderingFlags = null;
             uint? linkedRefKeywordFormId = null;
             uint? linkedRefFormId = null;
+            BendableSplinePlacementData? bendableSpline = null;
             var isMapMarker = false;
             ushort? markerType = null;
             string? markerName = null;
@@ -301,6 +302,9 @@ internal static class EsmDataExtractor
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
                         break;
+                    case "XBSD" when sub.Data.Length >= 20:
+                        bendableSpline = BendableSplineDataReader.ReadPlacement(sub.Data, bigEndian);
+                        break;
                     case "XMRK":
                         isMapMarker = true;
                         break;
@@ -359,7 +363,8 @@ internal static class EsmDataExtractor
                 MarkerName = markerName,
                 EditorId = editorId,
                 LinkedRefKeywordFormId = linkedRefKeywordFormId,
-                LinkedRefFormId = linkedRefFormId
+                LinkedRefFormId = linkedRefFormId,
+                BendableSpline = bendableSpline
             });
         }
     }

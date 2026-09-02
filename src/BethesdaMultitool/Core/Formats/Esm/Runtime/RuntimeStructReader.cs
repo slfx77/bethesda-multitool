@@ -239,6 +239,14 @@ public sealed class RuntimeStructReader
         IReadOnlyList<RuntimeEditorIdEntry>? landEntries = null)
     {
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
+        if (landEntries is { Count: > 0 })
+        {
+            // Correlation-resolved LAND byte for evidence-gating cell→LAND pointer follows.
+            // Empty on low-confidence dumps (mesh-yield resolution runs after cell enumeration),
+            // where the pCellLand follow stays ungated as before.
+            context.ResolvedLandFormType = landEntries[0].FormType;
+        }
+
         var refrLayoutProbe = RuntimeRefrReader.ProbeRefrLayout(context, refrEntries);
         var isEarlyBuild = refrLayoutProbe.Winner.Layout;
         var npcLayoutProbe = npcEntries is { Count: > 0 }

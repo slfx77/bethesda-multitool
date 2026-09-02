@@ -133,9 +133,15 @@ public static class LandTextureRewritePlanner
         var layers = new List<LandTextureLayer>(visual.TextureLayers.Count);
         foreach (var layer in visual.TextureLayers)
         {
+            // FormID 0 is not a dangling reference: retail authors ATXT/BTXT layers whose texture
+            // is the engine-default land texture (FalloutNV.esm LAND 0x000DB102 quadrant 0 layer 1
+            // paints one, VTXT and all). It needs no remap — 0 stays 0 — and dropping it deletes an
+            // authored blend layer. This was the 794-vs-793 residual: master LANDs re-encoded for
+            // runtime-heightmap cells lost their null-texture layers, while verbatim carry-forward
+            // kept them.
             if (layer.TextureFormId == 0)
             {
-                changed = true;
+                layers.Add(layer);
                 continue;
             }
 

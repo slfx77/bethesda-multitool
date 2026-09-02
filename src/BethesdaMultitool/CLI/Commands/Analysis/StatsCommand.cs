@@ -31,14 +31,12 @@ public static class StatsCommand
 
     private static async Task<int> RunStatsAsync(string filePath, CancellationToken cancellationToken)
     {
-        if (!File.Exists(filePath))
+        if (CliHelpers.ResolveAnalysisInput(filePath) is not { } fileType)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {filePath}");
             return 1;
         }
 
-        var fileType = FileTypeDetector.Detect(filePath);
-        AnsiConsole.MarkupLine($"[bold]Stats:[/] [cyan]{Path.GetFileName(filePath)}[/] ({fileType})");
+        AnsiConsole.MarkupLine($"[bold]Stats:[/] [cyan]{CliHelpers.InputLabel(filePath)}[/] ({fileType})");
         AnsiConsole.WriteLine();
 
         try
@@ -170,8 +168,17 @@ public static class StatsCommand
         // Map markers
         AddIfNonZero(categories, "World", "Markers", records.MapMarkers.Count);
 
-        // Generic
-        AddIfNonZero(categories, "Other", "Generic", records.GenericRecords.Count);
+        // Generic records, broken out by their own signature. A single lumped "Generic" row is
+        // useless wherever the generic bucket IS the file: Morrowind routes every base record
+        // through it, and a classic-game install is nothing but synthesized generic records.
+        foreach (var (type, count) in records.GenericRecords
+                     .GroupBy(r => string.IsNullOrEmpty(r.RecordType) ? "Generic" : r.RecordType, StringComparer.Ordinal)
+                     .Select(g => (Type: g.Key, Count: g.Count()))
+                     .OrderByDescending(x => x.Count)
+                     .ThenBy(x => x.Type, StringComparer.Ordinal))
+        {
+            AddIfNonZero(categories, "Other", type, count);
+        }
 
         // Unparsed
         foreach (var (type, count) in records.UnparsedTypeCounts.OrderByDescending(x => x.Value))

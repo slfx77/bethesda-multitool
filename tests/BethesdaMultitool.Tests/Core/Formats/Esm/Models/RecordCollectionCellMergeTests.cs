@@ -108,6 +108,43 @@ public class RecordCollectionCellMergeTests
     }
 
     [Fact]
+    public void MergeWith_TerrainCarryDisabled_OverrideKeepsOnlyItsOwnTerrain()
+    {
+        // The DMP viewer's "dump-preserved terrain only" mode (Master ESM terrain toggle OFF):
+        // the override (dump) cell must NOT inherit the base (master) cell's terrain, while ref
+        // merging and header backfill keep engine semantics.
+        var baseCell = Cell(0x10, Land(), Ref(0x100, 0xA)) with
+        {
+            EditorId = "MasterCell",
+            LandVisualData = new LandVisualData { Source = VisualDataSource.MasterEsm },
+            RuntimeTerrainMesh = new RuntimeTerrainMesh { Vertices = new float[3] }
+        };
+        var overrideCell = Cell(0x10, null, Ref(0x900, 0xC));
+
+        var merged = new RecordCollection { Cells = [baseCell] }
+            .MergeWith(new RecordCollection { Cells = [overrideCell] }, carryBaseTerrainIntoCells: false);
+
+        var cell = Assert.Single(merged.Cells);
+        Assert.Null(cell.Heightmap);
+        Assert.Null(cell.LandVisualData);
+        Assert.Null(cell.RuntimeTerrainMesh);
+        Assert.Equal("MasterCell", cell.EditorId); // header backfill unaffected
+        Assert.Equal(2, cell.PlacedObjects.Count); // ref merge unaffected
+    }
+
+    [Fact]
+    public void MergeWith_TerrainCarryDisabled_OverridesOwnTerrainSurvives()
+    {
+        var baseCell = Cell(0x10, Land());
+        var overrideCell = Cell(0x10, Land(2000f));
+
+        var merged = new RecordCollection { Cells = [baseCell] }
+            .MergeWith(new RecordCollection { Cells = [overrideCell] }, carryBaseTerrainIntoCells: false);
+
+        Assert.Equal(2000f, Assert.Single(merged.Cells).Heightmap!.HeightOffset);
+    }
+
+    [Fact]
     public void MergeWorldspaces_FoldsOverriddenCellChildren_WithoutRelink()
     {
         // The renderer-profiler path reads ws.Cells directly (it never calls RelinkWorldspaceCells),

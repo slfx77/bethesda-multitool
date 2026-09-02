@@ -206,6 +206,9 @@ public sealed record WaterAppearance(
     WaterSurfaceParams Surface,
     bool CausesDamage = false,
     bool IsLava = false,
+    // WATR FNAM bit 1. The default preserves the former reflective route for callers that build an
+    // appearance from colors alone (or for partial records whose required FNAM is unavailable).
+    bool IsReflective = true,
     // FO4 DNAM Silt "Dark Color" @196 — the FO4 water shader's unshadowed ambient-add term
     // (its PS adds this constant to the accumulated sun/point lighting before the body multiply).
     (byte R, byte G, byte B)? DarkSilt = null,
@@ -235,8 +238,9 @@ public sealed record WaterAppearance(
     ///     Builds appearance from a <see cref="WaterRecord" />. Returns null when the record is
     ///     missing or has no usable colors (caller falls back to a default tint). A missing
     ///     Shallow/Deep endpoint mirrors the other; a missing Reflection falls back to Shallow.
-    ///     Also surfaces the WATR FNAM "Causes Damage" flag and whether this is lava, so the renderer
-    ///     can give lava an emissive, Fresnel-free look (OBLIV-2) instead of drawing it as water.
+    ///     Also surfaces the WATR FNAM behavior flags and whether this is lava, so the renderer can
+    ///     select the reflective WATER007 route and give lava an emissive, Fresnel-free look
+    ///     (OBLIV-2) instead of drawing it as water.
     /// </summary>
     public static WaterAppearance? FromWaterRecord(WaterRecord? water)
     {
@@ -246,7 +250,13 @@ public sealed record WaterAppearance(
         // is lava OR oil in Oblivion (and radioactive water in Fallout), so "Causes Damage" alone does
         // not mean lava — distinguish lava by name (every shipped Oblivion lava WATR is editor-id'd
         // "…Lava…": OblivionCitadelLavaPlane / CamoranLava / OblivionLavaTest01; OblivionOil01 is not).
-        var causesDamage = water.WaterFlags is { Length: > 0 } f && (f[0] & 0x01) != 0;
+        var flags = water.WaterFlags is { Length: > 0 } waterFlags
+            ? waterFlags[0]
+            : (byte?)null;
+        var causesDamage = (flags.GetValueOrDefault() & 0x01) != 0;
+        // FNAM is required by the TES4 schema. Missing data means "unknown", not an authored OFF:
+        // retain the pre-flag behavior for partial/proto records and color-only construction.
+        var isReflective = flags is null || (flags.Value & 0x02) != 0;
         var isLava = LooksLikeLava(water);
 
         var textures = water.NormalTextures;
@@ -268,6 +278,7 @@ public sealed record WaterAppearance(
             {
                 CausesDamage = causesDamage,
                 IsLava = isLava,
+                IsReflective = isReflective,
                 Surface = appearance.Surface with { Opacity = opacity },
                 SurfaceTexture = water.SurfaceTexture
             };
@@ -281,7 +292,8 @@ public sealed record WaterAppearance(
         return isLava
             ? new WaterAppearance(DefaultLavaShallow, DefaultLavaDeep, DefaultLavaShallow,
                 firstTexture, WaterSurfaceParams.Default, causesDamage, true,
-                NormalTextures: textures, SurfaceTexture: water.SurfaceTexture)
+                IsReflective: isReflective, NormalTextures: textures,
+                SurfaceTexture: water.SurfaceTexture)
             : null;
     }
 

@@ -25,6 +25,7 @@ internal static class ObjectIndexBuilder
         List<FurnitureRecord> furniture,
         List<StaticCollectionRecord> staticCollections,
         List<PlaceableWaterRecord> placeableWaters,
+        List<BendableSplineRecord> bendableSplines,
         List<TreeRecord> trees,
         List<WeaponRecord> weapons,
         List<ArmorRecord> armor,
@@ -55,6 +56,8 @@ internal static class ObjectIndexBuilder
         // so every placed water plane lost its MODL and the renderer dropped it. Same failure the SCOL
         // line above exists to prevent.
         AddToIndexes(placeableWaters, p => p.FormId, p => p.Bounds, p => p.ModelPath, boundsIndex, modelIndex);
+        // BNDS has bounds but intentionally no model path: its REFR is procedural XBSD geometry.
+        AddToIndexes(bendableSplines, b => b.FormId, b => b.Bounds, _ => null, boundsIndex, modelIndex);
         // TREE moved out of GenericRecords 2026-08-07. Without this line every tree
         // placement loses its .spt model path — the exact regression the PWAT note
         // above records, repeated.

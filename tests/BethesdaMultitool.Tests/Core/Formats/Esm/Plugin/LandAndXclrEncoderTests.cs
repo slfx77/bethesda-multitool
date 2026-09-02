@@ -308,8 +308,13 @@ public class LandAndXclrEncoderTests
     }
 
     [Fact]
-    public void Land_Encode_SkipsTextureLayersWithZeroFormId()
+    public void Land_Encode_EmitsTextureLayersWithZeroFormId()
     {
+        // FormID 0 in a texture layer is the ENGINE-DEFAULT land texture, not a dangling
+        // reference: retail FalloutNV.esm authors such a layer (LAND 0x000DB102 quadrant 0
+        // layer 1, VTXT and all), and both retail masters store it. The encoder used to skip
+        // these — that skip deleted an authored blend layer from every re-encoded LAND (the
+        // 794-vs-793 residual, ruled a bug 2026-09-01).
         var heightmap = new LandHeightmap
         {
             HeightOffset = 0f,
@@ -354,11 +359,23 @@ public class LandAndXclrEncoderTests
         var subs = LandEncoder.Encode(heightmap, visual);
 
         Assert.NotNull(subs);
-        Assert.DoesNotContain(subs, s => s.Signature == "BTXT");
-        var atxt = Assert.Single(subs, s => s.Signature == "ATXT").Bytes;
-        Assert.Equal(0x22222222u, BinaryPrimitives.ReadUInt32LittleEndian(atxt.AsSpan(0, 4)));
-        var vtxt = Assert.Single(subs, s => s.Signature == "VTXT").Bytes;
-        Assert.Equal((ushort)13, BinaryPrimitives.ReadUInt16LittleEndian(vtxt.AsSpan(0, 2)));
+
+        // The null-texture BTXT emits, and its quadrant now sets a DATA "quad has data" bit.
+        var btxt = Assert.Single(subs, s => s.Signature == "BTXT").Bytes;
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(btxt.AsSpan(0, 4)));
+        Assert.Equal(0x11, subs![0].Bytes[0]); // DATA: 0x10 exterior flag | quadrant 0 bit
+
+        var atxts = subs.Where(s => s.Signature == "ATXT").Select(s => s.Bytes).ToList();
+        Assert.Equal(2, atxts.Count);
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(atxts[0].AsSpan(0, 4)));
+        Assert.Equal(0x22222222u, BinaryPrimitives.ReadUInt32LittleEndian(atxts[1].AsSpan(0, 4)));
+
+        // Each alpha layer keeps its own VTXT, in layer order — the null layer's blend paints
+        // the default texture and must not vanish or re-attribute to the next layer.
+        var vtxts = subs.Where(s => s.Signature == "VTXT").Select(s => s.Bytes).ToList();
+        Assert.Equal(2, vtxts.Count);
+        Assert.Equal((ushort)12, BinaryPrimitives.ReadUInt16LittleEndian(vtxts[0].AsSpan(0, 2)));
+        Assert.Equal((ushort)13, BinaryPrimitives.ReadUInt16LittleEndian(vtxts[1].AsSpan(0, 2)));
     }
 
     // ===================================================================================

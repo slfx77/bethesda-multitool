@@ -61,10 +61,14 @@ public sealed class AddnEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SNAM", sound));
         }
 
-        // DNAM is a required 4-byte struct: uint16 "Master Particle System Cap" + 2 unknown bytes.
-        // It maps to the 4-byte BGSAddonNode.Data (ADDON_DATA @104), which the generic reader
-        // surfaces as a hex string. Prefer those captured bytes verbatim; otherwise synthesize
-        // from iMasterParticleSystemIndex @108 and leave the trailing 2 bytes zero.
+        // DNAM is a required 4-byte struct: uint16 "Master Particle System Cap" + a second u16. It
+        // maps to the 4-byte BGSAddonNode.Data (ADDON_DATA @104) — and unlike its neighbours, the
+        // captured bytes are emitted VERBATIM, no byte swap. Measured 2026-08-31 on xex44: every
+        // runtime BGSAddonNode holds Data@104 = 00 00 01 00 while the adjacent iIndex@96 /
+        // iMasterParticleSystemIndex@108 are big-endian — and BOTH retail ESMs (PC and Xbox 360)
+        // store DNAM as those same bytes, so the engine loads this field without swapping and the
+        // capture is already in file byte order (the INDX-style already-little-endian class). A
+        // "corrective" u16 swap here corrupts it.
         var dnam = GenericRecordFields.TryBytes(addn, 4, "DNAM", "BGSAddonNode.Data");
         if (dnam is null)
         {

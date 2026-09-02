@@ -1,9 +1,12 @@
 using System.Buffers.Binary;
+using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm;
@@ -193,24 +196,202 @@ public sealed class EsmPlacedReferenceSubrecordTests
         Assert.Equal("DoorMarkerRef", refr.EditorId);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExtractRefrRecordsFromParsed_ReadsBendableSplineParameters_InBothEndiannesses(
+        bool bigEndian)
+    {
+        const uint refrFormId = 0x00150510;
+        const uint baseFormId = 0x00106F19;
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "REFR",
+                FormId = refrFormId
+            },
+            Offset = 0x380,
+            Subrecords =
+            [
+                MakeFormIdSubrecord("NAME", baseFormId, bigEndian),
+                new ParsedSubrecord
+                {
+                    Signature = "XBSD",
+                    Data = BuildBendableSplinePlacement(bigEndian, includeWindAndTrailingData: true),
+                    BigEndian = bigEndian
+                }
+            ]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], bigEndian);
+
+        var placement = Assert.Single(scanResult.RefrRecords).BendableSpline;
+        Assert.NotNull(placement);
+        Assert.Equal(24.5f, placement!.Slack);
+        Assert.Equal(1.5f, placement.Thickness);
+        Assert.Equal(new System.Numerics.Vector3(128f, 16f, 32f), placement.HalfExtents);
+        Assert.Equal((byte)2, placement.WindDetachedEndRaw);
+        Assert.True(placement.WindDetachedEnd is true);
+        Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, placement.TrailingData.ToArray());
+    }
+
+    [Fact]
+    public void ExtractRefrRecordsFromParsed_AcceptsRequiredXbsdPrefixWithoutOptionalWindByte()
+    {
+        const uint refrFormId = 0x00150520;
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "REFR", FormId = refrFormId },
+            Subrecords =
+            [
+                new ParsedSubrecord
+                {
+                    Signature = "XBSD",
+                    Data = BuildBendableSplinePlacement(false, includeWindAndTrailingData: false)
+                }
+            ]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
+
+        var placement = Assert.Single(scanResult.RefrRecords).BendableSpline;
+        Assert.NotNull(placement);
+        Assert.Null(placement!.WindDetachedEndRaw);
+        Assert.Null(placement.WindDetachedEnd);
+        Assert.Empty(placement.TrailingData);
+    }
+
+    [Fact]
+    public void ExtractRefrRecordsFromParsed_IgnoresTruncatedXbsd()
+    {
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "REFR", FormId = 0x00150530 },
+            Subrecords = [new ParsedSubrecord { Signature = "XBSD", Data = new byte[19] }]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
+
+        Assert.Null(Assert.Single(scanResult.RefrRecords).BendableSpline);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WorldExtractor_ReadsBendableSplineParameters_InBothEndiannesses(bool bigEndian)
+    {
+        const uint refrFormId = 0x00150540;
+        const uint baseFormId = 0x00106F19;
+        var recordBytes = EsmTestRecordBuilder.BuildRecordBytes(
+            refrFormId,
+            "REFR",
+            bigEndian,
+            ("NAME", BuildUInt32(baseFormId, bigEndian)),
+            ("XBSD", BuildBendableSplinePlacement(bigEndian, includeWindAndTrailingData: true)));
+        var scanResult = EsmTestRecordBuilder.MakeScanResult(
+        [
+            new DetectedMainRecord(
+                "REFR", (uint)(recordBytes.Length - 24), 0, refrFormId, 0, bigEndian)
+        ]);
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        EsmWorldExtractor.ExtractRefrRecords(accessor, recordBytes.Length, scanResult);
+
+        var refr = Assert.Single(scanResult.RefrRecords);
+        Assert.Equal(baseFormId, refr.BaseFormId);
+        Assert.NotNull(refr.BendableSpline);
+        Assert.Equal(24.5f, refr.BendableSpline!.Slack);
+        Assert.Equal(1.5f, refr.BendableSpline.Thickness);
+        Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, refr.BendableSpline.TrailingData.ToArray());
+    }
+
+    [Fact]
+    public void DescriptorScanner_ReadsBendableSplineParametersFromCompletePlugin()
+    {
+        const uint refrFormId = 0x00150550;
+        const uint baseFormId = 0x00106F19;
+        var refrBytes = EsmTestRecordBuilder.BuildRecordBytes(
+            refrFormId,
+            "REFR",
+            false,
+            ("NAME", BuildUInt32(baseFormId, false)),
+            ("XBSD", BuildBendableSplinePlacement(false, includeWindAndTrailingData: true)));
+        var fileData = new EsmTestFileBuilder()
+            .AddTopLevelGrup("REFR", refrBytes)
+            .Build();
+
+        var scanResult = EsmDescriptorScanner.Scan(fileData).ScanResult;
+
+        var refr = Assert.Single(scanResult.RefrRecords);
+        Assert.Equal(baseFormId, refr.BaseFormId);
+        Assert.NotNull(refr.BendableSpline);
+        Assert.Equal(24.5f, refr.BendableSpline!.Slack);
+        Assert.Equal(1.5f, refr.BendableSpline.Thickness);
+        Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, refr.BendableSpline.TrailingData.ToArray());
+    }
+
     private static ParsedSubrecord MakeFormIdSubrecord(string signature, uint formId, bool bigEndian = false)
     {
-        Span<byte> data = stackalloc byte[4];
-        if (bigEndian)
-        {
-            BinaryPrimitives.WriteUInt32BigEndian(data, formId);
-        }
-        else
-        {
-            BinaryPrimitives.WriteUInt32LittleEndian(data, formId);
-        }
-
         return new ParsedSubrecord
         {
             Signature = signature,
-            Data = data.ToArray(),
+            Data = BuildUInt32(formId, bigEndian),
             BigEndian = bigEndian
         };
+    }
+
+    private static byte[] BuildUInt32(uint value, bool bigEndian)
+    {
+        var data = new byte[4];
+        if (bigEndian)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(data, value);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(data, value);
+        }
+
+        return data;
+    }
+
+    private static byte[] BuildBendableSplinePlacement(
+        bool bigEndian,
+        bool includeWindAndTrailingData)
+    {
+        var data = new byte[includeWindAndTrailingData ? 24 : 20];
+        WriteFloat(data, 0, 24.5f, bigEndian);
+        WriteFloat(data, 4, 1.5f, bigEndian);
+        WriteFloat(data, 8, 128f, bigEndian);
+        WriteFloat(data, 12, 16f, bigEndian);
+        WriteFloat(data, 16, 32f, bigEndian);
+        if (includeWindAndTrailingData)
+        {
+            data[20] = 2;
+            data[21] = 0xAA;
+            data[22] = 0xBB;
+            data[23] = 0xCC;
+        }
+
+        return data;
+    }
+
+    private static void WriteFloat(byte[] data, int offset, float value, bool bigEndian)
+    {
+        if (bigEndian)
+        {
+            BinaryPrimitives.WriteSingleBigEndian(data.AsSpan(offset, 4), value);
+        }
+        else
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(offset, 4), value);
+        }
     }
 
     private static ParsedSubrecord MakeFloatSubrecord(

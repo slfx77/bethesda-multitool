@@ -149,7 +149,10 @@ internal static class ShowHelpers
             var header = hashes.IsComplete
                 ? $"({hashes.DeclaredCount})"
                 : $"({hashes.CapturedCount} of {hashes.DeclaredCount} captured)";
-            var rendered = hashes.Slots.Select(slot => slot ?? "[grey]--[/]");
+            // Captured slots are escaped: they are hex today, but this line renders inside Spectre
+            // markup, and the sibling path below escapes — an unescaped '[' here would throw at
+            // display time.
+            var rendered = hashes.Slots.Select(slot => slot is null ? "[grey]--[/]" : Markup.Escape(slot));
 
             lines.Add($"[bold]Texture Hashes[/] {header}: [grey]{string.Join(" ", rendered)}[/]");
         }

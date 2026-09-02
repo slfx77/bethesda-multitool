@@ -53,6 +53,13 @@ internal static class SemanticFileLoader
         options ??= new SemanticFileLoadOptions();
 
         var fileType = ResolveSemanticFileType(filePath, options.FileType);
+        if (fileType == AnalysisFileType.ClassicGameData)
+        {
+            // A classic source is an install, not a record stream — no scan result, no memory map
+            // of a single plugin. The classic analyzer owns the whole path.
+            return await Formats.Classic.ClassicGameAnalyzer.LoadAsync(filePath, cancellationToken);
+        }
+
         var analysisResult = await AnalyzeOnlyAsync(filePath, options, cancellationToken);
         return LoadFromAnalysisResult(filePath, analysisResult, fileType, options);
     }
@@ -142,6 +149,13 @@ internal static class SemanticFileLoader
     {
         options ??= new SemanticFileLoadOptions();
         fileType = ResolveSemanticFileType(filePath, fileType);
+        if (fileType == AnalysisFileType.ClassicGameData)
+        {
+            throw new InvalidOperationException(
+                "Classic game sources have no ESM scan result — load them via SemanticFileLoader.LoadAsync, " +
+                "which routes to ClassicGameAnalyzer.");
+        }
+
         if (analysisResult.EsmRecords == null)
         {
             throw new InvalidOperationException(
@@ -249,6 +263,9 @@ internal static class SemanticFileLoader
                 options.IncludeMetadata,
                 options.VerboseMinidumpAnalysis,
                 cancellationToken),
+            AnalysisFileType.ClassicGameData => throw new NotSupportedException(
+                "Classic game sources have no analyze-only phase — load them via SemanticFileLoader.LoadAsync, " +
+                "which routes to ClassicGameAnalyzer."),
             _ => throw new InvalidOperationException($"Unsupported semantic file type: {fileType}")
         };
 

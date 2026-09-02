@@ -241,9 +241,37 @@ internal static class EditorIdLookupTables
         // the build-independent invariant: a LAND record has no EditorID, so any FormType observed
         // carrying one in THIS dump is excluded. That leaves a handful of candidates (3 on
         // Fallout_Debug.xex2), not the whole table.
-        var landTypesWithEditorIds = landFormType == 0xFF
-            ? new HashSet<byte>(scanResult.RuntimeEditorIds.Select(entry => entry.FormType))
-            : [];
+        //
+        // Exclusion requires TWO named entries, not one: the editor-ID walk's string reads are
+        // fallible on damaged chains, and a single false-positive string attributed to the true
+        // LAND byte would silently remove it from candidacy (the dump then reports "no runtime
+        // terrain" with nothing to see). A wrongly-admitted type costs only sweep time — the mesh
+        // gate yields 0 for every non-LAND type — so the failure modes are asymmetric.
+        var landTypesWithEditorIds = new HashSet<byte>();
+        if (landFormType == 0xFF)
+        {
+            var namedCountsByType = new Dictionary<byte, int>();
+            foreach (var entry in scanResult.RuntimeEditorIds)
+            {
+                namedCountsByType.TryGetValue(entry.FormType, out var count);
+                namedCountsByType[entry.FormType] = count + 1;
+            }
+
+            foreach (var (formType, count) in namedCountsByType)
+            {
+                if (count >= 2)
+                {
+                    landTypesWithEditorIds.Add(formType);
+                }
+                else
+                {
+                    log.Debug(
+                        "EditorIDs: pAllForms: FormType 0x{0:X2} has only {1} named entry — kept as a LAND " +
+                        "candidate despite it (single string reads are fallible; the mesh gate arbitrates)",
+                        formType, count);
+                }
+            }
+        }
 
         foreach (var (formId, formType, fileOffset, va) in allEntries)
         {
@@ -264,8 +292,16 @@ internal static class EditorIdLookupTables
                 });
                 landCount++;
             }
-            else if (landFormType == 0xFF && !landTypesWithEditorIds.Contains(formType))
+            else if (landFormType == 0xFF
+                     && !landTypesWithEditorIds.Contains(formType)
+                     && (formType < refrBaseFormType || formType > refrBaseFormType + 2))
             {
+                // The REFR/ACHR/ACRE range is excluded explicitly, not just via the editor-ID
+                // filter: refr detection (arm 3 below) is independent of LAND detection and already
+                // trusted. Without this, a low-confidence-LAND dump whose capture happens to hold
+                // zero NAMED refs of one placed type (small interior-only captures can plausibly
+                // have no named ACRE) would divert that type's entire population into the LAND
+                // candidate sweep and silently lose its runtime placed-ref enrichment.
                 scanResult.RuntimeLandCandidateEntries.Add(new RuntimeEditorIdEntry
                 {
                     EditorId = $"__LAND_{formId:X8}",
@@ -319,9 +355,19 @@ internal static class EditorIdLookupTables
         List<(uint FormId, byte FormType, long FileOffset, long Va)> allEntries)
     {
         var chainDepth = 0;
+        // A corrupt page whose next-pointer loops back into the chain would otherwise re-append the
+        // same entries until the depth cap — dictionary collapse keeps downstream results correct,
+        // but allEntries (and every sweep over it) inflates ~1000x per cyclic node.
+        var visited = new HashSet<uint>();
 
         while (itemVa != 0 && chainDepth < 1000)
         {
+            if (!visited.Add(itemVa))
+            {
+                chainErrors++;
+                break;
+            }
+
             chainDepth++;
 
             var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);

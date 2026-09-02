@@ -513,7 +513,16 @@ internal static class SubrecordEffectSchemas
             Description = "Addon Node Index"
         };
 
-        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "ADDN", 4)] = SubrecordSchema.Simple4Byte("Addon Flags");
+        // DNAM is stored byte-identically in the Xbox 360 and PC masters (measured 2026-08-31:
+        // MPSFlamerFlame01 carries 00 00 01 00 in BOTH, while sibling DATA is genuinely
+        // byte-swapped) — the INDX-style already-little-endian class. The old Simple4Byte here
+        // reversed it to 00 01 00 00, moving the Master Particle System Cap into the wrong half.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "ADDN", 4)] = new SubrecordSchema(
+            F.UInt16LittleEndian("Master Particle System Cap"),
+            F.UInt16LittleEndian("Unknown"))
+        {
+            Description = "Addon Flags"
+        };
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "ADDN", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
     }
 }

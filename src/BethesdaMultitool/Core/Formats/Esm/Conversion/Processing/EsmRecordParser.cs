@@ -13,9 +13,13 @@ internal static class EsmRecordParser
     /// <summary>
     ///     Scans all records in an ESM file using flat GRUP scanning.
     /// </summary>
-    public static List<AnalyzerRecordInfo> ScanAllRecords(byte[] data, bool bigEndian)
+    public static List<AnalyzerRecordInfo> ScanAllRecords(
+        byte[] data,
+        bool bigEndian,
+        PluginFormat? pluginFormat = null)
     {
         var records = new List<AnalyzerRecordInfo>();
+        var format = pluginFormat ?? PluginFormat.Detect(data);
         var header = EsmParser.ParseFileHeader(data);
 
         if (header == null)
@@ -24,16 +28,16 @@ internal static class EsmRecordParser
         }
 
         // Skip TES4 header
-        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
+        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian, format);
         if (tes4Header == null)
         {
             return records;
         }
 
-        var startOffset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
+        var startOffset = format.RecordHeaderSize + (int)tes4Header.DataSize;
 
         // Use flat GRUP scanning for better Xbox 360 support
-        ScanAllGrupsFlat(data, bigEndian, startOffset, data.Length, records);
+        ScanAllGrupsFlat(data, bigEndian, startOffset, data.Length, records, format);
 
         return records;
     }
@@ -44,9 +48,17 @@ internal static class EsmRecordParser
     ///     TOFT data blocks are scanned recursively for nested records.
     ///     Orphaned data between regions triggers resync to the next GRUP signature.
     /// </summary>
-    public static void ScanAllGrupsFlat(byte[] data, bool bigEndian, int startOffset, int endOffset,
-        List<AnalyzerRecordInfo> records)
+    public static void ScanAllGrupsFlat(
+        byte[] data,
+        bool bigEndian,
+        int startOffset,
+        int endOffset,
+        List<AnalyzerRecordInfo> records,
+        PluginFormat? pluginFormat = null)
     {
+        var format = pluginFormat ?? PluginFormat.Detect(data);
+        var minimumHeaderSize = Math.Min(format.RecordHeaderSize, format.GroupHeaderSize);
+
         // Clamp endOffset to array bounds to prevent out-of-range access
         endOffset = Math.Min(endOffset, data.Length);
 
@@ -54,14 +66,14 @@ internal static class EsmRecordParser
         var maxIterations = 2_000_000;
         var iterations = 0;
 
-        while (offset >= 0 && offset + EsmParser.MainRecordHeaderSize <= endOffset && iterations++ < maxIterations)
+        while (offset >= 0 && offset + minimumHeaderSize <= endOffset && iterations++ < maxIterations)
         {
-            var header = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
+            var header = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian, format);
             if (header == null)
             {
                 // Resync: scan forward for next GRUP signature to skip orphaned data
                 // Xbox 360 ESMs have gaps between the TOFT region and flat cell GRUPs
-                if (!TryResyncToNextGrup(data, bigEndian, ref offset, endOffset))
+                if (!TryResyncToNextGrup(data, bigEndian, ref offset, endOffset, format))
                 {
                     break;
                 }
@@ -75,10 +87,10 @@ internal static class EsmRecordParser
                 var grupEnd = offset + (int)header.DataSize;
 
                 // Validate: grupEnd must advance past header and not exceed bounds
-                var innerStart = offset + EsmParser.MainRecordHeaderSize;
+                var innerStart = offset + format.GroupHeaderSize;
                 if (grupEnd > innerStart && grupEnd <= endOffset)
                 {
-                    ScanAllGrupsFlat(data, bigEndian, innerStart, grupEnd, records);
+                    ScanAllGrupsFlat(data, bigEndian, innerStart, grupEnd, records, format);
                 }
 
                 offset = Math.Max(grupEnd, innerStart);
@@ -88,11 +100,11 @@ internal static class EsmRecordParser
                 // TOFT streaming cache: Xbox 360 stores split INFO records inside data blocks
                 if (header.DataSize > 0)
                 {
-                    var toftDataStart = offset + EsmParser.MainRecordHeaderSize;
+                    var toftDataStart = offset + format.RecordHeaderSize;
                     var toftDataEnd = toftDataStart + (int)header.DataSize;
                     if (toftDataEnd > toftDataStart && toftDataEnd <= endOffset)
                     {
-                        ScanAllGrupsFlat(data, bigEndian, toftDataStart, toftDataEnd, records);
+                        ScanAllGrupsFlat(data, bigEndian, toftDataStart, toftDataEnd, records, format);
                     }
 
                     offset = Math.Max(toftDataEnd, toftDataStart);
@@ -100,13 +112,13 @@ internal static class EsmRecordParser
                 else
                 {
                     // Zero-size TOFT sentinel inside Cell Children GRUPs
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
             }
             else
             {
                 // Regular record
-                var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)header.DataSize;
+                var recordEnd = offset + format.RecordHeaderSize + (int)header.DataSize;
 
                 // Validate: recordEnd must advance and not exceed bounds
                 if (recordEnd > offset && recordEnd <= endOffset)
@@ -118,7 +130,8 @@ internal static class EsmRecordParser
                         Flags = header.Flags,
                         DataSize = header.DataSize,
                         Offset = (uint)offset,
-                        TotalSize = (uint)(recordEnd - offset)
+                        TotalSize = (uint)(recordEnd - offset),
+                        RecordHeaderSize = format.RecordHeaderSize
                     });
 
                     offset = recordEnd;
@@ -126,7 +139,7 @@ internal static class EsmRecordParser
                 else
                 {
                     // Bad record size — skip header and try to continue
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
             }
         }
@@ -136,7 +149,12 @@ internal static class EsmRecordParser
     ///     Scans forward from the current offset to find the next GRUP signature.
     ///     Xbox 360 ESMs have orphaned data between the TOFT region and flat cell GRUPs.
     /// </summary>
-    private static bool TryResyncToNextGrup(byte[] data, bool bigEndian, ref int offset, int endOffset)
+    private static bool TryResyncToNextGrup(
+        byte[] data,
+        bool bigEndian,
+        ref int offset,
+        int endOffset,
+        PluginFormat format)
     {
         // GRUP signature bytes: big-endian stores as "PURG", little-endian as "GRUP"
         byte b0, b1, b2, b3;
@@ -155,7 +173,7 @@ internal static class EsmRecordParser
             b3 = (byte)'P';
         }
 
-        var scanLimit = Math.Min(offset + 4096, endOffset - 24);
+        var scanLimit = Math.Min(offset + 4096, endOffset - format.GroupHeaderSize);
         for (var scan = offset + 1; scan <= scanLimit; scan++)
         {
             if (data[scan] != b0 || data[scan + 1] != b1 ||
@@ -164,9 +182,11 @@ internal static class EsmRecordParser
                 continue;
             }
 
-            // Validate: parse as GRUP header, GroupSize must be >= 24 and fit in file
-            var candidate = EsmParser.ParseRecordHeader(data.AsSpan(scan), bigEndian);
-            if (candidate != null && candidate.DataSize >= 24 && scan + candidate.DataSize <= data.Length)
+            // Validate the candidate using the active game's GRUP framing.
+            var candidate = EsmParser.ParseGroupHeader(data.AsSpan(scan), bigEndian, format);
+            if (candidate != null &&
+                candidate.GroupSize >= format.GroupHeaderSize &&
+                scan + candidate.GroupSize <= endOffset)
             {
                 offset = scan;
                 return true;
@@ -179,9 +199,14 @@ internal static class EsmRecordParser
     /// <summary>
     ///     Scans for a specific record type by searching for its signature pattern.
     /// </summary>
-    public static List<AnalyzerRecordInfo> ScanForRecordType(byte[] data, bool bigEndian, string recordType)
+    public static List<AnalyzerRecordInfo> ScanForRecordType(
+        byte[] data,
+        bool bigEndian,
+        string recordType,
+        PluginFormat? pluginFormat = null)
     {
         var records = new List<AnalyzerRecordInfo>();
+        var format = pluginFormat ?? PluginFormat.Detect(data);
 
         if (recordType.Length != 4)
         {
@@ -197,7 +222,7 @@ internal static class EsmRecordParser
         var offset = 0;
         var maxRecords = 100_000;
 
-        while (offset + EsmParser.MainRecordHeaderSize <= data.Length && records.Count < maxRecords)
+        while (offset + format.RecordHeaderSize <= data.Length && records.Count < maxRecords)
         {
             // Search for signature
             var found = -1;
@@ -217,12 +242,12 @@ internal static class EsmRecordParser
             }
 
             // Try to parse as record header
-            if (found + EsmParser.MainRecordHeaderSize <= data.Length)
+            if (found + format.RecordHeaderSize <= data.Length)
             {
-                var header = EsmParser.ParseRecordHeader(data.AsSpan(found), bigEndian);
+                var header = EsmParser.ParseRecordHeader(data.AsSpan(found), bigEndian, format);
                 if (header != null && header.Signature == recordType)
                 {
-                    var recordEnd = found + EsmParser.MainRecordHeaderSize + (int)header.DataSize;
+                    var recordEnd = found + format.RecordHeaderSize + (int)header.DataSize;
 
                     // Validate size is reasonable
                     if (header.DataSize > 0 && header.DataSize < 100_000_000 && recordEnd <= data.Length)
@@ -234,7 +259,8 @@ internal static class EsmRecordParser
                             Flags = header.Flags,
                             DataSize = header.DataSize,
                             Offset = (uint)found,
-                            TotalSize = (uint)(recordEnd - found)
+                            TotalSize = (uint)(recordEnd - found),
+                            RecordHeaderSize = format.RecordHeaderSize
                         });
 
                         // Skip past this record

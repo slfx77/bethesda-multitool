@@ -615,13 +615,21 @@ internal sealed class RuntimeGenericReader(
         // C++ pointer assignment is covariant: TESObjectREFR* pShooter holds a Character (ACHR) or
         // Creature (ACRE) in practice and a bare REFR almost never, so insisting on the declared
         // class alone would reject the correct answer on 15 of the 248 typed fields.
-        if (field.TypeDetail is { Length: > 0 } target &&
-            PdbStructLayouts.TryGetAssignableFormTypes(target, out var acceptableFormTypes))
+        if (field.TypeDetail is { Length: > 0 } target)
         {
-            // Null rather than the raw word: a pointer declared as a record class that does not
-            // resolve to one is a misread, and reporting the word would make it indistinguishable
-            // from a recovered reference.
-            return _context.FollowPointerToFormId(data, effectiveOffset, acceptableFormTypes);
+            if (PdbStructLayouts.TryGetAssignableFormTypes(target, out var acceptableFormTypes))
+            {
+                // Null rather than the raw word: a pointer declared as a record class that does not
+                // resolve to one is a misread, and reporting the word would make it
+                // indistinguishable from a recovered reference.
+                return _context.FollowPointerToFormId(data, effectiveOffset, acceptableFormTypes);
+            }
+
+            // The layout names a target class and it is NOT a record class — an aux struct, a
+            // template container, a plain allocation. The weak untyped follow below would happily
+            // read that allocation's bytes and hand them back as a "FormID" (the " ski" failure
+            // shape); a declared non-form pointer gets the raw VA as a diagnostic instead.
+            return _context.IsValidPointer(va) ? va : null;
         }
 
         // Try to follow as a TESForm pointer and get the target's FormID

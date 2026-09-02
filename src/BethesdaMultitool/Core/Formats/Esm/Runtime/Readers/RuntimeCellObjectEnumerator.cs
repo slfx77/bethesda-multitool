@@ -160,11 +160,24 @@ internal sealed class RuntimeCellObjectEnumerator
             flags,
             ReadReportableHeight(buffer, waterHeightOffset),
             view.FormIdPointer("pWorldSpace", "TESObjectCELL", 0x41),
+            // DELIBERATELY ungated, second attempt (2026-09-01): gating this on the per-dump
+            // empirical LAND byte (`_context.ResolvedLandFormType`) is correct in principle — the
+            // byte drifts across builds, so neither a literal nor the layout DB may stand in —
+            // but measured on xex21 the gate's rejections ripple into the WRLD/CELL shift probe's
+            // scores (margin collapsed 11 → 0) and shifted downstream cell classification until a
+            // real gridless exterior cell reached the planner's hard guard. The follow's blast
+            // radius while ungated is only the runtime cells CSV and probe scoring, so the honest
+            // trade is to stay ungated until the probe/classification stop consuming this link.
             view.FormIdPointer("pCellLand", "TESObjectCELL"),
             referenceListOffset.HasValue
                 ? ReadCellReferenceFormIds(buffer, referenceListOffset.Value)
                 : [],
-            view.FormIdPointer("pLightingTemplate", "TESObjectCELL", 0x67),
+            // Gate byte from the layout DB, not a literal: this gate shipped hardcoded as 0x67
+            // (TESObjectIMOD's byte) and therefore NEVER matched — measured 2026-09-01 on xex44,
+            // all 40 sampled interior cells' pLightingTemplate targets carry 0x65
+            // (BGSLightingTemplate, exactly what the DB says), so LightingTemplateFormId was
+            // silently null on every cell since the gate was written.
+            view.FormIdPointer("pLightingTemplate", "TESObjectCELL", LightingTemplateFormType),
             lightingInheritanceFlags,
             cellExtras.EncounterZoneFormId,
             cellExtras.MusicTypeFormId,
@@ -293,8 +306,11 @@ internal sealed class RuntimeCellObjectEnumerator
                 }
                 case ExtraCellMusicTypeCode:
                 {
+                    // 0x66 per the layout DB — the old hardcoded 0x6B (TESRecipeCategory) never
+                    // matched a real BGSMusicType (measured 2026-09-01: all sampled targets carry
+                    // 0x66), so this field was silently null everywhere.
                     var musicVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
-                    musicTypeFormId ??= _context.FollowPointerVaToFormId(musicVa, 0x6B);
+                    musicTypeFormId ??= _context.FollowPointerVaToFormId(musicVa, MusicTypeFormType);
                     break;
                 }
                 case ExtraCellAcousticSpaceCode:
@@ -309,8 +325,10 @@ internal sealed class RuntimeCellObjectEnumerator
                 }
                 case ExtraCellImageSpaceCode:
                 {
+                    // 0x53 per the layout DB — the old hardcoded 0x56 (BGSPerk) never matched a
+                    // real TESImageSpace (measured 2026-09-01: 19/19 sampled targets carry 0x53).
                     var imageVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
-                    imageSpaceFormId ??= _context.FollowPointerVaToFormId(imageVa, 0x56);
+                    imageSpaceFormId ??= _context.FollowPointerVaToFormId(imageVa, ImageSpaceFormType);
                     break;
                 }
             }
@@ -382,6 +400,22 @@ internal sealed class RuntimeCellObjectEnumerator
     private const int CellExtraNextOffset = 8;
     private const int CellExtraPayloadOffset = 12;
     private const int CellExtraNodeReadSize = 16;
+
+    // Pointer-gate bytes resolved from the layout DB rather than transcribed by hand — three of
+    // the original literals (0x67/0x6B/0x56) were wrong for EVERY corpus dump and their fields
+    // never resolved. The DB is the shipped build's PDB, so a future enum-drifted build could
+    // still disagree (the LAND 0x42-vs-0x44 lesson); these classes measured drift-free on the
+    // Release_Beta corpus (2026-09-01).
+    private static readonly byte LightingTemplateFormType = ResolveFormType("BGSLightingTemplate", 0x65);
+    private static readonly byte MusicTypeFormType = ResolveFormType("BGSMusicType", 0x66);
+    private static readonly byte ImageSpaceFormType = ResolveFormType("TESImageSpace", 0x53);
+
+    private static byte ResolveFormType(string className, byte measuredFallback)
+    {
+        return PdbStructLayouts.TryGetFormTypeByClassName(className, out var formType)
+            ? formType
+            : measuredFallback;
+    }
     private const int MaxCellExtraListNodes = 64;
 
     private const byte ExtraCellMusicTypeCode = 0x07;

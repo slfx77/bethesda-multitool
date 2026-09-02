@@ -89,8 +89,14 @@ internal static class RuntimeDataEnricher
         List<RuntimeEditorIdEntry> best = [];
         var bestMeshCount = 0;
         byte bestFormType = 0;
+        var tiedWith = new List<byte>();
 
-        foreach (var group in candidates.GroupBy(entry => entry.FormType))
+        // Deterministic tie-break: on equal mesh yield the LOWER FormType byte wins, and the tie is
+        // logged. Without an explicit rule the winner fell out of GroupBy enumeration order — i.e.
+        // hash-table memory layout — and the log then presented it as evidence-decided. Measured
+        // corpus separation is 100% vs 0%, so a real tie means something unusual is going on and
+        // deserves eyes.
+        foreach (var group in candidates.GroupBy(entry => entry.FormType).OrderBy(group => group.Key))
         {
             var entries = group.ToList();
             var data = context.RuntimeReader.ReadAllRuntimeLandData(entries, false);
@@ -100,6 +106,11 @@ internal static class RuntimeDataEnricher
                 bestMeshCount = meshCount;
                 bestFormType = group.Key;
                 best = entries;
+                tiedWith.Clear();
+            }
+            else if (meshCount > 0 && meshCount == bestMeshCount)
+            {
+                tiedWith.Add(group.Key);
             }
         }
 
@@ -111,9 +122,23 @@ internal static class RuntimeDataEnricher
             return [];
         }
 
+        if (tiedWith.Count > 0)
+        {
+            Logger.Instance.Warn(
+                $"[Semantic Parse] LAND FormType mesh yield TIED at {bestMeshCount}: kept 0x{bestFormType:X2}, " +
+                $"rejected {string.Join(", ", tiedWith.Select(formType => $"0x{formType:X2}"))} — " +
+                "the corpus norm is one type at 100% and the rest at 0%, so verify this dump manually.");
+        }
+
         Logger.Instance.Info(
             $"[Semantic Parse] Runtime LAND FormType resolved to 0x{bestFormType:X2} by mesh yield " +
             $"({bestMeshCount} of {best.Count} entries produced a terrain mesh).");
+
+        // Persist the resolution: everything downstream that asks "which byte is LAND on this dump"
+        // reads RuntimeLandFormEntries (gap scanner, formtype census, shift probes), and before this
+        // a mesh-yield-resolved dump left it empty forever — consumers saw zero LAND while the
+        // enricher quietly used the list it never shared.
+        context.ScanResult.RuntimeLandFormEntries.AddRange(best);
         return best;
     }
 

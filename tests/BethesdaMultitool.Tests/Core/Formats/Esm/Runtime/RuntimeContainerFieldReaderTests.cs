@@ -175,6 +175,28 @@ public sealed class RuntimeContainerFieldReaderTests
     }
 
     [Fact]
+    public void ModelSwapArray_ResolvesEachElementsPathPositionally()
+    {
+        // TESModelTextureSwap is 32 bytes with its cModel BSStringT 4 in (exported aux layout).
+        // CSNO's modelArrayList is 10 of them inline; slot index IS the meaning (chip
+        // denominations, slot machine, blackjack, roulette), so a hole must keep its place.
+        var heap = new Heap();
+        var chipPath = heap.AddBsStringT(@"clutter\casino\chip001.nif");
+        var tablePath = heap.AddBsStringT(@"clutter\casino\blackjacktable.nif");
+
+        var struc = new byte[96];
+        chipPath.CopyTo(struc.AsSpan(4));
+        tablePath.CopyTo(struc.AsSpan(68));
+
+        var value = Read(heap, struc,
+            Field("modelArrayList", 0, 96, "array", "TESCasino", "TESModelTextureSwap[]"));
+
+        Assert.Equal(
+            [@"clutter\casino\chip001.nif", string.Empty, @"clutter\casino\blackjacktable.nif"],
+            Assert.IsAssignableFrom<IReadOnlyList<string>>(value));
+    }
+
+    [Fact]
     public void AuxiliaryStructLayouts_DescribeTheNestedPayloadsTheWalkersDependOn()
     {
         // The layout database used to export only the 116 FormType classes, which left every
@@ -196,6 +218,10 @@ public sealed class RuntimeContainerFieldReaderTests
         // TESTexture's 12-byte / +4 shape was previously a hard-coded constant justified by the
         // 28 types carrying it as a base class. The export now states it outright.
         AssertLayout("TESTexture", 12, ("TextureName", 4));
+
+        // The model-swap array walker has NO hard-coded fallback — it fails closed without this
+        // exported layout — so a regeneration that moves cModel must fail here, loudly.
+        AssertLayout("TESModelTextureSwap", 32, ("cModel", 4));
     }
 
     [Fact]

@@ -26,6 +26,15 @@ internal sealed class RuntimeMemoryContext(
     public MinidumpInfo MinidumpInfo { get; } = minidumpInfo;
 
     /// <summary>
+    ///     This dump's empirically-detected LAND FormType byte, when the scan-time FormID
+    ///     correlation resolved it (null on low-confidence dumps, where mesh-yield resolution
+    ///     happens later than any consumer of this property). LAND's byte DRIFTS across dev
+    ///     builds (0x42 on Release_Beta vs the PDB's 0x44), so a pointer gate for a LAND target
+    ///     must come from here — never from the layout DB and never hardcoded.
+    /// </summary>
+    public byte? ResolvedLandFormType { get; set; }
+
+    /// <summary>
     ///     FormID → enumerated runtime entry (editor id, form type, base offset). Populated
     ///     by
     ///     <see

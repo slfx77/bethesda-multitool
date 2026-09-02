@@ -146,6 +146,9 @@ public record ExtractedRefrRecord
     /// </summary>
     public IReadOnlyList<uint> LinkedRefChildrenFormIds { get; init; } = [];
 
+    /// <summary>XBSD - Fallout 4-family procedural bendable-spline parameters.</summary>
+    public BendableSplinePlacementData? BendableSpline { get; init; }
+
     /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
     public PlacedReferenceStructuralData? StructuralData { get; init; }
 }

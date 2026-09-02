@@ -88,6 +88,17 @@ internal static class CoordBasedCellPairingPass
                 continue;
             }
 
+            // Never fold a virtual orphan tile onto a master cell. The fold re-keys the tile under
+            // the MASTER's FormID while the model stays IsVirtual, so the reparenting pass later
+            // classifies an authored master cell as an "orphan bucket" and its drop diagnostic
+            // names a real retail FormID — on xex44, 579 of 607 dropped buckets were this shape,
+            // burying the coordinate-resolved rescue class under the worst-case label. Left
+            // unfolded, the tile keeps its synthetic key and dies honestly labelled.
+            if (entry.DmpModel.IsVirtual)
+            {
+                continue;
+            }
+
             if (!VirtualCellCanonicalizer.TryGetCellCoordinateKey(entry.DmpModel, out var key))
             {
                 continue;

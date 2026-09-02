@@ -170,7 +170,8 @@ public static class EsmRecordTypes
             ["PNDT"] = new("Planet Data", RecordCategory.World),
             ["STDT"] = new("Star Data", RecordCategory.World),
             ["SUNP"] = new("Sun Preset", RecordCategory.World),
-            ["CUR3"] = new("3D Curve", RecordCategory.World)
+            ["CUR3"] = new("3D Curve", RecordCategory.World),
+            ["BNDS"] = new("Bendable Spline", RecordCategory.Object)
         };
 
     /// <summary>
@@ -256,6 +257,7 @@ public static class EsmRecordTypes
             ["XLOC"] = new("Lock Data", SubrecordDataType.Struct),
             ["XESP"] = new("Enable Parent", SubrecordDataType.Struct, 8),
             ["XTEL"] = new("Teleport Destination", SubrecordDataType.Struct),
+            ["XBSD"] = new("Bendable Spline Parameters", SubrecordDataType.Struct),
             ["XMRK"] = new("Map Marker Data", SubrecordDataType.Struct),
             ["XCNT"] = new("Count", SubrecordDataType.Int32),
             ["XAPD"] = new("Activate Parents Flags", SubrecordDataType.UInt8),

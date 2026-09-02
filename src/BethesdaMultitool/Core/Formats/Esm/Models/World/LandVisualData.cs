@@ -105,6 +105,23 @@ public record LandVisualData
     /// <summary>Provenance of <see cref="TextureLayers" />.</summary>
     public VisualDataSource TextureLayersSource { get; init; } = VisualDataSource.None;
 
+    // Effective per-field provenance: the field's own stamp, else the aggregate. Some construction
+    // sites (BTD injection, Morrowind parse) set only the aggregate Source; the merges used to
+    // express this fallback as `x?.FieldSource ?? x?.Source`, but the per-field sources are
+    // non-nullable so that middle term could never engage and aggregate-only instances merged as
+    // None — dropped from AggregateSource and exported as None in diagnostics.
+    private VisualDataSource EffectiveVertexColorsSource =>
+        VertexColorsSource != VisualDataSource.None ? VertexColorsSource : Source;
+
+    private VisualDataSource EffectiveVertexNormalsSource =>
+        VertexNormalsSource != VisualDataSource.None ? VertexNormalsSource : Source;
+
+    private VisualDataSource EffectiveTextureIndicesSource =>
+        TextureIndicesSource != VisualDataSource.None ? TextureIndicesSource : Source;
+
+    private VisualDataSource EffectiveTextureLayersSource =>
+        TextureLayersSource != VisualDataSource.None ? TextureLayersSource : Source;
+
     public bool HasVertexColors => VertexColors is { Length: > 0 };
 
     public bool HasVertexNormals => VertexNormals is { Length: > 0 };
@@ -133,22 +150,23 @@ public record LandVisualData
         LandVisualData? fallback)
     {
         var (vertexColors, vertexColorsSource) = ChooseValidVnml(
-            (primary?.VertexColors, primary?.VertexColorsSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.VertexColors, fallback?.VertexColorsSource ?? fallback?.Source ?? VisualDataSource.None));
+            (primary?.VertexColors, primary?.EffectiveVertexColorsSource ?? VisualDataSource.None),
+            (fallback?.VertexColors, fallback?.EffectiveVertexColorsSource ?? VisualDataSource.None));
 
         var (vertexNormals, vertexNormalsSource) = ChooseValidVnml(
-            (primary?.VertexNormals, primary?.VertexNormalsSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.VertexNormals, fallback?.VertexNormalsSource ?? fallback?.Source ?? VisualDataSource.None));
+            (primary?.VertexNormals, primary?.EffectiveVertexNormalsSource ?? VisualDataSource.None),
+            (fallback?.VertexNormals, fallback?.EffectiveVertexNormalsSource ?? VisualDataSource.None));
 
         var (textureIndices, textureIndicesSource) = ChooseNonEmptyArray(
-            (primary?.TextureIndices, primary?.TextureIndicesSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.TextureIndices, fallback?.TextureIndicesSource ?? fallback?.Source ?? VisualDataSource.None));
+            (primary?.TextureIndices, primary?.EffectiveTextureIndicesSource ?? VisualDataSource.None),
+            (fallback?.TextureIndices, fallback?.EffectiveTextureIndicesSource ?? VisualDataSource.None));
 
-        var (textureLayers, textureLayersSource) = ChooseNonEmptyLayers(
-            (primary?.TextureLayers, primary?.TextureLayersSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.TextureLayers, fallback?.TextureLayersSource ?? fallback?.Source ?? VisualDataSource.None));
+        var (textureLayers, textureLayersSource, unattachedVtxtCount, unattachedVtxtByteCount) =
+            ChooseNonEmptyLayers((primary, primary?.EffectiveTextureLayersSource ?? VisualDataSource.None),
+                (fallback, fallback?.EffectiveTextureLayersSource ?? VisualDataSource.None));
 
-        if (vertexColors is null && vertexNormals is null && textureIndices is null && textureLayers.Count == 0)
+        if (vertexColors is null && vertexNormals is null && textureIndices is null && textureLayers.Count == 0
+            && primary?.VtexTextureFormIds is null && fallback?.VtexTextureFormIds is null)
         {
             return null;
         }
@@ -159,6 +177,11 @@ public record LandVisualData
             VertexNormals = vertexNormals,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
+            // Morrowind/BTD 16x16 grid: first non-null wins. Without this carry, any merge of a
+            // Tes3/BTD-shaped instance silently blanked the whole texture grid.
+            VtexTextureFormIds = primary?.VtexTextureFormIds ?? fallback?.VtexTextureFormIds,
+            UnattachedVtxtCount = unattachedVtxtCount,
+            UnattachedVtxtByteCount = unattachedVtxtByteCount,
             VertexColorsSource = vertexColorsSource,
             VertexNormalsSource = vertexNormalsSource,
             TextureIndicesSource = textureIndicesSource,
@@ -167,30 +190,35 @@ public record LandVisualData
         };
     }
 
-    /// <summary>Merges visual data for emission, allowing runtime-captured vertex colors to take precedence over parsed ones.</summary>
+    /// <summary>
+    ///     Merges visual data for emission. Runtime-captured vertex colors fill in when the primary's
+    ///     parsed VCLR is absent or invalid and take precedence over the master fallback — the
+    ///     primary's own parsed colors stay authoritative (the file wins any field it has).
+    /// </summary>
     public static LandVisualData? MergeForEmission(
         LandVisualData? primary,
         byte[]? runtimeVertexColors,
         LandVisualData? fallback)
     {
         var (vertexColors, vertexColorsSource) = ChooseValidVnml(
-            (primary?.VertexColors, primary?.VertexColorsSource ?? primary?.Source ?? VisualDataSource.None),
+            (primary?.VertexColors, primary?.EffectiveVertexColorsSource ?? VisualDataSource.None),
             (runtimeVertexColors, VisualDataSource.Runtime),
-            (fallback?.VertexColors, fallback?.VertexColorsSource ?? fallback?.Source ?? VisualDataSource.None));
+            (fallback?.VertexColors, fallback?.EffectiveVertexColorsSource ?? VisualDataSource.None));
 
         var (vertexNormals, vertexNormalsSource) = ChooseValidVnml(
-            (primary?.VertexNormals, primary?.VertexNormalsSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.VertexNormals, fallback?.VertexNormalsSource ?? fallback?.Source ?? VisualDataSource.None));
+            (primary?.VertexNormals, primary?.EffectiveVertexNormalsSource ?? VisualDataSource.None),
+            (fallback?.VertexNormals, fallback?.EffectiveVertexNormalsSource ?? VisualDataSource.None));
 
         var (textureIndices, textureIndicesSource) = ChooseNonEmptyArray(
-            (primary?.TextureIndices, primary?.TextureIndicesSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.TextureIndices, fallback?.TextureIndicesSource ?? fallback?.Source ?? VisualDataSource.None));
+            (primary?.TextureIndices, primary?.EffectiveTextureIndicesSource ?? VisualDataSource.None),
+            (fallback?.TextureIndices, fallback?.EffectiveTextureIndicesSource ?? VisualDataSource.None));
 
-        var (textureLayers, textureLayersSource) = ChooseNonEmptyLayers(
-            (primary?.TextureLayers, primary?.TextureLayersSource ?? primary?.Source ?? VisualDataSource.None),
-            (fallback?.TextureLayers, fallback?.TextureLayersSource ?? fallback?.Source ?? VisualDataSource.None));
+        var (textureLayers, textureLayersSource, unattachedVtxtCount, unattachedVtxtByteCount) =
+            ChooseNonEmptyLayers((primary, primary?.EffectiveTextureLayersSource ?? VisualDataSource.None),
+                (fallback, fallback?.EffectiveTextureLayersSource ?? VisualDataSource.None));
 
-        if (vertexColors is null && vertexNormals is null && textureIndices is null && textureLayers.Count == 0)
+        if (vertexColors is null && vertexNormals is null && textureIndices is null && textureLayers.Count == 0
+            && primary?.VtexTextureFormIds is null && fallback?.VtexTextureFormIds is null)
         {
             return null;
         }
@@ -201,6 +229,11 @@ public record LandVisualData
             VertexNormals = vertexNormals,
             TextureIndices = textureIndices,
             TextureLayers = new List<LandTextureLayer>(textureLayers),
+            // Morrowind/BTD 16x16 grid: first non-null wins. Without this carry, any merge of a
+            // Tes3/BTD-shaped instance silently blanked the whole texture grid.
+            VtexTextureFormIds = primary?.VtexTextureFormIds ?? fallback?.VtexTextureFormIds,
+            UnattachedVtxtCount = unattachedVtxtCount,
+            UnattachedVtxtByteCount = unattachedVtxtByteCount,
             VertexColorsSource = vertexColorsSource,
             VertexNormalsSource = vertexNormalsSource,
             TextureIndicesSource = textureIndicesSource,
@@ -270,26 +303,45 @@ public record LandVisualData
     ///         still used when nothing authored has any — which is the DMP-only browse case.
     ///     </para>
     /// </summary>
-    private static (List<LandTextureLayer> Layers, VisualDataSource Source) ChooseNonEmptyLayers(
-        params (List<LandTextureLayer>? Layers, VisualDataSource Source)[] candidates)
+    private static (List<LandTextureLayer> Layers, VisualDataSource Source, int UnattachedVtxtCount,
+        int UnattachedVtxtByteCount) ChooseNonEmptyLayers(
+            params (LandVisualData? Data, VisualDataSource Source)[] candidates)
     {
+        // Pass 1 is an allowlist of the authored sources, not a Runtime blocklist: an unstamped
+        // (None) or re-merged (Merged) candidate must not slip past the demotion on a technicality.
+        // HasTextureLayers is consulted before the TextureLayers getter so that a lazy (BTD-backed)
+        // candidate with no layers is skipped without decoding its alpha map.
         foreach (var candidate in candidates)
         {
-            if (candidate.Layers is { Count: > 0 } && candidate.Source != VisualDataSource.Runtime)
+            if (candidate.Source is VisualDataSource.Dmp or VisualDataSource.MasterEsm
+                && candidate.Data is { HasTextureLayers: true } data
+                && data.TextureLayers is { Count: > 0 } layers)
             {
-                return (candidate.Layers, candidate.Source);
+                return (layers, candidate.Source, data.UnattachedVtxtCount, data.UnattachedVtxtByteCount);
             }
         }
 
         foreach (var candidate in candidates)
         {
-            if (candidate.Layers is { Count: > 0 })
+            if (candidate.Data is { HasTextureLayers: true } data
+                && data.TextureLayers is { Count: > 0 } layers)
             {
-                return (candidate.Layers, candidate.Source);
+                return (layers, candidate.Source, data.UnattachedVtxtCount, data.UnattachedVtxtByteCount);
             }
         }
 
-        return ([], VisualDataSource.None);
+        // No candidate has layers, but unattached VTXT is a parse diagnostic worth preserving on
+        // the merged record — before this, VtxtCount/VtxtByteCount silently under-reported after
+        // any merge.
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Data is { UnattachedVtxtCount: > 0 } data)
+            {
+                return ([], VisualDataSource.None, data.UnattachedVtxtCount, data.UnattachedVtxtByteCount);
+            }
+        }
+
+        return ([], VisualDataSource.None, 0, 0);
     }
 
     private static VisualDataSource AggregateSource(

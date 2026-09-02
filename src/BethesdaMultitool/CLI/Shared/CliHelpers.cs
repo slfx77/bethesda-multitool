@@ -9,6 +9,37 @@ namespace BethesdaMultitool.CLI.Shared;
 internal static class CliHelpers
 {
     /// <summary>
+    ///     Resolves an analysis input for the format-agnostic commands (stats/list/show). Returns
+    ///     the detected type, or null after printing an error when the path names nothing analyzable.
+    ///     <para>
+    ///         The input is normally a file, but a classic pre-plugin-era game has no single file to
+    ///         point at — its install directory is the unit, so a directory a game profile claims is
+    ///         accepted too. Any other directory, and any missing path, is still an error.
+    ///     </para>
+    /// </summary>
+    internal static Core.Analysis.AnalysisFileType? ResolveAnalysisInput(string path)
+    {
+        var fileType = Core.FileFormat.FileTypeDetector.Detect(path);
+        if (File.Exists(path) || fileType == Core.Analysis.AnalysisFileType.ClassicGameData)
+        {
+            return fileType;
+        }
+
+        AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", Markup.Escape(path));
+        return null;
+    }
+
+    /// <summary>
+    ///     Display label for an analysis input — the file name, or the directory name when the
+    ///     input is a classic install root (whose trailing separator would otherwise print empty).
+    /// </summary>
+    internal static string InputLabel(string path)
+    {
+        var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return string.IsNullOrEmpty(name) ? path : name;
+    }
+
+    /// <summary>
     ///     Captures Spectre.Console output to a plain-text string (no ANSI escape codes).
     ///     Used for file export — eliminates the need for duplicate plain-text rendering methods.
     /// </summary>

@@ -99,6 +99,47 @@ public sealed class ObjectIndexBuilderTests
         Assert.Equal("SCOL\\SSHQExterior03.NIF", placed.ModelPath);
     }
 
+    [Fact]
+    public void BuildIndexes_BendableSplineContributesBoundsWithoutInventingAModelPath()
+    {
+        const uint splineFormId = 0x00106F19;
+        var spline = new BendableSplineRecord
+        {
+            FormId = splineFormId,
+            EditorId = "WorkshopWire",
+            Bounds = new ObjectBounds { X1 = -8, Y1 = -8, Z1 = -8, X2 = 8, Y2 = 8, Z2 = 8 }
+        };
+        var modelIndex = new Dictionary<uint, string>();
+
+        var boundsIndex = BuildIndexes(modelIndex, bendableSplines: [spline]);
+
+        Assert.Equal(spline.Bounds, boundsIndex[splineFormId]);
+        Assert.False(modelIndex.ContainsKey(splineFormId));
+    }
+
+    [Fact]
+    public void ToPlacedReference_PreservesBendableSplinePlacementData()
+    {
+        var placementData = new BendableSplinePlacementData
+        {
+            Slack = 24.5f,
+            Thickness = 1.5f,
+            HalfExtents = new System.Numerics.Vector3(128f, 16f, 32f)
+        };
+        var extracted = new ExtractedRefrRecord
+        {
+            Header = new DetectedMainRecord("REFR", 0, 0, 0x200, 0, false),
+            BaseFormId = 0x00106F19,
+            BendableSpline = placementData
+        };
+
+        var placed = CellLinkageHandler.ToPlacedReference(
+            extracted,
+            new RecordParserContext(new EsmRecordScanResult()));
+
+        Assert.Same(placementData, placed.BendableSpline);
+    }
+
     private static List<CellRecord> OneCellPlacing(uint baseFormId)
     {
         return
@@ -123,12 +164,14 @@ public sealed class ObjectIndexBuilderTests
         Dictionary<uint, string> modelIndex,
         List<StaticCollectionRecord>? staticCollections = null,
         List<PlaceableWaterRecord>? placeableWaters = null,
+        List<BendableSplineRecord>? bendableSplines = null,
         List<TreeRecord>? trees = null)
     {
         return ObjectIndexBuilder.BuildIndexes(
             [], [], [], [], [],
             staticCollections ?? [],
             placeableWaters ?? [],
+            bendableSplines ?? [],
             trees ?? [],
             [], [], [], [], [], [],
             [], [], [], [], [], [],

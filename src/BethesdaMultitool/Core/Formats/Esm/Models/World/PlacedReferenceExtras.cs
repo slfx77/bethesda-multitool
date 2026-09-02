@@ -135,6 +135,9 @@ public sealed record PlacedReferenceExtras
     /// <summary>Runtime-linked child refs derived from ExtraLinkedRefChildren (DMP-only).</summary>
     public IReadOnlyList<uint>? LinkedRefChildrenFormIds { get; init; }
 
+    /// <summary>FO4-family procedural spline parameters from the XBSD subrecord.</summary>
+    public BendableSplinePlacementData? BendableSpline { get; init; }
+
     /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
     public PlacedReferenceStructuralData? StructuralData { get; init; }
 
