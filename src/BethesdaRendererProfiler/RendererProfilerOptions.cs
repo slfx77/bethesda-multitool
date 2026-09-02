@@ -30,6 +30,14 @@ internal sealed record RendererProfilerOptions
     internal int? DurationSeconds { get; init; }
 
     /// <summary>
+    ///     Optional deterministic image captured from the live profile's exact scored camera and
+    ///     pixel viewport after <see cref="DurationSeconds" /> elapses, but before shutdown. This is
+    ///     deliberately a live-profile epilogue rather than a second capture process so architectural
+    ///     A/B runs can prove that their scored renderer state is pixel-equivalent.
+    /// </summary>
+    internal string? ProfileEndCapturePath { get; init; }
+
+    /// <summary>
     ///     Optional live-profile warm-up gate. When set, frame aggregates, stalls and GPU rows stay
     ///     outside the scored window until the rendered scene reaches the existing clean, stable
     ///     streaming fixpoint. The timeout is deliberately opt-in because some diagnostic sessions
@@ -314,11 +322,22 @@ internal sealed record RendererProfilerOptions
     /// </summary>
     internal float CaptureMotionOrbitDegrees { get; init; }
 
-    /// <summary>Pixel width of a perspective frame capture. Default 768.</summary>
-    internal int CaptureWidth { get; init; } = 768;
+    /// <summary>
+    ///     Pixel width of a frame capture (perspective and single-shot top-down, which renders a
+    ///     square at max(width, height)). Default 1920 — USER RULING 2026-09-01: 512px is far too
+    ///     small for a capture deliverable; 1920×1080 is the minimum acceptable resolution.
+    /// </summary>
+    internal int CaptureWidth { get; init; } = 1920;
 
-    /// <summary>Pixel height of a perspective frame capture. Default 480.</summary>
-    internal int CaptureHeight { get; init; } = 480;
+    /// <summary>Pixel height of a frame capture. Default 1080 (see <see cref="CaptureWidth" />).</summary>
+    internal int CaptureHeight { get; init; } = 1080;
+
+    /// <summary>
+    ///     When true, --capture-topdown renders self-contained colored terrain (like the batch
+    ///     path) instead of the default depth-only transparent ground that mirrors the 2D map's
+    ///     "Rendered models" overlay compositing.
+    /// </summary>
+    internal bool CaptureTopDownTerrainColor { get; init; }
 
     /// <summary>
     ///     Maximum seconds a one-shot perspective capture waits for reference AND terrain streaming
@@ -386,6 +405,10 @@ internal sealed record RendererProfilerOptions
                                       Before a live profile, wait up to n seconds for four clean,
                                       unchanged streaming censuses; scoring/duration start afterward.
           --duration-seconds <n>      Exit automatically after the viewer has loaded.
+          --profile-end-capture <png> After the scored duration, capture the exact benchmark camera
+                                      and live pixel viewport, then exit. Requires static camera motion
+                                      plus --profile-settle-timeout-seconds and
+                                      --capture-animation-time for byte-comparable A/B evidence.
           --scenario <name>           Run a deterministic same-process acceptance scenario and exit.
                                       Names: fnv-water-night-matrix, fnv-water001-synthetic,
                                       fnv-cloud-motion, fnv-celestial, fnv-prospector-neon-bloom, fnv-sunlight-dimmer,
@@ -404,13 +427,18 @@ internal sealed record RendererProfilerOptions
           --width <px>                Window width. Default: 1450.
           --height <px>               Window height. Default: 900.
           --capture-topdown <path>    Render one top-down "Rendered models" overlay to a PNG, log coverage, then exit.
+                                      Square, at max(--capture-width, --capture-height) per side.
+          --capture-topdown-terrain-color
+                                      Make --capture-topdown a self-contained image with colored
+                                      terrain (like the batch path) instead of the depth-only
+                                      transparent ground that mirrors the 2D map overlay.
           --capture-frame <path>      Render one perspective frame to a PNG, then exit.
           --trim-working-set-before-settle
                                       Diagnostic only; with --capture-frame, force one non-compacting
                                       full GC and trim this process's working set before phase-two settle.
                                       Logs pre/post memory and post-settle page-fault observations.
-          --capture-width <px>        Perspective capture width. Default: 768; maximum: 16384.
-          --capture-height <px>       Perspective capture height. Default: 480; maximum: 16384.
+          --capture-width <px>        Capture width. Default: 1920; maximum: 16384.
+          --capture-height <px>       Capture height. Default: 1080; maximum: 16384.
           --capture-worldspace-name <id>
                                       Select this exterior Worldspace EditorID for --capture-frame; mismatch fails.
           --capture-interior <cell>   Select an interior by EditorID or 0xFormID for --capture-frame.
@@ -480,6 +508,8 @@ internal sealed record RendererProfilerOptions
         var captureBatchProjection = TopDownProjection.Trimetric;
         var profileIntervalMs = 2000;
         int? durationSeconds = null;
+        string? profileEndCapture = null;
+        var profileEndCaptureSpecified = false;
         int? profileSettleTimeoutSeconds = null;
         var cameraMotion = RendererCameraMotionKind.Static;
         var cameraSpeed = 2048f;
@@ -515,8 +545,11 @@ internal sealed record RendererProfilerOptions
         var captureMotionLiveFrames = 6;
         var captureMotionOrbitDegrees = 0f;
         float? captureFovDegrees = null;
-        var captureWidth = 768;
-        var captureHeight = 480;
+        // 1920×1080 default per the 2026-09-01 capture-resolution ruling (512/768-class captures
+        // are only acceptable as downscales, never as the deliverable).
+        var captureWidth = 1920;
+        var captureHeight = 1080;
+        var captureTopDownTerrainColor = false;
         var captureSettleTimeoutSeconds = 60;
         string? scenarioName = null;
         string? scenarioOutput = null;
@@ -576,6 +609,12 @@ internal sealed record RendererProfilerOptions
                     }
 
                     durationSeconds = seconds;
+                    break;
+
+                case "--profile-end-capture":
+                    profileEndCaptureSpecified = true;
+                    profileEndCapture = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--profile-settle-timeout-seconds":
@@ -659,6 +698,10 @@ internal sealed record RendererProfilerOptions
                 case "--capture-topdown":
                     captureTopDown = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-topdown-terrain-color":
+                    captureTopDownTerrainColor = true;
                     break;
 
                 case "--asset-data-dir":
@@ -1092,6 +1135,47 @@ internal sealed record RendererProfilerOptions
             return Fail(out options);
         }
 
+        if (profileEndCaptureSpecified && string.IsNullOrWhiteSpace(profileEndCapture))
+        {
+            error = "--profile-end-capture requires a non-empty path.";
+            return Fail(out options);
+        }
+
+        if (profileEndCaptureSpecified && durationSeconds is null)
+        {
+            error = "--profile-end-capture requires --duration-seconds.";
+            return Fail(out options);
+        }
+
+        if (profileEndCaptureSpecified && profileSettleTimeoutSeconds is null)
+        {
+            error = "--profile-end-capture requires --profile-settle-timeout-seconds.";
+            return Fail(out options);
+        }
+
+        if (profileEndCaptureSpecified &&
+            (!string.IsNullOrWhiteSpace(captureFrame) ||
+             !string.IsNullOrWhiteSpace(captureTopDown) ||
+             !string.IsNullOrWhiteSpace(captureTopDownBatch) ||
+             normalizedScenarioName is not null))
+        {
+            error = "--profile-end-capture is valid only for the live profile loop.";
+            return Fail(out options);
+        }
+
+        if (profileEndCaptureSpecified &&
+            cameraMotion != RendererCameraMotionKind.Static)
+        {
+            error = "--profile-end-capture requires deterministic static camera motion.";
+            return Fail(out options);
+        }
+
+        if (profileEndCaptureSpecified && captureAnimationTimeSeconds is null)
+        {
+            error = "--profile-end-capture requires --capture-animation-time to pin animated pixels.";
+            return Fail(out options);
+        }
+
         if (normalizedScenarioName is not null && cameraMotion != RendererCameraMotionKind.Static)
         {
             error = "--scenario requires deterministic static camera motion.";
@@ -1113,6 +1197,15 @@ internal sealed record RendererProfilerOptions
         if (!string.IsNullOrWhiteSpace(captureInterior) && !string.IsNullOrWhiteSpace(captureTopDown))
         {
             error = "--capture-interior cannot be combined with --capture-topdown.";
+            return Fail(out options);
+        }
+
+        if (captureTopDownTerrainColor && string.IsNullOrWhiteSpace(captureTopDown))
+        {
+            // Fail closed like the sibling capture flags: the batch path already renders colored
+            // terrain unconditionally and the perspective path always does — accepting the flag
+            // there would silently produce a differently-shaped artifact than the user asked for.
+            error = "--capture-topdown-terrain-color requires --capture-topdown.";
             return Fail(out options);
         }
 
@@ -1200,6 +1293,9 @@ internal sealed record RendererProfilerOptions
             ProfileJsonlOutputPath = resolvedProfileJsonl,
             ProfileIntervalMilliseconds = profileIntervalMs,
             DurationSeconds = durationSeconds,
+            ProfileEndCapturePath = profileEndCaptureSpecified
+                ? Path.GetFullPath(profileEndCapture!)
+                : null,
             ProfileSettleTimeoutSeconds = profileSettleTimeoutSeconds,
             // An explicit worldspace is a complete scene selection. Do not silently follow it with
             // the profiler's historical FNV-heavy default, which scans/materializes the selected
@@ -1260,6 +1356,7 @@ internal sealed record RendererProfilerOptions
             CaptureFovDegrees = captureFovDegrees,
             CaptureWidth = captureWidth,
             CaptureHeight = captureHeight,
+            CaptureTopDownTerrainColor = captureTopDownTerrainColor,
             CaptureSettleTimeoutSeconds = captureSettleTimeoutSeconds,
             ScenarioName = normalizedScenarioName,
             ScenarioOutputDirectory = resolvedScenarioOutput

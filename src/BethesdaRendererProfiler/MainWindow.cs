@@ -29,8 +29,12 @@ internal sealed partial class MainWindow : Window, IDisposable
     private CancellationTokenSource? _acceptanceScenarioCancellation;
     private bool _disposed;
     private bool _exiting;
+    private RendererProfilerCameraPose? _profileEndCapturePose;
+    private float _profileEndCaptureFovDegrees;
+    private (int Width, int Height)? _profileEndCaptureViewport;
     private Renderer3DScenario? _scenario;
     private bool _started;
+    private bool _timedExitCompletionStarted;
     private DispatcherQueueTimer? _timedExitTimer;
     private bool _traceClosed;
 
@@ -271,6 +275,25 @@ internal sealed partial class MainWindow : Window, IDisposable
                 Log.Info(
                     "Profiler: settled scoring window starts at frame {0} after a clean, stable scene fixpoint.",
                     firstScoredFrame);
+            }
+
+            if (_options.ProfileEndCapturePath is not null)
+            {
+                // Snapshot the scored configuration before camera automation starts. The option parser
+                // restricts this verification mode to Static, but retaining and reasserting the values
+                // here also makes incidental input/window-layout changes fail closed instead of changing
+                // the A/B evidence. Read the D3D12 surface, not XAML DIPs, for the exact scored viewport.
+                _profileEndCapturePose = _worldView.Profiler_CameraPose;
+                _profileEndCaptureFovDegrees = _worldView.Profiler_CameraFovDegrees;
+                _profileEndCaptureViewport = _worldView.Profiler_ViewportPixelSize ??
+                    throw new InvalidOperationException(
+                        "The scored D3D12 viewport was unavailable for --profile-end-capture.");
+                Log.Info(
+                    "Profiler: deterministic end capture armed at {0}x{1}, animation={2:0.###}s -> {3}",
+                    _profileEndCaptureViewport.Value.Width,
+                    _profileEndCaptureViewport.Value.Height,
+                    _options.CaptureAnimationTimeSeconds,
+                    _options.ProfileEndCapturePath);
             }
 
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
@@ -527,7 +550,15 @@ internal sealed partial class MainWindow : Window, IDisposable
             // too wide on Starfield, so the capture framed hundreds of empty cells.
             var half = Math.Max(1, _options.CaptureSpanCells) * 0.5f * _worldView.Profiler_CellWorldSize;
             float minX = cx - half, maxX = cx + half, minY = cy - half, maxY = cy + half;
-            const int px = 512;
+            // Square capture window → square pixels; sized from the capture flags (default 1920 per
+            // the 2026-09-01 resolution ruling — the old hardcoded 512 was ruled far too small).
+            // Mirror the batch path's max-final-dimension lift or anything above the renderer's
+            // 2048 default clamp silently comes back smaller. Below the 3072 supersample-drop the
+            // offscreen target renders at 2× per side (1920 → 3840² HDR+depth+readback, ~300 MB
+            // GPU), and very large explicit --capture-width values scale that quadratically — the
+            // 16384 flag ceiling is the D3D12 texture limit, not a fits-in-VRAM promise.
+            var px = Math.Max(_options.CaptureWidth, _options.CaptureHeight);
+            _worldView.TopDownMaxFinalDimension = Math.Max(px, _worldView.TopDownMaxFinalDimension);
 
             TopDownRender? render = null;
             for (var attempt = 0; attempt < 200; attempt++)
@@ -539,9 +570,11 @@ internal sealed partial class MainWindow : Window, IDisposable
                     Array.Empty<PlacedObjectCategory>(),
                     false, 12f,
                     null, // profiler top-down capture is exterior worldspaces only
-                    // Reproduces the 2D map's overlay exactly, so it stays comparable with what the
-                    // map shows; --capture-topdown-batch is the self-contained-image path.
-                    includeTerrainColor: false,
+                    // Default reproduces the 2D map's overlay exactly (transparent depth-only
+                    // ground), so it stays comparable with what the map shows;
+                    // --capture-topdown-terrain-color opts into the batch path's self-contained
+                    // colored-terrain image for evidence captures of specific cells.
+                    includeTerrainColor: _options.CaptureTopDownTerrainColor,
                     projection: TopDownProjection.Straight,
                     contentWorldZ: null,
                     trimetricYawDegrees: TrimetricViewProjBuilder.YawDegrees,
@@ -1098,15 +1131,270 @@ internal sealed partial class MainWindow : Window, IDisposable
         _timedExitTimer = DispatcherQueue.CreateTimer();
         _timedExitTimer.Interval = TimeSpan.FromSeconds(seconds);
         _timedExitTimer.IsRepeating = false;
-        _timedExitTimer.Tick += (_, _) =>
-        {
-            ExitProfiler(string.Format(
-                CultureInfo.InvariantCulture,
-                "BethesdaRendererProfiler: duration elapsed ({0}s); exiting.",
-                seconds));
-        };
+        _timedExitTimer.Tick += OnTimedExitTimerTick;
         _timedExitTimer.Start();
         Log.Info("BethesdaRendererProfiler: timed exit armed for {0}s.", seconds);
+    }
+
+    private async void OnTimedExitTimerTick(DispatcherQueueTimer sender, object args)
+    {
+        if (_timedExitCompletionStarted)
+        {
+            return;
+        }
+
+        _timedExitCompletionStarted = true;
+        var seconds = _options.DurationSeconds!.Value;
+        // Keep this text byte-for-byte identical to the historical timed-exit reason. Existing
+        // profile consumers key shutdown lifecycle validation on it; the capture is an awaited
+        // epilogue to the scored window, not a new completion mode.
+        var reason = string.Format(
+            CultureInfo.InvariantCulture,
+            "BethesdaRendererProfiler: duration elapsed ({0}s); exiting.",
+            seconds);
+        var exitCode = 0;
+        try
+        {
+            sender.Stop();
+            _timedExitTimer = null;
+            if (_options.ProfileEndCapturePath is not null)
+            {
+                exitCode = await CaptureProfileEndFrameAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            // DispatcherQueueTimer.Tick is necessarily async void. Keep a final containment layer
+            // here even though the capture routine handles its own failures: no future logging,
+            // tracing, or capture change may turn a timed run into an unhandled UI-thread exception.
+            exitCode = 1;
+            TryWriteTimedExitFailure("unexpected timed-exit completion failure", ex);
+            TryTraceTimedExitFailure("unexpected timed-exit completion failure", ex);
+        }
+        finally
+        {
+            ExitProfilerAfterTimedBoundary(reason, exitCode);
+        }
+    }
+
+    private async Task<int> CaptureProfileEndFrameAsync()
+    {
+        var path = _options.ProfileEndCapturePath!;
+        long? scoringEndFrame = null;
+        try
+        {
+            scoringEndFrame = _worldView.Profiler_FrameIndex;
+            if (!_worldView.CanRenderProjectionExport)
+            {
+                throw new InvalidOperationException("D3D12 scene capture is unavailable.");
+            }
+
+            if (_profileEndCapturePose is not { } benchmarkPose ||
+                _profileEndCaptureViewport is not { } benchmarkViewport)
+            {
+                throw new InvalidOperationException("The benchmark camera/viewport was not retained.");
+            }
+
+            if (_options.CaptureAnimationTimeSeconds is not { } animationClockSeconds)
+            {
+                throw new InvalidOperationException("The profile end-capture animation clock was not pinned.");
+            }
+
+            // Inspect the live state BEFORE disposing automation, reasserting the retained values,
+            // collapsing the view, or entering the offscreen renderer. Restoring first would erase
+            // evidence that the scored window drifted and let mismatched A/B runs emit plausible PNGs.
+            var currentPose = _worldView.Profiler_CameraPose;
+            var currentFovDegrees = _worldView.Profiler_CameraFovDegrees;
+            var currentViewport = _worldView.Profiler_ViewportPixelSize;
+            var currentCensus = _worldView.Profiler_CaptureSceneCensus;
+            if (!ProfileEndCaptureStateGuard.TryValidate(
+                    benchmarkPose,
+                    currentPose,
+                    _profileEndCaptureFovDegrees,
+                    currentFovDegrees,
+                    benchmarkViewport,
+                    currentViewport,
+                    currentCensus,
+                    out var validationError))
+            {
+                throw new InvalidOperationException(
+                    $"Profile end-capture duration-boundary validation failed: {validationError}.");
+            }
+
+            // The duration boundary is the scoring boundary. Stop the 16-ms camera owner before the
+            // first await, then reassert the exact pose/FOV retained at scoring start. Collapsing the
+            // live control prevents any additional scored Present while the offscreen capture owns the
+            // shared command recorder; Profiler_CaptureSceneAsync also drains the GPU before recording.
+            _scenario?.Dispose();
+            _scenario = null;
+            _worldView.Profiler_ClearInputState();
+            _worldView.Profiler_SetCameraPose(benchmarkPose);
+            _worldView.Profiler_SetCameraFov(_profileEndCaptureFovDegrees);
+            var capturePose = _worldView.Profiler_CameraPose;
+            _worldView.Visibility = Visibility.Collapsed;
+
+            var bgra = await _worldView.Profiler_CaptureSceneAsync(
+                benchmarkViewport.Width,
+                benchmarkViewport.Height,
+                animationClockSeconds);
+            if (bgra is null)
+            {
+                throw new InvalidOperationException("Renderer returned no pixels.");
+            }
+
+            var artifact = ProfileEndCaptureArtifactWriter.Save(
+                path,
+                bgra,
+                benchmarkViewport.Width,
+                benchmarkViewport.Height);
+
+            var fields = RendererProfilerTrace.CameraPoseFields(capturePose);
+            fields["success"] = true;
+            fields["path"] = artifact.Path;
+            fields["pixelWidth"] = artifact.PixelWidth;
+            fields["pixelHeight"] = artifact.PixelHeight;
+            fields["pixelFormat"] = "BGRA8";
+            fields["pixelByteCount"] = artifact.PixelByteCount;
+            fields["pixelSha256"] = artifact.PixelSha256;
+            fields["pngSha256"] = artifact.PngSha256;
+            fields["animationClockPinned"] = true;
+            fields["animationClockSeconds"] = animationClockSeconds;
+            fields["cameraFovDegrees"] = _profileEndCaptureFovDegrees;
+            fields["durationSeconds"] = _options.DurationSeconds;
+            fields["scoringEndFrame"] = scoringEndFrame;
+            fields["worldspace"] = _worldView.Profiler_SelectedWorldspaceEditorId;
+            RendererProfilerTrace.Event("profile-end-capture", fields);
+
+            var message = string.Format(
+                CultureInfo.InvariantCulture,
+                "[ProfileEndCapture] saved {0} ({1}x{2}) pixelSha256={3} pngSha256={4}",
+                artifact.Path,
+                artifact.PixelWidth,
+                artifact.PixelHeight,
+                artifact.PixelSha256,
+                artifact.PngSha256);
+            Log.Info(message);
+            Console.WriteLine(message);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            // Diagnostics are deliberately isolated from one another. A broken log file or trace
+            // sink must not escape this Task and strand an async-void timer callback before shutdown.
+            try
+            {
+                Log.Error("Profile end capture failed: {0}", ex);
+            }
+            catch (Exception diagnosticException)
+            {
+                TryWriteTimedExitFailure("profile-end-capture log failure", diagnosticException);
+            }
+
+            TryWriteTimedExitFailure("profile end capture failed", ex);
+            try
+            {
+                RendererProfilerTrace.Event("profile-end-capture", new Dictionary<string, object?>
+                {
+                    ["success"] = false,
+                    ["phase"] = "duration-boundary-or-capture",
+                    ["path"] = path,
+                    ["scoringEndFrame"] = scoringEndFrame,
+                    ["errorType"] = ex.GetType().FullName,
+                    ["error"] = ex.Message
+                });
+            }
+            catch (Exception diagnosticException)
+            {
+                TryWriteTimedExitFailure("profile-end-capture failure-trace failure", diagnosticException);
+            }
+
+            return 1;
+        }
+    }
+
+    /// <summary>
+    ///     Completes the timed lifecycle with independently guarded cleanup steps. Capture, profile
+    ///     log, and trace failures all force a non-zero process result while the shutdown reason
+    ///     remains the exact historical duration-elapsed text supplied by the caller.
+    /// </summary>
+    private void ExitProfilerAfterTimedBoundary(string reason, int exitCode)
+    {
+        if (_exiting)
+        {
+            return;
+        }
+
+        _exiting = true;
+        var finalExitCode = exitCode;
+
+        void Attempt(string operation, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                finalExitCode = 1;
+                TryWriteTimedExitFailure(operation, ex);
+                TryTraceTimedExitFailure(operation, ex);
+            }
+        }
+
+        Attempt("timed-exit status update failure", () => SetStatus(reason));
+        Attempt("timed-exit profile-log failure", () => Log.Info(reason));
+        Attempt("timed-exit timer-stop failure", () => _timedExitTimer?.Stop());
+        _timedExitTimer = null;
+        Attempt("timed-exit disposal failure", Dispose);
+        Attempt("timed-exit trace-close failure", () => CloseProfilerTrace(reason));
+        Attempt("timed-exit log-close failure", Log.CloseLogFile);
+        Attempt("timed-exit completion-console failure", () => Console.WriteLine(
+            $"[BethesdaRendererProfiler] Complete (exit code {finalExitCode}). Profile log: {_options.ProfileOutputPath}"));
+
+        Environment.ExitCode = finalExitCode;
+        try
+        {
+            Application.Current.Exit();
+        }
+        catch (Exception ex)
+        {
+            // Application.Exit is the graceful route. If WinUI itself rejects it, hard process exit
+            // is the only remaining way to honor the unattended timer's shutdown contract.
+            Environment.ExitCode = 1;
+            TryWriteTimedExitFailure("timed-exit application shutdown failure", ex);
+            Environment.Exit(1);
+        }
+    }
+
+    private static void TryWriteTimedExitFailure(string operation, Exception exception)
+    {
+        try
+        {
+            Console.Error.WriteLine(
+                $"[ProfileEndCapture] FAILED: {operation}: {exception.GetType().Name}: {exception.Message}");
+        }
+        catch
+        {
+            // Console diagnostics are best effort; the caller still sets a non-zero exit code.
+        }
+    }
+
+    private static void TryTraceTimedExitFailure(string operation, Exception exception)
+    {
+        try
+        {
+            RendererProfilerTrace.Event("timed-exit-failure", new Dictionary<string, object?>
+            {
+                ["operation"] = operation,
+                ["errorType"] = exception.GetType().FullName,
+                ["error"] = exception.Message
+            });
+        }
+        catch
+        {
+            // The trace may itself be the failing component or already be closed. Console and the
+            // non-zero process code remain independent fallbacks.
+        }
     }
 
     private void ExitProfiler(string message, int exitCode = 0)
@@ -1138,13 +1426,20 @@ internal sealed partial class MainWindow : Window, IDisposable
         }
 
         _traceClosed = true;
-        RendererProfilerTrace.Event("shutdown", new Dictionary<string, object?>
+        try
         {
-            ["reason"] = reason,
-            ["profileOutput"] = _options.ProfileOutputPath,
-            ["profileJsonl"] = _options.ProfileJsonlOutputPath
-        });
-        RendererProfilerTrace.Close();
+            RendererProfilerTrace.Event("shutdown", new Dictionary<string, object?>
+            {
+                ["reason"] = reason,
+                ["profileOutput"] = _options.ProfileOutputPath,
+                ["profileJsonl"] = _options.ProfileJsonlOutputPath
+            });
+        }
+        finally
+        {
+            // A failed final Event must not leave the underlying trace stream open during shutdown.
+            RendererProfilerTrace.Close();
+        }
     }
 
     private void SetStatus(string message)

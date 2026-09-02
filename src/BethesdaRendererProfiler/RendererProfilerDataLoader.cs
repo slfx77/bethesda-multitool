@@ -39,6 +39,21 @@ internal static class RendererProfilerDataLoader
             {
                 semantic = loadOrderRecords.MergeWith(semantic);
 
+                // Mirror the GUI's default-ON "Master ESM terrain" preview for dump primaries
+                // (SingleFileTab.PopulateWorldMapAsync): grid-keyed per-category LAND fill plus
+                // the heightmap hole-fill from the Load Order masters. Without it, a headless
+                // capture of a dump diverges from what the app shows — and the capture MUST equal
+                // the live renderer.
+                if (primary.FileType == AnalysisFileType.Minidump)
+                {
+                    var enriched = BethesdaMultitool.Core.Formats.Esm.Records.EsmLandEnricher
+                        .EnrichCellsWithMasterEsmLandFallback(semantic.Cells, loadOrderRecords.Cells);
+                    for (var i = 0; i < semantic.Cells.Count; i++)
+                    {
+                        semantic.Cells[i] = enriched[i];
+                    }
+                }
+
                 // Same post-merge pass the GUI runs (SingleFileTab.WorldMap.cs): re-link cells
                 // against the merged list, then resolve placed-object meshes against the merged
                 // base set. Parse-time enrichment is per-source, so a ref placing a base defined

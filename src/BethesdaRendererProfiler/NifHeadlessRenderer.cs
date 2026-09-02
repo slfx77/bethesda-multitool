@@ -13,6 +13,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
@@ -30,7 +31,7 @@ namespace BethesdaRendererProfiler;
 ///     <para>
 ///         Invoked via
 ///         <c>
-///             --render-nif &lt;esm-relative-path&gt; --archive &lt;meshes.bsa&gt;
+///             --render-nif &lt;esm-relative-path&gt; --game &lt;game&gt; --archive &lt;meshes.bsa&gt;
 ///             --textures-bsa &lt;a.bsa&gt; [&lt;b.bsa&gt; …] --out &lt;png&gt; [--size N]
 ///             [--bg &lt;#RRGGBB|magenta|gray|checker&gt;]
 ///         </c>
@@ -142,7 +143,7 @@ internal static class NifHeadlessRenderer
         {
             Console.Error.WriteLine("Usage: --render-nif <esm-relative-nif-path> --archive <meshes.bsa> " +
                                     "--textures-bsa <tex.bsa> [<tex2.bsa> ...] --out <png> [--size N] " +
-                                    "[--game <FO76|Starfield|BethesdaGame>] " +
+                                    "--game <FO76|Starfield|BethesdaGame> " +
                                     "[--expect-modern-standard <0|1>] " +
                                     "[--expect-static-opaque-packet <0|1>] " +
                                     "[--expect-water-pipeline <exact-telemetry-name>] " +
@@ -225,8 +226,39 @@ internal static class NifHeadlessRenderer
             rootSig = GpuRootSignature12.Create(gpu);
             deletion = new GpuDeletionQueue12(GpuCommandRecorder12.FramesInFlight);
 
+            // CE2 splits one NIF's external geometries\*.mesh payloads across several
+            // Starfield - Meshes*.ba2 archives. The GUI viewer discovers those siblings, so the
+            // headless "real viewer" verifier must use the same content-classified set or its PNG
+            // can silently omit parts while claiming to exercise the live reference path. Keep the
+            // historical single-archive behavior for every classic game, where explicitly isolated
+            // archive captures are useful controls.
+            string[]? siblingMeshArchives = null;
+            if (game == BethesdaGame.Starfield)
+            {
+                var primaryMeshArchive = Path.GetFullPath(meshArchive);
+                var archiveDirectory = Path.GetDirectoryName(primaryMeshArchive);
+                if (archiveDirectory is not null)
+                {
+                    siblingMeshArchives = BsaDiscovery.DiscoverInDirectory(archiveDirectory)
+                        .MeshesBsaPaths
+                        .Select(Path.GetFullPath)
+                        .Where(path => !string.Equals(
+                            path, primaryMeshArchive, StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(path => path, StringComparer.Ordinal)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                }
+
+                Console.WriteLine(
+                    $"[nif-render] Starfield external geometry sources: primary + " +
+                    $"{siblingMeshArchives?.Length ?? 0} content-classified sibling archive(s)");
+            }
+
             meshArchives = MeshArchiveSet.Open(
-                meshArchive, null, false);
+                meshArchive,
+                siblingMeshArchives is { Length: > 0 } ? siblingMeshArchives : null,
+                false);
             var texArr = textureArchives.ToArray();
             var textureResolver = new NifTextureResolver(texArr);
             var gpuTextureResolver = new NifGpuTextureResolver(texArr);
@@ -262,6 +294,11 @@ internal static class NifHeadlessRenderer
                 2048,
                 autoSizeMeshCapacity: false, speedTreeLeafTextures: leafTextures,
                 speedTreeDimming: dimming);
+            // These decoder totals are lifetime counters. This process renders one selected NIF, but
+            // snapshotting keeps the acceptance check scoped even if setup later performs other decodes.
+            var parseFailuresAtStart = meshCache.TotalParseFailedModelPaths;
+            var missingGeometryAtStart = meshCache.TotalMissingGeometryBlobs;
+            var decodeFailedGeometryAtStart = meshCache.TotalDecodeFailedGeometryBlobs;
             references = new ReferenceRenderer12(
                 gpu, recorder, ring, rootSig, heap, meshCache, deletion, game)
             {
@@ -325,6 +362,7 @@ internal static class NifHeadlessRenderer
             const int maxIterations = 200;
             byte[]? finalBgra = null;
             var drew = false;
+            var streamingSettled = false;
             // Per-iteration render stats are noisy; opt in with NIF_RENDER_VERBOSE=1 when diagnosing a
             // "nothing rendered" case (shows cull/missing/texPending/drawn counts per frame).
             var verbose = Environment.GetEnvironmentVariable("NIF_RENDER_VERBOSE") is "1";
@@ -470,6 +508,7 @@ internal static class NifHeadlessRenderer
                 var waterSettled = waterDraws > 0 && s.ReferenceTexturePending == 0 && s.ReferenceMeshMissing == 0;
                 var renderedContent = s.ReferenceDrawn > 0 || waterSettled;
                 drew |= renderedContent;
+                streamingSettled |= complete && it > 0 && renderedContent;
                 // A positive packet expectation is also a bounded warm-up request: do not accept
                 // the first quiesced legacy frame while the repeated-frame packet candidate is
                 // still being established. A negative expectation remains fail-closed as well.
@@ -515,17 +554,25 @@ internal static class NifHeadlessRenderer
                 return 4;
             }
 
-            if (!drew)
+            var finalStats = references.LastStats;
+            var parseFailureDelta = meshCache.TotalParseFailedModelPaths - parseFailuresAtStart;
+            var missingGeometryDelta = meshCache.TotalMissingGeometryBlobs - missingGeometryAtStart;
+            var decodeFailedGeometryDelta =
+                meshCache.TotalDecodeFailedGeometryBlobs - decodeFailedGeometryAtStart;
+            if (!streamingSettled || !drew || finalStats.ReferenceMeshMissing != 0 ||
+                parseFailureDelta != 0 || missingGeometryDelta != 0 || decodeFailedGeometryDelta != 0)
             {
-                // The reference never issued a draw within the cap — the saved frame is likely blank.
-                // Surface it loudly (with the last stats) instead of silently writing an empty PNG; re-run
-                // with NIF_RENDER_VERBOSE=1 to see per-frame cull/missing/texPending counts.
-                var s = references.LastStats;
+                // This executable produces acceptance artifacts, not best-effort previews. A partially
+                // decoded CE2 NIF can still issue draws for its surviving shapes, so ReferenceDrawn alone
+                // is insufficient: reject the image before it can be mistaken for a complete viewer render.
                 Console.Error.WriteLine(
-                    $"[nif-render] WARNING: reference never drew within {maxIterations} iterations — output " +
-                    $"may be blank. last: cells={s.ReferenceCellsVisited} culled={s.ReferenceCulled} " +
-                    $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} " +
-                    $"drawn={s.ReferenceDrawn} waterPlanes={references.NifWaterPlanes.Count}");
+                    $"[nif-render] incomplete render rejected after {maxIterations} iterations: " +
+                    $"settled={streamingSettled} drew={drew} cells={finalStats.ReferenceCellsVisited} " +
+                    $"culled={finalStats.ReferenceCulled} missing={finalStats.ReferenceMeshMissing} " +
+                    $"texPending={finalStats.ReferenceTexturePending} drawn={finalStats.ReferenceDrawn} " +
+                    $"waterPlanes={references.NifWaterPlanes.Count} parseFailures={parseFailureDelta} " +
+                    $"missingGeometry={missingGeometryDelta} decodeFailedGeometry={decodeFailedGeometryDelta}.");
+                return 9;
             }
 
             if (expectedModernStandardSpec is not null)
@@ -923,10 +970,35 @@ internal static class NifHeadlessRenderer
         {
             var nif = NifParser.Parse(bytes);
             if (nif is null) return false;
+            byte[]? LoadExternalGeometry(string meshPath)
+            {
+                var normalized = meshPath.Replace('/', '\\').Trim().TrimStart('\\');
+                if (normalized.Length == 0)
+                {
+                    return null;
+                }
+
+                if (!normalized.StartsWith("geometries\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalized = "geometries\\" + normalized;
+                }
+
+                if (!normalized.EndsWith(".mesh", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalized += ".mesh";
+                }
+
+                return meshArchives.TryExtractFile(normalized, out var geometry, out _) && geometry.Length > 0
+                    ? geometry
+                    : null;
+            }
+
             // Match the reference/decode path (collectBillboards + treatRootsAsIdentity) so the AABB includes
-            // baked particle clouds — otherwise a pure-particle NIF (FXDust) frames to nothing.
+            // baked particle clouds and CE2 external geometry. Otherwise a pure-particle NIF frames to
+            // nothing, while a Starfield NIF can be incorrectly centered on its authored origin.
             var model = NifGeometryExtractor.Extract(bytes, nif, textureResolver,
-                treatRootsAsIdentity: true, collectBillboards: true);
+                treatRootsAsIdentity: true, collectBillboards: true,
+                externalMeshLoader: LoadExternalGeometry);
             if (model is not { HasGeometry: true } || model.MaxX < model.MinX) return false;
             min = new Vector3(model.MinX, model.MinY, model.MinZ);
             max = new Vector3(model.MaxX, model.MaxY, model.MaxZ);
@@ -1036,7 +1108,7 @@ internal static class NifHeadlessRenderer
         if (string.IsNullOrWhiteSpace(value))
         {
             game = BethesdaGame.Unknown;
-            return true;
+            return false;
         }
 
         if (value.Equals("FO76", StringComparison.OrdinalIgnoreCase))

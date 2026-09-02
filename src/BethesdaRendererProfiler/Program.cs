@@ -124,6 +124,7 @@ public static class Program
                     ["profileJsonl"] = options.ProfileJsonlOutputPath,
                     ["profileIntervalMs"] = options.ProfileIntervalMilliseconds,
                     ["durationSeconds"] = options.DurationSeconds,
+                    ["profileEndCapture"] = options.ProfileEndCapturePath,
                     ["profileSettleTimeoutSeconds"] = options.ProfileSettleTimeoutSeconds,
                     ["scenario"] = options.ScenarioName,
                     ["scenarioOutput"] = options.ScenarioOutputDirectory,
@@ -143,12 +144,14 @@ public static class Program
                     ["capturePitchDegrees"] = options.CapturePitchDegrees,
                     ["captureYawDegrees"] = options.CaptureYawDegrees,
                     ["captureSettleTimeoutSeconds"] = options.CaptureSettleTimeoutSeconds,
-                    // Record architectural A/B state in the trace itself. Without these fields two
-                    // otherwise-identical profile files cannot prove which opt-in path they exercised.
+                    // Record raw architectural overrides in the startup trace. Game-scoped effective
+                    // state is recorded by the scene capture after the input's game has been decoded.
                     ["liveParticles"] = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_LIVE_PARTICLES"),
                     ["speedTreeRuntimeLod"] = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SPT_RUNTIME_LOD"),
                     ["modernWater"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernWater),
                     ["modernImageSpace"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernImageSpace),
+                    ["authoredSkyOverride"] =
+                        EnvironmentVariables.Get(EnvironmentVariables.Viewer.AuthoredSky),
                     ["placedLightTiles"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLightTiles),
                     ["tolerantCull"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull),
                     ["shadows"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.Shadows),

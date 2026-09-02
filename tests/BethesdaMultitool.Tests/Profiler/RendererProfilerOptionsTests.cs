@@ -1,4 +1,5 @@
 using BethesdaRendererProfiler;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Profiler;
@@ -8,7 +9,9 @@ public sealed class RendererProfilerOptionsTests
     private static readonly string[] DocumentedCaptureOptions =
     [
         "--capture-topdown",
+        "--capture-topdown-terrain-color",
         "--capture-frame",
+        "--profile-end-capture",
         "--trim-working-set-before-settle",
         "--capture-width",
         "--capture-height",
@@ -49,14 +52,17 @@ public sealed class RendererProfilerOptionsTests
     }
 
     [Fact]
-    public void TryParse_PreservesPerspectiveDefaultsForCompatibility()
+    public void TryParse_CaptureDefaultsMeetTheResolutionRuling()
     {
         WithInput(input =>
         {
             Assert.True(RendererProfilerOptions.TryParse(["--input", input], out var options, out var error));
             Assert.Null(error);
-            Assert.Equal(768, options.CaptureWidth);
-            Assert.Equal(480, options.CaptureHeight);
+            // USER RULING 2026-09-01: 1920×1080 is the minimum acceptable capture resolution —
+            // the old 768×480 (and the top-down path's 512) were ruled far too small.
+            Assert.Equal(1920, options.CaptureWidth);
+            Assert.Equal(1080, options.CaptureHeight);
+            Assert.False(options.CaptureTopDownTerrainColor);
             Assert.Null(options.CaptureYawDegrees);
             Assert.Equal(60, options.CaptureSettleTimeoutSeconds);
             // NULL by default = the LIVE animation clock. Pinning it froze every time-varying path
@@ -66,7 +72,21 @@ public sealed class RendererProfilerOptionsTests
             Assert.Null(options.ScenarioOutputDirectory);
             Assert.False(options.TrimWorkingSetBeforeSettle);
             Assert.Null(options.ProfileSettleTimeoutSeconds);
+            Assert.Null(options.ProfileEndCapturePath);
             Assert.Equal(RendererProfilerOptions.DefaultStressScene, options.StressScene);
+        });
+    }
+
+    [Fact]
+    public void TryParse_CaptureTopDownTerrainColor_Parses()
+    {
+        WithInput(input =>
+        {
+            Assert.True(RendererProfilerOptions.TryParse(
+                ["--input", input, "--capture-topdown", "t.png", "--capture-topdown-terrain-color"],
+                out var options, out var error));
+            Assert.Null(error);
+            Assert.True(options.CaptureTopDownTerrainColor);
         });
     }
 
@@ -111,6 +131,123 @@ public sealed class RendererProfilerOptionsTests
                 "--profile-settle-timeout-seconds",
                 RendererProfilerOptions.Usage,
                 StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void TryParse_MapsDeterministicProfileEndCapture()
+    {
+        WithInput(input =>
+        {
+            var capture = Path.Combine(Path.GetTempPath(), $"profile-end-{Guid.NewGuid():N}.png");
+            Assert.True(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--duration-seconds", "30",
+                    "--profile-end-capture", capture,
+                    "--profile-settle-timeout-seconds", "120",
+                    "--capture-animation-time", "12.5",
+                    "--camera-motion", "static"
+                ],
+                out var options,
+                out var error));
+
+            Assert.Null(error);
+            Assert.Equal(30, options.DurationSeconds);
+            Assert.Equal(Path.GetFullPath(capture), options.ProfileEndCapturePath);
+            Assert.Equal(120, options.ProfileSettleTimeoutSeconds);
+            Assert.Equal(12.5f, options.CaptureAnimationTimeSeconds);
+            Assert.Equal(RendererCameraMotionKind.Static, options.CameraMotion);
+        });
+    }
+
+    [Theory]
+    [InlineData(false, true, "static", "--duration-seconds")]
+    [InlineData(true, false, "static", "--capture-animation-time")]
+    [InlineData(true, true, "orbit", "static camera motion")]
+    public void TryParse_RejectsNondeterministicProfileEndCapture(
+        bool includeDuration,
+        bool includeAnimationTime,
+        string cameraMotion,
+        string expectedError)
+    {
+        WithInput(input =>
+        {
+            var args = new List<string>
+            {
+                "--input", input,
+                "--profile-end-capture", "profile-end.png",
+                "--profile-settle-timeout-seconds", "120",
+                "--camera-motion", cameraMotion
+            };
+            if (includeDuration)
+            {
+                args.AddRange(["--duration-seconds", "30"]);
+            }
+
+            if (includeAnimationTime)
+            {
+                args.AddRange(["--capture-animation-time", "0"]);
+            }
+
+            Assert.False(RendererProfilerOptions.TryParse(args.ToArray(), out _, out var error));
+            Assert.Contains(expectedError, error, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsProfileEndCaptureWithoutSettlementGate()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--duration-seconds", "30",
+                    "--profile-end-capture", "profile-end.png",
+                    "--capture-animation-time", "0"
+                ],
+                out _,
+                out var error));
+
+            Assert.Equal(
+                "--profile-end-capture requires --profile-settle-timeout-seconds.",
+                error);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsWhitespaceProfileEndCapturePathAsSpecifiedOption()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                ["--input", input, "--profile-end-capture", " "],
+                out _,
+                out var error));
+
+            Assert.Equal("--profile-end-capture requires a non-empty path.", error);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsProfileEndCaptureWithAutonomousCaptureLifecycle()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--duration-seconds", "30",
+                    "--profile-end-capture", "profile-end.png",
+                    "--profile-settle-timeout-seconds", "120",
+                    "--capture-animation-time", "0",
+                    "--capture-frame", "one-shot.png"
+                ],
+                out _,
+                out var error));
+
+            Assert.Contains("live profile loop", error, StringComparison.OrdinalIgnoreCase);
         });
     }
 
