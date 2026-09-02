@@ -7,7 +7,15 @@ public enum EngineFamily
     Tes3,
 
     /// <summary>Oblivion and later: GRUP-nested records, 2-byte subrecord sizes, FormIDs.</summary>
-    Tes4
+    Tes4,
+
+    /// <summary>
+    ///     Pre-plugin-era game (Arena through Fallout Tactics): no ESM/ESP record stream exists at
+    ///     all. This is a plugin-FRAMING statement, not a family-dispatch key — per-game decisions
+    ///     still key on <see cref="BethesdaGame" />. The record/group framing members carry 0/0/false
+    ///     sentinels and must never reach <c>EsmParser</c>.
+    /// </summary>
+    None
 }
 
 /// <summary>
@@ -53,6 +61,42 @@ public sealed record GameProfile
     public required int RecordHeaderSize { get; init; }
     public required int GroupHeaderSize { get; init; }
     public required bool HasRecordVersionTrailer { get; init; }
+
+    /// <summary>
+    ///     False for the classic (pre-Morrowind-plugin) games, whose content lives in containers and
+    ///     typed data files rather than a plugin record stream. When false the framing members above
+    ///     are 0/0/false sentinels (the Morrowind <c>GroupHeaderSize = 0</c> precedent) and the file
+    ///     never routes through <c>EsmParser</c>/<c>PluginFormat</c>.
+    /// </summary>
+    public bool HasPluginRecordStream => Engine != EngineFamily.None;
+
+    // ---- Classic-game install layout (consumed by ClassicGameLocator and the classic VFS mount) ----
+
+    /// <summary>
+    ///     Root-relative names/globs of this game's content archives, listed HIGHEST-precedence first
+    ///     (the order the classic VFS mounts them, e.g. Fallout 2's <c>f2_res.dat</c> over
+    ///     <c>patch*.dat</c> over <c>critter.dat</c> over <c>master.dat</c>). Empty for plugin-era
+    ///     games (the <c>*.bsa</c>/<c>*.ba2</c> Data-folder convention applies) and for classics with
+    ///     no general-purpose archive (Redguard is loose-file based; its per-map ROB archives belong
+    ///     to the mesh pipeline, not the VFS).
+    /// </summary>
+    public IReadOnlyList<string> ClassicArchiveGlobs { get; init; } = [];
+
+    /// <summary>
+    ///     Root-relative directory acting as the loose-file override tree the engine layers over the
+    ///     archives (Fallout 1 <c>DATA</c>, Fallout 2 <c>data</c>, Tactics <c>core</c>, Daggerfall
+    ///     <c>ARENA2</c>). Empty = the game root itself.
+    /// </summary>
+    public string ClassicLooseRoot { get; init; } = string.Empty;
+
+    /// <summary>
+    ///     Root-relative marker files whose JOINT presence identifies this game's install root
+    ///     (consumed by <see cref="ClassicGameLocator" />). Every entry must be satisfied; within one
+    ///     entry, <c>|</c> separates alternatives of which any one suffices (e.g. Fallout 1's
+    ///     <c>"FALLOUTW.EXE|FALLOUT.EXE|fallout.cfg"</c> beside the DAT pair that Fallout 2 also has).
+    ///     Empty for plugin-era games, which are detected from plugin bytes instead.
+    /// </summary>
+    public IReadOnlyList<string> InstallMarkers { get; init; } = [];
 
     /// <summary>
     ///     Substrings matched (case-insensitively) against a plugin's master list + filename to

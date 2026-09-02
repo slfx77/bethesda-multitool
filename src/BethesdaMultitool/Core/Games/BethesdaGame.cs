@@ -33,5 +33,30 @@ public enum BethesdaGame
     Fallout76,
 
     /// <summary>Starfield (TES4): 24-byte headers.</summary>
-    Starfield
+    Starfield,
+
+    // ---- Classic (pre-plugin-era) games. No ESM/ESP record stream exists: content lives in
+    // containers (BSA variants, DAT, BOS) and typed data files. Append-only from here — enum
+    // values reach serialized reports, so never reorder existing members. ----
+
+    /// <summary>TES: Arena (1994, DOS): GLOBAL.BSA container, palettized IMG/CIF/CFA art, MIF voxel maps.</summary>
+    Arena,
+
+    /// <summary>TES II: Daggerfall (1996, DOS): ARENA2 data set — XnGine BSAs (ARCH3D/BLOCKS/MAPS), TEXTURE.nnn.</summary>
+    Daggerfall,
+
+    /// <summary>An Elder Scrolls Legend: Battlespire (1997, DOS, XnGine): LZSS-capable BSAs, BSI images, BS6 levels.</summary>
+    Battlespire,
+
+    /// <summary>TES Adventures: Redguard (1998, DOS, XnGine): loose .3D/.3DC meshes, ROB archives, TEXBSI, RGM maps.</summary>
+    Redguard,
+
+    /// <summary>Fallout (1997): DAT1 archives (big-endian, LZSS), FRM sprites, MAP v19, PRO prototypes.</summary>
+    Fallout1,
+
+    /// <summary>Fallout 2 (1998): DAT2 archives (little-endian, zlib), same inner format family as Fallout 1.</summary>
+    Fallout2,
+
+    /// <summary>Fallout Tactics: Brotherhood of Steel (2001): BOS archives (plain zip), SPR/TIL/ZAR art, ENT/ESH records.</summary>
+    FalloutTactics
 }

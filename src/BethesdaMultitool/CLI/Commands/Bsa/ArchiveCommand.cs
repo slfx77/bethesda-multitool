@@ -94,9 +94,15 @@ public static class ArchiveCommand
             {
                 RenderBsaInfoTable(input, bsa);
             }
+            else if (reader.Ba2 is { } ba2)
+            {
+                RenderBa2InfoTable(input, ba2);
+            }
             else
             {
-                RenderBa2InfoTable(input, reader.Ba2!);
+                // Classic families (Arena BSA, and the XnGine/DAT/BOS backends as they land) have
+                // no BSA/BA2 typed archive — render the format-neutral facts the reader exposes.
+                RenderGenericInfoTable(input, reader);
             }
 
             RenderExtensionStats(reader.GetExtensionStats());
@@ -143,6 +149,21 @@ public static class ArchiveCommand
         if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Fonts)) fileTypes.Add("Fonts");
         if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Misc)) fileTypes.Add("Misc");
         table.AddRow("Content Types", string.Join(", ", fileTypes));
+
+        AnsiConsole.Write(table);
+    }
+
+    private static void RenderGenericInfoTable(string input, ArchiveReader reader)
+    {
+        var table = new Table { Border = TableBorder.Rounded };
+        table.AddColumn("Property");
+        table.AddColumn("Value");
+
+        table.AddRow("File", Path.GetFileName(input));
+        table.AddRow("Format", reader.FormatName);
+        table.AddRow("Platform", reader.PlatformLabel);
+        table.AddRow("Files", reader.TotalFiles.ToString("N0"));
+        table.AddRow("Size", new FileInfo(input).Length.ToString("N0") + " bytes");
 
         AnsiConsole.Write(table);
     }

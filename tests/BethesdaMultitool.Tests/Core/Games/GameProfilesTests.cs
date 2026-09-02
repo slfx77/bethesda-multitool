@@ -20,6 +20,13 @@ public class GameProfilesTests
     [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Starfield)]
+    [InlineData(BethesdaGame.Arena)]
+    [InlineData(BethesdaGame.Daggerfall)]
+    [InlineData(BethesdaGame.Battlespire)]
+    [InlineData(BethesdaGame.Redguard)]
+    [InlineData(BethesdaGame.Fallout1)]
+    [InlineData(BethesdaGame.Fallout2)]
+    [InlineData(BethesdaGame.FalloutTactics)]
     public void For_EveryKnownGame_ReturnsMatchingProfile(BethesdaGame game)
     {
         var profile = GameProfiles.For(game);
@@ -229,5 +236,73 @@ public class GameProfilesTests
     public void DefaultGame_IsFalloutNewVegas()
     {
         Assert.Equal(BethesdaGame.FalloutNewVegas, GameProfiles.DefaultGame);
+    }
+
+    /// <summary>
+    ///     The classic (pre-plugin-era) games carry <see cref="EngineFamily.None" /> with 0/0/false
+    ///     framing sentinels (the Morrowind <c>GroupHeaderSize = 0</c> precedent) — a file from them
+    ///     must never reach <c>EsmParser</c>, and <see cref="GameProfile.HasPluginRecordStream" /> is
+    ///     the guard everything keys on. Every plugin-era game must keep answering true, so a future
+    ///     <c>Engine == EngineFamily.Tes4</c> check can never silently match a classic.
+    /// </summary>
+    [Theory]
+    [InlineData(BethesdaGame.Arena)]
+    [InlineData(BethesdaGame.Daggerfall)]
+    [InlineData(BethesdaGame.Battlespire)]
+    [InlineData(BethesdaGame.Redguard)]
+    [InlineData(BethesdaGame.Fallout1)]
+    [InlineData(BethesdaGame.Fallout2)]
+    [InlineData(BethesdaGame.FalloutTactics)]
+    public void ClassicProfiles_HaveNoPluginStream_AndSentinelFraming(BethesdaGame game)
+    {
+        var profile = GameProfiles.For(game);
+        Assert.Equal(EngineFamily.None, profile.Engine);
+        Assert.False(profile.HasPluginRecordStream);
+        Assert.False(profile.IsTes3);
+        Assert.Equal(0, profile.RecordHeaderSize);
+        Assert.Equal(0, profile.GroupHeaderSize);
+        Assert.False(profile.HasRecordVersionTrailer);
+
+        // Identity comes from install markers, never plugin bytes — so both must hold.
+        Assert.NotEmpty(profile.InstallMarkers);
+        Assert.Empty(profile.MasterFileHints);
+    }
+
+    [Fact]
+    public void PluginEraProfiles_AllReportPluginStream()
+    {
+        foreach (var profile in GameProfiles.All.Where(p => p.Engine != EngineFamily.None))
+        {
+            Assert.True(profile.HasPluginRecordStream);
+            Assert.Empty(profile.InstallMarkers);
+        }
+    }
+
+    /// <summary>
+    ///     Fallout 2's archive globs are the VFS mount order, highest precedence first — the engine
+    ///     rule from fallout2.cfg is loose data\ over f2_res.dat over patch*.dat over critter.dat over
+    ///     master.dat, and reordering silently changes which copy of a shadowed file wins.
+    /// </summary>
+    [Fact]
+    public void ClassicProfiles_PinFallout2ArchivePrecedence()
+    {
+        Assert.Equal(
+            ["f2_res.dat", "patch*.dat", "critter.dat", "master.dat"],
+            GameProfiles.For(BethesdaGame.Fallout2).ClassicArchiveGlobs);
+        Assert.Equal("data", GameProfiles.For(BethesdaGame.Fallout2).ClassicLooseRoot);
+    }
+
+    /// <summary>
+    ///     Classic-unit invariance extends to the classic games: their profiles leave the world unit
+    ///     unset, so every human-scale camera constant stays a bit-exact no-op for them too.
+    /// </summary>
+    [Theory]
+    [InlineData(BethesdaGame.Arena)]
+    [InlineData(BethesdaGame.Daggerfall)]
+    [InlineData(BethesdaGame.Fallout1)]
+    [InlineData(BethesdaGame.FalloutTactics)]
+    public void HumanScaleFactor_IsExactlyOneForClassicGames(BethesdaGame game)
+    {
+        Assert.Equal(1f, GameProfiles.HumanScaleFactor(game));
     }
 }

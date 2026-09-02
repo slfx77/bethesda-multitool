@@ -229,6 +229,111 @@ public static class GameProfiles
                 // then binds the white-pixel placeholder instead of chasing a path that cannot resolve.
                 DefaultLandscapeDiffuse = string.Empty,
                 DefaultLandscapeNormal = string.Empty
+            },
+
+            // ---- Classic (pre-plugin-era) games. Engine = None: no ESM/ESP record stream exists, the
+            // framing members are sentinels (the Morrowind GroupHeaderSize = 0 precedent), and these
+            // files never route through EsmParser. Identity comes from InstallMarkers via
+            // ClassicGameLocator, never from plugin bytes. Install layouts verified on the Steam
+            // re-releases 2026-08-31. ----
+
+            [BethesdaGame.Arena] = new()
+            {
+                Game = BethesdaGame.Arena,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // The Steam wrapper nests the DOS game at ARENA\ beside DOSBox; markers identify that
+                // inner directory. Saves (STATES.00 …) sit beside the game data in the same directory.
+                InstallMarkers = ["GLOBAL.BSA", "TEMPLATE.DAT"],
+                ClassicArchiveGlobs = ["GLOBAL.BSA"]
+            },
+            [BethesdaGame.Daggerfall] = new()
+            {
+                Game = BethesdaGame.Daggerfall,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Root = DF\DAGGER (holds FALL.EXE + ARENA2). The DFCD tree is a duplicate CD mirror a
+                // scanner should treat as the same content, not new data. DAGGER.SND is a number-record
+                // XnGine BSA despite its extension; TEXTURE.nnn / SKYnn.DAT are files with internal
+                // structure, not archives.
+                InstallMarkers = [@"ARENA2\ARCH3D.BSA", @"ARENA2\MAPS.BSA"],
+                ClassicLooseRoot = "ARENA2",
+                ClassicArchiveGlobs = [@"ARENA2\*.BSA", @"ARENA2\DAGGER.SND"]
+            },
+            [BethesdaGame.Battlespire] = new()
+            {
+                Game = BethesdaGame.Battlespire,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Root = the install dir itself (GAME.EXE + GAMEDATA). 3D.BS6 is a BSA container despite
+                // the extension (2,115 mesh records); the DM*.BS6 deathmatch levels are raw chunked files
+                // and deliberately not mounted. SPIRE.SND is a number-record BSA of RIFF WAVs.
+                InstallMarkers = [@"GAMEDATA\3D.BS6", @"GAMEDATA\BSI.BSA"],
+                ClassicLooseRoot = "GAMEDATA",
+                ClassicArchiveGlobs = [@"GAMEDATA\*.BSA", @"GAMEDATA\3D.BS6", @"GAMEDATA\SPIRE.SND"]
+            },
+            [BethesdaGame.Redguard] = new()
+            {
+                Game = BethesdaGame.Redguard,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Root = ...\Redguard\Redguard (WORLD.INI is the master registry every viewer starts
+                // from). Loose-file based: no general-purpose archive to mount — the per-map ROB
+                // archives are mesh-pipeline containers, and movies/music live only inside the CUE/BIN
+                // CD image beside the root.
+                InstallMarkers = ["WORLD.INI", "ENGLISH.RTX"]
+            },
+            [BethesdaGame.Fallout1] = new()
+            {
+                Game = BethesdaGame.Fallout1,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // MASTER.DAT + CRITTER.DAT also exist in Fallout 2, so the third marker entry pins the
+                // FO1 executable/config (Steam ships FALLOUTW.EXE; classic CDs used FALLOUT.EXE).
+                // ClassicGameLocator probes Fallout 2 first, so its FALLOUT2.EXE install can never
+                // fall through to this profile.
+                InstallMarkers = ["MASTER.DAT", "CRITTER.DAT", "FALLOUTW.EXE|FALLOUT.EXE|fallout.cfg"],
+                // Loose DATA\ overrides the DATs (official 1.x patches + Hi-Res patch ship loose).
+                ClassicLooseRoot = "DATA",
+                ClassicArchiveGlobs = ["CRITTER.DAT", "MASTER.DAT"]
+            },
+            [BethesdaGame.Fallout2] = new()
+            {
+                Game = BethesdaGame.Fallout2,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                InstallMarkers = ["master.dat", "critter.dat", "FALLOUT2.EXE|fallout2.cfg"],
+                // fallout2.cfg precedence: loose data\ (master_patches/critter_patches) shadows the
+                // archives; among archives the Hi-Res f2_res.dat overlays patch*.dat overlays
+                // critter.dat overlays master.dat.
+                ClassicLooseRoot = "data",
+                ClassicArchiveGlobs = ["f2_res.dat", "patch*.dat", "critter.dat", "master.dat"]
+            },
+            [BethesdaGame.FalloutTactics] = new()
+            {
+                Game = BethesdaGame.FalloutTactics,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Root = the install dir (BOS.exe + core\). BOS archives are plain PKZIP; the 1.27
+                // patch ships loose core\ overrides that shadow same-path archive entries. game.pck
+                // holds the pen-and-paper PDF supplements — real data, but not game content to mount.
+                InstallMarkers = [@"core\game.pck", @"core\bos.cfg"],
+                ClassicLooseRoot = "core",
+                ClassicArchiveGlobs = [@"core\*.bos"]
             }
         };
 

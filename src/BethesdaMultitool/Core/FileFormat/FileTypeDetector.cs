@@ -1,9 +1,12 @@
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.FileFormat;
 
 /// <summary>
-///     Detects file types by examining magic bytes at the start of a file.
+///     Detects file types by examining magic bytes at the start of a file, or — for the classic
+///     pre-plugin-era games, whose analyzable unit is an install rather than a single file — by
+///     recognizing an install directory.
 /// </summary>
 public static class FileTypeDetector
 {
@@ -16,7 +19,11 @@ public static class FileTypeDetector
     {
         if (!File.Exists(filePath))
         {
-            return AnalysisFileType.Unknown;
+            // A classic game "file" can be a whole install directory — those games have no single
+            // plugin to point at, so the install root is the analyzable unit.
+            return Directory.Exists(filePath) && ClassicGameLocator.DetectFromDirectory(filePath) is not null
+                ? AnalysisFileType.ClassicGameData
+                : AnalysisFileType.Unknown;
         }
 
         try
@@ -37,6 +44,13 @@ public static class FileTypeDetector
                  filePath.EndsWith(".fos", StringComparison.OrdinalIgnoreCase)))
             {
                 return AnalysisFileType.SaveFile;
+            }
+
+            // Classic-era formats mostly have weak or no magic (Fallout DAT1 has none), so the last
+            // resort is location: a declared artifact inside a detected classic install.
+            if (result == AnalysisFileType.Unknown && ClassicSourceProbe.TryDetect(filePath) is not null)
+            {
+                return AnalysisFileType.ClassicGameData;
             }
 
             return result;

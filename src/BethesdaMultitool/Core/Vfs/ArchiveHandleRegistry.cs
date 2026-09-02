@@ -229,7 +229,10 @@ public sealed class ArchiveHandleRegistry
         entry.Length = info.Length;
         entry.LastWriteTimeUtc = info.LastWriteTimeUtc;
         entry.Reader = ArchiveReader.Open(entry.Key);
-        entry.Reader.AsBsaExtractor?.MarkShared();
+        // Shared handles are visible to every lease holder, so per-instance mutable state (the
+        // legacy BSA conversion toggles) must be locked out. The backend default is a no-op —
+        // every non-BSA backend is immutable after open and must stay that way.
+        entry.Reader.Backend.MarkShared();
     }
 
     private static bool IsStale(Entry entry)
