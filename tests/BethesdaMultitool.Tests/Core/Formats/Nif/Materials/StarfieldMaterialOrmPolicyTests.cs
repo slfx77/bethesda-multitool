@@ -77,6 +77,31 @@ public sealed class StarfieldMaterialOrmPolicyTests
         Assert.False(db.ResolveOrmPolicy(@"materials\test\missing.mat").IsResolved);
     }
 
+    [Fact]
+    public void ResolveShaderRoute_AdmitsOnlyDefinedEffectiveRoute_NotWaterShaderModelName()
+    {
+        var water = Assert.IsType<StarfieldMaterialDatabase>(
+            StarfieldMaterialDatabase.Parse(BuildDatabase(
+                useDiffChunks: true,
+                shaderRoute: "Water",
+                shaderModel: "Water1Layer")));
+        var modelOnly = Assert.IsType<StarfieldMaterialDatabase>(
+            StarfieldMaterialDatabase.Parse(BuildDatabase(
+                useDiffChunks: true,
+                shaderRoute: "Deferred",
+                shaderModel: "Water1Layer")));
+        var malformedRoute = Assert.IsType<StarfieldMaterialDatabase>(
+            StarfieldMaterialDatabase.Parse(BuildDatabase(
+                useDiffChunks: true,
+                shaderRoute: "Water1Layer",
+                shaderModel: "Water1Layer")));
+
+        Assert.Equal(StarfieldMaterialShaderRoute.Water, water.ResolveShaderRoute(MaterialPath));
+        Assert.Equal(StarfieldMaterialShaderRoute.Deferred, modelOnly.ResolveShaderRoute(MaterialPath));
+        Assert.Null(malformedRoute.ResolveShaderRoute(MaterialPath));
+        Assert.Null(water.ResolveShaderRoute(@"materials\test\missing.mat"));
+    }
+
     [Theory]
     [InlineData("dangling", true)]
     [InlineData("zero", true)]
@@ -172,7 +197,11 @@ public sealed class StarfieldMaterialOrmPolicyTests
         string? unsupported = null,
         string? objectInfoCase = null,
         string? inheritanceCase = null,
-        string? clearCase = null)
+        string? clearCase = null,
+        string shaderRoute = "Deferred",
+        string shaderModel = "BaseMaterial",
+        StarfieldEffectSettingsFixture? effectSettings = null,
+        StarfieldEffectOpacityFixture? effectOpacity = null)
     {
         var classNames = new[]
         {
@@ -193,7 +222,9 @@ public sealed class StarfieldMaterialOrmPolicyTests
             "BSMaterial::ShaderModelComponent",
             "BSMaterial::MRTextureFile",
             "BSMaterial::TextureReplacement",
-            "BSMaterial::FlipbookComponent"
+            "BSMaterial::FlipbookComponent",
+            "BSMaterial::EffectSettingsComponent",
+            "BSMaterial::OpacityComponent"
         };
         var offsets = new Dictionary<string, uint>();
         var strings = new List<byte>();
@@ -353,9 +384,9 @@ public sealed class StarfieldMaterialOrmPolicyTests
                 unsupported == "clamped" ? "Clamp" : "Wrap"),
             StringValue(uvStreamId, "BSMaterial::Channel", unsupported == "uv-two" ? "Two" : "One"),
             StringValue(rootId, "BSMaterial::ShaderRouteComponent",
-                unsupported == "water" ? "Water" : "Deferred"),
+                unsupported == "water" ? "Water" : shaderRoute),
             StringValue(rootId, "BSMaterial::ShaderModelComponent",
-                unsupported == "hair" ? "Hair1Layer" : "BaseMaterial"),
+                unsupported == "hair" ? "Hair1Layer" : shaderModel),
             StringValue(textureSetId, "BSMaterial::MRTextureFile",
                 @"Data\Textures\Test\surface_ao.dds", 5)
         };
@@ -440,6 +471,24 @@ public sealed class StarfieldMaterialOrmPolicyTests
                 materialId, 0, "BSMaterial::FlipbookComponent", [1], Concat(U16(0), [1])));
         }
 
+        if (effectSettings is { } effect)
+        {
+            components.Add(EffectSettings(rootId, effect));
+            if (effect.OpacityTexturePath is { } opacityTexturePath)
+            {
+                components.Add(StringValue(
+                    textureSetId,
+                    "BSMaterial::MRTextureFile",
+                    opacityTexturePath,
+                    2));
+            }
+        }
+
+        if (effectOpacity is { } opacity)
+        {
+            components.Add(EffectOpacity(rootId, opacity));
+        }
+
         var table = new List<byte>();
         table.AddRange(U32(offsets["BSComponentDB2::DBFileIndex::ComponentInfo"]));
         table.AddRange(U32((uint)components.Count));
@@ -512,6 +561,43 @@ public sealed class StarfieldMaterialOrmPolicyTests
             [1],
             Concat(U16(1), U16(0), U16(0), F32(0.5f)));
 
+    private static Component EffectSettings(uint owner, StarfieldEffectSettingsFixture effect) =>
+        new(owner, 0, "BSMaterial::EffectSettingsComponent",
+            Concat(
+                [0], [0],
+                F32(0f), F32(0f), F32(0f), F32(0f),
+                [effect.UsesVertexColor ? (byte)1 : (byte)0],
+                [0], F32(0.5f), [0], [0], F32(2f), [0], [0], [0], [0],
+                [effect.IsGlass ? (byte)1 : (byte)0],
+                [effect.HasFrosting ? (byte)1 : (byte)0],
+                F32(0.98f), F32(0f), F32(effect.MaterialOverallAlpha),
+                [1], [0], Str(effect.BlendingMode), [0],
+                F32(0f), F32(1f), F32(0f),
+                F32(1f), F32(1f), F32(1f), F32(1f),
+                [0], [0], [0], [0], U16(0)),
+            Concat(
+                U16(6), [effect.UsesVertexColor ? (byte)1 : (byte)0],
+                U16(16), [effect.IsGlass ? (byte)1 : (byte)0],
+                U16(17), [effect.HasFrosting ? (byte)1 : (byte)0],
+                U16(20), F32(effect.MaterialOverallAlpha),
+                U16(23), Str(effect.BlendingMode),
+                U16(0xFFFF)));
+
+    private static Component EffectOpacity(uint owner, StarfieldEffectOpacityFixture opacity) =>
+        new(owner, 0, "BSMaterial::OpacityComponent",
+            Concat(
+                Str($"MATERIAL_LAYER_{opacity.SourceLayer}"),
+                [opacity.SecondLayerActive ? (byte)1 : (byte)0],
+                Str("MATERIAL_LAYER_1"), Str("BLEND_LAYER_0"), Str("Lerp"),
+                [opacity.ThirdLayerActive ? (byte)1 : (byte)0],
+                Str("MATERIAL_LAYER_2"), Str("BLEND_LAYER_1"), Str("Lerp"),
+                F32(1f)),
+            Concat(
+                U16(0), Str($"MATERIAL_LAYER_{opacity.SourceLayer}"),
+                U16(1), [opacity.SecondLayerActive ? (byte)1 : (byte)0],
+                U16(5), [opacity.ThirdLayerActive ? (byte)1 : (byte)0],
+                U16(0xFFFF)));
+
     private static byte[] ObjectRecord(
         uint file,
         uint ext,
@@ -560,3 +646,16 @@ public sealed class StarfieldMaterialOrmPolicyTests
         byte[] Packed,
         byte[] Diff);
 }
+
+internal readonly record struct StarfieldEffectSettingsFixture(
+    bool IsGlass,
+    bool HasFrosting,
+    bool UsesVertexColor,
+    float MaterialOverallAlpha,
+    string BlendingMode,
+    string? OpacityTexturePath = null);
+
+internal readonly record struct StarfieldEffectOpacityFixture(
+    int SourceLayer,
+    bool SecondLayerActive,
+    bool ThirdLayerActive);

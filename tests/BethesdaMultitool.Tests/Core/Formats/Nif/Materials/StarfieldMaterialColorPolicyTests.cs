@@ -168,6 +168,39 @@ public sealed class StarfieldMaterialColorPolicyTests
     }
 
     [Fact]
+    public void VertexLerp_PreservesExactRgbaAndRequiresACompletePerVertexStream()
+    {
+        var policy = new StarfieldMaterialColorPolicy(
+            true,
+            true,
+            StarfieldMaterialColorOverrideMode.Lerp,
+            // Material color is not selected when ParamBool chooses vertex C.
+            new Vector4(float.NaN));
+        byte[] decoded =
+        [
+            10, 20, 30, 40,
+            50, 60, 70, 80
+        ];
+
+        var supported = policy.ResolveSupportedVertexColors(decoded, 2);
+
+        Assert.NotNull(supported);
+        Assert.NotSame(decoded, supported);
+        Assert.Equal(decoded, supported);
+        var state = policy.ResolveRenderState(supported, 2);
+        Assert.True(state.IsVertexLerp);
+        Assert.True(state.IsLerp);
+        Assert.False(state.IsConstantLerp);
+        Assert.Equal(Vector4.Zero, state.LinearTint);
+
+        Assert.Null(policy.ResolveSupportedVertexColors(decoded[..^1], 2));
+        Assert.Equal(default(StarfieldMaterialColorRenderState),
+            policy.ResolveRenderState(decoded[..^1], 2));
+        Assert.Equal(default(StarfieldMaterialColorRenderState),
+            policy.ResolveRenderState(null, 2));
+    }
+
+    [Fact]
     public void ResolveBaseColorPolicy_ReportsAnUnresolvedPath()
     {
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase(useDiffChunks: false));

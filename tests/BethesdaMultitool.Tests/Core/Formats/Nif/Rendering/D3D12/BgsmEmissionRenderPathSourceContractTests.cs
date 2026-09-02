@@ -29,10 +29,10 @@ public sealed class BgsmEmissionRenderPathSourceContractTests
         SourceContract.AssertOrder(
             cache,
             "var bgsmGlowMap = hasBgsmEmission",
-            "Acquire(_textureCache.GetOrUpload(sub.BgsmGlowMapTexturePath!))",
+            "Acquire(textureCache.GetOrUpload(sub.BgsmGlowMapTexturePath!))",
             "BgsmGlowMap = bgsmGlowMap",
             "BgsmEmissionColor = hasBgsmEmission ? sub.BgsmEmissionColor : Vector3.Zero");
-        Assert.Contains("_textureCache.Release(submesh.BgsmGlowMap);", cache, StringComparison.Ordinal);
+        Assert.Contains("textureCache.Release(submesh.BgsmGlowMap);", cache, StringComparison.Ordinal);
         Assert.Contains("_textureCache.Release(bgsmGlowMap);", owner, StringComparison.Ordinal);
     }
 

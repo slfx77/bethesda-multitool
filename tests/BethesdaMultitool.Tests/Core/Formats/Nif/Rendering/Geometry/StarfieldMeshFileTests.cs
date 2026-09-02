@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Geometry;
@@ -182,21 +183,26 @@ public class StarfieldMeshFileTests
             constantLerp.StarfieldMaterialColor.Mode);
         Assert.Equal(expectedLinearTint, constantLerp.StarfieldMaterialColor.LinearTint);
 
-        // Vertex-driven Lerp needs a separate per-vertex mask and remains fail-closed. Unresolved
-        // policy does too: neither may accidentally inherit the constant operation above.
-        foreach (var unsupported in new[]
-                 {
-                     new StarfieldMaterialColorPolicy(
-                         true, true, StarfieldMaterialColorOverrideMode.Lerp, 0x00FFFFFFu),
-                     default
-                 })
-        {
-            var withheld = Extract(unsupported);
-            Assert.False(withheld.UseVertexColors);
-            Assert.Null(withheld.VertexColors);
-            Assert.Equal(default(StarfieldMaterialColorRenderState),
-                withheld.StarfieldMaterialColor);
-        }
+        // Recovered CE2 semantics are mix(albedo, C.rgb, C.a). Preserve all four external bytes,
+        // identify the distinct renderer mode, and prove the GPU upload does not neutralize C.a as
+        // ordinary non-coverage vertex alpha.
+        var vertexLerp = Extract(new StarfieldMaterialColorPolicy(
+            true, true, StarfieldMaterialColorOverrideMode.Lerp, 0x00FFFFFFu));
+        Assert.True(vertexLerp.UseVertexColors);
+        Assert.False(vertexLerp.UseVertexAlphaForOpacity);
+        Assert.Equal(decodedRgba, vertexLerp.VertexColors);
+        Assert.True(vertexLerp.StarfieldMaterialColor.IsVertexLerp);
+        Assert.Equal(Vector4.Zero, vertexLerp.StarfieldMaterialColor.LinearTint);
+        var gpuVertices = GpuMeshUploader.BuildVertices(vertexLerp);
+        Assert.Equal(decodedRgba[3] / 255f, gpuVertices[0].VertexColor.W);
+        Assert.Equal(decodedRgba[7] / 255f, gpuVertices[1].VertexColor.W);
+
+        // Unresolved policy remains fail-closed and cannot inherit the preceding operation.
+        var withheld = Extract(default);
+        Assert.False(withheld.UseVertexColors);
+        Assert.Null(withheld.VertexColors);
+        Assert.Equal(default(StarfieldMaterialColorRenderState),
+            withheld.StarfieldMaterialColor);
     }
 
     private static byte[] BuildMesh(

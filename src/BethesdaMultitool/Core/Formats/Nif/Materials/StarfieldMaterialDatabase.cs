@@ -23,7 +23,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Materials;
 ///     Derived from the MIT-licensed <c>libfo76utils</c> (<c>bsrefl</c>/<c>bsmatcdb</c>) vendored under
 ///     <c>Sample/Reference_Code/nifskope/lib/</c>.
 /// </summary>
-internal sealed class StarfieldMaterialDatabase
+internal sealed partial class StarfieldMaterialDatabase
 {
     private const uint ChunkBeth = 0x48544542; // 'BETH'
     private const uint ChunkStrt = 0x54525453;
@@ -125,6 +125,27 @@ internal sealed class StarfieldMaterialDatabase
     /// <summary>Root material shader model; constructor default is BaseMaterial.</summary>
     private readonly Dictionary<uint, string> _shaderModelByObject = [];
     private readonly HashSet<uint> _malformedShaderModelObjects = [];
+
+    // EffectSettings lives on the root CE2Material. Keep the fields used by the bounded glTF alpha
+    // projection separate so a DIFF may replace one member while inheriting every other member.
+    private readonly HashSet<uint> _effectSettingsObjects = [];
+    private readonly Dictionary<uint, bool> _effectIsGlassByObject = [];
+    private readonly Dictionary<uint, bool> _effectHasFrostingByObject = [];
+    private readonly Dictionary<uint, bool> _effectUsesVertexColorByObject = [];
+    private readonly Dictionary<uint, float> _effectMaterialAlphaByObject = [];
+    private readonly Dictionary<uint, StarfieldMaterialEffectBlendMode> _effectBlendModeByObject = [];
+    private readonly HashSet<uint> _malformedEffectSettingsObjects = [];
+    private readonly HashSet<uint> _layeredEdgeFalloffObjects = [];
+
+    // Effect OpacityComponent defaults select layer 0 with no secondary layers.
+    private readonly HashSet<uint> _effectOpacityObjects = [];
+    private readonly Dictionary<uint, int> _effectOpacitySourceLayerByObject = [];
+    private readonly Dictionary<uint, bool> _effectOpacitySecondLayerActiveByObject = [];
+    private readonly Dictionary<uint, bool> _effectOpacityThirdLayerActiveByObject = [];
+    private readonly HashSet<uint> _malformedEffectOpacityObjects = [];
+
+    /// <summary>Reflection class name → field count, needed for versioned component tails.</summary>
+    private readonly Dictionary<string, ushort> _classFieldCounts = new(StringComparer.Ordinal);
 
     /// <summary>
     ///     Root CE2Material dbID → locally authored Flag_TwoSided setters in component-list order.
@@ -315,6 +336,95 @@ internal sealed class StarfieldMaterialDatabase
                IsObjectTypeRootedAt(root, LayeredMaterialsRootFileCrc)
             ? ResolveAlphaPolicy(root)
             : default;
+    }
+
+    /// <summary>
+    ///     Resolves typed CE2 EffectSettings and the static layer facts needed for a bounded Mesh
+    ///     Viewer alpha projection. This does not infer glass from shader names or asset paths.
+    /// </summary>
+    internal StarfieldMaterialEffectPolicy ResolveEffectPolicy(string materialPath)
+    {
+        if (!TryResolveRoot(materialPath, out var root) ||
+            !IsObjectTypeRootedAt(root, LayeredMaterialsRootFileCrc))
+        {
+            return default;
+        }
+
+        var layerPolicy = ResolveOrmPolicy(materialPath);
+        if (!layerPolicy.IsResolved)
+        {
+            return default;
+        }
+
+        var hasOpacityComponent = InheritedContains(_effectOpacityObjects, root);
+        var opacitySourceLayer = hasOpacityComponent
+            ? InheritedOrDefault(_effectOpacitySourceLayerByObject, root, 0)
+            : 0;
+        var hasSecondaryOpacityLayers = hasOpacityComponent &&
+                                        (InheritedOrDefault(
+                                             _effectOpacitySecondLayerActiveByObject, root, false) ||
+                                         InheritedOrDefault(
+                                             _effectOpacityThirdLayerActiveByObject, root, false));
+
+        var opacitySlot = default(StarfieldMaterialSlot);
+        if (InheritedSlot(_layersByObject, root, opacitySourceLayer) is { } layer && layer != 0)
+        {
+            var material = Inherited(_materialByLayer, layer);
+            var textureSet = material != 0 ? Inherited(_textureSetByMaterial, material) : 0;
+            if (textureSet != 0)
+            {
+                opacitySlot = SlotFromTextureSet(textureSet, OpacitySlot);
+            }
+        }
+
+        return new StarfieldMaterialEffectPolicy(
+            true,
+            InheritedContains(_effectSettingsObjects, root),
+            layerPolicy.HasMalformedStaticComponents ||
+            InheritedContains(_malformedEffectSettingsObjects, root) ||
+            InheritedContains(_malformedEffectOpacityObjects, root),
+            layerPolicy.ShaderRoute,
+            InheritedOrDefault(_effectIsGlassByObject, root, false),
+            InheritedOrDefault(_effectHasFrostingByObject, root, false),
+            InheritedOrDefault(_effectUsesVertexColorByObject, root, false),
+            InheritedContains(_layeredEdgeFalloffObjects, root),
+            InheritedOrDefault(_effectMaterialAlphaByObject, root, 1f),
+            InheritedOrDefault(
+                _effectBlendModeByObject,
+                root,
+                StarfieldMaterialEffectBlendMode.AlphaBlend),
+            layerPolicy.HasOnlyLayer0,
+            layerPolicy.HasBlenders,
+            layerPolicy.LayerUsesFlipbook,
+            layerPolicy.UvScale,
+            layerPolicy.UvOffset,
+            layerPolicy.TextureAddressMode,
+            layerPolicy.UvChannel,
+            opacitySourceLayer,
+            hasSecondaryOpacityLayers,
+            opacitySlot);
+    }
+
+    /// <summary>
+    ///     Resolves the root material's effective CE2 shader route. Null means the material path,
+    ///     runtime type, inheritance chain, or authored route component was not trustworthy. The
+    ///     constructor/default route is <see cref="StarfieldMaterialShaderRoute.Deferred" />.
+    ///     Shader-model names are deliberately not interpreted here: <c>Water1Layer</c> also writes
+    ///     two-sided state, but only ShaderRouteComponent selects the dedicated water pipeline.
+    /// </summary>
+    internal StarfieldMaterialShaderRoute? ResolveShaderRoute(string materialPath)
+    {
+        if (!TryResolveRoot(materialPath, out var root) ||
+            !IsObjectTypeRootedAt(root, LayeredMaterialsRootFileCrc) ||
+            InheritedContains(_malformedShaderRouteObjects, root))
+        {
+            return null;
+        }
+
+        return InheritedOrDefault(
+            _shaderRouteByObject,
+            root,
+            StarfieldMaterialShaderRoute.Deferred);
     }
 
     /// <summary>
@@ -1199,6 +1309,7 @@ internal sealed class StarfieldMaterialDatabase
             if (type == ChunkClas)
             {
                 ReadClassDefinition(body, className, ref objectInfoSize);
+                CaptureControllerClassDefinition(body, className, strings);
             }
             else if (type == ChunkList || type == ChunkMapc)
             {
@@ -1227,7 +1338,21 @@ internal sealed class StarfieldMaterialDatabase
                 componentIndex++;
                 if (entry.Owner != 0)
                 {
-                    ReadComponent(body, className, entry.Owner, entry.Slot, type == ChunkDiff);
+                    if (className == "BSBind::ControllerComponent")
+                    {
+                        ReadControllerComponent(
+                            body,
+                            entry.Owner,
+                            type == ChunkDiff,
+                            data,
+                            ref pos,
+                            ref chunksRemaining,
+                            strings);
+                    }
+                    else
+                    {
+                        ReadComponent(body, className, entry.Owner, entry.Slot, type == ChunkDiff);
+                    }
                 }
             }
         }
@@ -1500,7 +1625,256 @@ internal sealed class StarfieldMaterialDatabase
                 }
 
                 break;
+
+            case "BSMaterial::EffectSettingsComponent":
+                if (slot == 0)
+                {
+                    ReadEffectSettingsComponent(body, owner, isDiff);
+                }
+
+                break;
+
+            case "BSMaterial::OpacityComponent":
+                if (slot == 0)
+                {
+                    ReadEffectOpacityComponent(body, owner, isDiff);
+                }
+
+                break;
+
+            case "BSMaterial::LayeredEdgeFalloffComponent":
+                if (slot == 0)
+                {
+                    // The active mask is view-dependent alpha/RGB composition. Mere presence is
+                    // retained so the bounded core-glTF effect lane can fail closed.
+                    _layeredEdgeFalloffObjects.Add(owner);
+                }
+
+                break;
         }
+    }
+
+    /// <summary>
+    ///     Reads the exact EffectSettings members used by alpha blending. Packed objects contain all
+    ///     fields; DIFF objects may replace an arbitrary subset, so ignored fields are still walked
+    ///     according to their reflected wire types before the selected values are stored.
+    /// </summary>
+    private void ReadEffectSettingsComponent(
+        ReadOnlySpan<byte> body,
+        uint owner,
+        bool isDiff)
+    {
+        _effectSettingsObjects.Add(owner);
+        var pos = 4;
+        if (!isDiff)
+        {
+            if (!TryReadByte(body, ref pos, out _) || // UseFallOff
+                !TryReadByte(body, ref pos, out _) || // UseRGBFallOff
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out var vertexColor) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out var isGlass) ||
+                !TryReadByte(body, ref pos, out var frosting) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out var materialAlpha) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadLengthPrefixedString(body, ref pos, out var blendMode) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out _))
+            {
+                _malformedEffectSettingsObjects.Add(owner);
+                return;
+            }
+
+            // Launch-era objects end in UInt16 DepthBiasInUlp (field 32). Newer objects insert
+            // ForceRenderBeforeClouds (field 32) before the same UInt16 (field 33).
+            var tailLength = body.Length - pos;
+            if ((tailLength == 3 && !TryReadByte(body, ref pos, out _)) ||
+                tailLength is not (2 or 3) ||
+                !TryReadUInt16(body, ref pos, out _) ||
+                pos != body.Length ||
+                !TryParseDefinedEnum(blendMode, out StarfieldMaterialEffectBlendMode parsedBlendMode))
+            {
+                _malformedEffectSettingsObjects.Add(owner);
+                return;
+            }
+
+            _effectUsesVertexColorByObject[owner] = vertexColor != 0;
+            _effectIsGlassByObject[owner] = isGlass != 0;
+            _effectHasFrostingByObject[owner] = frosting != 0;
+            _effectMaterialAlphaByObject[owner] = materialAlpha;
+            _effectBlendModeByObject[owner] = parsedBlendMode;
+            return;
+        }
+
+        while (TryReadFieldOrTerminator(body, ref pos, out var field, out var terminated))
+        {
+            if (terminated)
+            {
+                if (pos == body.Length)
+                {
+                    return;
+                }
+
+                break;
+            }
+
+            switch (field)
+            {
+                case 6 when TryReadByte(body, ref pos, out var vertexColor):
+                    _effectUsesVertexColorByObject[owner] = vertexColor != 0;
+                    break;
+                case 16 when TryReadByte(body, ref pos, out var isGlass):
+                    _effectIsGlassByObject[owner] = isGlass != 0;
+                    break;
+                case 17 when TryReadByte(body, ref pos, out var frosting):
+                    _effectHasFrostingByObject[owner] = frosting != 0;
+                    break;
+                case 20 when TryReadSingle(body, ref pos, out var materialAlpha):
+                    _effectMaterialAlphaByObject[owner] = materialAlpha;
+                    break;
+                case 23 when TryReadLengthPrefixedString(body, ref pos, out var blendMode):
+                    if (!TryParseDefinedEnum(
+                            blendMode,
+                            out StarfieldMaterialEffectBlendMode parsedBlendMode))
+                    {
+                        _malformedEffectSettingsObjects.Add(owner);
+                        return;
+                    }
+
+                    _effectBlendModeByObject[owner] = parsedBlendMode;
+                    break;
+                case 28:
+                    // BackLightingTintColor → Color.Value → indexed XMFLOAT4.
+                    if (!TryReadFieldOrTerminator(
+                            body, ref pos, out var colorField, out var colorTerminated) ||
+                        colorTerminated || colorField != 0 ||
+                        !TryReadIndexedFloat4(body, ref pos, out _) ||
+                        !TryConsumeTerminator(body, ref pos))
+                    {
+                        _malformedEffectSettingsObjects.Add(owner);
+                        return;
+                    }
+
+                    break;
+                case 0 or 1 or 7 or 9 or 10 or 12 or 13 or 14 or 15 or 21 or 22 or 24 or 29 or 30 or 31
+                    when TryReadByte(body, ref pos, out _):
+                    break;
+                case 2 or 3 or 4 or 5 or 8 or 11 or 18 or 19 or 25 or 26 or 27
+                    when TryReadSingle(body, ref pos, out _):
+                    break;
+                case 32 when _classFieldCounts.GetValueOrDefault(
+                                      "BSMaterial::EffectSettingsComponent") >= 34 &&
+                                  TryReadByte(body, ref pos, out _):
+                    break;
+                case 32 when TryReadUInt16(body, ref pos, out _):
+                case 33 when TryReadUInt16(body, ref pos, out _):
+                    break;
+                default:
+                    _malformedEffectSettingsObjects.Add(owner);
+                    return;
+            }
+        }
+
+        _malformedEffectSettingsObjects.Add(owner);
+    }
+
+    /// <summary>Reads the Effect-route opacity layer selectors needed by single-layer glass.</summary>
+    private void ReadEffectOpacityComponent(
+        ReadOnlySpan<byte> body,
+        uint owner,
+        bool isDiff)
+    {
+        _effectOpacityObjects.Add(owner);
+        var pos = 4;
+        if (!isDiff)
+        {
+            if (!TryReadLengthPrefixedString(body, ref pos, out var sourceLayer) ||
+                !TryReadByte(body, ref pos, out var secondActive) ||
+                !TryReadLengthPrefixedString(body, ref pos, out _) ||
+                !TryReadLengthPrefixedString(body, ref pos, out _) ||
+                !TryReadLengthPrefixedString(body, ref pos, out _) ||
+                !TryReadByte(body, ref pos, out var thirdActive) ||
+                !TryReadLengthPrefixedString(body, ref pos, out _) ||
+                !TryReadLengthPrefixedString(body, ref pos, out _) ||
+                !TryReadLengthPrefixedString(body, ref pos, out _) ||
+                !TryReadSingle(body, ref pos, out _) ||
+                pos != body.Length ||
+                !TryParseMaterialLayer(sourceLayer, out var parsedLayer))
+            {
+                _malformedEffectOpacityObjects.Add(owner);
+                return;
+            }
+
+            _effectOpacitySourceLayerByObject[owner] = parsedLayer;
+            _effectOpacitySecondLayerActiveByObject[owner] = secondActive != 0;
+            _effectOpacityThirdLayerActiveByObject[owner] = thirdActive != 0;
+            return;
+        }
+
+        while (TryReadFieldOrTerminator(body, ref pos, out var field, out var terminated))
+        {
+            if (terminated)
+            {
+                if (pos == body.Length)
+                {
+                    return;
+                }
+
+                break;
+            }
+
+            switch (field)
+            {
+                case 0 when TryReadLengthPrefixedString(body, ref pos, out var sourceLayer):
+                    if (!TryParseMaterialLayer(sourceLayer, out var parsedLayer))
+                    {
+                        _malformedEffectOpacityObjects.Add(owner);
+                        return;
+                    }
+
+                    _effectOpacitySourceLayerByObject[owner] = parsedLayer;
+                    break;
+                case 1 when TryReadByte(body, ref pos, out var secondActive):
+                    _effectOpacitySecondLayerActiveByObject[owner] = secondActive != 0;
+                    break;
+                case 5 when TryReadByte(body, ref pos, out var thirdActive):
+                    _effectOpacityThirdLayerActiveByObject[owner] = thirdActive != 0;
+                    break;
+                case 2 or 3 or 4 or 6 or 7 or 8
+                    when TryReadLengthPrefixedString(body, ref pos, out _):
+                    break;
+                case 9 when TryReadSingle(body, ref pos, out _):
+                    break;
+                default:
+                    _malformedEffectOpacityObjects.Add(owner);
+                    return;
+            }
+        }
+
+        _malformedEffectOpacityObjects.Add(owner);
     }
 
     /// <summary>
@@ -2026,6 +2400,19 @@ internal sealed class StarfieldMaterialDatabase
         return true;
     }
 
+    private static bool TryReadUInt16(ReadOnlySpan<byte> body, ref int pos, out ushort value)
+    {
+        value = 0;
+        if (pos + 2 > body.Length)
+        {
+            return false;
+        }
+
+        value = BinaryPrimitives.ReadUInt16LittleEndian(body[pos..]);
+        pos += 2;
+        return true;
+    }
+
     private static bool TryReadSingle(ReadOnlySpan<byte> body, ref int pos, out float value)
     {
         value = 0f;
@@ -2276,7 +2663,7 @@ internal sealed class StarfieldMaterialDatabase
         return true;
     }
 
-    private static void ReadClassDefinition(ReadOnlySpan<byte> body, string className, ref int objectInfoSize)
+    private void ReadClassDefinition(ReadOnlySpan<byte> body, string className, ref int objectInfoSize)
     {
         if (body.Length < 12)
         {
@@ -2284,6 +2671,10 @@ internal sealed class StarfieldMaterialDatabase
         }
 
         var fieldCount = BinaryPrimitives.ReadUInt16LittleEndian(body[10..]);
+        if (className.Length != 0)
+        {
+            _classFieldCounts[className] = fieldCount;
+        }
 
         // The object table's stride is version-dependent and announced ONLY here: builds >= 1.11.33.0
         // append a parent BSResourceID, which shows up as this class gaining a fifth field. Guessing

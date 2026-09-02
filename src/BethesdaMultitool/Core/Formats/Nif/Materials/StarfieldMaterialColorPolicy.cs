@@ -27,24 +27,31 @@ internal enum StarfieldMaterialColorChannel : byte
 
 /// <summary>
 ///     Persistent renderer operation selected from the broader CE2 material-colour policy. The
-///     vertex-Lerp case is intentionally absent until the renderer has a separate mask channel.
+///     vertex-Lerp case consumes the external mesh colour's alpha as a blend weight; it is distinct
+///     from both coverage alpha and the constant-Lerp payload below.
 /// </summary>
 internal enum StarfieldMaterialColorRenderMode : byte
 {
     None = 0,
-    ConstantLerp = 1
+    ConstantLerp = 1,
+    VertexLerp = 2
 }
 
 /// <summary>
 ///     First-class Starfield colour state carried from extraction through the decoded-mesh cache.
-///     <see cref="LinearTint" /> stores CE2-expanded RGB and the original linear Lerp weight in W;
-///     W is material composition data and must never be reinterpreted as coverage/opacity.
+///     For constant Lerp, <see cref="LinearTint" /> stores CE2-expanded RGB and the original linear
+///     weight in W. Vertex Lerp instead reads exact RGBA from the vertex stream and keeps this tuple
+///     zero. Neither weight is coverage/opacity.
 /// </summary>
 internal readonly record struct StarfieldMaterialColorRenderState(
     StarfieldMaterialColorRenderMode Mode,
     Vector4 LinearTint)
 {
     internal bool IsConstantLerp => Mode == StarfieldMaterialColorRenderMode.ConstantLerp;
+
+    internal bool IsVertexLerp => Mode == StarfieldMaterialColorRenderMode.VertexLerp;
+
+    internal bool IsLerp => IsConstantLerp || IsVertexLerp;
 }
 
 /// <summary>
@@ -94,9 +101,9 @@ internal readonly record struct StarfieldMaterialColorPolicy(
     /// <summary>
     ///     Resolves the bounded constant-Lerp operation shared by the world renderer and export
     ///     consumers. RGB follows CE2's <c>uni4srgb</c> expansion; alpha remains the authored linear
-    ///     Lerp weight. An exact zero weight is elided as the inherited no-op. Vertex-driven Lerp
-    ///     fails closed because its per-vertex mask cannot share the multiplicative vertex-colour
-    ///     lane, and none of these values represents output opacity.
+    ///     Lerp weight. An exact zero weight is elided as the inherited no-op. Vertex-driven Lerp is
+    ///     resolved by the stream-aware overload below, and none of these values represents output
+    ///     opacity.
     /// </summary>
     internal bool TryResolveConstantLerp(out Vector4 linearTint)
     {
@@ -132,23 +139,23 @@ internal readonly record struct StarfieldMaterialColorPolicy(
     }
 
     /// <summary>
-    ///     Selects the colour stream that the current renderer can represent exactly through its
-    ///     existing multiplicative vertex-colour lane.
+    ///     Selects the colour stream that the current renderer can represent exactly through either
+    ///     its multiplicative lane or its dedicated Starfield vertex-Lerp branch.
     ///     <para>
     ///         <c>Multiply + UsesVertexColorAsTint</c> carries the decoded external-mesh RGB bytes.
     ///         <c>Multiply</c> with vertex tint disabled carries the authored constant after CE2's
     ///         sRGB expansion by repeating it per vertex. The neutral white constant needs no stream.
     ///     </para>
     ///     <para>
-    ///         Lerp deliberately returns null because its affine <c>mix(albedo, tint.rgb, tint.a)</c>
-    ///         operation cannot be expressed by the viewer's multiplicative lane. In Multiply mode
-    ///         tint alpha is unused, so every supported stream emits alpha 255; CE2 opacity is a
-    ///         separate AlphaSettings policy that is not decoded here.
+    ///         <c>Lerp + UsesVertexColorAsTint</c> carries the decoded RGBA bytes unchanged: RGB is
+    ///         the target colour and alpha is the per-fragment Lerp weight in NifSkope's recovered
+    ///         CE2 shader. In Multiply mode tint alpha is unused, so every supported stream emits
+    ///         alpha 255. CE2 opacity is a separate AlphaSettings policy decoded elsewhere.
     ///     </para>
     /// </summary>
     internal byte[]? ResolveSupportedVertexColors(byte[]? decodedVertexColors, int vertexCount)
     {
-        if (!IsResolved || OverrideMode != StarfieldMaterialColorOverrideMode.Multiply || vertexCount <= 0)
+        if (!IsResolved || vertexCount <= 0)
         {
             return null;
         }
@@ -166,16 +173,33 @@ internal readonly record struct StarfieldMaterialColorPolicy(
                 return null;
             }
 
-            // Starfield's vertex C is consumed as normalized bytes with no transfer conversion.
-            // Multiply ignores C.a; retaining it would let the viewer's generic vertex-colour path
-            // reinterpret a material input as opacity. Clone so the decoded mesh cache stays raw.
             var decodedColors = (byte[])decodedVertexColors.Clone();
-            for (var offset = 3; offset < decodedColors.Length; offset += 4)
+            if (OverrideMode == StarfieldMaterialColorOverrideMode.Lerp)
             {
-                decodedColors[offset] = byte.MaxValue;
+                // Recovered CE2 shader: tintColor = C; layerBaseMap = mix(layerBaseMap,
+                // tintColor.rgb, tintColor.a). The external stream is already normalized BGRA8
+                // reordered to RGBA8, and neither RGB nor the weight receives a transfer conversion.
+                return decodedColors;
             }
 
-            return decodedColors;
+            if (OverrideMode == StarfieldMaterialColorOverrideMode.Multiply)
+            {
+                // Multiply ignores C.a; retaining it would let the viewer's generic vertex-colour
+                // path reinterpret a material input as opacity. Clone keeps the raw mesh immutable.
+                for (var offset = 3; offset < decodedColors.Length; offset += 4)
+                {
+                    decodedColors[offset] = byte.MaxValue;
+                }
+
+                return decodedColors;
+            }
+
+            return null;
+        }
+
+        if (OverrideMode != StarfieldMaterialColorOverrideMode.Multiply)
+        {
+            return null;
         }
 
         // NifSkope's CE2 reference renderer uploads material.color through uni4srgb(), whose RGB
@@ -205,6 +229,36 @@ internal readonly record struct StarfieldMaterialColorPolicy(
         }
 
         return constantColors;
+    }
+
+    /// <summary>
+    ///     Projects policy plus the already-selected colour stream onto persistent renderer state.
+    ///     Constant Lerp does not need a stream. Vertex Lerp is admitted only when extraction proved
+    ///     that one complete RGBA value exists for every vertex; a missing/truncated stream remains
+    ///     fail-closed instead of turning the white fallback vertex into a full tint.
+    /// </summary>
+    internal StarfieldMaterialColorRenderState ResolveRenderState(
+        byte[]? supportedVertexColors,
+        int vertexCount)
+    {
+        var constant = ResolveRenderState();
+        if (constant.IsConstantLerp)
+        {
+            return constant;
+        }
+
+        var requiredLength = (long)vertexCount * 4;
+        return IsResolved &&
+               UsesVertexColorAsTint &&
+               OverrideMode == StarfieldMaterialColorOverrideMode.Lerp &&
+               vertexCount > 0 &&
+               requiredLength <= int.MaxValue &&
+               supportedVertexColors is not null &&
+               supportedVertexColors.LongLength == requiredLength
+            ? new StarfieldMaterialColorRenderState(
+                StarfieldMaterialColorRenderMode.VertexLerp,
+                Vector4.Zero)
+            : default;
     }
 
     private static bool IsRepresentable(float value)

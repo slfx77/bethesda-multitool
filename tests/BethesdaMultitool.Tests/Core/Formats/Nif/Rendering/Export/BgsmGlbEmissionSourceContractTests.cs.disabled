@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -16,16 +17,26 @@ public sealed class BgsmGlbEmissionSourceContractTests
         var npcExportSource = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Npc", "Assembly",
             "NpcExportSceneBuilder.cs");
+        var cloneSource = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "RenderableSubmeshCloner.cs");
+        var cliNpcCloneSource = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "CLI", "Rendering", "Npc", "NpcMeshHelpers.cs");
 
-        Assert.Equal(2, SourceContract.CountOccurrences(
-            worldExportSource,
-            "BgsmGlowMapTexturePath = "));
-        Assert.Equal(2, SourceContract.CountOccurrences(
-            worldExportSource,
-            "BgsmEmissionColor = "));
-        Assert.Contains("BgsmGlowMapTexturePath = submesh.BgsmGlowMapTexturePath", npcExportSource,
+        Assert.Contains("RenderableSubmeshCloner.DeepClone(part.Submesh)", worldExportSource,
             StringComparison.Ordinal);
-        Assert.Contains("BgsmEmissionColor = submesh.BgsmEmissionColor", npcExportSource,
+        Assert.Contains("RenderableSubmeshCloner.CloneGeometryWithRenderState(geometry, materialSource)",
+            worldExportSource,
+            StringComparison.Ordinal);
+        Assert.Contains("RenderableSubmeshCloner.DeepClone(submesh)", npcExportSource,
+            StringComparison.Ordinal);
+        Assert.Contains("BgsmGlowMapTexturePath = renderState.BgsmGlowMapTexturePath", cloneSource,
+            StringComparison.Ordinal);
+        Assert.Contains("BgsmEmissionColor = renderState.BgsmEmissionColor", cloneSource,
+            StringComparison.Ordinal);
+        Assert.Contains("BgsmGlowMapTexturePath = sub.BgsmGlowMapTexturePath", cliNpcCloneSource,
+            StringComparison.Ordinal);
+        Assert.Contains("BgsmEmissionColor = sub.BgsmEmissionColor", cliNpcCloneSource,
             StringComparison.Ordinal);
     }
 
@@ -40,6 +51,8 @@ public sealed class BgsmGlbEmissionSourceContractTests
             source,
             "var hasActiveBgsmEmission = TryEncodeGltfEmission(",
             "var bgsmGlowTexture",
+            "var hasExternalRegularBgsm",
+            "var inlineEmissiveTexture = !hasExternalRegularBgsm",
             "var emissiveTexturePath",
             "var emissiveFactor",
             "var emissiveStrength",
@@ -53,15 +66,20 @@ public sealed class BgsmGlbEmissionSourceContractTests
     }
 
     [Fact]
-    public void HdrEmissionIsLosslesslySplitBetweenBoundedFactorAndStrength()
+    public void HdrEmissionIsSplitBetweenBoundedFactorAndStrength()
     {
-        var effective = new Vector3(2f, 0.5f, 4f);
+        var effective = new Vector3(0.988560736f, 1.25f, 2.88482833f);
 
         Assert.True(GlbWriter.TryEncodeGltfEmission(effective, out var factor, out var strength));
 
-        Assert.Equal(new Vector3(0.5f, 0.125f, 1f), factor);
-        Assert.Equal(4f, strength);
-        Assert.Equal(effective, factor * strength);
+        Assert.InRange(factor.X, 0f, 1f);
+        Assert.InRange(factor.Y, 0f, 1f);
+        Assert.InRange(factor.Z, 0f, 1f);
+        Assert.Equal(effective.Z, strength);
+        var reconstructed = factor * strength;
+        Assert.Equal(effective.X, reconstructed.X, 6);
+        Assert.Equal(effective.Y, reconstructed.Y, 6);
+        Assert.Equal(effective.Z, reconstructed.Z, 6);
     }
 
     [Fact]
@@ -91,4 +109,24 @@ public sealed class BgsmGlbEmissionSourceContractTests
         new Vector3(float.NaN, 0.5f, 0.5f),
         new Vector3(0.5f, float.PositiveInfinity, 0.5f)
     };
+
+    [Fact]
+    public void ExternalBgsmMaterialIsAuthoritativeEvenWithoutActiveEmission()
+    {
+        var explicitMaterial = new RenderableSubmesh
+        {
+            ShaderMetadata = new NifShaderTextureMetadata
+            {
+                MaterialPath = "materials\\architecture\\wall.bgsm"
+            }
+        };
+        var legacyDiffuseFallback = new RenderableSubmesh
+        {
+            DiffuseTexturePath = "materials\\architecture\\wall.bgsm"
+        };
+
+        Assert.True(GlbWriter.HasExternalRegularBgsmMaterial(explicitMaterial));
+        Assert.True(GlbWriter.HasExternalRegularBgsmMaterial(legacyDiffuseFallback));
+        Assert.False(GlbWriter.HasExternalRegularBgsmMaterial(new RenderableSubmesh()));
+    }
 }

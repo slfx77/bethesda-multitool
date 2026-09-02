@@ -7,11 +7,27 @@ using static BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRendere
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
-///     Pins the bounded Starfield constant-Lerp operation across extraction, persistence, GPU
-///     constants, and the specialized shader without widening the shared opaque-draw ABI.
+///     Pins the bounded Starfield constant- and vertex-Lerp operations across extraction,
+///     persistence, GPU constants, and both specialized and fallback shaders without widening the
+///     shared opaque-draw ABI.
 /// </summary>
 public sealed class StarfieldConstantLerpRenderPathSourceContractTests
 {
+    [Fact]
+    public void VendoredReferencePinsVertexRgbAndAlphaAsTheLerpInputs()
+    {
+        var reference = SourceContract.ReadSource(
+            "Sample", "Reference_Code", "nifskope", "res", "shaders", "stf_default.frag");
+
+        SourceContract.AssertOrder(
+            reference,
+            "tintColor = ( (lm.layers[i].material.flags & 2) == 0 ? lm.layers[i].material.color : C );",
+            "if ( (lm.layers[i].material.flags & 1) == 0 )",
+            "layerBaseMap *= tintColor.rgb;",
+            "else",
+            "layerBaseMap = mix( layerBaseMap, tintColor.rgb, tintColor.a );");
+    }
+
     [Fact]
     public void StateFlowsFromRenderableThroughDecodedCacheAndCachedSubmesh()
     {
@@ -23,6 +39,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             "NifSubmeshExtractor.cs");
         var decoded = D3D12Source("ReferenceDecodedMesh12.cs");
         var decoder = D3D12Source("ReferenceMeshDecoder12.cs");
+        var submeshDecoder = D3D12Source("ReferenceSubmeshDecoder12.cs");
         var disk = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "ReferenceDecodedMeshDiskCache12.cs");
@@ -31,17 +48,19 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
 
         Assert.Contains("StarfieldMaterialColorRenderState StarfieldMaterialColor", renderable,
             StringComparison.Ordinal);
-        Assert.Contains("StarfieldMaterialColor = colorPolicy.ResolveRenderState()", extractor,
+        Assert.Contains("StarfieldMaterialColor = colorPolicy.ResolveRenderState(materialVertexColors, vertexCount)", extractor,
             StringComparison.Ordinal);
         Assert.Contains("StarfieldMaterialColor = submesh.StarfieldMaterialColor", extractor,
             StringComparison.Ordinal);
         Assert.Contains("StarfieldMaterialColorRenderState StarfieldMaterialColor = default", decoded,
             StringComparison.Ordinal);
+        Assert.Contains("StarfieldMaterialColor: submesh.StarfieldMaterialColor", submeshDecoder,
+            StringComparison.Ordinal);
         Assert.True(SourceContract.CountOccurrences(
-            decoder, "StarfieldMaterialColor: sub.StarfieldMaterialColor") >= 3);
+            decoder, "StarfieldMaterialColor: sub.StarfieldMaterialColor") >= 2);
         SourceContract.AssertOrder(
             disk,
-            "internal const int DecoderVersion = 86;",
+            "internal const int DecoderVersion = 89;",
             "writer.Write(submesh.ClassicEnvironmentMapIsSphereMap);",
             "WriteStarfieldMaterialColor(writer, submesh.StarfieldMaterialColor);",
             "WriteStarfieldMaterialAlpha(writer, submesh.StarfieldMaterialAlpha);");
@@ -53,7 +72,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
     }
 
     [Fact]
-    public void ConstantLaneAndBranchStayStarfieldOnlyAndKeepTheSharedAbiAt256Bytes()
+    public void LerpModesAndBranchStayStarfieldOnlyAndKeepTheSharedAbiAt256Bytes()
     {
         Assert.Equal(256, Marshal.SizeOf<InstanceDrawConstants>());
 
@@ -62,6 +81,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
         var renderer = D3D12Source("ReferenceRenderer12.cs");
         var vertex = SourceContract.ReadShaderSource("reference_instanced.vert.hlsl");
         var fragment = SourceContract.ReadShaderSource("reference.frag.hlsl");
+        var shadow = SourceContract.ReadShaderSource("shadow.frag.hlsl");
         var starfieldBranch = SourceContract.Extract(
             fragment,
             "#elif REFERENCE_STARFIELD_DIFFUSE_LIT\n",
@@ -73,6 +93,8 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
 
         Assert.Contains("StarfieldConstantLerpTextureState = -2f", cached,
             StringComparison.Ordinal);
+        Assert.Contains("StarfieldVertexLerpTextureState = -3f", cached,
+            StringComparison.Ordinal);
         Assert.Contains("EffectFalloff: ResolveEffectFalloffConstants(sub)", renderer,
             StringComparison.Ordinal);
         Assert.Contains("return submesh.StarfieldMaterialColor.LinearTint;", renderer,
@@ -82,13 +104,28 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("input.vTextureState.w == -2.0", starfieldBranch,
             StringComparison.Ordinal);
+        Assert.Contains("input.vTextureState.w == -3.0", starfieldBranch,
+            StringComparison.Ordinal);
         SourceContract.AssertOrder(
             starfieldBranch,
             "float3 albedo = input.vTextureState.w == -2.0",
             "lerp(sample.rgb, input.vStarfieldMaterialColor.rgb, input.vStarfieldMaterialColor.a)",
+            "input.vTextureState.w == -3.0",
+            "lerp(sample.rgb, input.vVertexColor.rgb, input.vVertexColor.a)",
             "float3 lit = albedo * shade;");
-        Assert.DoesNotContain("vStarfieldMaterialColor", genericBranch, StringComparison.Ordinal);
-        Assert.DoesNotContain("-2.0", genericBranch, StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            genericBranch,
+            "bool starfieldConstantLerp = input.vTextureState.w == -2.0;",
+            "bool starfieldVertexLerp = input.vTextureState.w == -3.0;",
+            "sample.rgb = lerp(sample.rgb, input.vEffectFalloff.rgb, input.vEffectFalloff.a);",
+            "sample.rgb = lerp(sample.rgb, input.vVertexColor.rgb, input.vVertexColor.a);",
+            "vertexRgb = 1.0;",
+            "fnvActiveAdtBase || starfieldMaterialLerp");
+        SourceContract.AssertOrder(
+            shadow,
+            "bool starfieldMaterialLerp = input.vTextureState.w == -2.0 || input.vTextureState.w == -3.0;",
+            "input.vAlphaState.w > 0.5 || starfieldMaterialLerp",
+            "saturate(alpha * input.vVertexColor.a)");
     }
 
     private static string D3D12Source(string fileName) => SourceContract.ReadSource(

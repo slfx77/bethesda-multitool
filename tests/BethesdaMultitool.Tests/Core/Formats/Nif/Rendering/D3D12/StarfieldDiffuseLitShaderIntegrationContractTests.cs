@@ -32,13 +32,27 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             referenceVariants.Select(VariantKey).Order(StringComparer.Ordinal));
         Assert.All(referenceVariants, AssertReferencePixelShader);
 
-        var vertexVariants = ShaderPermutations.Reference
-            .Where(permutation => IsStarfieldDiffuseLit(permutation) && permutation.Profile == "vs_5_1")
+        var instancedVertexVariants = ShaderPermutations.Reference
+            .Where(permutation =>
+                IsStarfieldDiffuseLit(permutation) &&
+                permutation.Profile == "vs_5_1" &&
+                permutation.File == "reference_instanced.vert.hlsl")
             .ToArray();
         Assert.Equal(
             new[] { FamilyMacro, $"{FamilyMacro},{CutoutMacro}" },
-            vertexVariants.Select(VariantKey).Order(StringComparer.Ordinal));
-        Assert.All(vertexVariants, AssertReferenceInstancedVertexShader);
+            instancedVertexVariants.Select(VariantKey).Order(StringComparer.Ordinal));
+        Assert.All(instancedVertexVariants, AssertReferenceInstancedVertexShader);
+
+        var directVertexVariants = ShaderPermutations.Reference
+            .Where(permutation =>
+                IsStarfieldDiffuseLit(permutation) &&
+                permutation.Profile == "vs_5_1" &&
+                permutation.File == "reference.vert.hlsl")
+            .ToArray();
+        Assert.Equal(
+            new[] { FamilyMacro, $"{FamilyMacro},{CutoutMacro}" },
+            directVertexVariants.Select(VariantKey).Order(StringComparer.Ordinal));
+        Assert.All(directVertexVariants, AssertReferenceDirectVertexShader);
 
         var pcfVariants = ShaderPermutations.ShadowComparisonPcf
             .Where(IsStarfieldDiffuseLit)
@@ -54,9 +68,9 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
                 macro => macro.Name == ShadowComparisonPcf12.ShaderMacroName && macro.Definition == "1");
         });
 
-        // RenderingShaderCompilationTests compiles All, making these ten inventory entries the
-        // gate for both compact VS signatures and every PS under both shadow sampling modes.
-        Assert.Equal(10, ShaderPermutations.All.Count(IsStarfieldDiffuseLit));
+        // RenderingShaderCompilationTests compiles All, making these twelve inventory entries the
+        // gate for both direct and instanced compact VS pairs and every PS under both shadow modes.
+        Assert.Equal(12, ShaderPermutations.All.Count(IsStarfieldDiffuseLit));
     }
 
     [Fact]
@@ -112,6 +126,8 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             "float3 shade = AtmosphereLight(",
             "float3 albedo = input.vTextureState.w == -2.0",
             "? lerp(sample.rgb, input.vStarfieldMaterialColor.rgb, input.vStarfieldMaterialColor.a)",
+            ": input.vTextureState.w == -3.0",
+            "? lerp(sample.rgb, input.vVertexColor.rgb, input.vVertexColor.a)",
             ": sample.rgb * input.vVertexColor.rgb;",
             "float3 lit = albedo * shade;",
             "lit = min(lit, 1.0);",
@@ -142,12 +158,39 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
     }
 
     [Fact]
+    public void DirectVertexShaderPublishesTheSparseStarfieldColorUnionOnThePerDrawAbi()
+    {
+        var shader = SourceContract.ReadShaderSource("reference.vert.hlsl");
+        var output = SourceContract.Extract(shader, "// The specialized PS inputs", "VSOutput main(");
+        var main = SourceContract.Extract(shader, "VSOutput main(", "return o;\n}");
+
+        Assert.Contains("#define REFERENCE_SPECIALIZED_DIRECT_VERTEX 1", output,
+            StringComparison.Ordinal);
+        Assert.Contains("#ifdef REFERENCE_STARFIELD_DIFFUSE_LIT", output,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "nointerpolation float4 vStarfieldMaterialColor : TEXCOORD10;",
+            output,
+            StringComparison.Ordinal);
+        Assert.Contains("#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX", output,
+            StringComparison.Ordinal);
+        Assert.Contains("o.vStarfieldMaterialColor = uEffectFalloff;", main,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("SV_InstanceID", shader, StringComparison.Ordinal);
+        Assert.DoesNotContain("uInstanceWorlds", shader, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PipelineFactoryPublishesFourPsosAtomicallyAndExposesEveryVariant()
     {
         var source = D3D12Source("ReferencePipelineFactory12.cs");
         var create = SourceContract.Extract(
             source,
             "private void TryCreateStarfieldDiffuseLitPipelines(",
+            "private void TryCreateDirectModernStandardOpaquePipelines(");
+        var directCreate = SourceContract.Extract(
+            source,
+            "private void TryCreateDirectStarfieldDiffuseLitPipelines(",
             "private ID3D12PipelineState CreateShadowPipelineState(");
         var route = SourceContract.Extract(
             source,
@@ -195,10 +238,10 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             "_starfieldDiffuseLitBackCutoutPso = backCutout;",
             "_starfieldDiffuseLitDoubleCutoutPso = doubleCutout;",
             "finally",
-            "doubleCutout?.Dispose();",
-            "backCutout?.Dispose();",
-            "doubleSided?.Dispose();",
-            "back?.Dispose();");
+            "DisposeAbandonedConstructionPipeline(ref doubleCutout);",
+            "DisposeAbandonedConstructionPipeline(ref backCutout);",
+            "DisposeAbandonedConstructionPipeline(ref doubleSided);",
+            "DisposeAbandonedConstructionPipeline(ref back);");
         Assert.Contains("catch (Exception ex) when (ex is not OutOfMemoryException)", create,
             StringComparison.Ordinal);
 
@@ -219,6 +262,49 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             StringComparison.Ordinal);
         Assert.Contains("return pso is not null;", route, StringComparison.Ordinal);
 
+        Assert.Contains(
+            "DirectStarfieldDiffuseLitRequested = StarfieldDiffuseLitRequested;",
+            source,
+            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            source,
+            "TryCreateStarfieldDiffuseLitPipelines();",
+            "TryCreateDirectStarfieldDiffuseLitPipelines();");
+        Assert.Equal(2, SourceContract.CountOccurrences(
+            directCreate, "\"reference.vert.hlsl\", \"main\", \"vs_5_1\""));
+        Assert.DoesNotContain("reference_instanced.vert.hlsl", directCreate, StringComparison.Ordinal);
+        Assert.Equal(4, SourceContract.CountOccurrences(directCreate, "blendAttachment: null"));
+        Assert.Equal(4, SourceContract.CountOccurrences(directCreate, "depthWriteEnabled: true"));
+        Assert.DoesNotContain("alphaToCoverage:", directCreate, StringComparison.Ordinal);
+        Assert.DoesNotContain("decal:", directCreate, StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            directCreate,
+            "back = CreatePipelineState(",
+            "doubleSided = CreatePipelineState(",
+            "backCutout = CreatePipelineState(",
+            "doubleCutout = CreatePipelineState(",
+            "_directStarfieldDiffuseLitBackPso = back;",
+            "_directStarfieldDiffuseLitDoublePso = doubleSided;",
+            "_directStarfieldDiffuseLitBackCutoutPso = backCutout;",
+            "_directStarfieldDiffuseLitDoubleCutoutPso = doubleCutout;",
+            "finally",
+            "DisposeAbandonedConstructionPipeline(ref doubleCutout);",
+            "DisposeAbandonedConstructionPipeline(ref backCutout);",
+            "DisposeAbandonedConstructionPipeline(ref doubleSided);",
+            "DisposeAbandonedConstructionPipeline(ref back);");
+        Assert.Contains("public bool DirectStarfieldDiffuseLitOpaqueAvailable =>", route,
+            StringComparison.Ordinal);
+        Assert.Contains("public bool TryGetDirectStarfieldDiffuseLitPso(", route,
+            StringComparison.Ordinal);
+        Assert.Contains("(false, false) => _directStarfieldDiffuseLitBackPso", route,
+            StringComparison.Ordinal);
+        Assert.Contains("(false, true) => _directStarfieldDiffuseLitDoublePso", route,
+            StringComparison.Ordinal);
+        Assert.Contains("(true, false) => _directStarfieldDiffuseLitBackCutoutPso", route,
+            StringComparison.Ordinal);
+        Assert.Contains("(true, true) => _directStarfieldDiffuseLitDoubleCutoutPso", route,
+            StringComparison.Ordinal);
+
         Assert.Contains("_mirrorPsoMap[_starfieldDiffuseLitBackPso] = mirrorBack;", source,
             StringComparison.Ordinal);
         Assert.Contains("_mirrorPsoMap[_starfieldDiffuseLitDoublePso] = OpaqueDoublePso;", source,
@@ -234,6 +320,14 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
         Assert.Contains("_starfieldDiffuseLitDoublePso?.Dispose();", dispose,
             StringComparison.Ordinal);
         Assert.Contains("_starfieldDiffuseLitBackPso?.Dispose();", dispose,
+            StringComparison.Ordinal);
+        Assert.Contains("_directStarfieldDiffuseLitDoubleCutoutPso?.Dispose();", dispose,
+            StringComparison.Ordinal);
+        Assert.Contains("_directStarfieldDiffuseLitBackCutoutPso?.Dispose();", dispose,
+            StringComparison.Ordinal);
+        Assert.Contains("_directStarfieldDiffuseLitDoublePso?.Dispose();", dispose,
+            StringComparison.Ordinal);
+        Assert.Contains("_directStarfieldDiffuseLitBackPso?.Dispose();", dispose,
             StringComparison.Ordinal);
     }
 
@@ -325,7 +419,7 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
         var cache = D3D12Source("ReferenceMeshCache12.cs");
         var rollback = SourceContract.Extract(
             cache,
-            "private void ReleaseSubmeshTextures(",
+            "private static void ReleaseSubmeshTextures(",
             "private static Vector3[]? ExtractParticleCenters(");
         var residentMesh = D3D12Source("CachedNifMesh12.cs");
         var dispose = SourceContract.Extract(
@@ -333,7 +427,7 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             "public void Dispose()",
             "}\n#endif");
 
-        Assert.Contains("_textureCache.Release(submesh.StarfieldOpacity);", rollback,
+        Assert.Contains("textureCache.Release(submesh.StarfieldOpacity);", rollback,
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             dispose,
@@ -360,6 +454,13 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
     private static void AssertReferenceInstancedVertexShader(ShaderPermutation permutation)
     {
         Assert.Equal("reference_instanced.vert.hlsl", permutation.File);
+        Assert.Equal("main", permutation.EntryPoint);
+        Assert.Equal("vs_5_1", permutation.Profile);
+    }
+
+    private static void AssertReferenceDirectVertexShader(ShaderPermutation permutation)
+    {
+        Assert.Equal("reference.vert.hlsl", permutation.File);
         Assert.Equal("main", permutation.EntryPoint);
         Assert.Equal("vs_5_1", permutation.Profile);
     }

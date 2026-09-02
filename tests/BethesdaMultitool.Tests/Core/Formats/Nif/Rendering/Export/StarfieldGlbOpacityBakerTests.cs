@@ -54,6 +54,57 @@ public sealed class StarfieldGlbOpacityBakerTests
     }
 
     [Fact]
+    public void BakeEffectAlpha_UsesSlotRedAndKeepsOverallAlphaAsSeparateFactor()
+    {
+        var baseColor = Texture(2, 1,
+            [10, 20, 30, 17, 50, 60, 70, 23]);
+        var opacity = Texture(2, 1,
+            [7, 99, 98, 97, 211, 96, 95, 94]);
+        var state = new StarfieldMaterialEffectAlphaState(
+            0.35f,
+            new StarfieldMaterialSlot(@"textures\test\visor_opacity.dds", null));
+
+        var result = StarfieldGlbOpacityBaker.BakeEffectAlpha(baseColor, opacity, state);
+
+        Assert.True(result.Applied);
+        Assert.Equal(0.35f, result.AlphaFactor);
+        Assert.Equal(
+            new byte[] { 10, 20, 30, 7, 50, 60, 70, 211 },
+            Assert.IsType<DecodedTexture>(result.Texture).Pixels);
+    }
+
+    [Fact]
+    public void BakeEffectAlpha_FlatOpacityMovesExactConstantIntoMaterialFactor()
+    {
+        var baseColor = Texture(1, 1, [10, 20, 30, 17]);
+        var state = new StarfieldMaterialEffectAlphaState(
+            0.5f,
+            new StarfieldMaterialSlot(null, 0xFFFFFFFFu & ~0xFFu | 64u));
+
+        var result = StarfieldGlbOpacityBaker.BakeEffectAlpha(baseColor, null, state);
+
+        Assert.True(result.Applied);
+        Assert.Equal(0.5f * (64f / 255f), result.AlphaFactor);
+        Assert.Equal(
+            new byte[] { 10, 20, 30, 255 },
+            Assert.IsType<DecodedTexture>(result.Texture).Pixels);
+    }
+
+    [Fact]
+    public void BakeEffectAlpha_MissingDeclaredOpacityImageFailsClosed()
+    {
+        var baseColor = Texture(1, 1, [10, 20, 30, 17]);
+        var state = new StarfieldMaterialEffectAlphaState(
+            0.5f,
+            new StarfieldMaterialSlot(@"textures\test\missing.dds", null));
+
+        var result = StarfieldGlbOpacityBaker.BakeEffectAlpha(baseColor, null, state);
+
+        Assert.False(result.Applied);
+        Assert.Same(baseColor, result.Texture);
+    }
+
+    [Fact]
     public void MissingBase_CombinesOpacityTextureWithTheConstantLerpFactor()
     {
         var state = new StarfieldMaterialColorRenderState(
