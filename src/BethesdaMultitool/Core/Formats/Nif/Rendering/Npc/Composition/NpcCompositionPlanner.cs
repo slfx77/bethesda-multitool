@@ -254,6 +254,7 @@ internal static class NpcCompositionPlanner
 
         var raceFacePartPaths = new[]
             {
+                npc.EarNifPath,
                 npc.MouthNifPath,
                 npc.LowerTeethNifPath,
                 npc.UpperTeethNifPath,
@@ -304,7 +305,7 @@ internal static class NpcCompositionPlanner
             return Array.Empty<NpcBodyMeshPlan>();
         }
 
-        var parts = new List<NpcBodyMeshPlan>(3);
+        var parts = new List<NpcBodyMeshPlan>(7);
         if ((coveredSlots & 0x04) == 0 &&
             npc.UpperBodyNifPath != null)
         {
@@ -312,6 +313,43 @@ internal static class NpcCompositionPlanner
             {
                 MeshPath = npc.UpperBodyNifPath,
                 TextureOverride = effectiveBodyTex,
+                RenderOrder = 0
+            });
+        }
+
+        // TES4/Oblivion authors the lower body, both hands, and both feet as three
+        // combined meshes. Their BMDT slots are 0x08, 0x10, and 0x20 respectively;
+        // keeping them distinct from the later left/right-hand fields prevents
+        // hand.nif from being emitted twice.
+        if ((coveredSlots & 0x08) == 0 &&
+            npc.LowerBodyNifPath != null)
+        {
+            parts.Add(new NpcBodyMeshPlan
+            {
+                MeshPath = npc.LowerBodyNifPath,
+                TextureOverride = npc.LowerBodyTexturePath,
+                RenderOrder = 0
+            });
+        }
+
+        if ((coveredSlots & 0x10) == 0 &&
+            npc.HandNifPath != null)
+        {
+            parts.Add(new NpcBodyMeshPlan
+            {
+                MeshPath = npc.HandNifPath,
+                TextureOverride = effectiveHandTex,
+                RenderOrder = 0
+            });
+        }
+
+        if ((coveredSlots & 0x20) == 0 &&
+            npc.FootNifPath != null)
+        {
+            parts.Add(new NpcBodyMeshPlan
+            {
+                MeshPath = npc.FootNifPath,
+                TextureOverride = npc.FootTexturePath,
                 RenderOrder = 0
             });
         }

@@ -34,6 +34,7 @@ internal static class NifExportExtractor
             shapeDataMap,
             shapePropertyMap,
             shapeSkinInstanceMap);
+        var treeAnimationShapes = NifSceneGraphWalker.CollectTreeAnimationShapes(nif, nodeChildren);
 
         ApplyShapeFilter(data, nif, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap, filterShapeName);
         NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, worldTransforms, animOverrides);
@@ -46,6 +47,7 @@ internal static class NifExportExtractor
             shapeDataMap,
             shapePropertyMap,
             shapeSkinInstanceMap,
+            treeAnimationShapes,
             worldTransforms,
             preSkinMorphDeltas);
 
@@ -164,17 +166,31 @@ internal static class NifExportExtractor
         Dictionary<int, int> shapeDataMap,
         Dictionary<int, List<int>> shapePropertyMap,
         Dictionary<int, int> shapeSkinInstanceMap,
+        IReadOnlySet<int> treeAnimationShapes,
         Dictionary<int, Matrix4x4> worldTransforms,
         float[]? preSkinMorphDeltas)
     {
         var meshParts = new List<ExtractedMeshPart>();
+        var parentByChild = new Dictionary<int, int>();
+        foreach (var (parentIndex, children) in nodeChildren)
+        {
+            foreach (var childIndex in children)
+            {
+                parentByChild.TryAdd(childIndex, parentIndex);
+            }
+        }
 
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
             var shapeBlock = nif.Blocks[shapeIndex];
             var dataBlock = nif.Blocks[dataIndex];
             var shapeName = NifBlockParsers.ReadBlockName(data, shapeBlock, nif) ?? $"Shape_{shapeIndex}";
-            var properties = ResolveShapeProperties(data, nif, shapePropertyMap, shapeIndex);
+            var properties = ResolveShapeProperties(
+                data,
+                nif,
+                shapePropertyMap,
+                shapeIndex,
+                treeAnimationShapes.Contains(shapeIndex));
 
             // FO76 self-contained shapes never enter shapeSkinInstanceMap: the walker maps them
             // shape-to-self and deliberately skips the legacy NiGeometry skin parser. Read their
@@ -190,6 +206,7 @@ internal static class NifExportExtractor
             var skin = fo76Skin.Binding is { } binding
                 ? new ExtractedSkinBinding
                 {
+                    BoneBlockIndices = binding.BoneBlockIndices,
                     BoneNames = binding.BoneNames,
                     InverseBindMatrices = binding.InverseBindMatrices,
                     PerVertexInfluences = binding.PerVertexInfluences
@@ -211,13 +228,26 @@ internal static class NifExportExtractor
             }
             submesh.SourceBlockIndex = shapeIndex;
 
+            var shapeWorldTransform = worldTransforms.TryGetValue(shapeIndex, out var shapeWorld)
+                ? shapeWorld
+                : Matrix4x4.Identity;
+            var parentNodeBlockIndex = parentByChild.TryGetValue(shapeIndex, out var parentIndex) &&
+                                       NifSceneGraphWalker.NodeTypes.Contains(nif.Blocks[parentIndex].TypeName)
+                ? parentIndex
+                : (int?)null;
+            var shapeLocalTransform = parentNodeBlockIndex is int parentBlockIndex &&
+                                      worldTransforms.TryGetValue(parentBlockIndex, out var parentWorld) &&
+                                      Matrix4x4.Invert(parentWorld, out var inverseParentWorld)
+                ? shapeWorldTransform * inverseParentWorld
+                : shapeWorldTransform;
+
             meshParts.Add(new ExtractedMeshPart
             {
                 Name = shapeName,
                 Submesh = submesh,
-                ShapeWorldTransform = worldTransforms.TryGetValue(shapeIndex, out var shapeWorld)
-                    ? shapeWorld
-                    : Matrix4x4.Identity,
+                ShapeLocalTransform = shapeLocalTransform,
+                ShapeWorldTransform = shapeWorldTransform,
+                ParentNodeBlockIndex = parentNodeBlockIndex,
                 Skin = skin
             });
         }
@@ -275,17 +305,23 @@ internal static class NifExportExtractor
         }
 
         var boneNames = new string[skinData.Bones.Length];
+        var boneBlockIndices = new int[skinData.Bones.Length];
         for (var i = 0; i < boneNames.Length; i++)
         {
-            boneNames[i] = i < skinInstance.BoneRefs.Length &&
-                           skinInstance.BoneRefs[i] >= 0 &&
-                           skinInstance.BoneRefs[i] < nif.Blocks.Count
-                ? NifBlockParsers.ReadBlockName(data, nif.Blocks[skinInstance.BoneRefs[i]], nif) ?? $"Bone_{i}"
+            var boneBlockIndex = i < skinInstance.BoneRefs.Length &&
+                                 skinInstance.BoneRefs[i] >= 0 &&
+                                 skinInstance.BoneRefs[i] < nif.Blocks.Count
+                ? skinInstance.BoneRefs[i]
+                : -1;
+            boneBlockIndices[i] = boneBlockIndex;
+            boneNames[i] = boneBlockIndex >= 0
+                ? NifBlockParsers.ReadBlockName(data, nif.Blocks[boneBlockIndex], nif) ?? $"Bone_{i}"
                 : $"Bone_{i}";
         }
 
         return new ExtractedSkinBinding
         {
+            BoneBlockIndices = boneBlockIndices,
             BoneNames = boneNames,
             InverseBindMatrices = skinData.Bones.Select(bone => bone.InverseBindPose).ToArray(),
             PerVertexInfluences = influences
@@ -373,11 +409,14 @@ internal static class NifExportExtractor
         byte[] data,
         NifInfo nif,
         Dictionary<int, List<int>> shapePropertyMap,
-        int shapeIndex)
+        int shapeIndex,
+        bool isTreeAnimationShape)
     {
         if (!shapePropertyMap.TryGetValue(shapeIndex, out var propRefs))
         {
-            return ShapeProperties.Default;
+            return isTreeAnimationShape
+                ? ShapeProperties.TreeAnimationDefault
+                : ShapeProperties.Default;
         }
 
         var shaderMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, propRefs);
@@ -420,7 +459,9 @@ internal static class NifExportExtractor
             IsEmissive = shaderMetadata?.PropertyType is "BSShaderNoLightingProperty"
                 or "BSEffectShaderProperty",
             UseVertexColors = useVertexColors,
-            UseVertexAlphaForOpacity = NifVertexColorPolicy.UsesAlphaForOpacity(shaderMetadata),
+            UseVertexAlphaForOpacity = NifVertexColorPolicy.UsesAlphaForOpacity(
+                shaderMetadata,
+                isTreeAnimationShape),
             IsDoubleSided = NifDoubleSidedPolicy.Resolve(
                 NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
                 shaderMetadata),
@@ -477,7 +518,11 @@ internal static class NifExportExtractor
 
         public required RenderableSubmesh Submesh { get; init; }
 
+        public required Matrix4x4 ShapeLocalTransform { get; init; }
+
         public required Matrix4x4 ShapeWorldTransform { get; init; }
+
+        public int? ParentNodeBlockIndex { get; init; }
 
         public ExtractedSkinBinding? Skin { get; init; }
     }
@@ -485,6 +530,8 @@ internal static class NifExportExtractor
     /// <summary>Extracted skinning for a mesh part: its bone names, inverse bind matrices, and per-vertex influences.</summary>
     internal sealed class ExtractedSkinBinding
     {
+        public required int[] BoneBlockIndices { get; init; }
+
         public required string[] BoneNames { get; init; }
 
         public required Matrix4x4[] InverseBindMatrices { get; init; }
@@ -495,6 +542,11 @@ internal static class NifExportExtractor
     private sealed class ShapeProperties
     {
         internal static readonly ShapeProperties Default = new();
+
+        internal static readonly ShapeProperties TreeAnimationDefault = new()
+        {
+            UseVertexAlphaForOpacity = false
+        };
 
         public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 

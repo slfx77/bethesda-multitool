@@ -883,7 +883,7 @@ public sealed class AtmosphereStateTests
         Assert.Equal(0f, AtmosphereState.HorizonGlow(12f, 5f, 19f, 0.766f));
     }
 
-    // --- FNV/FO3 engine sun path (triangle wave, FNV GMSTs fSunXExtreme=800 / fSunYExtreme=−100) ----
+    // --- FNV/FO3 engine sun path (both retail GMST sets: fSunXExtreme=800 / fSunYExtreme=−100) -------
 
     [Fact]
     public void FnvSunPath_NoonApex_MatchesEngineConstants()

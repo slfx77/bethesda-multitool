@@ -50,6 +50,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private readonly IDXGISwapChain3 _swapChain;
     private readonly ID3D12DescriptorHeap _rtvHeap;
     private readonly ID3D12DescriptorHeap _dsvHeap;
+    private SwapChainPanel? _panel;
     private readonly uint _rtvDescriptorSize;
     private readonly uint _dsvDescriptorSize;
     private readonly int _sampleCount;
@@ -80,6 +81,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private IDisposable? _footprint;
     private uint _width;
     private uint _height;
+    private bool _disposed;
 
     /// <summary>
     ///     Tonemap operator + parameters for the live viewer. Defaults to gamma-corrected ACES; the
@@ -97,6 +99,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12Resource depthTexture,
         ID3D12Resource? msaaColor,
         ID3D12Resource? hdrResolve,
+        SwapChainPanel panel,
         int sampleCount,
         uint width,
         uint height)
@@ -112,13 +115,29 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _depthTexture = depthTexture;
         _msaaColor = msaaColor;
         _hdrResolve = hdrResolve;
-        _tonemap = new GpuTonemapPass12(gpu);
-        TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
-        _tonemapEnabled = SceneColorFormat == Format.R16G16B16A16_Float
-                          && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
-        _width = width;
-        _height = height;
-        RefreshFootprint();
+        _panel = panel;
+        GpuTonemapPass12? tonemap = null;
+        try
+        {
+            tonemap = new GpuTonemapPass12(gpu);
+            _tonemap = tonemap;
+            TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
+            _tonemapEnabled = SceneColorFormat == Format.R16G16B16A16_Float
+                              && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+            _width = width;
+            _height = height;
+            RefreshFootprint();
+        }
+        catch
+        {
+            // Factory-owned swap-chain resources are deliberately left to Create's catch. Only the
+            // two resources born inside this constructor need local rollback when the object never
+            // becomes observable.
+            _footprint?.Dispose();
+            _footprint = null;
+            tonemap?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -379,6 +398,28 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+
+        // SwapChainPanel retains its own COM reference. Detach on the owning UI thread before
+        // releasing the surface graph so an unloaded/replaced tab cannot keep presenting a dead or
+        // blank swap chain. Current controls dispose from Loaded/Unloaded/UI lifecycle handlers;
+        // fail-soft if a future off-thread owner violates that contract.
+        var panel = _panel;
+        _panel = null;
+        if (panel is not null)
+        {
+            if (panel.DispatcherQueue.HasThreadAccess)
+            {
+                TryDetachPanel(panel);
+            }
+            else
+            {
+                Log.Warn("GpuSwapChainSurface12.Dispose called off the SwapChainPanel UI thread; " +
+                         "the panel could not be detached safely.");
+            }
+        }
+
         // Null-conditional: after a failed Resize the back-buffer slots are cleared (the old
         // buffers were disposed before ResizeBuffers and no new ones were acquired).
         foreach (var b in _backBuffers) b?.Dispose();
@@ -424,6 +465,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12Resource? depthTexture = null;
         ID3D12Resource? msaaColor = null;
         ID3D12Resource? hdrResolve = null;
+        GpuSwapChainSurface12? surface = null;
+        var panelBindAttempted = false;
 
         try
         {
@@ -469,12 +512,6 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             using var swapChain1 = factory.CreateSwapChainForComposition(gpu.DirectQueue, desc);
             swapChain3 = swapChain1.QueryInterface<IDXGISwapChain3>();
 
-            using (var panelComObject = new ComObject(panel))
-            {
-                using var native = panelComObject.QueryInterface<Vortice.WinUI.ISwapChainPanelNative>();
-                native.SetSwapChain(swapChain3).CheckError();
-            }
-
             // +1 RTV slot after the per-frame back-buffer RTVs for the scene MSAA color target.
             rtvHeap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
             {
@@ -496,25 +533,52 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             msaaColor = CreateSceneColor(gpu.Device, width, height, sampleCount, rtvHeap, rtvDescriptorSize);
             hdrResolve = CreateHdrResolve(gpu.Device, width, height, sampleCount);
 
+            surface = new GpuSwapChainSurface12(
+                gpu, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, hdrResolve,
+                panel, sampleCount, width, height);
+
+            // Bind LAST. A panel must never observe the swap chain until every back buffer, view,
+            // scene target, tonemap resource and accounting registration has constructed. No
+            // fallible resource setup follows this call.
+            panelBindAttempted = true;
+            BindPanel(panel, swapChain3);
             Log.Info("GpuSwapChainSurface12: bound {0}x{1} to SwapChainPanel ({2} buffers, MSAA {3}x)",
                 width, height, BufferCount, sampleCount);
-            return new GpuSwapChainSurface12(
-                gpu, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, hdrResolve,
-                sampleCount, width, height);
+            return surface;
         }
-        catch (SharpGenException ex)
+        catch (Exception ex)
         {
-            Log.Warn("GpuSwapChainSurface12.Create failed: {0}", ex.Message);
-            hdrResolve?.Dispose();
-            msaaColor?.Dispose();
-            depthTexture?.Dispose();
-            if (backBuffers is not null)
+            if (surface is not null)
             {
-                foreach (var b in backBuffers) b.Dispose();
+                // Dispose detaches first. This also covers SetSwapChain failing after partially
+                // changing panel state.
+                surface.Dispose();
             }
-            dsvHeap?.Dispose();
-            rtvHeap?.Dispose();
-            swapChain3?.Dispose();
+            else
+            {
+                // Preserve any prior valid panel binding when setup failed before BindPanel. Only a
+                // bind attempt can have partially replaced it with this factory's blank chain.
+                if (panelBindAttempted)
+                {
+                    TryDetachPanel(panel);
+                }
+                hdrResolve?.Dispose();
+                msaaColor?.Dispose();
+                depthTexture?.Dispose();
+                if (backBuffers is not null)
+                {
+                    foreach (var b in backBuffers) b.Dispose();
+                }
+                dsvHeap?.Dispose();
+                rtvHeap?.Dispose();
+                swapChain3?.Dispose();
+            }
+            if (ex is OutOfMemoryException)
+            {
+                throw;
+            }
+
+            Log.Warn("GpuSwapChainSurface12.Create failed: {0}", ex.Message);
             return null;
         }
     }
@@ -732,13 +796,47 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         var buffers = new ID3D12Resource[BufferCount];
         var rtvIncrement = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
         var heapStart = rtvHeap.GetCPUDescriptorHandleForHeapStart();
-        for (uint i = 0; i < BufferCount; i++)
+        try
         {
-            buffers[i] = swapChain.GetBuffer<ID3D12Resource>(i);
-            var handle = new CpuDescriptorHandle(heapStart, (int)i, rtvIncrement);
-            device.CreateRenderTargetView(buffers[i], null, handle);
+            for (uint i = 0; i < BufferCount; i++)
+            {
+                buffers[i] = swapChain.GetBuffer<ID3D12Resource>(i);
+                var handle = new CpuDescriptorHandle(heapStart, (int)i, rtvIncrement);
+                device.CreateRenderTargetView(buffers[i], null, handle);
+            }
+            return buffers;
         }
-        return buffers;
+        catch
+        {
+            // GetBuffer can fail after earlier wrappers were acquired (device removal is the common
+            // case). They have not escaped this helper yet, so release them synchronously.
+            foreach (var buffer in buffers)
+            {
+                buffer?.Dispose();
+            }
+            throw;
+        }
+    }
+
+    private static void BindPanel(SwapChainPanel panel, IDXGISwapChain3 swapChain)
+    {
+        using var panelComObject = new ComObject(panel);
+        using var native = panelComObject.QueryInterface<Vortice.WinUI.ISwapChainPanelNative>();
+        native.SetSwapChain(swapChain).CheckError();
+    }
+
+    private static void TryDetachPanel(SwapChainPanel panel)
+    {
+        try
+        {
+            using var panelComObject = new ComObject(panel);
+            using var native = panelComObject.QueryInterface<Vortice.WinUI.ISwapChainPanelNative>();
+            native.SetSwapChain(null).CheckError();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("GpuSwapChainSurface12: SwapChainPanel detach failed: {0}", ex.Message);
+        }
     }
 
     private static ID3D12Resource CreateDepthBuffer(

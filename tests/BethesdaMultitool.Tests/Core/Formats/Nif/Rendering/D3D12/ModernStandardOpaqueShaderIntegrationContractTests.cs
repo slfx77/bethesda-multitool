@@ -33,13 +33,27 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         Assert.Equal(expectedVariantKeys, referenceVariants.Select(VariantKey).Order(StringComparer.Ordinal));
         Assert.All(referenceVariants, AssertReferencePixelShader);
 
-        var vertexVariants = ShaderPermutations.Reference
-            .Where(permutation => IsModernStandard(permutation) && permutation.Profile == "vs_5_1")
+        var instancedVertexVariants = ShaderPermutations.Reference
+            .Where(permutation =>
+                IsModernStandard(permutation) &&
+                permutation.Profile == "vs_5_1" &&
+                permutation.File == "reference_instanced.vert.hlsl")
             .ToArray();
         Assert.Equal(
             new[] { ModernMacro, $"{ModernMacro},{CutoutMacro}" },
-            vertexVariants.Select(VariantKey).Order(StringComparer.Ordinal));
-        Assert.All(vertexVariants, AssertReferenceInstancedVertexShader);
+            instancedVertexVariants.Select(VariantKey).Order(StringComparer.Ordinal));
+        Assert.All(instancedVertexVariants, AssertReferenceInstancedVertexShader);
+
+        var directVertexVariants = ShaderPermutations.Reference
+            .Where(permutation =>
+                IsModernStandard(permutation) &&
+                permutation.Profile == "vs_5_1" &&
+                permutation.File == "reference.vert.hlsl")
+            .ToArray();
+        Assert.Equal(
+            new[] { ModernMacro, $"{ModernMacro},{CutoutMacro}" },
+            directVertexVariants.Select(VariantKey).Order(StringComparer.Ordinal));
+        Assert.All(directVertexVariants, AssertReferenceDirectVertexShader);
 
         var pcfVariants = ShaderPermutations.ShadowComparisonPcf
             .Where(IsModernStandard)
@@ -50,9 +64,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
                 permutation.Macros,
                 macro => macro.Name == ShadowComparisonPcf12.ShaderMacroName && macro.Definition == "1"));
 
-        // RenderingShaderCompilationTests iterates All. Pinning all eight entries here makes that
-        // loop a compile gate for the two stage-matched VSes plus all three base and PCF PS forms.
-        Assert.Equal(8, ShaderPermutations.All.Count(IsModernStandard));
+        // RenderingShaderCompilationTests iterates All. Pinning all ten entries here makes that
+        // loop a compile gate for both direct and instanced stage-matched VS pairs plus all three
+        // base and PCF PS forms.
+        Assert.Equal(10, ShaderPermutations.All.Count(IsModernStandard));
     }
 
     [Fact]
@@ -63,6 +78,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             source,
             "private void TryCreateModernStandardOpaquePipelines(",
             "private void TryCreateStarfieldDiffuseLitPipelines(");
+        var directCreate = SourceContract.Extract(
+            source,
+            "private void TryCreateDirectModernStandardOpaquePipelines(",
+            "private void TryCreateDirectStarfieldDiffuseLitPipelines(");
         var route = SourceContract.Extract(
             source,
             "public bool TryGetModernStandardOpaquePso(",
@@ -107,9 +126,9 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             "_modernStandardBackCutoutPso = backCutout;",
             "_modernStandardDoubleCutoutPso = doubleCutout;",
             "finally",
-            "doubleCutout?.Dispose();",
-            "backCutout?.Dispose();",
-            "back?.Dispose();");
+            "DisposeAbandonedConstructionPipeline(ref doubleCutout);",
+            "DisposeAbandonedConstructionPipeline(ref backCutout);",
+            "DisposeAbandonedConstructionPipeline(ref back);");
         Assert.Contains("catch (Exception ex) when (ex is not OutOfMemoryException)", create,
             StringComparison.Ordinal);
 
@@ -134,9 +153,59 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         Assert.Contains("_ => null", route, StringComparison.Ordinal);
         Assert.Contains("return pso is not null;", route, StringComparison.Ordinal);
 
+        Assert.Contains(
+            "DirectModernStandardOpaqueRequested = FalloutModernStandardRequested;",
+            source,
+            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            source,
+            "TryCreateModernStandardOpaquePipelines();",
+            "TryCreateDirectModernStandardOpaquePipelines();");
+        Assert.Equal(2, SourceContract.CountOccurrences(
+            directCreate, "\"reference.vert.hlsl\", \"main\", \"vs_5_1\""));
+        Assert.DoesNotContain("reference_instanced.vert.hlsl", directCreate, StringComparison.Ordinal);
+        Assert.Equal(3, SourceContract.CountOccurrences(directCreate, "blendAttachment: null"));
+        Assert.Equal(3, SourceContract.CountOccurrences(directCreate, "depthWriteEnabled: true"));
+        Assert.DoesNotContain("alphaToCoverage:", directCreate, StringComparison.Ordinal);
+        Assert.DoesNotContain("decal:", directCreate, StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            directCreate,
+            "back = CreatePipelineState(",
+            "backCutout = CreatePipelineState(",
+            "doubleCutout = CreatePipelineState(",
+            "_directModernStandardBackPso = back;",
+            "_directModernStandardBackCutoutPso = backCutout;",
+            "_directModernStandardDoubleCutoutPso = doubleCutout;",
+            "finally",
+            "DisposeAbandonedConstructionPipeline(ref doubleCutout);",
+            "DisposeAbandonedConstructionPipeline(ref backCutout);",
+            "DisposeAbandonedConstructionPipeline(ref back);");
+        Assert.Contains("public bool DirectModernStandardOpaqueAvailable =>", route,
+            StringComparison.Ordinal);
+        Assert.Contains("public bool TryGetDirectModernStandardOpaquePso(", route,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ModernStandardOpaqueShaderVariant.SingleSidedOpaque => _directModernStandardBackPso",
+            route,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ModernStandardOpaqueShaderVariant.SingleSidedGreaterCutout => _directModernStandardBackCutoutPso",
+            route,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ModernStandardOpaqueShaderVariant.DoubleSidedGreaterCutout => _directModernStandardDoubleCutoutPso",
+            route,
+            StringComparison.Ordinal);
+
         Assert.Contains("_modernStandardDoubleCutoutPso?.Dispose();", dispose, StringComparison.Ordinal);
         Assert.Contains("_modernStandardBackCutoutPso?.Dispose();", dispose, StringComparison.Ordinal);
         Assert.Contains("_modernStandardBackPso?.Dispose();", dispose, StringComparison.Ordinal);
+        Assert.Contains("_directModernStandardDoubleCutoutPso?.Dispose();", dispose,
+            StringComparison.Ordinal);
+        Assert.Contains("_directModernStandardBackCutoutPso?.Dispose();", dispose,
+            StringComparison.Ordinal);
+        Assert.Contains("_directModernStandardBackPso?.Dispose();", dispose,
+            StringComparison.Ordinal);
 
         // Specialized main-pass shaders intentionally omit the neutral clip instruction. Every
         // possible mirror replay route must therefore map back to an uber PSO that consumes b3.
@@ -169,6 +238,38 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         Assert.DoesNotContain("clip(", branch, StringComparison.Ordinal);
         Assert.Contains("if (!(sampleAlpha > input.vAlphaState.x)) discard;", branch,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DirectVertexShaderPublishesTheSameSparseModernSignatureWithoutTheInstancedAbi()
+    {
+        var shader = SourceContract.ReadShaderSource("reference.vert.hlsl");
+        var output = SourceContract.Extract(shader, "// The specialized PS inputs", "VSOutput main(");
+        var main = SourceContract.Extract(shader, "VSOutput main(", "return o;\n}");
+
+        Assert.Contains("#define REFERENCE_SPECIALIZED_DIRECT_VERTEX 1", output,
+            StringComparison.Ordinal);
+        Assert.Contains("#ifdef REFERENCE_DIRECT_OUTPUT_ALPHA_STATE", output,
+            StringComparison.Ordinal);
+        Assert.Contains("#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE", output,
+            StringComparison.Ordinal);
+        Assert.Contains("nointerpolation float4 vSpecular   : TEXCOORD10;", output,
+            StringComparison.Ordinal);
+        Assert.Contains("nointerpolation float4 vEnvMap        : TEXCOORD13;", output,
+            StringComparison.Ordinal);
+        Assert.Contains("nointerpolation float vSpecularLodFade : TEXCOORD15;", output,
+            StringComparison.Ordinal);
+        Assert.Contains("o.vSpecularLodFade = uUvScroll.z;", main, StringComparison.Ordinal);
+        Assert.Contains("#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX\n    // FormID-heatmap payload", main,
+            StringComparison.Ordinal);
+        Assert.Contains("#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX\n    // The per-draw path uses", main,
+            StringComparison.Ordinal);
+        Assert.Contains("#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX\n    float activeAdtUniformScale", main,
+            StringComparison.Ordinal);
+        Assert.Contains("#if !defined(REFERENCE_MODERN_STANDARD) && !defined(REFERENCE_STARFIELD_DIFFUSE_LIT)",
+            shader, StringComparison.Ordinal);
+        Assert.DoesNotContain("SV_InstanceID", shader, StringComparison.Ordinal);
+        Assert.DoesNotContain("uInstanceWorlds", shader, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -357,6 +458,13 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
     private static void AssertReferenceInstancedVertexShader(ShaderPermutation permutation)
     {
         Assert.Equal("reference_instanced.vert.hlsl", permutation.File);
+        Assert.Equal("main", permutation.EntryPoint);
+        Assert.Equal("vs_5_1", permutation.Profile);
+    }
+
+    private static void AssertReferenceDirectVertexShader(ShaderPermutation permutation)
+    {
+        Assert.Equal("reference.vert.hlsl", permutation.File);
         Assert.Equal("main", permutation.EntryPoint);
         Assert.Equal("vs_5_1", permutation.Profile);
     }

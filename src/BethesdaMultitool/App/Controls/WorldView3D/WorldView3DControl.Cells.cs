@@ -136,10 +136,7 @@ public sealed partial class WorldView3DControl
             ? StarfieldWaterApproximation.FromWaterRecord(initialWaterSelection.Water)
             : null;
         var normalIndices = ResolveWaterNormalIndices(appearance, starfieldApproximation);
-        var oblivionDetailIndex = WaterProfile.ForGame(_data.Game).UsesWatrDetailTexture &&
-                                  appearance?.SurfaceTexture is { Length: > 0 } detailPath
-            ? _textureResolver12?.ResolveDiffuseBindlessIndex(detailPath)
-            : null;
+        var oblivionDetailIndex = ResolveWatrDetailTextureIndex(initialWaterSelection.Water);
         _cellGrid?.LoadData(cellList, _spatialIndex);
         _worldZExtent = ComputeGridZExtent(cellList);
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
@@ -261,6 +258,18 @@ public sealed partial class WorldView3DControl
             : null;
     }
 
+    /// <summary>
+    ///     Resolves TES4 WATR TNAM as the per-water detail texture. It is deliberately separate
+    ///     from the shared water00..31 normal animation and must follow every XCWT material rebind.
+    /// </summary>
+    private uint? ResolveWatrDetailTextureIndex(WaterRecord? water)
+    {
+        return _data is not null && WaterProfile.ForGame(_data.Game).UsesWatrDetailTexture &&
+               water?.SurfaceTexture is { Length: > 0 } detailPath
+            ? _textureResolver12?.ResolveDiffuseBindlessIndex(detailPath)
+            : null;
+    }
+
     private Dictionary<uint, WaterRenderer12.FnvWaterMaterialBinding>?
         ResolveFnvWaterMaterialCatalog()
     {
@@ -297,11 +306,14 @@ public sealed partial class WorldView3DControl
         // FO3 parity 2026-08-10: widened from FNV-only. Starfield parity 2026-08-31: retail has six
         // authored CELL XCWT overrides, including New Atlantis where WRLD NAM2 is absent. Before
         // this, Starfield stayed on the world-load NAM2 (or unavailable) while crossing those cells.
+        // Oblivion uses the same XCWT -> WRLD NAM2 selection and additionally rebinds the selected
+        // WATR's TNAM detail map; otherwise both color/flags and WATER000 DetailMap stayed world-global.
         // Record semantics only: XCWT → NAM2, with the engine-default tier still scoped to FO3/FNV.
         // The FNV-only WATER001 route is unaffected (its contract hard-fails non-FNV input).
         if (_data is null || _water is null ||
             _data.Game is not (BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
                 or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3
+                or BethesdaMultitool.Core.Games.BethesdaGame.Oblivion
                 or BethesdaMultitool.Core.Games.BethesdaGame.Starfield))
         {
             return;
@@ -330,6 +342,7 @@ public sealed partial class WorldView3DControl
         _water.SetAppearance(
             appearance,
             ResolveWaterNormalIndices(appearance, starfieldApproximation));
+        _water.SetOblivionDetailTexture(ResolveWatrDetailTextureIndex(selection.Water));
         _water.SetStarfieldApproximation(starfieldApproximation);
         _water.SetFnvWater001WaterTypeContext(selection.WaterFormId, worldspace?.WaterFormId);
         _boundWaterAppearanceFormId = selection.WaterFormId;
@@ -463,7 +476,6 @@ public sealed partial class WorldView3DControl
         _water?.SetGame(_data.Game);
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
-        _water?.SetOblivionDetailTexture(null);
         var waterSelection = WaterAppearanceSelectionResolver.Resolve(
             cell: interior,
             worldspace: null,
@@ -474,6 +486,7 @@ public sealed partial class WorldView3DControl
         var starfieldApproximation = _data.Game == BethesdaGame.Starfield
             ? StarfieldWaterApproximation.FromWaterRecord(waterSelection.Water)
             : null;
+        _water?.SetOblivionDetailTexture(ResolveWatrDetailTextureIndex(waterSelection.Water));
         if (_water is not null) _water.DefaultWaterRequiresCellHasWater = false;
         _water?.LoadData(
             _cellGridLookup,

@@ -229,6 +229,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private IntPtr _instanceMapped;
     private int _instanceCapacity;
     private WaterInstance[] _instanceScratch = [];
+    // The session cannot dispose a renderer whose constructor never returns. Keep every COM object,
+    // footprint registration and shared-heap slot transaction-owned until the full PSO/tile graph is
+    // complete, then transfer ownership to the ordinary fields/Dispose path.
+    private WaterConstructionTransaction? _constructionTransaction = new();
     private bool _disposed;
 
     private readonly record struct FnvWater001SnapshotDescriptor(uint BindlessIndex, uint Width, uint Height)
@@ -279,12 +283,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _recorder = recorder;
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
-        _persistentSrvs = new GpuPersistentDescriptorAllocator12(
-            gpu,
-            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-            capacity: 1);
         _deletionQueue = deletionQueue;
         _sharedRootSignature = rootSignature.RootSignature;
+        try
+        {
+        _persistentSrvs = TrackConstructionResource(new GpuPersistentDescriptorAllocator12(
+            gpu,
+            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
+            capacity: 1));
 
         var noiseScrollBlendBytecode = CompileEmbeddedShader(
             "water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1");
@@ -292,24 +298,24 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             "water_noise.comp.hlsl", "mainNormal", "cs_5_1");
         var noiseDownsampleBytecode = CompileEmbeddedShader(
             "water_noise.comp.hlsl", "mainDownsample", "cs_5_1");
-        _fnvNoiseScrollBlendPso = gpu.Device.CreateComputePipelineState(
+        _fnvNoiseScrollBlendPso = TrackConstructionResource(gpu.Device.CreateComputePipelineState(
             new ComputePipelineStateDescription
             {
                 RootSignature = rootSignature.RootSignature,
                 ComputeShader = noiseScrollBlendBytecode,
-            });
-        _fnvNoiseNormalPso = gpu.Device.CreateComputePipelineState(
+            }));
+        _fnvNoiseNormalPso = TrackConstructionResource(gpu.Device.CreateComputePipelineState(
             new ComputePipelineStateDescription
             {
                 RootSignature = rootSignature.RootSignature,
                 ComputeShader = noiseNormalBytecode,
-            });
-        _fnvNoiseDownsamplePso = gpu.Device.CreateComputePipelineState(
+            }));
+        _fnvNoiseDownsamplePso = TrackConstructionResource(gpu.Device.CreateComputePipelineState(
             new ComputePipelineStateDescription
             {
                 RootSignature = rootSignature.RootSignature,
                 ComputeShader = noiseDownsampleBytecode,
-            });
+            }));
 
         var noiseTextureDescription = ResourceDescription.Texture2D(
             Format.R8G8B8A8_UNorm,
@@ -357,22 +363,24 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _fnvNoiseTiles = new FnvNoiseTileSet[FnvNoiseMaterialSlots];
         for (var slot = 0; slot < FnvNoiseMaterialSlots; slot++)
         {
-            var blendTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+            var blendTexture = TrackConstructionResource(gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 new HeapProperties(HeapType.Default),
                 HeapFlags.None,
                 noiseTextureDescription,
-                ResourceStates.NonPixelShaderResource);
+                ResourceStates.NonPixelShaderResource));
             blendTexture.Name = $"FNV Water Noise Scroll+Blend {slot}";
-            var normalTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+            var normalTexture = TrackConstructionResource(gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 new HeapProperties(HeapType.Default),
                 HeapFlags.None,
                 noiseNormalTextureDescription,
-                ResourceStates.PixelShaderResource);
+                ResourceStates.PixelShaderResource));
             normalTexture.Name = $"FNV Water Noise Normal {slot}";
 
             var blendSrv = cbvSrvUavHeap.AllocatePersistent();
+            TrackConstructionPersistentSlot(blendSrv.BindlessIndex);
             gpu.Device.CreateShaderResourceView(blendTexture, noiseSrvDescription, blendSrv.Cpu);
             var normalSrv = cbvSrvUavHeap.AllocatePersistent();
+            TrackConstructionPersistentSlot(normalSrv.BindlessIndex);
             gpu.Device.CreateShaderResourceView(normalTexture, normalSrvDescription, normalSrv.Cpu);
             // One single-mip SRV per SOURCE level (0..N-2) feeds each downsample step; persistent
             // because the texture is.
@@ -380,6 +388,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             for (var mip = 0; mip < FnvNoiseMipCount - 1; mip++)
             {
                 var mipSrv = cbvSrvUavHeap.AllocatePersistent();
+                TrackConstructionPersistentSlot(mipSrv.BindlessIndex);
                 mipSrvIndices[mip] = mipSrv.BindlessIndex;
                 gpu.Device.CreateShaderResourceView(
                     normalTexture,
@@ -400,11 +409,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         }
 
         // ~4.7 MB of fixed device-local noise tiles, alive for the renderer's life.
-        _noiseFootprint = Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
+        _noiseFootprint = TrackConstructionResource(Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
             "water-noise-tiles",
             FnvNoiseMaterialSlots *
             ((long)gpu.Device.GetResourceAllocationInfo(0, noiseTextureDescription).SizeInBytes +
-             (long)gpu.Device.GetResourceAllocationInfo(0, noiseNormalTextureDescription).SizeInBytes));
+             (long)gpu.Device.GetResourceAllocationInfo(0, noiseNormalTextureDescription).SizeInBytes)));
 
         var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
         // Per-game water is normally a per-FILE axis (WaterProfile.PixelShaderFile). FO76 is the
@@ -521,21 +530,22 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             SampleMask = uint.MaxValue,
         };
         _depthPsoTemplate = psoDesc;
-        _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _pso = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psOblivionBytecode;
-        _psoOblivion = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoOblivion = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psFo4Bytecode;
-        _psoFo4 = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoFo4 = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         var fallout76OpticsPsoDesc = psoDesc;
         fallout76OpticsPsoDesc.PixelShader = psFo76OpticsBytecode;
         fallout76OpticsPsoDesc.BlendState = fallout76OpticsBlend;
-        _psoFo76Optics = gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc);
+        _psoFo76Optics = TrackConstructionResource(
+            gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc));
         psoDesc.PixelShader = psMorrowindBytecode;
-        _psoMorrowind = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoMorrowind = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psStarfieldBytecode;
-        _psoStarfield = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoStarfield = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psFlatBytecode;
-        _psoFlat = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoFlat = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psBytecode;
 
         // Depth-sample variant: the scene depth buffer is bound BOTH as an SRV (depth-fade /
@@ -566,24 +576,47 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         psoDesc.PixelShader = psDepthSampleBytecode;
         _depthSamplePsoTemplate = psoDesc;
-        _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         // WATER001 always consumes both scene depth and a separate single-sample opaque-scene
         // snapshot; like every depth-sample PSO it keeps the hardware GreaterEqual test through
         // the host's read-only DSV (its manual occlusion clip is compiled out above).
         psoDesc.PixelShader = psFnvWater001Bytecode;
-        _psoFnvWater001DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoFnvWater001DepthSample = TrackConstructionResource(
+            gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psOblivionDepthSampleBytecode;
-        _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoOblivionDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psFo4DepthSampleBytecode;
-        _psoFo4DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoFo4DepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         fallout76OpticsPsoDesc = psoDesc;
         fallout76OpticsPsoDesc.PixelShader = psFo76OpticsDepthSampleBytecode;
         fallout76OpticsPsoDesc.BlendState = fallout76OpticsBlend;
-        _psoFo76OpticsDepthSample = gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc);
+        _psoFo76OpticsDepthSample = TrackConstructionResource(
+            gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc));
         psoDesc.PixelShader = psMorrowindDepthSampleBytecode;
-        _psoMorrowindDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoMorrowindDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psStarfieldDepthSampleBytecode;
-        _psoStarfieldDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _psoStarfieldDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
+
+        _constructionTransaction!.Commit();
+        _constructionTransaction = null;
+        }
+        catch
+        {
+            _constructionTransaction?.Dispose();
+            _constructionTransaction = null;
+            throw;
+        }
+    }
+
+    private T TrackConstructionResource<T>(T resource) where T : IDisposable
+    {
+        _constructionTransaction?.Track(resource);
+        return resource;
+    }
+
+    private void TrackConstructionPersistentSlot(uint slot)
+    {
+        _constructionTransaction?.Track(new PersistentSlotReturn(_cbvSrvUavHeap, slot));
     }
 
     public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
@@ -714,10 +747,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         var key = (
             gx: (int)MathF.Floor(worldX / WorldGridConstants.CellSize),
             gy: (int)MathF.Floor(worldY / WorldGridConstants.CellSize));
-        if (_waterHeightByGrid.TryGetValue(key, out height)) return true;
-
         height = float.NegativeInfinity;
         var found = false;
+        if (_waterHeightByGrid.TryGetValue(key, out var cellHeight))
+        {
+            height = cellHeight;
+            found = true;
+        }
         foreach (var water in _irregularWaterCells)
         {
             if (worldX < water.OriginXY.X || worldX > water.OriginXY.X + water.FootprintSize ||
@@ -728,6 +764,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
             height = MathF.Max(height, water.Height);
             found = true;
+        }
+
+        // HasVisibleWaterToPartition refreshes this bounded list immediately before the reference
+        // or standalone-viewer split. NIF water has no CELL lookup entry, so probe its authored
+        // triangles directly; otherwise the viewer would report visible water yet classify every
+        // translucent draw into the post-water complement. Highest covering surface matches the
+        // overlapping-CELL rule above and fails conservatively outside the actual triangle outline.
+        foreach (var geometry in _visibleNifScratch)
+        {
+            if (geometry.TryGetHeightAtXY(worldX, worldY, out var nifHeight))
+            {
+                height = MathF.Max(height, nifHeight);
+                found = true;
+            }
         }
 
         if (!found) height = 0f;
@@ -1016,6 +1066,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
     private Matrix4x4 _reflectionViewProj = Matrix4x4.Identity;
     private bool _reflectionIsScene;
+
+    /// <summary>
+    ///     Whether the current Oblivion WATR selects the projective WATER007 scene-reflection arm.
+    ///     A missing appearance keeps the historical fallback because partial records cannot prove
+    ///     that required FNAM bit 1 was authored off.
+    /// </summary>
+    public bool AllowsProjectiveSceneReflection =>
+        _game == BethesdaGame.Oblivion && _appearance?.IsReflective != false;
 
     public void SetModernCubeMap(uint? cubeMapBindlessIndex) =>
         _modernCubeBindlessIndex = cubeMapBindlessIndex ?? NoNormalMap;
@@ -2197,7 +2255,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 WaterReflectionSceneHeight = _reflectionSceneHeight,
                 WaterReflectionDistortion = ReflectionDistortionScale,
                 ReflectionViewProj = _reflectionViewProj,
-                ReflectionSceneFlag = _reflectionIsScene ? 1u : 0u,
+                ReflectionSceneFlag = _reflectionIsScene && AllowsProjectiveSceneReflection ? 1u : 0u,
                 Starfield = useStarfieldApproximation
                     ? _starfieldApproximation!.ProjectFrameUniforms()
                     : default,
@@ -2732,7 +2790,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             WaterReflectionSceneHeight = _reflectionSceneHeight,
             WaterReflectionDistortion = ReflectionDistortionScale,
             ReflectionViewProj = _reflectionViewProj,
-            ReflectionSceneFlag = _reflectionIsScene ? 1u : 0u,
+            ReflectionSceneFlag = _reflectionIsScene && AllowsProjectiveSceneReflection ? 1u : 0u,
         };
 
         _frameMaterialCb[(material.WaterFormId, water001)] = perFrame.GpuAddress;
@@ -3727,6 +3785,41 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private sealed class PersistentSlotReturn(GpuDescriptorHeapAllocator12 heap, uint slot) : IDisposable
     {
         public void Dispose() => heap.FreePersistent(slot);
+    }
+
+    private sealed class WaterConstructionTransaction : IDisposable
+    {
+        private readonly List<IDisposable> _creationOrder = new(128);
+        private readonly HashSet<IDisposable> _owned =
+            new(128, ReferenceEqualityComparer.Instance);
+
+        internal void Track(IDisposable resource)
+        {
+            if (_owned.Add(resource))
+            {
+                _creationOrder.Add(resource);
+            }
+        }
+
+        internal void Commit()
+        {
+            _owned.Clear();
+            _creationOrder.Clear();
+        }
+
+        public void Dispose()
+        {
+            for (var index = _creationOrder.Count - 1; index >= 0; index--)
+            {
+                var resource = _creationOrder[index];
+                if (_owned.Remove(resource))
+                {
+                    resource.Dispose();
+                }
+            }
+
+            _creationOrder.Clear();
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]

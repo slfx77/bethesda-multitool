@@ -35,6 +35,7 @@ internal sealed class GpuDevice12 : IDisposable
     private IDXGIAdapter3? _videoMemoryAdapter;
     private bool _videoMemoryAdapterResolved;
     private GpuVideoMemoryMonitor12? _videoMemory;
+    private bool _disposed;
 
     private GpuDevice12(
         ID3D12Device device,
@@ -121,16 +122,84 @@ internal sealed class GpuDevice12 : IDisposable
     /// </summary>
     public GpuVideoMemoryMonitor12 VideoMemory => _videoMemory ??= new GpuVideoMemoryMonitor12(this);
 
+    /// <summary>
+    ///     Explicitly removes the D3D12 device after a command list reached the queue without a
+    ///     usable completion fence. ID3D12Device5::RemoveDevice is the terminal boundary that makes
+    ///     releasing every resource referenced by that unfenced list safe.
+    /// </summary>
+    internal bool TryForceDeviceRemoval(string context)
+    {
+        if (_disposed)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (Device.DeviceRemovedReason.Failure)
+            {
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("GpuDevice12: could not inspect device state before forced removal ({0}): {1}",
+                context, ex.Message);
+        }
+
+        try
+        {
+            using var device5 = Device.QueryInterfaceOrNull<ID3D12Device5>();
+            if (device5 is null)
+            {
+                Log.Warn("GpuDevice12: ID3D12Device5 is unavailable for forced removal ({0}).", context);
+                return false;
+            }
+
+            device5.RemoveDevice();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("GpuDevice12: forced device removal failed ({0}): {1}", context, ex.Message);
+            return false;
+        }
+    }
+
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         // Before the adapter: the monitor's watcher unregisters its notification through it.
-        _videoMemory?.Dispose();
+        DisposeNoThrow(_videoMemory, "video-memory monitor");
         _videoMemory = null;
-        _videoMemoryAdapter?.Dispose();
-        _infoQueue?.Dispose();
-        FrameFence.Dispose();
-        DirectQueue.Dispose();
-        Device.Dispose();
+        DisposeNoThrow(_videoMemoryAdapter, "video-memory adapter");
+        _videoMemoryAdapter = null;
+        DisposeNoThrow(_infoQueue, "D3D12 info queue");
+        DisposeNoThrow(FrameFence, "frame fence");
+        DisposeNoThrow(DirectQueue, "direct queue");
+        DisposeNoThrow(Device, "D3D12 device");
+    }
+
+    private static void DisposeNoThrow(IDisposable? resource, string resourceName)
+    {
+        if (resource is null)
+        {
+            return;
+        }
+
+        try
+        {
+            resource.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("GpuDevice12: {0} teardown failed: {1}", resourceName, ex.Message);
+        }
     }
 
     /// <summary>

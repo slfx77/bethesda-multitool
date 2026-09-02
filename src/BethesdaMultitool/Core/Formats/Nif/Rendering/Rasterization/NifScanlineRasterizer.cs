@@ -68,7 +68,9 @@ internal static class NifScanlineRasterizer
         var edge2IsTopLeft = IsTopLeftEdge(sx0, sy0, sx1, sy1, windingSign);
         var tex = tri.Texture;
         var normalMap = tri.NormalMap;
-        var hasUvGradients = tri.Texture != null || tri.NormalMap != null;
+        var hasUvGradients = tri.Texture != null ||
+                             tri.NormalMap != null ||
+                             tri.StarfieldOpacityMap != null;
         float duDx = 0f, duDy = 0f, dvDx = 0f, dvDy = 0f;
         if (hasUvGradients)
         {
@@ -150,7 +152,7 @@ internal static class NifScanlineRasterizer
                     }
 
                     // Bump mapping: perturb normal using normal map + TBN matrix
-                    if (!NifSpriteRenderer.DisableBumpMapping && normalMap != null && tri.HasTangents && tex != null)
+                    if (!NifSpriteRenderer.DisableBumpMapping && normalMap != null && tri.HasTangents)
                     {
                         var u = tri.U0 * w0 + tri.U1 * w1 + tri.U2 * w2;
                         var v = tri.V0 * w0 + tri.V1 * w1 + tri.V2 * w2;
@@ -258,7 +260,7 @@ internal static class NifScanlineRasterizer
                     shade = tri.FlatShade;
                 }
 
-                if (tex != null)
+                if (tex != null || normalMap != null || tri.StarfieldOpacityMap != null)
                 {
                     RasterizeTexturedPixel(
                         pixels, depthBuffer, faceKind,
@@ -309,17 +311,30 @@ internal static class NifScanlineRasterizer
         float shade, float specIntensity, bool isBackFacing,
         float duDx, float dvDx, float duDy, float dvDy)
     {
-        var tex = tri.Texture!;
+        var tex = tri.Texture;
         var u = tri.U0 * w0 + tri.U1 * w1 + tri.U2 * w2;
         var v = tri.V0 * w0 + tri.V1 * w1 + tri.V2 * w2;
 
         var (r, g, b, a) = NifSpriteRenderer.DisableTextures
             ? ((byte)200, (byte)200, (byte)200, (byte)255)
-            : NifTextureSampler.SampleTexture(
-                tex, u, v, duDx, dvDx, duDy, dvDy,
-                tri.ClampTextureU, tri.ClampTextureV);
+            : tex is not null
+                ? NifTextureSampler.SampleTexture(
+                    tex, u, v, duDx, dvDx, duDy, dvDy,
+                    tri.ClampTextureU, tri.ClampTextureV)
+                // Match skin.frag.hlsl's no-diffuse fallback. This still enters the UV path when an
+                // independently-authored normal or CE2 opacity map exists; the latter's red channel
+                // controls coverage without inventing a diffuse image.
+                : ((byte)199, (byte)199, (byte)199, (byte)255);
 
-        if (tri.HasVertexColors)
+        if (tri.StarfieldOpacityMap is { } opacityMap)
+        {
+            var (opacity, _, _, _) = NifTextureSampler.SampleTexture(
+                opacityMap, u, v, duDx, dvDx, duDy, dvDy,
+                tri.ClampTextureU, tri.ClampTextureV);
+            a = opacity;
+        }
+
+        if (tri.HasVertexColors && !tri.IsStarfieldVertexLerp)
         {
             var vca = tri.A0 * w0 + tri.A1 * w1 + tri.A2 * w2;
             a = (byte)Math.Clamp(a * vca / 255f, 0, 255);
@@ -353,7 +368,22 @@ internal static class NifScanlineRasterizer
         }
 
         float fr, fg, fb;
-        if (tri.HasTintColor)
+        if (tri.IsStarfieldVertexLerp)
+        {
+            var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
+            var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
+            var vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
+            var lerpWeight = Math.Clamp(
+                (tri.StarfieldVertexLerpA0 * w0 +
+                 tri.StarfieldVertexLerpA1 * w1 +
+                 tri.StarfieldVertexLerpA2 * w2) / 255f,
+                0f,
+                1f);
+            fr = Lerp(r, vcr, lerpWeight) * shade;
+            fg = Lerp(g, vcg, lerpWeight) * shade;
+            fb = Lerp(b, vcb, lerpWeight) * shade;
+        }
+        else if (tri.HasTintColor)
         {
             var tintShadeR = 2f * tri.TintR;
             var tintShadeG = 2f * tri.TintG;
@@ -461,7 +491,7 @@ internal static class NifScanlineRasterizer
     {
         var brightness = (byte)(shade * 220 + 35);
         var fk = isBackFacing ? (byte)2 : (byte)1;
-        var vertexAlpha = tri.HasVertexColors
+        var vertexAlpha = tri.HasVertexColors && !tri.IsStarfieldVertexLerp
             ? Math.Clamp(tri.A0 * w0 + tri.A1 * w1 + tri.A2 * w2, 0f, 255f)
             : 255f;
 
@@ -489,7 +519,26 @@ internal static class NifScanlineRasterizer
         }
 
         float fr, fg, fb;
-        if (tri.HasTintColor)
+        if (tri.IsStarfieldVertexLerp)
+        {
+            var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
+            var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
+            var vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
+            var lerpWeight = Math.Clamp(
+                (tri.StarfieldVertexLerpA0 * w0 +
+                 tri.StarfieldVertexLerpA1 * w1 +
+                 tri.StarfieldVertexLerpA2 * w2) / 255f,
+                0f,
+                1f);
+            // Match the GPU sprite/reference equation exactly: the untextured base is 0.78 grey,
+            // the affine material operation happens before lighting, and the same shade multiplies
+            // both endpoints. The legacy untextured brightness curve is not a CE2 material input.
+            const float defaultGrey = 199f;
+            fr = Lerp(defaultGrey, vcr, lerpWeight) * shade;
+            fg = Lerp(defaultGrey, vcg, lerpWeight) * shade;
+            fb = Lerp(defaultGrey, vcb, lerpWeight) * shade;
+        }
+        else if (tri.HasTintColor)
         {
             var baseVal = brightness;
             fr = Math.Clamp(baseVal * 2f * tri.TintR * shade, 0, 255);
@@ -512,13 +561,20 @@ internal static class NifScanlineRasterizer
             fb = brightness;
         }
 
+        if (tri.HasEffectTint)
+        {
+            fr *= tri.EffectTintR;
+            fg *= tri.EffectTintG;
+            fb *= tri.EffectTintB;
+        }
+
         if (tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
         {
             depthBuffer[idx] = z;
             faceKind[idx] = fk;
-            pixels[pIdx + 0] = (byte)fr;
-            pixels[pIdx + 1] = (byte)fg;
-            pixels[pIdx + 2] = (byte)fb;
+            pixels[pIdx + 0] = (byte)Math.Clamp(fr, 0f, 255f);
+            pixels[pIdx + 1] = (byte)Math.Clamp(fg, 0f, 255f);
+            pixels[pIdx + 2] = (byte)Math.Clamp(fb, 0f, 255f);
             pixels[pIdx + 3] = 255;
         }
         else
@@ -571,6 +627,11 @@ internal static class NifScanlineRasterizer
     internal static float ComputeBlendedOpacity(float sourceAlphaByte, float materialAlpha)
     {
         return Math.Clamp(sourceAlphaByte * materialAlpha / 255f, 0f, 1f);
+    }
+
+    private static float Lerp(float from, float to, float weight)
+    {
+        return from + (to - from) * weight;
     }
 
     private static byte StochasticAlphaThreshold(int px, int py)

@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Resources;
 
@@ -25,6 +26,11 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     internal const string LeafAtlasMipsSuffix = "|leafmips";
 
+    // Persistent-cache revision scoped to the normal maps whose Xbox 360 `_s.ddx` companion is
+    // now folded into DXT5 alpha. A global DecoderVersion bump would throw away every warm diffuse,
+    // sky, water, and material texture even though their decoded bytes are unchanged.
+    private const string XboxNormalSpecularCacheRevision = "|x360-normal-spec-v1";
+
     /// <summary>
     ///     RGBA fallback decodes that produce more than this many bytes (mip 0 + chain) are
     ///     logged at warning level. The uncompressed fallback path allocates <c>w*h*4</c> per
@@ -37,6 +43,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     private readonly ConcurrentLazyCache<string, GpuTexturePayload> _cache;
+    private readonly IReadOnlyDictionary<string, DecodedTexture>? _generatedTextures;
     private readonly Func<string, GpuTexturePayload?>? _loadTextureOverride;
     private readonly ReferenceDecodedTextureDiskCache12? _persistentCache;
     private readonly List<INifTextureSource> _sources;
@@ -48,6 +55,21 @@ internal sealed class NifGpuTextureResolver : IDisposable
         _sourceSetIdentity = BuildSourceSetIdentity(textureSourcePaths);
         _persistentCache = ReferenceDecodedTextureDiskCache12.CreateFromEnvironment();
         _cache = CreateCache().RegisterWith(ResourceRegistry.Instance);
+    }
+
+    /// <summary>
+    ///     Creates a resolver for a native viewer scene. Scene-generated RGBA textures (FaceGen/EGT
+    ///     composites) take precedence over archives and deliberately bypass the persistent decoded
+    ///     cache, while all authored material and texture paths continue through the normal source
+    ///     set and cache pipeline.
+    /// </summary>
+    internal NifGpuTextureResolver(
+        IReadOnlyList<string> textureSourcePaths,
+        IReadOnlyDictionary<string, DecodedTexture> generatedTextures)
+        : this(textureSourcePaths.ToArray())
+    {
+        ArgumentNullException.ThrowIfNull(generatedTextures);
+        _generatedTextures = generatedTextures;
     }
 
     internal NifGpuTextureResolver(Func<string, GpuTexturePayload?> loadTexture)
@@ -217,6 +239,73 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return false;
     }
 
+    private bool ExistsExactlyInAnySource(string normalizedPath)
+    {
+        foreach (var source in _sources)
+        {
+            // Unlike INifTextureSource.Exists, metadata lookup never performs the loose-directory
+            // `.dds` <-> `.ddx` convenience fallback. Pair detection needs the spelling that will
+            // actually reach DecodeRawTexture so its scoped cache revision agrees with the decode.
+            if (source.TryGetAssetMetadata(normalizedPath, out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private string BuildPersistentCacheKey(string cachePath, string sourcePath)
+    {
+        return CanDecodePairedXboxNormal(sourcePath, ExistsExactlyInAnySource)
+            ? string.Concat(_sourceSetIdentity, "|", cachePath, XboxNormalSpecularCacheRevision)
+            : string.Concat(_sourceSetIdentity, "|", cachePath);
+    }
+
+    /// <summary>
+    ///     True when the uncached loader can select an Xbox normal plus its separately-stored
+    ///     specular companion. A <c>.dds</c> request always probes its <c>.ddx</c> fallback even when
+    ///     an exact <c>.dds</c> entry exists: that primary entry can be present but undecodable, in
+    ///     which case <see cref="LoadTextureUncached" /> continues to the paired DDX. Giving every
+    ///     possible paired result the scoped revision prevents a stale pre-pair payload from being
+    ///     returned or stored under the old key. The probes use metadata only; they do not extract
+    ///     or decode any texture.
+    /// </summary>
+    internal static bool CanDecodePairedXboxNormal(
+        string sourcePath,
+        Func<string, bool> existsExactly)
+    {
+        ArgumentNullException.ThrowIfNull(sourcePath);
+        ArgumentNullException.ThrowIfNull(existsExactly);
+
+        if (!NormalMapMerge.IsNormalMapPath(sourcePath))
+        {
+            return false;
+        }
+
+        string resolvedNormalPath;
+        if (sourcePath.EndsWith(".ddx", StringComparison.OrdinalIgnoreCase))
+        {
+            resolvedNormalPath = sourcePath;
+        }
+        else if (sourcePath.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            resolvedNormalPath = string.Concat(sourcePath.AsSpan(0, sourcePath.Length - 4), ".ddx");
+        }
+        else
+        {
+            return false;
+        }
+
+        if (!existsExactly(resolvedNormalPath))
+        {
+            return false;
+        }
+
+        var specularPath = NormalMapMerge.ComputeSpecularPath(resolvedNormalPath);
+        return specularPath is not null && existsExactly(specularPath);
+    }
+
     /// <summary>
     ///     Drops the cached decoded payload for <paramref name="texturePath" /> once it has been
     ///     uploaded to the GPU. The CPU-side mip <c>byte[]</c>s are dead weight after upload — the
@@ -249,6 +338,16 @@ internal sealed class NifGpuTextureResolver : IDisposable
         var variants = SplitVariantKey(path);
         var sourcePath = variants.SourcePath;
 
+        // Runtime-composited actor textures are authoritative for their canonical path. They must
+        // be checked before the disk cache: a previous actor can legitimately use the same logical
+        // FaceGen key with different pixels, and persisting either payload would cross-contaminate
+        // later viewer scenes.
+        if (_generatedTextures is not null &&
+            _generatedTextures.TryGetValue(NifTexturePathUtility.Normalize(sourcePath), out var generated))
+        {
+            return GpuTexturePayload.FromRgba(generated);
+        }
+
         if (_loadTextureOverride is not null)
         {
             return _loadTextureOverride(sourcePath);
@@ -260,7 +359,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         // keeps rebuilt mips and Starfield diffuse/normal roles in separate persistent entries.
         if (_persistentCache is not null)
         {
-            var keyText = string.Concat(_sourceSetIdentity, "|", path);
+            var keyText = BuildPersistentCacheKey(path, sourcePath);
             if (_persistentCache.TryLoad(keyText, out var cachedPayload, out _))
             {
                 return cachedPayload;
@@ -412,9 +511,25 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return null;
     }
 
-    private static GpuTexturePayload? DecodeRawTexture(byte[] rawData, string path, bool leafAtlasMips = false)
+    private byte[]? TryLoadRawFromSources(string path)
     {
-        var ddsData = NifTextureLoader.ConvertDdxIfNeeded(rawData);
+        foreach (var source in _sources)
+        {
+            if (source.TryLoadRaw(path) is { } rawData)
+            {
+                return rawData;
+            }
+        }
+
+        return null;
+    }
+
+    private GpuTexturePayload? DecodeRawTexture(byte[] rawData, string path, bool leafAtlasMips = false)
+    {
+        var ddsData = NifTextureLoader.ConvertDdxNormalPairIfNeeded(
+            rawData,
+            path,
+            TryLoadRawFromSources);
 
         // Leaf atlases skip the BCn pass-through: their shipped mips average foliage color with the
         // atlas background (white for the Oblivion dogwood/maple composites), which washes distant

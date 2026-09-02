@@ -35,6 +35,7 @@ public sealed partial class WorldView3DControl
     private CheckBox CollisionCheckBox => SettingsPanel.CollisionCheckBox;
     private CheckBox FormIdHeatmapCheckBox => SettingsPanel.FormIdHeatmapCheckBox;
     private CheckBox TerrainToggle => SettingsPanel.TerrainToggle;
+    private CheckBox MasterTerrainCheckBox => SettingsPanel.MasterTerrainCheckBox;
     private CheckBox RefsToggle => SettingsPanel.RefsToggle;
     private CheckBox WaterCheckBox => SettingsPanel.WaterCheckBox;
     private CheckBox GrassCheckBox => SettingsPanel.GrassCheckBox;
@@ -99,6 +100,7 @@ public sealed partial class WorldView3DControl
         Wire(p.CollisionCheckBox, CollisionCheckBox_Changed);
         Wire(p.FormIdHeatmapCheckBox, FormIdHeatmapCheckBox_Changed);
         Wire(p.TerrainToggle, TerrainToggle_Changed);
+        Wire(p.MasterTerrainCheckBox, MasterTerrainCheckBox_Changed);
         Wire(p.RefsToggle, RefsToggle_Changed);
         Wire(p.WaterCheckBox, WaterCheckBox_Changed);
         Wire(p.GrassCheckBox, GrassCheckBox_Changed);
@@ -362,6 +364,23 @@ public sealed partial class WorldView3DControl
     {
         if (_initializing) return;
         _showWater = WaterCheckBox.IsChecked == true;
+    }
+
+    /// <summary>
+    ///     Raised when the DMP-only "Master ESM terrain" checkbox changes. The terrain SOURCE is
+    ///     decided when the host tab builds WorldViewData (merge + enrichment), not in the
+    ///     renderer, so the control can only ask the host to rebuild — mirroring how
+    ///     <c>ReferenceEnabledOverridesReset</c> escalates to the tab.
+    /// </summary>
+    public event EventHandler<bool>? MasterTerrainPreviewToggled;
+
+    private void MasterTerrainCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        // Only meaningful for a memory-dump scene; the checkbox is hidden otherwise, but the
+        // handler still guards so a latent Checked replay during a non-DMP load can't rebuild.
+        if (_data?.IsMemoryDump != true) return;
+        MasterTerrainPreviewToggled?.Invoke(this, MasterTerrainCheckBox.IsChecked == true);
     }
 
     private void GrassCheckBox_Changed(object sender, RoutedEventArgs e)

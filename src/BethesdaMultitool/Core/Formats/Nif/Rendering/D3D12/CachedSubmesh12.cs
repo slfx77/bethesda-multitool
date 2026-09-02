@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 internal sealed class CachedSubmesh12
 {
     internal const float StarfieldConstantLerpTextureState = -2f;
+    internal const float StarfieldVertexLerpTextureState = -3f;
     internal const uint StarfieldOpacityTextureFlag = 1u << 15;
     internal const uint BgsmEmissionTextureFlag = 1u << 16;
 
@@ -38,7 +39,8 @@ internal sealed class CachedSubmesh12
 
     /// <summary>
     ///     Persistent CE2 material-colour state. Constant Lerp reuses the Starfield-only
-    ///     uEffectFalloff lane; its W is a blend weight and never contributes to output opacity.
+    ///     uEffectFalloff lane. Vertex Lerp consumes the uploaded vertex alpha. Both W values are
+    ///     blend weights and never contribute to output opacity.
     /// </summary>
     public StarfieldMaterialColorRenderState StarfieldMaterialColor { get; init; }
 
@@ -231,12 +233,12 @@ internal sealed class CachedSubmesh12
                 (StarfieldOpacity is null ? 0 : 1) <= 1,
                 "Specular, classic environment-mask, classic height, and Starfield opacity maps cannot share TexIndices.z.");
             System.Diagnostics.Debug.Assert(
-                !StarfieldMaterialColor.IsConstantLerp ||
+                !StarfieldMaterialColor.IsLerp ||
                 (StarfieldMaterialPath is not null &&
                  GradientMap is null &&
                  !HasEffectFalloff &&
                  !IsLighting30),
-                "Starfield constant Lerp requires the mutually-exclusive Starfield material lane.");
+                "Starfield Lerp requires the mutually-exclusive Starfield material lane.");
             System.Diagnostics.Debug.Assert(
                 !HasBgsmEmission ||
                 (StarfieldMaterialPath is null &&
@@ -260,13 +262,17 @@ internal sealed class CachedSubmesh12
             {
                 textureStateW = StarfieldConstantLerpTextureState;
             }
+            else if (StarfieldMaterialColor.IsVertexLerp)
+            {
+                textureStateW = StarfieldVertexLerpTextureState;
+            }
             else if (GradientMap is not null)
             {
                 textureStateW = GradientMapV;
             }
 
             var state = new Vector4(
-                Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
+                (float)Normal.NormalDecodeMode,
                 leafBillboardMode,
                 // Exact integer flags carried in a float constant: bit 0 = sample TexIndices.z for
                 // the spec mask, bits 1/2 = clamp U/V, bit 3 = TexIndices.w is a Lighting30 glow
@@ -292,7 +298,7 @@ internal sealed class CachedSubmesh12
                     : 0f) +
                 (StarfieldOpacity is not null ? (float)StarfieldOpacityTextureFlag : 0f) +
                 (HasBgsmEmission ? (float)BgsmEmissionTextureFlag : 0f),
-                textureStateW); // .w >= 0 = palette row; -2 = Starfield constant Lerp
+                textureStateW); // .w >= 0 = palette row; -2/-3 = Starfield constant/vertex Lerp
             if (TexturesReady)
             {
                 _textureState = state;
@@ -367,6 +373,13 @@ internal sealed class CachedSubmesh12
     ///     not part of the shared mesh or GPU instance identity; -1 means unavailable.
     /// </summary>
     public int SourceBlockIndex { get; init; } = -1;
+
+    /// <summary>
+    ///     Stable index in the <c>DecodedNifMesh12.Submeshes</c> collection supplied to the shared
+    ///     materializer. CPU-only; the standalone viewer uses it to recover its parallel native
+    ///     semantics after water/refraction/no-draw admission has filtered the GPU submesh list.
+    /// </summary>
+    public int MaterializationSourceIndex { get; init; } = -1;
 
     public required Vector3 LocalBoundsCenter { get; init; }
     public required float LocalBoundsRadius { get; init; }

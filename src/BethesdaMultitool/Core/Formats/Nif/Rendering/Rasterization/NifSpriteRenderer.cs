@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
@@ -379,19 +380,30 @@ internal static class NifSpriteRenderer
             // Resolve textures for this submesh (if available)
             DecodedTexture? texture = null;
             DecodedTexture? normalMap = null;
+            DecodedTexture? starfieldOpacityMap = null;
             if (textureResolver != null && uvs != null && submesh.DiffuseTexturePath != null)
             {
                 texture = textureResolver.GetTexture(submesh.DiffuseTexturePath);
-                if (texture != null)
-                {
-                    hasTexture = true;
-                }
             }
 
             var alphaState = NifAlphaClassifier.Classify(submesh, texture);
+            if (textureResolver != null &&
+                uvs != null &&
+                submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout &&
+                submesh.DiffuseTexturePath is { } starfieldMaterialPath &&
+                MaterialTexturePathResolver.IsStarfieldMaterialPath(starfieldMaterialPath))
+            {
+                starfieldOpacityMap = textureResolver.GetTexture(
+                    MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(starfieldMaterialPath));
+            }
             if (textureResolver != null && uvs != null && submesh.NormalMapTexturePath != null)
             {
                 normalMap = textureResolver.GetTexture(submesh.NormalMapTexturePath);
+            }
+
+            if (texture != null || normalMap != null || starfieldOpacityMap != null)
+            {
+                hasTexture = true;
             }
 
             // Skip untextured submeshes when texture rendering is active — but only
@@ -472,11 +484,15 @@ internal static class NifSpriteRenderer
                     SubsurfaceG = submesh.SubsurfaceColor.G,
                     SubsurfaceB = submesh.SubsurfaceColor.B,
                     ClampTextureU = submesh.ClampTextureU,
-                    ClampTextureV = submesh.ClampTextureV
+                    ClampTextureV = submesh.ClampTextureV,
+                    IsStarfieldVertexLerp = submesh.StarfieldMaterialColor.IsVertexLerp
                 };
 
-                // Populate UV data if texture is available
-                if (texture != null && uvs != null)
+                // Every UV-authored material texture uses the same coordinates. In particular, a
+                // CE2 opacity slot remains authoritative when the diffuse slot is absent or failed
+                // to decode; the GPU path shades that case over its 0.78 grey fallback.
+                if (uvs != null &&
+                    (texture != null || normalMap != null || starfieldOpacityMap != null))
                 {
                     var uv0 = tris[t] * 2;
                     var uv1 = tris[t + 1] * 2;
@@ -492,6 +508,7 @@ internal static class NifSpriteRenderer
                         tri.V2 = uvs[uv2 + 1];
                         tri.Texture = texture;
                         tri.NormalMap = normalMap;
+                        tri.StarfieldOpacityMap = starfieldOpacityMap;
                     }
                 }
 
@@ -538,7 +555,7 @@ internal static class NifSpriteRenderer
                     tri.HasTangents = true;
                 }
 
-                if (NifVertexColorPolicy.HasVertexColorData(submesh))
+                if (tri.IsStarfieldVertexLerp || NifVertexColorPolicy.HasVertexColorData(submesh))
                 {
                     var vertexIndex0 = tris[t];
                     var vertexIndex1 = tris[t + 1];
@@ -551,9 +568,15 @@ internal static class NifSpriteRenderer
                         ci1 + 3 < vcol.Length &&
                         ci2 + 3 < vcol.Length)
                     {
-                        var c0 = NifVertexColorPolicy.Read(submesh, vertexIndex0);
-                        var c1 = NifVertexColorPolicy.Read(submesh, vertexIndex1);
-                        var c2 = NifVertexColorPolicy.Read(submesh, vertexIndex2);
+                        var c0 = tri.IsStarfieldVertexLerp
+                            ? (R: vcol[ci0], G: vcol[ci0 + 1], B: vcol[ci0 + 2], A: vcol[ci0 + 3])
+                            : NifVertexColorPolicy.Read(submesh, vertexIndex0);
+                        var c1 = tri.IsStarfieldVertexLerp
+                            ? (R: vcol[ci1], G: vcol[ci1 + 1], B: vcol[ci1 + 2], A: vcol[ci1 + 3])
+                            : NifVertexColorPolicy.Read(submesh, vertexIndex1);
+                        var c2 = tri.IsStarfieldVertexLerp
+                            ? (R: vcol[ci2], G: vcol[ci2 + 1], B: vcol[ci2 + 2], A: vcol[ci2 + 3])
+                            : NifVertexColorPolicy.Read(submesh, vertexIndex2);
                         tri.R0 = c0.R;
                         tri.G0 = c0.G;
                         tri.B0 = c0.B;
@@ -567,6 +590,12 @@ internal static class NifSpriteRenderer
                         tri.B2 = c2.B;
                         tri.A2 = c2.A;
                         tri.HasVertexColors = true;
+                        if (tri.IsStarfieldVertexLerp)
+                        {
+                            tri.StarfieldVertexLerpA0 = vcol[ci0 + 3];
+                            tri.StarfieldVertexLerpA1 = vcol[ci1 + 3];
+                            tri.StarfieldVertexLerpA2 = vcol[ci2 + 3];
+                        }
                     }
                 }
 

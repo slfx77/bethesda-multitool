@@ -125,9 +125,9 @@ public sealed class FnvClassicBasicShaderSourceContractTests
         var policy = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Materials",
             "FnvClassicBasicShaderPolicy.cs");
-        var decoder = SourceContract.ReadSource(
+        var mapper = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-            "ReferenceMeshDecoder12.cs");
+            "ReferenceSubmeshDecoder12.cs");
 
         foreach (var token in new[]
                  {
@@ -140,8 +140,13 @@ public sealed class FnvClassicBasicShaderSourceContractTests
             Assert.Contains(token, policy, StringComparison.Ordinal);
         }
 
-        Assert.Contains("FnvClassicBasicShaderPolicy.Resolve(nif, sub, diffusePath, normalPath)", decoder,
-            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            mapper,
+            "FnvClassicBasicShaderPolicy.Resolve(",
+            "options.Nif",
+            "submesh",
+            "diffusePath",
+            "normalPath");
         Assert.Contains("submesh.BindPosePositions is not null", policy, StringComparison.Ordinal);
     }
 

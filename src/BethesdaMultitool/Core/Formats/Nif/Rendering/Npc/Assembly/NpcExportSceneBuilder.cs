@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
@@ -45,29 +46,10 @@ internal static class NpcExportSceneBuilder
         IEnumerable<NifExportExtractor.ExtractedNode> nodes,
         GlbNodeKind kind)
     {
-        var nodeList = nodes.ToList();
-        var blockToSceneNode = new Dictionary<int, int>();
-        foreach (var node in nodeList)
-        {
-            var parentSceneNode = node.ParentBlockIndex is int parentBlockIndex &&
-                                  blockToSceneNode.TryGetValue(parentBlockIndex, out var existingParent)
-                ? existingParent
-                : GlbScene.RootNodeIndex;
-            blockToSceneNode[node.BlockIndex] = scene.AddNode(
-                $"{node.Name}_{node.BlockIndex}",
-                parentSceneNode,
-                node.LocalTransform,
-                node.WorldTransform,
-                kind,
-                node.LookupName);
-        }
-
-        return blockToSceneNode
-            .Where(entry => nodeList.First(node => node.BlockIndex == entry.Key).LookupName != null)
-            .ToDictionary(
-                entry => nodeList.First(node => node.BlockIndex == entry.Key).LookupName!,
-                entry => entry.Value,
-                StringComparer.OrdinalIgnoreCase);
+        // Share the raw-NIF parent-first builder. NPC skeletons can also store a child before its
+        // parent block, and their node identity must survive into the native viewer for animation.
+        // Its name index also rejects duplicate names instead of whichever duplicate appeared first.
+        return NifExportSceneBuilder.AddNodes(scene, nodes, kind).ByName;
     }
 
     internal static void AddSkinnedNif(
@@ -100,7 +82,7 @@ internal static class NpcExportSceneBuilder
             mutateSubmesh?.Invoke(part.Submesh);
             if (part.Skin != null)
             {
-                AddSkinnedPart(scene, part, nodeIndicesByBoneName);
+                AddSkinnedPart(scene, part, nodeIndicesByBoneName, nifPath);
             }
             else
             {
@@ -112,7 +94,8 @@ internal static class NpcExportSceneBuilder
     internal static void AddSkinnedPart(
         GlbScene scene,
         NifExportExtractor.ExtractedMeshPart part,
-        Dictionary<string, int> nodeIndicesByBoneName)
+        Dictionary<string, int> nodeIndicesByBoneName,
+        string sourceNifPath)
     {
         var jointNodeIndices = new int[part.Skin!.BoneNames.Length];
         for (var index = 0; index < part.Skin.BoneNames.Length; index++)
@@ -126,10 +109,18 @@ internal static class NpcExportSceneBuilder
             jointNodeIndices[index] = jointNodeIndex;
         }
 
+        var submesh = CloneSubmesh(part.Submesh);
+        submesh.SourceNifPath = sourceNifPath;
+        submesh.BindPosePositions = part.Submesh.BindPosePositions is { } extractedBindPose
+            ? (float[])extractedBindPose.Clone()
+            : NifGeometryTransformUtils.TransformPositions(
+                (float[])part.Submesh.Positions.Clone(),
+                part.ShapeWorldTransform);
+
         scene.MeshParts.Add(new GlbMeshPart
         {
             Name = part.Name,
-            Submesh = CloneSubmesh(part.Submesh),
+            Submesh = submesh,
             Skin = new GlbSkinBinding
             {
                 JointNodeIndices = jointNodeIndices,
@@ -189,41 +180,7 @@ internal static class NpcExportSceneBuilder
 
     internal static RenderableSubmesh CloneSubmesh(RenderableSubmesh submesh)
     {
-        return new RenderableSubmesh
-        {
-            ShapeName = submesh.ShapeName,
-            Positions = (float[])submesh.Positions.Clone(),
-            Triangles = (ushort[])submesh.Triangles.Clone(),
-            Normals = submesh.Normals != null ? (float[])submesh.Normals.Clone() : null,
-            UVs = submesh.UVs != null ? (float[])submesh.UVs.Clone() : null,
-            VertexColors = submesh.VertexColors != null ? (byte[])submesh.VertexColors.Clone() : null,
-            Tangents = submesh.Tangents != null ? (float[])submesh.Tangents.Clone() : null,
-            Bitangents = submesh.Bitangents != null ? (float[])submesh.Bitangents.Clone() : null,
-            ShaderMetadata = submesh.ShaderMetadata,
-            DiffuseTexturePath = submesh.DiffuseTexturePath,
-            ClampTextureU = submesh.ClampTextureU,
-            ClampTextureV = submesh.ClampTextureV,
-            NormalMapTexturePath = submesh.NormalMapTexturePath,
-            BgsmGlowMapTexturePath = submesh.BgsmGlowMapTexturePath,
-            BgsmEmissionColor = submesh.BgsmEmissionColor,
-            EffectTint = submesh.EffectTint,
-            EffectFalloff = submesh.EffectFalloff,
-            IsEmissive = submesh.IsEmissive,
-            UseVertexColors = submesh.UseVertexColors,
-            UseVertexAlphaForOpacity = submesh.UseVertexAlphaForOpacity,
-            IsDoubleSided = submesh.IsDoubleSided,
-            HasAlphaBlend = submesh.HasAlphaBlend,
-            HasAlphaTest = submesh.HasAlphaTest,
-            AlphaTestThreshold = submesh.AlphaTestThreshold,
-            AlphaTestFunction = submesh.AlphaTestFunction,
-            SrcBlendMode = submesh.SrcBlendMode,
-            DstBlendMode = submesh.DstBlendMode,
-            MaterialAlpha = submesh.MaterialAlpha,
-            MaterialGlossiness = submesh.MaterialGlossiness,
-            IsEyeEnvmap = submesh.IsEyeEnvmap,
-            EnvMapScale = submesh.EnvMapScale,
-            TintColor = submesh.TintColor
-        };
+        return RenderableSubmeshCloner.DeepClone(submesh);
     }
 
     /// <summary>

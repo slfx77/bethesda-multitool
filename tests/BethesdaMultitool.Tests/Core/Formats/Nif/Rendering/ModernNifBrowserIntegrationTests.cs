@@ -55,7 +55,9 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
             @"meshes\architecture\catwalks\industrial\walks\catindwalksm2waya01.nif",
             "starfield-industrial-catwalk",
             requireNormalMap: true,
-            requireConstantLerpBake: true);
+            requireConstantLerpBake: true,
+            requireCompleteExternalGeometry: true,
+            requireSiblingExternalGeometry: true);
     }
 
     [Fact]
@@ -69,7 +71,9 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
             Path.Combine(dataDir!, "Starfield - Meshes01.ba2"),
             @"meshes\animobjects\animobjectspacesuit_constellation_helmet.nif",
             "starfield-constellation-helmet",
-            requireNormalMap: true);
+            requireNormalMap: true,
+            requireCompleteExternalGeometry: true,
+            requireSiblingExternalGeometry: true);
     }
 
     private void AssertMeshViewerGlb(
@@ -77,7 +81,9 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         string nifPath,
         string artifactName,
         bool requireNormalMap,
-        bool requireConstantLerpBake = false)
+        bool requireConstantLerpBake = false,
+        bool requireCompleteExternalGeometry = false,
+        bool requireSiblingExternalGeometry = false)
     {
         Assert.SkipUnless(File.Exists(archivePath), RealAssetPaths.SkipMessage(Path.GetFileName(archivePath)));
 
@@ -85,9 +91,39 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         var nifData = service.ReadNifData(nifPath);
         Assert.SkipUnless(nifData is not null, $"Retail fixture is absent from {Path.GetFileName(archivePath)}: {nifPath}");
 
-        var glb = service.BuildGlb(nifData!, nifPath);
+        var build = service.BuildGlbWithDiagnostics(nifData!, nifPath);
+        var glb = build.GlbBytes;
 
         Assert.NotNull(glb);
+        if (requireCompleteExternalGeometry)
+        {
+            Assert.True(build.ExternalGeometry.ReferencedCount > 0);
+            Assert.Equal(
+                build.ExternalGeometry.ReferencedCount,
+                build.ExternalGeometry.ResolvedCount);
+            Assert.True(
+                build.ExternalGeometry.IsComplete,
+                $"External geometry was incomplete: resolved " +
+                $"{build.ExternalGeometry.ResolvedCount}/{build.ExternalGeometry.ReferencedCount}; " +
+                $"missing=[{string.Join(", ", build.ExternalGeometry.MissingPaths)}]; " +
+                $"decodeFailed=[{string.Join(", ", build.ExternalGeometry.DecodeFailedPaths)}]");
+
+            Assert.All(
+                build.ExternalGeometry.Resolutions,
+                static resolution => Assert.False(string.IsNullOrWhiteSpace(resolution.SourcePath)));
+        }
+
+        if (requireSiblingExternalGeometry)
+        {
+            var openedArchivePath = Path.GetFullPath(archivePath);
+            Assert.Contains(
+                build.ExternalGeometry.Resolutions,
+                resolution => !string.Equals(
+                    resolution.SourcePath,
+                    openedArchivePath,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
         Assert.True(glb!.Length > 1_000, $"Mesh Viewer GLB was unexpectedly small ({glb.Length} bytes).");
         var artifactDirectory = Path.Combine(
             SourceContract.RepoRoot,

@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Atmosphere;
@@ -9,7 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Atmosphere;
 public sealed class AuthoredSkyArchitectureTests
 {
     [Fact]
-    public void EnvironmentOptInIsReadDynamicallyAndRequiresExactOne()
+    public void EnvironmentOverrideIsReadDynamicallyAndRequiresExactZeroOrOne()
     {
         Assert.Equal("FALLOUT_VIEWER_AUTHORED_SKY", AuthoredSkyArchitecture.EnvironmentVariableName);
 
@@ -17,13 +18,16 @@ public sealed class AuthoredSkyArchitectureTests
         try
         {
             EnvironmentVariables.Set(AuthoredSkyArchitecture.EnvironmentVariableName, null);
-            Assert.False(AuthoredSkyArchitecture.Enabled);
+            Assert.Null(AuthoredSkyArchitecture.ExplicitOverride);
 
             EnvironmentVariables.Set(AuthoredSkyArchitecture.EnvironmentVariableName, "1");
-            Assert.True(AuthoredSkyArchitecture.Enabled);
+            Assert.True(AuthoredSkyArchitecture.ExplicitOverride);
 
             EnvironmentVariables.Set(AuthoredSkyArchitecture.EnvironmentVariableName, "0");
-            Assert.False(AuthoredSkyArchitecture.Enabled);
+            Assert.False(AuthoredSkyArchitecture.ExplicitOverride);
+
+            EnvironmentVariables.Set(AuthoredSkyArchitecture.EnvironmentVariableName, "true");
+            Assert.Null(AuthoredSkyArchitecture.ExplicitOverride);
         }
         finally
         {
@@ -32,12 +36,23 @@ public sealed class AuthoredSkyArchitectureTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public void AtmosphereNifSelectionRequiresExplicitOptIn(bool explicitlyEnabled, bool expected)
+    [InlineData(BethesdaGame.Fallout76, null, false)]
+    [InlineData(BethesdaGame.Fallout76, false, false)]
+    [InlineData(BethesdaGame.Fallout76, true, true)]
+    [InlineData(BethesdaGame.Unknown, null, false)]
+    [InlineData(BethesdaGame.Skyrim, null, false)]
+    [InlineData(BethesdaGame.Fallout4, null, false)]
+    [InlineData(BethesdaGame.Starfield, null, false)]
+    [InlineData(BethesdaGame.Skyrim, true, true)]
+    [InlineData(BethesdaGame.Fallout4, true, true)]
+    [InlineData(BethesdaGame.Starfield, true, true)]
+    public void AtmosphereNifSelectionRequiresExplicitEvidenceRun(
+        BethesdaGame game,
+        bool? explicitOverride,
+        bool expected)
     {
         Assert.Equal(expected,
-            AuthoredSkyArchitecture.ShouldLoadAtmosphereNif(explicitlyEnabled));
+            AuthoredSkyArchitecture.ShouldLoadAtmosphereNif(game, explicitOverride));
     }
 
     [Fact]
@@ -52,16 +67,38 @@ public sealed class AuthoredSkyArchitectureTests
             new Vector3(16f, 17f, 18f));
 
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Skyrim, false, cube));
+            BethesdaGame.Skyrim, null, cube));
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+            BethesdaGame.Fallout76, null, cube));
+        Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
             BethesdaGame.Fallout76, false, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Fallout4, false, cube));
+            BethesdaGame.Fallout4, null, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Starfield, false, cube));
+            BethesdaGame.Starfield, null, cube));
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
             BethesdaGame.Fallout4, true, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Skyrim, false, null));
+            BethesdaGame.Skyrim, null, null));
+    }
+
+    [Fact]
+    public void ProfilerManifestRecordsTheRawAuthoredSkyOverride()
+    {
+        var profiler = SourceContract.ReadSource("src", "BethesdaRendererProfiler", "Program.cs");
+
+        Assert.Contains("[\"authoredSkyOverride\"] =", profiler, StringComparison.Ordinal);
+        Assert.Contains(
+            "EnvironmentVariables.Get(EnvironmentVariables.Viewer.AuthoredSky)",
+            profiler,
+            StringComparison.Ordinal);
+
+        var capture = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Controls", "WorldView3D",
+            "WorldView3DControl.SceneCapture.cs");
+        Assert.Contains("[\"explicitOverride\"] = AuthoredSkyArchitecture.ExplicitOverride", capture,
+            StringComparison.Ordinal);
+        Assert.Contains("[\"policyEnabled\"] = _authoredAtmospherePolicyEnabled", capture,
+            StringComparison.Ordinal);
     }
 }

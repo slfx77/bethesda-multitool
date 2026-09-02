@@ -145,4 +145,36 @@ public sealed class NifWaterGeometryTests
         // distance from the geometry AABB is sqrt(8), outside an inscribed radius-2 circle.
         Assert.True(geometry.IntersectsXY(new Vector2(8f, 18f), 2f));
     }
+
+    [Fact]
+    public void Point_height_probe_uses_the_authored_sloped_triangle_not_its_aabb_plane()
+    {
+        Vector3[] positions =
+        [
+            new(0f, 0f, 10f),
+            new(10f, 0f, 20f),
+            new(0f, 10f, 30f),
+        ];
+        Assert.True(NifWaterGeometry.TryCreate(positions, [0, 1, 2], out var geometry));
+
+        Assert.True(geometry!.TryGetHeightAtXY(2f, 3f, out var height));
+        Assert.Equal(18f, height, 4);
+        Assert.False(
+            geometry.TryGetHeightAtXY(9f, 9f, out _),
+            "an XY point inside the AABB but outside the authored triangle must not acquire water");
+    }
+
+    [Fact]
+    public void Point_height_probe_selects_the_highest_overlapping_authored_surface()
+    {
+        Vector3[] positions =
+        [
+            new(0f, 0f, 5f), new(4f, 0f, 5f), new(0f, 4f, 5f),
+            new(0f, 0f, 12f), new(4f, 0f, 12f), new(0f, 4f, 12f),
+        ];
+        Assert.True(NifWaterGeometry.TryCreate(positions, [0, 1, 2, 3, 4, 5], out var geometry));
+
+        Assert.True(geometry!.TryGetHeightAtXY(1f, 1f, out var height));
+        Assert.Equal(12f, height);
+    }
 }

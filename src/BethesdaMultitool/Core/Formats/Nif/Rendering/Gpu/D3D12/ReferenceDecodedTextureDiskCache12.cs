@@ -43,7 +43,9 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
     // copyBaseObject semantics) instead of stopping at the first level with any layers — a derived
     // material that locally overrides only a decal layer resolves the inherited layer-0 albedo now,
     // so its .mat key maps to a different texture than any v5 entry.
-    internal const int DecoderVersion = 6;
+    // v7: DX10 BC4/BC5 SNORM stays signed through the GPU payload/SRV. Older cache entries labeled
+    // the same compressed bytes UNORM, producing broken FO76/Starfield normals even after this fix.
+    internal const int DecoderVersion = 7;
 
     private const int MaxMipLevels = 24;
     private const int MaxMipBytes = 128 * 1024 * 1024;

@@ -12,16 +12,16 @@ internal static class NpcRecordDataReader
         bool bigEndian,
         AnalyzerRecordInfo record)
     {
-        var headerSize = EsmParser.MainRecordHeaderSize;
-        var dataStart = (int)(record.Offset + headerSize);
-        var dataSize = (int)record.DataSize;
+        var headerSize = record.RecordHeaderSize;
+        var dataStart = (long)record.Offset + headerSize;
+        var dataSize = (long)record.DataSize;
 
-        if (dataStart + dataSize > esmData.Length)
+        if (headerSize <= 0 || dataStart < 0 || dataSize < 0 || dataStart + dataSize > esmData.Length)
         {
             return null;
         }
 
-        var rawSpan = esmData.AsSpan(dataStart, dataSize);
+        var rawSpan = esmData.AsSpan((int)dataStart, (int)dataSize);
         if (record.IsCompressed)
         {
             return EsmParser.DecompressRecordData(rawSpan, bigEndian);

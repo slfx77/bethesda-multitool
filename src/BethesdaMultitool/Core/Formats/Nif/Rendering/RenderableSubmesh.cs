@@ -49,9 +49,9 @@ internal sealed class RenderableSubmesh
     public byte[]? VertexColors { get; init; }
 
     /// <summary>
-    ///     Bounded CE2 material-colour operation that cannot be represented by
-    ///     <see cref="VertexColors" />. Constant Lerp preserves expanded RGB plus its independent
-    ///     composition weight; vertex-driven Lerp remains fail-closed.
+    ///     Bounded CE2 material-colour operation. Constant Lerp preserves expanded RGB plus its
+    ///     independent composition weight. Vertex Lerp identifies <see cref="VertexColors" /> as
+    ///     shader data whose RGB is the target and whose alpha is the blend weight, not opacity.
     /// </summary>
     public StarfieldMaterialColorRenderState StarfieldMaterialColor { get; init; }
 

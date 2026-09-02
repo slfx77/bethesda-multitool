@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
@@ -9,7 +10,8 @@ internal static class NpcAppearanceIndexBuilder
     internal static NpcAppearanceIndex Build(byte[] esmData, bool bigEndian)
     {
         var index = new NpcAppearanceIndex();
-        var records = EsmRecordParser.ScanAllRecords(esmData, bigEndian);
+        var format = PluginFormat.Detect(esmData);
+        var records = EsmRecordParser.ScanAllRecords(esmData, bigEndian, format);
 
         foreach (var record in records)
         {
@@ -52,6 +54,7 @@ internal static class NpcAppearanceIndexBuilder
                         HeadPartRecordScanner.Process(esmData, bigEndian, record));
                     break;
                 case "ARMO":
+                case "CLOT":
                     AddIfPresent(
                         index.Armors,
                         record.FormId,

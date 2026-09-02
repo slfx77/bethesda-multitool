@@ -127,6 +127,55 @@ internal static class MaterialTexturePathResolver
     }
 
     /// <summary>
+    ///     Resolves typed CE2 EffectSettings for the bounded Mesh Viewer glass-alpha lane. Texture
+    ///     slots are normalized here so export can load them directly.
+    /// </summary>
+    internal static StarfieldMaterialEffectPolicy ResolveStarfieldEffectPolicy(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return default;
+        }
+
+        var policy = GetMaterialDatabase(sources)?.ResolveEffectPolicy(materialPath) ?? default;
+        return policy with { OpacitySlot = NormalizeStarfieldSlot(policy.OpacitySlot) };
+    }
+
+    /// <summary>
+    ///     Resolves a looping CE2 base-layer UV-offset curve when it is exactly representable as a
+    ///     constant-rate native viewer scroll. Unsupported/nonlinear controller graphs fail closed.
+    /// </summary>
+    internal static StarfieldMaterialUvAnimationPolicy ResolveStarfieldBaseLayerUvAnimation(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return default;
+        }
+
+        return GetMaterialDatabase(sources)?.ResolveBaseLayerUvAnimation(materialPath) ?? default;
+    }
+
+    /// <summary>
+    ///     Resolves the effective root CE2 ShaderRoute. Null is unresolved/malformed and must not
+    ///     authorize a specialized renderer; Deferred is a valid resolved ordinary material.
+    /// </summary>
+    internal static StarfieldMaterialShaderRoute? ResolveStarfieldShaderRoute(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
+        if (!IsStarfieldMaterialPath(materialPath))
+        {
+            return null;
+        }
+
+        return GetMaterialDatabase(sources)?.ResolveShaderRoute(materialPath);
+    }
+
+    /// <summary>
     ///     Resolves the strict static-layer CE2 ORM policy used only by standards-based export.
     ///     Texture paths are normalized here so callers can load them directly without inventing a
     ///     role-qualified key that could accidentally become part of the live renderer contract.

@@ -48,6 +48,9 @@ public sealed partial class WorldView3DControl
     private StarfieldCelestialRoute? _starfieldCelestialRoute;
     private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentAppliedChannels;
     private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentRejectedChannels;
+    private bool _authoredAtmospherePolicyEnabled;
+    private string? _authoredAtmosphereNifPath;
+    private int _authoredAtmosphereRecoveredSkyLayerCount;
 
     /// <summary>Last classic WTHR→IMAD selection and sampled tonemap values, for captures/profiling.</summary>
     internal string WeatherImageSpaceTelemetry => _weatherImageSpaceTelemetry;
@@ -718,6 +721,12 @@ public sealed partial class WorldView3DControl
         WeatherRecord? outgoingWeather,
         float currentWeatherWeight)
     {
+        _authoredAtmospherePolicyEnabled = AuthoredSkyArchitecture.ShouldLoadAtmosphereNif(
+            _data?.Game ?? BethesdaGame.Unknown,
+            AuthoredSkyArchitecture.ExplicitOverride);
+        _authoredAtmosphereNifPath = null;
+        _authoredAtmosphereRecoveredSkyLayerCount = 0;
+
         if (_skyDiag)
         {
             var dws = CurrentExteriorWorldspace();
@@ -792,14 +801,20 @@ public sealed partial class WorldView3DControl
         else if (climate?.ModelPath is string modl && !string.IsNullOrWhiteSpace(modl))
         {
             // The climate MODL is the stars dome (e.g. "Sky\Stars.nif"); the exact stars/cloud layers
-            // remain active on both paths. Atmosphere.nif is an architectural replacement and stays
-            // opt-in until its cross-game capture matrix passes; otherwise the procedural dome remains
-            // the compatibility fallback.
+            // remain active on both paths. Atmosphere.nif is an explicit candidate until its
+            // game-specific capture matrix proves the blend-weight interpretation. Loading remains
+            // fail-soft, so the procedural dome is the compatibility path when disabled, absent, or
+            // undecodable.
             var skyDir = Path.GetDirectoryName(modl.Replace('/', '\\')) ?? string.Empty;
-            if (AuthoredSkyArchitecture.ShouldLoadAtmosphereNif(AuthoredSkyArchitecture.Enabled))
+            if (_authoredAtmospherePolicyEnabled)
             {
-                AddSkyNifLayers(layers, Path.Combine(skyDir, "Atmosphere.nif"), weather,
+                _authoredAtmosphereNifPath = Path.Combine(skyDir, "Atmosphere.nif");
+                var beforeAtmosphere = layers.Count;
+                AddSkyNifLayers(layers, _authoredAtmosphereNifPath, weather,
                     currentCloudWeight);
+                _authoredAtmosphereRecoveredSkyLayerCount = layers
+                    .Skip(beforeAtmosphere)
+                    .Count(static layer => layer.Type == SkyObjectType.Sky);
             }
 
             AddSkyNifLayers(layers, modl, weather, currentCloudWeight);

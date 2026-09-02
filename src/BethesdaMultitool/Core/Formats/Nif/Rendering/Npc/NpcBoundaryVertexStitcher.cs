@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 
@@ -22,7 +23,30 @@ internal static class NpcBoundaryVertexStitcher
 
     internal static void StitchBoundaryVertices(List<RenderableSubmesh> submeshes)
     {
-        // Collect submeshes that have bind-pose data and a source NIF path
+        var groups = DiscoverBoundaryVertexGroups(submeshes);
+        var stitchedCount = ApplyBoundaryVertexGroups(submeshes, groups);
+
+        if (stitchedCount > 0)
+        {
+            var distinctSources = CollectDistinctSources(submeshes);
+            Log.Debug("Boundary vertex stitcher: snapped {0} vertices across {1} source NIFs",
+                stitchedCount, distinctSources.Count);
+        }
+
+        ClearBindPoseData(submeshes);
+    }
+
+    /// <summary>
+    ///     Finds bind-pose boundary matches without changing positions or consuming bind-pose data.
+    ///     Returned indices address the input list and remain valid while its mesh/vertex ordering is
+    ///     unchanged, so the same groups can be applied after every animated skinning update.
+    /// </summary>
+    internal static IReadOnlyList<BethesdaViewerBoundaryStitchGroup> DiscoverBoundaryVertexGroups(
+        IReadOnlyList<RenderableSubmesh> submeshes)
+    {
+        ArgumentNullException.ThrowIfNull(submeshes);
+
+        // Collect submeshes that have bind-pose data and a source NIF path.
         var candidates = new List<(RenderableSubmesh Sub, int Index)>();
         for (var i = 0; i < submeshes.Count; i++)
         {
@@ -35,21 +59,14 @@ internal static class NpcBoundaryVertexStitcher
 
         if (candidates.Count < 2)
         {
-            ClearBindPoseData(submeshes);
-            return;
+            return [];
         }
 
         // Check if there are at least 2 different source NIFs
-        var distinctSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (sub, _) in candidates)
-        {
-            distinctSources.Add(sub.SourceNifPath!);
-        }
-
+        var distinctSources = CollectDistinctSources(submeshes);
         if (distinctSources.Count < 2)
         {
-            ClearBindPoseData(submeshes);
-            return;
+            return [];
         }
 
         // Build spatial hash: quantized bind-pose position → list of (submeshIndex, vertexIndex)
@@ -76,8 +93,8 @@ internal static class NpcBoundaryVertexStitcher
             }
         }
 
-        // For each bucket, find cross-NIF vertex pairs and average their skinned positions
-        var stitchedCount = 0;
+        // For each bucket, retain the stable indices of cross-NIF bind-pose matches.
+        var stitchGroups = new List<BethesdaViewerBoundaryStitchGroup>();
         foreach (var bucket in spatialHash.Values)
         {
             if (bucket.Count < 2)
@@ -124,47 +141,92 @@ internal static class NpcBoundaryVertexStitcher
                 continue;
             }
 
-            // Compute average skinned position
+            stitchGroups.Add(new BethesdaViewerBoundaryStitchGroup
+            {
+                Vertices = matchedVertices
+                    .Select(static vertex => new BethesdaViewerMeshVertexIndex(
+                        vertex.SubIdx,
+                        vertex.VertIdx))
+                    .ToArray()
+            });
+        }
+
+        return stitchGroups;
+    }
+
+    /// <summary>
+    ///     Replaces each discovered group's current (normally post-skinning) positions with their
+    ///     shared average. Bind-pose arrays remain intact so callers may invoke this every frame.
+    /// </summary>
+    internal static int ApplyBoundaryVertexGroups(
+        IReadOnlyList<RenderableSubmesh> submeshes,
+        IReadOnlyList<BethesdaViewerBoundaryStitchGroup> stitchGroups)
+    {
+        ArgumentNullException.ThrowIfNull(submeshes);
+        ArgumentNullException.ThrowIfNull(stitchGroups);
+
+        var stitchedCount = 0;
+        foreach (var stitchGroup in stitchGroups)
+        {
+            if (stitchGroup.Vertices.Length < 2)
+            {
+                continue;
+            }
+
+            // Compute average skinned position.
             var avgX = 0f;
             var avgY = 0f;
             var avgZ = 0f;
-            foreach (var (subIdx, vertIdx) in matchedVertices)
+            foreach (var vertex in stitchGroup.Vertices)
             {
-                var positions = submeshes[subIdx].Positions;
-                avgX += positions[vertIdx * 3];
-                avgY += positions[vertIdx * 3 + 1];
-                avgZ += positions[vertIdx * 3 + 2];
+                var positions = submeshes[vertex.MeshPartIndex].Positions;
+                avgX += positions[vertex.VertexIndex * 3];
+                avgY += positions[vertex.VertexIndex * 3 + 1];
+                avgZ += positions[vertex.VertexIndex * 3 + 2];
             }
 
-            var count = matchedVertices.Count;
+            var count = stitchGroup.Vertices.Length;
             avgX /= count;
             avgY /= count;
             avgZ /= count;
 
-            // Snap all matched vertices to the average
-            foreach (var (subIdx, vertIdx) in matchedVertices)
+            // Snap all matched vertices to the average.
+            foreach (var vertex in stitchGroup.Vertices)
             {
-                var positions = submeshes[subIdx].Positions;
-                positions[vertIdx * 3] = avgX;
-                positions[vertIdx * 3 + 1] = avgY;
-                positions[vertIdx * 3 + 2] = avgZ;
+                var positions = submeshes[vertex.MeshPartIndex].Positions;
+                positions[vertex.VertexIndex * 3] = avgX;
+                positions[vertex.VertexIndex * 3 + 1] = avgY;
+                positions[vertex.VertexIndex * 3 + 2] = avgZ;
             }
 
             stitchedCount += count;
         }
 
-        if (stitchedCount > 0)
+        return stitchedCount;
+    }
+
+    /// <summary>
+    ///     Rebuilds a finalized viewer scene's animation-ready seam groups from its mesh-part order.
+    ///     Call this after all NPC/creature mesh parts have been composed and before returning the
+    ///     scene to the native viewer.
+    /// </summary>
+    internal static void PopulateViewerSceneBoundaryGroups(BethesdaViewerScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+
+        var submeshes = new RenderableSubmesh[scene.MeshParts.Count];
+        for (var index = 0; index < scene.MeshParts.Count; index++)
         {
-            Log.Debug("Boundary vertex stitcher: snapped {0} vertices across {1} source NIFs",
-                stitchedCount, distinctSources.Count);
+            submeshes[index] = scene.MeshParts[index].Submesh;
         }
 
-        ClearBindPoseData(submeshes);
+        scene.BoundaryStitchGroups.Clear();
+        scene.BoundaryStitchGroups.AddRange(DiscoverBoundaryVertexGroups(submeshes));
     }
 
     private static List<(int SubIdx, int VertIdx)> FindMatchingVertices(
         List<(int SubIdx, int VertIdx)> bucket,
-        List<RenderableSubmesh> submeshes)
+        IReadOnlyList<RenderableSubmesh> submeshes)
     {
         // Use the first vertex as reference; include all others within threshold
         var (refSubIdx, refVertIdx) = bucket[0];
@@ -203,6 +265,22 @@ internal static class NpcBoundaryVertexStitcher
         return ((long)(ix & 0x1FFFFF) << 42) |
                ((long)(iy & 0x1FFFFF) << 21) |
                (long)(iz & 0x1FFFFF);
+    }
+
+    private static HashSet<string> CollectDistinctSources(
+        IReadOnlyList<RenderableSubmesh> submeshes)
+    {
+        var distinctSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < submeshes.Count; index++)
+        {
+            var submesh = submeshes[index];
+            if (submesh.BindPosePositions != null && submesh.SourceNifPath != null)
+            {
+                distinctSources.Add(submesh.SourceNifPath);
+            }
+        }
+
+        return distinctSources;
     }
 
     private static void ClearBindPoseData(List<RenderableSubmesh> submeshes)

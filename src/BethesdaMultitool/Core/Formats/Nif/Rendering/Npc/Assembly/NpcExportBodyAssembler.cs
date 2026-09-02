@@ -382,7 +382,11 @@ internal static class NpcExportBodyAssembler
                         continue;
                     }
 
-                    NpcExportSceneBuilder.AddSkinnedPart(scene, part, skeletonContext.NodeIndicesByBoneName);
+                    NpcExportSceneBuilder.AddSkinnedPart(
+                        scene,
+                        part,
+                        skeletonContext.NodeIndicesByBoneName,
+                        weaponVisual.MeshPath);
                     addedSkinnedMesh = true;
                 }
 

@@ -493,7 +493,11 @@ float4 main(ModernStandardPSInput input) : SV_Target
     float3 mapN;
     if (input.vTextureState.x > 0.5)
     {
-        float2 xy = normalSample.rg * 2.0 - 1.0;
+        // BC5_SNORM SRVs already return signed XY. BC5_UNORM still needs the conventional
+        // [0,1] -> [-1,1] remap. TextureState.x carries the live cache entry's decode mode.
+        float2 xy = input.vTextureState.x > 1.5
+            ? normalSample.rg
+            : normalSample.rg * 2.0 - 1.0;
         mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
     }
     else
@@ -607,7 +611,9 @@ float4 main(StarfieldDiffuseLitPSInput input) : SV_Target
         float3 mapN;
         if (input.vTextureState.x > 0.5)
         {
-            float2 xy = normalSample.rg * 2.0 - 1.0;
+            float2 xy = input.vTextureState.x > 1.5
+                ? normalSample.rg
+                : normalSample.rg * 2.0 - 1.0;
             mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
         }
         else
@@ -633,11 +639,15 @@ float4 main(StarfieldDiffuseLitPSInput input) : SV_Target
     bool hdrActive = uSkyHorizon.w >= 0.5;
     float3 shade = AtmosphereLight(
         normal, input.vWorldPos, input.Position.xy, sunShadow, 0.0, hdrActive);
-    // TextureState.w == -2 is the CPU's Starfield constant-Lerp union tag. Apply the affine
-    // composition before lighting; every other admitted Starfield material retains Multiply.
+    // TextureState.w tags the two recovered CE2 affine colour operations. Constant Lerp carries
+    // shader-ready RGB + weight through the draw constant; vertex Lerp consumes external-mesh C
+    // exactly as NifSkope's recovered stf_default shader does. Vertex alpha is shader data here,
+    // never coverage. Every other admitted Starfield material retains Multiply.
     float3 albedo = input.vTextureState.w == -2.0
         ? lerp(sample.rgb, input.vStarfieldMaterialColor.rgb, input.vStarfieldMaterialColor.a)
-        : sample.rgb * input.vVertexColor.rgb;
+        : input.vTextureState.w == -3.0
+            ? lerp(sample.rgb, input.vVertexColor.rgb, input.vVertexColor.a)
+            : sample.rgb * input.vVertexColor.rgb;
     float3 lit = albedo * shade;
 
     // The fail-closed contract makes every omitted reflection term identically zero. Preserve the
@@ -678,6 +688,25 @@ float4 main(PSInput input) : SV_Target
         vertexRgb = 1.0;
     }
 
+    // Negative TextureState.w values are CPU-authored Starfield-only union tags; FO4/FO76
+    // gradient rows are non-negative and the ordinary sentinel is -1. Apply CE2's recovered
+    // material-wide operation here as well as in the specialized Starfield PS, because valid
+    // .mat draws that need blending, decals, non-wrap addressing, or another unaudited feature
+    // deliberately fall back to this shared shader. Vertex alpha is the Lerp weight, never coverage.
+    bool starfieldConstantLerp = input.vTextureState.w == -2.0;
+    bool starfieldVertexLerp = input.vTextureState.w == -3.0;
+    bool starfieldMaterialLerp = starfieldConstantLerp || starfieldVertexLerp;
+    if (starfieldConstantLerp)
+    {
+        sample.rgb = lerp(sample.rgb, input.vEffectFalloff.rgb, input.vEffectFalloff.a);
+        vertexRgb = 1.0;
+    }
+    else if (starfieldVertexLerp)
+    {
+        sample.rgb = lerp(sample.rgb, input.vVertexColor.rgb, input.vVertexColor.a);
+        vertexRgb = 1.0;
+    }
+
     // BGEM effect tint (fo76utils getDiffuseColor_Effect): rgb ×= baseColor × baseColorScale.
     // (1,1,1) for every non-effect material, so this is a no-op outside effect shapes. Without it
     // (and the falloff below) crossed-plane mist blobs rendered full-white on every plane and
@@ -690,7 +719,9 @@ float4 main(PSInput input) : SV_Target
     // alpha is BaseMap.a * material alpha (the runtime gate requires material alpha == 1).
     float sampleAlpha = HasStarfieldOpacityMap(input.vTextureState.z)
         ? SampleMaterialTexture(input.vTexIndices.z, materialUv, input.vTextureState.z).r
-        : saturate(sample.a * (fnvActiveAdtBase ? 1.0 : input.vVertexColor.a));
+        : saturate(sample.a * ((fnvActiveAdtBase || starfieldMaterialLerp)
+            ? 1.0
+            : input.vVertexColor.a));
 
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
     // discards transparent pixels rather than rendering them as opaque. Full NIF comparison
@@ -791,7 +822,9 @@ float4 main(PSInput input) : SV_Target
         float3 mapN;
         if (input.vTextureState.x > 0.5)
         {
-            float2 xy = normalSample.rg * 2.0 - 1.0;
+            float2 xy = input.vTextureState.x > 1.5
+                ? normalSample.rg
+                : normalSample.rg * 2.0 - 1.0;
             mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
             // BC5/ATI2 carries no alpha — the per-texel mask lives in the material's _s map,
             // sampled below when bound. No _s map ⇒ mask stays 0 (a uniform mask blows out scenes).

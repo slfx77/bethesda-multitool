@@ -44,6 +44,16 @@ public sealed partial class WorldView3DControl
         new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
 
     /// <summary>
+    ///     Exact D3D12 surface size used by scored live frames. Layout dimensions are expressed in
+    ///     device-independent pixels and cannot prove that a post-profile capture used the benchmark
+    ///     viewport at non-100% DPI, so the profiler reads the swap-chain surface itself.
+    /// </summary>
+    internal (int Width, int Height)? Profiler_ViewportPixelSize =>
+        _surface12 is { Width: > 0, Height: > 0 } surface
+            ? (checked((int)surface.Width), checked((int)surface.Height))
+            : null;
+
+    /// <summary>
     ///     Profiler hook: the loaded worldspace's cell-edge size in world units. The harness takes its
     ///     span/distance arguments in CELLS and previously converted them with the hard-coded
     ///     <c>WorldGridConstants.CellSize</c>, which is 40.96× too large on Starfield (100-unit cells) —

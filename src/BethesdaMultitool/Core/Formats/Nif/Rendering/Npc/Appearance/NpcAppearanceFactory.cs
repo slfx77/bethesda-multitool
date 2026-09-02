@@ -57,6 +57,14 @@ internal sealed class NpcAppearanceFactory
             npc.IsFemale,
             race?.MaleEyeRightModelPath,
             race?.FemaleEyeRightModelPath);
+        var earModelPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleEarModelPath,
+            race?.FemaleEarModelPath);
+        var earTexturePath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleEarTexturePath,
+            race?.FemaleEarTexturePath) ?? headTexturePath;
         var mouthModelPath = SelectGenderValue(
             npc.IsFemale,
             race?.MaleMouthModelPath,
@@ -77,6 +85,18 @@ internal sealed class NpcAppearanceFactory
             npc.IsFemale,
             race?.MaleUpperBodyPath,
             race?.FemaleUpperBodyPath);
+        var lowerBodyPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleLowerBodyPath,
+            race?.FemaleLowerBodyPath);
+        var handPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleHandPath,
+            race?.FemaleHandPath);
+        var footPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleFootPath,
+            race?.FemaleFootPath);
         var leftHandPath = SelectGenderValue(
             npc.IsFemale,
             race?.MaleLeftHandPath,
@@ -89,6 +109,18 @@ internal sealed class NpcAppearanceFactory
             npc.IsFemale,
             race?.MaleBodyTexturePath,
             race?.FemaleBodyTexturePath);
+        var lowerBodyTexturePath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleLowerBodyTexturePath,
+            race?.FemaleLowerBodyTexturePath);
+        var raceHandTexturePath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleHandTexturePath,
+            race?.FemaleHandTexturePath);
+        var footTexturePath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleFootTexturePath,
+            race?.FemaleFootTexturePath);
         var hair = ResolveHair(npc.HairFormId);
         var eyeTexturePath = ResolveEyeTexture(
             ResolveEffectiveEyesFormId(npc.EyesFormId, race, headModelPath), race);
@@ -116,12 +148,18 @@ internal sealed class NpcAppearanceFactory
         var textureCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npc.FaceGenTexture,
             raceTextureCoefficients);
-        var handTexturePath = NpcAppearancePathDeriver.DeriveHandTexturePath(
-            bodyTexturePath,
-            npc.IsFemale);
+        var handTexturePath = NpcAppearancePathDeriver.AsTexturePath(raceHandTexturePath) ??
+                              NpcAppearancePathDeriver.DeriveHandTexturePath(
+                                  bodyTexturePath,
+                                  npc.IsFemale);
         var bodyEgtPaths = NpcAppearancePathDeriver.DeriveBodyEgtPaths(
             headModelPath,
             npc.IsFemale);
+        if (handPath != null)
+        {
+            // TES4 uses one both-hands mesh and ships no FO3-style left/right hand EGTs.
+            bodyEgtPaths = (bodyEgtPaths.BodyEgt, null, null);
+        }
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
 
         return new NpcAppearance
@@ -141,6 +179,8 @@ internal sealed class NpcAppearanceFactory
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),
             RightEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(rightEyeModelPath),
             EyeTexturePath = NpcAppearancePathDeriver.AsTexturePath(eyeTexturePath),
+            EarNifPath = NpcAppearancePathDeriver.AsMeshPath(earModelPath),
+            EarTexturePath = NpcAppearancePathDeriver.AsTexturePath(earTexturePath),
             MouthNifPath = NpcAppearancePathDeriver.AsMeshPath(mouthModelPath),
             LowerTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerTeethModelPath),
             UpperTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(upperTeethModelPath),
@@ -156,10 +196,15 @@ internal sealed class NpcAppearanceFactory
             EquippedItems = equippedItems,
             WeaponVisual = weaponVisual,
             UpperBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(upperBodyPath),
+            LowerBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerBodyPath),
+            HandNifPath = NpcAppearancePathDeriver.AsMeshPath(handPath),
+            FootNifPath = NpcAppearancePathDeriver.AsMeshPath(footPath),
             LeftHandNifPath = NpcAppearancePathDeriver.AsMeshPath(leftHandPath),
             RightHandNifPath = NpcAppearancePathDeriver.AsMeshPath(rightHandPath),
             BodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(bodyTexturePath),
+            LowerBodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(lowerBodyTexturePath),
             HandTexturePath = handTexturePath,
+            FootTexturePath = NpcAppearancePathDeriver.AsTexturePath(footTexturePath),
             SkeletonNifPath = "meshes\\characters\\_Male\\skeleton.nif",
             BodyEgtPath = bodyEgtPaths.BodyEgt,
             LeftHandEgtPath = bodyEgtPaths.LeftHandEgt,
@@ -191,6 +236,14 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleEyeRightModelPath,
             race?.FemaleEyeRightModelPath);
+        var earModelPath = SelectGenderValue(
+            isFemale,
+            race?.MaleEarModelPath,
+            race?.FemaleEarModelPath);
+        var earTexturePath = SelectGenderValue(
+            isFemale,
+            race?.MaleEarTexturePath,
+            race?.FemaleEarTexturePath) ?? headTexturePath;
         var mouthModelPath = SelectGenderValue(
             isFemale,
             race?.MaleMouthModelPath,
@@ -211,6 +264,18 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleUpperBodyPath,
             race?.FemaleUpperBodyPath);
+        var lowerBodyPath = SelectGenderValue(
+            isFemale,
+            race?.MaleLowerBodyPath,
+            race?.FemaleLowerBodyPath);
+        var handPath = SelectGenderValue(
+            isFemale,
+            race?.MaleHandPath,
+            race?.FemaleHandPath);
+        var footPath = SelectGenderValue(
+            isFemale,
+            race?.MaleFootPath,
+            race?.FemaleFootPath);
         var leftHandPath = SelectGenderValue(
             isFemale,
             race?.MaleLeftHandPath,
@@ -223,6 +288,18 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleBodyTexturePath,
             race?.FemaleBodyTexturePath);
+        var lowerBodyTexturePath = SelectGenderValue(
+            isFemale,
+            race?.MaleLowerBodyTexturePath,
+            race?.FemaleLowerBodyTexturePath);
+        var raceHandTexturePath = SelectGenderValue(
+            isFemale,
+            race?.MaleHandTexturePath,
+            race?.FemaleHandTexturePath);
+        var footTexturePath = SelectGenderValue(
+            isFemale,
+            race?.MaleFootTexturePath,
+            race?.FemaleFootTexturePath);
         var hair = ResolveHair(npcRecord.HairFormId);
         var eyeFormId = ResolveEffectiveEyesFormId(
             npcRecord.EyesFormId ?? race?.DefaultEyesFormId, race, headModelPath);
@@ -280,12 +357,17 @@ internal sealed class NpcAppearanceFactory
             weaponResolutionNpc,
             inventoryItems,
             runtimeWeaponSelection);
-        var handTexturePath = NpcAppearancePathDeriver.DeriveHandTexturePath(
-            bodyTexturePath,
-            isFemale);
+        var handTexturePath = NpcAppearancePathDeriver.AsTexturePath(raceHandTexturePath) ??
+                              NpcAppearancePathDeriver.DeriveHandTexturePath(
+                                  bodyTexturePath,
+                                  isFemale);
         var bodyEgtPaths = NpcAppearancePathDeriver.DeriveBodyEgtPaths(
             headModelPath,
             isFemale);
+        if (handPath != null)
+        {
+            bodyEgtPaths = (bodyEgtPaths.BodyEgt, null, null);
+        }
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
 
         return new NpcAppearance
@@ -305,6 +387,8 @@ internal sealed class NpcAppearanceFactory
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),
             RightEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(rightEyeModelPath),
             EyeTexturePath = NpcAppearancePathDeriver.AsTexturePath(eyeTexturePath),
+            EarNifPath = NpcAppearancePathDeriver.AsMeshPath(earModelPath),
+            EarTexturePath = NpcAppearancePathDeriver.AsTexturePath(earTexturePath),
             MouthNifPath = NpcAppearancePathDeriver.AsMeshPath(mouthModelPath),
             LowerTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerTeethModelPath),
             UpperTeethNifPath = NpcAppearancePathDeriver.AsMeshPath(upperTeethModelPath),
@@ -320,10 +404,15 @@ internal sealed class NpcAppearanceFactory
             EquippedItems = equippedItems,
             WeaponVisual = weaponVisual,
             UpperBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(upperBodyPath),
+            LowerBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerBodyPath),
+            HandNifPath = NpcAppearancePathDeriver.AsMeshPath(handPath),
+            FootNifPath = NpcAppearancePathDeriver.AsMeshPath(footPath),
             LeftHandNifPath = NpcAppearancePathDeriver.AsMeshPath(leftHandPath),
             RightHandNifPath = NpcAppearancePathDeriver.AsMeshPath(rightHandPath),
             BodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(bodyTexturePath),
+            LowerBodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(lowerBodyTexturePath),
             HandTexturePath = handTexturePath,
+            FootTexturePath = NpcAppearancePathDeriver.AsTexturePath(footTexturePath),
             SkeletonNifPath = "meshes\\characters\\_Male\\skeleton.nif",
             BodyEgtPath = bodyEgtPaths.BodyEgt,
             LeftHandEgtPath = bodyEgtPaths.LeftHandEgt,

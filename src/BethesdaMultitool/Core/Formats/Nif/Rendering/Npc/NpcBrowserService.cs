@@ -7,9 +7,13 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Minidump;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
@@ -27,24 +31,29 @@ internal sealed class NpcBrowserService : IDisposable
 
     // Pre-resolved appearances from DMP (null for ESM-only mode)
     private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
+    private readonly BethesdaGame _game;
     private readonly MeshArchiveSet _meshArchives;
     private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();
 
     private readonly NpcAppearanceResolver _resolver;
     private readonly NifTextureResolver _textureResolver;
+    private readonly string[] _textureSourcePaths;
 
     private NpcBrowserService(
         NpcAppearanceResolver resolver,
         MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
+        string[] textureSourcePaths,
         string pluginName,
         Dictionary<uint, NpcAppearance>? dmpAppearances = null)
     {
         _resolver = resolver;
         _meshArchives = meshArchives;
         _textureResolver = textureResolver;
+        _textureSourcePaths = (string[])textureSourcePaths.Clone();
         _pluginName = pluginName;
+        _game = GameProfiles.ResolveByNames([pluginName]) ?? BethesdaGame.Unknown;
         _dmpAppearances = dmpAppearances;
     }
 
@@ -81,7 +90,12 @@ internal sealed class NpcBrowserService : IDisposable
         var textureResolver = new NifTextureResolver(bsaPaths.TexturesBsaPaths);
         var pluginName = Path.GetFileName(esmPath);
 
-        return new NpcBrowserService(resolver, meshArchives, textureResolver, pluginName);
+        return new NpcBrowserService(
+            resolver,
+            meshArchives,
+            textureResolver,
+            bsaPaths.TexturesBsaPaths,
+            pluginName);
     }
 
     /// <summary>
@@ -160,7 +174,13 @@ internal sealed class NpcBrowserService : IDisposable
 
         Log.Info("Resolved {0} NPC appearances from DMP", dmpAppearances.Count);
 
-        return new NpcBrowserService(resolver, meshArchives, textureResolver, pluginName, dmpAppearances);
+        return new NpcBrowserService(
+            resolver,
+            meshArchives,
+            textureResolver,
+            bsaPaths.TexturesBsaPaths,
+            pluginName,
+            dmpAppearances);
     }
 
     /// <summary>
@@ -225,8 +245,16 @@ internal sealed class NpcBrowserService : IDisposable
         return list;
     }
 
-    /// <summary>Composes and exports an NPC to GLB bytes, or <c>null</c> if the NPC can't be resolved.</summary>
-    public byte[]? BuildGlb(uint npcFormId, bool headOnly, bool noEquip, bool noWeapon,
+    /// <summary>
+    ///     Composes an NPC into the renderer-neutral native-viewer scene, or <c>null</c> if the NPC
+    ///     can't be resolved. Appearance resolution, FaceGen morphs, equipment, weapon, skeleton,
+    ///     and skin assembly all remain owned by the existing NPC composition pipeline.
+    /// </summary>
+    public BethesdaViewerScene? BuildViewerScene(
+        uint npcFormId,
+        bool headOnly,
+        bool noEquip,
+        bool noWeapon,
         bool bindPose = false)
     {
         var appearance = ResolveAppearance(npcFormId);
@@ -252,22 +280,34 @@ internal sealed class NpcBrowserService : IDisposable
             _textureResolver,
             _compositionCaches,
             NpcCompositionOptions.From(settings));
-        var scene = NpcCompositionExportAdapter.BuildNpc(
+        var exportScene = NpcCompositionExportAdapter.BuildNpc(
             plan,
             _meshArchives,
             _textureResolver,
             _compositionCaches);
 
-        if (scene == null || scene.MeshParts.Count == 0)
+        if (exportScene == null || exportScene.MeshParts.Count == 0)
         {
             return null;
         }
 
-        return GlbWriter.WriteToBytes(scene, _textureResolver);
+        var viewerScene = BethesdaViewerSceneGlbAdapter.FromGlbScene(
+            exportScene,
+            BuildNpcSourceLabel(appearance),
+            BethesdaViewerScenePurpose.NpcAppearance,
+            game: _game,
+            textureSourcePaths: _textureSourcePaths);
+        CaptureReferencedGeneratedTextures(viewerScene, appearance);
+        NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(viewerScene);
+        return viewerScene;
     }
 
-    /// <summary>Composes and exports a creature to GLB bytes, or <c>null</c> if the creature can't be resolved.</summary>
-    public byte[]? BuildCreatureGlb(uint creatureFormId, bool bindPose = false)
+    /// <summary>
+    ///     Composes a creature into the renderer-neutral native-viewer scene, or <c>null</c> if the
+    ///     creature can't be resolved. The existing record-driven skeleton, body, weapon, and skin
+    ///     assembly remains unchanged.
+    /// </summary>
+    public BethesdaViewerScene? BuildCreatureViewerScene(uint creatureFormId, bool bindPose = false)
     {
         var creatures = _resolver.GetAllCreatures();
         if (!creatures.TryGetValue(creatureFormId, out var creature))
@@ -289,14 +329,53 @@ internal sealed class NpcBrowserService : IDisposable
                 IncludeWeapon = true,
                 BindPose = bindPose
             });
-        var scene = plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, _meshArchives);
+        var exportScene = plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, _meshArchives);
 
-        if (scene == null || scene.MeshParts.Count == 0)
+        if (exportScene == null || exportScene.MeshParts.Count == 0)
         {
             return null;
         }
 
-        return GlbWriter.WriteToBytes(scene, _textureResolver);
+        var viewerScene = BethesdaViewerSceneGlbAdapter.FromGlbScene(
+            exportScene,
+            BuildCreatureSourceLabel(creatureFormId, creature),
+            BethesdaViewerScenePurpose.CreatureAppearance,
+            game: _game,
+            textureSourcePaths: _textureSourcePaths);
+        NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(viewerScene);
+        return viewerScene;
+    }
+
+    /// <summary>
+    ///     Serializes a native viewer scene to GLB for compatibility/export callers. Generated
+    ///     actor textures are restored to the resolver immediately before serialization so the
+    ///     export does not depend on the resolver cache lifetime used during composition.
+    /// </summary>
+    public byte[] ExportViewerSceneToGlb(BethesdaViewerScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        foreach (var (texturePath, texture) in scene.GeneratedTextures)
+        {
+            _textureResolver.InjectTexture(texturePath, texture);
+        }
+
+        var exportScene = BethesdaViewerSceneGlbAdapter.ToGlbScene(scene);
+        return GlbWriter.WriteToBytes(exportScene, _textureResolver);
+    }
+
+    /// <summary>Composes and exports an NPC to GLB bytes, or <c>null</c> if the NPC can't be resolved.</summary>
+    public byte[]? BuildGlb(uint npcFormId, bool headOnly, bool noEquip, bool noWeapon,
+        bool bindPose = false)
+    {
+        var scene = BuildViewerScene(npcFormId, headOnly, noEquip, noWeapon, bindPose);
+        return scene == null ? null : ExportViewerSceneToGlb(scene);
+    }
+
+    /// <summary>Composes and exports a creature to GLB bytes, or <c>null</c> if the creature can't be resolved.</summary>
+    public byte[]? BuildCreatureGlb(uint creatureFormId, bool bindPose = false)
+    {
+        var scene = BuildCreatureViewerScene(creatureFormId, bindPose);
+        return scene == null ? null : ExportViewerSceneToGlb(scene);
     }
 
     /// <summary>Composes and renders an NPC to PNG bytes, or <c>null</c> if the NPC can't be resolved or rendered.</summary>
@@ -514,6 +593,63 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         return _resolver.ResolveHeadOnly(npcFormId, _pluginName);
+    }
+
+    private void CaptureReferencedGeneratedTextures(
+        BethesdaViewerScene scene,
+        NpcAppearance appearance)
+    {
+        var referencedDiffusePaths = scene.MeshParts
+            .Select(static meshPart => meshPart.Submesh.DiffuseTexturePath)
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Select(static path => NifTexturePathUtility.Normalize(path!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var generatedTextureKeys = new[]
+        {
+            NpcTextureHelpers.BuildNpcFaceEgtTextureKey(appearance),
+            NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
+                appearance.NpcFormId,
+                "upperbody",
+                appearance.RenderVariantLabel),
+            NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
+                appearance.NpcFormId,
+                "lefthand",
+                appearance.RenderVariantLabel),
+            NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
+                appearance.NpcFormId,
+                "righthand",
+                appearance.RenderVariantLabel)
+        };
+
+        foreach (var textureKey in generatedTextureKeys)
+        {
+            if (!referencedDiffusePaths.Contains(NifTexturePathUtility.Normalize(textureKey)))
+            {
+                continue;
+            }
+
+            var texture = _textureResolver.GetTexture(textureKey);
+            if (texture != null)
+            {
+                scene.AddGeneratedTexture(textureKey, texture);
+            }
+        }
+    }
+
+    private static string BuildNpcSourceLabel(NpcAppearance appearance)
+    {
+        var actorName = appearance.FullName ?? appearance.EditorId ?? $"0x{appearance.NpcFormId:X8}";
+        var variant = string.IsNullOrWhiteSpace(appearance.RenderVariantLabel)
+            ? string.Empty
+            : $" [{appearance.RenderVariantLabel}]";
+        return $"{actorName}{variant} (NPC_ 0x{appearance.NpcFormId:X8})";
+    }
+
+    private static string BuildCreatureSourceLabel(uint creatureFormId, CreatureScanEntry creature)
+    {
+        var actorName = creature.FullName ?? creature.EditorId ?? $"0x{creatureFormId:X8}";
+        return $"{actorName} (CREA 0x{creatureFormId:X8})";
     }
 
     private List<NpcAppearance> GetAllAppearances()

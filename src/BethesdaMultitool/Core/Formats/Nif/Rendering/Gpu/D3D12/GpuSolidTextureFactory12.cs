@@ -222,9 +222,27 @@ internal sealed unsafe class GpuSolidTextureFactory12
         string? cacheKey)
     {
         var alloc = _heap.AllocatePersistent();
-        _gpu.Device.CreateShaderResourceView(texture, srvDesc, alloc.Cpu);
-        return new GpuTextureCache12.Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode,
-            isResident, cacheKey);
+        try
+        {
+            _gpu.Device.CreateShaderResourceView(texture, srvDesc, alloc.Cpu);
+            return new GpuTextureCache12.Entry(
+                texture,
+                srvDesc,
+                alloc.Cpu,
+                alloc.BindlessIndex,
+                format,
+                normalDecodeMode,
+                isResident,
+                cacheKey);
+        }
+        catch
+        {
+            // Allocation has not escaped into an Entry yet, so no frame can reference this slot.
+            // Return it synchronously; the cache's deferred retirement path owns only published
+            // entries.
+            _heap.FreePersistent(alloc.BindlessIndex);
+            throw;
+        }
     }
 
     /// <summary>

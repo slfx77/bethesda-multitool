@@ -247,10 +247,38 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         _pendingPromote.Clear();
 
         foreach (var t in _ownedTextures) DisposeResource(t);
-        if (_whitePixel is Entry wp) DisposeResource(wp.Texture);
-        if (_flatNormal is Entry fn) DisposeResource(fn.Texture);
-        if (_waterSurface is Entry ws) DisposeResource(ws.Texture);
-        foreach (var synthetic in _syntheticEntries.Values) DisposeResource(synthetic.Texture);
+        // Every cache entry owns a distinct persistent bindless slot even while its texture is only
+        // a shared fallback placeholder. Teardown used to release the textures but abandon all of
+        // those descriptor allocations (including the pinned/synthetic entries), so repeatedly
+        // opening standalone viewers steadily exhausted the host heap. Retire each still-owned slot
+        // through the same frame-safe path as Release(); a set makes the teardown defensive against
+        // future aliases without risking a double return to the allocator's free-list.
+        var retiredPersistentSlots = new HashSet<uint>();
+        foreach (var node in _cache.Values)
+        {
+            RetirePersistentSlot(node.Entry.BindlessIndex, retiredPersistentSlots);
+        }
+
+        if (_whitePixel is Entry wp)
+        {
+            DisposeResource(wp.Texture);
+            RetirePersistentSlot(wp.BindlessIndex, retiredPersistentSlots);
+        }
+        if (_flatNormal is Entry fn)
+        {
+            DisposeResource(fn.Texture);
+            RetirePersistentSlot(fn.BindlessIndex, retiredPersistentSlots);
+        }
+        if (_waterSurface is Entry ws)
+        {
+            DisposeResource(ws.Texture);
+            RetirePersistentSlot(ws.BindlessIndex, retiredPersistentSlots);
+        }
+        foreach (var synthetic in _syntheticEntries.Values)
+        {
+            DisposeResource(synthetic.Texture);
+            RetirePersistentSlot(synthetic.BindlessIndex, retiredPersistentSlots);
+        }
         _syntheticEntries.Clear();
         _ownedTextures.Clear();
         _pendingDispatch.Clear();
@@ -492,13 +520,29 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         // Return the bindless slot — deferred by frames-in-flight so a reused slot can't alias a
         // texture the GPU is still sampling via an in-flight frame's draw records.
+        RetirePersistentSlot(entry.BindlessIndex);
+    }
+
+    /// <summary>
+    ///     Returns one cache-owned persistent descriptor after any in-flight draw that may still
+    ///     index it has drained. <paramref name="retiredSlots" /> is used by bulk teardown to make
+    ///     ownership release idempotent across defensive aliases; ordinary eviction owns one slot
+    ///     and therefore does not need a set.
+    /// </summary>
+    private void RetirePersistentSlot(uint slot, HashSet<uint>? retiredSlots = null)
+    {
+        if (retiredSlots is not null && !retiredSlots.Add(slot))
+        {
+            return;
+        }
+
         if (_deletionQueue is not null)
         {
-            _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_heap, entry.BindlessIndex));
+            _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_heap, slot));
         }
         else
         {
-            _heap.FreePersistent(entry.BindlessIndex);
+            _heap.FreePersistent(slot);
         }
     }
 

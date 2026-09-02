@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -28,8 +29,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 {
     private const int ConstantBufferSize = 240; // sizeof(GpuUniforms) — must be 16-byte aligned
     private const int MsaaSampleCount = 4;
-    private const uint SrvTableSize = 2; // t0 diffuse + t1 normal
-    private const uint SamplerTableSize = 2; // s0 + s1; skin.frag.hlsl binds both
+    private const uint SrvTableSize = 3; // t0 diffuse + t1 normal + t2 CE2 opacity
+    private const uint SamplerTableSize = 3; // skin.frag.hlsl binds one sampler per texture
     private const uint SamplerModeCount = 4; // wrap/wrap, clampU, clampV, clampUV
     private const uint SamplerHeapSize = SamplerTableSize * SamplerModeCount;
     private readonly AutoResetEvent _fenceEvent = new(false);
@@ -246,8 +247,9 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         device.CreateRenderTargetView(colorTex, null, rtvHandle);
         device.CreateDepthStencilView(depthTex, null, dsvHandle);
 
-        // Shader-visible CBV/SRV/UAV heap sized to fit the worst case (2 descriptors per
-        // submesh: diffuse + normal). Use the actual draw count when known after classification.
+        // Shader-visible CBV/SRV/UAV heap sized to fit the worst case (3 descriptors per
+        // submesh: diffuse + normal + CE2 opacity). Use the actual draw count when known after
+        // classification.
         // ---- Classify + sort submeshes ----------------------------------------------------
         var renderItems = new List<RenderItem>();
         foreach (var sub in model.Submeshes)
@@ -258,7 +260,12 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             if (textureResolver != null && sub.DiffuseTexturePath != null)
                 diffuseTexture = textureResolver.GetTexture(sub.DiffuseTexturePath);
 
+            DecodedTexture? normalTexture = null;
+            if (textureResolver != null && sub.NormalMapTexturePath != null)
+                normalTexture = textureResolver.GetTexture(sub.NormalMapTexturePath);
+
             if (textureResolver != null && diffuseTexture == null &&
+                normalTexture == null &&
                 sub.DiffuseTexturePath == null &&
                 !(sub.IsEmissive && sub.DiffuseTexturePath != null) &&
                 !(sub.UseVertexColors && sub.VertexColors != null))
@@ -270,11 +277,26 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 !NifVertexColorPolicy.HasVertexColorData(sub))
                 continue;
 
+            string? starfieldOpacityPath = null;
+            if (textureResolver != null &&
+                sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout &&
+                sub.DiffuseTexturePath is { } starfieldMaterialPath &&
+                MaterialTexturePathResolver.IsStarfieldMaterialPath(starfieldMaterialPath))
+            {
+                var request = MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(starfieldMaterialPath);
+                if (textureResolver.GetTexture(request) is not null)
+                {
+                    starfieldOpacityPath = request;
+                }
+            }
+
             renderItems.Add(new RenderItem(
                 sub,
                 NifAlphaClassifier.Classify(sub, diffuseTexture),
                 ComputeAverageZ(sub, viewMatrix),
-                diffuseTexture != null));
+                diffuseTexture != null,
+                normalTexture != null,
+                starfieldOpacityPath));
         }
 
         var ordered = renderItems
@@ -283,7 +305,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             .ThenBy(item => item.AverageZ)
             .ToList();
 
-        var srvHeapCapacity = (uint)Math.Max(1, ordered.Count * 2);
+        var srvHeapCapacity = (uint)Math.Max(1, ordered.Count * (int)SrvTableSize);
         var srvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
@@ -317,7 +339,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             uint flags = 0;
             if (hasDiffuse) flags |= 1;
             if (sub.Normals != null) flags |= 2;
-            if (sub.Tangents != null && sub.Bitangents != null && sub.NormalMapTexturePath != null) flags |= 4;
+            if (sub.Tangents != null && sub.Bitangents != null && item.HasNormalTexture) flags |= 4;
             if (NifVertexColorPolicy.HasVertexColorData(sub)) flags |= 8;
             if (sub.IsEmissive) flags |= 16;
             if (sub.IsDoubleSided) flags |= 32;
@@ -327,6 +349,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             if (sub.TintColor.HasValue) flags |= 512;
             if (sub.IsFaceGen) flags |= 1024;
             if (alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage) flags |= 2048;
+            if (sub.StarfieldMaterialColor.IsVertexLerp) flags |= 4096;
+            if (item.StarfieldOpacityPath is not null) flags |= 8192;
 
             var uniforms = new GpuUniforms
             {
@@ -371,6 +395,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             var diffuseSrv = _whitePixelSrvDesc;
             var normalTex = _flatNormalTexture;
             var normalSrv = _flatNormalSrvDesc;
+            var opacityTex = _whitePixelTexture;
+            var opacitySrv = _whitePixelSrvDesc;
             if (hasDiffuse && textureResolver != null && sub.DiffuseTexturePath != null)
             {
                 var upload = UploadTextureOn(cmd, textureResolver, sub.DiffuseTexturePath);
@@ -383,13 +409,25 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 }
             }
 
-            if (textureResolver != null && sub.NormalMapTexturePath != null)
+            if (textureResolver != null && item.HasNormalTexture && sub.NormalMapTexturePath != null)
             {
                 var upload = UploadTextureOn(cmd, textureResolver, sub.NormalMapTexturePath);
                 if (upload is { } u)
                 {
                     normalTex = u.Texture;
                     normalSrv = u.SrvDesc;
+                    pendingResources.Add(u.Texture);
+                    pendingResources.Add(u.Staging);
+                }
+            }
+
+            if (textureResolver != null && item.StarfieldOpacityPath is { } opacityPath)
+            {
+                var upload = UploadTextureOn(cmd, textureResolver, opacityPath);
+                if (upload is { } u)
+                {
+                    opacityTex = u.Texture;
+                    opacitySrv = u.SrvDesc;
                     pendingResources.Add(u.Texture);
                     pendingResources.Add(u.Staging);
                 }
@@ -403,7 +441,9 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 new CpuDescriptorHandle(cpuStart, 0, srvIncrement));
             device.CreateShaderResourceView(normalTex, normalSrv,
                 new CpuDescriptorHandle(cpuStart, 1, srvIncrement));
-            srvBumpOffset += 2;
+            device.CreateShaderResourceView(opacityTex, opacitySrv,
+                new CpuDescriptorHandle(cpuStart, 2, srvIncrement));
+            srvBumpOffset += SrvTableSize;
 
             // PSO selection by alpha mode + double-sided + blend mode.
             var psoKey = new PsoKey(
@@ -474,7 +514,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             SsHeight = (int)ssHeight,
             BoundsWidth = projWidth,
             BoundsHeight = projHeight,
-            HasTexture = ordered.Any(item => item.HasDiffuseTexture),
+            HasTexture = ordered.Any(item =>
+                item.HasDiffuseTexture || item.HasNormalTexture || item.StarfieldOpacityPath is not null),
             FenceValue = fenceValue,
             ReadbackBuffer = readback,
             ReadbackRowPitch = footprints[0].Footprint.RowPitch,
@@ -786,14 +827,14 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             new RootDescriptor1(0, 0),
             ShaderVisibility.All);
 
-        // Slot 1: SRV table t0..t1 (diffuse + normal). PS.
+        // Slot 1: SRV table t0..t2 (diffuse + normal + CE2 opacity). PS.
         var srvRange = new DescriptorRange1(
             DescriptorRangeType.ShaderResourceView,
             SrvTableSize,
             0);
         var srvTable = new RootParameter1(new RootDescriptorTable1(srvRange), ShaderVisibility.Pixel);
 
-        // Slot 2: sampler table s0. PS.
+        // Slot 2: sampler table s0..s2. PS.
         var samplerRange = new DescriptorRange1(
             DescriptorRangeType.Sampler,
             SamplerTableSize,
@@ -829,8 +870,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 MinLOD = 0,
                 MaxLOD = float.MaxValue
             };
-            // skin.frag.hlsl binds diffuse s0 and normal s1. Give both the same independently
-            // authored BGSM/BGEM address mode, and select the two-descriptor table per draw.
+            // skin.frag.hlsl binds diffuse s0, normal s1, and CE2 opacity s2. Give all three the
+            // independently authored material address mode and select one table per draw.
             for (var samplerSlot = 0; samplerSlot < (int)SamplerTableSize; samplerSlot++)
             {
                 var descriptorIndex = mode * (int)SamplerTableSize + samplerSlot;
@@ -931,7 +972,9 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         RenderableSubmesh Submesh,
         NifAlphaRenderState AlphaState,
         float AverageZ,
-        bool HasDiffuseTexture);
+        bool HasDiffuseTexture,
+        bool HasNormalTexture,
+        string? StarfieldOpacityPath);
 
     private readonly record struct PsoKey(
         NifAlphaRenderMode Mode,

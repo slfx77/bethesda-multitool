@@ -180,10 +180,10 @@ internal static class BsaDiscovery
             foreach (var file in archive.AllFiles)
             {
                 var path = file.FullPath;
-                // "geometries\" counts as mesh content: Starfield splits every vertex/index buffer out
-                // of the NIF into hash-named blobs under that root (288,231 of them in Meshes01, with
-                // zero .nif among them). An archive holding only those would otherwise classify as
-                // NEITHER meshes nor textures and be dropped from the mesh set entirely.
+                // "geometries\" counts as mesh content: Starfield splits vertex/index buffers out of
+                // its NIFs into hash-named blobs under that root. Meshes01 contains both kinds today,
+                // while an archive holding only geometry blobs would otherwise classify as NEITHER
+                // meshes nor textures and be dropped from the mesh set entirely.
                 if (path.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase) ||
                     path.StartsWith("geometries\\", StringComparison.OrdinalIgnoreCase))
                 {

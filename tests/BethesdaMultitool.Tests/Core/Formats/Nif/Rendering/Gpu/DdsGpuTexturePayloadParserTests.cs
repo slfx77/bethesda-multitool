@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using Vortice.DXGI;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
@@ -15,6 +16,8 @@ public sealed class DdsGpuTexturePayloadParserTests
     [InlineData("ATI2", "BC5", 16)]
     [InlineData("BC4U", "BC4", 8)]
     [InlineData("BC5U", "BC5", 16)]
+    [InlineData("BC4S", "BC4S", 8)]
+    [InlineData("BC5S", "BC5S", 16)]
     public void Parse_CompressedMipChain_ReturnsGpuPayload(
         string fourCc,
         string expectedFormatName,
@@ -35,9 +38,7 @@ public sealed class DdsGpuTexturePayloadParserTests
         Assert.Equal(8, payload.Width);
         Assert.Equal(8, payload.Height);
         Assert.Equal(4, payload.MipCount);
-        Assert.Equal(expectedFormat == GpuTexturePayloadFormat.BC5
-            ? GpuNormalDecodeMode.Bc5ReconstructZ
-            : GpuNormalDecodeMode.None, payload.NormalDecodeMode);
+        Assert.Equal(ExpectedNormalDecodeMode(expectedFormat), payload.NormalDecodeMode);
 
         AssertMip(payload.MipLevels[0], 8, 8, GetCompressedLevelSize(8, 8, bytesPerBlock), 1);
         AssertMip(payload.MipLevels[1], 4, 4, GetCompressedLevelSize(4, 4, bytesPerBlock), 2);
@@ -63,7 +64,9 @@ public sealed class DdsGpuTexturePayloadParserTests
     [InlineData(72u, "BC1", 8)] // BC1_UNORM_SRGB
     [InlineData(77u, "BC3", 16)] // BC3_UNORM
     [InlineData(80u, "BC4", 8)] // BC4_UNORM
+    [InlineData(81u, "BC4S", 8)] // BC4_SNORM
     [InlineData(83u, "BC5", 16)] // BC5_UNORM
+    [InlineData(84u, "BC5S", 16)] // BC5_SNORM
     [InlineData(98u, "BC7", 16)] // BC7_UNORM
     [InlineData(99u, "BC7", 16)] // BC7_UNORM_SRGB
     public void Parse_Dx10Header_ReturnsGpuPayload(uint dxgiFormat, string expectedFormatName, int bytesPerBlock)
@@ -75,9 +78,19 @@ public sealed class DdsGpuTexturePayloadParserTests
 
         Assert.NotNull(payload);
         Assert.Equal(expectedFormat, payload!.Format);
+        Assert.Equal(ExpectedNormalDecodeMode(expectedFormat), payload.NormalDecodeMode);
         Assert.Equal(4, payload.MipCount);
         AssertMip(payload.MipLevels[0], 8, 8, GetCompressedLevelSize(8, 8, bytesPerBlock), 1);
         AssertMip(payload.MipLevels[3], 1, 1, GetCompressedLevelSize(1, 1, bytesPerBlock), 4);
+    }
+
+    [Fact]
+    public void SignedBcPayloadsKeepSignedDxgiViews()
+    {
+        Assert.Equal(Format.BC4_SNorm,
+            GpuTextureFormatHelpers12.ToDxgiFormat(GpuTexturePayloadFormat.BC4S));
+        Assert.Equal(Format.BC5_SNorm,
+            GpuTextureFormatHelpers12.ToDxgiFormat(GpuTexturePayloadFormat.BC5S));
     }
 
     [Theory]
@@ -176,6 +189,14 @@ public sealed class DdsGpuTexturePayloadParserTests
         Assert.Equal(byteLength, mip.Bytes.Length);
         Assert.All(mip.Bytes, value => Assert.Equal(expectedFill, value));
     }
+
+    private static GpuNormalDecodeMode ExpectedNormalDecodeMode(GpuTexturePayloadFormat format) =>
+        format switch
+        {
+            GpuTexturePayloadFormat.BC5 => GpuNormalDecodeMode.Bc5ReconstructZ,
+            GpuTexturePayloadFormat.BC5S => GpuNormalDecodeMode.Bc5SignedReconstructZ,
+            _ => GpuNormalDecodeMode.None
+        };
 
     private static byte[] CreateCompressedDds(
         int width,

@@ -25,6 +25,13 @@ internal static class RaceRecordScanner
             return null;
         }
 
+        // Oblivion's 20-byte TES4 RACE layout predates the gender-section layout used by
+        // Fallout 3/New Vegas.  Its head indices are shared except for two adjacent ear
+        // entries: 0 head, 1 male ear, 2 female ear, 3 mouth, 4 lower teeth, 5 upper
+        // teeth, 6 tongue, 7 left eye, 8 right eye.  Treating those as the later 0/2..7
+        // layout shifts every visible face part and was the source of the hollow-eye
+        // Oblivion NPC render.
+        var usesTes4HeadPartLayout = record.RecordHeaderSize == 20;
         var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
         string? editorId = null;
         var inMaleSection = true;
@@ -35,6 +42,10 @@ internal static class RaceRecordScanner
         string? femaleHeadModel = null;
         string? maleHeadTexture = null;
         string? femaleHeadTexture = null;
+        string? maleEarModel = null;
+        string? femaleEarModel = null;
+        string? maleEarTexture = null;
+        string? femaleEarTexture = null;
         string? maleMouthModel = null;
         string? femaleMouthModel = null;
         string? maleLowerTeethModel = null;
@@ -58,12 +69,24 @@ internal static class RaceRecordScanner
         uint? youngerRaceFormId = null;
         string? maleUpperBody = null;
         string? femaleUpperBody = null;
+        string? maleLowerBody = null;
+        string? femaleLowerBody = null;
+        string? maleHand = null;
+        string? femaleHand = null;
+        string? maleFoot = null;
+        string? femaleFoot = null;
         string? maleLeftHand = null;
         string? femaleLeftHand = null;
         string? maleRightHand = null;
         string? femaleRightHand = null;
         string? maleBodyTexture = null;
         string? femaleBodyTexture = null;
+        string? maleLowerBodyTexture = null;
+        string? femaleLowerBodyTexture = null;
+        string? maleHandTexture = null;
+        string? femaleHandTexture = null;
+        string? maleFootTexture = null;
+        string? femaleFootTexture = null;
         var currentIndex = -1;
 
         foreach (var subrecord in subrecords)
@@ -101,48 +124,80 @@ internal static class RaceRecordScanner
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleHeadModel,
                         ref femaleHeadModel);
                     break;
-                case "MODL" when inHeadPartsSection && currentIndex == 2:
+                case "MODL" when inHeadPartsSection &&
+                                  ((usesTes4HeadPartLayout && currentIndex == 1) ||
+                                   (!usesTes4HeadPartLayout && currentIndex == 1)):
+                {
+                    var path = EsmRecordParser.GetSubrecordString(subrecord);
+                    if (usesTes4HeadPartLayout)
+                    {
+                        maleEarModel = path;
+                    }
+                    else
+                    {
+                        AssignPath(path, inMaleSection, false, ref maleEarModel, ref femaleEarModel);
+                    }
+
+                    break;
+                }
+                case "MODL" when inHeadPartsSection && usesTes4HeadPartLayout && currentIndex == 2:
+                    femaleEarModel = EsmRecordParser.GetSubrecordString(subrecord);
+                    break;
+                case "MODL" when inHeadPartsSection &&
+                                  currentIndex == (usesTes4HeadPartLayout ? 3 : 2):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleMouthModel,
                         ref femaleMouthModel);
                     break;
-                case "MODL" when inHeadPartsSection && currentIndex == 3:
+                case "MODL" when inHeadPartsSection &&
+                                  currentIndex == (usesTes4HeadPartLayout ? 4 : 3):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleLowerTeethModel,
                         ref femaleLowerTeethModel);
                     break;
-                case "MODL" when inHeadPartsSection && currentIndex == 4:
+                case "MODL" when inHeadPartsSection &&
+                                  currentIndex == (usesTes4HeadPartLayout ? 5 : 4):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleUpperTeethModel,
                         ref femaleUpperTeethModel);
                     break;
-                case "MODL" when inHeadPartsSection && currentIndex == 5:
+                case "MODL" when inHeadPartsSection &&
+                                  currentIndex == (usesTes4HeadPartLayout ? 6 : 5):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleTongueModel,
                         ref femaleTongueModel);
                     break;
-                case "MODL" when inHeadPartsSection && currentIndex == 6:
+                case "MODL" when inHeadPartsSection &&
+                                  currentIndex == (usesTes4HeadPartLayout ? 7 : 6):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleEyeLeftModel,
                         ref femaleEyeLeftModel);
                     break;
-                case "MODL" when inHeadPartsSection && currentIndex == 7:
+                case "MODL" when inHeadPartsSection &&
+                                  currentIndex == (usesTes4HeadPartLayout ? 8 : 7):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleEyeRightModel,
                         ref femaleEyeRightModel);
                     break;
@@ -150,27 +205,45 @@ internal static class RaceRecordScanner
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleHeadTexture,
                         ref femaleHeadTexture);
                     break;
-                case "MODL" when inBodyPartsSection && currentIndex == 0:
+                case "ICON" when inHeadPartsSection && usesTes4HeadPartLayout && currentIndex == 1:
+                    maleEarTexture = EsmRecordParser.GetSubrecordString(subrecord);
+                    break;
+                case "ICON" when inHeadPartsSection && usesTes4HeadPartLayout && currentIndex == 2:
+                    femaleEarTexture = EsmRecordParser.GetSubrecordString(subrecord);
+                    break;
+                case "ICON" when inHeadPartsSection && !usesTes4HeadPartLayout && currentIndex == 1:
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        false,
+                        ref maleEarTexture,
+                        ref femaleEarTexture);
+                    break;
+                case "MODL" when inBodyPartsSection && !usesTes4HeadPartLayout && currentIndex == 0:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        false,
                         ref maleUpperBody,
                         ref femaleUpperBody);
                     break;
-                case "MODL" when inBodyPartsSection && currentIndex == 1:
+                case "MODL" when inBodyPartsSection && !usesTes4HeadPartLayout && currentIndex == 1:
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        false,
                         ref maleLeftHand,
                         ref femaleLeftHand);
                     break;
-                case "MODL" when inBodyPartsSection && currentIndex == 2:
+                case "MODL" when inBodyPartsSection && !usesTes4HeadPartLayout && currentIndex == 2:
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        false,
                         ref maleRightHand,
                         ref femaleRightHand);
                     break;
@@ -178,8 +251,33 @@ internal static class RaceRecordScanner
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
+                        false,
                         ref maleBodyTexture,
                         ref femaleBodyTexture);
+                    break;
+                case "ICON" when inBodyPartsSection && usesTes4HeadPartLayout && currentIndex == 1:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        false,
+                        ref maleLowerBodyTexture,
+                        ref femaleLowerBodyTexture);
+                    break;
+                case "ICON" when inBodyPartsSection && usesTes4HeadPartLayout && currentIndex == 2:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        false,
+                        ref maleHandTexture,
+                        ref femaleHandTexture);
+                    break;
+                case "ICON" when inBodyPartsSection && usesTes4HeadPartLayout && currentIndex == 3:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        false,
+                        ref maleFootTexture,
+                        ref femaleFootTexture);
                     break;
                 case "ENAM" when subrecord.Data.Length >= 4:
                     defaultEyesFormId ??= BinaryUtils.ReadUInt32(
@@ -204,6 +302,7 @@ internal static class RaceRecordScanner
                         subrecord.Data,
                         bigEndian,
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleFggs,
                         ref femaleFggs);
                     break;
@@ -212,6 +311,7 @@ internal static class RaceRecordScanner
                         subrecord.Data,
                         bigEndian,
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleFgga,
                         ref femaleFgga);
                     break;
@@ -220,10 +320,25 @@ internal static class RaceRecordScanner
                         subrecord.Data,
                         bigEndian,
                         inMaleSection,
+                        usesTes4HeadPartLayout,
                         ref maleFgts,
                         ref femaleFgts);
                     break;
             }
+        }
+
+        if (usesTes4HeadPartLayout)
+        {
+            // Oblivion RACE records store only per-race body textures. Geometry is
+            // selected from the fixed combined TES4 body-part meshes.
+            maleUpperBody ??= @"characters\_male\upperbody.nif";
+            femaleUpperBody ??= @"characters\_male\femaleupperbody.nif";
+            maleLowerBody = @"characters\_male\lowerbody.nif";
+            femaleLowerBody = @"characters\_male\femalelowerbody.nif";
+            maleHand = @"characters\_male\hand.nif";
+            femaleHand = @"characters\_male\femalehand.nif";
+            maleFoot = @"characters\_male\foot.nif";
+            femaleFoot = @"characters\_male\femalefoot.nif";
         }
 
         return new RaceScanEntry
@@ -236,6 +351,10 @@ internal static class RaceRecordScanner
             FemaleHeadModelPath = femaleHeadModel,
             MaleHeadTexturePath = maleHeadTexture,
             FemaleHeadTexturePath = femaleHeadTexture,
+            MaleEarModelPath = maleEarModel,
+            FemaleEarModelPath = femaleEarModel,
+            MaleEarTexturePath = maleEarTexture,
+            FemaleEarTexturePath = femaleEarTexture,
             MaleMouthModelPath = maleMouthModel,
             FemaleMouthModelPath = femaleMouthModel,
             MaleLowerTeethModelPath = maleLowerTeethModel,
@@ -256,18 +375,31 @@ internal static class RaceRecordScanner
             FemaleFaceGenTexture = femaleFgts,
             MaleUpperBodyPath = maleUpperBody,
             FemaleUpperBodyPath = femaleUpperBody,
+            MaleLowerBodyPath = maleLowerBody,
+            FemaleLowerBodyPath = femaleLowerBody,
+            MaleHandPath = maleHand,
+            FemaleHandPath = femaleHand,
+            MaleFootPath = maleFoot,
+            FemaleFootPath = femaleFoot,
             MaleLeftHandPath = maleLeftHand,
             FemaleLeftHandPath = femaleLeftHand,
             MaleRightHandPath = maleRightHand,
             FemaleRightHandPath = femaleRightHand,
             MaleBodyTexturePath = maleBodyTexture,
-            FemaleBodyTexturePath = femaleBodyTexture
+            FemaleBodyTexturePath = femaleBodyTexture,
+            MaleLowerBodyTexturePath = maleLowerBodyTexture,
+            FemaleLowerBodyTexturePath = femaleLowerBodyTexture,
+            MaleHandTexturePath = maleHandTexture,
+            FemaleHandTexturePath = femaleHandTexture,
+            MaleFootTexturePath = maleFootTexture,
+            FemaleFootTexturePath = femaleFootTexture
         };
     }
 
     private static void AssignPath(
         string? path,
         bool inMaleSection,
+        bool sharedAcrossGenders,
         ref string? maleValue,
         ref string? femaleValue)
     {
@@ -276,7 +408,12 @@ internal static class RaceRecordScanner
             return;
         }
 
-        if (inMaleSection)
+        if (sharedAcrossGenders)
+        {
+            maleValue = path;
+            femaleValue = path;
+        }
+        else if (inMaleSection)
         {
             maleValue = path;
         }
@@ -290,11 +427,17 @@ internal static class RaceRecordScanner
         byte[] data,
         bool bigEndian,
         bool inMaleSection,
+        bool sharedAcrossGenders,
         ref float[]? maleValue,
         ref float[]? femaleValue)
     {
         var coefficients = NpcRecordDataReader.ReadFloatArray(data, bigEndian);
-        if (inMaleSection)
+        if (sharedAcrossGenders)
+        {
+            maleValue = coefficients;
+            femaleValue = coefficients;
+        }
+        else if (inMaleSection)
         {
             maleValue = coefficients;
         }

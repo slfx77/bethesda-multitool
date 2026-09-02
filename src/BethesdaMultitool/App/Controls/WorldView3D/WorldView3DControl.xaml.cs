@@ -640,6 +640,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators default visible).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
+        // BNDS placements have no MODL: their XBSD geometry resolves through these two indexes at
+        // the same one-time cell-bake boundary as ordinary model/material metadata.
+        data.RenderCache.BendableSplineIndex = data.BendableSplinesByFormId;
+        data.RenderCache.TextureSetIndex = data.TextureSetsByFormId;
         // Resolve placed REFR base FormIDs to LIGH definitions during the same one-time cell bake.
         // This is independent of ModelPath, so meshless lights still become emitter-only entries.
         data.RenderCache.LightIndex = data.LightsByFormId;
@@ -778,6 +782,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             : "All Cells";
         AllCellsButton.IsEnabled = data.AllCells.Count > 0;
         ResolveRenamesButton.Visibility = data.IsMemoryDump ? Visibility.Visible : Visibility.Collapsed;
+        // Same DMP-only gate for the master-terrain data-source checkbox in the settings panel:
+        // swapping terrain sources only makes sense when the scene came from a memory dump.
+        SettingsPanel.MasterTerrainCheckBox.Visibility =
+            data.IsMemoryDump ? Visibility.Visible : Visibility.Collapsed;
 
         // Weather dropdown: "(Climate default)" + all weathers. Built once here; the worldspace
         // selection below refreshes the climate default + timing it resolves against.

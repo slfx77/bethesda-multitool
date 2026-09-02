@@ -17,29 +17,38 @@ internal static class NifExportSceneBuilder
         }
 
         var scene = new GlbScene();
-        var nodeIndicesByName = AddNodes(scene, extracted.Nodes);
+        var (nodeIndicesByName, nodeIndicesByBlock) = AddNodes(scene, extracted.Nodes);
 
         foreach (var part in extracted.MeshParts)
         {
-            if (part.Skin != null && TryCreateSkinBinding(part.Skin, nodeIndicesByName, out var skinBinding))
+            if (part.Skin != null && TryCreateSkinBinding(
+                    part.Skin,
+                    nodeIndicesByName,
+                    nodeIndicesByBlock,
+                    out var skinBinding))
             {
                 scene.MeshParts.Add(new GlbMeshPart
                 {
                     Name = part.Name,
-                    Submesh = CloneSubmesh(part.Submesh),
+                    Submesh = RenderableSubmeshCloner.DeepClone(part.Submesh),
                     Skin = skinBinding
                 });
                 continue;
             }
 
-            var rigidSubmesh = CloneSubmesh(part.Submesh);
-            ApplyWorldTransform(rigidSubmesh, part.ShapeWorldTransform);
+            var rigidSubmesh = RenderableSubmeshCloner.DeepClone(part.Submesh);
+            var parentNodeIndex = part.ParentNodeBlockIndex is int parentBlockIndex &&
+                                  nodeIndicesByBlock.TryGetValue(parentBlockIndex, out var resolvedParent)
+                ? resolvedParent
+                : GlbScene.RootNodeIndex;
             var nodeIndex = scene.AddNode(
-                $"{Path.GetFileNameWithoutExtension(sourceLabel)}_{scene.MeshParts.Count}",
-                GlbScene.RootNodeIndex,
-                Matrix4x4.Identity,
-                Matrix4x4.Identity,
-                GlbNodeKind.Attachment);
+                $"{part.Name}_{part.Submesh.SourceBlockIndex}",
+                parentNodeIndex,
+                part.ShapeLocalTransform,
+                part.ShapeWorldTransform,
+                GlbNodeKind.Attachment,
+                part.Name,
+                part.Submesh.SourceBlockIndex);
             scene.MeshParts.Add(new GlbMeshPart
             {
                 Name = part.Name,
@@ -138,7 +147,7 @@ internal static class NifExportSceneBuilder
                 Name = part.Name,
                 NodeIndex = part.NodeIndex,
                 Skin = part.Skin,
-                Submesh = CloneGeometryWithMaterialState(geometry, materialSource)
+                Submesh = RenderableSubmeshCloner.CloneGeometryWithRenderState(geometry, materialSource)
             };
         }
     }
@@ -170,15 +179,56 @@ internal static class NifExportSceneBuilder
         return plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, meshArchives);
     }
 
-    private static Dictionary<string, int> AddNodes(
+    internal static (Dictionary<string, int> ByName, Dictionary<int, int> ByBlock) AddNodes(
         GlbScene scene,
-        IEnumerable<NifExportExtractor.ExtractedNode> nodes)
+        IEnumerable<NifExportExtractor.ExtractedNode> nodes,
+        GlbNodeKind kind = GlbNodeKind.Skeleton)
     {
         var nodeList = nodes.ToList();
+        var pendingNodes = new List<NifExportExtractor.ExtractedNode>(nodeList);
+        var knownBlocks = nodeList.Select(static node => node.BlockIndex).ToHashSet();
+        var orderedNodes = new List<NifExportExtractor.ExtractedNode>(nodeList.Count);
+        var emittedBlocks = new HashSet<int>();
+
+        // NIF block order is not a hierarchy order: a child may legally precede its parent block.
+        // The viewer pose evaluator deliberately uses a compact parent-first graph, so append every
+        // resolvable parent before its descendants. Missing parents are rooted. A malformed cycle
+        // cannot be represented; break it deterministically at its first source node and preserve
+        // as much of the remaining hierarchy as possible.
+        while (pendingNodes.Count > 0)
+        {
+            var madeProgress = false;
+            for (var index = 0; index < pendingNodes.Count;)
+            {
+                var candidate = pendingNodes[index];
+                if (candidate.ParentBlockIndex is int parentBlockIndex &&
+                    knownBlocks.Contains(parentBlockIndex) &&
+                    !emittedBlocks.Contains(parentBlockIndex))
+                {
+                    index++;
+                    continue;
+                }
+
+                orderedNodes.Add(candidate);
+                emittedBlocks.Add(candidate.BlockIndex);
+                pendingNodes.RemoveAt(index);
+                madeProgress = true;
+            }
+
+            if (!madeProgress)
+            {
+                var cycleRoot = pendingNodes[0];
+                orderedNodes.Add(cycleRoot);
+                emittedBlocks.Add(cycleRoot.BlockIndex);
+                pendingNodes.RemoveAt(0);
+            }
+        }
+
         var blockToSceneNode = new Dictionary<int, int>();
         var nodeIndicesByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var ambiguousNodeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var node in nodeList)
+        foreach (var node in orderedNodes)
         {
             var parentSceneNode = node.ParentBlockIndex is int parentBlockIndex &&
                                   blockToSceneNode.TryGetValue(parentBlockIndex, out var existingParent)
@@ -190,28 +240,43 @@ internal static class NifExportSceneBuilder
                 parentSceneNode,
                 node.LocalTransform,
                 node.WorldTransform,
-                GlbNodeKind.Skeleton,
-                node.LookupName);
+                kind,
+                node.LookupName,
+                node.BlockIndex);
             blockToSceneNode[node.BlockIndex] = sceneNodeIndex;
 
-            if (!string.IsNullOrWhiteSpace(node.LookupName) && !nodeIndicesByName.ContainsKey(node.LookupName))
+            if (!string.IsNullOrWhiteSpace(node.LookupName) &&
+                !nodeIndicesByName.TryAdd(node.LookupName, sceneNodeIndex))
             {
-                nodeIndicesByName.Add(node.LookupName, sceneNodeIndex);
+                ambiguousNodeNames.Add(node.LookupName);
             }
         }
 
-        return nodeIndicesByName;
+        foreach (var ambiguousName in ambiguousNodeNames)
+        {
+            nodeIndicesByName.Remove(ambiguousName);
+        }
+
+        return (nodeIndicesByName, blockToSceneNode);
     }
 
-    private static bool TryCreateSkinBinding(
+    internal static bool TryCreateSkinBinding(
         NifExportExtractor.ExtractedSkinBinding skin,
         Dictionary<string, int> nodeIndicesByName,
+        Dictionary<int, int> nodeIndicesByBlock,
         out GlbSkinBinding? binding)
     {
         var jointNodeIndices = new int[skin.BoneNames.Length];
         for (var index = 0; index < skin.BoneNames.Length; index++)
         {
-            if (!nodeIndicesByName.TryGetValue(skin.BoneNames[index], out var jointNodeIndex))
+            var sourceBlockIndex = index < skin.BoneBlockIndices.Length
+                ? skin.BoneBlockIndices[index]
+                : -1;
+            int jointNodeIndex;
+            var resolved = sourceBlockIndex >= 0
+                ? nodeIndicesByBlock.TryGetValue(sourceBlockIndex, out jointNodeIndex)
+                : nodeIndicesByName.TryGetValue(skin.BoneNames[index], out jointNodeIndex);
+            if (!resolved)
             {
                 binding = null;
                 return false;
@@ -227,114 +292,6 @@ internal static class NifExportSceneBuilder
             PerVertexInfluences = skin.PerVertexInfluences
         };
         return true;
-    }
-
-    private static RenderableSubmesh CloneSubmesh(RenderableSubmesh source)
-    {
-        return new RenderableSubmesh
-        {
-            ShapeName = source.ShapeName,
-            Positions = (float[])source.Positions.Clone(),
-            Triangles = (ushort[])source.Triangles.Clone(),
-            Normals = source.Normals != null ? (float[])source.Normals.Clone() : null,
-            UVs = source.UVs != null ? (float[])source.UVs.Clone() : null,
-            VertexColors = source.VertexColors != null ? (byte[])source.VertexColors.Clone() : null,
-            Tangents = source.Tangents != null ? (float[])source.Tangents.Clone() : null,
-            Bitangents = source.Bitangents != null ? (float[])source.Bitangents.Clone() : null,
-            StarfieldMaterialColor = source.StarfieldMaterialColor,
-            StarfieldMaterialAlpha = source.StarfieldMaterialAlpha,
-            DiffuseTexturePath = source.DiffuseTexturePath,
-            BgsmGlowMapTexturePath = source.BgsmGlowMapTexturePath,
-            BgsmEmissionColor = source.BgsmEmissionColor,
-            ClampTextureU = source.ClampTextureU,
-            ClampTextureV = source.ClampTextureV,
-            NormalMapTexturePath = source.NormalMapTexturePath,
-            EffectTint = source.EffectTint,
-            EffectFalloff = source.EffectFalloff,
-            ShaderMetadata = source.ShaderMetadata,
-            IsEmissive = source.IsEmissive,
-            UseVertexColors = source.UseVertexColors,
-            UseVertexAlphaForOpacity = source.UseVertexAlphaForOpacity,
-            IsDoubleSided = source.IsDoubleSided,
-            HasAlphaBlend = source.HasAlphaBlend,
-            HasAlphaTest = source.HasAlphaTest,
-            AlphaTestThreshold = source.AlphaTestThreshold,
-            AlphaTestFunction = source.AlphaTestFunction,
-            SrcBlendMode = source.SrcBlendMode,
-            DstBlendMode = source.DstBlendMode,
-            MaterialAlpha = source.MaterialAlpha,
-            MaterialGlossiness = source.MaterialGlossiness,
-            IsEyeEnvmap = source.IsEyeEnvmap,
-            EnvMapScale = source.EnvMapScale,
-            RenderOrder = source.RenderOrder,
-            TintColor = source.TintColor,
-            SourceBlockIndex = source.SourceBlockIndex,
-            SourceNifPath = source.SourceNifPath
-        };
-    }
-
-    private static RenderableSubmesh CloneGeometryWithMaterialState(
-        RenderableSubmesh geometry,
-        RenderableSubmesh material)
-    {
-        return new RenderableSubmesh
-        {
-            ShapeName = geometry.ShapeName,
-            Positions = geometry.Positions,
-            Triangles = geometry.Triangles,
-            Normals = geometry.Normals,
-            UVs = geometry.UVs,
-            VertexColors = geometry.VertexColors,
-            Tangents = geometry.Tangents,
-            Bitangents = geometry.Bitangents,
-            BindPosePositions = geometry.BindPosePositions,
-            LocalBounds = geometry.LocalBounds,
-            SourceBlockIndex = geometry.SourceBlockIndex,
-            SourceNifPath = material.SourceNifPath ?? geometry.SourceNifPath,
-
-            StarfieldMaterialColor = material.StarfieldMaterialColor,
-            StarfieldMaterialAlpha = material.StarfieldMaterialAlpha,
-            DiffuseTexturePath = material.DiffuseTexturePath,
-            BgsmGlowMapTexturePath = material.BgsmGlowMapTexturePath,
-            BgsmEmissionColor = material.BgsmEmissionColor,
-            NormalMapTexturePath = material.NormalMapTexturePath,
-            SpecularMapTexturePath = material.SpecularMapTexturePath,
-            GradientMapTexturePath = material.GradientMapTexturePath,
-            GradientMapV = material.GradientMapV,
-            EnvironmentMapTexturePath = material.EnvironmentMapTexturePath,
-            EnvironmentMapScale = material.EnvironmentMapScale,
-            EnvironmentMapSmoothness = material.EnvironmentMapSmoothness,
-            ClassicEnvironmentMapTexturePath = material.ClassicEnvironmentMapTexturePath,
-            ClassicEnvironmentMaskTexturePath = material.ClassicEnvironmentMaskTexturePath,
-            ClassicEnvironmentMapScale = material.ClassicEnvironmentMapScale,
-            ClassicEnvironmentMapUsesWindowReflection = material.ClassicEnvironmentMapUsesWindowReflection,
-            ClassicEnvironmentMapIsSphereMap = material.ClassicEnvironmentMapIsSphereMap,
-            ClassicParallaxHeightMapTexturePath = material.ClassicParallaxHeightMapTexturePath,
-            ClampTextureU = material.ClampTextureU,
-            ClampTextureV = material.ClampTextureV,
-            EffectTint = material.EffectTint,
-            EffectFalloff = material.EffectFalloff,
-            ShaderMetadata = material.ShaderMetadata,
-            IsEmissive = material.IsEmissive,
-            UseVertexColors = material.UseVertexColors,
-            UseVertexAlphaForOpacity = material.UseVertexAlphaForOpacity,
-            IsDoubleSided = material.IsDoubleSided,
-            HasAlphaBlend = material.HasAlphaBlend,
-            HasAlphaTest = material.HasAlphaTest,
-            AlphaTestThreshold = material.AlphaTestThreshold,
-            AlphaTestFunction = material.AlphaTestFunction,
-            SrcBlendMode = material.SrcBlendMode,
-            DstBlendMode = material.DstBlendMode,
-            MaterialAlpha = material.MaterialAlpha,
-            MaterialGlossiness = material.MaterialGlossiness,
-            SpecularColor = material.SpecularColor,
-            MaterialDiffuse = material.MaterialDiffuse,
-            IsEyeEnvmap = material.IsEyeEnvmap,
-            EnvMapScale = material.EnvMapScale,
-            RenderOrder = material.RenderOrder,
-            TintColor = material.TintColor,
-            IsFaceGen = material.IsFaceGen
-        };
     }
 
     private static void ApplyWorldTransform(RenderableSubmesh submesh, Matrix4x4 transform)

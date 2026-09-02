@@ -23,6 +23,10 @@ internal static class GpuMeshUploader
     {
         var vertexCount = sub.VertexCount;
         var vertices = new GpuVertex[vertexCount];
+        // Both consumers are shader data rather than coverage: classic TallGrass reads alpha as
+        // wind weight, while CE2 vertex Lerp reads it as mix(albedo, vertex.rgb, vertex.a).
+        var preserveShaderVertexAlpha =
+            preserveAuthoredVertexAlpha || sub.StarfieldMaterialColor.IsVertexLerp;
 
         for (var i = 0; i < vertexCount; i++)
         {
@@ -38,20 +42,22 @@ internal static class GpuMeshUploader
             if (sub.UVs != null && uvi + 1 < sub.UVs.Length)
                 vertices[i].TexCoord = new Vector2(sub.UVs[uvi], sub.UVs[uvi + 1]);
 
-            if ((NifVertexColorPolicy.HasVertexColorData(sub) || preserveAuthoredVertexAlpha) &&
+            if ((NifVertexColorPolicy.HasVertexColorData(sub) || preserveShaderVertexAlpha) &&
                 sub.VertexColors != null &&
                 ci + 3 < sub.VertexColors.Length)
             {
-                var color = NifVertexColorPolicy.Read(sub, i);
+                var color = sub.StarfieldMaterialColor.IsVertexLerp
+                    ? (R: sub.VertexColors[ci], G: sub.VertexColors[ci + 1],
+                        B: sub.VertexColors[ci + 2], A: sub.VertexColors[ci + 3])
+                    : NifVertexColorPolicy.Read(sub, i);
                 vertices[i].VertexColor = new Vector4(
                     color.R / 255f,
                     color.G / 255f,
                     color.B / 255f,
-                    // The ordinary upload path keeps policy-normalized coverage alpha. The
-                    // reference renderer opts into the raw channel only for an explicitly
-                    // identified TallGrassShaderProperty, whose VS consumes it as wind weight
-                    // and resets the outgoing coverage alpha before any pixel shader sees it.
-                    preserveAuthoredVertexAlpha ? sub.VertexColors[ci + 3] / 255f : color.A / 255f);
+                    // The ordinary upload path keeps policy-normalized coverage alpha. Identified
+                    // shader-data routes retain the raw channel; dedicated shader flags keep that
+                    // alpha out of generic opacity and coverage calculations.
+                    preserveShaderVertexAlpha ? sub.VertexColors[ci + 3] / 255f : color.A / 255f);
             }
             else
             {

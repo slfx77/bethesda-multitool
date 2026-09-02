@@ -192,6 +192,13 @@
                     AutomationProperties.Name="Vertex colors"
                     ToolTipService.ToolTip="Apply per-vertex terrain color tint (press 4)" />
         </StackPanel>
+        <!--  Memory dumps only (visibility gated from LoadData). Data-source switch, not a render
+              flag: it rebuilds the world data, so it deliberately sits OUTSIDE
+              TerrainDependentControls — it also changes the 2D map, terrain display on or off.  -->
+        <CheckBox x:Name="MasterTerrainCheckBox" x:FieldModifier="internal" IsChecked="True"
+                  Content="Master ESM terrain" Visibility="Collapsed"
+                  AutomationProperties.Name="Master ESM terrain"
+                  ToolTipService.ToolTip="Fill terrain the dump lost from the Load Order's master ESMs (preview placements the way the converted plugin shows them in-game); off = only the terrain the dump itself preserved" />
         <CheckBox x:Name="WaterCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Water"
                   AutomationProperties.Name="Water"
                   ToolTipService.ToolTip="Show water surfaces (press 3)" />

@@ -244,6 +244,10 @@ public sealed class FnvTerrainNormalMapTests
             decode, StringComparison.Ordinal);
         Assert.Contains("(uNormalDecodeMetadata.x & (1u << slot)) != 0u", decode,
             StringComparison.Ordinal);
+        Assert.Contains("(uNormalDecodeMetadata.y & (1u << slot)) != 0u", decode,
+            StringComparison.Ordinal);
+        Assert.Contains("float2 xy = signedBc5 ? packed.rg : packed.rg * 2.0 - 1.0;", decode,
+            StringComparison.Ordinal);
         Assert.Contains("float3(xy, sqrt(saturate(1.0 - dot(xy, xy))))", decode,
             StringComparison.Ordinal);
         Assert.Contains(": packed * 2.0 - 1.0;", decode, StringComparison.Ordinal);
@@ -414,9 +418,15 @@ public sealed class FnvTerrainNormalMapTests
         var drawCell = Slice(renderer, "private void DrawCell(", "private CachedCellMesh12? GetOrUploadMesh(");
         Assert.Contains("BuildNormalBc5Mask(entry.NormalTextureEntries)", drawCell,
             StringComparison.Ordinal);
+        Assert.Contains("BuildNormalBc5SignedMask(entry.NormalTextureEntries)", drawCell,
+            StringComparison.Ordinal);
         var decodeMask = Slice(renderer, "private static uint BuildNormalBc5Mask(", "private long StartTiming()");
         Assert.Contains(
             "normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ",
+            decodeMask,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5SignedReconstructZ",
             decodeMask,
             StringComparison.Ordinal);
         Assert.Contains("mask |= 1u << slot;", decodeMask, StringComparison.Ordinal);

@@ -152,12 +152,11 @@ public sealed class FnvTallGrassWindTests
 
         // Both coverage consumers retain their existing diffuse/card-alpha tests; the VS has
         // already reset the authored wind weight before these inputs arrive. The bounded active
-        // ADT route deliberately bypasses vertex alpha, but TallGrass never sets that runtime flag
-        // and therefore still consumes the false branch below.
-        Assert.Contains(
-            "sample.a * (fnvActiveAdtBase ? 1.0 : input.vVertexColor.a)",
-            pixel,
+        // ADT and CE2 vertex-Lerp deliberately bypass vertex coverage alpha, but TallGrass sets
+        // neither route and therefore still consumes the false branch below.
+        Assert.Contains("fnvActiveAdtBase || starfieldMaterialLerp", pixel,
             StringComparison.Ordinal);
+        Assert.Contains(": input.vVertexColor.a", pixel, StringComparison.Ordinal);
         Assert.Contains("alpha * input.vVertexColor.a", shadow, StringComparison.Ordinal);
     }
 

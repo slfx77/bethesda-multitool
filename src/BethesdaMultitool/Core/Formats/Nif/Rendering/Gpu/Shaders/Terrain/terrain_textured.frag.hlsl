@@ -33,7 +33,8 @@ cbuffer PerCell : register(b1)
     uint4 uTextureIndices[4];
     // FNV TXST slot-1 companions. 0xffffffff means no authored normal (exact flat identity).
     uint4 uNormalTextureIndices[4];
-    // x low 16 bits: slot uses ATI2/BC5 and therefore stores only XY; yzw reserved.
+    // x low 16 bits: slot uses ATI2/BC5 and therefore stores only XY.
+    // y low 16 bits: that BC5 SRV is SNORM, so sampled XY is already in [-1,1].
     uint4 uNormalDecodeMetadata;
 };
 
@@ -108,8 +109,9 @@ float3 DecodeTerrainNormal(uint textureIndex, uint slot, float2 uv)
         // terrain normals promote asynchronously to ATI2/BC5, which exposes only RG; b1's live
         // per-draw mask selects the same positive-Z reconstruction used by the reference-material path.
         float3 packed = textures[NonUniformResourceIndex(textureIndex)].Sample(sDiffuse, uv).rgb;
-        float2 xy = packed.rg * 2.0 - 1.0;
         bool reconstructZ = (uNormalDecodeMetadata.x & (1u << slot)) != 0u;
+        bool signedBc5 = (uNormalDecodeMetadata.y & (1u << slot)) != 0u;
+        float2 xy = signedBc5 ? packed.rg : packed.rg * 2.0 - 1.0;
         decoded = reconstructZ
             ? float3(xy, sqrt(saturate(1.0 - dot(xy, xy))))
             : packed * 2.0 - 1.0;

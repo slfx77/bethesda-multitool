@@ -103,8 +103,14 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // submesh's serialized DoubleSided bit. Warm v84 entries retain the old backface-culling verdict.
     // v86: regular FO4/FO76 BGSM emissive RGB and optional slot-2 glow map join the payload. Warm
     // v85 entries omit that authored lit-emission material state.
+    // v87: an effective Starfield ShaderRoute::Water classifies external BSGeometry onto the
+    // existing water-surface sentinel. Warm v86 entries retain the .mat path and draw opaque slabs.
+    // v88: Starfield vertex-driven Lerp retains external RGBA and its first-class render mode. Warm
+    // v87 entries deliberately discarded that stream and cannot reconstruct the material result.
+    // v89: Starfield material UV scale/offset and reducible UVOffset controllers are baked into the
+    // existing vertex/scroll payload. Warm v88 entries retain untransformed, static layer-zero UVs.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 86;
+    internal const int DecoderVersion = 89;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -818,6 +824,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
                 IsNormalizedFinite(state.LinearTint.Z) &&
                 IsNormalizedFinite(state.LinearTint.W) &&
                 state.LinearTint.W > 0f,
+            StarfieldMaterialColorRenderMode.VertexLerp => state.LinearTint == Vector4.Zero,
             _ => false
         };
         if (!valid)
@@ -1281,7 +1288,7 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     // TES3/TES4-era NiTextureEffect ENVIRONMENT_MAP + CG_SPHERE_MAP marker (v79+): the classic
     // env texture is a 2D sphere map (view-space reflection lookup), never cube-promoted.
     bool ClassicEnvironmentMapIsSphereMap = false,
-    // Starfield constant-Lerp render state (v82+), appended after the sphere-map marker.
+    // Starfield material-Lerp render state: constant (v82+) or exact vertex-driven (v88+).
     StarfieldMaterialColorRenderState StarfieldMaterialColor = default,
     // Starfield AlphaSettings cutout state (v83+), appended after material colour.
     StarfieldMaterialAlphaRenderState StarfieldMaterialAlpha = default,

@@ -61,6 +61,24 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private ID3D12PipelineState? _starfieldDiffuseLitDoublePso;
     private ID3D12PipelineState? _starfieldDiffuseLitBackCutoutPso;
     private ID3D12PipelineState? _starfieldDiffuseLitDoubleCutoutPso;
+    // Native Mesh/NPC viewer twins use reference.vert.hlsl's per-draw b1 world matrix. They cannot
+    // alias the established instanced family: its VS reads SV_InstanceID + t8 and has a different
+    // stage/input ABI even though the compact pixel signatures are identical.
+    private ID3D12PipelineState? _directModernStandardBackPso;
+    private ID3D12PipelineState? _directModernStandardBackCutoutPso;
+    private ID3D12PipelineState? _directModernStandardDoubleCutoutPso;
+    private ID3D12PipelineState? _directStarfieldDiffuseLitBackPso;
+    private ID3D12PipelineState? _directStarfieldDiffuseLitDoublePso;
+    private ID3D12PipelineState? _directStarfieldDiffuseLitBackCutoutPso;
+    private ID3D12PipelineState? _directStarfieldDiffuseLitDoubleCutoutPso;
+
+    // A throwing COM/shader call in this constructor prevents the session from ever receiving the
+    // factory instance, so its ordinary Dispose path cannot run. Every PSO created while this bag is
+    // active is transaction-owned; a successful constructor commits the bag to the fields below,
+    // while a failure releases the partial graph in reverse creation order.
+    private PipelineConstructionTransaction? _constructionTransaction = new();
+    private readonly HashSet<ID3D12PipelineState> _ownedMirrorPsos =
+        new(ReferenceEqualityComparer.Instance);
 
     private bool _disposed;
 
@@ -71,16 +89,47 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     {
         _gpu = gpu;
         _rootSignature = rootSignature;
+        try
+        {
         var shaderOverride =
             EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceModernStandardShader);
         var shaderActivation = ModernStandardShaderActivationPolicy.Resolve(game, shaderOverride);
         FalloutModernStandardRequested = shaderActivation.FalloutModernStandardRequested;
         StarfieldDiffuseLitRequested = shaderActivation.StarfieldDiffuseLitRequested;
+        DirectModernStandardOpaqueRequested = FalloutModernStandardRequested;
+        DirectStarfieldDiffuseLitRequested = StarfieldDiffuseLitRequested;
 
         var blendedVsBytecode = CompileEmbeddedShader("reference.vert.hlsl", "main", "vs_5_1");
         var instancedVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1");
         var psBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1");
         _sharedRoute = new ShaderRoutePsos(blendedVsBytecode, psBytecode);
+        // Standalone Bethesda scenes carry one authored world transform per mesh part rather than
+        // thousands of repeated placements. Reuse the established per-draw vertex ABI for their
+        // opaque path instead of manufacturing one-element instance buffers in the viewer.
+        DirectOpaqueBackPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
+            depthWriteEnabled: true);
+        DirectOpaqueDoublePso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
+            depthWriteEnabled: true);
+        DirectOpaqueBackDecalPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
+            depthWriteEnabled: true, decal: true);
+        DirectOpaqueDoubleDecalPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
+            depthWriteEnabled: true, decal: true);
+        DirectOpaqueBackNoDepthPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
+            depthWriteEnabled: false, depthTestEnabled: false);
+        DirectOpaqueDoubleNoDepthPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
+            depthWriteEnabled: false, depthTestEnabled: false);
+        DirectOpaqueBackDecalNoDepthPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
+            depthWriteEnabled: false, decal: true, depthTestEnabled: false);
+        DirectOpaqueDoubleDecalNoDepthPso = CreatePipelineState(
+            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
+            depthWriteEnabled: false, decal: true, depthTestEnabled: false);
         OpaqueBackPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
             depthWriteEnabled: true);
         OpaqueDoublePso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
@@ -93,33 +142,66 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         if (FalloutModernStandardRequested)
         {
             TryCreateModernStandardOpaquePipelines();
+            TryCreateDirectModernStandardOpaquePipelines();
         }
         if (StarfieldDiffuseLitRequested)
         {
             TryCreateStarfieldDiffuseLitPipelines();
+            TryCreateDirectStarfieldDiffuseLitPipelines();
         }
 
         BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
             "ReferencePipelineFactory12: opaque shader profile game={0} override={1} " +
-            "falloutRequested={2} falloutAvailable={3} starfieldRequested={4} starfieldAvailable={5}.",
+            "falloutRequested={2} falloutAvailable={3} falloutDirectAvailable={4} " +
+            "starfieldRequested={5} starfieldAvailable={6} starfieldDirectAvailable={7}.",
             game,
             shaderOverride ?? "<unset>",
             FalloutModernStandardRequested,
             ModernStandardOpaqueAvailable,
+            DirectModernStandardOpaqueAvailable,
             StarfieldDiffuseLitRequested,
-            StarfieldDiffuseLitOpaqueAvailable);
+            StarfieldDiffuseLitOpaqueAvailable,
+            DirectStarfieldDiffuseLitOpaqueAvailable);
 
-        // Grass cutouts: alpha-to-coverage variants (engine mechanism — BSRenderState::
-        // SetAlphaToCoverageEnable) so MSAA dithers the alpha-test edge instead of the binary
-        // discard's hard staircase. The paired ALPHA_TO_COVERAGE pixel shader converts the
-        // authored NiAlphaProperty threshold into a sharpened coverage gradient. When the scene
-        // is single-sampled A2C is a hardware no-op AND the gradient PS would render solid
-        // cards, so the properties alias the plain opaque PSOs — renderer routing never branches.
+        // Grass cutouts and native-viewer hair/brow/lash: alpha-to-coverage variants (engine
+        // mechanism — BSRenderState::SetAlphaToCoverageEnable) so MSAA converts authored alpha
+        // into per-sample coverage instead of stacking transparent cards. The direct viewer set
+        // retains the full culling/decal/depth-test matrix; the placed-world set keeps its existing
+        // two variants. When the scene is single-sampled all A2C properties alias the corresponding
+        // plain PSOs. The viewer detects that case and explicitly routes native A2C through blend.
         AlphaToCoverageAvailable = _gpu.SceneSampleCount > 1;
         if (AlphaToCoverageAvailable)
         {
             var a2cPsBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
                 new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
+            DirectOpaqueBackA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
+                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
+            DirectOpaqueDoubleA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
+                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
+            DirectOpaqueBackDecalA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
+                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true);
+            DirectOpaqueDoubleDecalA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
+                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true);
+            DirectOpaqueBackNoDepthA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
+                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true,
+                depthTestEnabled: false);
+            DirectOpaqueDoubleNoDepthA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
+                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true,
+                depthTestEnabled: false);
+            DirectOpaqueBackDecalNoDepthA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
+                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true,
+                depthTestEnabled: false);
+            DirectOpaqueDoubleDecalNoDepthA2CPso = CreatePipelineState(
+                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
+                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true,
+                depthTestEnabled: false);
             OpaqueBackA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: false,
                 blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
             OpaqueDoubleA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: true,
@@ -127,6 +209,14 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         else
         {
+            DirectOpaqueBackA2CPso = DirectOpaqueBackPso;
+            DirectOpaqueDoubleA2CPso = DirectOpaqueDoublePso;
+            DirectOpaqueBackDecalA2CPso = DirectOpaqueBackDecalPso;
+            DirectOpaqueDoubleDecalA2CPso = DirectOpaqueDoubleDecalPso;
+            DirectOpaqueBackNoDepthA2CPso = DirectOpaqueBackNoDepthPso;
+            DirectOpaqueDoubleNoDepthA2CPso = DirectOpaqueDoubleNoDepthPso;
+            DirectOpaqueBackDecalNoDepthA2CPso = DirectOpaqueBackDecalNoDepthPso;
+            DirectOpaqueDoubleDecalNoDepthA2CPso = DirectOpaqueDoubleDecalNoDepthPso;
             OpaqueBackA2CPso = OpaqueBackPso;
             OpaqueDoubleA2CPso = OpaqueDoublePso;
         }
@@ -147,6 +237,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         // winding-agnostic and map to themselves. Decals are excluded from the replay entirely.
         var mirrorBack = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false,
             blendAttachment: null, depthWriteEnabled: true, mirrorWinding: true);
+        _ownedMirrorPsos.Add(mirrorBack);
         _mirrorPsoMap = new Dictionary<ID3D12PipelineState, ID3D12PipelineState>
         {
             [OpaqueBackPso] = mirrorBack,
@@ -185,9 +276,21 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         {
             var a2cPsBytecodeMirror = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
                 new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
-            _mirrorPsoMap[OpaqueBackA2CPso] = CreatePipelineState(instancedVsBytecode,
+            var mirrorA2C = CreatePipelineState(instancedVsBytecode,
                 a2cPsBytecodeMirror, doubleSided: false, blendAttachment: null,
                 depthWriteEnabled: true, alphaToCoverage: true, mirrorWinding: true);
+            _ownedMirrorPsos.Add(mirrorA2C);
+            _mirrorPsoMap[OpaqueBackA2CPso] = mirrorA2C;
+        }
+
+        _constructionTransaction!.Commit();
+        _constructionTransaction = null;
+        }
+        catch
+        {
+            _constructionTransaction?.Dispose();
+            _constructionTransaction = null;
+            throw;
         }
     }
 
@@ -211,6 +314,73 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// <summary>Depth-biased variant of <see cref="OpaqueDoublePso" /> for decal overlay submeshes.</summary>
     public ID3D12PipelineState OpaqueDoubleDecalPso { get; }
 
+    /// <summary>Non-instanced opaque PSOs sharing the reference per-draw b1 ABI. These are used by
+    /// the native Mesh/NPC viewer, whose scene parts already have distinct authored transforms.</summary>
+    public ID3D12PipelineState DirectOpaqueBackPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoublePso { get; }
+
+    public ID3D12PipelineState DirectOpaqueBackDecalPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleDecalPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueBackNoDepthPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleNoDepthPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueBackDecalNoDepthPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleDecalNoDepthPso { get; }
+
+    /// <summary>Non-instanced depth-writing A2C variants for native viewer hair/brow/lash geometry.</summary>
+    public ID3D12PipelineState DirectOpaqueBackA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueBackDecalA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleDecalA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueBackNoDepthA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleNoDepthA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueBackDecalNoDepthA2CPso { get; }
+
+    public ID3D12PipelineState DirectOpaqueDoubleDecalNoDepthA2CPso { get; }
+
+    public ID3D12PipelineState GetDirectAlphaToCoveragePipeline(
+        bool doubleSided,
+        bool decal,
+        bool depthTestOff = false) =>
+        (doubleSided, decal, depthTestOff) switch
+        {
+            (true, true, true) => DirectOpaqueDoubleDecalNoDepthA2CPso,
+            (true, false, true) => DirectOpaqueDoubleNoDepthA2CPso,
+            (false, true, true) => DirectOpaqueBackDecalNoDepthA2CPso,
+            (false, false, true) => DirectOpaqueBackNoDepthA2CPso,
+            (true, true, false) => DirectOpaqueDoubleDecalA2CPso,
+            (true, false, false) => DirectOpaqueDoubleA2CPso,
+            (false, true, false) => DirectOpaqueBackDecalA2CPso,
+            _ => DirectOpaqueBackA2CPso,
+        };
+
+    public ID3D12PipelineState GetDirectOpaquePipeline(
+        bool doubleSided,
+        bool decal,
+        bool depthTestOff = false) =>
+        (doubleSided, decal, depthTestOff) switch
+        {
+            (true, true, true) => DirectOpaqueDoubleDecalNoDepthPso,
+            (true, false, true) => DirectOpaqueDoubleNoDepthPso,
+            (false, true, true) => DirectOpaqueBackDecalNoDepthPso,
+            (false, false, true) => DirectOpaqueBackNoDepthPso,
+            (true, true, false) => DirectOpaqueDoubleDecalPso,
+            (true, false, false) => DirectOpaqueDoublePso,
+            (false, true, false) => DirectOpaqueBackDecalPso,
+            _ => DirectOpaqueBackPso,
+        };
+
     /// <summary>True when the scene target is multisampled and the A2C PSOs are distinct variants;
     /// false = <see cref="OpaqueBackA2CPso" />/<see cref="OpaqueDoubleA2CPso" /> alias the plain PSOs.</summary>
     public bool AlphaToCoverageAvailable { get; }
@@ -226,6 +396,13 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
     /// <summary>Effective Starfield default/override resolved when this game-specific factory was built.</summary>
     public bool StarfieldDiffuseLitRequested { get; }
+
+    /// <summary>Whether the native direct-viewer Fallout specialization was requested. This is an
+    /// explicit API (rather than making viewer integration infer it from the instanced family).</summary>
+    public bool DirectModernStandardOpaqueRequested { get; }
+
+    /// <summary>Whether the native direct-viewer Starfield specialization was requested.</summary>
+    public bool DirectStarfieldDiffuseLitRequested { get; }
 
     /// <summary>True only when the A/B was requested and all three specialized PSOs were created.</summary>
     public bool ModernStandardOpaqueAvailable =>
@@ -267,6 +444,54 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             (false, true) => _starfieldDiffuseLitDoublePso,
             (true, false) => _starfieldDiffuseLitBackCutoutPso,
             (true, true) => _starfieldDiffuseLitDoubleCutoutPso
+        };
+        return pso is not null;
+    }
+
+    /// <summary>True only when all three ordinary depth-writing, non-blended direct Fallout PSOs
+    /// were published as one family.</summary>
+    public bool DirectModernStandardOpaqueAvailable =>
+        _directModernStandardBackPso is not null &&
+        _directModernStandardBackCutoutPso is not null &&
+        _directModernStandardDoubleCutoutPso is not null;
+
+    /// <summary>Resolves a classifier-approved native-viewer Fallout PSO. Unsupported variants and
+    /// a family compile failure return false so the caller can keep the direct uber shader.</summary>
+    public bool TryGetDirectModernStandardOpaquePso(
+        ModernStandardOpaqueShaderVariant variant,
+        out ID3D12PipelineState? pso)
+    {
+        pso = variant switch
+        {
+            ModernStandardOpaqueShaderVariant.SingleSidedOpaque => _directModernStandardBackPso,
+            ModernStandardOpaqueShaderVariant.SingleSidedGreaterCutout => _directModernStandardBackCutoutPso,
+            ModernStandardOpaqueShaderVariant.DoubleSidedGreaterCutout => _directModernStandardDoubleCutoutPso,
+            _ => null
+        };
+        return pso is not null;
+    }
+
+    /// <summary>True only when all four ordinary depth-writing, non-blended direct Starfield PSOs
+    /// were published as one family.</summary>
+    public bool DirectStarfieldDiffuseLitOpaqueAvailable =>
+        _directStarfieldDiffuseLitBackPso is not null &&
+        _directStarfieldDiffuseLitDoublePso is not null &&
+        _directStarfieldDiffuseLitBackCutoutPso is not null &&
+        _directStarfieldDiffuseLitDoubleCutoutPso is not null;
+
+    /// <summary>Resolves a policy-approved native-viewer Starfield PSO; false keeps the direct uber
+    /// shader without ever crossing into the instanced VS ABI.</summary>
+    public bool TryGetDirectStarfieldDiffuseLitPso(
+        bool alphaGreater,
+        bool doubleSided,
+        out ID3D12PipelineState? pso)
+    {
+        pso = (alphaGreater, doubleSided) switch
+        {
+            (false, false) => _directStarfieldDiffuseLitBackPso,
+            (false, true) => _directStarfieldDiffuseLitDoublePso,
+            (true, false) => _directStarfieldDiffuseLitBackCutoutPso,
+            (true, true) => _directStarfieldDiffuseLitDoubleCutoutPso
         };
         return pso is not null;
     }
@@ -551,7 +776,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
-        return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        return TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
     }
 
     private void TryCreateModernStandardOpaquePipelines()
@@ -609,9 +834,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            doubleCutout?.Dispose();
-            backCutout?.Dispose();
-            back?.Dispose();
+            DisposeAbandonedConstructionPipeline(ref doubleCutout);
+            DisposeAbandonedConstructionPipeline(ref backCutout);
+            DisposeAbandonedConstructionPipeline(ref back);
         }
     }
 
@@ -677,10 +902,141 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            doubleCutout?.Dispose();
-            backCutout?.Dispose();
-            doubleSided?.Dispose();
-            back?.Dispose();
+            DisposeAbandonedConstructionPipeline(ref doubleCutout);
+            DisposeAbandonedConstructionPipeline(ref backCutout);
+            DisposeAbandonedConstructionPipeline(ref doubleSided);
+            DisposeAbandonedConstructionPipeline(ref back);
+        }
+    }
+
+    private void TryCreateDirectModernStandardOpaquePipelines()
+    {
+        ID3D12PipelineState? back = null;
+        ID3D12PipelineState? backCutout = null;
+        ID3D12PipelineState? doubleCutout = null;
+        try
+        {
+            // Compile the per-draw VS with the same family/alpha macros as the compact PS. This is
+            // deliberately reference.vert.hlsl, never an alias of the t8/SV_InstanceID ABI.
+            var backVs = CompileEmbeddedShader(
+                "reference.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"));
+            var cutoutVs = CompileEmbeddedShader(
+                "reference.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"));
+            var backPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"));
+            var backCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"));
+            var doubleCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_DOUBLE_SIDED", "1"));
+
+            back = CreatePipelineState(
+                backVs, backPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            backCutout = CreatePipelineState(
+                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleCutout = CreatePipelineState(
+                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+
+            // Publish only after the complete direct family exists. A partially-created family is
+            // never observable, and its tracked PSOs are synchronously abandoned in finally.
+            _directModernStandardBackPso = back;
+            _directModernStandardBackCutoutPso = backCutout;
+            _directModernStandardDoubleCutoutPso = doubleCutout;
+            back = null;
+            backCutout = null;
+            doubleCutout = null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "ReferencePipelineFactory12: direct modern-standard opaque specialization disabled: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            DisposeAbandonedConstructionPipeline(ref doubleCutout);
+            DisposeAbandonedConstructionPipeline(ref backCutout);
+            DisposeAbandonedConstructionPipeline(ref back);
+        }
+    }
+
+    private void TryCreateDirectStarfieldDiffuseLitPipelines()
+    {
+        ID3D12PipelineState? back = null;
+        ID3D12PipelineState? doubleSided = null;
+        ID3D12PipelineState? backCutout = null;
+        ID3D12PipelineState? doubleCutout = null;
+        try
+        {
+            var backVs = CompileEmbeddedShader(
+                "reference.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"));
+            var cutoutVs = CompileEmbeddedShader(
+                "reference.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"));
+            var backPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"));
+            var doublePs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"));
+            var backCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"));
+            var doubleCutoutPs = CompileEmbeddedShader(
+                "reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"));
+
+            back = CreatePipelineState(
+                backVs, backPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleSided = CreatePipelineState(
+                backVs, doublePs, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+            backCutout = CreatePipelineState(
+                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleCutout = CreatePipelineState(
+                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+
+            _directStarfieldDiffuseLitBackPso = back;
+            _directStarfieldDiffuseLitDoublePso = doubleSided;
+            _directStarfieldDiffuseLitBackCutoutPso = backCutout;
+            _directStarfieldDiffuseLitDoubleCutoutPso = doubleCutout;
+            back = null;
+            doubleSided = null;
+            backCutout = null;
+            doubleCutout = null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "ReferencePipelineFactory12: direct Starfield diffuse-lit specialization disabled: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            DisposeAbandonedConstructionPipeline(ref doubleCutout);
+            DisposeAbandonedConstructionPipeline(ref backCutout);
+            DisposeAbandonedConstructionPipeline(ref doubleSided);
+            DisposeAbandonedConstructionPipeline(ref back);
         }
     }
 
@@ -727,7 +1083,25 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             SampleDescription = new SampleDescription(1, 0),
             SampleMask = uint.MaxValue,
         };
-        return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        return TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+    }
+
+    private ID3D12PipelineState TrackConstructionPipeline(ID3D12PipelineState pipeline)
+    {
+        _constructionTransaction?.Track(pipeline);
+        return pipeline;
+    }
+
+    private void DisposeAbandonedConstructionPipeline(ref ID3D12PipelineState? pipeline)
+    {
+        if (pipeline is null)
+        {
+            return;
+        }
+
+        _constructionTransaction?.Forget(pipeline);
+        pipeline.Dispose();
+        pipeline = null;
     }
 
     /// <summary>
@@ -746,6 +1120,18 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _grassRoute.DisposeAll();
         _instancedGrassBlendRoute.DisposeAll();
         DisposeInstancedGrassPipelines();
+        foreach (var mirror in _ownedMirrorPsos)
+        {
+            mirror.Dispose();
+        }
+        _ownedMirrorPsos.Clear();
+        _directStarfieldDiffuseLitDoubleCutoutPso?.Dispose();
+        _directStarfieldDiffuseLitBackCutoutPso?.Dispose();
+        _directStarfieldDiffuseLitDoublePso?.Dispose();
+        _directStarfieldDiffuseLitBackPso?.Dispose();
+        _directModernStandardDoubleCutoutPso?.Dispose();
+        _directModernStandardBackCutoutPso?.Dispose();
+        _directModernStandardBackPso?.Dispose();
         _starfieldDiffuseLitDoubleCutoutPso?.Dispose();
         _starfieldDiffuseLitBackCutoutPso?.Dispose();
         _starfieldDiffuseLitDoublePso?.Dispose();
@@ -760,11 +1146,67 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             // Distinct variants only — when MSAA is off these alias the plain opaque PSOs below.
             OpaqueDoubleA2CPso.Dispose();
             OpaqueBackA2CPso.Dispose();
+            DirectOpaqueDoubleA2CPso.Dispose();
+            DirectOpaqueBackA2CPso.Dispose();
+            DirectOpaqueDoubleDecalA2CPso.Dispose();
+            DirectOpaqueBackDecalA2CPso.Dispose();
+            DirectOpaqueDoubleNoDepthA2CPso.Dispose();
+            DirectOpaqueBackNoDepthA2CPso.Dispose();
+            DirectOpaqueDoubleDecalNoDepthA2CPso.Dispose();
+            DirectOpaqueBackDecalNoDepthA2CPso.Dispose();
         }
         OpaqueDoubleDecalPso.Dispose();
         OpaqueBackDecalPso.Dispose();
         OpaqueDoublePso.Dispose();
         OpaqueBackPso.Dispose();
+        DirectOpaqueDoubleDecalPso.Dispose();
+        DirectOpaqueBackDecalPso.Dispose();
+        DirectOpaqueDoublePso.Dispose();
+        DirectOpaqueBackPso.Dispose();
+        DirectOpaqueDoubleDecalNoDepthPso.Dispose();
+        DirectOpaqueBackDecalNoDepthPso.Dispose();
+        DirectOpaqueDoubleNoDepthPso.Dispose();
+        DirectOpaqueBackNoDepthPso.Dispose();
+    }
+
+    private sealed class PipelineConstructionTransaction : IDisposable
+    {
+        private readonly List<ID3D12PipelineState> _creationOrder = new(48);
+        private readonly HashSet<ID3D12PipelineState> _owned =
+            new(48, ReferenceEqualityComparer.Instance);
+
+        internal void Track(ID3D12PipelineState pipeline)
+        {
+            if (_owned.Add(pipeline))
+            {
+                _creationOrder.Add(pipeline);
+            }
+        }
+
+        internal void Forget(ID3D12PipelineState pipeline)
+        {
+            _owned.Remove(pipeline);
+        }
+
+        internal void Commit()
+        {
+            _owned.Clear();
+            _creationOrder.Clear();
+        }
+
+        public void Dispose()
+        {
+            for (var index = _creationOrder.Count - 1; index >= 0; index--)
+            {
+                var pipeline = _creationOrder[index];
+                if (_owned.Remove(pipeline))
+                {
+                    pipeline.Dispose();
+                }
+            }
+
+            _creationOrder.Clear();
+        }
     }
 
     private readonly record struct BlendPipelineKey(

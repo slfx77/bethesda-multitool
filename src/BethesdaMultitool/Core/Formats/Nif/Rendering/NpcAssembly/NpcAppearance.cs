@@ -36,7 +36,9 @@ internal sealed class NpcAppearance
     public string? RightEyeNifPath { get; init; }
     public string? EyeTexturePath { get; init; }
 
-    // Race face parts (mouth, teeth, tongue)
+    // Race face parts (ears, mouth, teeth, tongue)
+    public string? EarNifPath { get; init; }
+    public string? EarTexturePath { get; init; }
     public string? MouthNifPath { get; init; }
     public string? LowerTeethNifPath { get; init; }
     public string? UpperTeethNifPath { get; init; }
@@ -59,10 +61,15 @@ internal sealed class NpcAppearance
 
     // Body meshes (from RACE body parts section, after NAM1)
     public string? UpperBodyNifPath { get; init; }
+    public string? LowerBodyNifPath { get; init; }
+    public string? HandNifPath { get; init; }
+    public string? FootNifPath { get; init; }
     public string? LeftHandNifPath { get; init; }
     public string? RightHandNifPath { get; init; }
     public string? BodyTexturePath { get; init; }
+    public string? LowerBodyTexturePath { get; init; }
     public string? HandTexturePath { get; init; }
+    public string? FootTexturePath { get; init; }
     public string? SkeletonNifPath { get; init; }
 
     // Body EGT paths (for body/hand skin tinting via FaceGen texture morphs)
@@ -95,6 +102,8 @@ internal sealed class NpcAppearance
             LeftEyeNifPath = LeftEyeNifPath,
             RightEyeNifPath = RightEyeNifPath,
             EyeTexturePath = EyeTexturePath,
+            EarNifPath = EarNifPath,
+            EarTexturePath = EarTexturePath,
             MouthNifPath = MouthNifPath,
             LowerTeethNifPath = LowerTeethNifPath,
             UpperTeethNifPath = UpperTeethNifPath,
@@ -105,10 +114,15 @@ internal sealed class NpcAppearance
             EquippedItems = EquippedItems,
             WeaponVisual = WeaponVisual,
             UpperBodyNifPath = UpperBodyNifPath,
+            LowerBodyNifPath = LowerBodyNifPath,
+            HandNifPath = HandNifPath,
+            FootNifPath = FootNifPath,
             LeftHandNifPath = LeftHandNifPath,
             RightHandNifPath = RightHandNifPath,
             BodyTexturePath = BodyTexturePath,
+            LowerBodyTexturePath = LowerBodyTexturePath,
             HandTexturePath = HandTexturePath,
+            FootTexturePath = FootTexturePath,
             SkeletonNifPath = SkeletonNifPath,
             BodyEgtPath = BodyEgtPath,
             LeftHandEgtPath = LeftHandEgtPath,

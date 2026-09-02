@@ -1,8 +1,10 @@
 using System.Numerics;
+using System.Text.Json.Nodes;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
@@ -62,6 +64,15 @@ internal static class GlbWriter
                 continue;
             }
 
+            // Match the world renderer's treatment of database-confirmed no-albedo helper geometry
+            // before a glTF material can turn its absent base layer into an opaque white surface.
+            // Specialized CE2 routes are retained: water/effect/ring/scattering geometry can be
+            // legitimately albedo-free and must reach its dedicated or best-effort export route.
+            if (ShouldSkipStarfieldNoDrawSubmesh(meshPart.Submesh, textureResolver))
+            {
+                continue;
+            }
+
             NormalizeWinding(meshPart.Submesh);
 
             if (meshPart.Skin != null)
@@ -93,6 +104,40 @@ internal static class GlbWriter
         }
 
         return sceneBuilder.ToGltf2();
+    }
+
+    /// <summary>
+    ///     Suppresses the same database-backed, no-albedo helper population as ReferenceMeshCache12
+    ///     without applying a shape-name heuristic. Explicit non-Deferred shader routes stay in the
+    ///     artifact because their lack of ordinary albedo is meaningful, not evidence of proxy/no-draw
+    ///     geometry. A missing database record also stays visible as a content diagnostic.
+    /// </summary>
+    internal static bool ShouldSkipStarfieldNoDrawSubmesh(
+        RenderableSubmesh submesh,
+        NifTextureResolver textureResolver)
+    {
+        ArgumentNullException.ThrowIfNull(submesh);
+        ArgumentNullException.ThrowIfNull(textureResolver);
+
+        var materialPath = submesh.ShaderMetadata?.MaterialPath;
+        if (string.IsNullOrWhiteSpace(materialPath) ||
+            !MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath))
+        {
+            materialPath = submesh.DiffuseTexturePath;
+        }
+
+        if (string.IsNullOrWhiteSpace(materialPath) ||
+            !MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath) ||
+            !textureResolver.IsStarfieldNoDrawMaterial(materialPath))
+        {
+            return false;
+        }
+
+        // Null means the database could not establish a trustworthy route. Keep that geometry
+        // visible as a diagnostic; only a positively resolved ordinary Deferred route authorizes
+        // suppression.
+        return textureResolver.ResolveStarfieldShaderRoute(materialPath) ==
+               StarfieldMaterialShaderRoute.Deferred;
     }
 
     private static void NormalizeWinding(RenderableSubmesh submesh)
@@ -167,44 +212,104 @@ internal static class GlbWriter
         }
     }
 
-    private static MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexEmpty> BuildRigidMesh(
+    private static IMeshBuilder<MaterialBuilder> BuildRigidMesh(
         GlbMeshPart meshPart,
         NifTextureResolver textureResolver,
         Dictionary<MaterialCacheKey, MaterialBuilder> materialCache)
     {
-        var mesh = new MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexEmpty>(meshPart.Name);
-        var material = GetOrCreateMaterial(meshPart.Submesh, textureResolver, materialCache);
-        var primitive = mesh.UsePrimitive(material);
+        var vertexLerpProjection = StarfieldGlbVertexLerpProjection.Resolve(meshPart.Submesh);
+        var material = GetOrCreateMaterial(
+            meshPart.Submesh,
+            textureResolver,
+            materialCache,
+            vertexLerpProjection);
         var tangents = NpcGlbTangentBuilder.BuildTangents(meshPart.Submesh);
+        var meshName = AuthoredSkyGlbPreviewProjection.AppliesTo(meshPart.Submesh)
+            ? meshPart.Name + AuthoredSkyGlbPreviewProjection.NameSuffix
+            : meshPart.Name;
 
+        if (vertexLerpProjection.RequiresViewerShader)
+        {
+            var viewerMesh =
+                new MeshBuilder<VertexPositionNormalTangent, VertexColor2Texture1, VertexEmpty>(meshName);
+            var viewerPrimitive = viewerMesh.UsePrimitive(material);
+            for (var index = 0; index + 2 < meshPart.Submesh.Triangles.Length; index += 3)
+            {
+                viewerPrimitive.AddTriangle(
+                    CreateRigidViewerVertex(
+                        meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index], vertexLerpProjection),
+                    CreateRigidViewerVertex(
+                        meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index + 1], vertexLerpProjection),
+                    CreateRigidViewerVertex(
+                        meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index + 2], vertexLerpProjection));
+            }
+
+            return viewerMesh;
+        }
+
+        var mesh = new MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexEmpty>(meshName);
+        var primitive = mesh.UsePrimitive(material);
         for (var index = 0; index + 2 < meshPart.Submesh.Triangles.Length; index += 3)
         {
             primitive.AddTriangle(
-                CreateRigidVertex(meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index]),
-                CreateRigidVertex(meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index + 1]),
-                CreateRigidVertex(meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index + 2]));
+                CreateRigidVertex(
+                    meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index], vertexLerpProjection),
+                CreateRigidVertex(
+                    meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index + 1], vertexLerpProjection),
+                CreateRigidVertex(
+                    meshPart.Submesh, tangents, meshPart.Submesh.Triangles[index + 2], vertexLerpProjection));
         }
 
         return mesh;
     }
 
-    private static MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexJoints4> BuildSkinnedMesh(
+    private static IMeshBuilder<MaterialBuilder> BuildSkinnedMesh(
         GlbMeshPart meshPart,
         NifTextureResolver textureResolver,
         Dictionary<MaterialCacheKey, MaterialBuilder> materialCache)
     {
-        var mesh = new MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexJoints4>(meshPart.Name);
-        var material = GetOrCreateMaterial(meshPart.Submesh, textureResolver, materialCache);
-        var primitive = mesh.UsePrimitive(material);
+        var vertexLerpProjection = StarfieldGlbVertexLerpProjection.Resolve(meshPart.Submesh);
+        var material = GetOrCreateMaterial(
+            meshPart.Submesh,
+            textureResolver,
+            materialCache,
+            vertexLerpProjection);
         var skin = meshPart.Skin!;
         var tangents = NpcGlbTangentBuilder.BuildTangents(meshPart.Submesh);
+        var meshName = AuthoredSkyGlbPreviewProjection.AppliesTo(meshPart.Submesh)
+            ? meshPart.Name + AuthoredSkyGlbPreviewProjection.NameSuffix
+            : meshPart.Name;
 
+        if (vertexLerpProjection.RequiresViewerShader)
+        {
+            var viewerMesh =
+                new MeshBuilder<VertexPositionNormalTangent, VertexColor2Texture1, VertexJoints4>(meshName);
+            var viewerPrimitive = viewerMesh.UsePrimitive(material);
+            for (var index = 0; index + 2 < meshPart.Submesh.Triangles.Length; index += 3)
+            {
+                viewerPrimitive.AddTriangle(
+                    CreateSkinnedViewerVertex(
+                        meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index], vertexLerpProjection),
+                    CreateSkinnedViewerVertex(
+                        meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index + 1], vertexLerpProjection),
+                    CreateSkinnedViewerVertex(
+                        meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index + 2], vertexLerpProjection));
+            }
+
+            return viewerMesh;
+        }
+
+        var mesh = new MeshBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexJoints4>(meshName);
+        var primitive = mesh.UsePrimitive(material);
         for (var index = 0; index + 2 < meshPart.Submesh.Triangles.Length; index += 3)
         {
             primitive.AddTriangle(
-                CreateSkinnedVertex(meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index]),
-                CreateSkinnedVertex(meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index + 1]),
-                CreateSkinnedVertex(meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index + 2]));
+                CreateSkinnedVertex(
+                    meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index], vertexLerpProjection),
+                CreateSkinnedVertex(
+                    meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index + 1], vertexLerpProjection),
+                CreateSkinnedVertex(
+                    meshPart.Submesh, tangents, skin, meshPart.Submesh.Triangles[index + 2], vertexLerpProjection));
         }
 
         return mesh;
@@ -213,21 +318,42 @@ internal static class GlbWriter
     private static (VertexPositionNormalTangent Geometry, VertexColor1Texture1 Material) CreateRigidVertex(
         RenderableSubmesh submesh,
         Vector4[]? tangents,
-        int vertexIndex)
+        int vertexIndex,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
     {
         return (
             new VertexPositionNormalTangent(
                 ReadPosition(submesh, vertexIndex),
                 ReadNormal(submesh, vertexIndex),
                 ReadTangent(submesh, tangents, vertexIndex)),
-            new VertexColor1Texture1(ReadVertexColor(submesh, vertexIndex), ReadUv(submesh, vertexIndex)));
+            new VertexColor1Texture1(
+                ReadVertexColor(submesh, vertexIndex, vertexLerpProjection),
+                ReadUv(submesh, vertexIndex)));
+    }
+
+    private static (VertexPositionNormalTangent Geometry, VertexColor2Texture1 Material) CreateRigidViewerVertex(
+        RenderableSubmesh submesh,
+        Vector4[]? tangents,
+        int vertexIndex,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
+    {
+        return (
+            new VertexPositionNormalTangent(
+                ReadPosition(submesh, vertexIndex),
+                ReadNormal(submesh, vertexIndex),
+                ReadTangent(submesh, tangents, vertexIndex)),
+            new VertexColor2Texture1(
+                ReadVertexColor(submesh, vertexIndex, vertexLerpProjection),
+                ReadViewerVertexLerpColor(submesh, vertexIndex, vertexLerpProjection),
+                ReadUv(submesh, vertexIndex)));
     }
 
     private static VertexBuilder<VertexPositionNormalTangent, VertexColor1Texture1, VertexJoints4> CreateSkinnedVertex(
         RenderableSubmesh submesh,
         Vector4[]? tangents,
         GlbSkinBinding skin,
-        int vertexIndex)
+        int vertexIndex,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
     {
         var bindings = skin.PerVertexInfluences[vertexIndex];
         var joints = bindings.Length > 0
@@ -239,7 +365,34 @@ internal static class GlbWriter
                 ReadPosition(submesh, vertexIndex),
                 ReadNormal(submesh, vertexIndex),
                 ReadTangent(submesh, tangents, vertexIndex)),
-            new VertexColor1Texture1(ReadVertexColor(submesh, vertexIndex), ReadUv(submesh, vertexIndex)),
+            new VertexColor1Texture1(
+                ReadVertexColor(submesh, vertexIndex, vertexLerpProjection),
+                ReadUv(submesh, vertexIndex)),
+            joints);
+    }
+
+    private static VertexBuilder<VertexPositionNormalTangent, VertexColor2Texture1, VertexJoints4>
+        CreateSkinnedViewerVertex(
+            RenderableSubmesh submesh,
+            Vector4[]? tangents,
+            GlbSkinBinding skin,
+            int vertexIndex,
+            StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
+    {
+        var bindings = skin.PerVertexInfluences[vertexIndex];
+        var joints = bindings.Length > 0
+            ? new VertexJoints4(bindings)
+            : new VertexJoints4((0, 1f));
+
+        return new VertexBuilder<VertexPositionNormalTangent, VertexColor2Texture1, VertexJoints4>(
+            new VertexPositionNormalTangent(
+                ReadPosition(submesh, vertexIndex),
+                ReadNormal(submesh, vertexIndex),
+                ReadTangent(submesh, tangents, vertexIndex)),
+            new VertexColor2Texture1(
+                ReadVertexColor(submesh, vertexIndex, vertexLerpProjection),
+                ReadViewerVertexLerpColor(submesh, vertexIndex, vertexLerpProjection),
+                ReadUv(submesh, vertexIndex)),
             joints);
     }
 
@@ -303,58 +456,165 @@ internal static class GlbWriter
         return new Vector4(tangentDir, 1f);
     }
 
-    private static Vector4 ReadVertexColor(RenderableSubmesh submesh, int vertexIndex)
+    private static Vector4 ReadVertexColor(
+        RenderableSubmesh submesh,
+        int vertexIndex,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
     {
+        if (AuthoredSkyGlbPreviewProjection.TryBuildVertexColor(
+                submesh,
+                vertexIndex,
+                out var authoredSkyPreview))
+        {
+            return authoredSkyPreview;
+        }
+
+        if (StarfieldGlbVertexLerpProjection.TryBuildVertexColor(
+                submesh,
+                vertexIndex,
+                vertexLerpProjection,
+                out var projected))
+        {
+            return projected;
+        }
+
         return NpcGlbTintColorEncoder.BuildVertexColor(submesh, vertexIndex);
+    }
+
+    private static Vector4 ReadViewerVertexLerpColor(
+        RenderableSubmesh submesh,
+        int vertexIndex,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
+    {
+        if (StarfieldGlbVertexLerpProjection.TryBuildViewerVertexLerpColor(
+                submesh,
+                vertexIndex,
+                vertexLerpProjection,
+                out var color))
+        {
+            return color;
+        }
+
+        throw new InvalidDataException(
+            $"Mesh '{submesh.ShapeName ?? "unnamed"}' was classified for exact Mesh Viewer vertex Lerp " +
+            $"but vertex {vertexIndex} has no complete CE2 RGBA value.");
     }
 
     private static MaterialBuilder GetOrCreateMaterial(
         RenderableSubmesh submesh,
         NifTextureResolver textureResolver,
-        Dictionary<MaterialCacheKey, MaterialBuilder> materialCache)
+        Dictionary<MaterialCacheKey, MaterialBuilder> materialCache,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
     {
-        var diffuseTexture = !string.IsNullOrWhiteSpace(submesh.DiffuseTexturePath)
+        var isStarfieldWater = string.Equals(
+            submesh.DiffuseTexturePath,
+            RenderableSubmesh.WaterSurfaceTexturePath,
+            StringComparison.Ordinal);
+        var authoredSkyPreview = AuthoredSkyGlbPreviewProjection.AppliesTo(submesh);
+        var diffuseTexture = !authoredSkyPreview &&
+                             !isStarfieldWater &&
+                             !string.IsNullOrWhiteSpace(submesh.DiffuseTexturePath)
             ? textureResolver.GetTexture(submesh.DiffuseTexturePath!)
             : null;
         diffuseTexture = NpcGlbTintColorEncoder.BakeDiffuseTexture(submesh, diffuseTexture);
-        var starfieldColor = ResolveStarfieldColor(submesh, textureResolver);
+        if (vertexLerpProjection.OmitDiffuseTexture)
+        {
+            // With weight one CE2 returns interpolated vertex RGB exactly; retaining the albedo
+            // image would make core glTF multiply it back in and change the authored result.
+            diffuseTexture = null;
+        }
+
+        var starfieldColor = ResolveStarfieldColor(
+            submesh,
+            textureResolver,
+            vertexLerpProjection);
         diffuseTexture = StarfieldGlbColorLerpBaker.BakeDiffuseTexture(diffuseTexture, starfieldColor);
         // Preserve whether Lerp was actually baked into authored RGB. AlphaSettings may synthesize
         // a white base texture later; that texture still needs the no-albedo Lerp factor rather than
         // being mistaken for already-baked colour.
         var starfieldLerpBakedIntoTexture = diffuseTexture is not null;
         var (starfieldAlpha, starfieldMaterialPath) = ResolveStarfieldAlpha(submesh, textureResolver);
-        var opacityTexture = starfieldAlpha.IsLayer0OpacityCutout && starfieldMaterialPath is not null
+        var starfieldEffectPolicy = !isStarfieldWater && starfieldMaterialPath is not null
+            ? textureResolver.ResolveStarfieldEffectPolicy(starfieldMaterialPath)
+            : default;
+        var hasStaticStarfieldEffectAlpha =
+            starfieldEffectPolicy.TryResolveStaticGlassAlphaBlend(out var starfieldEffectAlpha);
+        var effectOpacityTexture = hasStaticStarfieldEffectAlpha &&
+                                   starfieldEffectAlpha.OpacitySlot.TexturePath is { Length: > 0 } effectOpacityPath
+            ? textureResolver.GetTexture(effectOpacityPath)
+            : null;
+        var effectAlphaBake = hasStaticStarfieldEffectAlpha
+            ? StarfieldGlbOpacityBaker.BakeEffectAlpha(
+                diffuseTexture,
+                effectOpacityTexture,
+                starfieldEffectAlpha)
+            : new StarfieldGlbEffectAlphaBakeResult(diffuseTexture, false, 1f);
+        hasStaticStarfieldEffectAlpha &= effectAlphaBake.Applied;
+
+        var opacityTexture = !hasStaticStarfieldEffectAlpha &&
+                             starfieldAlpha.IsLayer0OpacityCutout &&
+                             starfieldMaterialPath is not null
             ? textureResolver.GetTexture(
                 MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(starfieldMaterialPath))
             : null;
-        var opacityBake = starfieldAlpha.IsLayer0OpacityCutout
+        var opacityBake = !hasStaticStarfieldEffectAlpha && starfieldAlpha.IsLayer0OpacityCutout
             ? StarfieldGlbOpacityBaker.Bake(diffuseTexture, opacityTexture)
             : new StarfieldGlbOpacityBakeResult(diffuseTexture, false);
-        diffuseTexture = opacityBake.Texture;
-        var preparedAlpha = starfieldAlpha.IsLayer0OpacityCutout
-            ? opacityBake.Applied
-                // PreparedAlphaTexture's byte threshold is the legacy NIF lane. Starfield keeps its
-                // authored float below so LINEAR-filtered opacity is not quantized at the silhouette.
-                ? new NpcGlbAlphaTexturePacker.PreparedAlphaTexture(
-                    diffuseTexture,
-                    NifAlphaRenderMode.Cutout,
-                    0,
-                    false)
-                : new NpcGlbAlphaTexturePacker.PreparedAlphaTexture(
-                    diffuseTexture,
-                    NifAlphaRenderMode.Opaque,
-                    0,
-                    false)
-            : NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture);
-        var packedNormal = NpcGlbNormalMapPacker.ResolvePacked(textureResolver, submesh.NormalMapTexturePath);
+        diffuseTexture = hasStaticStarfieldEffectAlpha
+            ? effectAlphaBake.Texture
+            : opacityBake.Texture;
+        NpcGlbAlphaTexturePacker.PreparedAlphaTexture preparedAlpha;
+        if (isStarfieldWater || authoredSkyPreview)
+        {
+            // KHR_materials_transmission models optical transparency; core alpha is geometric
+            // coverage. A water sheet fully covers its triangles, so keep alpha OPAQUE/one instead
+            // of multiplying the physical transmission by the old half-alpha visibility fallback.
+            preparedAlpha = new NpcGlbAlphaTexturePacker.PreparedAlphaTexture(
+                null,
+                NifAlphaRenderMode.Opaque,
+                0,
+                false);
+        }
+        else if (hasStaticStarfieldEffectAlpha)
+        {
+            preparedAlpha = new NpcGlbAlphaTexturePacker.PreparedAlphaTexture(
+                diffuseTexture,
+                NifAlphaRenderMode.Blend,
+                0,
+                false);
+        }
+        else if (starfieldAlpha.IsLayer0OpacityCutout)
+        {
+            // PreparedAlphaTexture's byte threshold is the legacy NIF lane. Starfield keeps its
+            // authored float below so LINEAR-filtered opacity is not quantized at the silhouette.
+            preparedAlpha = new NpcGlbAlphaTexturePacker.PreparedAlphaTexture(
+                diffuseTexture,
+                opacityBake.Applied ? NifAlphaRenderMode.Cutout : NifAlphaRenderMode.Opaque,
+                0,
+                false);
+        }
+        else
+        {
+            preparedAlpha = NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture);
+        }
+        // A standalone Starfield water NIF has no WATR record from which to select authored noise
+        // layers. Reuse only the shipped primary global normal already named by the source-backed
+        // World Viewer approximation; portable GLB viewers receive it statically and the embedded
+        // viewer scrolls it under an explicit approximation marker.
+        var normalTexturePath = authoredSkyPreview
+            ? null
+            : isStarfieldWater
+            ? StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath
+            : submesh.NormalMapTexturePath;
+        var packedNormal = NpcGlbNormalMapPacker.ResolvePacked(textureResolver, normalTexturePath);
         var normalTexture = packedNormal.Texture;
         var shaderMetadata = submesh.ShaderMetadata;
-        var starfieldOrmPolicy = starfieldMaterialPath is not null
+        var starfieldOrmPolicy = !isStarfieldWater && starfieldMaterialPath is not null
             ? textureResolver.ResolveStarfieldOrmPolicy(starfieldMaterialPath)
             : default;
         var starfieldOrmState = default(StarfieldMaterialOrmState);
-        var hasStaticStarfieldOrm = !submesh.IsEmissive &&
+        var hasStaticStarfieldOrm = !isStarfieldWater &&
+                                    !submesh.IsEmissive &&
                                     starfieldOrmPolicy.TryResolveStaticLayer0Orm(out starfieldOrmState);
         var starfieldOrm = hasStaticStarfieldOrm
             ? StarfieldGlbOrmPacker.Pack(
@@ -363,52 +623,83 @@ internal static class GlbWriter
                 LoadStarfieldSlotTexture(textureResolver, starfieldOrmState.MetalnessSlot),
                 LoadStarfieldSlotTexture(textureResolver, starfieldOrmState.AmbientOcclusionSlot))
             : default;
-        var hasActiveBgsmEmission = TryEncodeGltfEmission(
+        var bgsmEmissiveFactor = Vector3.One;
+        var bgsmEmissiveStrength = 1f;
+        var hasActiveBgsmEmission = !isStarfieldWater && TryEncodeGltfEmission(
             submesh.BgsmEmissionColor,
-            out var bgsmEmissiveFactor,
-            out var bgsmEmissiveStrength);
+            out bgsmEmissiveFactor,
+            out bgsmEmissiveStrength);
         var bgsmGlowTexture = hasActiveBgsmEmission &&
                               !string.IsNullOrWhiteSpace(submesh.BgsmGlowMapTexturePath)
             ? textureResolver.GetTexture(submesh.BgsmGlowMapTexturePath)
             : null;
-        var glowTexture = !string.IsNullOrWhiteSpace(shaderMetadata?.GlowMapPath)
+        var hasExternalRegularBgsm = !isStarfieldWater && HasExternalRegularBgsmMaterial(submesh);
+        var glowTexture = !isStarfieldWater &&
+                          !string.IsNullOrWhiteSpace(shaderMetadata?.GlowMapPath)
             ? textureResolver.GetTexture(shaderMetadata.GlowMapPath)
             : null;
-        var inlineEmissiveTexture = NpcGlbMaterialChannelDecider.ShouldExportGlowAsEmissive(submesh, shaderMetadata)
+        var inlineEmissiveTexture = !isStarfieldWater &&
+                                    !hasExternalRegularBgsm &&
+                                    NpcGlbMaterialChannelDecider.ShouldExportGlowAsEmissive(
+                                        submesh,
+                                        shaderMetadata)
             ? glowTexture
             : null;
-        // BGSM has an explicit emission texture and colour/scale factor. Its path is authoritative
-        // over the inline NIF slot (which is not necessarily an emission map for every shader family).
+        // A regular BGSM owns glow enablement as well as its texture and colour/scale. Even an
+        // inactive or malformed external material must not resurrect a stale inline slot-2 map.
         var emissiveTexture = hasActiveBgsmEmission ? bgsmGlowTexture : inlineEmissiveTexture;
         var emissiveTexturePath = hasActiveBgsmEmission
             ? submesh.BgsmGlowMapTexturePath
             : inlineEmissiveTexture != null ? shaderMetadata?.GlowMapPath : null;
         var emissiveFactor = hasActiveBgsmEmission ? bgsmEmissiveFactor : Vector3.One;
         var emissiveStrength = hasActiveBgsmEmission ? bgsmEmissiveStrength : 1f;
-        var heightTexture = !string.IsNullOrWhiteSpace(shaderMetadata?.HeightMapPath)
+        var heightTexture = !isStarfieldWater &&
+                            !string.IsNullOrWhiteSpace(shaderMetadata?.HeightMapPath)
             ? textureResolver.GetTexture(shaderMetadata.HeightMapPath)
             : null;
-        var environmentMaskTexture = !string.IsNullOrWhiteSpace(shaderMetadata?.EnvironmentMaskPath)
+        var environmentMaskTexture = !isStarfieldWater &&
+                                     !string.IsNullOrWhiteSpace(shaderMetadata?.EnvironmentMaskPath)
             ? textureResolver.GetTexture(shaderMetadata.EnvironmentMaskPath)
             : null;
-        var baseColor = NpcGlbTintColorEncoder.BuildBaseColor(submesh, preparedAlpha.Texture != null);
-        baseColor = StarfieldGlbColorLerpBaker.BuildBaseColor(
-            baseColor,
-            starfieldLerpBakedIntoTexture,
-            starfieldColor);
-        var hasEnvironmentMapping = NpcGlbMaterialTuning.HasEnvironmentMapping(submesh);
-        var materialProfile = NpcGlbMaterialTuning.Derive(submesh, normalTexture, packedNormal.HasGlossAlpha);
+        var baseColor = authoredSkyPreview || isStarfieldWater
+            ? Vector4.One
+            : StarfieldGlbColorLerpBaker.BuildBaseColor(
+                NpcGlbTintColorEncoder.BuildBaseColor(submesh, preparedAlpha.Texture != null),
+                starfieldLerpBakedIntoTexture,
+                starfieldColor);
+        if (hasStaticStarfieldEffectAlpha)
+        {
+            // CE2 EffectSettings owns this alpha; inline NIF material alpha is not an additional
+            // multiplier on the reference shader's Effect route.
+            baseColor.W = effectAlphaBake.AlphaFactor;
+        }
+
+        var hasEnvironmentMapping = !isStarfieldWater &&
+                                    NpcGlbMaterialTuning.HasEnvironmentMapping(submesh);
+        var materialProfile = isStarfieldWater
+            ? default
+            : NpcGlbMaterialTuning.Derive(submesh, normalTexture, packedNormal.HasGlossAlpha);
         // Selecting the strict CE2 ORM lane is a one-way decision. If an authored image is missing
         // or dimensions disagree, emit neutral CE2 constructor factors and no ORM image; never fall
         // through to the legacy NPC normal-alpha/environment/height heuristics, which interpret
         // unrelated Starfield channels as plausible-looking gloss/specular/AO.
-        var metallicFactor = hasStaticStarfieldOrm
+        var metallicFactor = authoredSkyPreview
+            ? 0f
+            : isStarfieldWater
+            ? 0f
+            : hasStaticStarfieldOrm
             ? starfieldOrm.Applied ? starfieldOrm.MetallicFactor : 0f
             : materialProfile.MetallicFactor;
-        var roughnessFactor = hasStaticStarfieldOrm
+        var roughnessFactor = authoredSkyPreview
+            ? 1f
+            : isStarfieldWater
+            ? StarfieldWaterMaterialRoute.MeshViewerRoughness
+            : hasStaticStarfieldOrm
             ? starfieldOrm.Applied ? starfieldOrm.RoughnessFactor : 0f
             : materialProfile.RoughnessFactor;
-        var (clampTextureU, clampTextureV) = hasStaticStarfieldOrm
+        var (clampTextureU, clampTextureV) = isStarfieldWater ||
+                                             hasStaticStarfieldOrm ||
+                                             hasStaticStarfieldEffectAlpha
             ? (false, false)
             : ResolveTextureAddressing(submesh, textureResolver);
         var alphaCutoff = opacityBake.Applied && starfieldAlpha.IsLayer0OpacityCutout
@@ -416,19 +707,21 @@ internal static class GlbWriter
             : preparedAlpha.AlphaThreshold / 255f;
         var key = new MaterialCacheKey(
             submesh.DiffuseTexturePath,
-            submesh.NormalMapTexturePath,
+            normalTexturePath,
             emissiveTexturePath,
             hasActiveBgsmEmission,
             emissiveFactor,
             emissiveStrength,
-            shaderMetadata?.HeightMapPath,
-            shaderMetadata?.EnvironmentMaskPath,
-            submesh.IsEmissive,
+            isStarfieldWater ? null : shaderMetadata?.HeightMapPath,
+            isStarfieldWater ? null : shaderMetadata?.EnvironmentMaskPath,
+            submesh.IsEmissive && !isStarfieldWater,
+            isStarfieldWater,
+            authoredSkyPreview,
             submesh.UseVertexColors,
-            submesh.IsDoubleSided,
+            submesh.IsDoubleSided || isStarfieldWater,
             preparedAlpha.RenderMode,
             preparedAlpha.AlphaThreshold,
-            submesh.AlphaTestFunction,
+            isStarfieldWater ? (byte)0 : submesh.AlphaTestFunction,
             preparedAlpha.HasTextureTransform,
             clampTextureU,
             clampTextureV,
@@ -436,14 +729,17 @@ internal static class GlbWriter
             roughnessFactor,
             materialProfile.SpecularFactor,
             starfieldColor,
-            starfieldMaterialPath,
+            isStarfieldWater ? null : starfieldMaterialPath,
             starfieldAlpha,
             opacityBake.Applied,
+            starfieldEffectPolicy,
+            hasStaticStarfieldEffectAlpha,
             starfieldOrmPolicy,
             hasStaticStarfieldOrm,
             starfieldOrm.Applied,
             starfieldOrm.Texture is not null,
             starfieldOrm.HasAmbientOcclusion,
+            vertexLerpProjection,
             baseColor);
 
         if (materialCache.TryGetValue(key, out var material))
@@ -451,8 +747,51 @@ internal static class GlbWriter
             return material;
         }
 
-        material = new MaterialBuilder(submesh.ShapeName ?? "material");
-        if (submesh.IsEmissive)
+        var materialName = submesh.ShapeName ?? "material";
+        if (vertexLerpProjection.IsUnsupported)
+        {
+            // Keep malformed source data visible in the artifact. It must never receive the viewer
+            // marker because the shader hook cannot recover a missing or incomplete RGBA stream.
+            materialName += " [CE2 vertex Lerp omitted: missing or incomplete RGBA stream]";
+        }
+        else if (vertexLerpProjection.RequiresViewerShader)
+        {
+            materialName += " [CE2 varying vertex Lerp: exact in embedded Mesh Viewer; portable base fallback]";
+        }
+
+        if (starfieldEffectPolicy.IsResolved &&
+            starfieldEffectPolicy.HasEffectSettings &&
+            starfieldEffectPolicy.IsGlass &&
+            !hasStaticStarfieldEffectAlpha)
+        {
+            materialName += " [CE2 glass alpha omitted: unsupported effect composition or missing opacity]";
+        }
+
+        if (authoredSkyPreview)
+        {
+            materialName += AuthoredSkyGlbPreviewProjection.NameSuffix;
+        }
+
+        material = new MaterialBuilder(materialName);
+        var materialExtras = new JsonObject();
+        if (vertexLerpProjection.RequiresViewerShader)
+        {
+            materialExtras[StarfieldGlbVertexLerpProjection.ViewerMaterialExtrasKey] = true;
+        }
+
+        if (isStarfieldWater)
+        {
+            materialName += " [CE2 water: global-normal physical preview (approx.)]";
+            material.Name = materialName;
+            materialExtras[StarfieldWaterMaterialRoute.MeshViewerMaterialExtrasKey] = true;
+        }
+
+        if (materialExtras.Count > 0)
+        {
+            material.Extras = materialExtras;
+        }
+
+        if ((!isStarfieldWater && submesh.IsEmissive) || authoredSkyPreview)
         {
             material.WithUnlitShader();
         }
@@ -464,18 +803,33 @@ internal static class GlbWriter
                 roughnessFactor);
         }
 
-        // Disable DoubleSided for alpha-blended materials to prevent back faces rendering
-        // over front faces in glTF viewers that don't do per-primitive depth sorting.
-        material.WithDoubleSide(submesh.IsDoubleSided &&
-                                preparedAlpha.RenderMode != NifAlphaRenderMode.Blend &&
-                                preparedAlpha.RenderMode != NifAlphaRenderMode.AlphaToCoverage);
+        if (isStarfieldWater)
+        {
+            // Standard glTF physical channels make the portable artifact reflective/transmissive
+            // instead of an opaque white slab. These are deliberately neutral water optics, not a
+            // claim that CE2's Water DXIL, CUR3, or material constants have been recovered.
+            material.IndexOfRefraction = StarfieldWaterMaterialRoute.MeshViewerIndexOfRefraction;
+            material.WithTransmission(null, StarfieldWaterMaterialRoute.MeshViewerTransmission);
+            material.WithClearCoat(null, StarfieldWaterMaterialRoute.MeshViewerClearCoat);
+            material.WithClearCoatRoughness(
+                null,
+                StarfieldWaterMaterialRoute.MeshViewerClearCoatRoughness);
+        }
+
+        // Generic alpha-blended materials stay single-sided to avoid unsorted back faces over front
+        // faces. Authored sky domes and thin water sheets must remain visible from either side.
+        material.WithDoubleSide(
+            authoredSkyPreview || isStarfieldWater ||
+            (submesh.IsDoubleSided &&
+             preparedAlpha.RenderMode != NifAlphaRenderMode.Blend &&
+             preparedAlpha.RenderMode != NifAlphaRenderMode.AlphaToCoverage));
         if (preparedAlpha.Texture != null)
         {
             var imageName = BuildBaseColorTextureName(
                 submesh.DiffuseTexturePath,
                 preparedAlpha.HasTextureTransform,
                 starfieldColor.IsConstantLerp,
-                opacityBake.Applied);
+                opacityBake.Applied || hasStaticStarfieldEffectAlpha);
             var image = ImageBuilder.From(
                 new MemoryImage(NpcGlbTextureEncoder.EncodePng(preparedAlpha.Texture)),
                 imageName);
@@ -486,14 +840,14 @@ internal static class GlbWriter
             material.WithBaseColor(baseColor);
         }
 
-        if (!submesh.IsEmissive && normalTexture != null)
+        if ((isStarfieldWater || !submesh.IsEmissive) && normalTexture != null)
         {
             var image = ImageBuilder.From(
                 new MemoryImage(NpcGlbTextureEncoder.EncodePng(normalTexture)),
-                BuildDerivedTextureName(submesh.NormalMapTexturePath, "normal"));
+                BuildDerivedTextureName(normalTexturePath, "normal"));
             material.WithNormal(image);
 
-            if (!hasStaticStarfieldOrm)
+            if (!isStarfieldWater && !hasStaticStarfieldOrm)
             {
                 var metallicRoughnessTexture = NpcGlbMaterialTexturePacker.BuildMetallicRoughnessTexture(
                     normalTexture,
@@ -512,7 +866,7 @@ internal static class GlbWriter
                 }
             }
 
-            if (!hasStaticStarfieldOrm)
+            if (!isStarfieldWater && !hasStaticStarfieldOrm)
             {
                 var specularFactorTexture = NpcGlbMaterialTexturePacker.BuildSpecularFactorTexture(
                     normalTexture,
@@ -528,7 +882,10 @@ internal static class GlbWriter
                 }
             }
         }
-        else if (!submesh.IsEmissive && environmentMaskTexture != null && hasEnvironmentMapping)
+        else if (!isStarfieldWater &&
+                 !submesh.IsEmissive &&
+                 environmentMaskTexture != null &&
+                 hasEnvironmentMapping)
         {
             if (!hasStaticStarfieldOrm)
             {
@@ -566,7 +923,10 @@ internal static class GlbWriter
             }
         }
 
-        if (!submesh.IsEmissive && starfieldOrm.Applied && starfieldOrm.Texture is { } ormTexture)
+        if (!isStarfieldWater &&
+            !submesh.IsEmissive &&
+            starfieldOrm.Applied &&
+            starfieldOrm.Texture is { } ormTexture)
         {
             var ormImage = ImageBuilder.From(
                 new MemoryImage(NpcGlbTextureEncoder.EncodePng(ormTexture)),
@@ -583,21 +943,25 @@ internal static class GlbWriter
             }
         }
 
-        if (!submesh.IsEmissive && emissiveTexture != null)
+        if (!isStarfieldWater && !submesh.IsEmissive && emissiveTexture != null)
         {
             var emissiveImage = ImageBuilder.From(
                 new MemoryImage(NpcGlbTextureEncoder.EncodePng(emissiveTexture)),
                 BuildDerivedTextureName(emissiveTexturePath, "emissive"));
             material.WithEmissive(emissiveImage, emissiveFactor, emissiveStrength);
         }
-        else if (!submesh.IsEmissive && hasActiveBgsmEmission)
+        else if (!isStarfieldWater && !submesh.IsEmissive && hasActiveBgsmEmission)
         {
-            // BGSM can carry a lit constant emission with no glow map. Keep it in the glTF
-            // emissive channel rather than turning the surface into the legacy unlit route.
+            // BGSM can carry a lit constant emission with no glow map. An authored map that cannot
+            // be resolved follows the renderer's white-texture fallback and therefore reaches the
+            // same constant term. Keep both in glTF emissive, never the legacy unlit route.
             material.WithEmissive(emissiveFactor, emissiveStrength);
         }
 
-        if (!submesh.IsEmissive && heightTexture != null && !hasStaticStarfieldOrm)
+        if (!isStarfieldWater &&
+            !submesh.IsEmissive &&
+            heightTexture != null &&
+            !hasStaticStarfieldOrm)
         {
             var occlusionTexture = NpcGlbMaterialTexturePacker.BuildOcclusionTexture(heightTexture);
             if (occlusionTexture != null)
@@ -690,17 +1054,34 @@ internal static class GlbWriter
 
     private static StarfieldMaterialColorRenderState ResolveStarfieldColor(
         RenderableSubmesh submesh,
-        NifTextureResolver textureResolver)
+        NifTextureResolver textureResolver,
+        StarfieldGlbVertexLerpProjectionResult vertexLerpProjection)
     {
+        // The water sentinel has already left the ordinary CE2 material route. Do not resurrect a
+        // layer tint from ShaderMetadata.MaterialPath in specialized/older export scenes that did
+        // not carry the extractor's cleared state.
+        if (string.Equals(
+                submesh.DiffuseTexturePath,
+                RenderableSubmesh.WaterSurfaceTexturePath,
+                StringComparison.Ordinal))
+        {
+            return default;
+        }
+
+        if (vertexLerpProjection.IsUniformTextureBake)
+        {
+            return StarfieldGlbColorLerpBaker.Normalize(vertexLerpProjection.ConstantLerpState);
+        }
+
         var carriedState = StarfieldGlbColorLerpBaker.Normalize(submesh.StarfieldMaterialColor);
         if (carriedState.IsConstantLerp)
         {
             return carriedState;
         }
 
-        // Current extraction carries ResolveRenderState() on the submesh. Retain a direct policy
-        // fallback for export scenes assembled by older/specialized callers that only preserve the
-        // material path; vertex-driven Lerp still fails closed in TryResolveConstantLerp().
+        // Current extraction carries its resolved state on the submesh. Retain a direct constant-
+        // Lerp fallback for older/specialized export scenes that preserve only the material path.
+        // Vertex Lerp requires the carried external RGBA stream and is projected above instead.
         var materialPath = submesh.ShaderMetadata?.MaterialPath;
         if (string.IsNullOrWhiteSpace(materialPath) ||
             !MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath))
@@ -729,6 +1110,16 @@ internal static class GlbWriter
         RenderableSubmesh submesh,
         NifTextureResolver textureResolver)
     {
+        // Water's explicit physical-preview coverage/no-cutout state is authoritative. Re-resolving
+        // the .mat here could otherwise replace it with an ordinary CE2 opacity cutout.
+        if (string.Equals(
+                submesh.DiffuseTexturePath,
+                RenderableSubmesh.WaterSurfaceTexturePath,
+                StringComparison.Ordinal))
+        {
+            return default;
+        }
+
         var materialPath = submesh.ShaderMetadata?.MaterialPath;
         if (string.IsNullOrWhiteSpace(materialPath) ||
             !MaterialTexturePathResolver.IsStarfieldMaterialPath(materialPath))
@@ -818,10 +1209,25 @@ internal static class GlbWriter
             : fileName + "." + suffix + ".png";
     }
 
+    internal static bool HasExternalRegularBgsmMaterial(RenderableSubmesh submesh)
+    {
+        ArgumentNullException.ThrowIfNull(submesh);
+
+        var materialPath = submesh.ShaderMetadata?.MaterialPath;
+        if (string.IsNullOrWhiteSpace(materialPath) &&
+            submesh.DiffuseTexturePath?.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            materialPath = submesh.DiffuseTexturePath;
+        }
+
+        return materialPath?.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
     /// <summary>
     ///     Encodes an effective linear emissive RGB into glTF's bounded emissive factor plus
-    ///     <c>KHR_materials_emissive_strength</c>. Their product is exactly the input for every
-    ///     finite, non-negative active value; malformed or inactive state fails closed.
+    ///     <c>KHR_materials_emissive_strength</c>. Their product represents the input within normal
+    ///     floating-point rounding for finite, non-negative authored values; malformed or inactive
+    ///     state fails closed.
     /// </summary>
     internal static bool TryEncodeGltfEmission(
         Vector3 effectiveEmission,
@@ -862,6 +1268,8 @@ internal static class GlbWriter
         string? HeightPath,
         string? EnvironmentMaskPath,
         bool IsEmissive,
+        bool IsStarfieldWater,
+        bool IsAuthoredSkyPreview,
         bool UseVertexColors,
         bool IsDoubleSided,
         NifAlphaRenderMode AlphaMode,
@@ -877,10 +1285,13 @@ internal static class GlbWriter
         string? StarfieldMaterialPath,
         StarfieldMaterialAlphaRenderState StarfieldAlpha,
         bool HasStarfieldOpacityTexture,
+        StarfieldMaterialEffectPolicy StarfieldEffectPolicy,
+        bool HasStarfieldEffectAlpha,
         StarfieldMaterialOrmPolicy StarfieldOrmPolicy,
         bool HasStaticStarfieldOrmPolicy,
         bool HasStarfieldOrm,
         bool HasStarfieldOrmTexture,
         bool HasStarfieldAmbientOcclusion,
+        StarfieldGlbVertexLerpProjectionResult StarfieldVertexLerpProjection,
         Vector4 BaseColor);
 }

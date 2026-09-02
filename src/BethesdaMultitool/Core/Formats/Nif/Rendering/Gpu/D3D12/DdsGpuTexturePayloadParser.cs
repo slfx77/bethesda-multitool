@@ -60,10 +60,12 @@ internal static class DdsGpuTexturePayloadParser
                 "DXT3" => GpuTexturePayloadFormat.BC2,
                 "DXT5" => GpuTexturePayloadFormat.BC3,
                 "ATI1" or "BC4U" => GpuTexturePayloadFormat.BC4,
-                // BC5S: Starfield's normal maps ship as legacy-FourCC SIGNED BC5. Same block layout as
-                // BC5U, so it uploads identically; without this entry every Starfield normal fell
-                // through to a full CPU RGBA decode.
-                "ATI2" or "BC5U" or "BC5S" => GpuTexturePayloadFormat.BC5,
+                "BC4S" => GpuTexturePayloadFormat.BC4S,
+                "ATI2" or "BC5U" => GpuTexturePayloadFormat.BC5,
+                // The compressed block size matches BC5U, but endpoint interpolation and shader
+                // sample range do not. Preserve signedness through the SRV instead of interpreting
+                // FO76/Starfield SNORM normals as unsigned (which produces high-contrast patches).
+                "BC5S" => GpuTexturePayloadFormat.BC5S,
                 "DX10" => ParseDx10Format(ddsData, ref dataOffset, ref isCubemap),
                 _ => null
             };
@@ -180,8 +182,10 @@ internal static class DdsGpuTexturePayloadParser
             71 or 72 => GpuTexturePayloadFormat.BC1, // BC1_UNORM(_SRGB)
             74 or 75 => GpuTexturePayloadFormat.BC2, // BC2_UNORM(_SRGB)
             77 or 78 => GpuTexturePayloadFormat.BC3, // BC3_UNORM(_SRGB)
-            80 or 81 => GpuTexturePayloadFormat.BC4, // BC4_UNORM / BC4_SNORM
-            83 or 84 => GpuTexturePayloadFormat.BC5, // BC5_UNORM / BC5_SNORM
+            80 => GpuTexturePayloadFormat.BC4, // BC4_UNORM
+            81 => GpuTexturePayloadFormat.BC4S, // BC4_SNORM
+            83 => GpuTexturePayloadFormat.BC5, // BC5_UNORM
+            84 => GpuTexturePayloadFormat.BC5S, // BC5_SNORM
             98 or 99 => GpuTexturePayloadFormat.BC7, // BC7_UNORM(_SRGB)
             _ => null
         };
@@ -198,9 +202,9 @@ internal static class DdsGpuTexturePayloadParser
     {
         return format switch
         {
-            GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 => 8,
+            GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 or GpuTexturePayloadFormat.BC4S => 8,
             GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC5
-                or GpuTexturePayloadFormat.BC7 => 16,
+                or GpuTexturePayloadFormat.BC5S or GpuTexturePayloadFormat.BC7 => 16,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
     }

@@ -179,6 +179,64 @@ internal sealed class NifWaterGeometry
                && BoundsMin.Y <= center.Y + radius;
     }
 
+    /// <summary>
+    ///     Resolves the highest authored triangle surface covering one XY point. This keeps the
+    ///     transparency partition honest for placed/NIF water: those surfaces are not represented in
+    ///     the CELL-height lookup and may be sloped, so substituting an AABB plane would classify
+    ///     geometry outside the actual outline or at the wrong height.
+    /// </summary>
+    internal bool TryGetHeightAtXY(float x, float y, out float height)
+    {
+        height = float.NegativeInfinity;
+        if (!float.IsFinite(x) || !float.IsFinite(y) ||
+            x < BoundsMin.X || x > BoundsMax.X ||
+            y < BoundsMin.Y || y > BoundsMax.Y)
+        {
+            return false;
+        }
+
+        var found = false;
+        const float barycentricEpsilon = 1e-5f;
+        for (var index = 0; index < _indices.Length; index += 3)
+        {
+            var a = _positions[_indices[index]];
+            var b = _positions[_indices[index + 1]];
+            var c = _positions[_indices[index + 2]];
+            var denominator = ((b.Y - c.Y) * (a.X - c.X)) +
+                              ((c.X - b.X) * (a.Y - c.Y));
+            if (!float.IsFinite(denominator) || MathF.Abs(denominator) <= float.Epsilon)
+            {
+                // Edge-on/degenerate in XY covers no surface area for a point-height query.
+                continue;
+            }
+
+            var wa = (((b.Y - c.Y) * (x - c.X)) + ((c.X - b.X) * (y - c.Y))) /
+                     denominator;
+            var wb = (((c.Y - a.Y) * (x - c.X)) + ((a.X - c.X) * (y - c.Y))) /
+                     denominator;
+            var wc = 1f - wa - wb;
+            if (wa < -barycentricEpsilon || wb < -barycentricEpsilon || wc < -barycentricEpsilon)
+            {
+                continue;
+            }
+
+            var surface = (wa * a.Z) + (wb * b.Z) + (wc * c.Z);
+            if (!float.IsFinite(surface))
+            {
+                continue;
+            }
+
+            height = MathF.Max(height, surface);
+            found = true;
+        }
+
+        if (!found)
+        {
+            height = 0f;
+        }
+        return found;
+    }
+
     private static bool IsFinite(Vector3 value)
     {
         return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);

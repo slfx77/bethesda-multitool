@@ -11,14 +11,22 @@ internal enum GpuTexturePayloadFormat
     BC3,
     BC4,
     BC5,
-    BC7
+    BC7,
+    // Keep signed variants at the end: the enum value is serialized by the persistent texture
+    // cache, and retaining every existing value avoids reinterpreting an older cache entry.
+    BC4S,
+    BC5S
 }
 
-/// <summary>Whether the shader must reconstruct the Z component of a normal map (BC5 stores only X/Y).</summary>
+/// <summary>
+///     How the shader decodes a normal-map sample. BC5 stores only X/Y; an SNORM SRV additionally
+///     returns those channels already in [-1, 1], while UNORM/RGBA samples still need remapping.
+/// </summary>
 internal enum GpuNormalDecodeMode
 {
     None = 0,
-    Bc5ReconstructZ = 1
+    Bc5ReconstructZ = 1,
+    Bc5SignedReconstructZ = 2
 }
 
 /// <summary>One mip level of a GPU texture payload: its dimensions and raw (possibly block-compressed) bytes.</summary>
@@ -47,17 +55,20 @@ internal sealed record GpuTexturePayload(
     public bool IsCompressed => Format != GpuTexturePayloadFormat.Rgba8;
 
     public GpuNormalDecodeMode NormalDecodeMode =>
-        Format == GpuTexturePayloadFormat.BC5
-            ? GpuNormalDecodeMode.Bc5ReconstructZ
-            : GpuNormalDecodeMode.None;
+        Format switch
+        {
+            GpuTexturePayloadFormat.BC5 => GpuNormalDecodeMode.Bc5ReconstructZ,
+            GpuTexturePayloadFormat.BC5S => GpuNormalDecodeMode.Bc5SignedReconstructZ,
+            _ => GpuNormalDecodeMode.None
+        };
 
     public long ByteSize => MipLevels.Sum(static level => (long)level.Bytes.Length);
 
     public int BytesPerBlock => Format switch
     {
-        GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 => 8,
+        GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 or GpuTexturePayloadFormat.BC4S => 8,
         GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC5
-            or GpuTexturePayloadFormat.BC7 => 16,
+            or GpuTexturePayloadFormat.BC5S or GpuTexturePayloadFormat.BC7 => 16,
         _ => 0
     };
 

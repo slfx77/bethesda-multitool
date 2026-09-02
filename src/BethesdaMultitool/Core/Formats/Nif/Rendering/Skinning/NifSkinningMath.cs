@@ -12,7 +12,7 @@ internal static class NifSkinningMath
     private const float DeterminantTolerance = 0.05f;
 
     internal static DualQuaternionCompatibility AnalyzeDualQuaternionCompatibility(
-        Matrix4x4[] boneSkinMatrices)
+        ReadOnlySpan<Matrix4x4> boneSkinMatrices)
     {
         for (var matrixIndex = 0; matrixIndex < boneSkinMatrices.Length; matrixIndex++)
         {
@@ -83,8 +83,23 @@ internal static class NifSkinningMath
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
     {
-        var numVertices = positions.Length / 3;
         var result = new float[positions.Length];
+        ApplySkinningPositions(positions, perVertexInfluences, boneSkinMatrices, result);
+        return result;
+    }
+
+    internal static void ApplySkinningPositions(
+        ReadOnlySpan<float> positions,
+        (int BoneIdx, float Weight)[][] perVertexInfluences,
+        ReadOnlySpan<Matrix4x4> boneSkinMatrices,
+        Span<float> result)
+    {
+        if (result.Length < positions.Length)
+        {
+            throw new ArgumentException("Skinned-position output span is too small.", nameof(result));
+        }
+
+        var numVertices = positions.Length / 3;
 
         for (var vertexIndex = 0; vertexIndex < numVertices; vertexIndex++)
         {
@@ -99,7 +114,7 @@ internal static class NifSkinningMath
             var destination = Vector3.Zero;
             foreach (var (boneIndex, weight) in influences)
             {
-                if (boneIndex < boneSkinMatrices.Length)
+                if ((uint)boneIndex < (uint)boneSkinMatrices.Length)
                 {
                     destination += weight * Vector3.Transform(source, boneSkinMatrices[boneIndex]);
                 }
@@ -108,7 +123,6 @@ internal static class NifSkinningMath
             WriteVector3(destination, result, vertexIndex);
         }
 
-        return result;
     }
 
     internal static float[] ApplySkinningNormals(
@@ -116,8 +130,23 @@ internal static class NifSkinningMath
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
     {
-        var numVertices = normals.Length / 3;
         var result = new float[normals.Length];
+        ApplySkinningNormals(normals, perVertexInfluences, boneSkinMatrices, result);
+        return result;
+    }
+
+    internal static void ApplySkinningNormals(
+        ReadOnlySpan<float> normals,
+        (int BoneIdx, float Weight)[][] perVertexInfluences,
+        ReadOnlySpan<Matrix4x4> boneSkinMatrices,
+        Span<float> result)
+    {
+        if (result.Length < normals.Length)
+        {
+            throw new ArgumentException("Skinned-normal output span is too small.", nameof(result));
+        }
+
+        var numVertices = normals.Length / 3;
 
         for (var vertexIndex = 0; vertexIndex < numVertices; vertexIndex++)
         {
@@ -132,7 +161,7 @@ internal static class NifSkinningMath
             var destination = Vector3.Zero;
             foreach (var (boneIndex, weight) in influences)
             {
-                if (boneIndex < boneSkinMatrices.Length)
+                if ((uint)boneIndex < (uint)boneSkinMatrices.Length)
                 {
                     destination += weight * Vector3.TransformNormal(
                         source,
@@ -149,7 +178,6 @@ internal static class NifSkinningMath
             WriteVector3(destination, result, vertexIndex);
         }
 
-        return result;
     }
 
     internal static float[] ApplySkinningPositionsDqs(
@@ -157,9 +185,24 @@ internal static class NifSkinningMath
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
     {
-        var numVertices = positions.Length / 3;
         var result = new float[positions.Length];
         var boneDualQuaternions = BuildDualQuaternions(boneSkinMatrices);
+        ApplySkinningPositionsDqs(positions, perVertexInfluences, boneDualQuaternions, result);
+        return result;
+    }
+
+    internal static void ApplySkinningPositionsDqs(
+        ReadOnlySpan<float> positions,
+        (int BoneIdx, float Weight)[][] perVertexInfluences,
+        ReadOnlySpan<DualQuaternion> boneDualQuaternions,
+        Span<float> result)
+    {
+        if (result.Length < positions.Length)
+        {
+            throw new ArgumentException("DQS-position output span is too small.", nameof(result));
+        }
+
+        var numVertices = positions.Length / 3;
 
         for (var vertexIndex = 0; vertexIndex < numVertices; vertexIndex++)
         {
@@ -177,7 +220,6 @@ internal static class NifSkinningMath
                 vertexIndex);
         }
 
-        return result;
     }
 
     internal static float[] ApplySkinningNormalsDqs(
@@ -185,9 +227,24 @@ internal static class NifSkinningMath
         (int BoneIdx, float Weight)[][] perVertexInfluences,
         Matrix4x4[] boneSkinMatrices)
     {
-        var numVertices = normals.Length / 3;
         var result = new float[normals.Length];
         var boneDualQuaternions = BuildDualQuaternions(boneSkinMatrices);
+        ApplySkinningNormalsDqs(normals, perVertexInfluences, boneDualQuaternions, result);
+        return result;
+    }
+
+    internal static void ApplySkinningNormalsDqs(
+        ReadOnlySpan<float> normals,
+        (int BoneIdx, float Weight)[][] perVertexInfluences,
+        ReadOnlySpan<DualQuaternion> boneDualQuaternions,
+        Span<float> result)
+    {
+        if (result.Length < normals.Length)
+        {
+            throw new ArgumentException("DQS-normal output span is too small.", nameof(result));
+        }
+
+        var numVertices = normals.Length / 3;
 
         for (var vertexIndex = 0; vertexIndex < numVertices; vertexIndex++)
         {
@@ -209,23 +266,33 @@ internal static class NifSkinningMath
             WriteVector3(destination, result, vertexIndex);
         }
 
+    }
+
+    private static DualQuaternion[] BuildDualQuaternions(ReadOnlySpan<Matrix4x4> boneSkinMatrices)
+    {
+        var result = new DualQuaternion[boneSkinMatrices.Length];
+        BuildDualQuaternions(boneSkinMatrices, result);
         return result;
     }
 
-    private static DualQuaternion[] BuildDualQuaternions(Matrix4x4[] boneSkinMatrices)
+    internal static void BuildDualQuaternions(
+        ReadOnlySpan<Matrix4x4> boneSkinMatrices,
+        Span<DualQuaternion> result)
     {
-        var result = new DualQuaternion[boneSkinMatrices.Length];
+        if (result.Length < boneSkinMatrices.Length)
+        {
+            throw new ArgumentException("Dual-quaternion output span is too small.", nameof(result));
+        }
+
         for (var i = 0; i < boneSkinMatrices.Length; i++)
         {
             result[i] = DualQuaternion.FromMatrix4x4(boneSkinMatrices[i]);
         }
-
-        return result;
     }
 
     private static DualQuaternion BlendDualQuaternions(
         (int BoneIdx, float Weight)[] influences,
-        DualQuaternion[] boneDualQuaternions)
+        ReadOnlySpan<DualQuaternion> boneDualQuaternions)
     {
         var realSum = Quaternion.Zero;
         var dualSum = Quaternion.Zero;
@@ -234,7 +301,7 @@ internal static class NifSkinningMath
 
         foreach (var (boneIndex, weight) in influences)
         {
-            if (boneIndex >= boneDualQuaternions.Length)
+            if ((uint)boneIndex >= (uint)boneDualQuaternions.Length)
             {
                 continue;
             }
@@ -286,7 +353,7 @@ internal static class NifSkinningMath
                 dualSum.W * inverseLength));
     }
 
-    private static Vector3 ReadVector3(float[] values, int vertexIndex)
+    private static Vector3 ReadVector3(ReadOnlySpan<float> values, int vertexIndex)
     {
         return new Vector3(
             values[vertexIndex * 3],
@@ -294,14 +361,14 @@ internal static class NifSkinningMath
             values[vertexIndex * 3 + 2]);
     }
 
-    private static void CopyVector3(float[] source, float[] destination, int vertexIndex)
+    private static void CopyVector3(ReadOnlySpan<float> source, Span<float> destination, int vertexIndex)
     {
         destination[vertexIndex * 3] = source[vertexIndex * 3];
         destination[vertexIndex * 3 + 1] = source[vertexIndex * 3 + 1];
         destination[vertexIndex * 3 + 2] = source[vertexIndex * 3 + 2];
     }
 
-    private static void WriteVector3(Vector3 value, float[] destination, int vertexIndex)
+    private static void WriteVector3(Vector3 value, Span<float> destination, int vertexIndex)
     {
         destination[vertexIndex * 3] = value.X;
         destination[vertexIndex * 3 + 1] = value.Y;
@@ -321,7 +388,7 @@ internal static class NifSkinningMath
         float MaxAxisDot,
         float Determinant);
 
-    private readonly struct DualQuaternion(Quaternion real, Quaternion dual)
+    internal readonly struct DualQuaternion(Quaternion real, Quaternion dual)
     {
         internal static readonly DualQuaternion Identity =
             new(Quaternion.Identity, Quaternion.Zero);

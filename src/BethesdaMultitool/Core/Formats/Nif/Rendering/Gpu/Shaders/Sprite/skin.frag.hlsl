@@ -19,6 +19,8 @@ Texture2D    tDiffuse   : register(t0);
 SamplerState sDiffuse   : register(s0);
 Texture2D    tNormalMap : register(t1);
 SamplerState sNormalMap : register(s1);
+Texture2D    tStarfieldOpacity : register(t2);
+SamplerState sStarfieldOpacity : register(s2);
 
 struct PSInput
 {
@@ -52,6 +54,8 @@ static const uint IS_EYE_ENVMAP   = 256u;
 static const uint HAS_TINT        = 512u;
 static const uint IS_FACEGEN      = 1024u;
 static const uint IS_A2C          = 2048u;
+static const uint IS_STARFIELD_VERTEX_LERP = 4096u;
+static const uint HAS_STARFIELD_OPACITY    = 8192u;
 
 // Per-sample coverage masks for the manual alpha-to-coverage path, indexed by
 // round(alpha * 4). Sample bits are spread so partial coverage stays spatially
@@ -179,16 +183,18 @@ PSOutput main(PSInput input)
         texColor = tDiffuse.Sample(sDiffuse, input.vTexCoord);
     }
 
-    // Apply vertex alpha (always — CPU does this before alpha test for both tint and non-tint paths)
-    if ((flags & HAS_VCOL) != 0u)
+    // CE2 AlphaSettings uses layer-0 slot 2 RED for coverage. It is independent from both
+    // diffuse alpha and material-colour Lerp weight.
+    if ((flags & HAS_STARFIELD_OPACITY) != 0u)
+    {
+        texColor.a = tStarfieldOpacity.Sample(sStarfieldOpacity, input.vTexCoord).r;
+    }
+
+    // Apply ordinary vertex opacity before alpha test. CE2 vertex Lerp alpha is RGB shader data.
+    if ((flags & HAS_VCOL) != 0u && (flags & IS_STARFIELD_VERTEX_LERP) == 0u)
     {
         texColor.a *= input.vVertexColor.a;
     }
-
-    // Classic BSEffect / BGEM: BaseColor.rgb × BaseColorScale is an authored source-color
-    // multiplier and may exceed one. Keep it before blend/output saturation so additive glows
-    // retain their intended intensity in the standalone GPU preview too.
-    texColor.rgb *= uEffectTint.rgb;
 
     // Alpha test — must run BEFORE material alpha multiplication (matches CPU ordering:
     // CPU tests raw texture_alpha * vertex_alpha, not texture_alpha * vertex_alpha * materialAlpha)
@@ -216,8 +222,13 @@ PSOutput main(PSInput input)
         discard; // Skip fully transparent + DXT fringe on blended meshes
     }
 
-    // Color modulation: tint and vertex color are mutually exclusive on RGB.
-    if ((flags & HAS_TINT) != 0u)
+    // CE2 vertex Lerp consumes vertex alpha only as an affine RGB weight. It neither changes
+    // opacity/coverage nor falls through to the ordinary multiplicative vertex-colour branch.
+    if ((flags & IS_STARFIELD_VERTEX_LERP) != 0u)
+    {
+        texColor.rgb = lerp(texColor.rgb, input.vVertexColor.rgb, input.vVertexColor.a);
+    }
+    else if ((flags & HAS_TINT) != 0u)
     {
         texColor.rgb *= 2.0 * uTintColor.rgb;
     }
@@ -225,6 +236,11 @@ PSOutput main(PSInput input)
     {
         texColor.rgb *= input.vVertexColor.rgb;
     }
+
+    // Classic BSEffect / BGEM: BaseColor.rgb × BaseColorScale is an authored source-color
+    // multiplier and may exceed one. Apply it after the material colour operation, matching the
+    // reference/world shader. Ordinary multiply-only routes are algebraically unchanged.
+    texColor.rgb *= uEffectTint.rgb;
 
     // Match CPU export alpha semantics:
     // - opaque + cutout materials write solid alpha after any discard

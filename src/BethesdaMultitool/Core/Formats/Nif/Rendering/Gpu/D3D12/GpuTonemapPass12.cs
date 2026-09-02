@@ -83,6 +83,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private ID3D12Resource? _brightPassBlurTexture;
     private int _classicSourceHeight;
     private int _classicSourceWidth;
+    // A failed constructor never reaches GpuSwapChainSurface12 ownership. Track each COM resource
+    // until the whole immutable tonemap graph exists, then transfer it to the normal Dispose path.
+    private TonemapConstructionTransaction? _constructionTransaction = new();
     private bool _disposed;
     private bool _lastAdaptiveMode;
     private Format _lastHistoryFormat = Format.Unknown;
@@ -97,6 +100,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
     {
         _gpu = gpu;
         var device = gpu.Device;
+        try
+        {
 
         // Root: [0] SRV table (t0 = HDR scene, t1 = 1×1 adapted average color, t2 = bloom); [1]
         // 24×32-bit root constants (b0, six float4s — tonemap/cinematic + modern semantic params
@@ -134,7 +139,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             RootSignatureFlags.None,
             new[] { srvTable, rootConstants },
             new[] { sampler });
-        _rootSignature = device.CreateRootSignature(desc);
+        _rootSignature = TrackConstructionResource(device.CreateRootSignature(desc));
 
         var vs = CompileEmbeddedShader("tonemap.vert.hlsl", "main", "vs_5_1");
         var ps = CompileEmbeddedShader("tonemap.frag.hlsl", "main", "ps_5_1");
@@ -172,7 +177,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             SampleDescription = new SampleDescription(1, 0), // the LDR output/backbuffer is single-sample
             SampleMask = uint.MaxValue
         };
-        _pso = device.CreateGraphicsPipelineState(psoDesc);
+        _pso = TrackConstructionResource(device.CreateGraphicsPipelineState(psoDesc));
 
         // The modern stand-in still computes a sparse average in mainAvg. Classic mode instead runs
         // the recursive reduction below and mainAdapt only performs temporal adaptation/clamping.
@@ -180,13 +185,13 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var avgPsoDesc = psoDesc;
         avgPsoDesc.PixelShader = avgPs;
         avgPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _avgPso = device.CreateGraphicsPipelineState(avgPsoDesc);
+        _avgPso = TrackConstructionResource(device.CreateGraphicsPipelineState(avgPsoDesc));
 
         var adaptPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAdapt", "ps_5_1");
         var adaptPsoDesc = psoDesc;
         adaptPsoDesc.PixelShader = adaptPs;
         adaptPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _adaptPso = device.CreateGraphicsPipelineState(adaptPsoDesc);
+        _adaptPso = TrackConstructionResource(device.CreateGraphicsPipelineState(adaptPsoDesc));
 
         // Recovered engine bloom: explicit DownSample16, then the two rows inside the selected
         // ImageSpaceEffectBlur effect: vertical BrightPassBlur followed by horizontal plain blur.
@@ -194,51 +199,69 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var downsamplePsoDesc = psoDesc;
         downsamplePsoDesc.PixelShader = downsamplePs;
         downsamplePsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _downsamplePso = device.CreateGraphicsPipelineState(downsamplePsoDesc);
+        _downsamplePso = TrackConstructionResource(device.CreateGraphicsPipelineState(downsamplePsoDesc));
 
         var bloomPs = CompileEmbeddedShader("bloom.frag.hlsl", "main", "ps_5_1");
         var bloomPsoDesc = psoDesc;
         bloomPsoDesc.PixelShader = bloomPs;
         bloomPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _bloomPso = device.CreateGraphicsPipelineState(bloomPsoDesc);
+        _bloomPso = TrackConstructionResource(device.CreateGraphicsPipelineState(bloomPsoDesc));
 
         var blurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainBlur", "ps_5_1");
         var blurPsoDesc = psoDesc;
         blurPsoDesc.PixelShader = blurPs;
         blurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _blurPso = device.CreateGraphicsPipelineState(blurPsoDesc);
+        _blurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(blurPsoDesc));
 
         // RTV heap: slots 0–1 = adapted-average ping-pong; then every possible reduction level;
         // final two slots = vertical BrightPassBlur intermediate + horizontal plain-blur output.
-        _avgRtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+        _avgRtvHeap = TrackConstructionResource(
+            device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.RenderTargetView,
             DescriptorCount = RtvDescriptorCount,
             Flags = DescriptorHeapFlags.None
-        });
+        }));
         _avgRtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
         for (var i = 0; i < 2; i++)
         {
-            _avgTextures[i] = device.CreateCommittedResource<ID3D12Resource>(
+            _avgTextures[i] = TrackConstructionResource(device.CreateCommittedResource<ID3D12Resource>(
                 new HeapProperties(HeapType.Default),
                 HeapFlags.None,
                 ResourceDescription.Texture2D(Format.R16G16B16A16_Float, 1, 1, 1, 1, 1, 0,
                     ResourceFlags.AllowRenderTarget),
-                ResourceStates.PixelShaderResource);
+                ResourceStates.PixelShaderResource));
             _avgTextures[i].Name = $"TonemapAvgColor1x1_{i}";
             var rtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
             rtv.Ptr += (nuint)(i * _avgRtvDescriptorSize);
             device.CreateRenderTargetView(_avgTextures[i], null, rtv);
         }
 
-        _srvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+        _srvHeap = TrackConstructionResource(
+            device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
             DescriptorCount = SrvRingSlots * GroupsPerCall * SrvsPerCall,
             Flags = DescriptorHeapFlags.ShaderVisible
-        });
+        }));
         _srvDescriptorSize = device.GetDescriptorHandleIncrementSize(
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+
+        _constructionTransaction!.Commit();
+        _constructionTransaction = null;
+        }
+        catch
+        {
+            _constructionTransaction?.Dispose();
+            _constructionTransaction = null;
+            throw;
+        }
+    }
+
+    private T TrackConstructionResource<T>(T resource) where T : IDisposable
+    {
+        _constructionTransaction?.Track(resource);
+        return resource;
     }
 
     /// <summary>Whether the most recently recorded pass invalidated its eye-adaptation history.</summary>
@@ -672,5 +695,40 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
     {
         return GpuShaderCompiler12.Compile(name, entryPoint, profile);
+    }
+
+    private sealed class TonemapConstructionTransaction : IDisposable
+    {
+        private readonly List<IDisposable> _creationOrder = new(16);
+        private readonly HashSet<IDisposable> _owned =
+            new(16, ReferenceEqualityComparer.Instance);
+
+        internal void Track(IDisposable resource)
+        {
+            if (_owned.Add(resource))
+            {
+                _creationOrder.Add(resource);
+            }
+        }
+
+        internal void Commit()
+        {
+            _owned.Clear();
+            _creationOrder.Clear();
+        }
+
+        public void Dispose()
+        {
+            for (var index = _creationOrder.Count - 1; index >= 0; index--)
+            {
+                var resource = _creationOrder[index];
+                if (_owned.Remove(resource))
+                {
+                    resource.Dispose();
+                }
+            }
+
+            _creationOrder.Clear();
+        }
     }
 }

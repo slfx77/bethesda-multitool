@@ -17,6 +17,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
@@ -567,6 +568,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
     public int PendingTextureUploads => _textureCache.PendingUploadCount;
     public int TotalMissingModelPaths => _decoder.TotalMissingModelPaths;
     public int TotalSkinnedModelPaths => _decoder.TotalSkinnedModelPaths;
+    public int TotalParseFailedModelPaths => _decoder.TotalParseFailedModelPaths;
+    public int TotalMissingGeometryBlobs => _decoder.TotalMissingGeometryBlobs;
+    public int TotalDecodeFailedGeometryBlobs => _decoder.TotalDecodeFailedGeometryBlobs;
 
     public void ResetFrameStats()
     {
@@ -682,6 +686,85 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             ref uploadBudget,
             priority,
             alternateTextures);
+    }
+
+    /// <summary>
+    ///     Resolves an already-generated FO4 BNDS tube through the same decoded LRU, upload budget,
+    ///     transactional DEFAULT-heap publication, texture cache, and GPU mesh LRU as archive NIFs.
+    ///     The generated payload is retained by the placement cache, so decoded-LRU eviction can
+    ///     re-arm this entry without an archive lookup or an unbounded task result.
+    /// </summary>
+    public CachedNifMesh12? GetOrUploadGenerated(
+        ID3D12GraphicsCommandList commandList,
+        BendableSplineRenderMesh generated,
+        ref int uploadBudget)
+    {
+        ArgumentNullException.ThrowIfNull(commandList);
+        ArgumentNullException.ThrowIfNull(generated);
+        if (_disposed) return null;
+
+        PruneCompletedDecodeTasks();
+        StartQueuedDecodes();
+
+        var cacheKey = generated.CacheKey;
+        if (_meshLru.TryGet(cacheKey, out var existing))
+        {
+            // DecodedCacheAvailable is only a hint and remains true until a failed LRU probe clears
+            // it. Probe the bounded cache directly; when it has evicted this small wrapper, rebuild
+            // it around the placement-owned vertex/index arrays without copying those arrays.
+            if (existing.Mesh is null && existing.PendingPublication is null &&
+                !TryGetDecodedCache(cacheKey, out _))
+            {
+                StoreDecodedCache(cacheKey, WrapGeneratedSpline(generated));
+                existing.DecodedCacheAvailable = true;
+                existing.DecodedCacheMissRecorded = false;
+            }
+
+            return ResolveExisting(
+                cacheKey, existing, commandList, collisionOnly: false, ref uploadBudget);
+        }
+
+        FrameCacheMisses++;
+        var node = new Node(
+            Mesh: null,
+            DecodeTask: null,
+            ResolvedNull: false)
+        {
+            DecodePath = cacheKey,
+            DecodedCacheAvailable = true
+        };
+        StoreDecodedCache(cacheKey, WrapGeneratedSpline(generated));
+        _meshLru.Set(cacheKey, node);
+        return ResolveExisting(
+            cacheKey, node, commandList, collisionOnly: false, ref uploadBudget);
+    }
+
+    private static DecodedNifMesh12 WrapGeneratedSpline(BendableSplineRenderMesh generated)
+    {
+        var submesh = new DecodedSubmesh12(
+            generated.Vertices,
+            generated.Indices,
+            DiffuseTexturePath: generated.DiffuseTexturePath,
+            NormalMapTexturePath: generated.NormalMapTexturePath,
+            HasBump: !string.IsNullOrEmpty(generated.NormalMapTexturePath),
+            AlphaRenderMode: NifAlphaRenderMode.Opaque,
+            AlphaBlend: false,
+            AlphaTest: false,
+            AlphaTestThreshold: 0.5f,
+            AlphaTestFunction: 4,
+            SrcBlendMode: 6,
+            DstBlendMode: 7,
+            MaterialAlpha: 1f,
+            DoubleSided: false,
+            IsEmissive: false,
+            LocalBoundsCenter: generated.LocalBoundsCenter,
+            LocalBoundsRadius: generated.LocalBoundsRadius,
+            IsBillboard: false);
+
+        // Retail also builds two capsule collision spans. Until that narrow collision shape is
+        // reconstructed, AbsentOrUnsupported deliberately admits the existing solid visual-soup
+        // fallback instead of falsely claiming the procedural object is non-collidable.
+        return new DecodedNifMesh12([submesh]);
     }
 
     /// <summary>
@@ -1045,7 +1128,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         // decoded material swaps can change AlphaBlend/IsEmissive/water admission. Until collision
         // identity carries the variant, the last uploaded variant wins (tracked in the active backlog).
         var uploadStarted = Stopwatch.GetTimestamp();
-        var materialization = UploadDecodedMesh(commandList, modelPath, node, decoded.Mesh);
+        // Collision is a placed-reference cache concern, while GPU materialization is shared with
+        // the standalone native viewer. Keep the collision side effect here so the shared helper
+        // remains archive/node agnostic.
+        StoreCollisionMesh(modelPath, node, decoded.Mesh);
+        var materialization = UploadDecodedMesh(
+            commandList,
+            node.DecodePath,
+            decoded.Mesh,
+            _geometryArena,
+            _deletionQueue,
+            _textureCache);
         var uploadMs = Stopwatch.GetElapsedTime(uploadStarted).TotalMilliseconds;
         _frameUploadMsConsumed += uploadMs;
         RecordUploadThroughput(decoded.ByteSize, uploadMs);
@@ -1058,8 +1151,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         ClearMaterializationRetry(node);
         if (materialization.Status == MeshMaterializationStatus.RenderEmpty)
         {
-            // UploadDecodedMesh installs collision before reporting an authored render-empty payload.
-            // Keep that positive decoded payload in the CPU/disk caches; replacing it with a total
+            // Collision was installed before shared GPU materialization reported an authored
+            // render-empty payload. Keep that positive decoded payload in the CPU/disk caches;
+            // replacing it with a total
             // negative would discard the provenance after collision-LRU eviction or next launch.
             node.ResolvedNull = true;
             return true;
@@ -1613,13 +1707,25 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         }
     }
 
-    private MeshMaterializationResult UploadDecodedMesh(
-        ID3D12GraphicsCommandList commandList,
-        string cacheKey,
-        Node node,
-        DecodedNifMesh12 decoded)
+    /// <summary>
+    ///     Materializes an already-decoded Bethesda mesh through the exact placed-reference GPU
+    ///     packing/material route. The native asset viewer calls this with its own short-lived arena
+    ///     and scene texture cache so Starfield slots, alpha state, environment maps, and authored
+    ///     water diversion cannot drift into a second implementation.
+    /// </summary>
+    internal static MeshMaterializationResult UploadDecodedMesh(
+        ID3D12GraphicsCommandList? commandList,
+        string modelPath,
+        DecodedNifMesh12 decoded,
+        GpuGeometryArena12 geometryArena,
+        GpuDeletionQueue12 deletionQueue,
+        GpuTextureCache12 textureCache)
     {
-        var modelPath = node.DecodePath;
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelPath);
+        ArgumentNullException.ThrowIfNull(decoded);
+        ArgumentNullException.ThrowIfNull(geometryArena);
+        ArgumentNullException.ThrowIfNull(deletionQueue);
+        ArgumentNullException.ThrowIfNull(textureCache);
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var success = false;
         var totalVertexCount = 0;
@@ -1632,11 +1738,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                 totalIndexCount += sub.Indices.Length;
             }
         }
-        // Capture walk-mode collision geometry from the solid submeshes before they are packed for the
-        // GPU. This must precede the empty-render-payload return: collision-only Havok NIFs still need
-        // their authored soup, while a decoded model with neither render nor collision geometry needs
-        // an authoritative resolved-null entry so cold warmup does not retry it forever.
-        StoreCollisionMesh(cacheKey, node, decoded);
         if (totalVertexCount == 0 || totalIndexCount == 0)
         {
             return MeshMaterializationResult.RenderEmpty;
@@ -1666,12 +1767,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             // Pack both streams into one shared arena range. UPLOAD backing memcpy's directly;
             // DEFAULT backing stages and records its copy/barrier on this frame's active command
             // list. Either mode publishes identical VBV/IBV addresses into the cached submeshes.
-            geometry = _geometryArena.Upload(
-                commandList,
-                _deletionQueue,
-                System.Runtime.InteropServices.MemoryMarshal.AsBytes<GpuMeshUploader.GpuVertex>(vertices),
-                System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>(indices),
-                debugTag: modelPath);
+            var vertexBytes =
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes<GpuMeshUploader.GpuVertex>(vertices);
+            var indexBytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>(indices);
+            geometry = geometryArena.BackingMode == GpuGeometryArenaBackingMode.UploadHeap
+                ? geometryArena.Upload(vertexBytes, indexBytes, debugTag: modelPath)
+                : geometryArena.Upload(
+                    commandList ?? throw new InvalidOperationException(
+                        "DEFAULT-heap decoded mesh materialization requires an open command list."),
+                    deletionQueue,
+                    vertexBytes,
+                    indexBytes,
+                    debugTag: modelPath);
         }
         catch (Exception ex)
         {
@@ -1809,7 +1916,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             // white fallback: that is broken content and should stay loudly visible.
             if (sub.DiffuseTexturePath is { } matPath &&
                 matPath.EndsWith(".mat", StringComparison.OrdinalIgnoreCase) &&
-                _textureCache.IsStarfieldNoDrawMaterial(matPath))
+                textureCache.IsStarfieldNoDrawMaterial(matPath))
             {
                 continue;
             }
@@ -1850,18 +1957,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     {
                         var baseColor =
                             NifMaterialDiffusePolicy.ResolveUntexturedBaseColor(materialDiffuse);
-                        diffuse = Acquire(_textureCache.GetOrCreateSynthetic(
+                        diffuse = Acquire(textureCache.GetOrCreateSynthetic(
                             NifMaterialDiffusePolicy.SyntheticTextureKey(baseColor), 1, 1,
                             NifMaterialDiffusePolicy.ToRgbaPixel(baseColor)));
                     }
                     else
                     {
-                        diffuse = _textureCache.WhitePixel;
+                        diffuse = textureCache.WhitePixel;
                     }
                 }
                 else if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
                 {
-                    diffuse = _textureCache.WaterSurface;
+                    diffuse = textureCache.WaterSurface;
                 }
                 else
                 {
@@ -1873,7 +1980,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     var diffusePath = sub.IsLeafBillboard && sub.AlphaTest
                         ? sub.DiffuseTexturePath + NifGpuTextureResolver.LeafAtlasMipsSuffix
                         : sub.DiffuseTexturePath!;
-                    diffuse = Acquire(_textureCache.GetOrUpload(diffusePath));
+                    diffuse = Acquire(textureCache.GetOrUpload(diffusePath));
                 }
                 // Starfield stores both albedo and normal behind one .mat name; decoded meshes carry
                 // that name only in the diffuse lane. Derive the role-qualified normal request here
@@ -1891,54 +1998,54 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     sub.HasBump,
                     sub.Vertices);
                 var normal = !string.IsNullOrEmpty(normalBinding.TexturePath)
-                    ? Acquire(_textureCache.GetOrUpload(normalBinding.TexturePath!, isNormalMap: true))
-                    : _textureCache.FlatNormal;
+                    ? Acquire(textureCache.GetOrUpload(normalBinding.TexturePath!, isNormalMap: true))
+                    : textureCache.FlatNormal;
                 var starfieldOpacity =
                     starfieldMaterialPath is not null &&
                     sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
-                        ? Acquire(_textureCache.GetOrUpload(
+                        ? Acquire(textureCache.GetOrUpload(
                             MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(
                                 starfieldMaterialPath)))
                         : null;
                 var specularMap = !string.IsNullOrEmpty(sub.SpecularMapTexturePath)
-                    ? Acquire(_textureCache.GetOrUpload(sub.SpecularMapTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.SpecularMapTexturePath!))
                     : null;
                 var gradientMap = !string.IsNullOrEmpty(sub.GradientMapTexturePath)
-                    ? Acquire(_textureCache.GetOrUpload(sub.GradientMapTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.GradientMapTexturePath!))
                     : null;
                 System.Diagnostics.Debug.Assert(
                     gradientMap is null || string.IsNullOrEmpty(sub.Lighting30GlowMapTexturePath),
                     "FO4 gradient and classic Lighting30 glow maps cannot share TexIndices.w.");
                 var lighting30GlowMap = sub.IsLighting30 && gradientMap is null &&
                                         !string.IsNullOrEmpty(sub.Lighting30GlowMapTexturePath)
-                    ? Acquire(_textureCache.GetOrUpload(sub.Lighting30GlowMapTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.Lighting30GlowMapTexturePath!))
                     : null;
                 var hasBgsmEmission = sub.BgsmEmissionColor.X > 0f ||
                                       sub.BgsmEmissionColor.Y > 0f ||
                                       sub.BgsmEmissionColor.Z > 0f;
                 var bgsmGlowMap = hasBgsmEmission &&
                                   !string.IsNullOrEmpty(sub.BgsmGlowMapTexturePath)
-                    ? Acquire(_textureCache.GetOrUpload(sub.BgsmGlowMapTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.BgsmGlowMapTexturePath!))
                     : null;
                 // FO4 environment cubemap (nearly always the shared mipblur_defaultoutside1.dds —
                 // one texture serving thousands of materials). The env shader term stays off until
                 // the entry promotes to a real TextureCube (see CachedSubmesh12.EnvMapState).
                 var envMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) && sub.EnvironmentMapScale > 0f
-                    ? Acquire(_textureCache.GetOrUpload(sub.EnvironmentMapTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.EnvironmentMapTexturePath!))
                     : null;
                 // FO3/FNV classic PP-lighting environment pass. Slot 5 is its own red-channel mask,
                 // not FO4's _s texture; keep both cache entries and packed-state routes separate.
                 var classicEnvMap = !string.IsNullOrEmpty(sub.ClassicEnvironmentMapTexturePath) &&
                                     sub.ClassicEnvironmentMapScale > 0f
-                    ? Acquire(_textureCache.GetOrUpload(sub.ClassicEnvironmentMapTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.ClassicEnvironmentMapTexturePath!))
                     : null;
                 var classicEnvMask = classicEnvMap is not null &&
                                      !string.IsNullOrEmpty(sub.ClassicEnvironmentMaskTexturePath)
-                    ? Acquire(_textureCache.GetOrUpload(sub.ClassicEnvironmentMaskTexturePath!))
+                    ? Acquire(textureCache.GetOrUpload(sub.ClassicEnvironmentMaskTexturePath!))
                     : null;
                 var classicParallaxHeightMap =
                     !string.IsNullOrEmpty(sub.ClassicParallaxHeightMapTexturePath)
-                        ? Acquire(_textureCache.GetOrUpload(sub.ClassicParallaxHeightMapTexturePath!))
+                        ? Acquire(textureCache.GetOrUpload(sub.ClassicParallaxHeightMapTexturePath!))
                         : null;
                 System.Diagnostics.Debug.Assert(
                     envMap is null || classicEnvMap is null,
@@ -2038,6 +2145,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                         sub.Lighting30EmissionColor,
                         sub.Lighting30EmissionMultiplier),
                     SourceBlockIndex = sub.SourceBlockIndex,
+                    MaterializationSourceIndex = i,
                     LocalBoundsCenter = sub.LocalBoundsCenter,
                     LocalBoundsRadius = sub.LocalBoundsRadius,
                     IsBillboard = sub.IsBillboard,
@@ -2063,7 +2171,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     IsDecal = sub.IsDecal,
                     // default(Vector3) = a pre-effect-fields payload (or a caller that skipped the
                     // arg); black would tint everything out, so normalize to the no-op white.
-                    EffectTint = sub.EffectTint == default ? Vector3.One : sub.EffectTint,
+                    EffectTint = sub.EffectTintSpecified
+                        ? sub.EffectTint
+                        : sub.EffectTint == default ? Vector3.One : sub.EffectTint,
                     EffectFalloffParams = sub.EffectFalloffParams,
                     HasEffectFalloff = sub.HasEffectFalloff,
                     SoftParticle = softParticle,
@@ -2099,7 +2209,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                 {
                     foreach (var acquired in acquiredTextures)
                     {
-                        _textureCache.Release(acquired);
+                        textureCache.Release(acquired);
                     }
                 }
 
@@ -2109,15 +2219,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
 
         if (materializationFailed)
         {
-            ReleaseSubmeshTextures(submeshes);
-            _geometryArena.Free(geometry);
+            ReleaseSubmeshTextures(submeshes, textureCache);
+            geometryArena.Free(geometry);
             return MeshMaterializationResult.RetryableFailure;
         }
 
         if (submeshes.Count == 0 && (waterPlanesLocal is null || waterPlanesLocal.Count == 0))
         {
             // No drawable submeshes and no water geometry — nothing references the arena range, so reclaim it.
-            _geometryArena.Free(geometry);
+            geometryArena.Free(geometry);
             return MeshMaterializationResult.RenderEmpty;
         }
 
@@ -2125,7 +2235,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         var cached = new CachedNifMesh12(
             // Materialized once at upload; the render thread then walks it allocation-free every frame.
             submeshes.ToArray(),
-            geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
+            geometry, geometryArena, deletionQueue, textureCache, MathF.Sqrt(meshLocalRadiusSq),
             aabbMin, aabbMax,
             (IReadOnlyList<NifWaterGeometry>?)waterPlanesLocal ?? Array.Empty<NifWaterGeometry>())
         {
@@ -2162,21 +2272,23 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
     ///     cannot be published as a complete mesh. Pinned fallback/synthetic entries are accepted;
     ///     <see cref="GpuTextureCache12.Release" /> deliberately ignores them.
     /// </summary>
-    private void ReleaseSubmeshTextures(IEnumerable<CachedSubmesh12> submeshes)
+    private static void ReleaseSubmeshTextures(
+        IEnumerable<CachedSubmesh12> submeshes,
+        GpuTextureCache12 textureCache)
     {
         foreach (var submesh in submeshes)
         {
-            _textureCache.Release(submesh.Diffuse);
-            _textureCache.Release(submesh.Normal);
-            _textureCache.Release(submesh.SpecularMap);
-            _textureCache.Release(submesh.GradientMap);
-            _textureCache.Release(submesh.Lighting30GlowMap);
-            _textureCache.Release(submesh.BgsmGlowMap);
-            _textureCache.Release(submesh.EnvMap);
-            _textureCache.Release(submesh.ClassicEnvMap);
-            _textureCache.Release(submesh.ClassicEnvMask);
-            _textureCache.Release(submesh.ClassicParallaxHeightMap);
-            _textureCache.Release(submesh.StarfieldOpacity);
+            textureCache.Release(submesh.Diffuse);
+            textureCache.Release(submesh.Normal);
+            textureCache.Release(submesh.SpecularMap);
+            textureCache.Release(submesh.GradientMap);
+            textureCache.Release(submesh.Lighting30GlowMap);
+            textureCache.Release(submesh.BgsmGlowMap);
+            textureCache.Release(submesh.EnvMap);
+            textureCache.Release(submesh.ClassicEnvMap);
+            textureCache.Release(submesh.ClassicEnvMask);
+            textureCache.Release(submesh.ClassicParallaxHeightMap);
+            textureCache.Release(submesh.StarfieldOpacity);
         }
     }
 
@@ -2332,14 +2444,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         }
     }
 
-    private enum MeshMaterializationStatus
+    internal enum MeshMaterializationStatus
     {
         Success,
         RenderEmpty,
         RetryableFailure
     }
 
-    private readonly record struct MeshMaterializationResult(
+    internal readonly record struct MeshMaterializationResult(
         MeshMaterializationStatus Status,
         CachedNifMesh12? Mesh)
     {

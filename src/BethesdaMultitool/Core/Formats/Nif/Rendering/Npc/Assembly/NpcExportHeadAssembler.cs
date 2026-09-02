@@ -65,7 +65,11 @@ internal static class NpcExportHeadAssembler
 
                     if (part.Skin != null && nodeIndicesByBoneName != null)
                     {
-                        NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByBoneName);
+                        NpcExportSceneBuilder.AddSkinnedPart(
+                            scene,
+                            part,
+                            nodeIndicesByBoneName,
+                            headPlan.BaseHeadNifPath);
                     }
                     else
                     {
@@ -188,7 +192,11 @@ internal static class NpcExportHeadAssembler
 
                     if (part.Skin != null && nodeIndicesByBoneName != null)
                     {
-                        NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByBoneName);
+                        NpcExportSceneBuilder.AddSkinnedPart(
+                            scene,
+                            part,
+                            nodeIndicesByBoneName,
+                            npc.BaseHeadNifPath);
                     }
                     else
                     {
@@ -364,6 +372,7 @@ internal static class NpcExportHeadAssembler
     {
         foreach (var facePartPath in new[]
                  {
+                     npc.EarNifPath,
                      npc.MouthNifPath,
                      npc.LowerTeethNifPath,
                      npc.UpperTeethNifPath,
@@ -429,6 +438,15 @@ internal static class NpcExportHeadAssembler
                     bonelessAttachmentTransform,
                     facePartPath,
                     NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
+            }
+
+            if (string.Equals(facePartPath, npc.EarNifPath, StringComparison.OrdinalIgnoreCase) &&
+                npc.EarTexturePath != null)
+            {
+                foreach (var submesh in partModel.Submeshes)
+                {
+                    submesh.DiffuseTexturePath = npc.EarTexturePath;
+                }
             }
 
             WeldSubmeshSeams(partModel);

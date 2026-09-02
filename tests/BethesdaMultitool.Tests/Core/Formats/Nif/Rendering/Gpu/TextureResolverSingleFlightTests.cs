@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Tests.Helpers;
@@ -7,6 +8,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 
 public sealed class TextureResolverSingleFlightTests
 {
+    [Fact]
+    public void NifGpuTextureResolver_GeneratedSceneTexturePrecedesArchiveSources()
+    {
+        var texture = TestTextures.Single(12, 34, 56, 78);
+        var generated = new Dictionary<string, DecodedTexture>(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"textures\facegen_egt\actor.dds"] = texture
+        };
+        using var resolver = new NifGpuTextureResolver(Array.Empty<string>(), generated);
+
+        var payload = resolver.GetTexture(@"Textures/FaceGen_EGT/ACTOR.DDS");
+
+        var resolved = Assert.IsType<GpuTexturePayload>(payload);
+        Assert.Equal(GpuTexturePayloadFormat.Rgba8, resolved.Format);
+        Assert.Same(texture.Pixels, resolved.MipLevels[0].Bytes);
+    }
+
     [Fact]
     public async Task NifGpuTextureResolver_ConcurrentColdMisses_RunOneLoadForPath()
     {

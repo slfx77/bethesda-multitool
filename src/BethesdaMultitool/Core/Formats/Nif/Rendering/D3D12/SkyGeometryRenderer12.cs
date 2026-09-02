@@ -97,14 +97,33 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
 
-        var vs = CompileEmbeddedShader("sky_geo.vert.hlsl", "main", "vs_5_1");
-        var ps = CompileEmbeddedShader("sky_geo.frag.hlsl", "main", "ps_5_1");
+        ID3D12PipelineState? gradient = null;
+        ID3D12PipelineState? stars = null;
+        ID3D12PipelineState? clouds = null;
+        try
+        {
+            var vs = CompileEmbeddedShader("sky_geo.vert.hlsl", "main", "vs_5_1");
+            var ps = CompileEmbeddedShader("sky_geo.frag.hlsl", "main", "ps_5_1");
 
-        _psoGradient = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Opaque);
-        _psoStars = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Additive);
-        _psoClouds = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Alpha);
+            gradient = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Opaque);
+            stars = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Additive);
+            clouds = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Alpha);
+            var fallback = GenerateGradientDome();
 
-        (_fallbackVerts, _fallbackIndices) = GenerateGradientDome();
+            // Publish only after the whole renderer is viable. Before this assignment the local
+            // transaction below is the sole owner, so a failed later PSO cannot leak earlier ones.
+            _psoGradient = gradient;
+            _psoStars = stars;
+            _psoClouds = clouds;
+            (_fallbackVerts, _fallbackIndices) = fallback;
+        }
+        catch
+        {
+            clouds?.Dispose();
+            stars?.Dispose();
+            gradient?.Dispose();
+            throw;
+        }
     }
 
     // A low-res UV-sphere of unit directions (Z up); the gradient PS reads dir.z for the horizon→top blend
@@ -262,7 +281,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         Vector3 cloudTint, float cloudOpacity, Vector3 starTint, float starFade,
         float gameHour, AtmosphereState.ClimateTiming? cloudTiming, BethesdaGame game,
         float? animationTimeSeconds = null,
-        bool advanceCloudScroll = true)
+        bool advanceCloudScroll = true,
+        float? radiusOverride = null)
     {
         if (_disposed) return;
 
@@ -325,7 +345,11 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         // between the near and far planes. Starfield's unit is a metre and its far plane is
         // cell-scaled (~4,200 units at default draw distance), so the unscaled radius would put the
         // ENTIRE sky — gradient, stars, clouds, sun — beyond the far plane and it all clips away.
-        var radius = TargetRadius * GameProfiles.HumanScaleFactor(game);
+        var defaultRadius = TargetRadius * GameProfiles.HumanScaleFactor(game);
+        var radius = radiusOverride is { } requestedRadius &&
+                     float.IsFinite(requestedRadius) && requestedRadius > 0f
+            ? requestedRadius
+            : defaultRadius;
 
         // The procedural dome is strictly a missing-asset fallback. An authored Atmosphere.nif owns the
         // background whenever one was decoded, including its non-linear vertex blend bands.

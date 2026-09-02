@@ -363,7 +363,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             abort,
             "if (!_frameOpen) return false;",
             "CommandList.Close();",
-            "resource.Dispose();",
+            "DisposeNoThrow(resource, \"aborted-frame retirement\");",
             "_currentFrameRetirements.Clear();",
             "FrameIndex = (FrameIndex + 1) % FramesInFlight;",
             "_frameOpen = false;",

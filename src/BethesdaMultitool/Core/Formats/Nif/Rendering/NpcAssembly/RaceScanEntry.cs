@@ -13,6 +13,10 @@ internal sealed class RaceScanEntry
     public string? FemaleHeadModelPath { get; init; }
     public string? MaleHeadTexturePath { get; init; }
     public string? FemaleHeadTexturePath { get; init; }
+    public string? MaleEarModelPath { get; init; }
+    public string? FemaleEarModelPath { get; init; }
+    public string? MaleEarTexturePath { get; init; }
+    public string? FemaleEarTexturePath { get; init; }
     public string? MaleMouthModelPath { get; init; }
     public string? FemaleMouthModelPath { get; init; }
     public string? MaleLowerTeethModelPath { get; init; }
@@ -36,10 +40,22 @@ internal sealed class RaceScanEntry
     // Body mesh paths (from body parts section after NAM1)
     public string? MaleUpperBodyPath { get; init; }
     public string? FemaleUpperBodyPath { get; init; }
+    public string? MaleLowerBodyPath { get; init; }
+    public string? FemaleLowerBodyPath { get; init; }
+    public string? MaleHandPath { get; init; }
+    public string? FemaleHandPath { get; init; }
+    public string? MaleFootPath { get; init; }
+    public string? FemaleFootPath { get; init; }
     public string? MaleLeftHandPath { get; init; }
     public string? FemaleLeftHandPath { get; init; }
     public string? MaleRightHandPath { get; init; }
     public string? FemaleRightHandPath { get; init; }
     public string? MaleBodyTexturePath { get; init; }
     public string? FemaleBodyTexturePath { get; init; }
+    public string? MaleLowerBodyTexturePath { get; init; }
+    public string? FemaleLowerBodyTexturePath { get; init; }
+    public string? MaleHandTexturePath { get; init; }
+    public string? FemaleHandTexturePath { get; init; }
+    public string? MaleFootTexturePath { get; init; }
+    public string? FemaleFootTexturePath { get; init; }
 }

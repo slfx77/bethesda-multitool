@@ -423,158 +423,46 @@ internal sealed class ReferenceMeshDecoder12
                     if (textureOverride.Normal is not null) normalPath = textureOverride.Normal;
                 }
 
-                var alphaState = NifAlphaClassifier.Classify(sub, diffuseTexture: null);
-                var alphaRenderMode = alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage
-                    ? NifAlphaRenderMode.Blend
-                    : alphaState.RenderMode;
-                var hasBump = sub.Tangents != null &&
-                              sub.Bitangents != null &&
-                              !string.IsNullOrEmpty(normalPath);
-
-                var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
-                var specularEnabled = NifSpecularPolicy.IsEnabled(sub);
-                // Emissive (no-lighting/effect) shapes never take the specular path (spec is
-                // force-disabled below and the PS gates on non-emissive), so the specular-color
-                // slot carries their material emissive GLOW TINT instead: the engine renders
-                // texture × emissive (× mult) — e.g. BarrelPile03's goo is a white gradient sheet
-                // × green (0.05, 1, 0) × 2; without the tint it draws clipped white. Animated
-                // (controller) emissive wins over the static material color; no material = white.
-                // An ALL-ZERO emissive is treated as unauthored for this material policy: shipped
-                // no-lighting shapes with a black material emissive still
-                // render in-engine — SuperMutantBedding01's multiplicative shadow plane SHARES its
-                // mattress's material (emissive 0,0,0) and would otherwise multiply the frame to
-                // black — so black cannot be a modulator; fall back to no tint.
-                if (sub.IsEmissive)
-                {
-                    var glow = sub.AnimatedEmissiveColor ?? sub.EmissiveColor;
-                    specularColor = glow is { } g && (g.R > 0f || g.G > 0f || g.B > 0f)
-                        ? new Vector3(g.R, g.G, g.B)
-                        : Vector3.One;
-                }
+                var skin = skinsByShapeIndex is not null &&
+                           skinsByShapeIndex.TryGetValue(sub.SourceBlockIndex, out var resolvedSkin)
+                    ? resolvedSkin
+                    : null;
+                var sway = !sub.IsBillboard && !sub.IsParticleCloud &&
+                           physicsLiteRoutes.TryGetValue(sub.SourceBlockIndex, out var resolvedSway)
+                    ? resolvedSway
+                    : (PhysicsLiteSwayDescriptor?)null;
+                var rigidAnimation = !sub.IsBillboard && !sub.IsParticleCloud &&
+                                     rigidTracksByShapeBlock is not null &&
+                                     rigidTracksByShapeBlock.TryGetValue(
+                                         sub.SourceBlockIndex,
+                                         out var resolvedRigidAnimation)
+                    ? resolvedRigidAnimation
+                    : null;
+                var decodedSubmesh = ReferenceSubmeshDecoder12.Decode(
+                    sub,
+                    new ReferenceSubmeshDecodeOptions12(
+                        diffusePath,
+                        normalPath,
+                        gradientMapVOverride,
+                        nif,
+                        skin,
+                        sway,
+                        rigidAnimation,
+                        ParticleLiveSettings.Enabled));
 
                 if (DecodeDiagnosticsEnabled)
                 {
+                    var tint = decodedSubmesh.SpecularColor;
                     Console.WriteLine(
                         $"[decode-diag] '{sub.ShapeName}' emissive={sub.IsEmissive} " +
-                        $"tint=({specularColor.X:0.##},{specularColor.Y:0.##},{specularColor.Z:0.##}) " +
+                        $"tint=({tint.X:0.##},{tint.Y:0.##},{tint.Z:0.##}) " +
                         $"matEmissive={sub.EmissiveColor} anim={sub.AnimatedEmissiveColor} " +
-                        $"useVtxColors={sub.UseVertexColors} vtxColors={(sub.VertexColors is null ? "null" : sub.VertexColors.Length.ToString())} " +
+                        $"useVtxColors={sub.UseVertexColors} " +
+                        $"vtxColors={(sub.VertexColors is null ? "null" : sub.VertexColors.Length.ToString())} " +
                         $"blend={sub.SrcBlendMode}/{sub.DstBlendMode} diffuse={diffusePath ?? "(none)"}");
                 }
-                // The env term needs the _s map (mask + per-texel smoothness) even when the
-                // specular ENABLE flag is clear — fo76utils computes envMapScale from the raw
-                // strength before zeroing disabled specular.
-                var hasEnvMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) &&
-                                sub.EnvironmentMapScale > 0f;
-                var isTallGrass = string.Equals(
-                    sub.ShaderMetadata?.PropertyType,
-                    "TallGrassShaderProperty",
-                    StringComparison.Ordinal);
-                var localBounds = NifLocalBoundsResolver.Resolve(sub);
 
-                submeshes.Add(new DecodedSubmesh12(
-                    // Keep the authored alpha only in this explicit reference-renderer route.
-                    // The TallGrass VS consumes it as wind weight, then writes coverage alpha 1.
-                    GpuMeshUploader.BuildVertices(sub, preserveAuthoredVertexAlpha: isTallGrass),
-                    sub.Triangles,
-                    diffusePath,
-                    hasBump ? normalPath : null,
-                    hasBump,
-                    alphaRenderMode,
-                    alphaState.HasAlphaBlend,
-                    alphaState.HasAlphaTest,
-                    sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
-                        ? sub.StarfieldMaterialAlpha.AlphaTestThreshold
-                        : alphaState.AlphaTestThreshold / 255f,
-                    alphaState.AlphaTestFunction,
-                    alphaState.SrcBlendMode,
-                    alphaState.DstBlendMode,
-                    alphaState.MaterialAlpha,
-                    sub.IsDoubleSided,
-                    sub.IsEmissive,
-                    localBounds.Center,
-                    localBounds.Radius,
-                    sub.IsBillboard,
-                    specularColor,
-                    sub.MaterialGlossiness,
-                    specularEnabled,
-                    sub.IsLeafBillboard,
-                    alphaState.DepthWritingBlend,
-                    specularEnabled || hasEnvMap ? sub.SpecularMapTexturePath : null,
-                    sub.GradientMapTexturePath,
-                    // FO4-family MODC: the base record's Color Remapping Index overrides the
-                    // material's gradient-palette row (fo76utils render.cpp) — the engine's
-                    // shared-mesh colorway mechanism. One crate BGSM bakes V=1.0 (the red row);
-                    // Gray/Yellow/Blue come from per-STAT MODC. Only meaningful when the material
-                    // actually has a gradient map.
-                    gradientMapVOverride is { } remapV && sub.GradientMapTexturePath is not null
-                        ? remapV
-                        : sub.GradientMapV,
-                    sub.IsDecal,
-                    new Vector3(sub.EffectTint.R, sub.EffectTint.G, sub.EffectTint.B),
-                    sub.EffectFalloff is { } falloff
-                        ? new Vector4(falloff.StartAngle, falloff.StopAngle, falloff.StartOpacity, falloff.StopOpacity)
-                        : default,
-                    HasEffectFalloff: sub.EffectFalloff is not null,
-                    EnvironmentMapTexturePath: hasEnvMap ? sub.EnvironmentMapTexturePath : null,
-                    EnvironmentMapScale: hasEnvMap ? sub.EnvironmentMapScale : 0f,
-                    EnvironmentMapSmoothness: hasEnvMap ? sub.EnvironmentMapSmoothness : 0f,
-                    UvScrollVelocity: sub.UvScrollVelocity,
-                    Skin: skinsByShapeIndex is not null &&
-                          skinsByShapeIndex.TryGetValue(sub.SourceBlockIndex, out var skin)
-                        ? skin
-                        : null,
-                    IsSpeedTreeBranch: sub.IsSpeedTreeBranch,
-                    SpeedTreeWindSpeeds: sub.SpeedTreeWindSpeeds,
-                    ClampTextureU: sub.ClampTextureU,
-                    ClampTextureV: sub.ClampTextureV,
-                    IsParticleCloud: sub.IsParticleCloud,
-                    SoftParticleFalloffDepth: sub.SoftParticleFalloffDepth,
-                    MaterialAlphaController: sub.MaterialAlphaController,
-                    PhysicsLiteSway: !sub.IsBillboard && !sub.IsParticleCloud &&
-                                      physicsLiteRoutes.TryGetValue(sub.SourceBlockIndex, out var sway)
-                        ? sway
-                        : null,
-                    RigidNodeAnimation: !sub.IsBillboard && !sub.IsParticleCloud &&
-                                        rigidTracksByShapeBlock is not null &&
-                                        rigidTracksByShapeBlock.TryGetValue(
-                                            sub.SourceBlockIndex, out var rigidTrack)
-                        ? rigidTrack
-                        : null,
-                    ParticleRuntime: ParticleLiveSettings.Enabled ? sub.ParticleRuntime : null,
-                    SpeedTreeLod: sub.SpeedTreeLod,
-                    IsLighting30: sub.IsLighting30,
-                    Lighting30GlowMapTexturePath: sub.Lighting30GlowMapTexturePath,
-                    Lighting30EmissionColor: sub.Lighting30EmissionColor is { } lighting30Emission
-                        ? new Vector3(lighting30Emission.R, lighting30Emission.G, lighting30Emission.B)
-                        : Vector3.Zero,
-                    Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier,
-                    IsTallGrass: isTallGrass,
-                    ClassicEnvironmentMapTexturePath: sub.ClassicEnvironmentMapTexturePath,
-                    ClassicEnvironmentMaskTexturePath: sub.ClassicEnvironmentMaskTexturePath,
-                    ClassicEnvironmentMapScale: sub.ClassicEnvironmentMapScale,
-                    ClassicEnvironmentMapUsesWindowReflection:
-                        sub.ClassicEnvironmentMapUsesWindowReflection,
-                    ClassicEnvironmentMapIsSphereMap: sub.ClassicEnvironmentMapIsSphereMap,
-                    ClassicParallaxHeightMapTexturePath:
-                        sub.ClassicParallaxHeightMapTexturePath,
-                    ClassicBasicShaderMode: nif is not null
-                        ? FnvClassicBasicShaderPolicy.Resolve(nif, sub, diffusePath, normalPath)
-                        : FnvClassicBasicShaderMode.None,
-                    SourceBlockIndex: sub.SourceBlockIndex,
-                    BillboardMode: sub.BillboardMode,
-                    EngineZWriteOff: alphaState.EngineZWriteOff,
-                    DepthTestOff: alphaState.DepthTestOff,
-                    // Emissive shapes are excluded: their engine output is matEmissive-only and the
-                    // specularColor slot above already carries the glow tint, so a diffuse base
-                    // bind would wrongly modulate the glow.
-                    MaterialDiffuse: !sub.IsEmissive && sub.MaterialDiffuse is { } materialDiffuse
-                        ? new Vector3(materialDiffuse.R, materialDiffuse.G, materialDiffuse.B)
-                        : (Vector3?)null,
-                    StarfieldMaterialColor: sub.StarfieldMaterialColor,
-                    StarfieldMaterialAlpha: sub.StarfieldMaterialAlpha,
-                    BgsmGlowMapTexturePath: sub.BgsmGlowMapTexturePath,
-                    BgsmEmissionColor: sub.BgsmEmissionColor));
+                submeshes.Add(decodedSubmesh);
             }
 
             if (submeshes.Count == 0)

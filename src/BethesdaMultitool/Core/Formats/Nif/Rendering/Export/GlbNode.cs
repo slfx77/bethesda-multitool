@@ -9,6 +9,9 @@ internal sealed class GlbNode
 
     public string? LookupName { get; init; }
 
+    /// <summary>Originating NIF object block, when this node has a one-to-one source identity.</summary>
+    public int? SourceBlockIndex { get; init; }
+
     public int? ParentIndex { get; init; }
 
     public required Matrix4x4 LocalTransform { get; init; }

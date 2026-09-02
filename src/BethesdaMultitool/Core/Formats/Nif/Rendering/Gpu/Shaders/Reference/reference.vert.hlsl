@@ -75,6 +75,7 @@ struct VSInput
     float3 aBitangent   : TEXCOORD5;
 };
 
+#if !defined(REFERENCE_MODERN_STANDARD) && !defined(REFERENCE_STARFIELD_DIFFUSE_LIT)
 bool IsTallGrassMaterial(float packedState)
 {
     return (((uint)round(packedState)) & 32u) != 0u;
@@ -117,6 +118,20 @@ float WrapTallGrassPhase(float phase)
     if (phase < 0.0) phase += TwoPi;
     return phase - Pi;
 }
+#endif
+
+// The specialized PS inputs are intentionally sparse. D3D12 links the compiled stage signatures by
+// physical registers, so the direct viewer VS must omit exactly the same unused fields as the
+// instanced VS; compiling the generic TEXCOORD0..17 output against either compact PS is invalid.
+#if defined(REFERENCE_MODERN_STANDARD) || defined(REFERENCE_STARFIELD_DIFFUSE_LIT)
+#define REFERENCE_SPECIALIZED_DIRECT_VERTEX 1
+#endif
+#if !defined(REFERENCE_SPECIALIZED_DIRECT_VERTEX) || defined(REFERENCE_MODERN_STANDARD_ALPHA_GREATER) || defined(REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER)
+#define REFERENCE_DIRECT_OUTPUT_ALPHA_STATE 1
+#endif
+#if !defined(REFERENCE_SPECIALIZED_DIRECT_VERTEX) || defined(REFERENCE_MODERN_STANDARD)
+#define REFERENCE_DIRECT_OUTPUT_MODERN_STATE 1
+#endif
 
 struct VSOutput
 {
@@ -126,25 +141,44 @@ struct VSOutput
     float4 vVertexColor : TEXCOORD2;
     float3 vTangent     : TEXCOORD3;
     float3 vBitangent   : TEXCOORD4;
+#ifdef REFERENCE_DIRECT_OUTPUT_ALPHA_STATE
     nointerpolation float4 vAlphaState  : TEXCOORD5;
+#endif
     nointerpolation float4 vRenderState : TEXCOORD6;
     nointerpolation float4 vTextureState : TEXCOORD7;
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;  // world-space position for per-pixel distance fog
+#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
+#endif
+#ifdef REFERENCE_STARFIELD_DIFFUSE_LIT
+    // Starfield-only union arm: uEffectFalloff carries CE2-expanded RGB + linear Lerp weight.
+    nointerpolation float4 vStarfieldMaterialColor : TEXCOORD10;
+#endif
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
+#endif
+#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE
     nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
+#endif
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     nointerpolation float4 vSoftParticle  : TEXCOORD14;
+#endif
+#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE
     nointerpolation float vSpecularLodFade : TEXCOORD15;
+#endif
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
     // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
     nointerpolation float4 vHeatmap : TEXCOORD17;
+#endif
 };
 
 VSOutput main(VSInput input)
 {
     VSOutput o;
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     // FormID-heatmap payload (debug overlay): ramp rgb + a 2.0 flag in uWorld's w-lanes
     // (uWorld[3]), written per draw by the CPU for in-range references. Ordinary affine draws
     // carry exactly 1.0 in uWorld[3].w and the FNV grass lighting payload caps its w-lane at
@@ -156,6 +190,7 @@ VSOutput main(VSInput input)
         : float4(0.0, 0.0, 0.0, 0.0);
     bool isTallGrass = IsTallGrassMaterial(uTextureState.z);
     float tallGrassWindWeight = isTallGrass ? saturate(input.aVertexColor.a) : 0.0;
+#endif
     float4 worldPos;
     if (uTextureState.y > 0.5)
     {
@@ -183,6 +218,7 @@ VSOutput main(VSInput input)
         worldPos.w = 1.0;
     }
 
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     // The per-draw path uses a layout-preserving union: uSoftParticle is GRASS2000 WindData for
     // an actual FNV GRAS placement. Apply displacement in WORLD XY after the object transform,
     // and recover absolute phase XY through uCameraOrigin.
@@ -196,6 +232,7 @@ VSOutput main(VSInput input)
             tallGrassWindWeight * tallGrassWindWeight;
         worldPos.xy += uSoftParticle.xy * weightedOffset;
     }
+#endif
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For
@@ -211,28 +248,49 @@ VSOutput main(VSInput input)
     }
     o.vTexCoord = input.aTexCoord + uUvScroll.xy;
     o.vVertexColor = input.aVertexColor;
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     if (isTallGrass)
     {
         // Vertex alpha is wind weight only; diffuse texture alpha remains the sole cutout input.
         o.vVertexColor.a = 1.0;
     }
+#endif
     o.vTangent = mul((float3x3)uWorld, input.aTangent);
     o.vBitangent = mul((float3x3)uWorld, input.aBitangent);
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     float activeAdtUniformScale = length(mul((float3x3)uWorld, float3(1.0, 0.0, 0.0)));
     o.vFnvActiveAdtBaseLight = IsFnvActiveAdtBaseMaterial(uTextureState.z)
         ? ResolveFnvActiveAdtBaseLight(
             o.vTangent, o.vBitangent, o.vWorldNormal, activeAdtUniformScale)
         : 0.0.xxx;
+#endif
+#ifdef REFERENCE_DIRECT_OUTPUT_ALPHA_STATE
     o.vAlphaState = uAlphaState;
+#endif
     o.vRenderState = uRenderState;
     o.vTextureState = uTextureState;
     o.vTexIndices = uTexIndices;
+#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE
     o.vSpecular = uSpecular;
+#endif
+#ifdef REFERENCE_STARFIELD_DIFFUSE_LIT
+    o.vStarfieldMaterialColor = uEffectFalloff;
+#endif
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     o.vEffectTint = uEffectTint;
     o.vEffectFalloff = uEffectFalloff;
+#endif
+#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE
     o.vEnvMap = uEnvMap;
+#endif
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     o.vSoftParticle = isTallGrass ? 0.0 : uSoftParticle;
+#endif
+#ifdef REFERENCE_DIRECT_OUTPUT_MODERN_STATE
     o.vSpecularLodFade = uUvScroll.z;
+#endif
+#ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     o.vHeatmap = heatmap;
+#endif
     return o;
 }

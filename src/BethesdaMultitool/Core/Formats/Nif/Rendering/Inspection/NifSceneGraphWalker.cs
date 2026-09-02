@@ -21,6 +21,13 @@ internal static class NifSceneGraphWalker
         "NiBSAnimationNode", "NiBSParticleNode"
     ];
 
+    /// <summary>
+    ///     Bethesda tree-animation containers whose descendant geometry stores wind deformation data in
+    ///     vertex alpha. That channel is shader input, not surface opacity; diffuse alpha remains the
+    ///     foliage-coverage source.
+    /// </summary>
+    internal static readonly HashSet<string> TreeAnimationNodeTypes = ["BSLeafAnimNode", "BSTreeNode"];
+
     internal static readonly HashSet<string> ShapeTypes =
     [
         "NiTriShape", "NiTriStrips", "BSLODTriShape",
@@ -281,6 +288,37 @@ internal static class NifSceneGraphWalker
                 }
 
                 CollectDescendantShapes(children[ordinal], nif, nodeChildren, result, []);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Returns every renderable shape below a Bethesda tree-animation container. The result is based
+    ///     on graph ancestry rather than shape/material names, so modern self-contained
+    ///     <c>BSTriShape</c> variants and classic <c>NiTriShape</c> trees share the same semantic.
+    /// </summary>
+    internal static HashSet<int> CollectTreeAnimationShapes(
+        NifInfo nif,
+        IReadOnlyDictionary<int, List<int>> nodeChildren)
+    {
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(nodeChildren);
+
+        var result = new HashSet<int>();
+        var visited = new HashSet<int>();
+        for (var nodeIndex = 0; nodeIndex < nif.Blocks.Count; nodeIndex++)
+        {
+            if (!TreeAnimationNodeTypes.Contains(nif.Blocks[nodeIndex].TypeName) ||
+                !nodeChildren.TryGetValue(nodeIndex, out var children))
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                CollectDescendantShapes(child, nif, nodeChildren, result, visited);
             }
         }
 

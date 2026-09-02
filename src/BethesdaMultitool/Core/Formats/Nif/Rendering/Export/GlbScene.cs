@@ -39,7 +39,8 @@ internal sealed class GlbScene
         Matrix4x4 localTransform,
         Matrix4x4 worldTransform,
         GlbNodeKind kind,
-        string? lookupName = null)
+        string? lookupName = null,
+        int? sourceBlockIndex = null)
     {
         var nodeIndex = Nodes.Count;
         Nodes.Add(new GlbNode
@@ -49,7 +50,8 @@ internal sealed class GlbScene
             LocalTransform = localTransform,
             WorldTransform = worldTransform,
             Kind = kind,
-            LookupName = lookupName
+            LookupName = lookupName,
+            SourceBlockIndex = sourceBlockIndex
         });
 
         if (!string.IsNullOrWhiteSpace(lookupName) && !_namedNodes.ContainsKey(lookupName))

@@ -57,6 +57,8 @@ internal static class GpuTextureFormatHelpers12
             GpuTexturePayloadFormat.BC4 => Format.BC4_UNorm,
             GpuTexturePayloadFormat.BC5 => Format.BC5_UNorm,
             GpuTexturePayloadFormat.BC7 => Format.BC7_UNorm,
+            GpuTexturePayloadFormat.BC4S => Format.BC4_SNorm,
+            GpuTexturePayloadFormat.BC5S => Format.BC5_SNorm,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
     }

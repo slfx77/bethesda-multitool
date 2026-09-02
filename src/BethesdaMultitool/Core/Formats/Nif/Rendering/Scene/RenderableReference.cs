@@ -1,6 +1,9 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
 
@@ -41,7 +44,10 @@ internal readonly record struct RenderableReference(
     // Raw positive finite GRAS DATA WavePeriod field. The recovered shader consumes this value
     // as a direct phase multiplier; the field name deliberately avoids claiming seconds/period
     // or a reciprocal conversion that the retail evidence does not support.
-    float GrassWaveMultiplier = 0f)
+    float GrassWaveMultiplier = 0f,
+    // FO4-family BNDS bases intentionally have no MODL. Their generated tube rides the ordinary
+    // reference batch/cache path under ModelPath's synthetic CacheKey.
+    BendableSplineRenderMesh? BendableSplineMesh = null)
 {
     /// <summary>
     ///     Cull-sphere radius (world units) used for a reference whose base record has NO OBND, until its
@@ -292,6 +298,62 @@ internal readonly record struct RenderableReference(
             IsLodDuplicateBaseEditorId(placement.BaseEditorId),
             category,
             alternateTextures);
+    }
+
+    /// <summary>
+    ///     Builds a renderable FO4-family BNDS placement. This is deliberately separate from
+    ///     <see cref="TryBuild" />: a bendable spline has no MODL by design, so admitting it through
+    ///     the ordinary factory would weaken that factory's useful missing-model guard.
+    /// </summary>
+    public static RenderableReference? TryBuildBendableSpline(
+        PlacedReference placement,
+        BendableSplineRecord definition,
+        TextureSetRecord? textureSet,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown,
+        bool xespDisabled = false)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        ArgumentNullException.ThrowIfNull(definition);
+
+        if (placement.RecordType is "ACHR" or "ACRE" ||
+            placement.BendableSpline is not { } parameters ||
+            definition.Data is not { } definitionData ||
+            !float.IsFinite(placement.X) ||
+            !float.IsFinite(placement.Y) ||
+            !float.IsFinite(placement.Z))
+        {
+            return null;
+        }
+
+        var mesh = BendableSplineGeometry.TryBuild(
+            placement.FormId,
+            definitionData,
+            parameters,
+            textureSet);
+        if (mesh is null)
+        {
+            return null;
+        }
+
+        var world = ComposeWorldMatrix(placement);
+        var boundsCenter = Vector3.Transform(mesh.LocalBoundsCenter, world);
+        var scale = placement.Scale > 0f && float.IsFinite(placement.Scale)
+            ? placement.Scale
+            : 1f;
+        var boundsRadius = mesh.LocalBoundsRadius * scale;
+
+        return new RenderableReference(
+            placement.FormId,
+            world,
+            mesh.CacheKey,
+            boundsCenter,
+            boundsRadius,
+            ComputeMeshId(mesh.CacheKey),
+            placement.IsInitiallyDisabled || xespDisabled,
+            IsMarker: false,
+            IsImposter: false,
+            category,
+            BendableSplineMesh: mesh);
     }
 
     private static void DumpRefr(PlacedReference p, Matrix4x4 world)

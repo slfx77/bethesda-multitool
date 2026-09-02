@@ -312,6 +312,42 @@ internal sealed class NifTextureResolver : IDisposable
     }
 
     /// <summary>
+    ///     Resolves the exact CE2 effect settings used by the bounded Mesh Viewer glass-alpha path.
+    /// </summary>
+    internal StarfieldMaterialEffectPolicy ResolveStarfieldEffectPolicy(string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldEffectPolicy(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     Resolves an exactly representable looping UV-offset controller on CE2 material layer zero.
+    /// </summary>
+    internal StarfieldMaterialUvAnimationPolicy ResolveStarfieldBaseLayerUvAnimation(
+        string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldBaseLayerUvAnimation(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     Resolves the effective CE2 root ShaderRoute. Null fails closed; callers may select a
+    ///     specialized renderer only from an explicitly decoded route.
+    /// </summary>
+    internal StarfieldMaterialShaderRoute? ResolveStarfieldShaderRoute(string materialPath)
+    {
+        return MaterialTexturePathResolver.ResolveStarfieldShaderRoute(materialPath, _sources);
+    }
+
+    /// <summary>
+    ///     True only when a Starfield material exists in the compiled database but resolves no
+    ///     diffuse image or flat replacement colour. Missing material records remain false so
+    ///     callers can keep broken content visibly diagnostic instead of silently dropping it.
+    /// </summary>
+    internal bool IsStarfieldNoDrawMaterial(string materialPath)
+    {
+        return MaterialTexturePathResolver.IsStarfieldNoDrawMaterial(materialPath, _sources);
+    }
+
+    /// <summary>
     ///     Resolves the fail-closed CE2 ORM policy consumed by Mesh Viewer GLB export. This does not
     ///     opt the D3D12/world renderer into glTF PBR semantics.
     /// </summary>

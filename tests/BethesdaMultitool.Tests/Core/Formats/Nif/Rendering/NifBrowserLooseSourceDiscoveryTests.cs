@@ -50,7 +50,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
     }
 
     [Fact]
-    public void CreateFromDirectory_ExplicitTextureSources_TakePrecedenceOverDiscovery()
+    public void CreateFromDirectory_ExplicitTextureSources_PrecedeButDoNotReplaceDiscovery()
     {
         var tempRoot = Directory.CreateTempSubdirectory("nifbrowser_loose_override_").FullName;
         try
@@ -62,7 +62,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
 
             using var service = NifBrowserService.CreateFromDirectory(meshesRoot, [explicitRoot]);
 
-            Assert.Equal(explicitRoot, Assert.Single(service.TexturePaths));
+            Assert.Equal([explicitRoot, dataRoot], service.TexturePaths);
         }
         finally
         {
@@ -83,6 +83,29 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
             using var service = NifBrowserService.CreateFromDirectory(dataRoot);
 
             Assert.Equal(dataRoot, Assert.Single(service.TexturePaths));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CreateFromDirectory_TrailingSeparatorOverride_DeduplicatesDiscoveredDataRoot()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory("nifbrowser_loose_dedupe_").FullName;
+        try
+        {
+            var dataRoot = Directory.CreateDirectory(Path.Combine(tempRoot, "Data")).FullName;
+            var meshesRoot = Directory.CreateDirectory(Path.Combine(dataRoot, "meshes")).FullName;
+            Directory.CreateDirectory(Path.Combine(dataRoot, "textures"));
+            var preferredSpelling = dataRoot + Path.DirectorySeparatorChar;
+
+            using var service = NifBrowserService.CreateFromDirectory(
+                meshesRoot,
+                [preferredSpelling]);
+
+            Assert.Equal(preferredSpelling, Assert.Single(service.TexturePaths));
         }
         finally
         {

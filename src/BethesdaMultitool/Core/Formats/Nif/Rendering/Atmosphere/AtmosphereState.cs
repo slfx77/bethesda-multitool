@@ -862,9 +862,9 @@ public static class AtmosphereState
         return Vector3.Normalize(dir);
     }
 
-    // FNV GMSTs verified from FalloutNV.esm: fSunXExtreme=800, fSunYExtreme=−100 → noon
-    // apex atan(800/100) ≈ 83° with the sun slightly on the −Y (south) side. FO3 shares the engine
-    // path; its GMSTs are unverified, so it rides the FNV values as a labeled stand-in. No z floor:
+    // Retail FO3 and FNV GMSTs are byte-identical: fSunXExtreme=800, fSunYExtreme=−100 → noon
+    // apex atan(800/100) ≈ 83° with the sun slightly on the −Y (south) side. Verified directly in
+    // Fallout3.esm and FalloutNV.esm (each GMST DATA float is 0x44480000 / 0xC2C80000). No z floor:
     // FNV has no shadow-min-angle clamp (FO4-only), and the night leg is unused (SunDirection's night
     // return keeps the (0,0,−1) convention the horizon-glow gating depends on).
     internal static Vector3 Fo4SunPathDirection(

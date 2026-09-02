@@ -186,6 +186,7 @@ internal static class NifGeometryExtractor
         var shapeSkinInstanceMap = new Dictionary<int, int>();
         NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap,
             shapeSkinInstanceMap);
+        var treeAnimationShapes = NifSceneGraphWalker.CollectTreeAnimationShapes(nif, nodeChildren);
 
         // Remove specific block indices (e.g., shapes under NiVisController-targeted nodes)
         if (excludeBlockIndices is { Count: > 0 })
@@ -393,6 +394,7 @@ internal static class NifGeometryExtractor
 
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
+            var isTreeAnimationShape = treeAnimationShapes.Contains(shapeIndex);
             // Resolve texture paths and shader flags from shader properties
             var shapeName = NifBlockParsers.ReadBlockName(
                 data,
@@ -410,7 +412,9 @@ internal static class NifGeometryExtractor
             // advisory, not gating. (Skyrim+ BSLightingShaderProperty overrides this below — its
             // SLSF flags ARE authoritative.)
             var useVertexColors = true;
-            var useVertexAlpha = true;
+            // BSLeafAnimNode/BSTreeNode descendants use vertex alpha as wind-deformation data.
+            // Keep the raw byte stream, but do not feed that channel into surface coverage.
+            var useVertexAlpha = !isTreeAnimationShape;
             string? specularMapPath = null;
             string? gradientMapPath = null;
             var gradientMapV = 0.5f;
@@ -442,6 +446,7 @@ internal static class NifGeometryExtractor
             var effectTint = (R: 1f, G: 1f, B: 1f);
             var staticUvOffset = Vector2.Zero;
             var staticUvScale = Vector2.One;
+            var materialUvScrollVelocity = Vector2.Zero;
             var clampTextureU = false;
             var clampTextureV = false;
             (float, float, float, float)? effectFalloff = null;
@@ -460,7 +465,9 @@ internal static class NifGeometryExtractor
                     staticUvOffset = shaderMetadata.UvOffset;
                     staticUvScale = shaderMetadata.UvScale;
                     softParticleFalloffDepth = shaderMetadata.SoftEffectFalloffDepth ?? 0f;
-                    useVertexAlpha = NifVertexColorPolicy.UsesAlphaForOpacity(shaderMetadata);
+                    useVertexAlpha = NifVertexColorPolicy.UsesAlphaForOpacity(
+                        shaderMetadata,
+                        isTreeAnimationShape);
                     if (shaderMetadata.PropertyType == "TallGrassShaderProperty")
                     {
                         // FO3/FNV grass parity: TallGrassShader::PresetStages (0x82A9A810) sets the
@@ -671,10 +678,44 @@ internal static class NifGeometryExtractor
                 {
                     starfieldColorPolicy = textureResolver.ResolveStarfieldBaseColorPolicy(materialPath);
                     starfieldAlphaPolicy = textureResolver.ResolveStarfieldAlphaPolicy(materialPath);
+                    var materialAnimation =
+                        textureResolver.ResolveStarfieldBaseLayerUvAnimation(materialPath);
+                    if (materialAnimation.IsResolved)
+                    {
+                        var starfieldUv = textureResolver.ResolveStarfieldOrmPolicy(materialPath);
+                        if (starfieldUv.IsResolved &&
+                            !starfieldUv.HasMalformedStaticComponents &&
+                            starfieldUv.UvChannel == StarfieldMaterialUvChannel.One &&
+                            starfieldUv.TextureAddressMode == StarfieldMaterialTextureAddressMode.Wrap)
+                        {
+                            // BSBind::Float2DCurveController replaces UVOffset at runtime. The
+                            // bounded material reader admits only linear loops, which map exactly to
+                            // the renderer's existing per-draw UV-scroll constant. Scale still comes
+                            // from the bound layer-zero UV stream; the controller supplies its offset.
+                            staticUvScale = starfieldUv.UvScale;
+                            staticUvOffset = materialAnimation.InitialOffset;
+                            materialUvScrollVelocity = materialAnimation.Velocity;
+                        }
+                    }
+
                     // CE2 root ParamBool and the authored shader model both write Flag_TwoSided.
                     // A positive resolved material value can safely widen inline NIF state; an
                     // unresolved/false value does not erase an independently authored stencil flag.
                     isDoubleSided |= textureResolver.ResolveStarfieldRootTwoSided(materialPath) == true;
+
+                    // CE2 ShaderRoute::Water is the material-authored equivalent of the classic
+                    // WaterShaderProperty classification below. Carry it through the existing
+                    // sentinel so World Viewer diverts the real external-mesh triangles into
+                    // WaterRenderer12 and Mesh Viewer/GLB retains the translucent fallback.
+                    _ = StarfieldWaterMaterialRoute.TryApply(
+                        materialPath,
+                        textureResolver,
+                        ref diffusePath,
+                        ref starfieldColorPolicy,
+                        ref starfieldAlphaPolicy,
+                        ref hasAlphaBlend,
+                        ref hasAlphaTest,
+                        ref materialAlpha);
                 }
 
                 if (materialPath is not null && textureResolver?.TryGetMaterial(materialPath) is { } bgsm)
@@ -1008,6 +1049,10 @@ internal static class NifGeometryExtractor
                     NifUvScrollResolver.TryResolve(data, nif, shapeIndex, out var uvScroll))
                 {
                     submesh.UvScrollVelocity = uvScroll;
+                }
+                else if (materialUvScrollVelocity != Vector2.Zero)
+                {
+                    submesh.UvScrollVelocity = materialUvScrollVelocity;
                 }
 
                 // External_Emittance (classic BSShaderFlags bit 29 and Skyrim BSEffect). Lighting30

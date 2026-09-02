@@ -8,18 +8,27 @@ internal static class NifVertexColorPolicy
     ///     shaders use it only as a squared wind-displacement weight: GRASS2000.vso multiplies the
     ///     wind offset by <c>vColor.a^2</c>, while GRASS2000.pso compares <c>DiffuseMap.a</c>
     ///     directly with <c>AlphaTestRef</c>. Skyrim-family lighting shaders instead declare the
-    ///     choice through SLSF1_Vertex_Alpha (flags1 bit 3).
+    ///     choice through SLSF1_Vertex_Alpha (flags1 bit 3). When that explicit bit is readable it
+    ///     remains authoritative, including for Skyrim/FO4 tree nodes. FO76-era lighting metadata
+    ///     does not expose the legacy flags through this parser, so tree ancestry supplies the wind
+    ///     semantic only for that otherwise-ambiguous case.
     /// </summary>
-    internal static bool UsesAlphaForOpacity(NifShaderTextureMetadata? shaderMetadata)
+    internal static bool UsesAlphaForOpacity(
+        NifShaderTextureMetadata? shaderMetadata,
+        bool isTreeAnimationShape = false)
     {
         if (shaderMetadata?.PropertyType == "TallGrassShaderProperty")
         {
             return false;
         }
 
-        return shaderMetadata is not
-                   { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } flags1 } ||
-               (flags1 & 0x8u) != 0;
+        if (shaderMetadata is
+            { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } flags1 })
+        {
+            return (flags1 & 0x8u) != 0;
+        }
+
+        return !isTreeAnimationShape;
     }
 
     internal static bool HasVertexColorData(RenderableSubmesh submesh)

@@ -52,6 +52,15 @@ internal static class ShaderPermutations
                 new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1")
             ],
             "modern standard compact stage-link signature: GREATER cutout"),
+        new("reference.vert.hlsl", "main", "vs_5_1",
+            [new ShaderMacro("REFERENCE_MODERN_STANDARD", "1")],
+            "direct-viewer modern standard compact stage-link signature: opaque"),
+        new("reference.vert.hlsl", "main", "vs_5_1",
+            [
+                new ShaderMacro("REFERENCE_MODERN_STANDARD", "1"),
+                new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1")
+            ],
+            "direct-viewer modern standard compact stage-link signature: GREATER cutout"),
         new("reference_instanced.vert.hlsl", "main", "vs_5_1",
             [new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1")],
             "Starfield diffuse-lit compact stage-link signature: opaque"),
@@ -61,6 +70,15 @@ internal static class ShaderPermutations
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1")
             ],
             "Starfield diffuse-lit compact stage-link signature: GREATER cutout"),
+        new("reference.vert.hlsl", "main", "vs_5_1",
+            [new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1")],
+            "direct-viewer Starfield diffuse-lit compact stage-link signature: opaque"),
+        new("reference.vert.hlsl", "main", "vs_5_1",
+            [
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"),
+                new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1")
+            ],
+            "direct-viewer Starfield diffuse-lit compact stage-link signature: GREATER cutout"),
         new("reference_instanced.vert.hlsl", "main", "vs_5_1",
             [new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1")],
             "shadow-map replay: light-facing cards, wind compiled out"),

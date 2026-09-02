@@ -1263,6 +1263,11 @@ internal static class NifSubmeshExtractor
         var transformed = ApplySkinningOrTransform(
             mesh.Positions, mesh.Normals, mesh.Tangents, bitangents, transform, null, false, shapeName);
 
+        var vertexCount = transformed.Positions.Length / 3;
+        var materialVertexColors = colorPolicy.ResolveSupportedVertexColors(
+            mesh.VertexColors,
+            vertexCount);
+
         return new RenderableSubmesh
         {
             Positions = transformed.Positions,
@@ -1272,13 +1277,13 @@ internal static class NifSubmeshExtractor
             UVs = mesh.Uvs,
             // Starfield vertex colour is not automatically albedo. ParamBool slot 0 on the base
             // layer's MaterialID target selects it as tint, while Multiply can also be represented
-            // by an sRGB-expanded authored constant through the same lane. Lerp and unrepresentable
-            // constants fail closed in the policy helper. ColorChannelTypeComponent belongs to layer
-            // BLENDERS and cannot be used as a substitute enable signal. Multiply ignores tint alpha,
-            // so the policy always emits 255 until the separate AlphaSettings policy is decoded.
-            VertexColors = colorPolicy.ResolveSupportedVertexColors(
-                mesh.VertexColors, transformed.Positions.Length / 3),
-            StarfieldMaterialColor = colorPolicy.ResolveRenderState(),
+            // by an sRGB-expanded authored constant through the same lane. Missing/truncated streams
+            // and unrepresentable constants fail closed in the policy helper. ColorChannelTypeComponent
+            // belongs to layer BLENDERS and cannot be used as a substitute enable signal. Multiply
+            // neutralizes tint alpha; vertex Lerp preserves it as the blend weight. Neither route
+            // makes it coverage.
+            VertexColors = materialVertexColors,
+            StarfieldMaterialColor = colorPolicy.ResolveRenderState(materialVertexColors, vertexCount),
             StarfieldMaterialAlpha = alphaPolicy.ResolveRenderState(),
             Tangents = transformed.Tangents,
             Bitangents = transformed.Bitangents,

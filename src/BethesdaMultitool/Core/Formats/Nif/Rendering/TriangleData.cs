@@ -36,6 +36,12 @@ internal struct TriangleData
     public float R2, G2, B2, A2;
     public bool HasVertexColors;
 
+    // CE2 base-material vertex Lerp is a separate shader operation, not generic vertex colour.
+    // Keep its unmodified alpha bytes outside the opacity lane so a Lerp weight of zero cannot
+    // discard a pixel and a fractional weight cannot attenuate blending or alpha-to-coverage.
+    public bool IsStarfieldVertexLerp;
+    public float StarfieldVertexLerpA0, StarfieldVertexLerpA1, StarfieldVertexLerpA2;
+
     // Flat face normal shade (fallback when no vertex normals)
     public float FlatShade;
 
@@ -45,6 +51,7 @@ internal struct TriangleData
     // Textures
     public DecodedTexture? Texture;
     public DecodedTexture? NormalMap;
+    public DecodedTexture? StarfieldOpacityMap;
     public bool ClampTextureU;
     public bool ClampTextureV;
 

@@ -547,6 +547,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // The top-down "Rendered models" overlay bakes placement lists through this same cache, so
         // seed the category index here too (idempotent with the 3D control's LoadData).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
+        // Keep the shared placement cache order-independent: whichever tab bakes first must have
+        // the BNDS and TNAM/TXST indexes needed to materialize FO4 procedural power lines.
+        data.RenderCache.BendableSplineIndex = data.BendableSplinesByFormId;
+        data.RenderCache.TextureSetIndex = data.TextureSetsByFormId;
         data.RenderCache.LightIndex = data.LightsByFormId;
         data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceColorsByFormId;
         data.RenderCache.XespDisabledRefs = data.XespDisabledRefs;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -37,6 +38,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     private readonly AutoResetEvent _fenceEvent = new(false);
     private readonly Queue<FenceRetirement> _fenceRetirements = new();
     private readonly ulong[] _frameFenceValues = new ulong[FramesInFlight];
+    private readonly List<IDisposable> _unfencedSubmissionRetirements = new();
 
     private readonly GpuDevice12 _gpu;
     private bool _disposed;
@@ -45,6 +47,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     // WaitForFrameSlot + BeginFrame reports one total rather than only the second half.
     private bool _fenceWaitAccumulating;
     private bool _frameOpen;
+    private bool _submissionPoisoned;
     private ulong _nextFenceValue = 1;
 
     public GpuCommandRecorder12(GpuDevice12 gpu)
@@ -92,14 +95,59 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// <summary>Fence value signaled by the most recent <see cref="EndFrame" /> submission.</summary>
     public ulong LastSubmittedFenceValue { get; private set; }
 
-    public void Dispose()
+    public void Dispose() => DisposeCore(waitForGpuIdle: true);
+
+    /// <summary>
+    ///     Releases recorder-owned objects after the owner has already made its one best-effort idle
+    ///     wait. This keeps shared-context teardown from issuing a second queue signal after device
+    ///     removal while preserving <see cref="Dispose()" /> as the safe standalone API.
+    /// </summary>
+    internal void DisposeAfterGpuIdleAttempt() => DisposeCore(waitForGpuIdle: false);
+
+    private void DisposeCore(bool waitForGpuIdle)
     {
         if (_disposed) return;
         _disposed = true;
-        WaitForGpuIdle();
-        CommandList.Dispose();
-        foreach (var a in _allocators) a.Dispose();
-        _fenceEvent.Dispose();
+
+        if (waitForGpuIdle)
+        {
+            try
+            {
+                WaitForGpuIdle();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"GpuCommandRecorder12: GPU idle wait during teardown failed: {ex}");
+                if (!_gpu.TryForceDeviceRemoval("command-recorder-teardown"))
+                {
+                    // An owner cannot safely release allocator/retirement state after an unfenced
+                    // wait failure. The supported Windows runtime exposes RemoveDevice; keep the
+                    // same terminal queue/device-release fallback as the shared viewer context.
+                    _gpu.Dispose();
+                }
+            }
+        }
+
+        if (_frameOpen)
+        {
+            try
+            {
+                AbortFrame();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"GpuCommandRecorder12: abandoning the final open frame failed: {ex}");
+            }
+        }
+
+        RetireAllFenceResources();
+        DisposeNoThrow(CommandList, "command list");
+        foreach (var allocator in _allocators)
+        {
+            DisposeNoThrow(allocator, "command allocator");
+        }
+
+        DisposeNoThrow(_fenceEvent, "fence event");
     }
 
     /// <summary>
@@ -164,6 +212,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// </summary>
     public void WaitForFrameSlot()
     {
+        ThrowIfSubmissionPoisoned();
         if (_frameOpen)
         {
             return;
@@ -179,6 +228,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// </summary>
     public void BeginFrame()
     {
+        ThrowIfSubmissionPoisoned();
         if (_frameOpen) throw new InvalidOperationException("BeginFrame called twice without EndFrame.");
 
         WaitForFrameSlotFence();
@@ -240,7 +290,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
             {
                 foreach (var resource in _currentFrameRetirements)
                 {
-                    resource.Dispose();
+                    DisposeNoThrow(resource, "aborted-frame retirement");
                 }
             }
             finally
@@ -263,13 +313,51 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// </summary>
     public void EndFrame()
     {
+        EndFrameWithOutcome().ThrowIfFailed();
+    }
+
+    /// <summary>
+    ///     Ends a frame while preserving whether the command list may already be executing when a
+    ///     queue signal fails. The optional lifetime is transferred to the recorder only in that
+    ///     unfenced case; on success or a pre-execute failure it remains caller-owned.
+    /// </summary>
+    internal GpuCommandSubmissionOutcome12 EndFrameWithOutcome(IDisposable? retainIfUnfenced = null)
+    {
         if (!_frameOpen) throw new InvalidOperationException("EndFrame called without BeginFrame.");
 
-        CommandList.Close();
-        _gpu.DirectQueue.ExecuteCommandList(CommandList);
+        try
+        {
+            CommandList.Close();
+        }
+        catch (Exception ex)
+        {
+            return FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: false, retainIfUnfenced);
+        }
+
+        try
+        {
+            _gpu.DirectQueue.ExecuteCommandList(CommandList);
+        }
+        catch (Exception ex)
+        {
+            // ExecuteCommandLists has no HRESULT return. If its managed projection throws while
+            // crossing the native boundary, conservatively retain every referenced lifetime.
+            return FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: true, retainIfUnfenced);
+        }
 
         var signalValue = _nextFenceValue++;
-        _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
+        try
+        {
+            _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
+        }
+        catch (Exception ex)
+        {
+            // Execute succeeded, so releasing staging/readback resources here can race the GPU even
+            // though no usable completion fence was published. Poison future recording and retain
+            // those objects until the owner performs its final idle/device teardown.
+            return FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: true, retainIfUnfenced);
+        }
+
         _frameFenceValues[FrameIndex] = signalValue;
         LastSubmittedFenceValue = signalValue;
         for (var i = 0; i < _currentFrameRetirements.Count; i++)
@@ -283,6 +371,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         FrameIndex = (FrameIndex + 1) % FramesInFlight;
         _frameOpen = false;
         _fenceWaitAccumulating = false;
+        return GpuCommandSubmissionOutcome12.Success(signalValue);
     }
 
     /// <summary>
@@ -312,15 +401,75 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     {
         while (_fenceRetirements.TryDequeue(out var pending))
         {
-            pending.Resource.Dispose();
+            DisposeNoThrow(pending.Resource, "fence retirement");
         }
 
         foreach (var resource in _currentFrameRetirements)
         {
-            resource.Dispose();
+            DisposeNoThrow(resource, "current-frame retirement");
         }
 
         _currentFrameRetirements.Clear();
+        foreach (var resource in _unfencedSubmissionRetirements)
+        {
+            DisposeNoThrow(resource, "unfenced-submission retirement");
+        }
+
+        _unfencedSubmissionRetirements.Clear();
+    }
+
+    private GpuCommandSubmissionOutcome12 FinalizeFailedSubmission(
+        Exception error,
+        bool commandListMayHaveReachedQueue,
+        IDisposable? retainIfUnfenced)
+    {
+        if (commandListMayHaveReachedQueue)
+        {
+            _unfencedSubmissionRetirements.AddRange(_currentFrameRetirements);
+            if (retainIfUnfenced is not null)
+            {
+                _unfencedSubmissionRetirements.Add(retainIfUnfenced);
+            }
+
+            NotifyCurrentFrameParticipants(submitted: true);
+        }
+        else
+        {
+            foreach (var resource in _currentFrameRetirements)
+            {
+                DisposeNoThrow(resource, "abandoned submission retirement");
+            }
+
+            NotifyCurrentFrameParticipants(submitted: false);
+        }
+
+        _currentFrameRetirements.Clear();
+        _submissionPoisoned = true;
+        FrameIndex = (FrameIndex + 1) % FramesInFlight;
+        _frameOpen = false;
+        _fenceWaitAccumulating = false;
+        return GpuCommandSubmissionOutcome12.Failure(commandListMayHaveReachedQueue, error);
+    }
+
+    private void ThrowIfSubmissionPoisoned()
+    {
+        if (_submissionPoisoned)
+        {
+            throw new InvalidOperationException(
+                "The D3D12 command recorder cannot begin another frame after an unfenced or failed submission.");
+        }
+    }
+
+    private static void DisposeNoThrow(IDisposable resource, string resourceKind)
+    {
+        try
+        {
+            resource.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"GpuCommandRecorder12: disposing {resourceKind} failed: {ex}");
+        }
     }
 
     /// <summary>
@@ -356,6 +505,33 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     }
 
     private readonly record struct FenceRetirement(IDisposable Resource, ulong FenceValue);
+}
+
+/// <summary>
+///     Exact CPU-side outcome of ending one command list. A failed outcome can still require GPU
+///     lifetime retention when ExecuteCommandLists was reached before the failure.
+/// </summary>
+internal readonly record struct GpuCommandSubmissionOutcome12(
+    bool Succeeded,
+    bool CommandListMayHaveReachedQueue,
+    ulong FenceValue,
+    Exception? Error)
+{
+    internal static GpuCommandSubmissionOutcome12 Success(ulong fenceValue) =>
+        new(true, true, fenceValue, null);
+
+    internal static GpuCommandSubmissionOutcome12 Failure(
+        bool commandListMayHaveReachedQueue,
+        Exception error) =>
+        new(false, commandListMayHaveReachedQueue, 0, error);
+
+    internal void ThrowIfFailed()
+    {
+        if (Error is not null)
+        {
+            ExceptionDispatchInfo.Capture(Error).Throw();
+        }
+    }
 }
 
 /// <summary>

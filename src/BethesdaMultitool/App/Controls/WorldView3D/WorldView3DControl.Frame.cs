@@ -1272,6 +1272,13 @@ public sealed partial class WorldView3DControl
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.SkyEnd);
         }
 
+        // The mirror planner reads the current material's FNAM Reflective bit, so Oblivion must
+        // select the camera CELL's XCWT before planning (the ordinary water draw refresh is later).
+        if (_showWater && _data?.Game == Core.Games.BethesdaGame.Oblivion)
+        {
+            RefreshWaterAppearanceForCurrentCell();
+        }
+
         // WATER-REFLECTION SCENE MIRROR — planned up front: when the loaded game's water shader
         // has a projective RT arm (Oblivion WATER007), the toggle is on, and a dominant visible
         // water plane exists below the camera, the reflection target gets MIRRORED SCENE content
@@ -1282,7 +1289,8 @@ public sealed partial class WorldView3DControl
         var mirrorPlaneHeight = 0f;
         if (_showSky && WaterReflectionActive && !projectionActive && _showWater &&
             _data?.Game == Core.Games.BethesdaGame.Oblivion &&
-            _water is not null && _references is not null && _selectedInterior is null &&
+            _water is not null && _water.AllowsProjectiveSceneReflection &&
+            _references is not null && _selectedInterior is null &&
             _water.TryGetDominantVisibleWaterPlaneHeight(
                 cylinder, _camera.Position.Z, out mirrorPlaneHeight) &&
             TryEnsureWaterReflectionTarget((int)surface.Width, (int)surface.Height, sceneContent: true))
@@ -2275,7 +2283,7 @@ public sealed partial class WorldView3DControl
             float grassScale = 1f)
         {
             var directionalAmbient = AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-                game, AuthoredSkyArchitecture.Enabled, a.DirectionalAmbient);
+                game, AuthoredSkyArchitecture.ExplicitOverride, a.DirectionalAmbient);
 
             return new()
             {

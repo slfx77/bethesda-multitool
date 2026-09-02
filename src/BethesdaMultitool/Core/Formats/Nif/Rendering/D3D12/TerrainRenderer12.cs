@@ -737,6 +737,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             unsafe
             {
                 textureIndices.NormalDecodeMetadata[0] = BuildNormalBc5Mask(entry.NormalTextureEntries);
+                textureIndices.NormalDecodeMetadata[1] = BuildNormalBc5SignedMask(entry.NormalTextureEntries);
                 *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = textureIndices;
             }
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
@@ -1130,6 +1131,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             // ATI2/BC5 texture changes the same stable Entry to Bc5ReconstructZ without rebuilding
             // this cell or changing its bindless index.
             textureIndices.NormalDecodeMetadata[0] = BuildNormalBc5Mask(entry.NormalTextureEntries);
+            textureIndices.NormalDecodeMetadata[1] = BuildNormalBc5SignedMask(entry.NormalTextureEntries);
             *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = textureIndices;
         }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
@@ -1650,7 +1652,28 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var count = Math.Min(normalTextureEntries.Length, CellTerrainTextureSet.MaxSlots);
         for (var slot = 0; slot < count; slot++)
         {
-            if (normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ)
+            if (normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ||
+                normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5SignedReconstructZ)
+            {
+                mask |= 1u << slot;
+            }
+        }
+
+        return mask;
+    }
+
+    private static uint BuildNormalBc5SignedMask(GpuTextureCache12.Entry?[]? normalTextureEntries)
+    {
+        if (normalTextureEntries is null)
+        {
+            return 0;
+        }
+
+        uint mask = 0;
+        var count = Math.Min(normalTextureEntries.Length, CellTerrainTextureSet.MaxSlots);
+        for (var slot = 0; slot < count; slot++)
+        {
+            if (normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5SignedReconstructZ)
             {
                 mask |= 1u << slot;
             }

@@ -386,6 +386,245 @@ public sealed class NifScanlineRasterizerTests
         Assert.Equal(1f, depthBuffer[rightIndex]);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(128)]
+    [InlineData(255)]
+    public void RasterizeTriangle_StarfieldVertexLerpUsesAlphaOnlyAsRgbWeight(byte lerpAlpha)
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+        var baseTexture = TestTextures.FromTexels(1, 1, (40, 80, 120, 128));
+
+        foreach (var source in CreateQuadTriangles(
+                     1f,
+                     baseTexture,
+                     NifAlphaRenderMode.Blend,
+                     true,
+                     false,
+                     0,
+                     4))
+        {
+            var triangle = source;
+            triangle.IsStarfieldVertexLerp = true;
+            triangle.HasVertexColors = true;
+            triangle.R0 = triangle.R1 = triangle.R2 = 200f;
+            triangle.G0 = triangle.G1 = triangle.G2 = 20f;
+            triangle.B0 = triangle.B1 = triangle.B2 = 60f;
+            triangle.StarfieldVertexLerpA0 = lerpAlpha;
+            triangle.StarfieldVertexLerpA1 = lerpAlpha;
+            triangle.StarfieldVertexLerpA2 = lerpAlpha;
+
+            NifScanlineRasterizer.RasterizeTriangle(
+                pixels,
+                depthBuffer,
+                faceKind,
+                emissiveMask,
+                width,
+                triangle,
+                1f,
+                0f,
+                0f,
+                0,
+                height - 1);
+        }
+
+        var weight = lerpAlpha / 255f;
+        var sourceAlpha = 128f / 255f;
+        var center = ReadPixel(pixels, width, 16, 16);
+        Assert.InRange(center.R, (byte)MathF.Floor((40f + (200f - 40f) * weight) * sourceAlpha),
+            (byte)MathF.Ceiling((40f + (200f - 40f) * weight) * sourceAlpha));
+        Assert.InRange(center.G, (byte)MathF.Floor((80f + (20f - 80f) * weight) * sourceAlpha),
+            (byte)MathF.Ceiling((80f + (20f - 80f) * weight) * sourceAlpha));
+        Assert.InRange(center.B, (byte)MathF.Floor((120f + (60f - 120f) * weight) * sourceAlpha),
+            (byte)MathF.Ceiling((120f + (60f - 120f) * weight) * sourceAlpha));
+        Assert.Equal(128, center.A); // texture opacity is unchanged by all three Lerp weights
+    }
+
+    [Fact]
+    public void RasterizeTriangle_UntexturedStarfieldVertexLerpIsAffineBeforePartialLightingAndOpaque()
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+
+        foreach (var source in CreateQuadTriangles(
+                     1f,
+                     TestTextures.FromTexels(1, 1, (255, 255, 255, 255)),
+                     NifAlphaRenderMode.Blend,
+                     true,
+                     false,
+                     0,
+                     4))
+        {
+            var triangle = source;
+            triangle.Texture = null;
+            triangle.IsEmissive = false;
+            triangle.FlatShade = 0.5f;
+            triangle.IsStarfieldVertexLerp = true;
+            triangle.HasVertexColors = true;
+            triangle.R0 = triangle.R1 = triangle.R2 = 55f;
+            triangle.G0 = triangle.G1 = triangle.G2 = 105f;
+            triangle.B0 = triangle.B1 = triangle.B2 = 155f;
+            triangle.StarfieldVertexLerpA0 = 128f;
+            triangle.StarfieldVertexLerpA1 = 128f;
+            triangle.StarfieldVertexLerpA2 = 128f;
+
+            NifScanlineRasterizer.RasterizeTriangle(
+                pixels,
+                depthBuffer,
+                faceKind,
+                emissiveMask,
+                width,
+                triangle,
+                1f,
+                0f,
+                0f,
+                0,
+                height - 1);
+        }
+
+        var center = ReadPixel(pixels, width, 16, 16);
+        Assert.InRange(center.R, 63, 64);
+        Assert.InRange(center.G, 75, 76);
+        Assert.InRange(center.B, 88, 89);
+        Assert.Equal(255, center.A);
+    }
+
+    [Fact]
+    public void RasterizeTriangle_StarfieldOpacityMapStillCutsOutWhenDiffuseIsMissing()
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+
+        RasterizeQuad(
+            pixels, depthBuffer, faceKind, emissiveMask, width, height, 0f,
+            TestTextures.FromTexels(1, 1, (0, 0, 255, 255)),
+            NifAlphaRenderMode.Opaque);
+
+        foreach (var source in CreateQuadTriangles(
+                     1f,
+                     TestTextures.FromTexels(1, 1, (255, 255, 255, 255)),
+                     NifAlphaRenderMode.Cutout,
+                     false,
+                     true,
+                     127,
+                     4))
+        {
+            var triangle = source;
+            triangle.Texture = null;
+            triangle.StarfieldOpacityMap = TestTextures.FromTexels(
+                2,
+                1,
+                (0, 255, 255, 255),
+                (255, 0, 0, 0));
+            NifScanlineRasterizer.RasterizeTriangle(
+                pixels, depthBuffer, faceKind, emissiveMask, width, triangle,
+                1f, 0f, 0f, 0, height - 1);
+        }
+
+        Assert.True(IsBlueDominant(ReadPixel(pixels, width, 8, 16)));
+        var retained = ReadPixel(pixels, width, 24, 16);
+        Assert.InRange(retained.R, 198, 199);
+        Assert.InRange(retained.G, 198, 199);
+        Assert.InRange(retained.B, 198, 199);
+        Assert.Equal(255, retained.A);
+    }
+
+    [Fact]
+    public void RasterizeTriangle_NormalMapOnlyUsesGpuCompatibleGreyUvFallback()
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+
+        foreach (var source in CreateQuadTriangles(
+                     1f,
+                     TestTextures.FromTexels(1, 1, (255, 255, 255, 255)),
+                     NifAlphaRenderMode.Opaque,
+                     false,
+                     false,
+                     0,
+                     4))
+        {
+            var triangle = source;
+            triangle.Texture = null;
+            triangle.NormalMap = TestTextures.FromTexels(1, 1, (128, 128, 255, 255));
+            NifScanlineRasterizer.RasterizeTriangle(
+                pixels, depthBuffer, faceKind, emissiveMask, width, triangle,
+                1f, 0f, 0f, 0, height - 1);
+        }
+
+        var center = ReadPixel(pixels, width, 16, 16);
+        Assert.InRange(center.R, 198, 199);
+        Assert.InRange(center.G, 198, 199);
+        Assert.InRange(center.B, 198, 199);
+        Assert.Equal(255, center.A);
+    }
+
+    [Fact]
+    public void RasterizeTriangle_StarfieldCutoutSamplesOpacityMapRedNotDiffuseAlpha()
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+
+        RasterizeQuad(
+            pixels, depthBuffer, faceKind, emissiveMask, width, height, 0f,
+            TestTextures.FromTexels(1, 1, (0, 0, 255, 255)),
+            NifAlphaRenderMode.Opaque);
+
+        foreach (var source in CreateQuadTriangles(
+                     1f,
+                     TestTextures.FromTexels(1, 1, (0, 255, 0, 255)),
+                     NifAlphaRenderMode.Cutout,
+                     false,
+                     true,
+                     127,
+                     4))
+        {
+            var triangle = source;
+            triangle.StarfieldOpacityMap = TestTextures.FromTexels(
+                2,
+                1,
+                (0, 255, 255, 255),
+                (255, 0, 0, 0));
+            NifScanlineRasterizer.RasterizeTriangle(
+                pixels, depthBuffer, faceKind, emissiveMask, width, triangle,
+                1f, 0f, 0f, 0, height - 1);
+        }
+
+        Assert.True(IsBlueDominant(ReadPixel(pixels, width, 8, 16)));
+        Assert.True(IsGreenDominant(ReadPixel(pixels, width, 24, 16)));
+    }
+
     [Fact]
     public void DrawTriangleWireframeOverlay_EyeLayerUsesCyanHighlight()
     {

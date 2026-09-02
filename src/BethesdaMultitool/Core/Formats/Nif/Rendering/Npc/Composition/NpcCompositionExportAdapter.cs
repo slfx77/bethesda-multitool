@@ -60,7 +60,7 @@ internal static class NpcCompositionExportAdapter
             {
                 if (part.Skin != null)
                 {
-                    NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByName);
+                    NpcExportSceneBuilder.AddSkinnedPart(scene, part, nodeIndicesByName, bodyPath);
                     continue;
                 }
 

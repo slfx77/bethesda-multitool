@@ -47,7 +47,7 @@ public sealed class DefaultReferenceGeometrySourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("public CachedNifMesh12? GetOrUpload(\n        ID3D12GraphicsCommandList commandList,",
             cache, StringComparison.Ordinal);
-        Assert.Contains("_geometryArena.Upload(\n                commandList,\n                _deletionQueue,",
+        Assert.Contains("geometryArena.Upload(\n                    commandList ?? throw new InvalidOperationException(",
             cache, StringComparison.Ordinal);
     }
 
@@ -63,7 +63,8 @@ public sealed class DefaultReferenceGeometrySourceContractTests
             "if (commandList is null)",
             "if (uploadBudget <= 0)",
             "FrameGpuUploads++;",
-            "UploadDecodedMesh(commandList, modelPath, node, decoded.Mesh)");
+            "StoreCollisionMesh(modelPath, node, decoded.Mesh);",
+            "var materialization = UploadDecodedMesh(");
     }
 
     [Fact]

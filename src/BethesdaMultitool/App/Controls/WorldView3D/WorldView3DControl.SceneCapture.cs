@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -722,7 +723,8 @@ public sealed partial class WorldView3DControl
                 var captureMirrorPlaneHeight = 0f;
                 if (_showSky && WaterReflectionActive && _showWater &&
                     _data?.Game == Core.Games.BethesdaGame.Oblivion &&
-                    _water is not null && _references is not null && _selectedInterior is null &&
+                    _water is not null && _water.AllowsProjectiveSceneReflection &&
+                    _references is not null && _selectedInterior is null &&
                     _water.TryGetDominantVisibleWaterPlaneHeight(
                         cylinder, _camera.Position.Z, out captureMirrorPlaneHeight) &&
                     TryEnsureWaterReflectionTarget(target.Width, target.Height, sceneContent: true))
@@ -1173,6 +1175,16 @@ public sealed partial class WorldView3DControl
             }
         }
 
+        var captureReferenceStats = captureReferencesEnabled ? _references!.LastStats : null;
+        var captureWaterStats = captureWaterEnabled ? _water!.LastStats : null;
+        var captureTerrainStats = captureTerrainEnabled ? _terrain!.LastStats : null;
+
+        // This compact event is deliberately emitted as soon as the offscreen command lists have
+        // been submitted.  The much larger capture-state payload below describes visual parity,
+        // but an A/B also needs proof that this capture itself traversed the requested reference
+        // submission path and carried real geometry; scored live-frame averages cannot prove that.
+        EmitCaptureRenderPathTelemetry(captureReferenceStats, captureWaterStats, captureTerrainStats);
+
         Profiler_LastCaptureScenarioSnapshot = BuildProfilerScenarioSnapshot(
             weatherTransition,
             skyBand,
@@ -1180,8 +1192,8 @@ public sealed partial class WorldView3DControl
             masserDirection,
             masserDrawAlpha,
             animationTimeSeconds ?? 0f,
-            captureReferencesEnabled ? _references!.LastStats : null,
-            captureWaterEnabled ? _water!.LastStats : null,
+            captureReferenceStats,
+            captureWaterStats,
             tonemap,
             weatherImageSpaceEvaluation,
             target.TonemapHistoryReset,
@@ -1192,9 +1204,9 @@ public sealed partial class WorldView3DControl
             activeWeather, skyBand, cloudSourceIndices, atmo, tonemap,
             masserDirection, masserFade, masserDrawAlpha,
             secundaDirection, secundaFade, secundaDrawAlpha,
-            captureReferencesEnabled ? _references!.LastStats : null,
-            captureWaterEnabled ? _water!.LastStats : null,
-            captureTerrainEnabled ? _terrain!.LastStats : null,
+            captureReferenceStats,
+            captureWaterStats,
+            captureTerrainStats,
             target, w, h, animationTimeSeconds ?? 0f);
 
         fenceValue = recorder.LastSubmittedFenceValue;
@@ -1406,6 +1418,55 @@ public sealed partial class WorldView3DControl
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
             referenceColor?.Bands.HasModernTransitions == true,
             hasAuthoredHighNoon);
+    }
+
+    private static void EmitCaptureRenderPathTelemetry(
+        WorldRenderStats? referenceStats,
+        WorldRenderStats? waterStats,
+        WorldRenderStats? terrainStats)
+    {
+        RendererProfilerTrace.Event("capture-render-path", new Dictionary<string, object?>
+        {
+            ["referenceStatsAvailable"] = referenceStats is not null,
+            ["terrainStatsAvailable"] = terrainStats is not null,
+            ["waterStatsAvailable"] = waterStats is not null,
+            ["referenceDrawn"] = referenceStats?.ReferenceDrawn ?? 0,
+            ["referenceSubmeshDraws"] = referenceStats?.ReferenceSubmeshDraws ?? 0,
+            ["referenceInstances"] = referenceStats?.ReferenceInstances ?? 0,
+            ["referenceOpaqueSurvivingDraws"] = referenceStats?.ReferenceOpaqueSurvivingDraws ?? 0,
+            ["terrainDraws"] = terrainStats?.TerrainDraws ?? 0,
+            ["waterDraws"] = waterStats?.WaterDraws ?? 0,
+            ["referenceOpaqueIndirectActive"] = referenceStats?.ReferenceOpaqueIndirectActive ?? false,
+            ["referenceOpaqueDirectDraws"] = referenceStats?.ReferenceOpaqueDirectDraws ?? 0,
+            ["referenceOpaqueIndirectDraws"] = referenceStats?.ReferenceOpaqueIndirectDraws ?? 0,
+            ["referenceOpaqueIndirectExecuteCalls"] =
+                referenceStats?.ReferenceOpaqueIndirectExecuteCalls ?? 0,
+            ["referenceOpaqueIndirectArgumentBytes"] =
+                referenceStats?.ReferenceOpaqueIndirectArgumentBytes ?? 0,
+            ["referenceOpaqueIndirectFallbackReason"] =
+                referenceStats?.ReferenceOpaqueIndirectFallbackReason ?? 0,
+            ["referenceModernStandardShaderActive"] =
+                referenceStats?.ReferenceModernStandardShaderActive ?? false,
+            ["referenceModernStandardBatches"] = referenceStats?.ReferenceModernStandardBatches ?? 0,
+            ["referenceModernStandardInstances"] = referenceStats?.ReferenceModernStandardInstances ?? 0,
+            ["referenceStaticOpaquePacketActive"] =
+                referenceStats?.ReferenceStaticOpaquePacketActive ?? false,
+            ["referenceStaticOpaquePacketHit"] = referenceStats?.ReferenceStaticOpaquePacketHit ?? false,
+            ["referenceStaticOpaquePacketBatches"] =
+                referenceStats?.ReferenceStaticOpaquePacketBatches ?? 0,
+            ["referenceStaticOpaquePacketInstances"] =
+                referenceStats?.ReferenceStaticOpaquePacketInstances ?? 0,
+            ["referenceStaticOpaquePacketRuns"] = referenceStats?.ReferenceStaticOpaquePacketRuns ?? 0,
+            ["referenceStaticOpaquePacketBytes"] = referenceStats?.ReferenceStaticOpaquePacketBytes ?? 0,
+            ["referenceStaticOpaquePacketSavedMatrixBytes"] =
+                referenceStats?.ReferenceStaticOpaquePacketSavedMatrixBytes ?? 0,
+            ["referenceStaticOpaquePacketSavedConstantBytes"] =
+                referenceStats?.ReferenceStaticOpaquePacketSavedConstantBytes ?? 0,
+            ["referenceStaticOpaquePacketSavedArgumentBytes"] =
+                referenceStats?.ReferenceStaticOpaquePacketSavedArgumentBytes ?? 0,
+            ["referenceStaticOpaquePacketFallbackReason"] =
+                referenceStats?.ReferenceStaticOpaquePacketFallbackReason ?? 0
+        });
     }
 
     private void EmitCaptureParityTelemetry(
@@ -2051,6 +2112,15 @@ public sealed partial class WorldView3DControl
                     : string.IsNullOrWhiteSpace(climate.ModelPath)
                         ? "Resolved Starfield CLMT has no sky MODL; CLDF/ATMO scattering and TODD geometry are not implemented"
                         : null;
+        fields["authoredAtmosphere"] = new Dictionary<string, object?>
+        {
+            ["rawOverride"] = EnvironmentVariables.Get(AuthoredSkyArchitecture.EnvironmentVariableName),
+            ["explicitOverride"] = AuthoredSkyArchitecture.ExplicitOverride,
+            ["policyEnabled"] = _authoredAtmospherePolicyEnabled,
+            ["nifPath"] = _authoredAtmosphereNifPath,
+            ["recoveredSkyLayerCount"] = _authoredAtmosphereRecoveredSkyLayerCount,
+            ["recovered"] = _authoredAtmosphereRecoveredSkyLayerCount > 0
+        };
         var moonProfile = MoonProfile;
         var phaseLengthDays = _currentClimateTiming.MoonPhaseDays > 0
             ? _currentClimateTiming.MoonPhaseDays
@@ -2173,7 +2243,7 @@ public sealed partial class WorldView3DControl
         fields["weatherImageSpaceApplication"] = weatherImageSpaceApplication;
         fields["directionalAmbientUploaded"] =
             AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-                game, AuthoredSkyArchitecture.Enabled, atmo.DirectionalAmbient) is not null;
+                game, AuthoredSkyArchitecture.ExplicitOverride, atmo.DirectionalAmbient) is not null;
         fields["tonemapHistoryKey"] = $"0x{tonemap.HistoryKey:X16}";
         fields["tonemapHistoryReset"] = target.TonemapHistoryReset;
         fields["tonemapHistoryResetReason"] = target.TonemapHistoryResetReason;

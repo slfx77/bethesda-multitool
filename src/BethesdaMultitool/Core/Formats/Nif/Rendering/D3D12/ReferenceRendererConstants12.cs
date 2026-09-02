@@ -88,7 +88,8 @@ internal static class ReferenceRendererConstants12
         Vector4 Wind = default,
         // BGEM effect terms (uEffectTint / uEffectFalloff), the mutually-exclusive classic
         // Lighting30 emission tuple selected by TextureState bit 4, or Starfield constant-Lerp
-        // selected by TextureState.w == -2, or regular BGSM emission selected by bit 16.
+        // selected by TextureState.w == -2, or regular BGSM emission selected by bit 16. Starfield
+        // vertex Lerp is tagged by -3 but reads the vertex stream and does not consume this tuple.
         Vector4 EffectTint = default,
         Vector4 EffectFalloff = default,
         // FO4 cubemap environment mapping (uEnvMap: x = cube slot or −1, y = scale,

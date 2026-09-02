@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -121,14 +122,16 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // payloads lack the first-class operation. v83 adds distinct AlphaSettings cutout state;
         // v84 rejects flipbook layer materials from that static operation. v85 carries resolved
         // Starfield root-material two-sided state in the existing serialized DoubleSided field.
-        // v86 appends regular BGSM emission plus its optional glow texture. This assertion pins all
-        // seven bumps.
+        // v86 appends regular BGSM emission plus its optional glow texture. v87 reclassifies decoded
+        // Starfield Water-route geometry onto the existing water sentinel. v88 retains vertex-Lerp
+        // RGBA and its mode. v89 bakes Starfield material UV transforms and reducible UVOffset loops
+        // into the existing UV/scroll payload. This assertion pins all ten bumps.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
         Assert.Equal(default(StarfieldMaterialColorRenderState), loaded.StarfieldMaterialColor);
         Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
-        Assert.Equal(86, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(89, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -156,6 +159,70 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
         Assert.Equal(expected, loaded.StarfieldMaterialColor);
         Assert.Equal(0.4f, loaded.StarfieldMaterialColor.LinearTint.W);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsStarfieldVertexLerpStateAndRawWeight()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var source = Assert.Single(CreatePayload().Submeshes);
+        var vertices = (GpuMeshUploader.GpuVertex[])source.Vertices.Clone();
+        vertices[0].VertexColorRgba = 0x2B4D331Au;
+        var expected = new StarfieldMaterialColorRenderState(
+            StarfieldMaterialColorRenderMode.VertexLerp,
+            Vector4.Zero);
+        var payload = new ReferenceDecodedMeshPayload12(
+        [
+            source with
+            {
+                Vertices = vertices,
+                DiffuseTexturePath = @"materials\test\vertex_lerp.mat",
+                StarfieldMaterialColor = expected
+            }
+        ]);
+
+        cache.Store(metadata, null, "cdb-vertex-lerp", payload);
+
+        Assert.True(cache.TryLoad(metadata, null, "cdb-vertex-lerp", out var entry));
+        var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
+        Assert.Equal(expected, loaded.StarfieldMaterialColor);
+        Assert.True(loaded.StarfieldMaterialColor.IsVertexLerp);
+        Assert.Equal(vertices[0].VertexColorRgba, loaded.Vertices[0].VertexColorRgba);
+        Assert.Equal(0x2B / 255f, loaded.Vertices[0].VertexColor.W);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsStarfieldWaterSurfaceSentinel()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var source = Assert.Single(CreatePayload().Submeshes);
+        var payload = new ReferenceDecodedMeshPayload12(
+        [
+            source with
+            {
+                DiffuseTexturePath = RenderableSubmesh.WaterSurfaceTexturePath,
+                AlphaRenderMode = NifAlphaRenderMode.Blend,
+                AlphaBlend = true,
+                AlphaTest = false,
+                MaterialAlpha = 0.5f,
+                StarfieldMaterialAlpha = default
+            }
+        ]);
+
+        cache.Store(metadata, null, "cdb-water-route", payload);
+
+        Assert.True(cache.TryLoad(metadata, null, "cdb-water-route", out var entry));
+        var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
+        Assert.Equal(RenderableSubmesh.WaterSurfaceTexturePath, loaded.DiffuseTexturePath);
+        Assert.Equal(NifAlphaRenderMode.Blend, loaded.AlphaRenderMode);
+        Assert.True(loaded.AlphaBlend);
+        Assert.False(loaded.AlphaTest);
+        Assert.Equal(0.5f, loaded.MaterialAlpha);
+        Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
     }
 
     [Fact]
@@ -425,6 +492,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [InlineData(83)] // v84 rejects Starfield flipbook layers from static AlphaSettings cutout.
     [InlineData(84)] // v85 carries Starfield root-material two-sided state into decoded submeshes.
     [InlineData(85)] // v86 appends regular BGSM lit-emission state.
+    [InlineData(86)] // v87 classifies Starfield ShaderRoute::Water onto the water sentinel.
+    [InlineData(87)] // v88 retains Starfield vertex-Lerp RGBA + render mode.
     public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
     {
         using var tempDir = new TempDirectory();
