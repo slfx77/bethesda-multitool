@@ -31,7 +31,7 @@
 <body>
 <model-viewer id="viewer"
               camera-controls
-              camera-orbit="180deg 90deg auto"
+              camera-orbit="180deg 75deg auto"
               shadow-intensity="0.6"
               exposure="1.2"
               environment-image="neutral"
@@ -41,11 +41,326 @@
 <script>
     const viewer = document.getElementById('viewer');
     const status = document.getElementById('status');
+    const ce2VertexLerpMarker = 'bethesdaCe2VertexLerpV1';
+    const starfieldWaterMarker = 'bethesdaStarfieldWaterApproxV1';
+    const patchedCe2VertexLerpMaterials = new WeakSet();
     let currentBlobUrl = null;
+    let modelLoadGeneration = 0;
+    let starfieldWaterAnimationFrame = null;
+
+    function showFatalStatus(message) {
+      const detail = message instanceof Error ? message.message : String(message);
+      console.error('[Mesh Viewer] ' + detail);
+      status.textContent = 'Fatal mesh viewer error: ' + detail;
+      status.classList.remove('hidden');
+    }
+
+    function inspectGlbVertexLerpContract(bytes) {
+      if (bytes.byteLength < 20) {
+        throw new Error('Invalid GLB: the header or JSON chunk is truncated.');
+      }
+
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const glbMagic = 0x46546c67;
+      const jsonChunkType = 0x4e4f534a;
+      if (view.getUint32(0, true) !== glbMagic || view.getUint32(4, true) !== 2) {
+        throw new Error('Invalid GLB: expected a version 2 glTF binary.');
+      }
+
+      const declaredLength = view.getUint32(8, true);
+      const jsonLength = view.getUint32(12, true);
+      if (declaredLength !== bytes.byteLength ||
+          view.getUint32(16, true) !== jsonChunkType ||
+          jsonLength > bytes.byteLength - 20) {
+        throw new Error('Invalid GLB: the declared JSON chunk is malformed.');
+      }
+
+      let document;
+      try {
+        const jsonBytes = bytes.subarray(20, 20 + jsonLength);
+        const json = new TextDecoder('utf-8', { fatal: true })
+          .decode(jsonBytes)
+          .replace(/\u0000+$/u, '');
+        document = JSON.parse(json);
+      } catch (error) {
+        throw new Error('Invalid GLB JSON: ' + error.message);
+      }
+
+      const materials = Array.isArray(document.materials) ? document.materials : [];
+      const markedMaterialIndexes = [];
+      const starfieldWaterMaterialIndexes = [];
+      for (let index = 0; index < materials.length; index++) {
+        if (materials[index]?.extras?.[ce2VertexLerpMarker] === true) {
+          markedMaterialIndexes.push(index);
+        }
+        if (materials[index]?.extras?.[starfieldWaterMarker] === true) {
+          starfieldWaterMaterialIndexes.push(index);
+        }
+      }
+
+      return {
+        expectedMaterialCount: markedMaterialIndexes.length,
+        markedMaterialIndexes,
+        expectedStarfieldWaterMaterialCount: starfieldWaterMaterialIndexes.length,
+        starfieldWaterMaterialIndexes
+      };
+    }
+
+    function findInternalModelScene() {
+      const sceneCandidates = Object.getOwnPropertySymbols(viewer)
+        .map(symbol => viewer[symbol])
+        .filter(candidate => candidate &&
+          candidate.model &&
+          typeof candidate.model.traverse === 'function' &&
+          typeof candidate.queueRender === 'function');
+
+      if (sceneCandidates.length !== 1) {
+        throw new Error(
+          'Bethesda material extensions require exactly one compatible model-viewer scene; found ' +
+          sceneCandidates.length + '.');
+      }
+
+      return sceneCandidates[0];
+    }
+
+    function replaceRequiredShaderAnchor(source, anchor, replacement, stage) {
+      if (!source.includes(anchor)) {
+        const error = new Error(
+          'CE2 vertex Lerp cannot patch the bundled ' + stage +
+          ' shader: missing ' + anchor + '.');
+        showFatalStatus(error);
+        throw error;
+      }
+
+      return source.replace(anchor, replacement);
+    }
+
+    function installCe2VertexLerpShader(material) {
+      if (patchedCe2VertexLerpMaterials.has(material)) {
+        return;
+      }
+
+      const previousOnBeforeCompile = material.onBeforeCompile;
+      const previousCustomProgramCacheKey = material.customProgramCacheKey;
+      material.onBeforeCompile = function (shader, renderer) {
+        if (typeof previousOnBeforeCompile === 'function') {
+          previousOnBeforeCompile.call(this, shader, renderer);
+        }
+
+        const colorParsVertex = '#include <color_pars_vertex>';
+        const colorVertex = '#include <color_vertex>';
+        const colorParsFragment = '#include <color_pars_fragment>';
+        const colorFragment = '#include <color_fragment>';
+        shader.vertexShader = replaceRequiredShaderAnchor(
+          shader.vertexShader,
+          colorParsVertex,
+          colorParsVertex +
+            '\nattribute vec4 color_1;' +
+            '\nvarying vec4 vBethesdaCe2VertexLerp;',
+          'vertex');
+        shader.vertexShader = replaceRequiredShaderAnchor(
+          shader.vertexShader,
+          colorVertex,
+          colorVertex + '\nvBethesdaCe2VertexLerp = color_1;',
+          'vertex');
+        shader.fragmentShader = replaceRequiredShaderAnchor(
+          shader.fragmentShader,
+          colorParsFragment,
+          colorParsFragment + '\nvarying vec4 vBethesdaCe2VertexLerp;',
+          'fragment');
+        shader.fragmentShader = replaceRequiredShaderAnchor(
+          shader.fragmentShader,
+          colorFragment,
+          colorFragment +
+            '\ndiffuseColor.rgb = mix(' +
+            'diffuseColor.rgb, vBethesdaCe2VertexLerp.rgb, vBethesdaCe2VertexLerp.a);',
+          'fragment');
+      };
+      material.customProgramCacheKey = function () {
+        const previousKey = typeof previousCustomProgramCacheKey === 'function'
+          ? previousCustomProgramCacheKey.call(this)
+          : '';
+        return previousKey + '|' + ce2VertexLerpMarker;
+      };
+
+      patchedCe2VertexLerpMaterials.add(material);
+      material.needsUpdate = true;
+    }
+
+    function patchMarkedCe2VertexLerpScene(scene, contract) {
+      const expectedMaterialIndexes = new Set(contract.markedMaterialIndexes);
+      const runtimeMaterialIndexes = new Set();
+      const markedMaterials = new Set();
+      let patchedMeshCount = 0;
+      scene.model.traverse(node => {
+        const materials = Array.isArray(node.material)
+          ? node.material
+          : (node.material ? [node.material] : []);
+        const nodeMarkedMaterials = materials.filter(material =>
+          material?.userData?.[ce2VertexLerpMarker] === true);
+        if (nodeMarkedMaterials.length === 0) {
+          return;
+        }
+
+        const geometry = node.geometry;
+        const color1 = geometry && typeof geometry.getAttribute === 'function'
+          ? geometry.getAttribute('color_1')
+          : null;
+        const position = geometry && typeof geometry.getAttribute === 'function'
+          ? geometry.getAttribute('position')
+          : null;
+        if (!color1 || color1.itemSize !== 4 ||
+            !position || color1.count !== position.count) {
+          throw new Error(
+            'CE2 vertex Lerp mesh "' + (node.name || '(unnamed)') +
+            '" has a missing or invalid vec4 geometry color_1 attribute.');
+        }
+
+        patchedMeshCount++;
+        for (const material of nodeMarkedMaterials) {
+          const materialIndex = material.userData?.associations?.materials;
+          if (!Number.isInteger(materialIndex) || !expectedMaterialIndexes.has(materialIndex)) {
+            throw new Error(
+              'CE2 vertex Lerp material "' + (material.name || '(unnamed)') +
+              '" has no matching marked glTF material association.');
+          }
+          runtimeMaterialIndexes.add(materialIndex);
+          markedMaterials.add(material);
+        }
+      });
+
+      const missingMaterialIndexes = contract.markedMaterialIndexes.filter(
+        index => !runtimeMaterialIndexes.has(index));
+      if (missingMaterialIndexes.length > 0) {
+        throw new Error(
+          'model-viewer omitted marked CE2 vertex-Lerp material association(s): ' +
+          missingMaterialIndexes.join(', ') + '.');
+      }
+
+      let patchedMaterialCount = 0;
+      for (const material of markedMaterials) {
+        installCe2VertexLerpShader(material);
+        patchedMaterialCount++;
+      }
+
+      if (patchedMaterialCount === 0) {
+        throw new Error(
+          'GLB declares ' + contract.expectedMaterialCount +
+          ' CE2 vertex-Lerp material(s), but model-viewer exposed zero patchable materials.');
+      }
+
+      scene.queueRender();
+      return {
+        expectedMaterialCount: contract.expectedMaterialCount,
+        patchedMaterialCount,
+        patchedMeshCount
+      };
+    }
+
+    function stopStarfieldWaterAnimation() {
+      if (starfieldWaterAnimationFrame !== null) {
+        cancelAnimationFrame(starfieldWaterAnimationFrame);
+        starfieldWaterAnimationFrame = null;
+      }
+    }
+
+    function patchMarkedStarfieldWaterScene(scene, contract, loadGeneration) {
+      const expectedMaterialIndexes = new Set(contract.starfieldWaterMaterialIndexes);
+      const runtimeMaterialIndexes = new Set();
+      const markedMaterials = new Set();
+      scene.model.traverse(node => {
+        const materials = Array.isArray(node.material)
+          ? node.material
+          : (node.material ? [node.material] : []);
+        for (const material of materials) {
+          if (material?.userData?.[starfieldWaterMarker] !== true) {
+            continue;
+          }
+
+          const materialIndex = material.userData?.associations?.materials;
+          if (!Number.isInteger(materialIndex) || !expectedMaterialIndexes.has(materialIndex)) {
+            throw new Error(
+              'Starfield water material "' + (material.name || '(unnamed)') +
+              '" has no matching marked glTF material association.');
+          }
+
+          runtimeMaterialIndexes.add(materialIndex);
+          markedMaterials.add(material);
+        }
+      });
+
+      const missingMaterialIndexes = contract.starfieldWaterMaterialIndexes.filter(
+        index => !runtimeMaterialIndexes.has(index));
+      if (missingMaterialIndexes.length > 0) {
+        throw new Error(
+          'model-viewer omitted marked Starfield water material association(s): ' +
+          missingMaterialIndexes.join(', ') + '.');
+      }
+      if (markedMaterials.size === 0) {
+        throw new Error(
+          'GLB declares ' + contract.expectedStarfieldWaterMaterialCount +
+          ' Starfield water material(s), but model-viewer exposed zero patchable materials.');
+      }
+
+      const animatedNormals = [];
+      const animatedNormalTextures = new Set();
+      for (const material of markedMaterials) {
+        const normalMap = material.normalMap;
+        if (!normalMap || !normalMap.offset || animatedNormalTextures.has(normalMap)) {
+          continue;
+        }
+
+        animatedNormalTextures.add(normalMap);
+        normalMap.matrixAutoUpdate = true;
+        animatedNormals.push({
+          texture: normalMap,
+          initialX: normalMap.offset.x,
+          initialY: normalMap.offset.y
+        });
+      }
+
+      stopStarfieldWaterAnimation();
+      if (animatedNormals.length > 0) {
+        const animationStart = performance.now();
+        const renderWaterFrame = now => {
+          if (loadGeneration !== modelLoadGeneration) {
+            starfieldWaterAnimationFrame = null;
+            return;
+          }
+
+          // The WebView remains alive when WinUI collapses the Mesh Viewer tab. model-viewer's
+          // intersection state catches that case even when Chromium still reports a visible page;
+          // never wake its renderer behind the active World Viewer or another application tab.
+          if (document.visibilityState === 'visible' && viewer.modelIsVisible === true) {
+            const seconds = (now - animationStart) / 1000;
+            for (const entry of animatedNormals) {
+              // Standalone NIFs carry no WATR direction/speed. Keep the fixed preview drift within
+              // one repeat so long-running sessions do not lose texture-transform precision.
+              entry.texture.offset.x = entry.initialX + (seconds * 0.018) % 1;
+              entry.texture.offset.y = entry.initialY - (seconds * 0.045) % 1;
+            }
+            scene.queueRender();
+          }
+          starfieldWaterAnimationFrame = requestAnimationFrame(renderWaterFrame);
+        };
+        starfieldWaterAnimationFrame = requestAnimationFrame(renderWaterFrame);
+      } else {
+        scene.queueRender();
+      }
+
+      return {
+        expectedMaterialCount: contract.expectedStarfieldWaterMaterialCount,
+        patchedMaterialCount: markedMaterials.size,
+        animatedNormalCount: animatedNormals.length
+      };
+    }
 
     function loadModel(base64Glb) {
+      const loadGeneration = ++modelLoadGeneration;
       status.textContent = 'Loading model...';
       status.classList.remove('hidden');
+
+      stopStarfieldWaterAnimation();
 
       if (currentBlobUrl) {
         URL.revokeObjectURL(currentBlobUrl);
@@ -58,25 +373,68 @@
         for (let i = 0; i < binary.length; i++) {
           bytes[i] = binary.charCodeAt(i);
         }
+        const vertexLerpContract = inspectGlbVertexLerpContract(bytes);
         const blob = new Blob([bytes], { type: 'model/gltf-binary' });
         currentBlobUrl = URL.createObjectURL(blob);
+
+        const removeLoadListeners = () => {
+          viewer.removeEventListener('load', onLoad);
+          viewer.removeEventListener('error', onError);
+        };
+        const onLoad = () => {
+          removeLoadListeners();
+          if (loadGeneration !== modelLoadGeneration) {
+            return;
+          }
+
+          try {
+            if (vertexLerpContract.expectedMaterialCount > 0 ||
+                vertexLerpContract.expectedStarfieldWaterMaterialCount > 0) {
+              const scene = findInternalModelScene();
+              if (vertexLerpContract.expectedMaterialCount > 0) {
+                const diagnostics = patchMarkedCe2VertexLerpScene(scene, vertexLerpContract);
+                console.info(
+                  '[Mesh Viewer] CE2 vertex Lerp: expected ' +
+                  diagnostics.expectedMaterialCount + ', patched ' +
+                  diagnostics.patchedMaterialCount + ' material(s) across ' +
+                  diagnostics.patchedMeshCount + ' mesh(es).');
+              }
+              if (vertexLerpContract.expectedStarfieldWaterMaterialCount > 0) {
+                const waterDiagnostics = patchMarkedStarfieldWaterScene(
+                  scene, vertexLerpContract, loadGeneration);
+                console.info(
+                  '[Mesh Viewer] Starfield water approximation: expected ' +
+                  waterDiagnostics.expectedMaterialCount + ', patched ' +
+                  waterDiagnostics.patchedMaterialCount + ' material(s), animated ' +
+                  waterDiagnostics.animatedNormalCount + ' normal map(s).');
+              }
+            }
+            status.classList.add('hidden');
+          } catch (error) {
+            showFatalStatus(error);
+          }
+        };
+        const onError = () => {
+          removeLoadListeners();
+          if (loadGeneration !== modelLoadGeneration) {
+            return;
+          }
+
+          showFatalStatus('Failed to load model.');
+        };
+
+        viewer.addEventListener('load', onLoad, { once: true });
+        viewer.addEventListener('error', onError, { once: true });
+
         viewer.src = currentBlobUrl;
-
-        viewer.addEventListener('load', () => {
-          status.classList.add('hidden');
-        }, { once: true });
-
-        viewer.addEventListener('error', () => {
-          status.textContent = 'Failed to load model';
-          status.classList.remove('hidden');
-        }, { once: true });
       } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-        status.classList.remove('hidden');
+        showFatalStatus(e);
       }
     }
 
     function clearModel() {
+      modelLoadGeneration++;
+      stopStarfieldWaterAnimation();
       if (currentBlobUrl) {
         URL.revokeObjectURL(currentBlobUrl);
         currentBlobUrl = null;

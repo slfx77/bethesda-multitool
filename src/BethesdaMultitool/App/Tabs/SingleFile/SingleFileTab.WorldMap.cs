@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Diagnostics;
+﻿using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -12,6 +12,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
@@ -25,12 +27,40 @@ public sealed partial class SingleFileTab
     private PlacedReference? _selectedWorldObject;
     private bool _suppressReferenceStateSelectionChanged;
 
+    // DMP-only "Master ESM terrain" preview toggle state. Default ON mirrors the settings panel's
+    // MasterTerrainCheckBox IsChecked default: recovered placements preview over the Load Order
+    // masters' terrain the way the converted ESM will show them in-game; OFF shows exactly the
+    // terrain the dump itself preserved (holes stay holes). ESM/ESP/save paths never read this.
+    private bool _useMasterTerrainPreview = true;
+
     private async Task PopulateWorldMapAsync(CancellationToken cancellationToken)
+    {
+        // The populate is single-flight (RunExclusiveAsync "populate-worldmap" returns the
+        // in-flight task to a second caller), so a reset + re-fire that lands MID-populate — a
+        // Load Order change or the master-terrain toggle, both of which bump
+        // _worldMapLoadGeneration via ResetWorldMap — schedules nothing new, while the in-flight
+        // pass discards its now-stale result. Historically that left the map stuck on the
+        // placeholder until the user switched sub-tabs. So the exclusive task loops: whenever a
+        // pass ends STALE (generation moved on, map still unpopulated, session still has data),
+        // run another pass for the newest generation instead of returning.
+        while (await PopulateWorldMapPassAsync(cancellationToken)
+               && !_session.WorldMapPopulated
+               && (_session.HasEsmRecords || _session.IsSaveFile))
+        {
+        }
+    }
+
+    /// <summary>
+    ///     One populate attempt. Returns true only when the attempt was discarded as STALE (a
+    ///     generation bump invalidated it mid-run) — the caller then retries; every terminal
+    ///     outcome (populated, no data, save with no terrain source) returns false.
+    /// </summary>
+    private async Task<bool> PopulateWorldMapPassAsync(CancellationToken cancellationToken)
     {
         var loadGeneration = Volatile.Read(ref _worldMapLoadGeneration);
         if (_session.WorldMapPopulated)
         {
-            return;
+            return false;
         }
 
         // Cancellation while WAITING throws before the gate is acquired (outside the try), so the
@@ -42,7 +72,7 @@ public sealed partial class SingleFileTab
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentWorldMapLoad(loadGeneration) || _session.WorldMapPopulated)
             {
-                return;
+                return IsStaleDiscard(loadGeneration);
             }
 
             // Show progress
@@ -59,18 +89,18 @@ public sealed partial class SingleFileTab
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!IsCurrentWorldMapLoad(loadGeneration))
                 {
-                    return;
+                    return IsStaleDiscard(loadGeneration);
                 }
 
                 if (worldData == null)
                 {
                     WorldMapStatusText.Text = "No world data available. Use Load Order to load an ESM for terrain.";
-                    return;
+                    return false;
                 }
 
                 worldData.AdditionalDataPaths = CollectLoadOrderPaths();
                 ApplyWorldMapData(worldData);
-                return;
+                return false;
             }
 
             // Ensure semantic parse is complete
@@ -81,7 +111,7 @@ public sealed partial class SingleFileTab
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!IsCurrentWorldMapLoad(loadGeneration))
                 {
-                    return;
+                    return IsStaleDiscard(loadGeneration);
                 }
             }
 
@@ -89,7 +119,7 @@ public sealed partial class SingleFileTab
             if (semantic == null)
             {
                 WorldMapStatusText.Text = Strings.Status_NoWorldData;
-                return;
+                return false;
             }
 
             // Snapshot UI-thread-owned state before going off-thread: LoadOrder.Entries is a
@@ -103,6 +133,7 @@ public sealed partial class SingleFileTab
             var isEsmFile = _session.IsEsmFile;
             var isSaveFile = _session.IsSaveFile;
             var filePath = _session.FilePath;
+            var useMasterTerrain = _useMasterTerrainPreview;
 
             WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
 
@@ -128,9 +159,12 @@ public sealed partial class SingleFileTab
                     // top of (later wins → ESP edits apply); an opened DMP/save is the runtime truth
                     // and wins over the Load Order. MergeList unions by FormID either way, so DLC/new
                     // worldspaces still appear.
+                    // For a DMP primary, the "Master ESM terrain" preview toggle decides whether a
+                    // dump cell that lost its LAND inherits the master's terrain (ON, default) or
+                    // shows exactly what the dump preserved (OFF → carryBaseTerrainIntoCells:false).
                     records = isEsmFile
                         ? records.MergeWith(loadOrderRecords)
-                        : loadOrderRecords.MergeWith(records);
+                        : loadOrderRecords.MergeWith(records, carryBaseTerrainIntoCells: useMasterTerrain);
 
                     // Re-link cells to worldspaces against the MERGED cell list so overridden/added
                     // cells reach the viewer (which reads ws.Cells), not each worldspace's pre-merge
@@ -151,6 +185,28 @@ public sealed partial class SingleFileTab
                         records = records
                             .WithWorldspacesFilteredTo(primaryWorldspaceIds)
                             .WithCellsFilteredTo(primaryCellIds);
+
+                        if (useMasterTerrain)
+                        {
+                            // Preview ON: grid-keyed per-category fill from the Load Order's parsed
+                            // master cells, plus the heightmap hole the FormID-keyed cell merge
+                            // above cannot fill (diverged/synthetic FormIDs, partial LAND). Applied
+                            // to this viewer-local filtered copy only — never to
+                            // _session.SemanticResult (the merge drops the LAND provenance field
+                            // the converter's CellLandPlanner gates on).
+                            // In-place element writes are safe ONLY because `records` here is
+                            // always a fresh MergeWith product (MergeCells allocates a new list on
+                            // every exit) — the With*FilteredTo calls above may return `this` and
+                            // share the receiver's list, so this loop must never move outside the
+                            // loadOrderRecords != null branch.
+                            var enriched = EsmLandEnricher.EnrichCellsWithMasterEsmLandFallback(
+                                records.Cells, loadOrderRecords.Cells);
+                            for (var i = 0; i < records.Cells.Count; i++)
+                            {
+                                records.Cells[i] = enriched[i];
+                            }
+                        }
+
                         records.RelinkWorldspaceCells().ResolvePlacedModels();
                     }
                 }
@@ -160,11 +216,12 @@ public sealed partial class SingleFileTab
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentWorldMapLoad(loadGeneration))
             {
-                return;
+                return IsStaleDiscard(loadGeneration);
             }
 
             esmWorldData.AdditionalDataPaths = CollectLoadOrderPaths();
             ApplyWorldMapData(esmWorldData);
+            return false;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -174,6 +231,8 @@ public sealed partial class SingleFileTab
                     "World map population failed: {0}", ex);
                 WorldMapStatusText.Text = $"World map failed: {ex.GetType().Name}: {ex.Message}";
             }
+
+            return false;
         }
         finally
         {
@@ -189,6 +248,14 @@ public sealed partial class SingleFileTab
     private bool IsCurrentWorldMapLoad(int loadGeneration) =>
         Volatile.Read(ref _worldMapLoadGeneration) == loadGeneration &&
         (_session.HasEsmRecords || _session.IsSaveFile);
+
+    /// <summary>
+    ///     True when a populate pass died specifically because the load generation moved on while
+    ///     the map is still unpopulated — the one outcome <see cref="PopulateWorldMapAsync" />
+    ///     retries. A teardown (no records, no save) with an unchanged generation is terminal.
+    /// </summary>
+    private bool IsStaleDiscard(int loadGeneration) =>
+        Volatile.Read(ref _worldMapLoadGeneration) != loadGeneration && !_session.WorldMapPopulated;
 
     private void ApplyWorldMapData(WorldViewData worldData)
     {
@@ -399,6 +466,33 @@ public sealed partial class SingleFileTab
     private void WorldView3D_ReferenceEnabledOverridesReset(object? sender, EventArgs e)
     {
         if (_selectedWorldObject is { } obj) UpdateReferenceStateInspection(obj);
+    }
+
+    /// <summary>
+    ///     DMP-only "Master ESM terrain" toggle. Terrain source is decided at world-data BUILD time
+    ///     (the merge + enrichment in <see cref="PopulateWorldMapAsync" />), and every per-cell
+    ///     render cache keys off CellRecord references — so flipping it rebuilds the whole
+    ///     WorldViewData through the same reset path a Load Order change uses, keeping the 2D map
+    ///     and the 3D view on one consistent data set.
+    /// </summary>
+    private void WorldView3D_MasterTerrainPreviewToggled(object? sender, bool useMasterTerrain)
+    {
+        if (_useMasterTerrainPreview == useMasterTerrain) return;
+        _useMasterTerrainPreview = useMasterTerrain;
+        // If another reset+re-fire (e.g. a Load Order change) already has a populate in flight,
+        // the single-flight runner schedules nothing new here — PopulateWorldMapAsync's
+        // stale-retry loop is what guarantees the newest generation still gets built.
+        if (_session.IsEsmFile || _session.IsSaveFile) return;
+
+        _session.WorldMapPopulated = false;
+        _session.WorldViewData = null;
+        ResetWorldMap();
+
+        var selected = SubTabView.SelectedItem;
+        if (selected != null)
+        {
+            SubTabView_SelectionChanged(this, new SelectionChangedEventArgs([], [selected]));
+        }
     }
 
     private void UpdateReferenceStateHint(PlacedReference obj, ReferenceEnabledOverride enabledOverride)
@@ -800,7 +894,7 @@ public sealed partial class SingleFileTab
         }
 
         PushUnifiedNav();
-        SubTabView.SelectedItem = WorldMapTab;
+        TrySelectSubTab(AnalysisSubTab.World);
         WorldMapControl.NavigateToWorldspace(wsIdx);
     }
 
@@ -831,7 +925,7 @@ public sealed partial class SingleFileTab
 
         var cellFormId = placements[0].Cell.FormId;
         PushUnifiedNav();
-        SubTabView.SelectedItem = WorldMapTab;
+        TrySelectSubTab(AnalysisSubTab.World);
         NavigateToCellInWorldMap(cellFormId);
     }
 

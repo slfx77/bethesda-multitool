@@ -621,7 +621,8 @@
                                           Visibility="Collapsed"
                                           InspectObject="WorldMap_InspectObject"
                                           InspectCell="WorldMap_InspectCell"
-                                          ReferenceEnabledOverridesReset="WorldView3D_ReferenceEnabledOverridesReset" />
+                                          ReferenceEnabledOverridesReset="WorldView3D_ReferenceEnabledOverridesReset"
+                                          MasterTerrainPreviewToggled="WorldView3D_MasterTerrainPreviewToggled" />
 
                 <!--  Right: tabbed Settings / Inspection / Export panel. Settings (default) hosts the
                       ACTIVE viewer's settings expanders (content swapped on the 2D/3D view-mode change);
@@ -890,15 +891,24 @@
                 </Button>
               </Border>
 
-              <!--  Center: 3D model viewer (WebView2)  -->
+              <!--  Center: native Bethesda model viewer with a temporary pre-Ready WebView.  -->
               <Grid Grid.Column="2"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     CornerRadius="4">
-                <WebView2 x:Name="NpcModelViewer" />
+                <local:BethesdaSceneViewerControl x:Name="NpcSceneViewer" />
+                <WebView2 x:Name="NpcModelViewer" Visibility="Collapsed" />
                 <ProgressRing x:Name="NpcModelLoadingRing"
                               HorizontalAlignment="Center" VerticalAlignment="Center"
                               Margin="0,0,0,40"
                               Visibility="Collapsed" />
+                <InfoBar x:Name="NpcNativeViewerWarning"
+                         Title="Native renderer unavailable"
+                         Severity="Warning"
+                         IsClosable="False"
+                         IsOpen="False"
+                         HorizontalAlignment="Stretch"
+                         VerticalAlignment="Top"
+                         Margin="8" />
               </Grid>
 
               <!--  Right: Controls panel  -->
@@ -960,6 +970,11 @@
                     <TextBlock Text="Render PNG" FontWeight="SemiBold" FontSize="13"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Margin="0,8,0,0" />
+                    <Button x:Name="NpcCaptureNativePngButton"
+                            Content="Capture current native viewport..."
+                            Click="NpcCaptureNativePng_Click" IsEnabled="False" />
+                    <TextBlock Text="Software sprite views" FontSize="11" FontStyle="Italic"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ComboBox x:Name="NpcPerspectiveComboBox" MinWidth="200"
                               AutomationProperties.Name="NPC render perspective">
                       <ComboBoxItem Content="Front (single view)" IsSelected="True" Tag="front" />

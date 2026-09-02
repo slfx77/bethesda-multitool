@@ -49,4 +49,39 @@ public sealed class NifConverterTextureArchiveStateSourceContractTests
         Assert.Contains("result.TexturePathsDisplay", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("keepTextureOverride", viewModel, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ViewerSourceLoadingExposesTruthfulPhaseProgressAndClearsStaleState()
+    {
+        var xaml = SourceContract.ReadAppSource("NifConverterTab.xaml");
+        var code = SourceContract.ReadAppSource("NifConverterTab.xaml.cs");
+        var workflow = SourceContract.ReadAppSource("NifConverterWorkflowService.cs");
+        var viewModel = SourceContract.ReadAppSource("NifConverterViewModel.cs");
+        var browser = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "NifBrowserService.cs");
+
+        Assert.Contains("x:Name=\"NifViewerSourceProgressPanel\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NifViewerSourceProgressBar\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("_nifViewer.ClearSource();", code, StringComparison.Ordinal);
+        Assert.Contains("PopulateNifTree([]);", code, StringComparison.Ordinal);
+        Assert.Contains("new Progress<NifViewerSourceLoadProgress>", code, StringComparison.Ordinal);
+        Assert.Contains("Opening archive and related asset indexes...", code, StringComparison.Ordinal);
+        Assert.Contains("Scanning archive entries:", code, StringComparison.Ordinal);
+        Assert.Contains("Scanning folder:", code, StringComparison.Ordinal);
+        Assert.Contains("Building mesh list for", code, StringComparison.Ordinal);
+        Assert.Contains("_nifViewerSourceLoadingGeneration == sourceGeneration", code,
+            StringComparison.Ordinal);
+
+        Assert.Contains("NifViewerSourceLoadPhase.OpeningArchiveIndexes", workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("NifViewerSourceLoadPhase.ScanningArchiveEntries", workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("NifViewerSourceLoadPhase.BuildingTree", workflow, StringComparison.Ordinal);
+        Assert.Contains("Action<NifBrowserScanProgress>? progress", browser, StringComparison.Ordinal);
+        Assert.Contains("new NifBrowserScanProgress(0, files.Count, 0)", browser,
+            StringComparison.Ordinal);
+        Assert.Contains("public void ClearSource()", viewModel, StringComparison.Ordinal);
+    }
 }

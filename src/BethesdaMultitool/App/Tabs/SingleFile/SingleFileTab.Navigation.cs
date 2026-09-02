@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -239,17 +240,17 @@ public sealed partial class SingleFileTab
         switch (location)
         {
             case DataBrowserNavLocation db:
-                SubTabView.SelectedItem = DataBrowserTab;
+                TrySelectSubTab(AnalysisSubTab.Records);
                 await SelectAndScrollToNodeAsync(db.Node);
                 break;
 
             case WorldMapNavLocation wm:
-                SubTabView.SelectedItem = WorldMapTab;
+                TrySelectSubTab(AnalysisSubTab.World);
                 WorldMapControl.RestoreNavState(wm.State);
                 break;
 
             case DialogueNavLocation dl:
-                SubTabView.SelectedItem = DialogueViewerTab;
+                TrySelectSubTab(AnalysisSubTab.Dialogue);
                 _dialogueQuestFilter = dl.QuestFilter;
                 _dialogueSpeakerFilter = dl.SpeakerFilter;
                 if (_session.DialogueFormIdIndex?.TryGetValue(dl.TopicFormId, out var topic) == true)
@@ -306,7 +307,7 @@ public sealed partial class SingleFileTab
         // Switch to Records tab FIRST so progress bar is visible during loading
         if (!ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
         {
-            SubTabView.SelectedItem = DataBrowserTab;
+            TrySelectSubTab(AnalysisSubTab.Records);
         }
 
         // Ensure Records tree is populated before FormID lookup.

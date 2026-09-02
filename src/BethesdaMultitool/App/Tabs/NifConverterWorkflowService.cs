@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.CLI;
 
@@ -124,23 +125,56 @@ internal static class NifConverterWorkflowService
     internal static Task<NifViewerSourceLoadResult> LoadSourceAsync(
         string path,
         bool isArchive,
-        string? texturePathOverride)
+        string? texturePathOverride,
+        IProgress<NifViewerSourceLoadProgress>? progress = null)
     {
         return Task.Run(() =>
         {
+            progress?.Report(new NifViewerSourceLoadProgress(
+                isArchive
+                    ? NifViewerSourceLoadPhase.OpeningArchiveIndexes
+                    : NifViewerSourceLoadPhase.OpeningDirectory,
+                0,
+                null,
+                0));
+
             var texturePathsOverride = NifTextureSourcePathText.ParseOverride(texturePathOverride);
 
             var service = isArchive
                 ? NifBrowserService.CreateFromBsa(path, texturePathsOverride)
                 : NifBrowserService.CreateFromDirectory(path, texturePathsOverride);
+            try
+            {
+                var nifFilesFound = 0;
+                var entries = service.ListNifFiles(scanProgress =>
+                {
+                    nifFilesFound = scanProgress.NifFilesFound;
+                    progress?.Report(new NifViewerSourceLoadProgress(
+                        scanProgress.TotalEntries.HasValue
+                            ? NifViewerSourceLoadPhase.ScanningArchiveEntries
+                            : NifViewerSourceLoadPhase.ScanningDirectory,
+                        scanProgress.CurrentEntry,
+                        scanProgress.TotalEntries,
+                        scanProgress.NifFilesFound));
+                });
 
-            var entries = service.ListNifFiles();
-            var items = NifTreeViewItem.FromTreeEntries(entries);
+                progress?.Report(new NifViewerSourceLoadProgress(
+                    NifViewerSourceLoadPhase.BuildingTree,
+                    0,
+                    null,
+                    nifFilesFound));
+                var items = NifTreeViewItem.FromTreeEntries(entries);
 
-            return new NifViewerSourceLoadResult(
-                service,
-                items,
-                NifTextureSourcePathText.Format(service.TexturePaths));
+                return new NifViewerSourceLoadResult(
+                    service,
+                    items,
+                    NifTextureSourcePathText.Format(service.TexturePaths));
+            }
+            catch
+            {
+                service.Dispose();
+                throw;
+            }
         });
     }
 
@@ -191,24 +225,38 @@ internal static class NifConverterWorkflowService
 
     internal static Task<NifViewerModelLoadResult> LoadModelAsync(
         NifBrowserService service,
-        NifTreeViewItem item)
+        NifTreeViewItem item,
+        bool includeCompatibilityGlb = true,
+        CancellationToken cancellationToken = default)
     {
         return Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var nifData = service.ReadNifData(item.FullPath);
             if (nifData == null)
             {
                 return NifViewerModelLoadResult.Failed("Failed to read NIF file");
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             var info = NifBrowserService.GetNifInfo(nifData, item.DisplayName);
-            var glbBytes = service.BuildGlb(nifData, item.DisplayName);
+            var build = service.BuildViewerSceneWithDiagnostics(nifData, item.DisplayName);
+            cancellationToken.ThrowIfCancellationRequested();
+            var glbBytes = !includeCompatibilityGlb || build.Scene is null
+                ? null
+                : service.ExportViewerSceneToGlb(build.Scene);
 
-            return new NifViewerModelLoadResult(nifData, info, glbBytes, null);
-        });
+            return new NifViewerModelLoadResult(
+                nifData,
+                info,
+                build.Scene,
+                glbBytes,
+                null,
+                build.ExternalGeometry.IncompleteWarningMessage);
+        }, cancellationToken);
     }
 
-    internal static async Task<byte[]?> BuildGlbAsync(
+    internal static async Task<NifBrowserGlbBuildResult?> BuildGlbAsync(
         NifBrowserService service,
         string nifPath,
         CancellationToken cancellationToken = default)
@@ -216,7 +264,7 @@ internal static class NifConverterWorkflowService
         var nifData = await Task.Run(() => service.ReadNifData(nifPath), cancellationToken);
         return nifData == null
             ? null
-            : await Task.Run(() => service.BuildGlb(nifData, nifPath), cancellationToken);
+            : await Task.Run(() => service.BuildGlbWithDiagnostics(nifData, nifPath), cancellationToken);
     }
 
     internal static async Task<int> RenderPngViewsAsync(
@@ -326,19 +374,46 @@ internal sealed record NifConversionProgress(int Current, int Total, string Rela
 /// <summary>Tally of a batch NIF conversion: converted, skipped, and failed file counts.</summary>
 internal sealed record NifConversionSummary(int Converted, int Skipped, int Failed);
 
+/// <summary>Phases of opening and enumerating a source for the mesh viewer.</summary>
+internal enum NifViewerSourceLoadPhase
+{
+    OpeningArchiveIndexes,
+    OpeningDirectory,
+    ScanningArchiveEntries,
+    ScanningDirectory,
+    BuildingTree
+}
+
+/// <summary>
+///     Mesh-viewer source progress. A total exists only for the archive-entry scan, not the opaque
+///     archive/index open or recursive directory traversal.
+/// </summary>
+internal readonly record struct NifViewerSourceLoadProgress(
+    NifViewerSourceLoadPhase Phase,
+    int CurrentEntry,
+    int? TotalEntries,
+    int NifFilesFound);
+
 /// <summary>Result of loading a NIF source (folder or archive): its service, file tree, and texture paths.</summary>
 internal sealed record NifViewerSourceLoadResult(
     NifBrowserService Service,
     List<NifTreeViewItem> Items,
     string TexturePathsDisplay);
 
-/// <summary>Result of loading a single NIF for the viewer: raw data, parsed info, GLB bytes, or an error message.</summary>
+/// <summary>
+///     Result of loading a single NIF for the viewer. <see cref="Scene" /> is the replacement
+///     renderer's native input; <see cref="GlbBytes" /> exists only while the WebView compatibility
+///     host remains in use and for explicit export.
+/// </summary>
 internal sealed record NifViewerModelLoadResult(
     byte[]? NifData,
     NifViewerInfo? Info,
+    BethesdaViewerScene? Scene,
     byte[]? GlbBytes,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    string? WarningMessage)
 {
     /// <summary>Creates a failed load result carrying only the error message.</summary>
-    public static NifViewerModelLoadResult Failed(string errorMessage) => new(null, null, null, errorMessage);
+    public static NifViewerModelLoadResult Failed(string errorMessage) =>
+        new(null, null, null, null, errorMessage, null);
 }

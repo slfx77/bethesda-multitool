@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Localization;
@@ -8,6 +8,7 @@ using Windows.UI.Text;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Ui;
 
 namespace BethesdaMultitool;
 
@@ -182,7 +183,7 @@ public sealed partial class SingleFileTab
             {
                 await _tasks.RunExclusiveAsync("populate-worldmap", PopulateWorldMapAsync);
                 NavigateToCellInWorldMap(cellFormId);
-                SubTabView.SelectedItem = WorldMapTab;
+                TrySelectSubTab(AnalysisSubTab.World);
             }
         };
     }
@@ -365,7 +366,7 @@ public sealed partial class SingleFileTab
     {
         if (CoverageGapListView.SelectedItem is CoverageGapEntry gap)
         {
-            SubTabView.SelectedItem = RawViewTab;
+            TrySelectSubTab(AnalysisSubTab.RawView);
             HexViewer.NavigateToOffset(gap.RawFileOffset);
         }
     }
@@ -608,7 +609,7 @@ public sealed partial class SingleFileTab
         if (_selectedBrowserNode?.FileOffset is > 0)
         {
             PushUnifiedNav();
-            SubTabView.SelectedItem = RawViewTab;
+            TrySelectSubTab(AnalysisSubTab.RawView);
             HexViewer.NavigateToOffset(_selectedBrowserNode.FileOffset.Value);
         }
     }

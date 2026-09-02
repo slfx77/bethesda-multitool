@@ -13,6 +13,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -45,6 +46,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     public void Dispose()
     {
+        DisposeNpcViewerResources();
         _searchDebounceToken?.Dispose();
         _tasks.Dispose();
         _session.Dispose();
@@ -56,8 +58,14 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void SubTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.Count == 0 || _pipelinePhase != AnalysisPipelinePhase.Idle) return;
         var selected = SubTabView.SelectedItem;
+        NpcSceneViewer.SetPresentationActive(ReferenceEquals(selected, NpcBrowserTab));
+        if (e.AddedItems.Count == 0 || _pipelinePhase != AnalysisPipelinePhase.Idle) return;
+
+        if (ReferenceEquals(selected, NpcBrowserTab))
+        {
+            NpcSceneViewer.InvalidateViewport();
+        }
 
         if (ReferenceEquals(selected, SummaryTab) && !_session.RecordBreakdownPopulated && _session.HasEsmRecords)
         {
@@ -124,11 +132,16 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     public SingleFileTab()
     {
         InitializeComponent();
-        ReorderSubTabsForGameDataWorkflow();
+        // Nothing is loaded yet, so the full surface shows; the type-specific pass runs once the
+        // analyze pass knows what the file is.
+        ConfigureSubTabsForFileType(AnalysisFileType.Unknown);
         ResultsListView.ItemsSource = _carvedFiles;
         ReportListView.ItemsSource = _reportEntries;
         InitializeFileTypeCheckboxes();
         SetupTextBoxContextMenus();
+        NpcSceneViewer.RenderStateChanged += NpcSceneViewer_RenderStateChanged;
+        NpcSceneViewer.AttachRenderSession(new BethesdaViewerRenderSession12());
+        NpcSceneViewer.SetPresentationActive(ReferenceEquals(SubTabView.SelectedItem, NpcBrowserTab));
         WorldMapControl.BeforeNavigate += WorldMap_BeforeNavigate;
         // World-map right panel: seed the Settings and Export tabs with the default (2D) viewer's
         // panels and select Settings (SelectorBar has no XAML default-selection attribute).
@@ -160,18 +173,89 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             NpcSideCollapsedStrip, CollapseNpcSidePanelButton, ExpandNpcSidePanelButton);
     }
 
-    private void ReorderSubTabsForGameDataWorkflow()
+    /// <summary>
+    ///     Rebuilds the sub-tab strip for the loaded file's type, in
+    ///     <see cref="AnalysisSubTabPolicy" /> order. A plugin has no carved-file list and no gap
+    ///     coverage, so showing those tabs invites the user to open panes that can only ever be
+    ///     empty; hiding them is what makes this tab read as a data browser rather than a dump
+    ///     tool that happens to open plugins.
+    ///     <para>
+    ///         The current selection is carried across when the new set still contains it, and
+    ///         falls back to Summary when it does not.
+    ///     </para>
+    /// </summary>
+    private void ConfigureSubTabsForFileType(AnalysisFileType fileType)
     {
+        var previous = SubTabOf(SubTabView.SelectedItem as Microsoft.UI.Xaml.Controls.TabViewItem)
+                       ?? AnalysisSubTab.Summary;
+
         SubTabView.TabItems.Clear();
-        SubTabView.TabItems.Add(SummaryTab);
-        SubTabView.TabItems.Add(DataBrowserTab);
-        SubTabView.TabItems.Add(WorldMapTab);
-        SubTabView.TabItems.Add(DialogueViewerTab);
-        SubTabView.TabItems.Add(NpcBrowserTab);
-        SubTabView.TabItems.Add(ReportsTab);
-        SubTabView.TabItems.Add(RawViewTab);
-        SubTabView.TabItems.Add(CoverageTab);
-        SubTabView.SelectedItem = SummaryTab;
+        foreach (var tab in AnalysisSubTabPolicy.VisibleFor(fileType))
+        {
+            SubTabView.TabItems.Add(SubTabItem(tab));
+        }
+
+        TrySelectSubTab(AnalysisSubTabPolicy.Fallback(previous, fileType));
+    }
+
+    /// <summary>The TabViewItem backing a policy sub-tab.</summary>
+    private Microsoft.UI.Xaml.Controls.TabViewItem SubTabItem(AnalysisSubTab tab) => tab switch
+    {
+        AnalysisSubTab.Summary => SummaryTab,
+        AnalysisSubTab.Records => DataBrowserTab,
+        AnalysisSubTab.World => WorldMapTab,
+        AnalysisSubTab.Dialogue => DialogueViewerTab,
+        AnalysisSubTab.Actors => NpcBrowserTab,
+        AnalysisSubTab.Reports => ReportsTab,
+        AnalysisSubTab.RawView => RawViewTab,
+        AnalysisSubTab.Coverage => CoverageTab,
+        _ => SummaryTab
+    };
+
+    /// <summary>The policy sub-tab a TabViewItem stands for, or null if it is not one of them.</summary>
+    private AnalysisSubTab? SubTabOf(Microsoft.UI.Xaml.Controls.TabViewItem? item)
+    {
+        if (item is null) return null;
+        if (ReferenceEquals(item, SummaryTab)) return AnalysisSubTab.Summary;
+        if (ReferenceEquals(item, DataBrowserTab)) return AnalysisSubTab.Records;
+        if (ReferenceEquals(item, WorldMapTab)) return AnalysisSubTab.World;
+        if (ReferenceEquals(item, DialogueViewerTab)) return AnalysisSubTab.Dialogue;
+        if (ReferenceEquals(item, NpcBrowserTab)) return AnalysisSubTab.Actors;
+        if (ReferenceEquals(item, ReportsTab)) return AnalysisSubTab.Reports;
+        if (ReferenceEquals(item, RawViewTab)) return AnalysisSubTab.RawView;
+        if (ReferenceEquals(item, CoverageTab)) return AnalysisSubTab.Coverage;
+        return null;
+    }
+
+    /// <summary>
+    ///     Selects a sub-tab if it is currently shown, and reports whether it was. Every navigation
+    ///     path goes through this rather than assigning <c>SelectedItem</c> directly: assigning a
+    ///     TabViewItem that is not in <c>TabItems</c> silently clears the selection, which would
+    ///     leave the pane blank with no tab highlighted.
+    /// </summary>
+    private bool TrySelectSubTab(AnalysisSubTab tab)
+    {
+        var item = SubTabItem(tab);
+        if (!SubTabView.TabItems.Contains(item))
+        {
+            return false;
+        }
+
+        SubTabView.SelectedItem = item;
+
+        // Clearing and rebuilding TabItems can leave SelectedItem pointing at the same
+        // TabViewItem instance. Reassigning that instance does not necessarily raise
+        // SelectionChanged, even though the item becomes visible/selected again. Keep the
+        // native actor presenter in sync explicitly so its first scene cannot wait forever for
+        // a CompositionTarget frame while _isPresentationActive is still false.
+        var actorsSelected = ReferenceEquals(item, NpcBrowserTab);
+        NpcSceneViewer.SetPresentationActive(actorsSelected);
+        if (actorsSelected)
+        {
+            NpcSceneViewer.InvalidateViewport();
+        }
+
+        return true;
     }
 
     #endregion
@@ -248,24 +332,24 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         // what makes the world map populate as part of the analyze pass — instead of a second, race-prone
         // populate afterward (HasEsmRecords flips true mid-analysis, well before the parse finishes).
         var targetTab = ResolveAutoOpenTab();
-        if (targetTab is not null) SubTabView.SelectedItem = targetTab;
+        if (targetTab is { } requested) TrySelectSubTab(requested);
 
         // Wait for the Analyze button to enable (the dependency check + file setup can lag well past a
         // fixed delay) before kicking analysis — the auto-open below depends on it actually running.
         for (var i = 0; i < 200 && !AnalyzeButton.IsEnabled; i++) await Task.Delay(50);
         if (AnalyzeButton.IsEnabled) AnalyzeButton_Click(this, new RoutedEventArgs());
 
-        if (targetTab is not null) await AutoOpenRequestedViewAsync(targetTab);
+        if (targetTab is { } requestedView) await AutoOpenRequestedViewAsync(requestedView);
     }
 
-    private Microsoft.UI.Xaml.Controls.TabViewItem? ResolveAutoOpenTab() =>
+    private static AnalysisSubTab? ResolveAutoOpenTab() =>
         Program.AutoOpenView?.Trim().ToLowerInvariant() switch
         {
-            "worldmap" or "world" or "map" or "2d" or "3d" => WorldMapTab,
-            "dialogue" => DialogueViewerTab,
-            "data" or "databrowser" => DataBrowserTab,
-            "actors" or "npcs" => NpcBrowserTab,
-            "reports" => ReportsTab,
+            "worldmap" or "world" or "map" or "2d" or "3d" => AnalysisSubTab.World,
+            "dialogue" => AnalysisSubTab.Dialogue,
+            "data" or "databrowser" => AnalysisSubTab.Records,
+            "actors" or "npcs" => AnalysisSubTab.Actors,
+            "reports" => AnalysisSubTab.Reports,
             _ => null
         };
 
@@ -276,14 +360,14 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     ///     that (the populate runs fire-and-forget inside AnalyzeButton_Click) then sets worldspace
     ///     (densest by default), layer, and overlay so an instrumented run lands on the exact failing view.
     /// </summary>
-    private async Task AutoOpenRequestedViewAsync(Microsoft.UI.Xaml.Controls.TabViewItem targetTab)
+    private async Task AutoOpenRequestedViewAsync(AnalysisSubTab targetTab)
     {
         var view = Program.AutoOpenView?.Trim().ToLowerInvariant() ?? "";
         var log = BethesdaMultitool.Core.Diagnostics.Logger.Instance;
         log.Info("[AutoOpen] view={0} ws={1} layer={2} — waiting for analysis + map populate…",
             view, Program.AutoOpenWorldspace ?? "(densest)", Program.AutoOpenLayer ?? "(default)");
 
-        if (!ReferenceEquals(targetTab, WorldMapTab))
+        if (targetTab != AnalysisSubTab.World)
         {
             return; // non-map tabs: AnalyzeButton_Click's own end-of-run auto-populate is enough.
         }
@@ -298,7 +382,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         if (!mapReady) return;
 
         // Re-assert the tab selection (analysis resets sub-tab content) so the map is actually shown.
-        SubTabView.SelectedItem = targetTab;
+        TrySelectSubTab(targetTab);
 
         // 2D vs 3D viewer.
         if (view == "3d" && WorldViewModeComboBox is not null) WorldViewModeComboBox.SelectedIndex = 1;
@@ -483,6 +567,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     {
         // Quiesce background populates before tearing down the session state they read from.
         await _tasks.CancelAllAndDrainAsync();
+        await CancelNpcViewerLoadAndDrainAsync();
+        DisposeNpcViewerResources();
         _tasks.Dispose();
         _session.Dispose();
     }
@@ -578,6 +664,9 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             }
 
             _session.Open(filePath, _analysisResult, fileType, openAccessor: fileType == AnalysisFileType.SaveFile);
+
+            // The type is settled now, so drop the sub-tabs that cannot apply to it.
+            ConfigureSubTabsForFileType(fileType);
             UpdateFileInfoCard();
 
             _session.RuntimeMeshes = _analysisResult.RuntimeMeshes;

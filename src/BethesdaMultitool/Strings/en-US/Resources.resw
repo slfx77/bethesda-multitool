@@ -53,8 +53,8 @@
   <data name="NavHeader_Assets.Content" xml:space="preserve">
     <value>Assets</value>
   </data>
-  <data name="NavHeader_Conversion.Content" xml:space="preserve">
-    <value>Conversion</value>
+  <data name="NavHeader_Recovery.Content" xml:space="preserve">
+    <value>Recovery</value>
   </data>
   <data name="NavHeader_MemoryDumps.Content" xml:space="preserve">
     <value>Memory Dumps</value>

@@ -27,6 +27,7 @@ internal static class NpcHeadPartAttacher
     {
         foreach (var partPath in new[]
                  {
+                     npc.EarNifPath,
                      npc.MouthNifPath,
                      npc.LowerTeethNifPath,
                      npc.UpperTeethNifPath,
@@ -102,6 +103,12 @@ internal static class NpcHeadPartAttacher
 
             foreach (var sub in partModel.Submeshes)
             {
+                if (string.Equals(partPath, npc.EarNifPath, StringComparison.OrdinalIgnoreCase) &&
+                    npc.EarTexturePath != null)
+                {
+                    sub.DiffuseTexturePath = npc.EarTexturePath;
+                }
+
                 sub.RenderOrder = 0;
                 model.Submeshes.Add(sub);
                 model.ExpandBounds(sub.Positions);

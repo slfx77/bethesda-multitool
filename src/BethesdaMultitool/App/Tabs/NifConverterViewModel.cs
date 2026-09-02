@@ -13,6 +13,15 @@ internal sealed class NifConverterViewModel
     public bool IsArchive { get; private set; }
     public string? SelectedNifPath { get; private set; }
 
+    /// <summary>Forgets a source before a replacement begins loading.</summary>
+    public void ClearSource()
+    {
+        CurrentPath = null;
+        IsArchive = false;
+        SelectedNifPath = null;
+        _allItems = [];
+    }
+
     /// <summary>Adopts a newly loaded folder/archive source and returns the view state.</summary>
     public NifViewerSourceState ApplySource(
         string path,

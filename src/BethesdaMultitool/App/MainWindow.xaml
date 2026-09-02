@@ -68,18 +68,10 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
-        <!--  Texture Tools  -->
-        <NavigationViewItem
-          x:Uid="Nav_DdxConverter"
-          Tag="DdxConverter">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xEB9F;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
         <NavigationViewItemSeparator />
 
-        <NavigationViewItemHeader x:Uid="NavHeader_Conversion" />
+        <!--  Recovery tools: each tracks its own opened file, independent of the explorers.  -->
+        <NavigationViewItemHeader x:Uid="NavHeader_Recovery" />
 
         <!--  Game Repacker  -->
         <NavigationViewItem
@@ -87,6 +79,15 @@
           Tag="Repacker">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE777;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
+        <!--  Texture Tools (DDX conversion)  -->
+        <NavigationViewItem
+          x:Uid="Nav_DdxConverter"
+          Tag="DdxConverter">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xEB9F;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 

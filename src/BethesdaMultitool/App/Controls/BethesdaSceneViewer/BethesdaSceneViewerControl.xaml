@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="BethesdaMultitool.BethesdaSceneViewerControl"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Grid>
+    <SwapChainPanel x:Name="RenderPanel"
+                    IsTabStop="True"
+                    AutomationProperties.Name="Native Bethesda scene viewer" />
+
+    <!-- This is a renderer-state surface, not a success placeholder. The panel is not created or
+         presented until the mandatory render session reports Ready; tab hosts observe the same
+         state and start their compatibility path only after a native first-frame fault. -->
+    <Border x:Name="StatusPanel"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            MaxWidth="480"
+            Padding="12,8"
+            CornerRadius="4"
+            Background="#D8202024">
+      <TextBlock x:Name="StatusText"
+                 Text="Preparing native Bethesda renderer…"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 Foreground="#FFF0F0F0"
+                 AutomationProperties.Name="Native viewer status" />
+    </Border>
+
+    <Border x:Name="AnimationPanel"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Margin="12"
+            Padding="8,6"
+            CornerRadius="4"
+            Background="#D8202024"
+            Visibility="Collapsed">
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="160" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <Button x:Name="AnimationLoadKfButton"
+                Grid.Column="0"
+                Padding="8,4"
+                Content="Load KF…"
+                Click="AnimationLoadKfButton_Click"
+                AutomationProperties.Name="Load KF animation"
+                ToolTipService.ToolTip="Load standalone classic Bethesda animation sequences from a KF file" />
+
+        <Button x:Name="AnimationPlayPauseButton"
+                Grid.Column="1"
+                MinWidth="36"
+                Padding="8,4"
+                Click="AnimationPlayPauseButton_Click"
+                AutomationProperties.Name="Pause animation"
+                ToolTipService.ToolTip="Play or pause the selected animation">
+          <FontIcon x:Name="AnimationPlayPauseIcon"
+                    FontSize="14"
+                    Glyph="&#xE769;" />
+        </Button>
+
+        <ComboBox x:Name="AnimationClipComboBox"
+                  Grid.Column="2"
+                  MinWidth="140"
+                  SelectionChanged="AnimationClipComboBox_SelectionChanged"
+                  AutomationProperties.Name="Animation clip"
+                  ToolTipService.ToolTip="Select an animation clip" />
+
+        <Slider x:Name="AnimationTimeline"
+                Grid.Column="3"
+                Minimum="0"
+                Maximum="1"
+                StepFrequency="0.01"
+                SmallChange="0.01"
+                ValueChanged="AnimationTimeline_ValueChanged"
+                AutomationProperties.Name="Animation timeline" />
+
+        <TextBlock x:Name="AnimationTimeText"
+                   Grid.Column="4"
+                   MinWidth="84"
+                   VerticalAlignment="Center"
+                   Text="0.00 / 0.00 s"
+                   Foreground="#FFF0F0F0"
+                   AutomationProperties.Name="Animation time" />
+
+        <TextBlock x:Name="AnimationLoadStatusText"
+                   Grid.Column="5"
+                   MaxWidth="260"
+                   VerticalAlignment="Center"
+                   Text="No animation clip loaded"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="#FFCCCCCC"
+                   AutomationProperties.Name="Animation load status"
+                   AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

@@ -88,15 +88,24 @@ internal static class NpcSkeletonLoader
             Log.Warn("Custom animation not found: {0}", customPath);
         }
 
-        var idleKfPath = skelDir + "locomotion\\mtidle.kf";
-        var idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(idleKfPath, meshArchives, true);
-
-        // Female skeletons share male locomotion animations
-        if (idleRaw == null && skelDir.Contains("_female", StringComparison.OrdinalIgnoreCase))
+        (byte[] Data, NifInfo Info)? idleRaw = null;
+        // Fallout 3/New Vegas place the neutral male idle under locomotion; retail
+        // Oblivion instead ships characters\_male\idle.kf. Probe both exact engine
+        // families in preference order rather than fabricating a renamed path.
+        foreach (var relativeIdlePath in new[] { "locomotion\\mtidle.kf", "idle.kf" })
         {
-            var maleKfPath = skelDir.Replace("_female", "_male", StringComparison.OrdinalIgnoreCase)
-                             + "locomotion\\mtidle.kf";
-            idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(maleKfPath, meshArchives, true);
+            idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(skelDir + relativeIdlePath, meshArchives, true);
+            if (idleRaw == null && skelDir.Contains("_female", StringComparison.OrdinalIgnoreCase))
+            {
+                var maleKfPath = skelDir.Replace("_female", "_male", StringComparison.OrdinalIgnoreCase) +
+                                 relativeIdlePath;
+                idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(maleKfPath, meshArchives, true);
+            }
+
+            if (idleRaw != null)
+            {
+                break;
+            }
         }
 
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? overrides = null;

@@ -4,6 +4,7 @@ using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Minidump;
 
 namespace BethesdaMultitool;
@@ -120,14 +121,39 @@ internal static class NpcBrowserWorkflowService
                $"Gender: {(npc.IsFemale ? "Female" : "Male")}";
     }
 
-    internal static Task<byte[]?> BuildGlbAsync(
+    /// <summary>
+    ///     Builds the shared renderer-neutral scene used by both the NPC and creature preview
+    ///     workflows. Existing GLB callers serialize this scene only after composition completes.
+    /// </summary>
+    internal static Task<BethesdaViewerScene?> BuildViewerSceneAsync(
+        NpcBrowserService service,
+        NpcListItem npc,
+        NpcRenderOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return npc.IsCreature
+                ? service.BuildCreatureViewerScene(npc.FormId, options.BindPose)
+                : service.BuildViewerScene(
+                    npc.FormId,
+                    options.HeadOnly,
+                    options.NoEquip,
+                    options.NoWeapon,
+                    options.BindPose);
+        }, cancellationToken);
+    }
+
+    internal static async Task<byte[]?> BuildGlbAsync(
         NpcBrowserService service,
         NpcListItem npc,
         NpcRenderOptions options)
     {
-        return Task.Run(() => npc.IsCreature
-            ? service.BuildCreatureGlb(npc.FormId)
-            : service.BuildGlb(npc.FormId, options.HeadOnly, options.NoEquip, options.NoWeapon, options.BindPose));
+        var scene = await BuildViewerSceneAsync(service, npc, options);
+        return scene == null
+            ? null
+            : await Task.Run(() => service.ExportViewerSceneToGlb(scene));
     }
 
     internal static async Task ExportGlbAsync(

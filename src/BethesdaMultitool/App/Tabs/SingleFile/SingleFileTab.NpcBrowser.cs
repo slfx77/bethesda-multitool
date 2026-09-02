@@ -1,15 +1,18 @@
-using BethesdaMultitool.CLI.Rendering.Nif;
+﻿using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Windows.Storage.Pickers;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Ui;
 using WinRT.Interop;
 
 namespace BethesdaMultitool;
@@ -22,8 +25,18 @@ public sealed partial class SingleFileTab
     private readonly NpcBrowserController _npcBrowser = new();
     private CancellationTokenSource? _npcBatchCts;
     private NpcBrowserService? _npcBrowserService;
+    private BethesdaViewerScene? _npcViewerScene;
+    private CancellationTokenSource? _npcViewerLoadCts;
+    private Task? _npcViewerLoadTask;
+    private int _npcViewerLoadGeneration;
+    private bool _npcViewerNativeReady;
+    private TaskCompletionSource<BethesdaSceneViewerRenderState>? _npcViewerNativeOutcome;
+    private BethesdaViewerScene? _npcViewerNativeOutcomeScene;
+    private int _npcViewerNativeOutcomeGeneration;
+    private bool _npcViewerDisposed;
     private CancellationTokenSource? _npcRenderOptionDebounce;
     private bool _webViewInitialized;
+    private Task? _webViewInitializationTask;
 
     #region Cross-Tab Navigation
 
@@ -35,7 +48,7 @@ public sealed partial class SingleFileTab
         }
 
         // Switch to NPC Browser tab
-        SubTabView.SelectedItem = NpcBrowserTab;
+        TrySelectSubTab(AnalysisSubTab.Actors);
 
         // Ensure the NPC browser is populated
         if (!_session.NpcBrowserPopulated)
@@ -156,8 +169,7 @@ public sealed partial class SingleFileTab
 
             NpcBrowserPlaceholder.Visibility = Visibility.Collapsed;
             NpcBrowserContent.Visibility = Visibility.Visible;
-
-            await InitializeWebViewAsync();
+            // Keep the compatibility host cold until a selected actor fails native D3D12 setup.
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -203,14 +215,47 @@ public sealed partial class SingleFileTab
 
     private async Task InitializeWebViewAsync()
     {
-        if (_webViewInitialized)
+        if (_npcViewerNativeReady || _webViewInitialized)
         {
             return;
         }
 
+        if (_webViewInitializationTask is { } pending)
+        {
+            await pending;
+            return;
+        }
+
+        var initialization = InitializeWebViewCoreAsync();
+        _webViewInitializationTask = initialization;
+        try
+        {
+            await initialization;
+        }
+        finally
+        {
+            if (ReferenceEquals(_webViewInitializationTask, initialization))
+            {
+                _webViewInitializationTask = null;
+            }
+        }
+    }
+
+    private async Task InitializeWebViewCoreAsync()
+    {
         try
         {
             await NpcModelViewer.EnsureCoreWebView2Async();
+
+            // Chromium startup is not cancellable. Native Ready or tab disposal can win while
+            // this await is in flight, so establish ownership first and immediately tear the
+            // fallback back down instead of making it visible after the native promotion.
+            _webViewInitialized = true;
+            if (_npcViewerNativeReady || _npcViewerDisposed)
+            {
+                CloseNpcViewerCompatibilityHost();
+                return;
+            }
 
             // Serve local assets via virtual host mapping
             var assetsDir = Path.Combine(AppContext.BaseDirectory, "App", "Assets");
@@ -224,13 +269,27 @@ public sealed partial class SingleFileTab
                 "https://npc-viewer-assets/npc-viewer.html"
 #pragma warning restore S1075
             );
-            _webViewInitialized = true;
+
+            if (_npcViewerNativeReady || _npcViewerDisposed)
+            {
+                CloseNpcViewerCompatibilityHost();
+                return;
+            }
+
+            NpcModelViewer.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
+            if (_npcViewerDisposed) return;
+
+            CloseNpcViewerCompatibilityHost();
             NpcBrowserStatusText.Text = $"WebView2 init failed: {ex.Message}";
-            NpcBrowserPlaceholder.Visibility = Visibility.Visible;
-            NpcBrowserContent.Visibility = Visibility.Collapsed;
+            NpcNativeViewerWarning.Message =
+                $"Compatibility preview failed to initialize; the native renderer will continue preparing. {ex.Message}";
+            NpcNativeViewerWarning.IsOpen = true;
+            // Compatibility failure must not hide the native viewer or the rest of the browser.
+            // The native control reports its own preparing/faulted state in-place.
+            NpcBrowserContent.Visibility = Visibility.Visible;
         }
     }
 
@@ -279,15 +338,29 @@ public sealed partial class SingleFileTab
 
     private async void NpcListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        CancelNpcRenderOptionDebounce();
+
         if (NpcListView.SelectedItem is not NpcListItem npc || _npcBrowserService == null)
         {
+            var emptyGeneration = unchecked(++_npcViewerLoadGeneration);
+            await CancelNpcViewerLoadAndDrainAsync();
+            if (emptyGeneration != _npcViewerLoadGeneration ||
+                NpcListView.SelectedItem is NpcListItem)
+            {
+                return;
+            }
+
+            _npcViewerScene = null;
+            NpcSceneViewer.ClearScene();
             ApplyNpcSelectionState(NpcSelectionState.Empty);
             return;
         }
 
         ApplyNpcSelectionState(_npcBrowser.Select(npc));
 
-        await LoadNpcIntoViewerAsync(npc);
+        var load = LoadNpcIntoViewerAsync(npc);
+        _npcViewerLoadTask = load;
+        await load;
     }
 
     private void ApplyNpcSelectionState(NpcSelectionState state)
@@ -300,6 +373,10 @@ public sealed partial class SingleFileTab
         NpcIdlePoseCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
         NpcExportGlbButton.IsEnabled = state.CanExportGlb;
         NpcRenderPngButton.IsEnabled = state.CanRenderPng;
+        NpcCaptureNativePngButton.IsEnabled =
+            state.CanRenderPng &&
+            _npcViewerScene is not null &&
+            NpcSceneViewer.RenderState == BethesdaSceneViewerRenderState.Ready;
     }
 
     #endregion
@@ -308,48 +385,144 @@ public sealed partial class SingleFileTab
 
     private async Task LoadNpcIntoViewerAsync(NpcListItem npc)
     {
-        if (_npcBrowserService == null || !_webViewInitialized)
-        {
-            return;
-        }
+        await CancelNpcViewerLoadAndDrainAsync();
+        var service = _npcBrowserService;
+        if (service == null) return;
+
+        var options = BuildNpcRenderOptions();
+        var loadCts = new CancellationTokenSource();
+        _npcViewerLoadCts = loadCts;
+        var cancellationToken = loadCts.Token;
+        var generation = unchecked(++_npcViewerLoadGeneration);
+        TaskCompletionSource<BethesdaSceneViewerRenderState>? nativeOutcome = null;
 
         NpcModelLoadingRing.Visibility = Visibility.Visible;
 
         try
         {
-            await NpcModelViewer.ExecuteScriptAsync("setStatus('Building model...')");
-
-            var glbBytes = await NpcBrowserWorkflowService.BuildGlbAsync(
-                _npcBrowserService,
+            var scene = await NpcBrowserWorkflowService.BuildViewerSceneAsync(
+                service,
                 npc,
-                BuildNpcRenderOptions());
-
-            if (glbBytes == null)
+                options,
+                cancellationToken);
+            if (!IsCurrentNpcViewerLoad(service, npc, options, generation, cancellationToken))
             {
-                var label = npc.IsCreature ? "creature" : "NPC";
-                await NpcModelViewer.ExecuteScriptAsync($"setStatus('No geometry for this {label}')");
-                NpcModelLoadingRing.Visibility = Visibility.Collapsed;
                 return;
             }
 
-            var base64 = Convert.ToBase64String(glbBytes);
-            await NpcModelViewer.ExecuteScriptAsync($"loadModel('{base64}')");
+            if (scene == null)
+            {
+                var label = npc.IsCreature ? "creature" : "NPC";
+                _npcViewerScene = null;
+                NpcSceneViewer.ClearScene();
+                await SetNpcViewerFallbackStatusAsync($"No geometry for this {label}");
+                return;
+            }
+
+            if (!_npcViewerNativeReady)
+            {
+                nativeOutcome = new TaskCompletionSource<BethesdaSceneViewerRenderState>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                _npcViewerNativeOutcome = nativeOutcome;
+                _npcViewerNativeOutcomeScene = scene;
+                _npcViewerNativeOutcomeGeneration = generation;
+            }
+
+            _npcViewerScene = scene;
+            NpcSceneViewer.SetScene(scene);
+            NpcSceneViewer.FrameScene();
+            NpcSceneViewer.InvalidateViewport();
+
+            // Let CompositionTarget produce one real native frame before deciding whether a
+            // compatibility process is needed. The fallback serializes this exact assembled scene;
+            // it never recomposes the actor.
+            if (nativeOutcome is not null)
+            {
+                if (NpcSceneViewer.RenderState == BethesdaSceneViewerRenderState.Faulted)
+                {
+                    nativeOutcome.TrySetResult(BethesdaSceneViewerRenderState.Faulted);
+                }
+
+                var nativeState = await nativeOutcome.Task.WaitAsync(cancellationToken);
+                if (!IsCurrentNpcViewerLoad(service, npc, options, generation, cancellationToken))
+                {
+                    return;
+                }
+
+                if (nativeState == BethesdaSceneViewerRenderState.Faulted && !_npcViewerNativeReady)
+                {
+                    await InitializeWebViewAsync();
+                    if (!IsCurrentNpcViewerLoad(service, npc, options, generation, cancellationToken) ||
+                        !ReferenceEquals(scene, _npcViewerScene))
+                    {
+                        return;
+                    }
+
+                    if (!_npcViewerNativeReady && _webViewInitialized)
+                    {
+                        try
+                        {
+                            await NpcModelViewer.ExecuteScriptAsync("setStatus('Building compatibility model...')");
+                            var glbBytes = await Task.Run(
+                                () => service.ExportViewerSceneToGlb(scene),
+                                cancellationToken);
+                            if (!IsCurrentNpcViewerLoad(service, npc, options, generation, cancellationToken) ||
+                                !ReferenceEquals(scene, _npcViewerScene) ||
+                                _npcViewerNativeReady)
+                            {
+                                return;
+                            }
+
+                            var base64 = Convert.ToBase64String(glbBytes);
+                            await NpcModelViewer.ExecuteScriptAsync($"loadModel('{base64}')");
+                        }
+                        catch (Exception ex) when (_npcViewerNativeReady)
+                        {
+                            // Promotion closes the compatibility host. A racing script completion must not
+                            // clear the already-valid native scene through the outer failure path.
+                            Logger.Instance.Warn(
+                                "NPC Viewer: compatibility load ended during native promotion: {0}",
+                                ex.Message);
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer actor/options state owns the visible preview.
         }
         catch (Exception ex)
         {
-            try
+            if (generation == _npcViewerLoadGeneration && ReferenceEquals(service, _npcBrowserService))
             {
-                await NpcModelViewer.ExecuteScriptAsync(
-                    $"setStatus('Error: {EscapeJsString(ex.Message)}')");
-            }
-            catch
-            {
-                // WebView may not be ready
+                if (!_npcViewerNativeReady)
+                {
+                    _npcViewerScene = null;
+                    NpcSceneViewer.ClearScene();
+                    await SetNpcViewerFallbackStatusAsync($"Error: {ex.Message}");
+                }
+                else
+                {
+                    Logger.Instance.Warn("NPC Viewer: post-promotion UI update failed: {0}", ex.Message);
+                }
             }
         }
         finally
         {
-            NpcModelLoadingRing.Visibility = Visibility.Collapsed;
+            if (ReferenceEquals(_npcViewerNativeOutcome, nativeOutcome))
+            {
+                _npcViewerNativeOutcome = null;
+                _npcViewerNativeOutcomeScene = null;
+            }
+
+            if (ReferenceEquals(_npcViewerLoadCts, loadCts))
+            {
+                _npcViewerLoadCts = null;
+                NpcModelLoadingRing.Visibility = Visibility.Collapsed;
+            }
+
+            loadCts.Dispose();
         }
     }
 
@@ -361,25 +534,40 @@ public sealed partial class SingleFileTab
         }
 
         // Debounce rapid toggling
-        if (_npcRenderOptionDebounce != null)
-        {
-            await _npcRenderOptionDebounce.CancelAsync();
-        }
-
-        _npcRenderOptionDebounce = new CancellationTokenSource();
-        var token = _npcRenderOptionDebounce.Token;
+        CancelNpcRenderOptionDebounce();
+        var debounce = new CancellationTokenSource();
+        _npcRenderOptionDebounce = debounce;
+        var token = debounce.Token;
 
         try
         {
+            // Publish the latest-wins token before awaiting the active viewer load. A second option
+            // event or actor selection can now cancel this operation while the drain is in flight.
+            await CancelNpcViewerLoadAndDrainAsync();
+            token.ThrowIfCancellationRequested();
             await Task.Delay(300, token);
-            if (!token.IsCancellationRequested)
+            if (!token.IsCancellationRequested &&
+                NpcListView.SelectedItem is NpcListItem selectedNpc &&
+                selectedNpc.FormId == npc.FormId &&
+                selectedNpc.IsCreature == npc.IsCreature)
             {
-                await LoadNpcIntoViewerAsync(npc);
+                var load = LoadNpcIntoViewerAsync(selectedNpc);
+                _npcViewerLoadTask = load;
+                await load;
             }
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // Expected on rapid toggling
+        }
+        finally
+        {
+            if (ReferenceEquals(_npcRenderOptionDebounce, debounce))
+            {
+                _npcRenderOptionDebounce = null;
+            }
+
+            debounce.Dispose();
         }
     }
 
@@ -738,6 +926,228 @@ public sealed partial class SingleFileTab
         return WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
     }
 
+    private bool IsCurrentNpcViewerLoad(
+        NpcBrowserService service,
+        NpcListItem npc,
+        NpcRenderOptions options,
+        int generation,
+        CancellationToken cancellationToken)
+    {
+        return !cancellationToken.IsCancellationRequested &&
+               generation == _npcViewerLoadGeneration &&
+               ReferenceEquals(service, _npcBrowserService) &&
+               NpcListView.SelectedItem is NpcListItem selected &&
+               selected.FormId == npc.FormId &&
+               selected.IsCreature == npc.IsCreature &&
+               Equals(options, BuildNpcRenderOptions());
+    }
+
+    private async Task SetNpcViewerFallbackStatusAsync(string message)
+    {
+        if (_npcViewerNativeReady || !_webViewInitialized) return;
+
+        try
+        {
+            await NpcModelViewer.ExecuteScriptAsync($"setStatus('{EscapeJsString(message)}')");
+        }
+        catch
+        {
+            NpcBrowserStatusText.Text = message;
+        }
+    }
+
+    private async void NpcCaptureNativePng_Click(object sender, RoutedEventArgs e)
+    {
+        if (_npcViewerScene is null ||
+            NpcSceneViewer.RenderState != BethesdaSceneViewerRenderState.Ready)
+        {
+            return;
+        }
+
+        var npc = NpcListView.SelectedItem as NpcListItem;
+        var outputPath = EnvironmentVariables.Get(EnvironmentVariables.Viewer.NativeCaptureOutput);
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            var picker = new FileSavePicker();
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeChoices.Add("PNG Image", [".png"]);
+            picker.SuggestedFileName = Path.ChangeExtension(
+                NpcBrowserController.BuildDefaultFileName(npc, ".png"),
+                ".native.png");
+            InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
+
+            var file = await picker.PickSaveFileAsync();
+            if (file == null) return;
+            outputPath = file.Path;
+        }
+        else
+        {
+            outputPath = Path.GetFullPath(outputPath);
+            var outputDirectory = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(outputDirectory))
+            {
+                Directory.CreateDirectory(outputDirectory);
+            }
+        }
+
+        NpcCaptureNativePngButton.IsEnabled = false;
+        try
+        {
+            var pngBytes = await NpcSceneViewer.CapturePngAsync();
+            await File.WriteAllBytesAsync(outputPath, pngBytes);
+            StatusTextBlock.Text = $"Captured native viewport: {Path.GetFileName(outputPath)}";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"Native capture failed: {ex.Message}";
+        }
+        finally
+        {
+            NpcCaptureNativePngButton.IsEnabled =
+                _npcViewerScene is not null &&
+                NpcSceneViewer.RenderState == BethesdaSceneViewerRenderState.Ready;
+        }
+    }
+
+    private async Task CancelNpcViewerLoadAndDrainAsync()
+    {
+        // Snapshot the previous operation before the first await. The selection/options handler
+        // stores the newly returned task as soon as CancelAsync yields; reading the field afterward
+        // would make this operation await itself forever.
+        var load = _npcViewerLoadTask;
+        var cancellation = _npcViewerLoadCts;
+        if (cancellation is not null && !cancellation.IsCancellationRequested)
+        {
+            await cancellation.CancelAsync();
+        }
+
+        if (load is null || load.IsCompleted) return;
+
+        try
+        {
+            await load;
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when selection, options, or source supersedes the load.
+        }
+    }
+
+    private void CancelNpcRenderOptionDebounce()
+    {
+        var debounce = _npcRenderOptionDebounce;
+        _npcRenderOptionDebounce = null;
+        if (debounce is null) return;
+
+        if (!debounce.IsCancellationRequested)
+        {
+            debounce.Cancel();
+        }
+
+        debounce.Dispose();
+    }
+
+    private void NpcSceneViewer_RenderStateChanged(
+        object? sender,
+        BethesdaSceneViewerRenderStateChangedEventArgs e)
+    {
+        CompleteNpcViewerNativeOutcome(e.State);
+        NpcCaptureNativePngButton.IsEnabled =
+            e.State == BethesdaSceneViewerRenderState.Ready && _npcViewerScene is not null;
+
+        if (e.State == BethesdaSceneViewerRenderState.Faulted)
+        {
+            NpcNativeViewerWarning.Message = _npcViewerNativeReady
+                ? $"The native renderer could not display this assembled actor. {e.Message}"
+                : $"Opening the compatibility preview. {e.Message}";
+            NpcNativeViewerWarning.IsOpen = true;
+            return;
+        }
+
+        if (e.State != BethesdaSceneViewerRenderState.Ready || _npcViewerNativeReady) return;
+
+        _npcViewerNativeReady = true;
+        NpcNativeViewerWarning.IsOpen = false;
+        NpcModelViewer.Visibility = Visibility.Collapsed;
+        CloseNpcViewerCompatibilityHost();
+        if (_npcViewerScene is not null)
+        {
+            NpcSceneViewer.SetScene(_npcViewerScene);
+            NpcSceneViewer.FrameScene();
+            NpcSceneViewer.InvalidateViewport();
+        }
+    }
+
+    private void CompleteNpcViewerNativeOutcome(BethesdaSceneViewerRenderState state)
+    {
+        if (state is not (BethesdaSceneViewerRenderState.Ready or BethesdaSceneViewerRenderState.Faulted) ||
+            _npcViewerNativeOutcome is not { } outcome ||
+            _npcViewerNativeOutcomeGeneration != _npcViewerLoadGeneration ||
+            !ReferenceEquals(_npcViewerNativeOutcomeScene, _npcViewerScene))
+        {
+            return;
+        }
+
+        outcome.TrySetResult(state);
+    }
+
+    private void CloseNpcViewerCompatibilityHost()
+    {
+        if (!_webViewInitialized) return;
+
+        try
+        {
+            // Close releases the Chromium process, decoded GLB, and WebView compositor resources;
+            // merely hiding the compatibility control would keep all of them resident.
+            NpcModelViewer.Close();
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Warn("NPC Viewer: compatibility WebView close failed: {0}", ex.Message);
+        }
+        finally
+        {
+            _webViewInitialized = false;
+            NpcModelViewer.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void DisposeNpcViewerResources()
+    {
+        if (_npcViewerDisposed) return;
+        _npcViewerDisposed = true;
+
+        unchecked { _npcViewerLoadGeneration++; }
+        _npcViewerLoadCts?.Cancel();
+        _npcViewerLoadCts = null;
+        _npcRenderOptionDebounce?.Cancel();
+        _npcRenderOptionDebounce?.Dispose();
+        _npcRenderOptionDebounce = null;
+
+        NpcSceneViewer.RenderStateChanged -= NpcSceneViewer_RenderStateChanged;
+        NpcSceneViewer.ClearScene();
+        NpcSceneViewer.Dispose();
+        CloseNpcViewerCompatibilityHost();
+        _npcViewerScene = null;
+
+        var service = _npcBrowserService;
+        _npcBrowserService = null;
+        var load = _npcViewerLoadTask;
+        if (service is not null && load is { IsCompleted: false })
+        {
+            _ = load.ContinueWith(
+                static (_, state) => ((NpcBrowserService)state!).Dispose(),
+                service,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+        else
+        {
+            service?.Dispose();
+        }
+    }
+
     private void ResetNpcBrowser()
     {
         _npcBatchCts?.Cancel();
@@ -748,8 +1158,28 @@ public sealed partial class SingleFileTab
         _npcRenderOptionDebounce?.Dispose();
         _npcRenderOptionDebounce = null;
 
-        _npcBrowserService?.Dispose();
+        unchecked { _npcViewerLoadGeneration++; }
+        _npcViewerLoadCts?.Cancel();
+        _npcViewerLoadCts = null;
+        _npcViewerScene = null;
+        NpcSceneViewer.ClearScene();
+
+        var service = _npcBrowserService;
         _npcBrowserService = null;
+        var load = _npcViewerLoadTask;
+        if (service is not null && load is { IsCompleted: false })
+        {
+            _ = load.ContinueWith(
+                static (_, state) => ((NpcBrowserService)state!).Dispose(),
+                service,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+        else
+        {
+            service?.Dispose();
+        }
 
         _npcBrowser.Reset();
 
@@ -763,6 +1193,7 @@ public sealed partial class SingleFileTab
         NpcBrowserProgressBar.Visibility = Visibility.Collapsed;
         NpcBsaPathPanel.Visibility = Visibility.Collapsed;
         NpcBrowserStatusText.Text = "Run analysis on an ESM to browse NPCs";
+        NpcNativeViewerWarning.IsOpen = false;
         NpcBatchProgressBar.Visibility = Visibility.Collapsed;
         NpcBatchStatusText.Text = "";
     }

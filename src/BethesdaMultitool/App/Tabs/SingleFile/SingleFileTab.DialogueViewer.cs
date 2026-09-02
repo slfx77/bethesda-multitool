@@ -1,7 +1,8 @@
-using BethesdaMultitool.Core.EsmView.Dialogue;
+﻿using BethesdaMultitool.Core.EsmView.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -53,7 +54,7 @@ public sealed partial class SingleFileTab
             return false;
         }
 
-        SubTabView.SelectedItem = DialogueViewerTab;
+        TrySelectSubTab(AnalysisSubTab.Dialogue);
 
         if (!_session.DialogueViewerPopulated && _session.SemanticResult != null)
         {

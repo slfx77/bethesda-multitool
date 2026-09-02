@@ -286,6 +286,7 @@
                 AutomationProperties.HelpText="Path to a folder containing NIF files, or an archive"
                 FontSize="12" />
               <DropDownButton
+                x:Name="NifViewerSourceBrowseButton"
                 Grid.Column="1"
                 Margin="4,0,0,0"
                 AutomationProperties.Name="Open folder or archive"
@@ -326,6 +327,7 @@
                   AutomationProperties.HelpText="Optional semicolon-separated BSA, BA2, or loose-directory paths; leave empty to auto-detect"
                   FontSize="12" />
                 <Button
+                  x:Name="NifViewerTextureBrowseButton"
                   Grid.Column="1"
                   Margin="4,0,0,0"
                   Click="NifViewerBrowseTextureArchive_Click"
@@ -356,20 +358,49 @@
             <!-- File tree -->
             <Border Grid.Row="3"
                     Style="{StaticResource CardBorderStyle}">
-              <TreeView
-                x:Name="NifViewerTreeView"
-                SelectionMode="Single"
-                AutomationProperties.Name="NIF files in selected source"
-                ItemInvoked="NifViewerTree_ItemInvoked">
-                <TreeView.ItemTemplate>
-                  <DataTemplate x:DataType="local:NifTreeViewItem">
-                    <TreeViewItem
-                      Content="{x:Bind DisplayName}"
-                      ItemsSource="{x:Bind Children}"
-                      IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}" />
-                  </DataTemplate>
-                </TreeView.ItemTemplate>
-              </TreeView>
+              <Grid>
+                <TreeView
+                  x:Name="NifViewerTreeView"
+                  SelectionMode="Single"
+                  AutomationProperties.Name="NIF files in selected source"
+                  ItemInvoked="NifViewerTree_ItemInvoked">
+                  <TreeView.ItemTemplate>
+                    <DataTemplate x:DataType="local:NifTreeViewItem">
+                      <TreeViewItem
+                        Content="{x:Bind DisplayName}"
+                        ItemsSource="{x:Bind Children}"
+                        IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}" />
+                    </DataTemplate>
+                  </TreeView.ItemTemplate>
+                </TreeView>
+
+                <!-- Source/archive discovery is separate from the viewport's model-load spinner. -->
+                <Grid
+                  x:Name="NifViewerSourceProgressPanel"
+                  Padding="16"
+                  Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                  Visibility="Collapsed">
+                  <StackPanel
+                    Width="220"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="10">
+                    <ProgressBar
+                      x:Name="NifViewerSourceProgressBar"
+                      Minimum="0"
+                      Maximum="1"
+                      IsIndeterminate="True"
+                      AutomationProperties.Name="Opening NIF source" />
+                    <TextBlock
+                      x:Name="NifViewerSourceProgressText"
+                      Text="Opening source..."
+                      TextAlignment="Center"
+                      TextWrapping="Wrap"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      AutomationProperties.LiveSetting="Polite" />
+                  </StackPanel>
+                </Grid>
+              </Grid>
             </Border>
 
             <!-- File count -->
@@ -378,7 +409,8 @@
               Grid.Row="4"
               FontSize="11"
               Margin="0,4,0,0"
-              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              AutomationProperties.LiveSetting="Polite" />
           </Grid>
 
           <!-- Splitter: tree ↔ preview -->
@@ -388,8 +420,13 @@
           <Grid Grid.Column="2">
             <Border Style="{StaticResource DarkCardBorderStyle}">
               <Grid>
+                <!-- The native Bethesda renderer owns the normal path. The compatibility WebView is
+                     created and shown only if this exact scene faults before its first Present. -->
+                <local:BethesdaSceneViewerControl
+                  x:Name="NifSceneViewer" />
                 <WebView2
                   x:Name="NifModelViewer"
+                  Visibility="Collapsed"
                   DefaultBackgroundColor="Transparent" />
                 <ProgressRing
                   x:Name="NifModelLoadingRing"
@@ -403,7 +440,8 @@
                   HorizontalAlignment="Center"
                   VerticalAlignment="Center"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                  FontSize="14" />
+                  FontSize="14"
+                  Visibility="Collapsed" />
               </Grid>
             </Border>
           </Grid>
@@ -426,6 +464,13 @@
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextWrapping="Wrap"
                 Text="No file selected" />
+
+              <InfoBar
+                x:Name="NifViewerGeometryWarning"
+                Title="Incomplete model"
+                Severity="Warning"
+                IsClosable="False"
+                IsOpen="False" />
 
               <!-- Block Types -->
               <TextBlock Text="Block Types"
@@ -457,11 +502,20 @@
 
               <!-- Render PNG -->
               <TextBlock x:Name="NifViewerRenderSectionHeader"
-                         Text="Render PNG (Software)"
+                         Text="Render PNG"
                          AutomationProperties.HeadingLevel="Level3"
                          FontWeight="SemiBold" FontSize="13"
                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                          Margin="0,8,0,0" />
+              <Button
+                x:Name="NifViewerCaptureNativePngButton"
+                Content="Capture current native viewport..."
+                HorizontalAlignment="Stretch"
+                Click="NifViewerCaptureNativePng_Click"
+                IsEnabled="False" />
+              <TextBlock Text="Software sprite views"
+                         FontSize="11" FontStyle="Italic"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
               <ComboBox
                 x:Name="NifViewerPerspectiveComboBox"
                 HorizontalAlignment="Stretch"
