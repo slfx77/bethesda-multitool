@@ -54,6 +54,11 @@ internal static class NifKeyGroupReader
 
         var rawType = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
+        if (rawType < (uint)NifKeyInterpolation.Linear ||
+            rawType > (uint)NifKeyInterpolation.Constant)
+        {
+            return false;
+        }
         interpolation = (NifKeyInterpolation)rawType;
 
         if (interpolation == NifKeyInterpolation.XyzEuler)
@@ -133,8 +138,13 @@ internal static class NifKeyGroupReader
             return false;
         }
 
-        interpolation = (NifKeyInterpolation)BinaryUtils.ReadUInt32(data, pos, be);
+        var rawType = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
+        if (!IsScalarInterpolation(rawType))
+        {
+            return false;
+        }
+        interpolation = (NifKeyInterpolation)rawType;
 
         var stride = interpolation switch
         {
@@ -186,8 +196,13 @@ internal static class NifKeyGroupReader
             return false;
         }
 
-        interpolation = (NifKeyInterpolation)BinaryUtils.ReadUInt32(data, pos, be);
+        var rawType = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
+        if (!IsScalarInterpolation(rawType))
+        {
+            return false;
+        }
+        interpolation = (NifKeyInterpolation)rawType;
 
         var stride = interpolation switch
         {
@@ -210,5 +225,13 @@ internal static class NifKeyGroupReader
         }
 
         return true;
+    }
+
+    private static bool IsScalarInterpolation(uint rawType)
+    {
+        return rawType == (uint)NifKeyInterpolation.Linear ||
+               rawType == (uint)NifKeyInterpolation.Quadratic ||
+               rawType == (uint)NifKeyInterpolation.Tbc ||
+               rawType == (uint)NifKeyInterpolation.Constant;
     }
 }

@@ -117,6 +117,7 @@ public class NifKeyGroupReaderTests
     [InlineData(1u, 16)] // LINEAR: time + vec3
     [InlineData(2u, 40)] // QUADRATIC: time + value + forward + backward
     [InlineData(3u, 28)] // TBC: time + value + t/b/c
+    [InlineData(5u, 16)] // CONSTANT: time + vec3
     public void Vector3Keys_StridesMatchNifXml(uint keyType, int expectedStride)
     {
         var bytes = new List<byte>();
@@ -142,6 +143,7 @@ public class NifKeyGroupReaderTests
     [InlineData(1u, 8)] // LINEAR: time + float
     [InlineData(2u, 16)] // QUADRATIC: time + value + forward + backward
     [InlineData(3u, 20)] // TBC: time + value + t/b/c
+    [InlineData(5u, 8)] // CONSTANT: time + float
     public void FloatKeys_StridesMatchNifXml(uint keyType, int expectedStride)
     {
         var bytes = new List<byte>();
@@ -189,6 +191,34 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.False(NifKeyGroupReader.TryReadFloatKeys(
+            data, ref pos, data.Length, false, out _, out _));
+    }
+
+    [Fact]
+    public void UnknownInterpolation_ReturnsFalseInsteadOfGuessingAKeyStride()
+    {
+        var bytes = new List<byte>();
+        AppendUInt(bytes, 1);
+        AppendUInt(bytes, 99);
+        AppendFloats(bytes, 0f, 1f);
+        var data = bytes.ToArray();
+        var pos = 0;
+
+        Assert.False(NifKeyGroupReader.TryReadFloatKeys(
+            data, ref pos, data.Length, false, out _, out _));
+    }
+
+    [Fact]
+    public void XyzEuler_IsRejectedForNonRotationKeyGroups()
+    {
+        var bytes = new List<byte>();
+        AppendUInt(bytes, 1);
+        AppendUInt(bytes, 4);
+        AppendFloats(bytes, 0f, 1f, 2f, 3f);
+        var data = bytes.ToArray();
+        var pos = 0;
+
+        Assert.False(NifKeyGroupReader.TryReadVector3Keys(
             data, ref pos, data.Length, false, out _, out _));
     }
 

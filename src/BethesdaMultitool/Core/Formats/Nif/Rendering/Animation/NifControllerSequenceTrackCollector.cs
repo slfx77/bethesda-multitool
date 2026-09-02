@@ -43,7 +43,10 @@ internal static class NifControllerSequenceTrackCollector
     // NiTransformInterpolator: static pose (Vec3 + Quat + float = 32 bytes), then Data ref.
     private const int InterpolatorDataRefOffset = 32;
 
-    internal static NifMeshAnimation? Collect(byte[] data, NifInfo nif)
+    internal static NifMeshAnimation? Collect(
+        byte[] data,
+        NifInfo nif,
+        bool preserveFileRootTransformAndTrack = false)
     {
         if (nif.BinaryVersion != NifVersions.Gamebryo202007 || nif.BsVersion == 0)
         {
@@ -153,13 +156,24 @@ internal static class NifControllerSequenceTrackCollector
                 data, interpolator.DataOffset + InterpolatorDataRefOffset, be);
             var track = NifKeyframeDataTrackReader.TryReadTrack(
                 data, nif, dataRef, nodeName, frequency, 0f);
-            if (track is { HasMotion: true })
+            if (track is { HasAnyKeys: true })
             {
                 tracksByNode[nodeBlock] = track;
             }
         }
 
-        if (NifAnimationRigBuilder.Build(data, nif, nodeChildren, shapeSkinInstanceMap, tracksByNode)
+        if (!tracksByNode.Values.Any(static track => track.HasMotion))
+        {
+            return null;
+        }
+
+        if (NifAnimationRigBuilder.Build(
+                data,
+                nif,
+                nodeChildren,
+                shapeSkinInstanceMap,
+                tracksByNode,
+                preserveFileRootTransformAndTrack)
             is not var (bones, tracks))
         {
             return null;

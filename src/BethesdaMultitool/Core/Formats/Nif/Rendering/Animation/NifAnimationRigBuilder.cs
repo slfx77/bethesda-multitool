@@ -11,10 +11,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 ///     set is every tracked node ∪ skin-referenced node ∪ their ancestors, so one forward pass
 ///     composes world transforms.
 ///     <para>
-///         Parentless (file-root) bones get IDENTITY rest and their tracks are dropped: the decode
-///         path extracts geometry with <c>treatRootsAsIdentity</c> (the REFR placement supplies the
-///         world transform), so the pose evaluator must not re-introduce the root's authored
-///         transform — a root-rotated NIF would otherwise render rotated only while animated.
+///         Placed-world callers keep parentless (file-root) bones at IDENTITY and drop their tracks:
+///         REFR placement supplies the world transform, so animation must not re-introduce it.
+///         Standalone raw-asset viewers opt into preserving the authored file-root rest/track because
+///         they have no placement transform and otherwise lose legitimate root motion.
 ///     </para>
 /// </summary>
 internal static class NifAnimationRigBuilder
@@ -24,7 +24,8 @@ internal static class NifAnimationRigBuilder
         NifInfo nif,
         Dictionary<int, List<int>> nodeChildren,
         Dictionary<int, int> shapeSkinInstanceMap,
-        Dictionary<int, NifNodeTrack> tracksByNode)
+        Dictionary<int, NifNodeTrack> tracksByNode,
+        bool preserveFileRootTransformAndTrack = false)
     {
         if (tracksByNode.Count == 0)
         {
@@ -75,7 +76,7 @@ internal static class NifAnimationRigBuilder
                 ? ps
                 : -1;
 
-            if (parentSlot < 0)
+            if (parentSlot < 0 && !preserveFileRootTransformAndTrack)
             {
                 // File-root policy (see class docs): identity rest, no track.
                 bones[slot] = new NifAnimBone(name, -1, Vector3.Zero, Quaternion.Identity, 1f, blockIndex);

@@ -26,6 +26,18 @@ internal static class NifControllerSequenceSelector
                 continue;
             }
 
+            if (nif.HasInlineStrings)
+            {
+                if (nif.BlockNames.TryGetValue(block.Index, out var inlineName) &&
+                    inlineName.Contains("idle", StringComparison.OrdinalIgnoreCase))
+                {
+                    bestSequence = block;
+                    break;
+                }
+
+                continue;
+            }
+
             var nameIndex = BinaryUtils.ReadInt32(data, block.DataOffset, be);
             if (nameIndex < 0 || nameIndex >= nif.Strings.Count)
             {

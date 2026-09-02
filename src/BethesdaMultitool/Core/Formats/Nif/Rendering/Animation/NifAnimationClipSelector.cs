@@ -81,6 +81,18 @@ internal static class NifAnimationClipSelector
             Expand(track.RotationKeys.Length, i => track.RotationKeys[i].Time, ref min, ref max);
             Expand(track.TranslationKeys.Length, i => track.TranslationKeys[i].Time, ref min, ref max);
             Expand(track.ScaleKeys.Length, i => track.ScaleKeys[i].Time, ref min, ref max);
+            if (track.EulerXKeys is { } eulerX)
+            {
+                Expand(eulerX.Length, i => eulerX[i].Time, ref min, ref max);
+            }
+            if (track.EulerYKeys is { } eulerY)
+            {
+                Expand(eulerY.Length, i => eulerY[i].Time, ref min, ref max);
+            }
+            if (track.EulerZKeys is { } eulerZ)
+            {
+                Expand(eulerZ.Length, i => eulerZ[i].Time, ref min, ref max);
+            }
         }
 
         return max > min ? new NifAnimClip(min, max, true) : null;

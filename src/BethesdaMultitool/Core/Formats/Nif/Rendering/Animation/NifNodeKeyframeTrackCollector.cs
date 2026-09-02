@@ -13,7 +13,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 /// </summary>
 internal static class NifNodeKeyframeTrackCollector
 {
-    internal static NifMeshAnimation? Collect(byte[] data, NifInfo nif)
+    internal static NifMeshAnimation? Collect(
+        byte[] data,
+        NifInfo nif,
+        bool preserveFileRootTransformAndTrack = false)
     {
         var be = nif.IsBigEndian;
 
@@ -56,7 +59,7 @@ internal static class NifNodeKeyframeTrackCollector
                     var dataRef = NifKeyframeDataTrackReader.ReadControllerDataRef(data, controllerBlock, be);
                     var track = NifKeyframeDataTrackReader.TryReadTrack(
                         data, nif, dataRef, nodeName!, header.Frequency, header.Phase);
-                    if (track is { HasMotion: true })
+                    if (track is { HasAnyKeys: true })
                     {
                         tracksByNode[nodeIndex] = track;
                         break;
@@ -67,7 +70,18 @@ internal static class NifNodeKeyframeTrackCollector
             }
         }
 
-        if (NifAnimationRigBuilder.Build(data, nif, nodeChildren, shapeSkinInstanceMap, tracksByNode)
+        if (!tracksByNode.Values.Any(static track => track.HasMotion))
+        {
+            return null;
+        }
+
+        if (NifAnimationRigBuilder.Build(
+                data,
+                nif,
+                nodeChildren,
+                shapeSkinInstanceMap,
+                tracksByNode,
+                preserveFileRootTransformAndTrack)
             is not var (bones, tracks))
         {
             return null;
