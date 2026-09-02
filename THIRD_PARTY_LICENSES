@@ -120,6 +120,131 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
+OpenTESArena - The Elder Scrolls: Arena format decoders
+================================================================================
+
+Source: https://github.com/afritz1/OpenTESArena
+License: MIT
+
+The following are ported from OpenTESArena; each file names its upstream source in
+a header comment:
+
+  - Core/Compression/RleCodec.cs, LzssCodec.cs, LzhufCodec.cs
+      (src/Assets/Compression.h/.cpp)
+  - Core/Formats/Arena/ArenaImgDecoder.cs, ArenaCifDecoder.cs, ArenaDfaDecoder.cs,
+    ArenaCfaDecoder.cs (src/Assets/IMGFile, SETFile, CIFFile, DFAFile, CFAFile)
+  - Core/Formats/Arena/ArenaInfFile.cs, ArenaTemplateDat.cs
+      (src/Assets/INFFile, TextAssetLibrary)
+  - Core/Formats/Arena/ArenaMifFile.cs, ArenaRmdFile.cs, ArenaLightTable.cs
+      (src/Assets/MIFFile, RMDFile, LGTFile, ArenaTypes)
+  - Core/Formats/Xngine/Bsa/ArenaBsaParser.cs
+      (components/archives/bsaarchive.cpp)
+  - Core/Formats/Xngine/Flic/FlicFile.cs (src/Assets/FLCFile)
+
+The MIT License (MIT)
+
+Copyright (c) 2016-2026 The OpenTESArena Developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+daggerfall-unity (DaggerfallConnect) - Daggerfall format decoders
+================================================================================
+
+Source: https://github.com/Interkarma/daggerfall-unity
+License: MIT
+
+The Daggerfall TEXTURE.nnn decoder (Core/Formats/Daggerfall/DaggerfallTextureFile.cs)
+is ported from the DaggerfallConnect API layer (Assets/Scripts/API/TextureFile.cs and
+BaseImageFile.cs). Further Daggerfall decoders port from the same layer as they land;
+each ported file names its upstream source in a header comment.
+
+MIT License
+
+Copyright (c) 2009-2023 Daggerfall Workshop
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+falltergeist/dat-unpacker - Fallout DAT1 LZSS decompression
+================================================================================
+
+Source: https://github.com/falltergeist/dat-unpacker
+License: MIT
+
+The block-framed LZSS used by Fallout 1 DAT archives (Core/Compression/
+FalloutLzss.cs) is ported from src/LZSS.cpp.
+
+The MIT License (MIT)
+
+Copyright (c) 2015-2018 Falltergeist developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+kaitai_struct_formats game/fallout_dat.ksy - Fallout DAT structure reference
+================================================================================
+
+Source: https://github.com/kaitai-io/kaitai_struct_formats
+License: CC0-1.0 (declared in the .ksy file's own meta/license tag; the
+         repository licenses each specification separately)
+
+The Fallout DAT1 block framing in Core/Compression/FalloutLzss.cs was
+cross-checked against this specification. No code was taken from it.
+
+CC0-1.0 is a public-domain dedication: the author waives all copyright and
+related rights worldwide, so no attribution is required. This credit is given
+voluntarily. Full text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+================================================================================
 @google/model-viewer - 3D model viewer (bundled in the GUI)
 ================================================================================
 
