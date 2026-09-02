@@ -356,6 +356,9 @@ MIT License - See [LICENSE](LICENSE) for details.
 | [Xenia](https://github.com/xenia-project/xenia) | [BSD-3-Clause](https://github.com/xenia-project/xenia/blob/master/LICENSE) | Xbox 360 texture tiling code (in DDXConv) |
 | [fo76utils](https://github.com/fo76utils/fo76utils) | [MIT](https://github.com/fo76utils/fo76utils/blob/master/LICENSE) | BA2 archive parser + BTD terrain reader (re-implemented) |
 | [@google/model-viewer](https://github.com/google/model-viewer) | [BSD-3-Clause](https://github.com/google/model-viewer/blob/master/LICENSE) | 3D NPC model viewer (bundled in GUI) |
+| [OpenTESArena](https://github.com/afritz1/OpenTESArena) | [MIT](https://github.com/afritz1/OpenTESArena/blob/master/LICENSE.txt) | Arena codecs, image/animation/map decoders and FLIC (ported) |
+| [daggerfall-unity](https://github.com/Interkarma/daggerfall-unity) | [MIT](https://github.com/Interkarma/daggerfall-unity/blob/master/LICENSE) | Daggerfall format decoders via DaggerfallConnect (ported) |
+| [falltergeist/dat-unpacker](https://github.com/falltergeist/dat-unpacker) | MIT | Fallout DAT1 LZSS decompression (ported) |
 
 ## Acknowledgments
 
@@ -380,3 +383,31 @@ MIT License - See [LICENSE](LICENSE) for details.
 - [xEdit / TES5Edit](https://github.com/TES5Edit) - ESM format documentation
 - [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format documentation (BSD-3-Clause)
 - [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion (MIT, Copyright 2026 Kran)
+
+### Classic-format references
+
+Support for the pre-Morrowind catalog (Arena, Daggerfall, Battlespire, Redguard,
+Fallout, Fallout 2, Fallout Tactics) builds on the following community work. Code is
+ported only from permissively-licensed projects, with the upstream source named in a
+header comment on every ported file and the license text in
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Everything else is used strictly as
+written documentation — no code from those projects is present here.
+
+**Ported (permissive):**
+
+- [OpenTESArena](https://github.com/afritz1/OpenTESArena) - Arena compression codecs and image decoders (MIT)
+- [daggerfall-unity](https://github.com/Interkarma/daggerfall-unity) - Daggerfall decoders via its DaggerfallConnect API layer (MIT)
+- [falltergeist/dat-unpacker](https://github.com/falltergeist/dat-unpacker) - Fallout DAT1 LZSS (MIT)
+- [kaitai_struct_formats](https://github.com/kaitai-io/kaitai_struct_formats) - `game/fallout_dat.ksy` structure cross-check (CC0-1.0)
+
+**Documentation only (not ported):**
+
+- [ariscop/battlespire-tools](https://github.com/ariscop/battlespire-tools) - XnGine BSA and Battlespire format notes
+- [fodev.net](https://fodev.net) - Fallout FRM, PRO, MAP and palette documentation
+- [UESP](https://en.uesp.net) - Daggerfall, Battlespire and Redguard format articles
+- Creative Voice File (`.VOC`) specification - the published block-type table and time-constant
+  formula; the decoder here is clean-roomed from it
+
+Fallout Tactics support is clean-roomed from prose format specifications: every
+public Tactics tool is GPL-licensed and therefore incompatible with this project's
+MIT license, so no Tactics code is derived from them.

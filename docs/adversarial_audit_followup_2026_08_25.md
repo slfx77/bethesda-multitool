@@ -1602,3 +1602,343 @@ runtime is still used when nothing authored exists) could not be run. Another se
 mid-refactor moving `WorldMapOverlayBuilder` into `Core/WorldData/` against a `HeightmapRenderer`
 that does not exist yet, leaving both the main and test projects uncompilable. The numbers above come
 from conversions run before that landed, and from direct parsing of the output plugins.
+
+---
+
+## Round 9 (2026-08-31): adversarial re-verification of rounds 5–8b + the data-linkage audit
+
+The user asked two questions over everything rounds 5–8b produced: is anything wrong or left, and
+is recovered data linked together **by evidence or by well-founded heuristics**. A user ruling
+taken at planning time frames the second question: **heuristic links are fine as long as there's a
+decent rationale for them** — the audit flags only rationale-free or inconsistently-applied
+heuristics, never heuristics as such.
+
+Method: three read-only exploration passes (change inventory, linkage map, adversarial pre-seed),
+then an 8-group verification workflow (51 agents; every claim verified against source with
+CONFIRMED/REFUTED verdicts, every new finding submitted to a 3-refuter majority panel, and a
+completeness critic over the whole verdict set), then fixes, then re-measurement against a
+byte-identical rebuilt baseline.
+
+### Gate results
+
+- The rounds' own never-executed tests **pass on first run**: `LandTextureLayerPrecedenceTests`
+  (4 cases) and `RuntimeLandFabricationGuardTests` all green.
+- The predicted stale test **failed exactly as predicted**:
+  `MergeCategories_PrefersRuntime_FillsFromMasterEsm` pinned the pre-8b runtime-first layer rule
+  (expected `Runtime`, got `MasterEsm`). Rewritten as
+  `MergeCategories_AuthoredLayersOutrankRuntime_OtherCategoriesFillPerCandidateOrder`.
+- Full fast suite after fixes: **10,117 pass / 35 fail — every failure is the concurrent
+  session's** (Nif rendering source-contracts + their nine unregistered Starfield/FO76 typed
+  collections). Zero failures in anything rounds 5–9 touched.
+
+### Verdicts (45 claims, 8 groups)
+
+**Refuted — do not re-chase:**
+
+- **T-2a** (REFR/ACHR/ACRE swallowed by the LAND-candidate branch): the premise is empirically
+  false — xex44's editor-ID table holds 3,220 named REFR / 1,074 ACHR / 292 ACRE entries, so the
+  refr types are in the exclusion set and placed-ref enrichment runs. The protection was
+  *incidental* (it relies on at least one named ref per type existing); an explicit exclusion is
+  now in place.
+- **T-1b** (mesh gate weak at 1%): the 1% floor only selects buffers for
+  `RuntimeTerrainGridReconstructionService.Reconstruct`, which demands >=12 valid samples, IQR
+  z-filtering, bounded XY spans, and a lattice or 75-80%-coverage grid fit — a garbage candidate
+  cannot luck a mesh through it.
+- Also refuted: T-2d (`TryProbe` cannot emit the 0xFF sentinel), T-3e, T-4b (bounds guard covered
+  by callers), T-4d (covariance derivation complete for the live layouts), T-6e, T-9b
+  (`TryAlternateTextures` genuinely implements its all-or-nothing drop), C2
+  (`BuildAlternateTextureIndex` survived the Core/ move unchanged).
+- The refuter panel also **killed** the "mis-correlated LAND fabricates coords-only records"
+  finding 3-0: correlation counts are identity-probed (exact FormID at +12), duplicated form
+  copies vote for the *correct* byte, and a mesh veto on the correlation path would **regress**
+  builds (xex22/xex43/xex44) whose genuine LANDs hold valid LoadedLandData with unresolvable
+  vertex arrays. Do not add a mesh veto there.
+
+**Confirmed and fixed this round** (all verified by the gates and the re-measure):
+
+1. Stale test rewritten (above); missing-stamp, larger-runtime-set and unattached-count cases
+   added to `LandTextureLayerPrecedenceTests` (8 cases total).
+2. `LandVisualData`: the `?? Source` fallbacks were dead code (per-field sources are
+   non-nullable) — replaced with real effective-source properties; pass 1 of
+   `ChooseNonEmptyLayers` is now an **authored allowlist** (`Dmp`/`MasterEsm`) instead of a
+   Runtime blocklist (closes the None/Merged loopholes); the chooser takes instances and consults
+   `HasTextureLayers` before materializing (a lazy BTD candidate no longer decodes just to lose);
+   `UnattachedVtxtCount/ByteCount` now survive merges; the `MergeForEmission` docstring no longer
+   claims runtime vertex colors outrank the primary — the code was right (file-wins), the
+   docstring and the 8b memory note were wrong.
+3. `BtdTerrainInjector` + `Tes3RecordParser` now stamp per-field sources.
+4. `EditorIdLookupTables`: LAND candidacy explicitly excludes the detected REFR/ACHR/ACRE range;
+   both bucket-chain walkers (here and `EsmEditorIdExtractor`) gained cycle guards — a looping
+   next-pointer now counts as a chain error instead of appending ~1000x duplicate entries.
+5. `RuntimeDataEnricher`: deterministic mesh-yield tie-break (lowest byte wins; a tie logs a WARN
+   — the corpus norm is one type at 100% and the rest at 0%, so a tie deserves eyes) and the
+   resolution is **persisted** into `ScanResult.RuntimeLandFormEntries` — the gap scanner,
+   formtype census and shift probes previously saw zero LAND on every mesh-yield-resolved dump.
+6. **W10**: the second `DetectDialFormType` (the one gating all INFO->topic linking) accepted its
+   0x45 fallback on mere existence — on a gapped or non-+1-drifted dump that walks the wrong
+   record population and fabricates topic/quest links keyed to real FormIDs. Now probe-validated
+   (>=3 of 20 `ReadRuntimeDialogTopic` successes) and logged, mirroring its sibling.
+7. **W8**: topic quest backfill refuses ties (dictionary-order coin flips no longer assign
+   parentage) and counts the refusals.
+8. **W4**: `RecoveredTopicFormId` — set by the gap-recovery promoter with a comment claiming the
+   repaired parentage reaches emission — was consumed by *nothing*. `MergeDialogueWithRuntimeInfo`
+   now fills `TopicFormId` from it when the walk/carve left none, mirroring the quest half that
+   already worked. (Runtime-only recovered INFOs still need a creation pass — see punch list.)
+9. **W3**: `refr.orphan-bucket-dropped` no longer labels every drop an "unresolved-parent
+   bucket"; the message and metadata now carry the bucket kind, grid, EditorId,
+   `WorldspaceAssignmentSource`, and the child's `AssignmentSource`.
+10. **The V5 pair, shipped together per the critic**: the bounds-inference reuse scan excludes
+    `IsVirtual` tiles (the pass's own doc block promised rescued refs would not land in
+    planner-deleted cells; the offset-cluster pass running earlier in `Apply` violated that), and
+    `CoordBasedCellPairingPass` no longer folds virtual tiles onto master cells — the fold had
+    re-keyed doomed buckets under real retail FormIDs (579 of 607 on xex44), misdirecting triage.
+11. `RuntimeContainerFieldReader`: the counted-array cap borrowed the BSSimpleList budget again —
+    the exact anti-pattern the R5 ruling retired — so an IDLM with more than 50 idles was
+    silently dropped whole; now bounded by the count field's own u8 range. The `Handles`
+    BSSimpleList branch now requires a non-pointer kind: 8 pointer-to-list fields (ENCH/SPEL
+    `m_pkNext`, ARMO/ARMA `pFoleySoundList`, REGN `pPointLists`, CDCK `pDeck`) were being walked
+    at the wrong indirection, chasing adjacent struct members as list chains.
+12. `ReadPointerField`: a pointer whose declared target is a known **non-record** class no longer
+    falls to the weak untyped follow (the " ski" fabrication shape) — it returns the raw VA as a
+    diagnostic. ~276 aux-typed/unknown-typed pointer fields exit the misread-prone path.
+13. `PdbStructLayouts`: a duplicate class name in a future layout regeneration now logs loudly
+    (the TryAdd previously swallowed it; the live DB has zero duplicates, verified).
+14. `ShowHelpers`: the texture-hash line escapes captured slot text (the sibling path already
+    did).
+15. `CsnoEncoder`: doc block updated — the layout regeneration made the CSNO model/texture arrays
+    readable, so "no reader change can reach them" is no longer true (emission is open work).
+
+### The ADDN DNAM story — the workflow's one overturned verdict
+
+The workflow **confirmed** (T-4c) that `AddnEncoder` writes captured big-endian DNAM bytes into
+the little-endian plugin, and a first fix swapped the leading u16. Empirical measurement then
+overturned the verdict's premise:
+
+- Both retail masters store `MPSFlamerFlame01` DNAM as the **same bytes** (`00 00 01 00`) while
+  the sibling DATA subrecord is genuinely byte-swapped (`24 00 00 00` vs `00 00 00 24`).
+- All 37 runtime `BGSAddonNode`s in xex44 hold `Data@104 = 00 00 01 00` — file byte order —
+  while the adjacent `iIndex@96` / `iMasterParticleSystemIndex@108` are big-endian.
+
+DNAM is the INDX-style **already-little-endian** field class: the engine loads it verbatim, so the
+encoder's original verbatim emission was correct all along (the swap was reverted; the evidence is
+pinned in the encoder comment). The **real** defect was one hop away: the *conversion* schema
+`SchemaKey("DNAM","ADDN",4) = Simple4Byte` 4-byte-reverses it, so every `esm convert` emitted
+`00 01 00 00` — the Master Particle System Cap transposed into the wrong half. Fixed to two
+`F.UInt16LittleEndian` fields and verified end-to-end: a fresh Xbox->PC conversion now produces
+DNAM `00 00 01 00`, byte-equal to the PC master. (ADDN never emits from the DMP corpus — 0
+records in every output — so `dmp to-esm` outputs were never affected by either side of this.)
+
+### Re-measurement — every delta attributed
+
+A clean worktree at HEAD rebuilt the pre-round-9 baseline: `base_xex44.esm` is **md5-identical**
+to the accepted 8b `land_fixed.esm`, proving conversion determinism and making the fix delta
+exact. Round 9 vs baseline on xex44:
+
+| | baseline | round 9 |
+|---|---|---|
+| bytes | 13,742,714 | 13,742,644 |
+| records emitted | 97,016 | 97,016 |
+| per-type counts | — | all identical (CELL 230, NAVM 20, PGRE 24, ...) |
+| ATXT / VTXT | 793 / 793 | **793 / 793** |
+| `refr.orphan-bucket-dropped` | 2,670 across 607 buckets | **2,602 across 601** |
+| bucket key ranges | 579 of 607 keyed by **master** FormIDs | **all synthetic (0x01)** |
+
+The 68 fewer drops are redistributor-synthesized copies that no longer get created into doomed
+tiles; validation and the full semantic check pass on both outputs; the residual byte/hash
+difference is a cosmetic synthetic-FormID renumber from the changed allocation order (the same
+content classes appear on both sides at shifted IDs). xex21: same shape (75,330 records, -70 B,
+clean validation).
+
+**The orphan-bucket population, finally classified** — the new W3 metadata answers what no prior
+artifact could: of 2,602 dropped children, **2,593 are `PersistentRedistributedSynthetic`**
+placements in virtual tiles and only **9** die in true unresolved-parent buckets. Master-range
+Override drops lose the dump's captured *delta* for a ref whose vanilla placement survives via
+the master — the "2,670 lost placed refs" headline substantially overstated the unique-content
+loss.
+
+### The linkage verdict (the user's second question)
+
+Runtime reads are overwhelmingly **evidence-based**: typed pointer derefs with FormType gates,
+hash-table containment for cell membership, a bidirectional backpointer gate on quest<->script
+(a brute-forced candidate is accepted only if its `pOwnerQuest` points back), agreement-gated
+dialogue parentage recovery, and fail-closed SCTX reads — which honestly explain most of the
+867-SCDA / 674-SCTX gap: bytecode has an explicit size, source text needs its NUL terminator
+resident. The parse/planner-side heuristics — proximity, grid-map, bounds inference with the
+Z-band veto, interior offset clustering with the spatial veto, offset-cluster anchoring, stem
+aliasing (refuses ambiguity), single-candidate grid parents — all carry stated rationales and
+honest `AssignmentSource`/`WorldspaceAssignmentSource` provenance, and under the ruling are
+**documented as sound, not changed**. What the round fixed was never "heuristics": it was the
+places where a heuristic was applied inconsistently (W2's IsVirtual asymmetry), misdescribed
+(W3's label), unvalidated relative to its own sibling (W10), tie-broken by accident (W8, T-1a),
+or where an intended evidence path dead-ended (W4).
+
+### Open items and rulings
+
+**Needs a user ruling:**
+
+- **W2 flip**: should offset-cluster rescue tiles become real cells like the bounds-inference
+  pass (rescuing a share of the 2,593 synthetic-copy drops into emission)? The per-class evidence
+  is now in the event metadata; note the reduced stakes given the reclassification above.
+- `LAND 0x000DB102` 18-vs-19 layers (carried from 8b).
+- `EnrichCellsWithMasterEsmLandFallback` is **dead code** (zero callers) — its docstring promises
+  parse-time master fill-in for the GUI/viewer that never happens. Wire it (GUI behaviour change)
+  or delete it; either way the merges need `VtexTextureFormIds` support first (they currently
+  drop that field — latent until Morrowind/BTD instances enter a merge).
+- ~~Carried from rounds 2-3: DDX fallback rule, GMST duplicate certainty, M2 LZX->BSA.~~
+  **Correction (2026-09-01):** these were already ruled and closed — the Round 2 implementation
+  section above records all of it (Ruling 2: DDX exact chunk-walk, 0% fallbacks; Ruling 3: GMST
+  deep compare; Ruling 4: M2 HELD pending a real XMem archive, silent failure closed). The
+  "Decisions owed" block at the end of Round 1 is a stale snapshot; nothing from rounds 2-3 is
+  owed.
+
+**Punch list (no ruling needed):**
+
+- W4 completion: a creation pass for promoted runtime-only INFOs (`MergeRuntimeDialogueData`
+  only enriches existing records).
+- V7 finding (survived refutation): the enumerator's typed gates for `pLightingTemplate` (0x67),
+  `ExtraCellMusicType` (0x6B) and `ExtraCellImageSpace` (0x56) contradict the layout DB (0x65 /
+  0x66 / 0x53) with a non-monotonic implied shift — at least some of the six hardcoded gates
+  reject the genuine target on any one build, silently nulling those fields. No existing CSV
+  carries them; settling needs one instrumented run (hexdump the pointed-to FormType bytes for a
+  few known cells, or count non-null fields per build).
+- W7: gate `pCellLand` with the now-persisted per-dump LAND FormType; add an `IReadOnlySet`
+  overload of `FollowPointerVaToFormId` and gate the cell refs list on the REFR family.
+- CSNO model/texture emission (now readable); LSCR LNAM still synthetic-only.
+- T-4a (all-zero array decline conflates absent with zero — display-only today; revisit if an
+  encoder ever consumes those fields), T-4e (uncaptured-VA typed pointers discarded
+  indistinguishably from misreads), T-5a/5b (MODT DeclaredCount plausibility gate + same-span
+  entry check), T-2c (a single spurious editor-ID string can exclude a genuine LAND type — wants
+  a count threshold + logging), T-3b (rejected candidates' stage counters computed then
+  discarded).
+- Cosmetic: synthetic-FormID renumbering between versions churns plugin-range IDs (relevant to
+  savegame continuity across released versions); terrain captures still owed (≥1920×1080 —
+  USER RULING 2026-09-01: 512px is far too small for a capture; it is only a Read-downscale size).
+- The both-TFM build gate could not complete this round: the concurrent session's
+  `WaterRenderer12.cs` was mid-edit (CS1026) at gate time. The CLI TFM builds 0/0 with all fixes;
+  no `App/` file was touched by this round.
+
+**Cross-session facts recorded:** the audited "uncommitted" scope was committed mid-round
+(c24c2421..5fb4271d); the `pdb_layouts.json` +31,645-line growth is in 8fcf40c7 and **passes the
+diff-gate** (54 unknown->real fields, 2 typeDetails filled, +449 auxStructs, zero pre-existing
+fields moved, zero duplicate class names); `RecordModelUnion` correctly skips the now-lazy
+`DecodedTree`; the `MiscEnvironmentHandler` BE/LE hunk is the Starfield session's, Starfield-scoped
+and fail-safe for Xbox BE records. Unexamined surfaces this round (flagged by the critic): the
+round-3 carving/provenance batch (~24 files, covered by R3 but not re-verified here) and
+`RecordCollectionFormIdRebaser`'s name-keyed registry completeness (one interaction checked and
+neutralized: FormID-0 alternate-texture entries are guarded by the mappers themselves).
+
+
+### Round 9 rulings applied (2026-09-01)
+
+The user ruled on the three open decisions; all three turned into shipped changes the same day.
+
+**Decision 1 — orphan-bucket refs: RULED (b), re-home by the FormID census.** The user's
+instinct — "shouldn't this be done already by our form ID census?" — was exactly right: for an
+Override child the master's own GRUP containment (`MasterIndex.RefToCell`, already plumbed into
+`PersistentCellReparenting` as `masterRefToCell`) names its authored parent cell with zero
+heuristics. `OrphanBucketResolution` (extracted to its own file for the planner line ratchet) now
+re-homes each dying Override child into that cell — persistence class follows the MASTER's filing
+so the GRUP/flag agreement holds, targets must already be in the plan (sparse-preserved cells stay
+untouched), and a global child-FormID index prevents duplicate emission. **Measured on xex44:
+2,593 of 2,602 dying children re-home — a complete sweep of the Override class — leaving exactly
+the 9 unresolved-parent New records that nothing can place.** Top target (1,826 refs) is a
+worldspace persistent container, i.e. where master files those refs. Emission grew 97,016 →
+99,891 records (81,594 placed refs), full validation + semantic check green (no duplicate
+FormIDs, all refs correctly parented).
+
+**Decision 2 — LAND 0x000DB102's 18-vs-19: NEITHER hypothesis — a null-texture layer drop, now
+fixed.** The build-difference reading was tested and refuted: the Aug-22 disk build IS the 360
+final (byte-identical ESM), and semdiff shows it authors all 19 layers, layer-for-layer equal to
+PC. The truncated-compressed-record recovery was also refuted (kill-switch run emitted the same
+18). The actual chain, proven with a temporary planner probe: the record's page is absent from
+the dump image, so the cell's terrain is runtime-recovered → the LAND re-encodes instead of
+carrying master bytes verbatim → `MergeForEmission` correctly picks the master's 23 layers → and
+then BOTH `LandTextureRewritePlanner.RewriteLandVisual` and `LandEncoder.Encode` silently
+discarded any layer with `TextureFormId == 0`. Retail authors exactly such a layer (quadrant 0
+layer 1 paints the ENGINE-DEFAULT land texture, VTXT and all) — FormID 0 there is a sentinel, not
+a dangling reference. Both filters removed (and `LandEncoder`'s DATA quadrant-flag loop aligned).
+**Result: the record is now layer-for-layer identical to retail, and the fix restored 9 authored
+layers corpus-wide on xex44 (ATXT/VTXT 793 → 802) — the "794-vs-793 residual" was this defect,
+and the true parity number was higher than 794 all along** (the old 794 baseline still lost null
+layers on OTHER re-encoded records; only verbatim master carry-forward preserved them).
+
+**Decision 3 — `EnrichCellsWithMasterEsmLandFallback`: docstring was WRONG, method stays.** Per
+the user, the intended consumer is a VIEWER TOGGLE — swap between the dump's preserved LAND
+records and the loaded master ESM's, so placements that survived without terrain can be previewed
+as the converted ESM will show them. The docstring no longer claims an unconditional parse-time
+fill; the toggle is owed GUI work. Prerequisite fixed now: both merge builders carry
+`VtexTextureFormIds` (first non-null wins) and count it in the all-empty check — previously any
+merge of a Morrowind/BTD-shaped instance silently blanked the 16×16 texture grid.
+
+Also corrected while assembling the decision brief: the "carried decisions from rounds 2-3" in
+the Round 9 punch list were already ruled and closed (see the strike-through note above).
+
+Final round-9 output state (xex44): 99,891 records, ATXT/VTXT 802/802, validation + semantic
+check clean; suite 10,110 green with zero failures outside the concurrent session's rendering
+scope; planner line ratchet green after the `OrphanBucketResolution` extraction.
+
+
+### Remaining work executed (2026-09-01, second pass)
+
+**V7 pointer-gate contradiction: measured, then fixed.** The empirical protocol (region-map +
+direct dump reads on xex44): 40/40 interior cells' `pLightingTemplate` targets carry **0x65**
+(the layout DB's BGSLightingTemplate; the code gated 0x67 = TESObjectIMOD), 19/19 worldspace
+`pImageSpace` targets carry **0x53** (DB TESImageSpace; code gated 0x56 = BGSPerk), 4/4
+`pMusicType` targets carry **0x66** (DB BGSMusicType; code gated 0x6B = TESRecipeCategory) —
+control fields (pClimate 0x36, pWorldSpace 0x41) matched their gates, validating the protocol.
+The three wrong literals had **never matched once**; the gates now resolve through
+`PdbStructLayouts.TryGetFormTypeByClassName`. Measured emission gain on xex44: **+1 LTMP,
++40 XCMO, +50 XCIM** on cell overrides (+91 authored links the dump always held); XCAS/XEZN
+(correct gates all along) byte-stable. xex21's counts were already saturated via its parsed
+cells — no emission delta there.
+
+**W7 `pCellLand` gate: attempted, measured, REVERTED — an honest negative.** The per-dump
+empirical LAND byte now persists on `RuntimeMemoryContext.ResolvedLandFormType` (kept), but
+gating the `pCellLand` follow with it collapsed xex21's WRLD/CELL shift-probe margin (11 → 0)
+and shifted downstream cell classification until a real gridless exterior cell hit the
+planner's hard guard (`CellContextSynthesizer` throw). Bisect-proven: gate off → clean run.
+The link's ungated blast radius is only the runtime cells CSV and probe scoring, so the gate
+stays off — documented at the call site — until the probe/classification stop consuming it.
+
+**W4 completed: runtime-only promoted INFOs are now created.** `CreateGapRecoveredDialogues`
+(DialogueRuntimeMerger) materializes gap-recovery-promoted INFOs the topic walk missed —
+`RecoveredTopicFormId is > 0` is the precise marker (the promoter sets it only under the
+agreement gate), topic-less promotions are refused (the `info.master-topic-unbound` hazard),
+one record per FormID, ordered before the TES-file script backfill so created records get
+segment calibration and result-script recovery. Construction shared with the topic-walk path
+via one builder so the two sites cannot drift. Off by default (gap recovery is opt-in). Three
+new tests.
+
+**CSNO model/texture arrays: read AND emitted.** New `ReadModelSwapArray` (10 × 32-byte inline
+`TESModelTextureSwap`, cModel at +4 from the exported aux layout, fail-closed without it) joins
+`ReadTextureArray` (11 × TESTexture); `GenericRecordFields.TryStringSlots` (exact-count
+positional accessor); `CsnoEncoder` emits the vanilla-verified order — MODL ×8 (chips + slot
+machine), MOD2 duplicating the slot-machine path byte-for-byte, MOD3/MOD4 tables, ICON ×7
+reels, ICO2 ×4 deck backs (repeated path preserved) — all-or-nothing per positional group,
+MODT deliberately never (schema lists one; no vanilla record carries it). Corpus emission
+delta today: 0 (all five casinos are master-preserved) — the win is reader-side paths plus
+emission-readiness for proto dumps. Four encoder tests + the `TESModelTextureSwap` aux-layout
+ratchet pin.
+
+**Smaller closures:** T-2c — excluding a FormType from LAND candidacy now takes ≥2 named
+entries (a single fallible string read can no longer hide a build's terrain; singles are
+Debug-logged; a wrongly-admitted type costs only sweep time since the mesh gate yields 0 for
+it). T-3b — the quiet sweep path leaves one Debug stage-counter line, so "no candidate yielded
+a mesh" is falsifiable from logs. A second stale pre-8b pin
+(`Land_Encode_SkipsTextureLayersWithZeroFormId`) was rewritten to the ruled null-texture
+behavior (emit, own VTXT, DATA quadrant bit).
+
+**Validation.** Concurrent-session churn made the shared tree unusable mid-pass (their live
+edits broke the main project once and the test project three times), so validation ran in an
+isolated HEAD worktree carrying only this session's 34 files: main + tests build clean,
+**9,699 tests green with zero failures outside the rendering set already failing at HEAD**.
+Conversions: xex44 = 99,891 records, semantic check clean, delta vs the rulings baseline fully
+attributed (+91 V7 subrecords, +1,000 B); xex21 = 77,085 records, semantic record diff vs
+baseline is **zero** (the only byte delta is one worldspace's all-zero OFST table now being
+rebuilt, +80 B, engine-benign).
+
+**Still owed:** the viewer master-terrain toggle (GUI; the App tree is the concurrent
+session's active battleground), the probe/classification decoupling that would let the
+pCellLand gate return, and the standing opens (ATXT-cell captures at ≥1920×1080 per the
+2026-09-01 resolution ruling, LSCR LNAM synthetic-only, `pWaterWeatherControl`).
+

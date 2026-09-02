@@ -136,6 +136,10 @@ public static class Program
         rootCommand.Subcommands.Add(SaveCommand.Create());
         rootCommand.Subcommands.Add(DmpCommand.Create());
         rootCommand.Subcommands.Add(RenderCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Sprite.SpriteCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Classic.ClassicCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Audio.AudioCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Video.VideoCommand.Create());
         rootCommand.Subcommands.Add(ExportCommand.Create());
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());

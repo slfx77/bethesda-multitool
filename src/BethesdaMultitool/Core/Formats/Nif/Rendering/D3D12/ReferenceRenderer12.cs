@@ -21,6 +21,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Orchestration;
 using Vortice.Direct3D;
@@ -1440,11 +1441,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var altTextureIndex = renderCache.AlternateTextureIndex;
         var swapIndex = renderCache.MaterialSwapIndex;
         var baseSwapIndex = renderCache.BaseMaterialSwapIndex;
+        var bendableSplineIndex = renderCache.BendableSplineIndex;
         var seen = new HashSet<(string Path, uint AltBase, uint Swap)>();
         foreach (var cell in cells.Values)
         {
             foreach (var placed in cell.PlacedObjects)
             {
+                if (placed.BendableSpline is not null &&
+                    bendableSplineIndex is not null &&
+                    bendableSplineIndex.ContainsKey(placed.BaseFormId))
+                {
+                    seen.Add((BendableSplineGeometry.BuildCacheKey(placed.FormId), 0u, 0u));
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(placed.ModelPath))
                 {
                     continue;
@@ -3256,12 +3266,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var pdx = reference.BoundsCenter.X - cylinderX;
         var pdy = reference.BoundsCenter.Y - cylinderY;
         var resolveStarted = StartTiming();
-        var mesh = _meshCache.GetOrUpload(
-            commandList,
-            reference.ModelPath,
-            ref uploadBudget,
-            (pdx * pdx) + (pdy * pdy),
-            reference.AlternateTextures);
+        var mesh = reference.BendableSplineMesh is { } generatedSpline
+            ? _meshCache.GetOrUploadGenerated(
+                commandList,
+                generatedSpline,
+                ref uploadBudget)
+            : _meshCache.GetOrUpload(
+                commandList,
+                reference.ModelPath,
+                ref uploadBudget,
+                (pdx * pdx) + (pdy * pdy),
+                reference.AlternateTextures);
         meshResolveMs += ElapsedMilliseconds(resolveStarted);
 
         var texturesReady = mesh?.TexturesReady ?? false;

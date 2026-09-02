@@ -52,7 +52,8 @@ esm diff --xbox <f> --converted <f> --pc <f>  # Unified 2/3-way diff
 esm cell objects <file> <cell>  # List placed objects in a cell
 esm cell npc-trace <file> <id>  # Trace NPC from FormID to cell
 
-# Archive commands (format-agnostic: accept .bsa OR .ba2, detected by magic)
+# Archive commands (format-agnostic: Gamebryo .bsa, .ba2, and classic families, detected by
+#   an ordered exact-arithmetic probe chain — several classic formats have weak or NO magic)
 #   `archive` is canonical; `bsa` and `ba2` are deprecated aliases of the same group.
 archive list <file>                 # List files in an archive
 archive extract <file> -o <dir>     # Extract archive contents (-c/--convert: BSA Xbox->PC only)
@@ -65,6 +66,38 @@ archive file-compare <a> <f> <e>    # Compare an archived file vs an extracted c
 archive convert <file>              # Convert Xbox 360 BSA -> PC BSA (extract, convert, repack)
 archive validate <file>             # Validate BSA round-trip (extract -> repack -> compare)
 archive compare <fileA> <fileB>     # Compare two BSA headers/folder hashes
+
+# Sprite commands (classic-game 2D art -> PNG; the `render` sibling for palettized formats)
+sprite render <file> -o <dir>              # Decode a loose image to PNG frames
+sprite render <archive> -e <entry> -o <d>  # ...or an entry inside an archive
+sprite info <file> [-e <entry>]            # Frame count/sizes/offsets without writing PNGs
+#   Palette resolution: embedded > --palette <file> > PAL.COL, then ART_PAL.COL, beside the source.
+#   Today: Arena IMG/MNU/SET/CIF/DFA/CFA + Daggerfall TEXTURE.nnn (record-labelled rNN_fMM output).
+#   Raw 768-byte .PAL files are range-sniffed: all components <= 63 = 6-bit VGA (promote), else 8-bit.
+
+# Classic (pre-Morrowind) commands
+classic text <install-dir>                 # Dump authored text from a classic install
+classic text <TEMPLATE.DAT|file.INF>       # ...or from one file
+#   -s/--source template|inf|all, -f/--filter <substr>, -l/--limit N
+#   Arena today: TEMPLATE.DAT strings + .INF on-screen text, riddles and door keys.
+video info <file> [-e <entry>]             # FLIC geometry, frame count, fps, palette switches
+video export <file> -o <dir> [--every N]   # Render FLIC frames to PNG
+#   Arena .FLC/.CEL (Autodesk FLIC, magic 0xAF12). A FLIC stores header+1 frame blocks — the
+#   extra one loops back to frame 0 and is dropped, so decoded count == declared count.
+audio decode <file> -o <dir>               # Decode classic audio to WAV
+audio decode <archive> --all -o <dir>      #   ...or every supported file in an archive (-e for one)
+audio info <file> [-e <entry>]             # Sample rate, depth, duration, loop/text metadata
+#   Arena .VOC today (8-bit PCM; rate = 1000000/(256-timeConstant)). ACM/SND/XMI land per game.
+classic exe <A.EXE> [-o <out>] [--info]    # Unpack the PKLITE-compressed Arena executable
+#   Retail A.EXE: 174,021 -> 304,624 bytes. Holds province/race names, item + city tables.
+classic map info <file> [-e <entry>]       # Map dimensions, levels, .INF refs, locks/triggers
+classic map export <file> -o <dir>         # Render voxel layers to PNG (--scale px/voxel)
+#   Arena .MIF (LZHUF layers) and .RMD (word-RLE wilderness chunks); -e reads from GLOBAL.BSA.
+#   Layer colours are DIAGNOSTIC (stable hue per voxel id, 0 = black), not the game's textures:
+#   resolving real textures needs the level .INF plus tables still inside the packed A.EXE.
+# stats/list/show also accept a classic INSTALL DIRECTORY (those games have no single plugin
+#   file). Arena synthesizes ATPL (TEMPLATE.DAT strings), AINF (.INF level definitions),
+#   ALOC (CITYDATA world-map locations) and APRV (provinces) — 1,186 records on a retail install.
 
 # Render commands (output: PNG sprites)
 render <path> -o <dir>                     # Render single NIF to PNG
@@ -343,6 +376,24 @@ Sample/
 - **PC final**: `Sample/Full_Builds/Fallout New Vegas (PC Final)/Data/`
 - **PC install**: `E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\`
 
+### Classic Game Installs (pre-Morrowind catalog)
+
+All under `E:\SteamLibrary\SteamApps\common\`. Data root is what `ClassicGameLocator`
+detects; pass either it or the install root to `stats`/`archive`/`sprite`.
+
+| Game | Install subdir | Data root | Notes |
+|---|---|---|---|
+| Arena | `The Elder Scrolls Arena` | `ARENA` | `GLOBAL.BSA` has NO magic — probed by exact directory tiling |
+| Daggerfall | `Daggerfall` | `DF\DAGGER\ARENA2` | `DFCD` is a duplicate mirror — ignore it |
+| Battlespire | `Battlespire` | `GAMEDATA` | `3D.BS6` is a BSA despite the extension |
+| Redguard | `Redguard` | `Redguard` | Movies + music live only inside the CUE/BIN CD image |
+| Fallout | `Fallout` | install root | Loose `DATA\` overrides the DATs; install is MODDED (Hi-Res patch) |
+| Fallout 2 | `Fallout 2` | install root | Precedence: loose > `f2_res` > `patch*` > `critter` > `master`; MODDED (sfall + Killap UP) |
+| Fallout Tactics | `Fallout Tactics` | `core` | 40 `.bos` archives, all plain PKZIP |
+
+Because the two Fallout installs are modded, real-asset tests assert **structure only**,
+never content counts. Daggerfall/Battlespire save dirs are empty until the user plays.
+
 ### ESM Conversion Testing
 
 - **Xbox 360 source**: `Sample/ESM/360_final/FalloutNV.esm`
@@ -458,7 +509,8 @@ Tests use synthetic byte fixtures by default. Tests that require real game data 
 
 Every real-asset test class additionally MUST carry `[Collection(SequentialIntegrationGroup.Name)]` and load masters via `RealAssetEsmCache.LoadAsync` (never dispose the returned result — the cache owns it). Without this, xUnit runs the multi-GB parses in parallel and the suite thrashes RAM until it never finishes. A full `RUN_BUCKET_B=1` sweep takes ~7 min and is for when the relevant code (semantic loader, schema decode, profiles) changes.
 
-Resolve retail masters through `RealAssetPaths.Masters.*` — never a hand-rolled probe. `Masters.FalloutNv()` / `.Fallout3()` deliberately resolve the **installed** master and do NOT fall back to `Sample/ESM/…`: the two are different files (measured 2026-08-21: 266,840,039 vs 245,650,747 bytes, different md5), so substituting one produces field-level "failures" that have nothing to do with the code under test.
+Classic pre-Morrowind installs resolve through `RealAssetPaths.Classics.*` (data *roots*, not
+masters — those games have no plugin file). Resolve retail masters through `RealAssetPaths.Masters.*` — never a hand-rolled probe. `Masters.FalloutNv()` / `.Fallout3()` deliberately resolve the **installed** master and do NOT fall back to `Sample/ESM/…`: the two are different files (measured 2026-08-21: 266,840,039 vs 245,650,747 bytes, different md5), so substituting one produces field-level "failures" that have nothing to do with the code under test.
 
 Each opt-in guard must be paired with its `[Trait("Category", TestCategories.X)]` — the guard does the skipping, the trait is what `--filter-trait` selects, and a class with the guard but no trait is silently omitted from targeted runs. `TestCategoryConsistencyTests` enforces the pairing; `TestCategories` also defines `Benchmark` (measurement, not a correctness gate) and `Tool` (generator that asserts nothing).
 
@@ -493,7 +545,7 @@ The test runs in strict mode — there is no baseline of known gaps. Any new con
 
 When adding a new interactive control: either set `AutomationProperties.Name` inline, give the control an `x:Uid`, or link it to a visible label via `LabeledBy`. Icon-only buttons should have both a tooltip (visual) and `AutomationProperties.Name` (screen-reader). Headings (`<TextBlock Style="{StaticResource SubtitleTextBlockStyle}" />`) should also get `AutomationProperties.HeadingLevel="Level1"` (page) / `Level2` / `Level3`.
 
-Keyboard shortcuts are declared via XAML `<KeyboardAccelerator>` — WinUI auto-decorates tooltips with the shortcut hint. Add new shortcuts to `KeyboardShortcutsDialog.All` (under `src/BethesdaMultitool/App/Dialogs/`) so the F1 cheat-sheet lists them.
+Keyboard shortcuts are declared via XAML `<KeyboardAccelerator>` — WinUI auto-decorates tooltips with the shortcut hint. Add new shortcuts to `KeyboardShortcutRegistry.All` (`src/BethesdaMultitool/Core/Ui/KeyboardShortcutRegistry.cs` — deliberately in Core/ so it is unit-testable; consumed by `App/Dialogs/KeyboardShortcutsDialog`) so the F1 cheat-sheet lists them.
 
 ## Code Style
 

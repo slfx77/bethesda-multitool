@@ -122,6 +122,44 @@ internal static class RealAssetPaths
     }
 
     /// <summary>
+    ///     Data roots for the classic pre-Morrowind games. These have no master plugin to resolve —
+    ///     their analyzable unit is a directory — so each member returns the data root a
+    ///     <c>ClassicGameLocator</c> probe would claim, or null when the game is not installed.
+    ///     <para>
+    ///         Two installs here are MODDED (Fallout has the Hi-Res patch; Fallout 2 also has sfall
+    ///         and the Killap patch), and the Daggerfall/Battlespire save directories ship empty, so
+    ///         real-asset tests over these must assert structure, never content counts.
+    ///     </para>
+    /// </summary>
+    public static class Classics
+    {
+        /// <summary>Arena's data root — game files and saves share one directory.</summary>
+        public static string? Arena() => SteamGameDirectory("The Elder Scrolls Arena", "ARENA");
+
+        /// <summary>
+        ///     Daggerfall's data root. <c>DF\DFCD</c> beside it is a duplicate CD mirror — do not
+        ///     use it. Note the Steam folder is the full title, not "Daggerfall": a shortened name
+        ///     here resolves nowhere and every real-asset test silently skips.
+        /// </summary>
+        public static string? Daggerfall() =>
+            SteamGameDirectory("The Elder Scrolls Daggerfall", @"DF\DAGGER\ARENA2");
+
+        public static string? Battlespire() =>
+            SteamGameDirectory("An Elder Scrolls Legend Battlespire", "GAMEDATA");
+
+        public static string? Redguard() =>
+            SteamGameDirectory("The Elder Scrolls Adventures Redguard", "Redguard");
+
+        /// <summary>Fallout's install root: loose <c>DATA\</c> overrides the DAT archives.</summary>
+        public static string? Fallout1() => SteamGameDirectory("Fallout", string.Empty);
+
+        /// <summary>Fallout 2's install root: loose <c>data\</c> then f2_res, patch, critter, master.</summary>
+        public static string? Fallout2() => SteamGameDirectory("Fallout 2", string.Empty);
+
+        public static string? FalloutTactics() => SteamGameDirectory("Fallout Tactics", "core");
+    }
+
+    /// <summary>
     ///     Resolve a directory inside a Steam-installed game (a Data folder, say) using the same probe
     ///     order as <see cref="SteamGameFile" />.
     /// </summary>

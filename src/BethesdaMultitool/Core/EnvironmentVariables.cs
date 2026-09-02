@@ -97,6 +97,13 @@ internal static class EnvironmentVariables
         public const string DumpReference = "FALLOUT_VIEWER_DUMP_REFR";
 
         /// <summary>
+        ///     Optional absolute PNG path used by the native Mesh/NPC viewer capture buttons.
+        ///     Intended for deterministic visual-regression automation; unset preserves the
+        ///     interactive save picker.
+        /// </summary>
+        public const string NativeCaptureOutput = "FALLOUT_VIEWER_NATIVE_CAPTURE_OUTPUT";
+
+        /// <summary>
         ///     Geometry/instance validation for the D3D12 reference renderer. "1": draw-time
         ///     liveness + view-window checks on every opaque batch, upload-time packing self-check,
         ///     strict arena free validation, and per-instance world-matrix sanity checks. "2":
@@ -132,9 +139,11 @@ internal static class EnvironmentVariables
         public const string ModernImageSpace = "FALLOUT_VIEWER_MODERN_IMAGESPACE";
 
         /// <summary>
-        ///     Explicit opt-in for authored-sky architectural replacements: loading the default
-        ///     Atmosphere.nif layer and uploading the full WTHR DALC directional-ambient cube.
-        ///     Unset preserves the procedural atmosphere and flat ambient compatibility paths.
+        ///     Tri-state override for authored-sky architectural replacements. Atmosphere.nif remains
+        ///     opt-in pending visual capture proof. Skyrim and Fallout 76 upload the evidence-backed
+        ///     WTHR DALC directional-ambient cube by default. Set <c>1</c> to force the complete
+        ///     authored path, or <c>0</c> to force the compatibility path for a control capture. Unset
+        ///     uses each feature's evidence-backed game default.
         /// </summary>
         public const string AuthoredSky = "FALLOUT_VIEWER_AUTHORED_SKY";
 
