@@ -65,11 +65,41 @@ public sealed class NifNativeViewerSceneSourceContractTests
 
         SourceContract.AssertOrder(
             load,
-            "BuildViewerSceneWithDiagnostics(nifData, item.DisplayName)",
+            "BuildViewerSceneWithDiagnostics(",
+            "item.DisplayName,",
+            "item.FullPath);",
             "service.ExportViewerSceneToGlb(build.Scene)",
             "build.Scene,",
             "build.ExternalGeometry.IncompleteWarningMessage");
         Assert.Contains("BethesdaViewerScene? Scene", workflow, StringComparison.Ordinal);
-        Assert.Contains("temporary WebView compatibility", workflow, StringComparison.Ordinal);
+        // The GLB's role is now named by a parameter rather than a comment: the workflow builds
+        // the native scene first and emits the GLB only as an opt-in compatibility artefact.
+        Assert.Contains("bool includeCompatibilityGlb = true,", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MeshViewerPublishesHandleFreeModelFamilyProvenance()
+    {
+        var browser = BrowserServiceSource();
+        var scene = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Viewer",
+            "BethesdaViewerScene.cs");
+        var xaml = SourceContract.ReadAppSource("NifConverterTab.xaml");
+        var code = SourceContract.ReadAppSource("NifConverterTab.xaml.cs");
+
+        SourceContract.AssertOrder(
+            browser,
+            "ResolveModelFamilyAnimations(sourcePath ?? sourceLabel",
+            "viewerScene.SetModelFamilyAnimations(modelFamilyAnimations)");
+        Assert.Contains("private sealed class DeferredGameFileSystem", browser,
+            StringComparison.Ordinal);
+        Assert.Contains("files.EnumerateFiles(prefix).ToArray()", browser,
+            StringComparison.Ordinal);
+        Assert.Contains("Animations = catalog.Animations", scene, StringComparison.Ordinal);
+        Assert.DoesNotContain("IGameFileSystem", scene, StringComparison.Ordinal);
+        Assert.DoesNotContain("ArchiveLease", scene, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NifViewerAnimationSourcesText\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("SetNifViewerAnimationCatalog(result.Scene?.ModelFamilyAnimations)", code,
+            StringComparison.Ordinal);
     }
 }

@@ -227,7 +227,13 @@ public sealed class ClassicSpecularLodTests
         }
 
         Assert.Contains("o.vSpecularLodFade = uUvScroll.z;", directVertex, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(pixel, "vSpecularLodFade"));
+        // Pin the APPLICATION form, not the raw token count. The token also appears in each
+        // input struct's declaration (there are two entry points now), which a bare count would
+        // conflate with a use. What "scoped to direct FNV sun specular" actually means is that
+        // the fade only ever multiplies the sun specular term — and both entry points apply it
+        // exactly that way, inside their uSunColorLighting.w / vSpecular.w / specMask gate.
+        Assert.Equal(2, CountOccurrences(pixel, "specMask * specTerm * input.vSpecularLodFade"));
+        Assert.Equal(2, CountOccurrences(pixel, "nointerpolation float vSpecularLodFade : TEXCOORD15;"));
 
         var directStart = pixel.IndexOf("// FNV sun specular", StringComparison.Ordinal);
         var environmentStart = pixel.IndexOf(

@@ -62,6 +62,17 @@ public sealed class ReferenceSubmeshDecoder12Tests
             ClassicEnvironmentMapIsSphereMap = true,
             ClassicParallaxHeightMapTexturePath = @"textures\height.dds",
             IsDecal = true,
+            // The classifier honours IsDecal only inside the arm that runs when shader flags are
+            // present; a decal with no BSShader metadata falls to the legacy mirror and gets
+            // EngineZWriteOff = !DepthWritingBlend instead. Minimal metadata puts this fixture on
+            // the path its IsDecal is meant to exercise. Whether IsDecal should force ZWrite-off
+            // for metadata-less NIFs too is an open engine-rule question, not settled here.
+            ShaderMetadata = new NifShaderTextureMetadata
+            {
+                PropertyType = "BSLightingShaderProperty",
+                ShaderFlags = 0u,
+                ShaderFlags2 = 0u
+            },
             EffectTint = (0.1f, 0.2f, 0.3f),
             EffectFalloff = (0.4f, 0.5f, 0.6f, 0.7f),
             SoftParticleFalloffDepth = 32f,

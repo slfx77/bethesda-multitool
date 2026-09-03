@@ -414,9 +414,12 @@ public sealed class BgsmMaterial
         }
         else if (!isFallout4 && _paths[SlotGlow] is not null)
         {
+            // The 17-byte payload guard above holds here too: flag, then RGB (ignored in this
+            // arm — the colour is forced white), then the scale at +13. Reading +1 would take
+            // the R channel as the scale, which is 0 for every real FO76 glow-only material.
             EmissiveColor = Vector3.One;
             EmissiveScale = Math.Clamp(
-                BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 1)), 0f, 8f);
+                BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 13)), 0f, 8f);
             hasPayload = true;
         }
 

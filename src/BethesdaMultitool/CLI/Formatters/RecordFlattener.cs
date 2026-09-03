@@ -131,6 +131,20 @@ internal static class RecordFlattener
         result.AddRange(
             records.PlaceableWaters.Select(r => new FlatRecord(r.FormId, "PWAT", r.EditorId, null)));
         result.AddRange(records.Trees.Select(r => new FlatRecord(r.FormId, "TREE", r.EditorId, null)));
+        result.AddRange(records.BendableSplines.Select(r => new FlatRecord(r.FormId, "BNDS", r.EditorId, null)));
+
+        // Starfield / Fallout 76 sky and environment records. None carries a FULL name. VOLI is
+        // shared by two collections because the two games define different layouts under the
+        // same signature; a plugin populates one or the other, never both.
+        result.AddRange(records.WeatherSettings.Select(r => new FlatRecord(r.FormId, "WTHS", r.EditorId, null)));
+        result.AddRange(records.VolumetricLightingSettings.Select(r => new FlatRecord(r.FormId, "VOLI", r.EditorId, null)));
+        result.AddRange(records.Fallout76VolumetricLightingSettings.Select(r => new FlatRecord(r.FormId, "VOLI", r.EditorId, null)));
+        result.AddRange(records.CloudForms.Select(r => new FlatRecord(r.FormId, "CLDF", r.EditorId, null)));
+        result.AddRange(records.Atmospheres.Select(r => new FlatRecord(r.FormId, "ATMO", r.EditorId, null)));
+        result.AddRange(records.PlanetData.Select(r => new FlatRecord(r.FormId, "PNDT", r.EditorId, null)));
+        result.AddRange(records.StarData.Select(r => new FlatRecord(r.FormId, "STDT", r.EditorId, null)));
+        result.AddRange(records.SunPresets.Select(r => new FlatRecord(r.FormId, "SUNP", r.EditorId, null)));
+        result.AddRange(records.Curves3D.Select(r => new FlatRecord(r.FormId, "CUR3", r.EditorId, null)));
 
         // Generic
         result.AddRange(

@@ -133,8 +133,11 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             "lit = min(lit, 1.0);",
             "ApplyFog(lit, input.vWorldPos, 0.0)");
         Assert.Equal(3, SourceContract.CountOccurrences(branch, ".Sample("));
+        // Vertex alpha must never scale the SAMPLE alpha in this branch — that is the FNV
+        // behaviour this shader deliberately does not inherit. It IS used, by design, as the lerp
+        // weight for the vTextureState.w == -3.0 vertex-colour route pinned in the order above,
+        // so a blanket ban on the token would contradict that pin.
         Assert.DoesNotContain("sample.a * input.vVertexColor.a", branch, StringComparison.Ordinal);
-        Assert.DoesNotContain("input.vVertexColor.a", branch, StringComparison.Ordinal);
         Assert.DoesNotContain("uClipPlane", branch, StringComparison.Ordinal);
         Assert.DoesNotContain("clip(", branch, StringComparison.Ordinal);
 
@@ -389,10 +392,12 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
         Assert.Contains(": _pipelines.ShadowOpaquePso", shadowReplay,
             StringComparison.Ordinal);
 
-        Assert.Contains("private const int AtmosphereClipPlaneFloat4Slot = 37;", headless,
+        Assert.Contains(
+            "private const int AtmosphereClipPlaneFloat4Slot = AtmosphereConstantBufferLayout.ClipPlaneFloat4Slot;",
+            headless,
             StringComparison.Ordinal);
         Assert.Contains(
-            "private const int AtmosphereBytes = (AtmosphereClipPlaneFloat4Slot + 1) * 16;",
+            "private const int AtmosphereBytes = (int)AtmosphereConstantBufferLayout.ByteSize;",
             headless,
             StringComparison.Ordinal);
         Assert.Contains("cb[AtmosphereClipPlaneFloat4Slot * 4 + 3] = 1f;", headless,

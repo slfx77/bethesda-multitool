@@ -88,9 +88,9 @@ public sealed class WaterHardwareOcclusionSourceContractTests
             "var psDepthSampleBytecode = CompileEmbeddedShader(",
             "psoDesc.PixelShader = psDepthSampleBytecode;",
             "_depthSamplePsoTemplate = psoDesc;",
-            "_psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);",
+            "_psoDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));",
             "psoDesc.PixelShader = psFnvWater001Bytecode;",
-            "_psoFnvWater001DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);");
+            "_psoFnvWater001DepthSample = TrackConstructionResource(");
         Assert.Contains("pixelDepthDescription.PixelShader = modernPixelDepthSampleBytecode;",
             renderer, StringComparison.Ordinal);
     }

@@ -133,7 +133,11 @@ public sealed class OpaqueSubmissionTelemetryTests
             StringComparison.Ordinal);
         Assert.Contains("_opaqueSubmissionPsos.Clear();", loop, StringComparison.Ordinal);
         Assert.DoesNotContain("new HashSet", loop, StringComparison.Ordinal);
-        Assert.Contains("if (batchState.Instances.Count != 0)", loop, StringComparison.Ordinal);
+        // The count is read once into a local so the packet census and the draw gate see the
+        // same number; the gate itself is unchanged.
+        SourceContract.AssertOrder(loop,
+            "var sourceInstanceCount = batchState.Instances.Count;",
+            "if (sourceInstanceCount != 0)");
         Assert.Contains("if (drawCount > 0)", loop, StringComparison.Ordinal);
         Assert.Contains("LastStats.ReferenceOpaqueSurvivingDraws++;", loop, StringComparison.Ordinal);
         Assert.Contains("!ReferenceEquals(previousOpaquePso, batchState.Pso)", loop, StringComparison.Ordinal);

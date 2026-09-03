@@ -76,9 +76,9 @@ public sealed class Fallout76WaterOpticsSourceContractTests
 
         Assert.Contains("new ShaderMacro(\"FO76_WATER_OPTICS\", \"1\")", source,
             StringComparison.Ordinal);
-        Assert.Contains("_psoFo76Optics = gpu.Device.CreateGraphicsPipelineState", source,
+        Assert.Contains("_psoFo76Optics = TrackConstructionResource(", source,
             StringComparison.Ordinal);
-        Assert.Contains("_psoFo76OpticsDepthSample = gpu.Device.CreateGraphicsPipelineState", source,
+        Assert.Contains("_psoFo76OpticsDepthSample = TrackConstructionResource(", source,
             StringComparison.Ordinal);
         Assert.Contains("_psoFo76Optics.Dispose();", source, StringComparison.Ordinal);
         Assert.Contains("_psoFo76OpticsDepthSample.Dispose();", source, StringComparison.Ordinal);

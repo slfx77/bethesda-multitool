@@ -76,7 +76,11 @@ public sealed class ShadowCascadeSubmissionPolicyTests
             "if (drawCount == 0 && !canCaptureShadowTail)",
             "startInstance += (uint)shadowCount;",
             "continue;",
-            "var textureState = ResolveTextureState(sub);");
+            // Material setup for the colour pass now lives in BuildOpaqueInstanceDrawConstants,
+            // which hands back the resolved texture state as an out parameter. The property under
+            // test is unchanged: that call sits AFTER the empty-colour early-out above, so a batch
+            // with no colour draws never pays for per-draw constants it cannot submit.
+            "var instanceDraw = BuildOpaqueInstanceDrawConstants(");
         Assert.Contains(
             "if (!submitIndirect && drawCount > 0 && !ReferenceEquals(currentPso, batchState.Pso))",
             source,

@@ -25,9 +25,15 @@ public sealed class NifHeadlessSettlementSourceContractTests
             settlementHelper,
             StringComparison.Ordinal);
         Assert.DoesNotContain("strict: false", settlementHelper, StringComparison.Ordinal);
+        // The settle condition is now two named locals rather than one compound `if`:
+        // renderedContent captures "something actually drew" (references, or a settled water
+        // plane for water-only NIFs), and streamingSettled requires it AND stream completion AND a
+        // non-zero iteration. The strictness under test is unchanged — a frame that drew nothing
+        // can never settle — only its spelling moved.
         SourceContract.AssertOrder(
             source,
             "var complete = StreamingComplete(references.LastStats);",
-            "if (complete && it > 0 && (s.ReferenceDrawn > 0 || waterSettled))");
+            "var renderedContent = s.ReferenceDrawn > 0 || waterSettled;",
+            "streamingSettled |= complete && it > 0 && renderedContent;");
     }
 }

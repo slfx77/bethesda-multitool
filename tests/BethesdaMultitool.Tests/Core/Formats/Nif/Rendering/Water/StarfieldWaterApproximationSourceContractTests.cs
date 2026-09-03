@@ -16,9 +16,11 @@ public sealed class StarfieldWaterApproximationSourceContractTests
     {
         var renderer = ReadRenderer();
 
-        Assert.Contains("_psoStarfield = gpu.Device.CreateGraphicsPipelineState", renderer,
+        // PSOs are registered with TrackConstructionResource so a failed constructor disposes
+        // everything it already created; the pin follows the creation through that wrapper.
+        Assert.Contains("_psoStarfield = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState", renderer,
             StringComparison.Ordinal);
-        Assert.Contains("_psoStarfieldDepthSample = gpu.Device.CreateGraphicsPipelineState", renderer,
+        Assert.Contains("_psoStarfieldDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState", renderer,
             StringComparison.Ordinal);
         Assert.Contains("depthSample ? _psoStarfieldDepthSample : _psoStarfield", renderer,
             StringComparison.Ordinal);

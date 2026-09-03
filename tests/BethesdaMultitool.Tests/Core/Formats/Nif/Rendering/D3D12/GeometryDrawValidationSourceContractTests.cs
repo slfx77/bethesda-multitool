@@ -25,9 +25,17 @@ public sealed class GeometryDrawValidationSourceContractTests
             "cmd.IASetVertexBuffers(0, batchState.Submesh.EffectiveVertexBufferView);",
             "cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);");
 
-        // Both draw sites (main + shadow capture) are gated on the validation result.
-        Assert.Contains("if (drawCount > 0 && drawLiveness)", loop, StringComparison.Ordinal);
-        Assert.Contains("drawCount + shadowCount > 0 && drawLiveness", loop, StringComparison.Ordinal);
+        // Both main-scene draw arms (indirect and direct) are gated on the validation result. The
+        // gate is a nested `if (drawLiveness)` under `if (drawCount > 0)` rather than one compound
+        // condition, so the geometry binds still happen for an invalid draw and only the cmd.*
+        // draw is suppressed — which is the whole point of validating before binding.
+        Assert.Contains("if (drawCount > 0)", loop, StringComparison.Ordinal);
+        Assert.Equal(2, SourceContract.CountOccurrences(loop, "if (drawLiveness)"));
+        SourceContract.AssertOrder(
+            loop,
+            "cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);",
+            "if (drawLiveness)",
+            "cmd.DrawIndexedInstanced(");
     }
 
     [Fact]

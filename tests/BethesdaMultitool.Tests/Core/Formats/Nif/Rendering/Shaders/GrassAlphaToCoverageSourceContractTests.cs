@@ -75,7 +75,9 @@ public sealed class GrassAlphaToCoverageSourceContractTests
             "submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier, pso",
             batches,
             StringComparison.Ordinal);
-        Assert.Contains("ID3D12PipelineState Pso);", batches, StringComparison.Ordinal);
+        // The registry's batch record gained members after Pso, so the constructor line no longer
+        // ends at it; the property is the stable place the key exposes it.
+        Assert.Contains("public ID3D12PipelineState Pso { get; } = pso;", batches, StringComparison.Ordinal);
     }
 
     [Fact]

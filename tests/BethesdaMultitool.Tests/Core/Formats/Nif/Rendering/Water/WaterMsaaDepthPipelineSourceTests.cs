@@ -135,7 +135,8 @@ public sealed class WaterMsaaDepthPipelineSourceTests
         var call = source[callStart..helperStart];
         Assert.Contains("_game,", call, StringComparison.Ordinal);
         Assert.Contains("depthSample,", call, StringComparison.Ordinal);
-        Assert.Contains("_depthSampleCount);", call, StringComparison.Ordinal);
+        // Trailing comma: DescribeTechnique takes further arguments after the sample count now.
+        Assert.Contains("_depthSampleCount,", call, StringComparison.Ordinal);
 
         var helper = source[helperStart..helperEnd];
         Assert.Contains(

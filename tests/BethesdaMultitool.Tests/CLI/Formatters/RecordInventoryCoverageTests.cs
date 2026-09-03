@@ -10,6 +10,18 @@ namespace BethesdaMultitool.Tests.CLI.Formatters;
 
 public sealed class RecordInventoryCoverageTests
 {
+    /// <summary>
+    ///     Collections whose <c>MergeWith</c> deliberately keeps both base and overlay records rather
+    ///     than deduping by FormID, because a domain merger folds them later. Each entry must cite
+    ///     the model's own documentation for why.
+    /// </summary>
+    private static readonly HashSet<string> DeferredMergeCollections =
+    [
+        // RecordCollection.PlanetData: EOVR carries ordered deltas over the master CNAM list;
+        // StarfieldPlanetDataMerger folds them, so deduping here would discard the deltas.
+        nameof(RecordCollection.PlanetData)
+    ];
+
     public static IEnumerable<object[]> SemanticCollectionProperties =>
         typeof(RecordCollection)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -87,11 +99,26 @@ public sealed class RecordInventoryCoverageTests
                                  throw new InvalidOperationException($"Unknown collection {propertyName}.");
         var mergedList = (IList)(collectionProperty.GetValue(merged) ??
                                  throw new InvalidOperationException($"Merged {propertyName} is null."));
+
+        if (DeferredMergeCollections.Contains(propertyName))
+        {
+            // Documented on the model: repeated FormIDs are KEPT in load order because a later
+            // plugin's EOVR carries ordered deltas over the master's list, and the domain merger
+            // (StarfieldPlanetDataMerger) folds them. Deduping here would discard the deltas, so
+            // the merge contract for these collections is "both survive, base first".
+            var both = mergedList.Cast<object>().ToList();
+            Assert.Equal(2, both.Count);
+            Assert.Equal($"Base{both[0].GetType().Name}", EditorIdOf(both[0]));
+            Assert.Equal($"Overlay{both[1].GetType().Name}", EditorIdOf(both[1]));
+            return;
+        }
+
         var mergedRecord = Assert.Single(mergedList.Cast<object>());
 
-        Assert.Equal(
-            $"Overlay{mergedRecord.GetType().Name}",
-            mergedRecord.GetType().GetProperty("EditorId")?.GetValue(mergedRecord));
+        Assert.Equal($"Overlay{mergedRecord.GetType().Name}", EditorIdOf(mergedRecord));
+
+        static object? EditorIdOf(object record) =>
+            record.GetType().GetProperty("EditorId")?.GetValue(record);
     }
 
     [Theory]

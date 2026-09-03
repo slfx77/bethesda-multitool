@@ -2565,5 +2565,240 @@
     ],
     "confidence": "high",
     "nextAction": "All BGSMusicType runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "BendableSplineRecord",
+    "recordCodes": [
+      "BNDS"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "spline definition (DNAM)",
+        "texture set FormID",
+        "placement data via REFR XBSD"
+      ]
+    },
+    "evidence": [
+      "BendableSplineDataReader",
+      "EsmParsedRecordTypes registry entry for BNDS"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Fallout 4 has no memory dumps in Sample/. Typed data reaches WorldViewData; no curve renderer exists until endpoint/sag/tessellation math is recovered."
+  },
+  {
+    "semanticModel": "StarfieldWeatherSettingsRecord",
+    "recordCodes": [
+      "WTHS"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "weather settings body"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseWeatherSettings",
+      "EsmParsedRecordTypes registry entry for WTHS"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Rendering parity is separately tracked and open."
+  },
+  {
+    "semanticModel": "StarfieldVolumetricLightingRecord",
+    "recordCodes": [
+      "VOLI"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "volumetric lighting settings"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler (VOLI, Starfield layout)",
+      "EsmParsedRecordTypes registry entry for VOLI"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Shares the VOLI signature with the Fallout 76 layout; the game profile selects the reader."
+  },
+  {
+    "semanticModel": "Fallout76VolumetricLightingRecord",
+    "recordCodes": [
+      "VOLI"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "volumetric lighting settings"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler (VOLI, Fallout 76 layout)",
+      "EsmParsedRecordTypes registry entry for VOLI"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Fallout 76 has no memory dumps in Sample/. Shares the VOLI signature with the Starfield layout; the game profile selects the reader."
+  },
+  {
+    "semanticModel": "StarfieldCloudFormRecord",
+    "recordCodes": [
+      "CLDF"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "cloud form definition"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler (CLDF)",
+      "EsmParsedRecordTypes registry entry for CLDF"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Decoded but not yet rendered."
+  },
+  {
+    "semanticModel": "StarfieldAtmosphereRecord",
+    "recordCodes": [
+      "ATMO"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "atmosphere parameters"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler (ATMO) + StarfieldAtmosphereResolver",
+      "EsmParsedRecordTypes registry entry for ATMO"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Resolver reports unresolved inputs rather than inventing values."
+  },
+  {
+    "semanticModel": "StarfieldPlanetDataRecord",
+    "recordCodes": [
+      "PNDT"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "planet data body",
+        "override merge via StarfieldPlanetDataMerger",
+        "FormID rebasing via StarfieldPlanetDataFormIdRebaser"
+      ]
+    },
+    "evidence": [
+      "StarfieldPlanetDataDecoder + StarfieldPlanetDataMerger",
+      "EsmParsedRecordTypes registry entry for PNDT"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Decoder is schema-strict and rejects CLAS drift."
+  },
+  {
+    "semanticModel": "StarfieldStarDataRecord",
+    "recordCodes": [
+      "STDT"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "star data body",
+        "binary star / sun preset / time-of-day routing FormIDs"
+      ]
+    },
+    "evidence": [
+      "StarfieldStarDataDecoder + StarfieldStarDataResolver",
+      "EsmParsedRecordTypes registry entry for STDT"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. DecodeFailure is surfaced on the record rather than zero-filled."
+  },
+  {
+    "semanticModel": "StarfieldSunPresetRecord",
+    "recordCodes": [
+      "SUNP"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "sun preset body"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler (SUNP) + StarfieldSunPresetResolver",
+      "EsmParsedRecordTypes registry entry for SUNP"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Resolver reports unresolved inputs rather than inventing values."
+  },
+  {
+    "semanticModel": "StarfieldCurve3DRecord",
+    "recordCodes": [
+      "CUR3"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "3D curve control points"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler (CUR3)",
+      "EsmParsedRecordTypes registry entry for CUR3"
+    ],
+    "confidence": "high",
+    "nextAction": "No runtime parity possible: the DMP corpus is Fallout New Vegas only and Starfield has no memory dumps in Sample/. Decoder rejects wrong CLAS order, duplicate/unknown chunks and truncated payloads."
   }
 ]

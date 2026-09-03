@@ -26,7 +26,9 @@ public sealed class ReferenceSubmeshDecoder12SourceContractTests
         Assert.Contains("ReferenceSubmeshDecoder12.Decode(", viewerDecoder, StringComparison.Ordinal);
         Assert.Contains("scene.TextureSourcePaths.ToArray()", viewerDecoder, StringComparison.Ordinal);
         Assert.Contains("scene.GeneratedTextures", viewerDecoder, StringComparison.Ordinal);
-        Assert.Contains("scene.AnimationClips.Select(SnapshotAnimationClip)", viewerDecoder,
+        // Clips are snapshotted in a foreach rather than a Select so the loop can skip clips
+        // that fail validation; the mapper is the same SnapshotAnimationClip either way.
+        Assert.Contains("snapshots.Add(SnapshotAnimationClip(source));", viewerDecoder,
             StringComparison.Ordinal);
     }
 

@@ -117,7 +117,11 @@ public sealed class StarfieldMaterialNormalBindingSourceContractTests
         Assert.Contains("!_resolver.IsUnauthoredStarfieldNormalMap(cacheKey)", cache,
             StringComparison.Ordinal);
         Assert.Contains("normalMap: starfieldNormalMap", resolver, StringComparison.Ordinal);
-        Assert.Contains("var keyText = string.Concat(_sourceSetIdentity, \"|\", path);", resolver,
+        // The key is now built in BuildPersistentCacheKey with two arms — a paired Xbox normal
+        // gets a revision suffix, everything else keeps the bare identity|path form. Both arms
+        // still start from _sourceSetIdentity, which is the property under test: the cache key is
+        // scoped to the source set so a normal never aliases a diffuse from a different set.
+        Assert.Contains("string.Concat(_sourceSetIdentity, \"|\", cachePath)", resolver,
             StringComparison.Ordinal);
     }
 }

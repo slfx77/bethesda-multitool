@@ -207,9 +207,11 @@ public sealed class ReferenceCollisionCacheEntryTests
         var cache = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceMeshCache12.cs");
+        // UploadDecodedMesh became a static returning a materialization result rather than the
+        // cached mesh directly; the collision retention it pins lives in the same body.
         var upload = SourceContract.Extract(
             cache,
-            "private CachedNifMesh12? UploadDecodedMesh",
+            "internal static MeshMaterializationResult UploadDecodedMesh(",
             "private static Vector3[]? ExtractParticleCenters");
 
         Assert.Contains("preserveEmptyModel: true", decoder, StringComparison.Ordinal);

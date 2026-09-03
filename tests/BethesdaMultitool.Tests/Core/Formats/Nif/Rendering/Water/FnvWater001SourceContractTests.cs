@@ -12,7 +12,9 @@ public sealed class FnvWater001SourceContractTests
         var source = ReadRenderer();
 
         Assert.Contains("\"water_fnv001.frag.hlsl\", \"main\", \"ps_5_1\"", source, StringComparison.Ordinal);
-        Assert.Contains("_psoFnvWater001DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);",
+        // Creation goes through TrackConstructionResource (constructor-failure cleanup), which
+        // spans lines, so the pin stops at the wrapper call rather than the full expression.
+        Assert.Contains("_psoFnvWater001DepthSample = TrackConstructionResource(",
             source, StringComparison.Ordinal);
         Assert.Contains("_psoFnvWater001DepthSample.Dispose();", source, StringComparison.Ordinal);
         Assert.DoesNotContain("_psoFnvWater001 =", source, StringComparison.Ordinal);

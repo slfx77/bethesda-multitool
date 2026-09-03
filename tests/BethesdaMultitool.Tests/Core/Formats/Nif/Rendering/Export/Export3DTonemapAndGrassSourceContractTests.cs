@@ -28,8 +28,8 @@ public sealed class Export3DTonemapAndGrassSourceContractTests
             render,
             "var tonemap = ResolveTonemapSettings() with { AdaptFactor = 1f };",
             "target.TonemapSettings = tonemap;",
-            "lightVisibility: cylinder, tonemapOverride: tonemap);",
-            "target.RecordReadback(cmd);");
+            "lightVisibility: cylinder, tonemapOverride: tonemap,",
+            "target.RecordReadback(recorder);");
     }
 
     [Fact]

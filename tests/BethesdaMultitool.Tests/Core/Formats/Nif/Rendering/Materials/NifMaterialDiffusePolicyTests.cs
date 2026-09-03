@@ -132,7 +132,8 @@ public sealed class NifMaterialDiffusePolicyTests
             "if (string.IsNullOrEmpty(sub.DiffuseTexturePath))",
             "sub.MaterialDiffuse is { } materialDiffuse",
             "GetOrCreateSynthetic",
-            "diffuse = _textureCache.WhitePixel;",
+            // No underscore: UploadDecodedMesh is static now and takes the cache as a parameter.
+            "diffuse = textureCache.WhitePixel;",
             "GetOrUpload(diffusePath)");
     }
 }

@@ -109,6 +109,18 @@ public static class StatsCommand
         AddIfNonZero(categories, "World", "SCOL", records.StaticCollections.Count);
         AddIfNonZero(categories, "World", "PWAT", records.PlaceableWaters.Count);
         AddIfNonZero(categories, "World", "TREE", records.Trees.Count);
+        AddIfNonZero(categories, "World", "BNDS", records.BendableSplines.Count);
+        // Starfield / Fallout 76 sky and environment. VOLI appears for whichever game's collection
+        // is populated — a plugin fills one, never both, so only one line is ever non-zero.
+        AddIfNonZero(categories, "World", "WTHS", records.WeatherSettings.Count);
+        AddIfNonZero(categories, "World", "VOLI", records.VolumetricLightingSettings.Count);
+        AddIfNonZero(categories, "World", "VOLI", records.Fallout76VolumetricLightingSettings.Count);
+        AddIfNonZero(categories, "World", "CLDF", records.CloudForms.Count);
+        AddIfNonZero(categories, "World", "ATMO", records.Atmospheres.Count);
+        AddIfNonZero(categories, "World", "PNDT", records.PlanetData.Count);
+        AddIfNonZero(categories, "World", "STDT", records.StarData.Count);
+        AddIfNonZero(categories, "World", "SUNP", records.SunPresets.Count);
+        AddIfNonZero(categories, "World", "CUR3", records.Curves3D.Count);
         AddIfNonZero(categories, "World", "ACTI", records.Activators.Count);
         AddIfNonZero(categories, "World", "DOOR", records.Doors.Count);
         AddIfNonZero(categories, "World", "FURN", records.Furniture.Count);

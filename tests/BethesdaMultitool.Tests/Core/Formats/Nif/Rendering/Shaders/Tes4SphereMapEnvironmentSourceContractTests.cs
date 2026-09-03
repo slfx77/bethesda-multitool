@@ -118,7 +118,9 @@ public sealed class Tes4SphereMapEnvironmentSourceContractTests
             source,
             "ReadRigidNodeAnimation(reader),",
             "reader.ReadBoolean(),",
-            "ReadStarfieldMaterialColor(reader));");
+            // Trailing comma, not `));` — the cache entry grew alpha and material fields after
+            // colour, so colour is no longer the last argument of the constructor.
+            "ReadStarfieldMaterialColor(reader),");
 
         // Extract returns the start marker inclusively; strip it before parsing the number.
         const string versionMarker = "internal const int DecoderVersion = ";

@@ -43,7 +43,10 @@ public sealed class DefaultReferenceGeometrySourceContractTests
         var renderer = RendererSource();
         var cache = CacheSource();
 
-        Assert.Contains("_meshCache.GetOrUpload(\n            commandList,", renderer,
+        // GetOrUpload sits in the false arm of a ternary now (bendable splines take the
+        // generated-mesh route), so it is one indent deeper — the open command list is still the
+        // first argument, which is what carries it into the arena copy.
+        Assert.Contains("_meshCache.GetOrUpload(\n                commandList,", renderer,
             StringComparison.Ordinal);
         Assert.Contains("public CachedNifMesh12? GetOrUpload(\n        ID3D12GraphicsCommandList commandList,",
             cache, StringComparison.Ordinal);

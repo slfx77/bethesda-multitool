@@ -275,10 +275,18 @@ public sealed class FnvTerrainNormalMapTests
             "return normalize(tangentNormal.x * T + tangentNormal.y * B + tangentNormal.z * N);",
             decode,
             StringComparison.Ordinal);
-        Assert.True(
-            main.IndexOf("normal = TerrainTangentToWorld(tangentNormal, normal);", StringComparison.Ordinal) <
-            main.IndexOf("float3 shade = AtmosphereLight(normal, input.vWorldPos, sunShadow);",
-                StringComparison.Ordinal));
+        // AtmosphereLight takes the pixel position now (input.Position.xy) for the screen-space
+        // atmosphere terms; the ordering under test — tangent-space normal resolved BEFORE it is
+        // lit — is unchanged. Each marker is asserted present first: with IndexOf, a missing
+        // second string returns -1 and `N < -1` is a silent false rather than a named failure.
+        var tangentToWorldAt = main.IndexOf(
+            "normal = TerrainTangentToWorld(tangentNormal, normal);", StringComparison.Ordinal);
+        var atmosphereLightAt = main.IndexOf(
+            "float3 shade = AtmosphereLight(normal, input.vWorldPos, input.Position.xy, sunShadow);",
+            StringComparison.Ordinal);
+        Assert.True(tangentToWorldAt >= 0, "TerrainTangentToWorld call not found in main().");
+        Assert.True(atmosphereLightAt >= 0, "AtmosphereLight call not found in main().");
+        Assert.True(tangentToWorldAt < atmosphereLightAt);
 
         CompileTerrainFragmentShader(source);
     }

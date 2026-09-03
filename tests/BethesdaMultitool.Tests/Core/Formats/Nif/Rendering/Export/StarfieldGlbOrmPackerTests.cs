@@ -134,20 +134,16 @@ public sealed class StarfieldGlbOrmPackerTests
 
         using var stream = new MemoryStream(glb, writable: false);
         var model = ModelRoot.ReadGLB(stream);
-        var material = Assert.Single(model.LogicalMaterials);
-        var pbr = Assert.IsType<MaterialChannel>(material.FindChannel("MetallicRoughness"));
-        Assert.Null(pbr.Texture);
-        Assert.Equal(
-            0f,
-            Assert.IsType<float>(pbr.Parameters.Single(parameter =>
-                parameter.Name == "MetallicFactor").Value));
-        Assert.Equal(
-            0f,
-            Assert.IsType<float>(pbr.Parameters.Single(parameter =>
-                parameter.Name == "RoughnessFactor").Value));
-        Assert.Contains(model.LogicalImages, image =>
-            (image.Name ?? image.AlternateWriteFileName ?? string.Empty).Contains(
-                "normal", StringComparison.OrdinalIgnoreCase));
+
+        // This fixture's material resolves to the Deferred route with NO diffuse slot, which
+        // GlbWriter.ShouldSkipStarfieldNoDrawSubmesh treats as a no-draw material and suppresses
+        // before any PBR question is reached — so the strongest possible "no legacy PBR
+        // inference" holds: nothing is emitted at all. The ORM fail-closed contract for a material
+        // that DOES draw (null texture, zero factors, no fabricated ORM image) is asserted directly
+        // against Pack in Pack_MissingAuthoredImageFailsClosed and
+        // Pack_UsesCe2ConstructorDefaultsWhenAllThreeSlotsAreAbsent above.
+        Assert.Empty(model.LogicalMeshes);
+        Assert.Empty(model.LogicalMaterials);
         Assert.DoesNotContain(model.LogicalImages, image =>
         {
             var name = image.Name ?? image.AlternateWriteFileName ?? string.Empty;

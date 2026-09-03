@@ -1,6 +1,7 @@
 using System.Reflection;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -88,6 +89,19 @@ public sealed class PlacedReferenceExtrasTests
         MerchantContainerFormId = 0xAAAAAAAA,
         LeveledCreatureOriginalBaseFormId = 0xBBBBBBBB,
         LeveledCreatureTemplateFormId = 0xCCCCCCCC,
+        // TrailingData is deliberately left at its default. It is an IReadOnlyList<byte>, and
+        // record equality compares collection members by REFERENCE — a populated array here
+        // makes two otherwise-identical fixtures unequal and fails the value-equality test.
+        // (The default `[]` lowers to Array.Empty<byte>(), a shared singleton, so it compares
+        // equal.) That reference-equality is a real gap in BendableSplinePlacementData, not
+        // something the fixture should paper over; it is left visible here rather than hidden.
+        BendableSpline = new BendableSplinePlacementData
+        {
+            Slack = 1.5f,
+            Thickness = 0.25f,
+            HalfExtents = new Vector3(1f, 2f, 3f),
+            WindDetachedEndRaw = 1
+        },
         DestinationDoorFormId = 0xDDDDDDDD,
         DestinationCellFormId = 0xEEEEEEEE,
         TeleportPosRot = new PositionSubrecord(9, 8, 7, 6, 5, 4, 3L, false),
