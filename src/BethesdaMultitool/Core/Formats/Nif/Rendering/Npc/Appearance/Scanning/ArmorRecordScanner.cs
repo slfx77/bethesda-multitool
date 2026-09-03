@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -11,7 +12,8 @@ internal static class ArmorRecordScanner
     internal static ArmoScanEntry? Process(
         byte[] esmData,
         bool bigEndian,
-        AnalyzerRecordInfo record)
+        AnalyzerRecordInfo record,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         var recordData = NpcRecordDataReader.ReadRecordData(
             esmData,
@@ -42,6 +44,16 @@ internal static class ArmorRecordScanner
                     break;
                 case "MOD3":
                     femaleBipedModel = EsmRecordParser.GetSubrecordString(subrecord);
+                    break;
+                case "BMDT" when game == BethesdaGame.Oblivion && subrecord.Data.Length >= 3:
+                    // TES4's four-byte BMDT is uint16 slots + uint8 general flags + padding.
+                    // Reading it as Fallout's uint32 slot mask blends Heavy/Hide flags into the
+                    // slot value (Mazoga's shield became 0x00802000 instead of 0x2000).
+                    bipedFlags = BinaryUtils.ReadUInt16(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
+                    generalFlags = subrecord.Data[2];
                     break;
                 case "BMDT" when subrecord.Data.Length >= 4:
                     bipedFlags = BinaryUtils.ReadUInt32(

@@ -1,8 +1,15 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Text;
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -67,6 +74,189 @@ public sealed class NpcAppearancePluginFramingTests
     }
 
     [Fact]
+    [Trait("Category", TestCategories.BucketB)]
+    public void RetailOblivion_BeastTailMetadata_ReachesGenderedNpcAppearances()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        var esmPath = RealAssetPaths.Masters.Oblivion();
+        Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
+
+        var esm = File.ReadAllBytes(esmPath!);
+        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var argonian = Assert.Contains(0x00023FE9u, index.Races);
+        Assert.Equal(@"Characters\Argonian\Tail.NIF", argonian.MaleTailPath);
+        Assert.Equal(@"Characters\Argonian\Tail.NIF", argonian.FemaleTailPath);
+        Assert.Equal(@"Characters\Argonian\Male\tail.dds", argonian.MaleTailTexturePath);
+        Assert.Equal(@"Characters\Argonian\Female\tail.dds", argonian.FemaleTailTexturePath);
+
+        var khajiit = Assert.Contains(0x000223C7u, index.Races);
+        Assert.Equal(@"Characters\Khajiit\KhajiitTail.NIF", khajiit.MaleTailPath);
+        Assert.Equal(@"Characters\Khajiit\KhajiitTail.NIF", khajiit.FemaleTailPath);
+        // Retail authors Female\tail.dds in both Khajiit gender sections; retain the master value.
+        Assert.Equal(@"Characters\Khajiit\Female\tail.dds", khajiit.MaleTailTexturePath);
+        Assert.Equal(@"Characters\Khajiit\Female\tail.dds", khajiit.FemaleTailTexturePath);
+
+        var factory = new NpcAppearanceFactory(index);
+        var ocheeva = factory.Build(
+            0x000224EC,
+            Assert.Contains(0x000224ECu, index.Npcs),
+            "Oblivion.esm");
+        Assert.True(ocheeva.IsFemale);
+        Assert.Equal(@"meshes\Characters\Argonian\Tail.NIF", ocheeva.TailNifPath);
+        Assert.Equal(@"textures\Characters\Argonian\Female\tail.dds", ocheeva.TailTexturePath);
+        Assert.Equal(@"meshes\characters\_Male\skeletonbeast.nif", ocheeva.SkeletonNifPath);
+
+        var mraajDar = factory.Build(
+            0x00023E35,
+            Assert.Contains(0x00023E35u, index.Npcs),
+            "Oblivion.esm");
+        Assert.False(mraajDar.IsFemale);
+        Assert.Equal(@"meshes\Characters\Khajiit\KhajiitTail.NIF", mraajDar.TailNifPath);
+        Assert.Equal(@"textures\Characters\Khajiit\Female\tail.dds", mraajDar.TailTexturePath);
+        Assert.Equal(@"meshes\characters\_Male\skeletonbeast.nif", mraajDar.SkeletonNifPath);
+
+        var meshesPath = Path.Combine(Path.GetDirectoryName(esmPath!)!, "Oblivion - Meshes.bsa");
+        Assert.SkipWhen(!File.Exists(meshesPath), RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
+        using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
+        var skeleton = NpcCompositionPlanner.BuildSkeletonComposition(
+            ocheeva,
+            meshArchives,
+            new NpcCompositionCaches(),
+            new NpcCompositionOptions());
+        Assert.NotNull(skeleton);
+        Assert.Contains("Bip01 TailRoot", skeleton!.BodySkinningBones!);
+        // tailIndex, not index: an outer scope in this method already binds `index`, and C#
+        // refuses a nested declaration of the same name (CS0136).
+        for (var tailIndex = 1; tailIndex <= 8; tailIndex++)
+        {
+            var boneName = $"Bip01 Tail{tailIndex:00}";
+            Assert.Contains(boneName, skeleton.BodySkinningBones!);
+            Assert.Contains(boneName, skeleton.AnimationOverrides!);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", TestCategories.BucketB)]
+    public void RetailOblivion_Mazoga_UsesPlayerLevelTierAndCoherentOneHandPose()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        var esmPath = RealAssetPaths.Masters.Oblivion();
+        Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
+        var meshesPath = Path.Combine(Path.GetDirectoryName(esmPath!)!, "Oblivion - Meshes.bsa");
+        Assert.SkipWhen(!File.Exists(meshesPath), RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
+
+        var esm = File.ReadAllBytes(esmPath!);
+        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var factory = new NpcAppearanceFactory(index);
+        var noContextAppearance = factory.Build(
+            0x00085969,
+            Assert.Contains(0x00085969u, index.Npcs),
+            "Oblivion.esm");
+        var noContextWeapon = Assert.IsType<WeaponVisual>(noContextAppearance.WeaponVisual);
+        Assert.False(noContextWeapon.IsVisible);
+        Assert.Equal(WeaponVisualSourceKind.OmittedLeveledContextRequired, noContextWeapon.SourceKind);
+        Assert.Equal(0x0003ABC0u, noContextWeapon.LeveledListTrace?.ListFormId);
+
+        var appearance = factory.Build(
+            0x00085969,
+            Assert.Contains(0x00085969u, index.Npcs),
+            "Oblivion.esm",
+            previewPlayerLevel: 10);
+
+        Assert.Equal(BethesdaGame.Oblivion, index.Game);
+        var shield = Assert.Single(appearance.EquippedItems!, item =>
+            item.MeshPath.EndsWith(@"Armor\Iron\Shield.NIF", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(0x2000u, shield.BipedFlags);
+        Assert.Equal(EquipmentAttachmentMode.LeftWristRigid, shield.AttachmentMode);
+
+        var weapon = Assert.IsType<WeaponVisual>(appearance.WeaponVisual);
+        var authoredLongswords = Assert.Contains(0x0003ABC0u, index.LeveledItemRecords);
+        Assert.Equal("LL0NPCWeaponLongswordLvl100", authoredLongswords.EditorId);
+        Assert.Equal(0, authoredLongswords.ChanceNone);
+        Assert.Equal(0x02, authoredLongswords.Flags);
+        Assert.Equal(
+            new ushort[] { 1, 2, 4, 6, 9, 12, 16, 20 },
+            authoredLongswords.Entries.Select(static entry => entry.Level).ToArray());
+        Assert.Equal(
+            new uint[] { 0x00000C0C, 0x000229BA, 0x0002521F, 0x00035DD1,
+                0x000229B3, 0x00035E5F, 0x00035E6E, 0x00035E76 },
+            authoredLongswords.Entries.Select(static entry => entry.FormId).ToArray());
+        Assert.Equal(0x000229B3u, weapon.WeaponFormId); // level 10 -> highest eligible tier 9 (Elven)
+        Assert.Equal(WeaponVisualSourceKind.EsmBestWeapon, weapon.SourceKind);
+        Assert.Equal(WeaponType.OneHandMelee, weapon.WeaponType);
+        Assert.Equal(WeaponAttachmentMode.HolsterPose, weapon.AttachmentMode);
+        Assert.Equal("onehandidle.kf", weapon.AttachmentPoseKfPath);
+        Assert.Equal((ushort)10, weapon.LeveledListTrace?.PreviewPlayerLevel);
+        Assert.Equal((ushort)9, weapon.LeveledListTrace?.SelectedEntryLevel);
+
+        var levelTwentyAppearance = factory.Build(
+            0x00085969,
+            Assert.Contains(0x00085969u, index.Npcs),
+            "Oblivion.esm",
+            previewPlayerLevel: 20);
+        Assert.Equal(0x00035E76u, levelTwentyAppearance.WeaponVisual?.WeaponFormId);
+        Assert.Equal((ushort)20, levelTwentyAppearance.WeaponVisual?.LeveledListTrace?.SelectedEntryLevel);
+
+        using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
+        var skeletonCaches = new NpcCompositionCaches();
+        var defaultIdleSkeleton = NpcCompositionPlanner.BuildSkeletonComposition(
+            noContextAppearance,
+            meshArchives,
+            skeletonCaches,
+            new NpcCompositionOptions());
+        var skeleton = NpcCompositionPlanner.BuildSkeletonComposition(
+            appearance,
+            meshArchives,
+            skeletonCaches,
+            new NpcCompositionOptions());
+        Assert.NotNull(defaultIdleSkeleton);
+        Assert.NotNull(skeleton);
+        Assert.Equal(2, skeletonCaches.SkeletonPlans.Count);
+        Assert.Null(defaultIdleSkeleton!.BodyPoseKfPath);
+        Assert.Equal("onehandidle.kf", skeleton!.BodyPoseKfPath);
+        Assert.Same(skeleton.BodySkinningBones, skeleton.WeaponAttachmentBones);
+        Assert.NotEqual(
+            Assert.Contains("Bip01 R Hand", defaultIdleSkeleton.BodySkinningBones!).Translation,
+            Assert.Contains("Bip01 R Hand", skeleton.BodySkinningBones!).Translation);
+
+        var pose = NpcWeaponAttachmentResolver.LoadWeaponHolsterPose(
+            appearance.SkeletonNifPath,
+            meshArchives,
+            weapon.HolsterProfileKey!,
+            false,
+            weapon.AttachmentPoseKfPath);
+
+        Assert.NotNull(pose);
+        Assert.Contains("Weapon", pose!.WorldTransforms.Keys);
+        Assert.Contains("Bip01 R Hand", pose.WorldTransforms.Keys);
+        Assert.Contains("Bip01 L Forearm", pose.WorldTransforms.Keys);
+        var bodyRightHand = Assert.Contains("Bip01 R Hand", skeleton.BodySkinningBones!);
+        var attachmentRightHand = Assert.Contains("Bip01 R Hand", pose.WorldTransforms);
+        Assert.InRange(
+            Vector3.Distance(bodyRightHand.Translation, attachmentRightHand.Translation),
+            0f,
+            0.01f);
+        Assert.True(NpcWeaponAttachmentResolver.TryResolveEquipmentAttachmentTransform(
+            shield,
+            pose.WorldTransforms,
+            out var shieldNode,
+            out var shieldTransform,
+            out var shieldOmitReason), shieldOmitReason);
+        Assert.Equal("Bip01 L Forearm", shieldNode);
+        Assert.True(shieldTransform.Translation.LengthSquared() > 1f);
+
+        var weaponTransform = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
+            pose,
+            "Weapon");
+        Assert.True(weaponTransform.HasValue);
+        Assert.True(weaponTransform.Value.Translation.LengthSquared() > 1f);
+        Assert.InRange(
+            Vector3.Distance(bodyRightHand.Translation, weaponTransform.Value.Translation),
+            5f,
+            8f);
+    }
+
+    [Fact]
     public void OblivionRaceLayout_MapsGenderedEarsAndSharedFacePartsWithoutIndexShift()
     {
         var esm = BuildOblivionRacePlugin();
@@ -96,9 +286,13 @@ public sealed class NpcAppearancePluginFramingTests
         Assert.Equal(@"characters\_male\lowerbody.nif", race.MaleLowerBodyPath);
         Assert.Equal(@"characters\_male\femalehand.nif", race.FemaleHandPath);
         Assert.Equal(@"characters\_male\foot.nif", race.MaleFootPath);
+        Assert.Equal("MaleTail.nif", race.MaleTailPath);
+        Assert.Equal("FemaleTail.nif", race.FemaleTailPath);
         Assert.Equal("MaleLeg.dds", race.MaleLowerBodyTexturePath);
         Assert.Equal("FemaleHand.dds", race.FemaleHandTexturePath);
         Assert.Equal("MaleFoot.dds", race.MaleFootTexturePath);
+        Assert.Equal("MaleTail.dds", race.MaleTailTexturePath);
+        Assert.Equal("FemaleTail.dds", race.FemaleTailTexturePath);
         Assert.Equal(50, Assert.IsType<float[]>(race.MaleFaceGenSymmetric).Length);
         Assert.Equal(50, Assert.IsType<float[]>(race.FemaleFaceGenSymmetric).Length);
     }
@@ -178,15 +372,19 @@ public sealed class NpcAppearancePluginFramingTests
             IndexedModel(8, "EyeRight.nif"),
             BuildSubrecord("NAM1", [], bigEndian),
             BuildSubrecord("MNAM", [], bigEndian),
+            BuildSubrecord("MODL", Encoding.ASCII.GetBytes("MaleTail.nif\0"), bigEndian),
             IndexedIcon(0, "MaleBody.dds"),
             IndexedIcon(1, "MaleLeg.dds"),
             IndexedIcon(2, "MaleHand.dds"),
             IndexedIcon(3, "MaleFoot.dds"),
+            IndexedIcon(4, "MaleTail.dds"),
             BuildSubrecord("FNAM", [], bigEndian),
+            BuildSubrecord("MODL", Encoding.ASCII.GetBytes("FemaleTail.nif\0"), bigEndian),
             IndexedIcon(0, "FemaleBody.dds"),
             IndexedIcon(1, "FemaleLeg.dds"),
             IndexedIcon(2, "FemaleHand.dds"),
             IndexedIcon(3, "FemaleFoot.dds"),
+            IndexedIcon(4, "FemaleTail.dds"),
             BuildSubrecord("FGGS", faceCoefficients, bigEndian));
         var race = BuildRecord("RACE", RaceFormId, racePayload, headerSize, bigEndian);
         return Concat(tes4, BuildGroup("RACE", race, headerSize, bigEndian));

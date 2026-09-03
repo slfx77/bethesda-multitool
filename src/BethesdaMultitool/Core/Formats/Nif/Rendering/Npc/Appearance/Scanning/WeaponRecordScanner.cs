@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -13,7 +14,8 @@ internal static class WeaponRecordScanner
     internal static WeapScanEntry? Process(
         byte[] esmData,
         bool bigEndian,
-        AnalyzerRecordInfo record)
+        AnalyzerRecordInfo record,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         var recordData = NpcRecordDataReader.ReadRecordData(
             esmData,
@@ -43,6 +45,7 @@ internal static class WeaponRecordScanner
         uint skillRequirement = 0;
         uint strengthRequirement = 0;
         byte handGripAnim = 0xff;
+        string? attachmentPoseKfPath = null;
 
         foreach (var subrecord in subrecords)
         {
@@ -93,6 +96,30 @@ internal static class WeaponRecordScanner
 
                     break;
                 }
+                case "DATA" when game == BethesdaGame.Oblivion && subrecord.Data.Length >= 1:
+                {
+                    // Oblivion stores its six-value weapon animation type at DATA byte 0;
+                    // Fallout 3/New Vegas moved the unrelated 0..13 animation enum to DNAM.
+                    // Normalize the selection category while retaining the retail TES4 pose family.
+                    var rawWeaponType = subrecord.Data[0];
+                    weaponType = ResolveOblivionWeaponType(rawWeaponType);
+                    attachmentPoseKfPath = ResolveOblivionAttachmentPose(rawWeaponType);
+
+                    // TES4 DATA is 30 bytes: type/pad, speed, reach, ignore-resistance,
+                    // value, health, weight, damage. Preserve selection inputs where present.
+                    if (subrecord.Data.Length >= 30)
+                    {
+                        shotsPerSec = MathF.Max(BinaryUtils.ReadFloat(subrecord.Data, 4, bigEndian), 0.1f);
+                        health = (int)Math.Min(
+                            BinaryUtils.ReadUInt32(subrecord.Data, 20, bigEndian),
+                            (uint)int.MaxValue);
+                        damage = (short)Math.Min(
+                            BinaryUtils.ReadUInt16(subrecord.Data, 28, bigEndian),
+                            (ushort)short.MaxValue);
+                    }
+
+                    break;
+                }
                 case "DATA" when subrecord.Data.Length >= 14:
                 {
                     if (SubrecordSchemaView.TryRead("DATA", "WEAP", subrecord.Data, bigEndian) is { } v)
@@ -130,7 +157,32 @@ internal static class WeaponRecordScanner
             SkillRequirement = skillRequirement,
             StrengthRequirement = strengthRequirement,
             HandGripAnim = handGripAnim,
-            EmbeddedWeaponNode = embeddedWeaponNode
+            EmbeddedWeaponNode = embeddedWeaponNode,
+            AttachmentPoseKfPath = attachmentPoseKfPath
+        };
+    }
+
+    private static WeaponType ResolveOblivionWeaponType(byte rawWeaponType)
+    {
+        return rawWeaponType switch
+        {
+            0 or 2 => WeaponType.OneHandMelee, // blade/blunt one hand
+            1 or 3 => WeaponType.TwoHandMelee, // blade/blunt two hand
+            4 => WeaponType.TwoHandHandle, // staff
+            5 => WeaponType.TwoHandRifle, // bow: ranged selection category
+            _ => WeaponType.OneHandMelee
+        };
+    }
+
+    private static string? ResolveOblivionAttachmentPose(byte rawWeaponType)
+    {
+        return rawWeaponType switch
+        {
+            0 or 2 => "onehandidle.kf",
+            1 or 3 => "twohandidle.kf",
+            4 => "staffidle.kf",
+            5 => "bowidle.kf",
+            _ => null
         };
     }
 }

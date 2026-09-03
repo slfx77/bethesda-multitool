@@ -32,7 +32,7 @@ public sealed class NpcNativeViewerSceneSourceContractTests
 
         SourceContract.AssertOrder(
             npcScene,
-            "ResolveAppearance(npcFormId)",
+            "ResolveAppearance(npcFormId, previewPlayerLevel)",
             "NpcCompositionPlanner.CreatePlan(",
             "NpcCompositionExportAdapter.BuildNpc(",
             "BethesdaViewerSceneGlbAdapter.FromGlbScene(",
@@ -104,6 +104,7 @@ public sealed class NpcNativeViewerSceneSourceContractTests
 
         Assert.Contains("service.BuildCreatureViewerScene(", native, StringComparison.Ordinal);
         Assert.Contains("service.BuildViewerScene(", native, StringComparison.Ordinal);
+        Assert.Contains("options.PreviewPlayerLevel", native, StringComparison.Ordinal);
         SourceContract.AssertOrder(
             compatibility,
             "BuildViewerSceneAsync(service, npc, options)",
@@ -113,5 +114,26 @@ public sealed class NpcNativeViewerSceneSourceContractTests
             "GameProfiles.ResolveByNames([pluginName]) ?? BethesdaGame.Unknown",
             ServiceSource(),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ActorPreviewLevelIsVisibleAndFlowsThroughEveryNpcOutputPath()
+    {
+        var host = SourceContract.ReadAppSource("SingleFileTab.NpcBrowser.cs");
+        var workflow = SourceContract.ReadAppSource("NpcBrowserWorkflowService.cs");
+        var xaml = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Tabs", "SingleFile", "SingleFileTab.xaml");
+
+        Assert.Contains("x:Name=\"NpcPreviewPlayerLevelNumberBox\"", xaml, StringComparison.Ordinal);
+        var previewLevel = SourceContract.Extract(
+            xaml,
+            "<NumberBox x:Name=\"NpcPreviewPlayerLevelNumberBox\"",
+            "/>");
+        Assert.DoesNotContain(" Value=\"", previewLevel, StringComparison.Ordinal);
+        Assert.Contains("Minimum=\"1\"", previewLevel, StringComparison.Ordinal);
+        Assert.Contains("Leave blank to keep it unresolved.", previewLevel, StringComparison.Ordinal);
+        Assert.Contains("Preview player level (optional):", xaml, StringComparison.Ordinal);
+        Assert.Contains("NpcPreviewPlayerLevelNumberBox.Value", host, StringComparison.Ordinal);
+        Assert.Equal(2, SourceContract.CountOccurrences(workflow, "options.PreviewPlayerLevel"));
     }
 }

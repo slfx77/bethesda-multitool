@@ -387,14 +387,17 @@ internal static class NpcWeaponAttachmentResolver
         string? skeletonNifPath,
         MeshArchiveSet meshArchives,
         string holsterProfileKey,
-        bool usePowerArmorHolster)
+        bool usePowerArmorHolster,
+        string? attachmentPoseKfPath = null)
     {
+        var kfRelPath = attachmentPoseKfPath ??
+                        BuildHolsterKfRelPath(holsterProfileKey, usePowerArmorHolster);
         return LoadWeaponAttachmentPose(
             skeletonNifPath,
             meshArchives,
-            BuildHolsterKfRelPath(holsterProfileKey, usePowerArmorHolster),
+            kfRelPath,
             false,
-            "holster");
+            attachmentPoseKfPath == null ? "holster" : "game-native attachment");
     }
 
     internal static WeaponHolsterPose? LoadWeaponAttachmentPose(
@@ -407,7 +410,7 @@ internal static class NpcWeaponAttachmentResolver
         if (skeletonNifPath == null)
             return null;
 
-        var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+        var skelDir = NpcSkeletonLoader.ResolveSkeletonDirectory(skeletonNifPath);
         var kfPath = skelDir + kfRelPath;
 
         var kfRaw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);

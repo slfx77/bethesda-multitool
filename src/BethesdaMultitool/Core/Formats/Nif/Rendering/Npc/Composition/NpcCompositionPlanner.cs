@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -16,6 +17,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 /// </summary>
 internal static class NpcCompositionPlanner
 {
+    // TES4 BMDT bit 15 is the tail slot. Armor that explicitly occupies it replaces the race tail.
+    internal const uint Tes4TailSlot = 0x8000u;
+
     private static readonly Logger Log = Logger.Instance;
 
     internal static NpcCompositionPlan CreatePlan(
@@ -85,6 +89,9 @@ internal static class NpcCompositionPlanner
             attachmentBoneTransforms,
             bonelessAttachmentTransform);
 
+        var weapon = BuildWeaponPlan(npc, meshArchives, skeleton, options);
+        LogWeaponPreviewProvenance(npc, skeleton);
+
         return new NpcCompositionPlan
         {
             Appearance = npc,
@@ -96,7 +103,7 @@ internal static class NpcCompositionPlanner
             CoveredSlots = coveredSlots,
             EffectiveBodyTexturePath = effectiveBodyTex,
             EffectiveHandTexturePath = effectiveHandTex,
-            Weapon = BuildWeaponPlan(npc, meshArchives, skeleton, options)
+            Weapon = weapon
         };
     }
 
@@ -111,10 +118,15 @@ internal static class NpcCompositionPlanner
             return null;
         }
 
-        var cacheKey = BuildSkeletonCacheKey(npc.SkeletonNifPath, options);
+        var bodyPoseKfPath = ResolveBodyPoseKfPath(npc, options);
+        var cacheKey = BuildSkeletonCacheKey(npc.SkeletonNifPath, options, bodyPoseKfPath);
         if (!caches.SkeletonPlans.TryGetValue(cacheKey, out var cached))
         {
-            cached = LoadSkeletonPlan(npc.SkeletonNifPath, meshArchives, options);
+            cached = LoadSkeletonPlan(
+                npc.SkeletonNifPath,
+                meshArchives,
+                options.BindPose,
+                bodyPoseKfPath);
             caches.SkeletonPlans[cacheKey] = cached;
         }
 
@@ -144,14 +156,16 @@ internal static class NpcCompositionPlanner
             BodySkinningBones = bodyBones,
             WeaponAttachmentBones = weaponBones,
             PoseDeltas = cached.PoseDeltas,
-            AnimationOverrides = cached.AnimationOverrides
+            AnimationOverrides = cached.AnimationOverrides,
+            BodyPoseKfPath = cached.BodyPoseKfPath
         };
     }
 
     private static NpcCompositionCaches.CachedNpcSkeletonPlan? LoadSkeletonPlan(
         string skeletonNifPath,
         MeshArchiveSet meshArchives,
-        NpcCompositionOptions options)
+        bool bindPose,
+        string? bodyPoseKfPath)
     {
         var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
         if (skelRaw == null)
@@ -160,13 +174,13 @@ internal static class NpcCompositionPlanner
             return null;
         }
 
-        var animationOverrides = options.BindPose
+        var animationOverrides = bindPose
             ? null
             : NpcSkeletonLoader.LoadIdleAnimationOverrides(
                 skeletonNifPath,
                 meshArchives,
                 skelRaw,
-                options.AnimOverride);
+                bodyPoseKfPath);
 
         var bodyBones = NifGeometryExtractor.ExtractNamedBoneTransforms(
             skelRaw.Value.Data,
@@ -191,7 +205,8 @@ internal static class NpcCompositionPlanner
             skeletonNifPath,
             bodyBones,
             poseDeltas,
-            animationOverrides);
+            animationOverrides,
+            bodyPoseKfPath);
     }
 
     private static NpcHeadCompositionPlan BuildHeadPlan(
@@ -293,7 +308,7 @@ internal static class NpcCompositionPlanner
         };
     }
 
-    private static IReadOnlyList<NpcBodyMeshPlan> BuildBodyParts(
+    internal static IReadOnlyList<NpcBodyMeshPlan> BuildBodyParts(
         NpcAppearance npc,
         NpcCompositionOptions options,
         uint coveredSlots,
@@ -372,6 +387,17 @@ internal static class NpcCompositionPlanner
             {
                 MeshPath = npc.RightHandNifPath,
                 TextureOverride = effectiveHandTex,
+                RenderOrder = 0
+            });
+        }
+
+        if ((coveredSlots & Tes4TailSlot) == 0 &&
+            npc.TailNifPath != null)
+        {
+            parts.Add(new NpcBodyMeshPlan
+            {
+                MeshPath = npc.TailNifPath,
+                TextureOverride = npc.TailTexturePath,
                 RenderOrder = 0
             });
         }
@@ -584,14 +610,19 @@ internal static class NpcCompositionPlanner
                     skeleton.SkeletonNifPath,
                     meshArchives,
                     weaponVisual.HolsterProfileKey!,
-                    usePowerArmorHolster);
+                    usePowerArmorHolster,
+                    weaponVisual.AttachmentPoseKfPath);
                 mainAttachmentTransform = holsterPose != null
                     ? NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
                         holsterPose,
                         resolvedAttachmentNodeName)
                     : null;
                 attachmentNodeName = resolvedAttachmentNodeName;
-                attachmentSourceLabel = usePowerArmorHolster ? " (power armor holster KF)" : " (holster KF)";
+                attachmentSourceLabel = weaponVisual.AttachmentPoseKfPath is { } posePath
+                    ? $" (game-native attachment KF '{posePath}')"
+                    : usePowerArmorHolster
+                        ? " (power armor holster KF)"
+                        : " (holster KF)";
                 if (!mainAttachmentTransform.HasValue)
                 {
                     return new NpcWeaponCompositionPlan
@@ -693,10 +724,73 @@ internal static class NpcCompositionPlanner
                npc.WeaponVisual.WeaponType == WeaponType.HandToHandMelee;
     }
 
-    private static string BuildSkeletonCacheKey(
-        string skeletonNifPath,
+    /// <summary>
+    ///     TES4's one-hand attachment anchor is authored in onehandidle.kf. Use that
+    ///     same pose for the visible body unless the caller explicitly requested a
+    ///     bind pose or another animation. Other weapon families retain their current
+    ///     behavior until their body-pose parity is independently validated.
+    /// </summary>
+    internal static string? ResolveBodyPoseKfPath(
+        NpcAppearance npc,
         NpcCompositionOptions options)
     {
-        return $"{skeletonNifPath}|bind:{options.BindPose}|anim:{options.AnimOverride ?? string.Empty}";
+        if (options.BindPose)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.AnimOverride))
+        {
+            return options.AnimOverride;
+        }
+
+        var weapon = npc.WeaponVisual;
+        if (!options.IncludeWeapon ||
+            npc.Game != BethesdaGame.Oblivion ||
+            weapon?.IsVisible != true ||
+            weapon.WeaponType != WeaponType.OneHandMelee ||
+            string.IsNullOrWhiteSpace(weapon.AttachmentPoseKfPath))
+        {
+            return null;
+        }
+
+        var normalizedPath = weapon.AttachmentPoseKfPath.Replace('/', '\\');
+        return normalizedPath.EndsWith("onehandidle.kf", StringComparison.OrdinalIgnoreCase)
+            ? weapon.AttachmentPoseKfPath
+            : null;
+    }
+
+    private static string BuildSkeletonCacheKey(
+        string skeletonNifPath,
+        NpcCompositionOptions options,
+        string? bodyPoseKfPath)
+    {
+        return $"{skeletonNifPath}|bind:{options.BindPose}|anim:{bodyPoseKfPath ?? string.Empty}";
+    }
+
+    private static void LogWeaponPreviewProvenance(
+        NpcAppearance npc,
+        NpcSkeletonComposition? skeleton)
+    {
+        var weapon = npc.WeaponVisual;
+        if (weapon == null ||
+            (weapon.LeveledListTrace == null && string.IsNullOrWhiteSpace(weapon.AttachmentPoseKfPath)))
+        {
+            return;
+        }
+
+        var trace = weapon.LeveledListTrace;
+        Log.Debug(
+            "NPC 0x{0:X8} weapon preview: source={1}, visible={2}, weapon={3}, LVLI={4}, previewLevel={5}, selectedTier={6}, LVLF={7}, bodyKF={8}, attachmentKF={9}",
+            npc.NpcFormId,
+            weapon.SourceKind,
+            weapon.IsVisible,
+            weapon.WeaponFormId.HasValue ? $"0x{weapon.WeaponFormId.Value:X8}" : "(none)",
+            trace != null ? $"0x{trace.ListFormId:X8}" : "(direct)",
+            trace?.PreviewPlayerLevel?.ToString() ?? "(required)",
+            trace?.SelectedEntryLevel?.ToString() ?? "(none)",
+            trace != null ? $"0x{trace.Flags:X2}" : "(n/a)",
+            skeleton?.BodyPoseKfPath ?? (skeleton == null ? "(none)" : "(default idle)"),
+            weapon.AttachmentPoseKfPath ?? "(none)");
     }
 }

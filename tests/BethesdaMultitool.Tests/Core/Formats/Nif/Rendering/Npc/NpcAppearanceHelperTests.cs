@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -40,7 +41,9 @@ public sealed class NpcAppearanceHelperTests
             FemaleUpperBodyPath = @"characters\female\upperbody.nif",
             FemaleLeftHandPath = @"characters\female\lefthand.nif",
             FemaleRightHandPath = @"characters\female\righthand.nif",
+            FemaleTailPath = @"characters\argonian\tail.nif",
             FemaleBodyTexturePath = @"characters\female\UpperBodyFemale.dds",
+            FemaleTailTexturePath = @"characters\argonian\female\tail.dds",
             DefaultEyesFormId = 20
         };
         index.Hairs[10] = new HairScanEntry
@@ -105,6 +108,8 @@ public sealed class NpcAppearanceHelperTests
         Assert.Equal([4.0f], appearance.NpcFaceGenTextureCoeffs);
         Assert.Equal([0.75f], appearance.RaceFaceGenTextureCoeffs);
         Assert.Equal(@"textures\characters\female\HandFemale.dds", appearance.HandTexturePath);
+        Assert.Equal(@"meshes\characters\argonian\tail.nif", appearance.TailNifPath);
+        Assert.Equal(@"textures\characters\argonian\female\tail.dds", appearance.TailTexturePath);
         Assert.Equal(@"meshes\headparts\brow.nif", Assert.Single(appearance.HeadPartNifPaths!));
         Assert.Equal(@"meshes\armor\outfitf.nif", Assert.Single(appearance.EquippedItems!).MeshPath);
         Assert.NotNull(appearance.WeaponVisual);
@@ -326,6 +331,34 @@ public sealed class NpcAppearanceHelperTests
         var item = Assert.Single(equippedItems);
         Assert.Equal(@"meshes\armor\primary.nif", item.MeshPath);
         Assert.Equal(0x04u | 0x08u | 0x10u, item.BipedFlags);
+    }
+
+    [Fact]
+    public void EquipmentResolver_OblivionShieldSlot_UsesLeftForearmRigidAttachmentOnlyForTes4()
+    {
+        var armors = new Dictionary<uint, ArmoScanEntry>
+        {
+            [1] = new()
+            {
+                BipedFlags = 0x2000,
+                MaleBipedModelPath = @"Armor\Iron\Shield.NIF"
+            }
+        };
+        var inventory = new List<InventoryItem> { new(1, 1) };
+        var armorAddons = new Dictionary<uint, ArmaAddonScanEntry>();
+        var formLists = new Dictionary<uint, List<uint>>();
+        var leveledItems = new Dictionary<uint, List<uint>>();
+
+        var oblivionResolver = new NpcEquipmentResolver(
+            armors, armorAddons, formLists, leveledItems, BethesdaGame.Oblivion);
+        var falloutResolver = new NpcEquipmentResolver(
+            armors, armorAddons, formLists, leveledItems, BethesdaGame.FalloutNewVegas);
+
+        var oblivionShield = Assert.Single(oblivionResolver.Resolve(inventory, false)!);
+        var falloutItem = Assert.Single(falloutResolver.Resolve(inventory, false)!);
+
+        Assert.Equal(EquipmentAttachmentMode.LeftWristRigid, oblivionShield.AttachmentMode);
+        Assert.Equal(EquipmentAttachmentMode.None, falloutItem.AttachmentMode);
     }
 
     [Fact]

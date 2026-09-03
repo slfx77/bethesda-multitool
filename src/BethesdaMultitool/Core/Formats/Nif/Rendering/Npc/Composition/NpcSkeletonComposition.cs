@@ -17,4 +17,7 @@ internal sealed class NpcSkeletonComposition
     public Dictionary<string, Matrix4x4>? PoseDeltas { get; init; }
 
     public Dictionary<string, NifAnimationParser.AnimPoseOverride>? AnimationOverrides { get; init; }
+
+    /// <summary>The explicit equipment-compatible KF used for the actor body, if any.</summary>
+    public string? BodyPoseKfPath { get; init; }
 }

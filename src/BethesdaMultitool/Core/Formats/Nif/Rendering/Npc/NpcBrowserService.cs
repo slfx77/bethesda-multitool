@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI.Rendering.Npc;
@@ -7,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
@@ -78,24 +80,215 @@ internal sealed class NpcBrowserService : IDisposable
         string esmPath,
         BsaDiscoveryResult bsaPaths)
     {
+        return TryCreate(
+            esmData,
+            bigEndian,
+            esmPath,
+            bsaPaths,
+            progress: null,
+            cancellationToken: default);
+    }
+
+    internal static NpcBrowserService? TryCreate(
+        byte[] esmData,
+        bool bigEndian,
+        string esmPath,
+        BsaDiscoveryResult bsaPaths,
+        IProgress<NpcBrowserLoadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         if (!bsaPaths.HasMeshes)
         {
             return null;
         }
 
-        var resolver = NpcAppearanceResolver.Build(esmData, bigEndian);
-        var meshArchives = MeshArchiveSet.Open(
-            bsaPaths.MeshesBsaPaths[0],
-            bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null);
-        var textureResolver = new NifTextureResolver(bsaPaths.TexturesBsaPaths);
-        var pluginName = Path.GetFileName(esmPath);
+        return TryCreateCore(
+            () => NpcAppearanceResolver.Build(
+                esmData,
+                bigEndian,
+                timing => LogAppearanceIndexTiming(timing, "whole-file-rescan"),
+                cancellationToken),
+            esmPath,
+            bsaPaths,
+            progress,
+            cancellationToken,
+            "whole-file-rescan");
+    }
 
-        return new NpcBrowserService(
-            resolver,
-            meshArchives,
-            textureResolver,
-            bsaPaths.TexturesBsaPaths,
-            pluginName);
+    /// <summary>
+    ///     Creates an ESM browser from the session's retained record descriptors and memory mapping.
+    ///     This is the GUI path: it reads only appearance-relevant record payloads and never rereads
+    ///     or rescans the complete plugin.
+    /// </summary>
+    internal static NpcBrowserService? TryCreateFromAnalyzedEsm(
+        IMemoryAccessor esmAccessor,
+        long esmLength,
+        EsmRecordScanResult analyzedRecords,
+        bool bigEndian,
+        string esmPath,
+        BsaDiscoveryResult bsaPaths,
+        IProgress<NpcBrowserLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(esmAccessor);
+        ArgumentNullException.ThrowIfNull(analyzedRecords);
+        if (!bsaPaths.HasMeshes || analyzedRecords.MainRecords.Count == 0)
+        {
+            return null;
+        }
+
+        return TryCreateCore(
+            () => NpcAppearanceResolver.Build(
+                esmAccessor,
+                esmLength,
+                analyzedRecords.MainRecords,
+                bigEndian,
+                analyzedRecords.Game,
+                timing => LogAppearanceIndexTiming(timing, "analyzed-session-index"),
+                cancellationToken),
+            esmPath,
+            bsaPaths,
+            progress,
+            cancellationToken,
+            "analyzed-session-index");
+    }
+
+    private static NpcBrowserService? TryCreateCore(
+        Func<NpcAppearanceResolver> resolverFactory,
+        string esmPath,
+        BsaDiscoveryResult bsaPaths,
+        IProgress<NpcBrowserLoadProgress>? progress,
+        CancellationToken cancellationToken,
+        string recordSource)
+    {
+        var totalTimer = Stopwatch.StartNew();
+        Log.Info(
+            "NPC Browser load started for '{0}' source={1}; CPU record/archive preparation only " +
+            "(renderer and shaders remain cold until actor selection).",
+            Path.GetFileName(esmPath),
+            recordSource);
+
+        progress?.Report(new NpcBrowserLoadProgress(
+            recordSource == "analyzed-session-index"
+                ? NpcBrowserLoadStage.ReusingRecordIndex
+                : NpcBrowserLoadStage.ReadingEsm,
+            recordSource == "analyzed-session-index"
+                ? "Reusing analyzed ESM record index..."
+                : "Scanning NPC records..."));
+
+        var resolver = TimeLoadStage(
+            NpcBrowserLoadStage.DecodingAppearanceRecords,
+            "Reading NPC appearance records...",
+            resolverFactory,
+            progress,
+            $"source={recordSource}");
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var meshArchives = TimeLoadStage(
+            NpcBrowserLoadStage.IndexingMeshArchives,
+            "Indexing mesh archives...",
+            () => MeshArchiveSet.Open(
+                bsaPaths.MeshesBsaPaths[0],
+                bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null),
+            progress,
+            $"archives={bsaPaths.MeshesBsaPaths.Length}");
+
+        NifTextureResolver? textureResolver = null;
+        NpcBrowserService? service = null;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            textureResolver = TimeLoadStage(
+                NpcBrowserLoadStage.IndexingTextureArchives,
+                "Indexing texture archives...",
+                () => new NifTextureResolver(bsaPaths.TexturesBsaPaths),
+                progress,
+                $"archives={bsaPaths.TexturesBsaPaths.Length}");
+            cancellationToken.ThrowIfCancellationRequested();
+
+            service = new NpcBrowserService(
+                resolver,
+                meshArchives,
+                textureResolver,
+                bsaPaths.TexturesBsaPaths,
+                Path.GetFileName(esmPath));
+            textureResolver = null;
+
+            totalTimer.Stop();
+            var detail =
+                $"source={recordSource} npcs={service.NpcCount} creatures={service.CreatureCount} " +
+                $"races={service.RaceCount}";
+            Log.Info(
+                "NPC Browser load completed in {0:N2} ms ({1}).",
+                totalTimer.Elapsed.TotalMilliseconds,
+                detail);
+            progress?.Report(new NpcBrowserLoadProgress(
+                NpcBrowserLoadStage.Complete,
+                $"Loaded {service.NpcCount + service.CreatureCount:N0} actors",
+                totalTimer.Elapsed,
+                detail));
+            return service;
+        }
+        catch
+        {
+            if (service != null)
+            {
+                service.Dispose();
+            }
+            else
+            {
+                textureResolver?.Dispose();
+                meshArchives.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    private static T TimeLoadStage<T>(
+        NpcBrowserLoadStage stage,
+        string message,
+        Func<T> action,
+        IProgress<NpcBrowserLoadProgress>? progress,
+        string detail)
+    {
+        progress?.Report(new NpcBrowserLoadProgress(stage, message, Detail: detail));
+        var timer = Stopwatch.StartNew();
+        try
+        {
+            var result = action();
+            timer.Stop();
+            Log.Info(
+                "NPC Browser load stage={0} outcome=completed elapsed={1:N2} ms {2}.",
+                stage,
+                timer.Elapsed.TotalMilliseconds,
+                detail);
+            progress?.Report(new NpcBrowserLoadProgress(stage, message, timer.Elapsed, detail));
+            return result;
+        }
+        catch
+        {
+            timer.Stop();
+            Log.Info(
+                "NPC Browser load stage={0} outcome=failed elapsed={1:N2} ms {2}.",
+                stage,
+                timer.Elapsed.TotalMilliseconds,
+                detail);
+            throw;
+        }
+    }
+
+    private static void LogAppearanceIndexTiming(NpcAppearanceIndexBuildTiming timing, string source)
+    {
+        Log.Info(
+            "NPC Browser appearance-index stage={0} elapsed={1:N2} ms source={2} " +
+            "recordsVisited={3:N0} recordsDecoded={4:N0} bytesRead={5:N0}.",
+            timing.Stage,
+            timing.Elapsed.TotalMilliseconds,
+            source,
+            timing.RecordsVisited,
+            timing.RecordsDecoded,
+            timing.BytesRead);
     }
 
     /// <summary>
@@ -255,9 +448,10 @@ internal sealed class NpcBrowserService : IDisposable
         bool headOnly,
         bool noEquip,
         bool noWeapon,
-        bool bindPose = false)
+        bool bindPose = false,
+        ushort? previewPlayerLevel = null)
     {
-        var appearance = ResolveAppearance(npcFormId);
+        var appearance = ResolveAppearance(npcFormId, previewPlayerLevel);
         if (appearance == null)
         {
             return null;
@@ -365,9 +559,16 @@ internal sealed class NpcBrowserService : IDisposable
 
     /// <summary>Composes and exports an NPC to GLB bytes, or <c>null</c> if the NPC can't be resolved.</summary>
     public byte[]? BuildGlb(uint npcFormId, bool headOnly, bool noEquip, bool noWeapon,
-        bool bindPose = false)
+        bool bindPose = false,
+        ushort? previewPlayerLevel = null)
     {
-        var scene = BuildViewerScene(npcFormId, headOnly, noEquip, noWeapon, bindPose);
+        var scene = BuildViewerScene(
+            npcFormId,
+            headOnly,
+            noEquip,
+            noWeapon,
+            bindPose,
+            previewPlayerLevel);
         return scene == null ? null : ExportViewerSceneToGlb(scene);
     }
 
@@ -386,9 +587,10 @@ internal sealed class NpcBrowserService : IDisposable
         bool noWeapon,
         int spriteSize,
         float azimuth,
-        float elevation)
+        float elevation,
+        ushort? previewPlayerLevel = null)
     {
-        var appearance = ResolveAppearance(npcFormId);
+        var appearance = ResolveAppearance(npcFormId, previewPlayerLevel);
         if (appearance == null)
         {
             return null;
@@ -585,14 +787,16 @@ internal sealed class NpcBrowserService : IDisposable
         }, ct);
     }
 
-    private NpcAppearance? ResolveAppearance(uint npcFormId)
+    private NpcAppearance? ResolveAppearance(
+        uint npcFormId,
+        ushort? previewPlayerLevel = null)
     {
         if (_dmpAppearances != null)
         {
             return _dmpAppearances.GetValueOrDefault(npcFormId);
         }
 
-        return _resolver.ResolveHeadOnly(npcFormId, _pluginName);
+        return _resolver.ResolveHeadOnly(npcFormId, _pluginName, previewPlayerLevel);
     }
 
     private void CaptureReferencedGeneratedTextures(
@@ -643,7 +847,13 @@ internal sealed class NpcBrowserService : IDisposable
         var variant = string.IsNullOrWhiteSpace(appearance.RenderVariantLabel)
             ? string.Empty
             : $" [{appearance.RenderVariantLabel}]";
-        return $"{actorName}{variant} (NPC_ 0x{appearance.NpcFormId:X8})";
+        var leveledWeapon = appearance.WeaponVisual?.LeveledListTrace;
+        var weaponContext = leveledWeapon == null
+            ? string.Empty
+            : leveledWeapon.PreviewPlayerLevel.HasValue
+                ? $" [weapon LVLI 0x{leveledWeapon.ListFormId:X8}, preview Lv{leveledWeapon.PreviewPlayerLevel}, tier {leveledWeapon.SelectedEntryLevel}]"
+                : $" [weapon LVLI 0x{leveledWeapon.ListFormId:X8} omitted: preview level required]";
+        return $"{actorName}{variant} (NPC_ 0x{appearance.NpcFormId:X8}){weaponContext}";
     }
 
     private static string BuildCreatureSourceLabel(uint creatureFormId, CreatureScanEntry creature)

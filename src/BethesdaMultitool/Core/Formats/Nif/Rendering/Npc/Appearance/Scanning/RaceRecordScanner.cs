@@ -75,6 +75,8 @@ internal static class RaceRecordScanner
         string? femaleHand = null;
         string? maleFoot = null;
         string? femaleFoot = null;
+        string? maleTail = null;
+        string? femaleTail = null;
         string? maleLeftHand = null;
         string? femaleLeftHand = null;
         string? maleRightHand = null;
@@ -87,6 +89,8 @@ internal static class RaceRecordScanner
         string? femaleHandTexture = null;
         string? maleFootTexture = null;
         string? femaleFootTexture = null;
+        string? maleTailTexture = null;
+        string? femaleTailTexture = null;
         var currentIndex = -1;
 
         foreach (var subrecord in subrecords)
@@ -255,6 +259,17 @@ internal static class RaceRecordScanner
                         ref maleBodyTexture,
                         ref femaleBodyTexture);
                     break;
+                case "MODL" when inBodyPartsSection && usesTes4HeadPartLayout && currentIndex == -1:
+                    // TES4 authors a gendered tail model immediately after the zero-length MNAM/FNAM
+                    // marker, before the first INDX body-texture entry. Argonian and Khajiit both use
+                    // this slot; ignoring it made their Actors-tab assemblies intrinsically tailless.
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        false,
+                        ref maleTail,
+                        ref femaleTail);
+                    break;
                 case "ICON" when inBodyPartsSection && usesTes4HeadPartLayout && currentIndex == 1:
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
@@ -278,6 +293,14 @@ internal static class RaceRecordScanner
                         false,
                         ref maleFootTexture,
                         ref femaleFootTexture);
+                    break;
+                case "ICON" when inBodyPartsSection && usesTes4HeadPartLayout && currentIndex == 4:
+                    AssignPath(
+                        EsmRecordParser.GetSubrecordString(subrecord),
+                        inMaleSection,
+                        false,
+                        ref maleTailTexture,
+                        ref femaleTailTexture);
                     break;
                 case "ENAM" when subrecord.Data.Length >= 4:
                     defaultEyesFormId ??= BinaryUtils.ReadUInt32(
@@ -381,6 +404,8 @@ internal static class RaceRecordScanner
             FemaleHandPath = femaleHand,
             MaleFootPath = maleFoot,
             FemaleFootPath = femaleFoot,
+            MaleTailPath = maleTail,
+            FemaleTailPath = femaleTail,
             MaleLeftHandPath = maleLeftHand,
             FemaleLeftHandPath = femaleLeftHand,
             MaleRightHandPath = maleRightHand,
@@ -392,7 +417,9 @@ internal static class RaceRecordScanner
             MaleHandTexturePath = maleHandTexture,
             FemaleHandTexturePath = femaleHandTexture,
             MaleFootTexturePath = maleFootTexture,
-            FemaleFootTexturePath = femaleFootTexture
+            FemaleFootTexturePath = femaleFootTexture,
+            MaleTailTexturePath = maleTailTexture,
+            FemaleTailTexturePath = femaleTailTexture
         };
     }
 

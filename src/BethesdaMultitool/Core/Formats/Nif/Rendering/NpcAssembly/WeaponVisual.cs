@@ -15,6 +15,7 @@ internal sealed class WeaponVisual
     public WeaponAttachmentMode AttachmentMode { get; init; }
     public string? MeshPath { get; init; }
     public string? HolsterProfileKey { get; init; }
+    public string? AttachmentPoseKfPath { get; init; }
     public uint? RuntimeActorFormId { get; init; }
     public uint? AmmoFormId { get; init; }
     public bool IsEmbeddedWeapon { get; init; }
@@ -23,4 +24,5 @@ internal sealed class WeaponVisual
     public bool PreferEquippedForearmMount { get; init; }
     public bool RenderStandaloneMesh { get; init; } = true;
     public List<WeaponAddonVisual>? AddonMeshes { get; init; }
+    public WeaponLeveledListTrace? LeveledListTrace { get; init; }
 }

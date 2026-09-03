@@ -55,6 +55,51 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     }
 
     [Fact]
+    public void Tes4TailBodyPart_UsesAuthoredTextureAndHonorsTailCoverageSlot()
+    {
+        var appearance = new NpcAppearance
+        {
+            NpcFormId = 0x224EC,
+            TailNifPath = @"meshes\characters\argonian\tail.nif",
+            TailTexturePath = @"textures\characters\argonian\female\tail.dds"
+        };
+
+        var visible = NpcCompositionPlanner.BuildBodyParts(
+            appearance,
+            new NpcCompositionOptions(),
+            coveredSlots: 0,
+            effectiveBodyTex: null,
+            effectiveHandTex: null);
+        var tail = Assert.Single(visible);
+        Assert.Equal(appearance.TailNifPath, tail.MeshPath);
+        Assert.Equal(appearance.TailTexturePath, tail.TextureOverride);
+
+        var upperBodyCovered = NpcCompositionPlanner.BuildBodyParts(
+            appearance,
+            new NpcCompositionOptions(),
+            coveredSlots: 0x04,
+            effectiveBodyTex: null,
+            effectiveHandTex: null);
+        Assert.Single(upperBodyCovered);
+
+        var tailCovered = NpcCompositionPlanner.BuildBodyParts(
+            appearance,
+            new NpcCompositionOptions(),
+            coveredSlots: NpcCompositionPlanner.Tes4TailSlot,
+            effectiveBodyTex: null,
+            effectiveHandTex: null);
+        Assert.Empty(tailCovered);
+
+        var headOnly = NpcCompositionPlanner.BuildBodyParts(
+            appearance,
+            new NpcCompositionOptions { HeadOnly = true },
+            coveredSlots: 0,
+            effectiveBodyTex: null,
+            effectiveHandTex: null);
+        Assert.Empty(headOnly);
+    }
+
+    [Fact]
     [Trait("Category", BucketBTestGuard.Category)]
     public void CreatePlan_FullBodyNpc_UsesHatHairFilter_AndSuppressesOverlappingBodyEquipment()
     {
@@ -300,6 +345,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     {
         return new NpcAppearance
         {
+            Game = source.Game,
             NpcFormId = source.NpcFormId,
             EditorId = source.EditorId,
             FullName = source.FullName,
@@ -329,10 +375,12 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
             EquippedItems = equippedItems ?? source.EquippedItems,
             WeaponVisual = weaponVisual ?? source.WeaponVisual,
             UpperBodyNifPath = source.UpperBodyNifPath,
+            TailNifPath = source.TailNifPath,
             LeftHandNifPath = source.LeftHandNifPath,
             RightHandNifPath = source.RightHandNifPath,
             BodyTexturePath = source.BodyTexturePath,
             HandTexturePath = source.HandTexturePath,
+            TailTexturePath = source.TailTexturePath,
             SkeletonNifPath = source.SkeletonNifPath,
             BodyEgtPath = source.BodyEgtPath,
             LeftHandEgtPath = source.LeftHandEgtPath,

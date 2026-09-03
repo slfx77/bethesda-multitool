@@ -69,6 +69,7 @@ internal static class NpcEsmRecordParsers
         bool bigEndian,
         AnalyzerRecordInfo record)
     {
-        return LeveledListRecordScanner.Process(esmData, bigEndian, record);
+        var leveledList = LeveledListRecordScanner.Process(esmData, bigEndian, record);
+        return leveledList?.Entries.Select(static entry => entry.FormId).ToList();
     }
 }

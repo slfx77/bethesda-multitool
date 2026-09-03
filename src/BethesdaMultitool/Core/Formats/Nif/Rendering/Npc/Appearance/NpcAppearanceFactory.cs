@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -12,6 +13,8 @@ internal sealed class NpcAppearanceFactory
 {
     /// <summary>The player's base NPC_ record ("PlayerBase", engine-reserved FormID).</summary>
     private const uint PlayerBaseFormId = 0x7;
+    private const string HumanoidSkeletonNifPath = @"meshes\characters\_Male\skeleton.nif";
+    private const string Tes4BeastSkeletonNifPath = @"meshes\characters\_Male\skeletonbeast.nif";
 
     private readonly NpcEquipmentResolver _equipmentResolver;
     private readonly NpcHeadPartPathResolver _headPartPathResolver;
@@ -28,17 +31,24 @@ internal sealed class NpcAppearanceFactory
             index.Armors,
             index.ArmorAddons,
             index.FormLists,
-            index.LeveledItems);
+            index.LeveledItems,
+            index.Game);
         _weaponResolver = new NpcWeaponResolver(
             index.Packages,
             index.Weapons,
             index.ArmorAddons,
             index.LeveledItems,
             index.Idles,
-            index.CombatStyles);
+            index.CombatStyles,
+            index.Game,
+            index.LeveledItemRecords);
     }
 
-    internal NpcAppearance Build(uint formId, NpcScanEntry npc, string pluginName)
+    internal NpcAppearance Build(
+        uint formId,
+        NpcScanEntry npc,
+        string pluginName,
+        ushort? previewPlayerLevel = null)
     {
         var race = ResolveRace(npc.RaceFormId);
         var headModelPath = SelectGenderValue(
@@ -97,6 +107,10 @@ internal sealed class NpcAppearanceFactory
             npc.IsFemale,
             race?.MaleFootPath,
             race?.FemaleFootPath);
+        var tailPath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleTailPath,
+            race?.FemaleTailPath);
         var leftHandPath = SelectGenderValue(
             npc.IsFemale,
             race?.MaleLeftHandPath,
@@ -121,6 +135,10 @@ internal sealed class NpcAppearanceFactory
             npc.IsFemale,
             race?.MaleFootTexturePath,
             race?.FemaleFootTexturePath);
+        var tailTexturePath = SelectGenderValue(
+            npc.IsFemale,
+            race?.MaleTailTexturePath,
+            race?.FemaleTailTexturePath);
         var hair = ResolveHair(npc.HairFormId);
         var eyeTexturePath = ResolveEyeTexture(
             ResolveEffectiveEyesFormId(npc.EyesFormId, race, headModelPath), race);
@@ -128,7 +146,10 @@ internal sealed class NpcAppearanceFactory
         var equippedItems = _equipmentResolver.Resolve(
             inventoryItems,
             npc.IsFemale);
-        var weaponVisual = _weaponResolver.Resolve(npc, inventoryItems);
+        var weaponVisual = _weaponResolver.Resolve(
+            npc,
+            inventoryItems,
+            previewPlayerLevel: previewPlayerLevel);
         var symmetricCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npc.FaceGenSymmetric,
             SelectGenderValue(
@@ -161,9 +182,11 @@ internal sealed class NpcAppearanceFactory
             bodyEgtPaths = (bodyEgtPaths.BodyEgt, null, null);
         }
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
+        var tailNifPath = NpcAppearancePathDeriver.AsMeshPath(tailPath);
 
         return new NpcAppearance
         {
+            Game = _index.Game,
             NpcFormId = formId,
             EditorId = npc.EditorId,
             FullName = npc.FullName,
@@ -199,13 +222,15 @@ internal sealed class NpcAppearanceFactory
             LowerBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerBodyPath),
             HandNifPath = NpcAppearancePathDeriver.AsMeshPath(handPath),
             FootNifPath = NpcAppearancePathDeriver.AsMeshPath(footPath),
+            TailNifPath = tailNifPath,
             LeftHandNifPath = NpcAppearancePathDeriver.AsMeshPath(leftHandPath),
             RightHandNifPath = NpcAppearancePathDeriver.AsMeshPath(rightHandPath),
             BodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(bodyTexturePath),
             LowerBodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(lowerBodyTexturePath),
             HandTexturePath = handTexturePath,
             FootTexturePath = NpcAppearancePathDeriver.AsTexturePath(footTexturePath),
-            SkeletonNifPath = "meshes\\characters\\_Male\\skeleton.nif",
+            TailTexturePath = NpcAppearancePathDeriver.AsTexturePath(tailTexturePath),
+            SkeletonNifPath = ResolveSkeletonNifPath(tailNifPath),
             BodyEgtPath = bodyEgtPaths.BodyEgt,
             LeftHandEgtPath = bodyEgtPaths.LeftHandEgt,
             RightHandEgtPath = bodyEgtPaths.RightHandEgt
@@ -216,7 +241,8 @@ internal sealed class NpcAppearanceFactory
         NpcRecord npcRecord,
         string pluginName,
         NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null,
-        NpcEquipmentResolver.RuntimeEquipmentSelection? runtimeEquipmentSelection = null)
+        NpcEquipmentResolver.RuntimeEquipmentSelection? runtimeEquipmentSelection = null,
+        ushort? previewPlayerLevel = null)
     {
         var isFemale = npcRecord.Stats != null && (npcRecord.Stats.Flags & 1) != 0;
         var race = ResolveRace(npcRecord.Race);
@@ -276,6 +302,10 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleFootPath,
             race?.FemaleFootPath);
+        var tailPath = SelectGenderValue(
+            isFemale,
+            race?.MaleTailPath,
+            race?.FemaleTailPath);
         var leftHandPath = SelectGenderValue(
             isFemale,
             race?.MaleLeftHandPath,
@@ -300,6 +330,10 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleFootTexturePath,
             race?.FemaleFootTexturePath);
+        var tailTexturePath = SelectGenderValue(
+            isFemale,
+            race?.MaleTailTexturePath,
+            race?.FemaleTailTexturePath);
         var hair = ResolveHair(npcRecord.HairFormId);
         var eyeFormId = ResolveEffectiveEyesFormId(
             npcRecord.EyesFormId ?? race?.DefaultEyesFormId, race, headModelPath);
@@ -356,7 +390,8 @@ internal sealed class NpcAppearanceFactory
         var weaponVisual = _weaponResolver.Resolve(
             weaponResolutionNpc,
             inventoryItems,
-            runtimeWeaponSelection);
+            runtimeWeaponSelection,
+            previewPlayerLevel);
         var handTexturePath = NpcAppearancePathDeriver.AsTexturePath(raceHandTexturePath) ??
                               NpcAppearancePathDeriver.DeriveHandTexturePath(
                                   bodyTexturePath,
@@ -369,9 +404,11 @@ internal sealed class NpcAppearanceFactory
             bodyEgtPaths = (bodyEgtPaths.BodyEgt, null, null);
         }
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
+        var tailNifPath = NpcAppearancePathDeriver.AsMeshPath(tailPath);
 
         return new NpcAppearance
         {
+            Game = _index.Game,
             NpcFormId = npcRecord.FormId,
             EditorId = npcRecord.EditorId,
             FullName = npcRecord.FullName,
@@ -407,17 +444,29 @@ internal sealed class NpcAppearanceFactory
             LowerBodyNifPath = NpcAppearancePathDeriver.AsMeshPath(lowerBodyPath),
             HandNifPath = NpcAppearancePathDeriver.AsMeshPath(handPath),
             FootNifPath = NpcAppearancePathDeriver.AsMeshPath(footPath),
+            TailNifPath = tailNifPath,
             LeftHandNifPath = NpcAppearancePathDeriver.AsMeshPath(leftHandPath),
             RightHandNifPath = NpcAppearancePathDeriver.AsMeshPath(rightHandPath),
             BodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(bodyTexturePath),
             LowerBodyTexturePath = NpcAppearancePathDeriver.AsTexturePath(lowerBodyTexturePath),
             HandTexturePath = handTexturePath,
             FootTexturePath = NpcAppearancePathDeriver.AsTexturePath(footTexturePath),
-            SkeletonNifPath = "meshes\\characters\\_Male\\skeleton.nif",
+            TailTexturePath = NpcAppearancePathDeriver.AsTexturePath(tailTexturePath),
+            SkeletonNifPath = ResolveSkeletonNifPath(tailNifPath),
             BodyEgtPath = bodyEgtPaths.BodyEgt,
             LeftHandEgtPath = bodyEgtPaths.LeftHandEgt,
             RightHandEgtPath = bodyEgtPaths.RightHandEgt
         };
+    }
+
+    private string ResolveSkeletonNifPath(string? tailNifPath)
+    {
+        // TES4 ships race tails as external NiSkin meshes bound to Bip01 Tail01..Tail08.
+        // Those bones exist only in skeletonbeast.nif; the ordinary humanoid skeleton cannot
+        // attach or deform an otherwise correctly resolved Argonian/Khajiit tail.
+        return _index.Game == BethesdaGame.Oblivion && tailNifPath != null
+            ? Tes4BeastSkeletonNifPath
+            : HumanoidSkeletonNifPath;
     }
 
     private RaceScanEntry? ResolveRace(uint? raceFormId)

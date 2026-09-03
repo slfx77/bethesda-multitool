@@ -104,12 +104,13 @@ internal static class NpcWeaponLoader
                     skeletonNifPath,
                     meshArchives,
                     npc.WeaponVisual.HolsterProfileKey,
-                    usePowerArmorHolster);
+                    usePowerArmorHolster,
+                    npc.WeaponVisual.AttachmentPoseKfPath);
                 if (holsterPose == null)
                 {
-                    Log.Warn("Weapon omitted for NPC 0x{0:X8}: holster KF missing for profile {1}{2}",
+                    Log.Warn("Weapon omitted for NPC 0x{0:X8}: attachment KF missing for {1}{2}",
                         npc.NpcFormId,
-                        npc.WeaponVisual.HolsterProfileKey,
+                        npc.WeaponVisual.AttachmentPoseKfPath ?? npc.WeaponVisual.HolsterProfileKey,
                         usePowerArmorHolster ? " (power armor)" : "");
                     return;
                 }
@@ -126,7 +127,11 @@ internal static class NpcWeaponLoader
                     return;
                 }
 
-                attachmentSourceLabel = usePowerArmorHolster ? " (power armor holster KF)" : " (holster KF)";
+                attachmentSourceLabel = npc.WeaponVisual.AttachmentPoseKfPath is { } posePath
+                    ? $" (game-native attachment KF '{posePath}')"
+                    : usePowerArmorHolster
+                        ? " (power armor holster KF)"
+                        : " (holster KF)";
                 break;
             }
             default:

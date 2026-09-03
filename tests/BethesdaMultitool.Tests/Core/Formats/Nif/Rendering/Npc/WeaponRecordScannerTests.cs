@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -7,6 +9,46 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
 
 public sealed class WeaponRecordScannerTests
 {
+    [Theory]
+    [InlineData((byte)0, WeaponType.OneHandMelee, "onehandidle.kf")]
+    [InlineData((byte)1, WeaponType.TwoHandMelee, "twohandidle.kf")]
+    [InlineData((byte)2, WeaponType.OneHandMelee, "onehandidle.kf")]
+    [InlineData((byte)3, WeaponType.TwoHandMelee, "twohandidle.kf")]
+    [InlineData((byte)4, WeaponType.TwoHandHandle, "staffidle.kf")]
+    [InlineData((byte)5, WeaponType.TwoHandRifle, "bowidle.kf")]
+    public void Process_OblivionData_MapsNativeWeaponTypeAndRetailPose(
+        byte rawWeaponType,
+        WeaponType expectedType,
+        string expectedPose)
+    {
+        var data = new byte[30];
+        data[0] = rawWeaponType;
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), 1.25f);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(20), 100);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(28), 17);
+
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
+            0x00001233,
+            "WEAP",
+            false,
+            ("EDID", EsmTestRecordBuilder.NullTermString("Tes4Weapon")),
+            ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\test.nif")),
+            ("DATA", data));
+
+        var scanEntry = WeaponRecordScanner.Process(
+            recordBytes,
+            false,
+            record,
+            BethesdaGame.Oblivion);
+
+        Assert.NotNull(scanEntry);
+        Assert.Equal(expectedType, scanEntry!.WeaponType);
+        Assert.Equal(expectedPose, scanEntry.AttachmentPoseKfPath);
+        Assert.Equal(100, scanEntry.Health);
+        Assert.Equal(17, scanEntry.Damage);
+        Assert.Equal(1.25f, scanEntry.ShotsPerSec);
+    }
+
     [Theory]
     [InlineData((byte)4, WeaponType.OneHandPistolEnergy)]
     [InlineData((byte)7, WeaponType.TwoHandRifleEnergy)]

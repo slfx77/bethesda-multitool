@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
@@ -11,30 +14,115 @@ namespace BethesdaMultitool;
 
 internal static class NpcBrowserWorkflowService
 {
-    internal static Task<BsaDiscoveryResult> DiscoverBsaPathsAsync(string esmPath, string? configuredDataDirectory)
+    private static readonly Logger Log = Logger.Instance;
+
+    internal static Task<BsaDiscoveryResult> DiscoverBsaPathsAsync(
+        string esmPath,
+        string? configuredDataDirectory,
+        IProgress<NpcBrowserLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         return Task.Run(() =>
         {
-            if (configuredDataDirectory != null)
+            progress?.Report(new NpcBrowserLoadProgress(
+                NpcBrowserLoadStage.DiscoveringArchives,
+                "Detecting archives..."));
+            var timer = Stopwatch.StartNew();
+            try
             {
-                var pseudoEsmPath = Path.Combine(configuredDataDirectory, Path.GetFileName(esmPath));
-                return BsaDiscovery.Discover(pseudoEsmPath);
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = configuredDataDirectory != null
+                    ? BsaDiscovery.Discover(Path.Combine(configuredDataDirectory, Path.GetFileName(esmPath)))
+                    : BsaDiscovery.Discover(esmPath);
+                timer.Stop();
+                var detail =
+                    $"meshArchives={result.MeshesBsaPaths.Length} textureArchives={result.TexturesBsaPaths.Length}";
+                Log.Info(
+                    "NPC Browser load stage={0} elapsed={1:N2} ms {2}.",
+                    NpcBrowserLoadStage.DiscoveringArchives,
+                    timer.Elapsed.TotalMilliseconds,
+                    detail);
+                progress?.Report(new NpcBrowserLoadProgress(
+                    NpcBrowserLoadStage.DiscoveringArchives,
+                    "Detecting archives...",
+                    timer.Elapsed,
+                    detail));
+                return result;
             }
-
-            return BsaDiscovery.Discover(esmPath);
-        });
+            catch
+            {
+                timer.Stop();
+                Log.Info(
+                    "NPC Browser load stage={0} outcome=failed elapsed={1:N2} ms.",
+                    NpcBrowserLoadStage.DiscoveringArchives,
+                    timer.Elapsed.TotalMilliseconds);
+                throw;
+            }
+        }, cancellationToken);
     }
 
     internal static Task<NpcBrowserService?> CreateFromEsmAsync(
         string esmPath,
         bool bigEndian,
-        BsaDiscoveryResult bsaPaths)
+        BsaDiscoveryResult bsaPaths,
+        IProgress<NpcBrowserLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         return Task.Run(() =>
         {
+            progress?.Report(new NpcBrowserLoadProgress(
+                NpcBrowserLoadStage.ReadingEsm,
+                "Reading ESM for NPC records..."));
+            var readTimer = Stopwatch.StartNew();
             var esmData = File.ReadAllBytes(esmPath);
-            return NpcBrowserService.TryCreate(esmData, bigEndian, esmPath, bsaPaths);
-        });
+            readTimer.Stop();
+            Log.Info(
+                "NPC Browser load stage={0} elapsed={1:N2} ms bytesRead={2:N0} source=whole-file-fallback.",
+                NpcBrowserLoadStage.ReadingEsm,
+                readTimer.Elapsed.TotalMilliseconds,
+                esmData.LongLength);
+            progress?.Report(new NpcBrowserLoadProgress(
+                NpcBrowserLoadStage.ReadingEsm,
+                "Reading ESM for NPC records...",
+                readTimer.Elapsed,
+                $"bytesRead={esmData.LongLength}"));
+            cancellationToken.ThrowIfCancellationRequested();
+            return NpcBrowserService.TryCreate(
+                esmData,
+                bigEndian,
+                esmPath,
+                bsaPaths,
+                progress,
+                cancellationToken);
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Creates the ESM-mode browser from the analysis session's existing memory map and record
+    ///     descriptors. This is the SingleFile tab path; the byte-array overload remains the safe
+    ///     fallback for callers that do not own an analyzed session.
+    /// </summary>
+    internal static Task<NpcBrowserService?> CreateFromAnalyzedEsmAsync(
+        string esmPath,
+        bool bigEndian,
+        BsaDiscoveryResult bsaPaths,
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        EsmRecordScanResult analyzedRecords,
+        IProgress<NpcBrowserLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(accessor);
+        ArgumentNullException.ThrowIfNull(analyzedRecords);
+        return Task.Run(() => NpcBrowserService.TryCreateFromAnalyzedEsm(
+            new MmfMemoryAccessor(accessor),
+            fileSize,
+            analyzedRecords,
+            bigEndian,
+            esmPath,
+            bsaPaths,
+            progress,
+            cancellationToken), cancellationToken);
     }
 
     internal static Task<NpcBrowserService?> CreateFromDmpAsync(
@@ -134,14 +222,41 @@ internal static class NpcBrowserWorkflowService
         return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return npc.IsCreature
-                ? service.BuildCreatureViewerScene(npc.FormId, options.BindPose)
-                : service.BuildViewerScene(
+            var timer = Stopwatch.StartNew();
+            Log.Info(
+                "NPC Browser actor-scene assembly started formId=0x{0:X8} kind={1}.",
+                npc.FormId,
+                npc.IsCreature ? "creature" : "npc");
+            try
+            {
+                var scene = npc.IsCreature
+                    ? service.BuildCreatureViewerScene(npc.FormId, options.BindPose)
+                    : service.BuildViewerScene(
+                        npc.FormId,
+                        options.HeadOnly,
+                        options.NoEquip,
+                        options.NoWeapon,
+                        options.BindPose,
+                        options.PreviewPlayerLevel);
+                timer.Stop();
+                Log.Info(
+                    "NPC Browser actor-scene assembly completed formId=0x{0:X8} outcome={1} " +
+                    "elapsed={2:N2} ms parts={3:N0}.",
                     npc.FormId,
-                    options.HeadOnly,
-                    options.NoEquip,
-                    options.NoWeapon,
-                    options.BindPose);
+                    scene is null ? "no-scene" : "ready",
+                    timer.Elapsed.TotalMilliseconds,
+                    scene?.MeshParts.Count ?? 0);
+                return scene;
+            }
+            catch
+            {
+                timer.Stop();
+                Log.Info(
+                    "NPC Browser actor-scene assembly failed formId=0x{0:X8} elapsed={1:N2} ms.",
+                    npc.FormId,
+                    timer.Elapsed.TotalMilliseconds);
+                throw;
+            }
         }, cancellationToken);
     }
 
@@ -188,7 +303,8 @@ internal static class NpcBrowserWorkflowService
                     options.NoWeapon,
                     spriteSize,
                     azimuth,
-                    elevation));
+                    elevation,
+                    options.PreviewPlayerLevel));
 
             if (pngBytes != null)
             {
@@ -234,9 +350,13 @@ internal static class NpcBrowserWorkflowService
     }
 }
 
-/// <summary>NPC render/export options: head-only vs full body, and whether to omit equipment, weapon, and idle pose.</summary>
+/// <summary>
+///     NPC render/export options, including the explicit player level used to resolve leveled
+///     equipment. A null level intentionally leaves level-dependent equipment unresolved.
+/// </summary>
 internal sealed record NpcRenderOptions(
     bool HeadOnly,
     bool NoEquip,
     bool NoWeapon,
-    bool BindPose);
+    bool BindPose,
+    ushort? PreviewPlayerLevel = null);

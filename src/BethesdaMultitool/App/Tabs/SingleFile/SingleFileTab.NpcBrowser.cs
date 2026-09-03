@@ -1,4 +1,5 @@
 ﻿using BethesdaMultitool.CLI.Rendering.Nif;
+using System.Diagnostics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core;
@@ -35,6 +36,7 @@ public sealed partial class SingleFileTab
     private int _npcViewerNativeOutcomeGeneration;
     private bool _npcViewerDisposed;
     private CancellationTokenSource? _npcRenderOptionDebounce;
+    private bool _npcListRefreshInProgress;
     private bool _webViewInitialized;
     private Task? _webViewInitializationTask;
 
@@ -81,6 +83,70 @@ public sealed partial class SingleFileTab
         }
     }
 
+    /// <summary>
+     ///     Applies an explicit unattended-startup selector after the complete browser list exists.
+    ///     Resolution is exact and fail-closed; normal interactive startup never calls this method.
+    /// </summary>
+    private void SelectAutoOpenActor(string selector, Logger log)
+    {
+        var resolution = NpcStartupActorSelector.Resolve(_npcBrowser.FullList, selector);
+        if (!resolution.IsResolved)
+        {
+            log.Warn(
+                "[AutoOpen] actor selector='{0}' outcome={1} matches={2} detail={3}",
+                selector,
+                resolution.Status,
+                resolution.MatchCount,
+                resolution.Diagnostic);
+            return;
+        }
+
+        var resolvedActor = resolution.Actor!;
+        var visibleActor = _npcBrowser.FindVisible(resolvedActor.FormId);
+        if (visibleActor is null)
+        {
+            // An exact Editor ID may legitimately target an unnamed actor hidden by Named only, or
+            // an unattended launch may inherit a XAML-default search value. Clear those filters as
+            // one transaction, then publish the complete list once.
+            _npcListRefreshInProgress = true;
+            try
+            {
+                NpcNamedOnlyCheckBox.IsChecked = false;
+                NpcSearchBox.Text = string.Empty;
+            }
+            finally
+            {
+                _npcListRefreshInProgress = false;
+            }
+
+            ApplyNpcListState(_npcBrowser.Refresh(
+                namedOnly: false,
+                searchText: string.Empty,
+                showEditorId: NpcShowEditorIdCheckBox.IsChecked == true));
+            visibleActor = _npcBrowser.FindVisible(resolvedActor.FormId);
+        }
+
+        if (visibleActor is null)
+        {
+            log.Warn(
+                "[AutoOpen] actor selector='{0}' outcome=failed detail=resolved FormID 0x{1:X8} was not visible after clearing filters.",
+                selector,
+                resolvedActor.FormId);
+            return;
+        }
+
+        NpcListView.SelectedItem = visibleActor;
+        DispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () => NpcListView.ScrollIntoView(visibleActor));
+        log.Info(
+            "[AutoOpen] actor selector='{0}' outcome=selected formId=0x{1:X8} editorId='{2}' fullName='{3}'.",
+            selector,
+            visibleActor.FormId,
+            visibleActor.EditorId ?? "(none)",
+            visibleActor.FullName ?? "(none)");
+    }
+
     #endregion
 
     #region Initialization
@@ -116,6 +182,17 @@ public sealed partial class SingleFileTab
 
         NpcBrowserProgressBar.Visibility = Visibility.Visible;
         NpcBrowserStatusText.Text = "Detecting archives...";
+        var loadProgress = new Progress<NpcBrowserLoadProgress>(update =>
+        {
+            if (cancellationToken.IsCancellationRequested || _session.NpcBrowserPopulated)
+            {
+                return;
+            }
+
+            NpcBrowserStatusText.Text = update.Elapsed is { } elapsed
+                ? $"{update.Message.TrimEnd('.')} ({elapsed.TotalSeconds:N1}s)"
+                : update.Message;
+        });
 
         try
         {
@@ -123,7 +200,9 @@ public sealed partial class SingleFileTab
 
             var bsaPaths = await NpcBrowserWorkflowService.DiscoverBsaPathsAsync(
                 esmPath,
-                _session.NpcBsaDirectory);
+                _session.NpcBsaDirectory,
+                loadProgress,
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!bsaPaths.HasMeshes)
@@ -147,7 +226,23 @@ public sealed partial class SingleFileTab
                 NpcBrowserStatusText.Text = "Scanning NPC records...";
 
                 var bigEndian = _session.AnalysisResult?.EsmRecords?.BigEndianRecords > 0;
-                service = await NpcBrowserWorkflowService.CreateFromEsmAsync(esmPath, bigEndian, bsaPaths);
+                var analyzedRecords = _session.AnalysisResult?.EsmRecords;
+                service = _session.Accessor != null && analyzedRecords is { MainRecords.Count: > 0 }
+                    ? await NpcBrowserWorkflowService.CreateFromAnalyzedEsmAsync(
+                        esmPath,
+                        bigEndian,
+                        bsaPaths,
+                        _session.Accessor,
+                        _session.FileSize,
+                        analyzedRecords,
+                        loadProgress,
+                        cancellationToken)
+                    : await NpcBrowserWorkflowService.CreateFromEsmAsync(
+                        esmPath,
+                        bigEndian,
+                        bsaPaths,
+                        loadProgress,
+                        cancellationToken);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -158,17 +253,36 @@ public sealed partial class SingleFileTab
                 return;
             }
 
-            _npcBrowserService = service;
-            _session.NpcBrowserPopulated = true;
+            var materializeStarted = Stopwatch.GetTimestamp();
+            var actorList = service.GetNpcList();
+            var materializeElapsed = Stopwatch.GetElapsedTime(materializeStarted);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            ApplyNpcListState(_npcBrowser.LoadList(
-                service.GetNpcList(),
+            var filterStarted = Stopwatch.GetTimestamp();
+            var listState = _npcBrowser.LoadList(
+                actorList,
                 NpcNamedOnlyCheckBox.IsChecked == true,
                 NpcSearchBox.Text,
-                NpcShowEditorIdCheckBox.IsChecked == true));
+                NpcShowEditorIdCheckBox.IsChecked == true);
+            var filterElapsed = Stopwatch.GetElapsedTime(filterStarted);
+
+            _npcBrowserService = service;
+            var publishStarted = Stopwatch.GetTimestamp();
+            ApplyNpcListState(listState);
+            _session.NpcBrowserPopulated = true;
+            var publishElapsed = Stopwatch.GetElapsedTime(publishStarted);
+            Logger.Instance.Info(
+                "NPC Browser list publication completed actors={0:N0} visible={1:N0} " +
+                "materialize={2:N2} ms filter={3:N2} ms uiBind={4:N2} ms.",
+                actorList.Count,
+                listState.Items.Count,
+                materializeElapsed.TotalMilliseconds,
+                filterElapsed.TotalMilliseconds,
+                publishElapsed.TotalMilliseconds);
 
             NpcBrowserPlaceholder.Visibility = Visibility.Collapsed;
             NpcBrowserContent.Visibility = Visibility.Visible;
+            NpcBrowserProgressBar.Visibility = Visibility.Collapsed;
             // Keep the compatibility host cold until a selected actor fails native D3D12 setup.
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -312,10 +426,22 @@ public sealed partial class SingleFileTab
 
     private void ApplyNpcListState(NpcListState state)
     {
-        NpcListView.ItemsSource = state.Items;
-        if (state.RestoredSelection != null)
+        // Replacing ItemsSource raises SelectionChanged with a transient null selection before a
+        // retained item can be restored. That is list bookkeeping, not an explicit request to
+        // discard the currently rendered actor. Suppress both synthetic events so filtering from
+        // one actor to another can replace the scene directly and retain the native swap chain.
+        _npcListRefreshInProgress = true;
+        try
         {
-            NpcListView.SelectedItem = state.RestoredSelection;
+            NpcListView.ItemsSource = state.Items;
+            if (state.RestoredSelection != null)
+            {
+                NpcListView.SelectedItem = state.RestoredSelection;
+            }
+        }
+        finally
+        {
+            _npcListRefreshInProgress = false;
         }
 
         NpcCountText.Text = state.CountText;
@@ -323,21 +449,26 @@ public sealed partial class SingleFileTab
 
     private void NpcSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_npcListRefreshInProgress) return;
         RefreshNpcList();
     }
 
     private void NpcNamedOnlyCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_npcListRefreshInProgress) return;
         RefreshNpcList();
     }
 
     private void NpcShowEditorIdCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_npcListRefreshInProgress) return;
         RefreshNpcList();
     }
 
     private async void NpcListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_npcListRefreshInProgress) return;
+
         CancelNpcRenderOptionDebounce();
 
         if (NpcListView.SelectedItem is not NpcListItem npc || _npcBrowserService == null)
@@ -371,6 +502,7 @@ public sealed partial class SingleFileTab
         NpcArmorCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
         NpcWeaponCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
         NpcIdlePoseCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
+        NpcPreviewPlayerLevelNumberBox.IsEnabled = state.CanToggleHumanoidOptions;
         NpcExportGlbButton.IsEnabled = state.CanExportGlb;
         NpcRenderPngButton.IsEnabled = state.CanRenderPng;
         NpcCaptureNativePngButton.IsEnabled =
@@ -396,6 +528,7 @@ public sealed partial class SingleFileTab
         var generation = unchecked(++_npcViewerLoadGeneration);
         TaskCompletionSource<BethesdaSceneViewerRenderState>? nativeOutcome = null;
 
+        NpcModelLoadingRing.IsActive = true;
         NpcModelLoadingRing.Visibility = Visibility.Visible;
 
         try
@@ -429,6 +562,11 @@ public sealed partial class SingleFileTab
             }
 
             _npcViewerScene = scene;
+            // Analysis rebuilds the TabView item collection after startup auto-selection. A
+            // delayed SelectionChanged from that rebuild can leave the presenter's cached active
+            // flag stale even though Actors is visibly selected. Reassert ownership at the scene
+            // publication boundary so the first SwapChainPanel frame never requires a tab toggle.
+            NpcSceneViewer.SetPresentationActive(ReferenceEquals(SubTabView.SelectedItem, NpcBrowserTab));
             NpcSceneViewer.SetScene(scene);
             NpcSceneViewer.FrameScene();
             NpcSceneViewer.InvalidateViewport();
@@ -519,6 +657,7 @@ public sealed partial class SingleFileTab
             if (ReferenceEquals(_npcViewerLoadCts, loadCts))
             {
                 _npcViewerLoadCts = null;
+                NpcModelLoadingRing.IsActive = false;
                 NpcModelLoadingRing.Visibility = Visibility.Collapsed;
             }
 
@@ -527,6 +666,18 @@ public sealed partial class SingleFileTab
     }
 
     private async void NpcRenderOption_Changed(object sender, RoutedEventArgs e)
+    {
+        await ReloadNpcAfterRenderOptionChangeAsync();
+    }
+
+    private async void NpcPreviewPlayerLevelNumberBox_ValueChanged(
+        NumberBox sender,
+        NumberBoxValueChangedEventArgs args)
+    {
+        await ReloadNpcAfterRenderOptionChangeAsync();
+    }
+
+    private async Task ReloadNpcAfterRenderOptionChangeAsync()
     {
         if (NpcListView.SelectedItem is not NpcListItem npc || _npcBrowserService == null)
         {
@@ -896,7 +1047,8 @@ public sealed partial class SingleFileTab
             NpcFullBodyCheckBox.IsChecked == true,
             NpcArmorCheckBox.IsChecked == true,
             NpcWeaponCheckBox.IsChecked == true,
-            NpcIdlePoseCheckBox.IsChecked == true);
+            NpcIdlePoseCheckBox.IsChecked == true,
+            NpcPreviewPlayerLevelNumberBox.Value);
     }
 
     private CameraConfig BuildCameraConfig()

@@ -46,6 +46,8 @@ internal sealed class RaceScanEntry
     public string? FemaleHandPath { get; init; }
     public string? MaleFootPath { get; init; }
     public string? FemaleFootPath { get; init; }
+    public string? MaleTailPath { get; init; }
+    public string? FemaleTailPath { get; init; }
     public string? MaleLeftHandPath { get; init; }
     public string? FemaleLeftHandPath { get; init; }
     public string? MaleRightHandPath { get; init; }
@@ -58,4 +60,6 @@ internal sealed class RaceScanEntry
     public string? FemaleHandTexturePath { get; init; }
     public string? MaleFootTexturePath { get; init; }
     public string? FemaleFootTexturePath { get; init; }
+    public string? MaleTailTexturePath { get; init; }
+    public string? FemaleTailTexturePath { get; init; }
 }

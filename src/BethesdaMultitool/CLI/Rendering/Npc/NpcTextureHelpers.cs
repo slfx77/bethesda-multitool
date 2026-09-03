@@ -84,16 +84,31 @@ internal static class NpcTextureHelpers
         if (string.IsNullOrEmpty(texturePath))
             return false;
 
-        if (texturePath.Contains("hair", StringComparison.OrdinalIgnoreCase) ||
-            texturePath.Contains("eyes", StringComparison.OrdinalIgnoreCase) ||
-            texturePath.Contains("headhuman", StringComparison.OrdinalIgnoreCase) ||
-            texturePath.Contains("underwear", StringComparison.OrdinalIgnoreCase))
+        var normalized = texturePath.Replace('/', '\\');
+        if (normalized.Contains("hair", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("eyes", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("head", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("underwear", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        return texturePath.Contains("characters\\_male", StringComparison.OrdinalIgnoreCase) ||
-               texturePath.Contains("characters\\male", StringComparison.OrdinalIgnoreCase) ||
-               texturePath.Contains("characters\\_female", StringComparison.OrdinalIgnoreCase) ||
-               texturePath.Contains("characters\\female", StringComparison.OrdinalIgnoreCase);
+        if (!normalized.Contains("characters\\", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // TES4 equipment embeds exposed skin with a race directory between `characters` and the
+        // gender/body name. Iron female cuirasses, for example, reference
+        // `characters\\imperial\\female\\UpperBodyFemale.dds`; requiring `characters\\female`
+        // left Orc/Argonian/Khajiit torsos on the Imperial texture even though their hands and face
+        // used the resolved RACE texture. Keep the broad FO3/NV root forms, and recognize the
+        // body-part file names used by the nested TES4 race layout.
+        var fileName = Path.GetFileNameWithoutExtension(normalized);
+        return normalized.Contains("characters\\_male", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("characters\\male", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("characters\\_female", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("characters\\female", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Contains("upperbody", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Contains("lowerbody", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Contains("hand", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Contains("foot", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

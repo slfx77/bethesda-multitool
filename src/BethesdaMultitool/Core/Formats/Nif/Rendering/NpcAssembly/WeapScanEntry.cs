@@ -25,4 +25,10 @@ internal sealed class WeapScanEntry
     public uint StrengthRequirement { get; init; }
     public byte HandGripAnim { get; init; }
     public string? EmbeddedWeaponNode { get; init; }
+
+    /// <summary>
+    ///     Game-native skeleton pose used for static attachment when the title does not ship
+    ///     Fallout-style <c>*Holster.kf</c> sequences (for example Oblivion's onehand/staff/bow idle KFs).
+    /// </summary>
+    public string? AttachmentPoseKfPath { get; init; }
 }

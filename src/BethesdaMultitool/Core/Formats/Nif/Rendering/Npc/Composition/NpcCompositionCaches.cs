@@ -41,5 +41,6 @@ internal sealed class NpcCompositionCaches
         string SkeletonNifPath,
         Dictionary<string, Matrix4x4> BodySkinningBones,
         Dictionary<string, Matrix4x4> PoseDeltas,
-        Dictionary<string, NifAnimationParser.AnimPoseOverride>? AnimationOverrides);
+        Dictionary<string, NifAnimationParser.AnimPoseOverride>? AnimationOverrides,
+        string? BodyPoseKfPath = null);
 }

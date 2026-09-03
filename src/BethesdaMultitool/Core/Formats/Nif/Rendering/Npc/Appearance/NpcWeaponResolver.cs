@@ -1,6 +1,8 @@
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -34,10 +36,13 @@ internal sealed class NpcWeaponResolver
     ];
 
     private readonly IReadOnlyDictionary<uint, CstyEntry> _combatStyles;
+    private readonly BethesdaGame _game;
 
     private readonly Dictionary<string, List<ArmaAddonScanEntry>> _handToHandAddonsByPath;
     private readonly Dictionary<string, IdleScanEntry> _idlesByEditorId;
     private readonly IReadOnlyDictionary<uint, List<uint>> _leveledItems;
+    private readonly IReadOnlyDictionary<uint, LeveledListScanEntry> _leveledItemRecords;
+    private static readonly Logger Log = Logger.Instance;
 
     private readonly IReadOnlyDictionary<uint, PackageScanEntry> _packages;
     private readonly IReadOnlyDictionary<uint, WeapScanEntry> _weapons;
@@ -48,12 +53,16 @@ internal sealed class NpcWeaponResolver
         IReadOnlyDictionary<uint, ArmaAddonScanEntry> armorAddons,
         IReadOnlyDictionary<uint, List<uint>> leveledItems,
         IReadOnlyDictionary<uint, IdleScanEntry> idles,
-        IReadOnlyDictionary<uint, CstyEntry>? combatStyles = null)
+        IReadOnlyDictionary<uint, CstyEntry>? combatStyles = null,
+        BethesdaGame game = BethesdaGame.Unknown,
+        IReadOnlyDictionary<uint, LeveledListScanEntry>? leveledItemRecords = null)
     {
         _packages = packages;
         _weapons = weapons;
         _leveledItems = leveledItems;
+        _leveledItemRecords = leveledItemRecords ?? new Dictionary<uint, LeveledListScanEntry>();
         _combatStyles = combatStyles ?? new Dictionary<uint, CstyEntry>();
+        _game = game;
         _idlesByEditorId = BuildIdleEditorLookup(idles);
         _handToHandAddonsByPath = BuildHandToHandAddonLookup(armorAddons);
     }
@@ -61,7 +70,8 @@ internal sealed class NpcWeaponResolver
     internal WeaponVisual Resolve(
         NpcScanEntry npc,
         List<InventoryItem>? inventoryItems,
-        RuntimeWeaponSelection? runtimeSelection = null)
+        RuntimeWeaponSelection? runtimeSelection = null,
+        ushort? previewPlayerLevel = null)
     {
         if (runtimeSelection is { HasRuntimeTarget: true })
         {
@@ -71,6 +81,7 @@ internal sealed class NpcWeaponResolver
                     WeaponVisualSourceKind.DmpRuntimeCurrent,
                     runtimeSelection.Value.ActorRefFormId,
                     npc.IsFemale,
+                    null,
                     out var runtimeVisual))
             {
                 return runtimeVisual;
@@ -98,6 +109,7 @@ internal sealed class NpcWeaponResolver
                     WeaponVisualSourceKind.EsmPackage,
                     null,
                     npc.IsFemale,
+                    null,
                     out var packageVisual))
             {
                 return packageVisual;
@@ -106,10 +118,14 @@ internal sealed class NpcWeaponResolver
             return BuildOmitted(WeaponVisualSourceKind.OmittedUnresolved);
         }
 
-        var bestWeapon = SelectBestWeapon(npc, inventoryItems);
+        var bestWeapon = SelectBestWeapon(
+            npc,
+            inventoryItems,
+            previewPlayerLevel,
+            out var leveledResolutionFailure);
         if (bestWeapon == null)
         {
-            return BuildOmitted(WeaponVisualSourceKind.OmittedUnresolved);
+            return leveledResolutionFailure ?? BuildOmitted(WeaponVisualSourceKind.OmittedUnresolved);
         }
 
         return bestWeapon;
@@ -136,16 +152,55 @@ internal sealed class NpcWeaponResolver
 
     private WeaponVisual? SelectBestWeapon(
         NpcScanEntry npc,
-        List<InventoryItem>? inventoryItems)
+        List<InventoryItem>? inventoryItems,
+        ushort? previewPlayerLevel,
+        out WeaponVisual? leveledResolutionFailure)
     {
+        leveledResolutionFailure = null;
         if (inventoryItems is not { Count: > 0 })
         {
             return null;
         }
 
-        var expandedInventory = ExpandInventory(inventoryItems);
+        var expandedInventory = ExpandInventory(
+            inventoryItems,
+            previewPlayerLevel,
+            out var leveledTrace);
+        if (!previewPlayerLevel.HasValue && leveledTrace != null)
+        {
+            leveledResolutionFailure = BuildOmitted(
+                WeaponVisualSourceKind.OmittedLeveledContextRequired,
+                leveledTrace);
+            Log.Debug(
+                "NPC {0} weapon LVLI 0x{1:X8} ({2}) omitted: explicit preview player level required; LVLD={3}, LVLF=0x{4:X2}",
+                npc.EditorId ?? npc.FullName ?? "?",
+                leveledTrace.ListFormId,
+                leveledTrace.ListEditorId ?? "?",
+                leveledTrace.ChanceNone,
+                leveledTrace.Flags);
+            return null;
+        }
+
         if (expandedInventory.Count == 0)
         {
+            if (leveledTrace != null)
+            {
+                var sourceKind = leveledTrace.PreviewPlayerLevel.HasValue
+                    ? WeaponVisualSourceKind.OmittedUnresolved
+                    : WeaponVisualSourceKind.OmittedLeveledContextRequired;
+                leveledResolutionFailure = BuildOmitted(sourceKind, leveledTrace);
+                Log.Debug(
+                    "NPC {0} weapon LVLI 0x{1:X8} ({2}) omitted: {3}; LVLD={4}, LVLF=0x{5:X2}",
+                    npc.EditorId ?? npc.FullName ?? "?",
+                    leveledTrace.ListFormId,
+                    leveledTrace.ListEditorId ?? "?",
+                    leveledTrace.PreviewPlayerLevel.HasValue
+                        ? $"no eligible weapon at preview player level {leveledTrace.PreviewPlayerLevel.Value}"
+                        : "explicit preview player level required",
+                    leveledTrace.ChanceNone,
+                    leveledTrace.Flags);
+            }
+
             return null;
         }
 
@@ -154,7 +209,7 @@ internal sealed class NpcWeaponResolver
         // applies a heavy penalty to weapons that require ammo (AmmoFormId set) since
         // NPC static inventories rarely include ammo entries — companions get ammo via
         // scripts and leveled lists at runtime.
-        var candidates = new List<(uint FormId, WeapScanEntry Weapon)>();
+        var candidates = new List<(uint FormId, WeapScanEntry Weapon, WeaponLeveledListTrace? Trace)>();
         foreach (var item in expandedInventory)
         {
             if (item.Count <= 0 ||
@@ -165,11 +220,20 @@ internal sealed class NpcWeaponResolver
                 continue;
             }
 
-            candidates.Add((item.ItemFormId, weapon));
+            candidates.Add((item.ItemFormId, weapon, item.LeveledListTrace));
         }
 
         if (candidates.Count == 0)
         {
+            if (leveledTrace != null)
+            {
+                leveledResolutionFailure = BuildOmitted(
+                    leveledTrace.PreviewPlayerLevel.HasValue
+                        ? WeaponVisualSourceKind.OmittedUnresolved
+                        : WeaponVisualSourceKind.OmittedLeveledContextRequired,
+                    leveledTrace);
+            }
+
             return null;
         }
 
@@ -190,13 +254,14 @@ internal sealed class NpcWeaponResolver
 
         WeaponVisual? bestVisual = null;
         var bestScore = float.MinValue;
-        foreach (var (formId, weapon) in pool)
+        foreach (var (formId, weapon, trace) in pool)
         {
             if (!TryBuildVisual(
                     formId,
                     WeaponVisualSourceKind.EsmBestWeapon,
                     null,
                     npc.IsFemale,
+                    trace,
                     out var visual))
             {
                 continue;
@@ -208,6 +273,21 @@ internal sealed class NpcWeaponResolver
                 bestScore = score;
                 bestVisual = visual;
             }
+        }
+
+        if (bestVisual?.LeveledListTrace is { } selectedTrace)
+        {
+            Log.Debug(
+                "NPC {0} weapon LVLI 0x{1:X8} ({2}): previewLevel={3}, selectedTier={4}, entry=0x{5:X8}, weapon=0x{6:X8}, LVLD={7}, LVLF=0x{8:X2}",
+                npc.EditorId ?? npc.FullName ?? "?",
+                selectedTrace.ListFormId,
+                selectedTrace.ListEditorId ?? "?",
+                selectedTrace.PreviewPlayerLevel,
+                selectedTrace.SelectedEntryLevel,
+                selectedTrace.SelectedEntryFormId,
+                bestVisual.WeaponFormId,
+                selectedTrace.ChanceNone,
+                selectedTrace.Flags);
         }
 
         return bestVisual;
@@ -223,16 +303,23 @@ internal sealed class NpcWeaponResolver
         return WeaponRestriction.None;
     }
 
-    private List<InventoryItem> ExpandInventory(List<InventoryItem> inventoryItems)
+    private List<ExpandedInventoryItem> ExpandInventory(
+        List<InventoryItem> inventoryItems,
+        ushort? previewPlayerLevel,
+        out WeaponLeveledListTrace? leveledTrace)
     {
-        var expanded = new List<InventoryItem>();
+        var expanded = new List<ExpandedInventoryItem>();
+        leveledTrace = null;
         foreach (var inventoryItem in inventoryItems)
         {
             ExpandInventoryItem(
                 inventoryItem.ItemFormId,
                 inventoryItem.Count,
                 0,
-                expanded);
+                previewPlayerLevel,
+                null,
+                expanded,
+                ref leveledTrace);
         }
 
         return expanded;
@@ -242,10 +329,78 @@ internal sealed class NpcWeaponResolver
         uint formId,
         int count,
         int depth,
-        List<InventoryItem> expanded)
+        ushort? previewPlayerLevel,
+        WeaponLeveledListTrace? inheritedTrace,
+        List<ExpandedInventoryItem> expanded,
+        ref WeaponLeveledListTrace? leveledTrace)
     {
         if (count <= 0 || depth > 5)
         {
+            return;
+        }
+
+        if (_game == BethesdaGame.Oblivion &&
+            _leveledItemRecords.TryGetValue(formId, out var leveledList))
+        {
+            var canYieldRenderableWeapon = CanYieldRenderableWeapon(formId, depth);
+            if (!previewPlayerLevel.HasValue)
+            {
+                if (canYieldRenderableWeapon)
+                {
+                    leveledTrace ??= BuildLeveledTrace(formId, leveledList, null, null);
+                }
+
+                return;
+            }
+
+            var eligibleEntries = leveledList.Entries
+                .Where(entry => entry.Level <= previewPlayerLevel.Value)
+                .ToList();
+            if (!leveledList.CalculateFromAllLevelsAtOrBelowPlayer && eligibleEntries.Count > 0)
+            {
+                var selectedLevel = eligibleEntries.Max(static entry => entry.Level);
+                eligibleEntries.RemoveAll(entry => entry.Level != selectedLevel);
+            }
+
+            if (eligibleEntries.Count == 0)
+            {
+                if (canYieldRenderableWeapon)
+                {
+                    leveledTrace ??= BuildLeveledTrace(
+                        formId,
+                        leveledList,
+                        previewPlayerLevel,
+                        null);
+                }
+
+                return;
+            }
+
+            foreach (var entry in eligibleEntries)
+            {
+                var entryCanYieldRenderableWeapon = CanYieldRenderableWeapon(entry.FormId, depth + 1);
+                var entryTrace = entryCanYieldRenderableWeapon
+                    ? inheritedTrace ?? BuildLeveledTrace(
+                        formId,
+                        leveledList,
+                        previewPlayerLevel,
+                        entry)
+                    : null;
+                if (entryTrace != null)
+                {
+                    leveledTrace ??= entryTrace;
+                }
+
+                ExpandInventoryItem(
+                    entry.FormId,
+                    MultiplyCounts(count, entry.Count),
+                    depth + 1,
+                    previewPlayerLevel,
+                    entryTrace,
+                    expanded,
+                    ref leveledTrace);
+            }
+
             return;
         }
 
@@ -253,13 +408,76 @@ internal sealed class NpcWeaponResolver
         {
             foreach (var entryFormId in entries)
             {
-                ExpandInventoryItem(entryFormId, count, depth + 1, expanded);
+                ExpandInventoryItem(
+                    entryFormId,
+                    count,
+                    depth + 1,
+                    previewPlayerLevel,
+                    inheritedTrace,
+                    expanded,
+                    ref leveledTrace);
             }
 
             return;
         }
 
-        expanded.Add(new InventoryItem(formId, count));
+        expanded.Add(new ExpandedInventoryItem(formId, count, inheritedTrace));
+    }
+
+    /// <summary>
+    ///     Determines whether a leveled-list branch can ever produce a visible combat weapon.
+    ///     This is deliberately independent of preview level: when no level was supplied, it lets
+    ///     omission telemetry identify the relevant weapon LVLI instead of whichever clothing or
+    ///     armor list happened to appear first in CNTO order.
+    /// </summary>
+    private bool CanYieldRenderableWeapon(uint formId, int depth, HashSet<uint>? visited = null)
+    {
+        if (depth > 5)
+        {
+            return false;
+        }
+
+        if (_weapons.TryGetValue(formId, out var weapon))
+        {
+            return IsRenderableCombatWeapon(weapon) &&
+                   !string.IsNullOrWhiteSpace(weapon.ModelPath);
+        }
+
+        visited ??= [];
+        if (!visited.Add(formId))
+        {
+            return false;
+        }
+
+        var result = _leveledItemRecords.TryGetValue(formId, out var leveledList)
+            ? leveledList.Entries.Any(entry =>
+                CanYieldRenderableWeapon(entry.FormId, depth + 1, visited))
+            : _leveledItems.TryGetValue(formId, out var entries) &&
+              entries.Any(entry => CanYieldRenderableWeapon(entry, depth + 1, visited));
+        visited.Remove(formId);
+        return result;
+    }
+
+    private static WeaponLeveledListTrace BuildLeveledTrace(
+        uint listFormId,
+        LeveledListScanEntry leveledList,
+        ushort? previewPlayerLevel,
+        LeveledEntry? selectedEntry)
+    {
+        return new WeaponLeveledListTrace(
+            listFormId,
+            leveledList.EditorId,
+            leveledList.ChanceNone,
+            leveledList.Flags,
+            previewPlayerLevel,
+            selectedEntry?.Level,
+            selectedEntry?.FormId,
+            selectedEntry?.Count);
+    }
+
+    private static int MultiplyCounts(int parentCount, ushort entryCount)
+    {
+        return (int)Math.Min((long)parentCount * entryCount, int.MaxValue);
     }
 
     private bool TryBuildVisual(
@@ -267,6 +485,7 @@ internal sealed class NpcWeaponResolver
         WeaponVisualSourceKind sourceKind,
         uint? runtimeActorFormId,
         bool isFemale,
+        WeaponLeveledListTrace? leveledListTrace,
         out WeaponVisual weaponVisual)
     {
         weaponVisual = BuildOmitted(WeaponVisualSourceKind.OmittedUnresolved);
@@ -310,6 +529,7 @@ internal sealed class NpcWeaponResolver
             AttachmentMode = attachmentMode,
             MeshPath = meshPath,
             HolsterProfileKey = holsterProfileKey,
+            AttachmentPoseKfPath = weapon.AttachmentPoseKfPath,
             RuntimeActorFormId = runtimeActorFormId,
             AmmoFormId = weapon.AmmoFormId,
             IsEmbeddedWeapon = (weapon.Flags & WeaponEmbeddedFlag) != 0,
@@ -317,7 +537,8 @@ internal sealed class NpcWeaponResolver
             EquippedPoseKfPath = equippedPoseKfPath,
             PreferEquippedForearmMount = preferEquippedForearmMount,
             RenderStandaloneMesh = !suppressStandaloneMesh,
-            AddonMeshes = addonMeshes
+            AddonMeshes = addonMeshes,
+            LeveledListTrace = leveledListTrace
         };
         return true;
     }
@@ -589,7 +810,9 @@ internal sealed class NpcWeaponResolver
                normalizedModelPath.Contains("ballisticfist", StringComparison.Ordinal);
     }
 
-    private static WeaponVisual BuildOmitted(WeaponVisualSourceKind sourceKind)
+    private static WeaponVisual BuildOmitted(
+        WeaponVisualSourceKind sourceKind,
+        WeaponLeveledListTrace? leveledListTrace = null)
     {
         return new WeaponVisual
         {
@@ -597,7 +820,8 @@ internal sealed class NpcWeaponResolver
             IsVisible = false,
             AttachmentMode = WeaponAttachmentMode.HolsterPose,
             MeshPath = null,
-            HolsterProfileKey = null
+            HolsterProfileKey = null,
+            LeveledListTrace = leveledListTrace
         };
     }
 
@@ -649,4 +873,9 @@ internal sealed class NpcWeaponResolver
         bool HasRuntimeTarget,
         uint? ActorRefFormId,
         uint? WeaponFormId);
+
+    private readonly record struct ExpandedInventoryItem(
+        uint ItemFormId,
+        int Count,
+        WeaponLeveledListTrace? LeveledListTrace);
 }

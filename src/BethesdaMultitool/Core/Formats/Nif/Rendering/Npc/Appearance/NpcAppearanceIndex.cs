@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -9,6 +10,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 /// </summary>
 internal sealed class NpcAppearanceIndex
 {
+    public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
+
     public Dictionary<uint, NpcScanEntry> Npcs { get; } =
         new();
 
@@ -51,7 +54,15 @@ internal sealed class NpcAppearanceIndex
     public Dictionary<uint, List<uint>> LeveledItems { get; } =
         new();
 
+    /// <summary>Full LVLI metadata used when an engine-family-specific preview context is available.</summary>
+    public Dictionary<uint, LeveledListScanEntry> LeveledItemRecords { get; } =
+        new();
+
     public Dictionary<uint, List<uint>> LeveledNpcs { get; } =
+        new();
+
+    /// <summary>Full LVLN metadata retained alongside the legacy flattened template lookup.</summary>
+    public Dictionary<uint, LeveledListScanEntry> LeveledNpcRecords { get; } =
         new();
 
     public Dictionary<uint, CstyEntry> CombatStyles { get; } =

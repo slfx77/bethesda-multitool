@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 /// <summary>
@@ -6,6 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 /// </summary>
 internal sealed class NpcAppearance
 {
+    public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
     public uint NpcFormId { get; init; }
     public string? EditorId { get; init; }
     public string? FullName { get; init; }
@@ -64,12 +67,14 @@ internal sealed class NpcAppearance
     public string? LowerBodyNifPath { get; init; }
     public string? HandNifPath { get; init; }
     public string? FootNifPath { get; init; }
+    public string? TailNifPath { get; init; }
     public string? LeftHandNifPath { get; init; }
     public string? RightHandNifPath { get; init; }
     public string? BodyTexturePath { get; init; }
     public string? LowerBodyTexturePath { get; init; }
     public string? HandTexturePath { get; init; }
     public string? FootTexturePath { get; init; }
+    public string? TailTexturePath { get; init; }
     public string? SkeletonNifPath { get; init; }
 
     // Body EGT paths (for body/hand skin tinting via FaceGen texture morphs)
@@ -83,6 +88,7 @@ internal sealed class NpcAppearance
     {
         return new NpcAppearance
         {
+            Game = Game,
             NpcFormId = NpcFormId,
             EditorId = EditorId,
             FullName = FullName,
@@ -117,12 +123,14 @@ internal sealed class NpcAppearance
             LowerBodyNifPath = LowerBodyNifPath,
             HandNifPath = HandNifPath,
             FootNifPath = FootNifPath,
+            TailNifPath = TailNifPath,
             LeftHandNifPath = LeftHandNifPath,
             RightHandNifPath = RightHandNifPath,
             BodyTexturePath = BodyTexturePath,
             LowerBodyTexturePath = LowerBodyTexturePath,
             HandTexturePath = HandTexturePath,
             FootTexturePath = FootTexturePath,
+            TailTexturePath = TailTexturePath,
             SkeletonNifPath = SkeletonNifPath,
             BodyEgtPath = BodyEgtPath,
             LeftHandEgtPath = LeftHandEgtPath,

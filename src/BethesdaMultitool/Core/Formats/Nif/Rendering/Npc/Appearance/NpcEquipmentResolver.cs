@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -9,18 +10,21 @@ internal sealed class NpcEquipmentResolver
     private readonly IReadOnlyDictionary<uint, ArmaAddonScanEntry> _armorAddons;
     private readonly IReadOnlyDictionary<uint, ArmoScanEntry> _armors;
     private readonly IReadOnlyDictionary<uint, List<uint>> _formLists;
+    private readonly BethesdaGame _game;
     private readonly IReadOnlyDictionary<uint, List<uint>> _leveledItems;
 
     internal NpcEquipmentResolver(
         IReadOnlyDictionary<uint, ArmoScanEntry> armors,
         IReadOnlyDictionary<uint, ArmaAddonScanEntry> armorAddons,
         IReadOnlyDictionary<uint, List<uint>> formLists,
-        IReadOnlyDictionary<uint, List<uint>> leveledItems)
+        IReadOnlyDictionary<uint, List<uint>> leveledItems,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         _armors = armors;
         _armorAddons = armorAddons;
         _formLists = formLists;
         _leveledItems = leveledItems;
+        _game = game;
     }
 
     internal List<EquippedItem>? Resolve(List<InventoryItem>? inventoryItems, bool isFemale)
@@ -176,7 +180,7 @@ internal sealed class NpcEquipmentResolver
         return false;
     }
 
-    private static void AddEquippedItem(
+    private void AddEquippedItem(
         string? meshPath,
         uint bipedFlags,
         bool isPowerArmor,
@@ -198,13 +202,20 @@ internal sealed class NpcEquipmentResolver
         {
             BipedFlags = bipedFlags,
             IsPowerArmor = isPowerArmor,
-            AttachmentMode = ResolveAttachmentMode(bipedFlags),
+            AttachmentMode = ResolveAttachmentMode(bipedFlags, _game),
             MeshPath = normalizedPath
         });
     }
 
-    private static EquipmentAttachmentMode ResolveAttachmentMode(uint bipedFlags)
+    private static EquipmentAttachmentMode ResolveAttachmentMode(uint bipedFlags, BethesdaGame game)
     {
+        // Oblivion BMDT bit 13 is the shield slot. Shields are rigid world models;
+        // skinning them as ordinary body armor leaves their vertices at model origin (the feet).
+        if (game == BethesdaGame.Oblivion && (bipedFlags & 0x2000) != 0)
+        {
+            return EquipmentAttachmentMode.LeftWristRigid;
+        }
+
         // Only classify as wrist-rigid when the item covers exclusively hand/wrist
         // slots. Items that also cover body slots (chest, legs, etc.) get None.
         const uint handSlotsMask = 0x08 | 0x10 | 0x40; // left hand, right hand, Pip-Boy

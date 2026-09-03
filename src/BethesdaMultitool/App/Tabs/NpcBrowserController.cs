@@ -88,10 +88,35 @@ internal sealed class NpcBrowserController
         SelectedFormId = null;
     }
 
-    /// <summary>Builds NPC render options from the UI toggles (note: each flag is inverted to a "head/no-X" option).</summary>
-    public static NpcRenderOptions BuildRenderOptions(bool fullBody, bool armor, bool weapon, bool idlePose)
+    /// <summary>
+    ///     Builds NPC render options from the UI controls (the display flags are inverted to the
+    ///     renderer's "head/no-X" options). An empty NumberBox produces an explicit no-context null.
+    /// </summary>
+    public static NpcRenderOptions BuildRenderOptions(
+        bool fullBody,
+        bool armor,
+        bool weapon,
+        bool idlePose,
+        double previewPlayerLevel = double.NaN)
     {
-        return new NpcRenderOptions(!fullBody, !armor, !weapon, !idlePose);
+        return new NpcRenderOptions(
+            !fullBody,
+            !armor,
+            !weapon,
+            !idlePose,
+            NormalizePreviewPlayerLevel(previewPlayerLevel));
+    }
+
+    internal static ushort? NormalizePreviewPlayerLevel(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return null;
+        }
+
+        return (ushort)Math.Round(
+            Math.Clamp(value, 1d, ushort.MaxValue),
+            MidpointRounding.AwayFromZero);
     }
 
     /// <summary>Clamps a requested sprite render size to the supported 64-4096 px range.</summary>

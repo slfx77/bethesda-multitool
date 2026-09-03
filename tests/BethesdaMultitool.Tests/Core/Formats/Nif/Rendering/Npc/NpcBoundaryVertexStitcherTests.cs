@@ -43,6 +43,7 @@ public sealed class NpcBoundaryVertexStitcherTests
         var emitted = Assert.Single(scene.MeshParts).Submesh;
         Assert.NotSame(sourceSubmesh, emitted);
         Assert.Equal(@"meshes\actors\character\characterassets\body.nif", emitted.SourceNifPath);
+        Assert.NotNull(emitted.BindPosePositions);
         Assert.Equal([11f, 22f, 33f], emitted.BindPosePositions);
         Assert.Equal([1f, 2f, 3f], sourceSubmesh.Positions);
         Assert.Null(sourceSubmesh.BindPosePositions);

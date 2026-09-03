@@ -10,5 +10,6 @@ internal enum WeaponVisualSourceKind
     EsmBestWeapon,
     DmpRuntimeCurrent,
     OmittedUnequipped,
+    OmittedLeveledContextRequired,
     OmittedUnresolved
 }

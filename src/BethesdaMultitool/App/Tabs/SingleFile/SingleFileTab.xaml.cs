@@ -188,11 +188,43 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     {
         var previous = SubTabOf(SubTabView.SelectedItem as Microsoft.UI.Xaml.Controls.TabViewItem)
                        ?? AnalysisSubTab.Summary;
+        var visibleTabs = AnalysisSubTabPolicy.VisibleFor(fileType);
+        var visibleItems = visibleTabs.Select(SubTabItem).ToArray();
+        var selectedItem = SubTabView.SelectedItem as Microsoft.UI.Xaml.Controls.TabViewItem;
+        var retainSelected = selectedItem is not null &&
+                             visibleItems.Contains(selectedItem) &&
+                             SubTabView.TabItems.Contains(selectedItem);
 
-        SubTabView.TabItems.Clear();
-        foreach (var tab in AnalysisSubTabPolicy.VisibleFor(fileType))
+        if (retainSelected)
         {
-            SubTabView.TabItems.Add(SubTabItem(tab));
+            // Keep the selected content mounted while rebuilding the strip in canonical policy
+            // order. Clearing and immediately re-adding the selected item can deliver a deferred
+            // Unloaded without a compensating Loaded; the native SwapChainPanel then remains
+            // logically selected but asleep until the user toggles tabs.
+            for (var i = SubTabView.TabItems.Count - 1; i >= 0; i--)
+            {
+                if (!ReferenceEquals(SubTabView.TabItems[i], selectedItem))
+                {
+                    SubTabView.TabItems.RemoveAt(i);
+                }
+            }
+
+            for (var i = 0; i < visibleItems.Length; i++)
+            {
+                var item = visibleItems[i];
+                if (ReferenceEquals(item, selectedItem)) continue;
+                SubTabView.TabItems.Insert(i, item);
+            }
+        }
+        else
+        {
+            // The selected item is going away (or there is no selection), so no live subtree can
+            // be retained. Rebuild directly to guarantee the policy's canonical order.
+            SubTabView.TabItems.Clear();
+            foreach (var item in visibleItems)
+            {
+                SubTabView.TabItems.Add(item);
+            }
         }
 
         TrySelectSubTab(AnalysisSubTabPolicy.Fallback(previous, fileType));
@@ -333,6 +365,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         // populate afterward (HasEsmRecords flips true mid-analysis, well before the parse finishes).
         var targetTab = ResolveAutoOpenTab();
         if (targetTab is { } requested) TrySelectSubTab(requested);
+        if (!string.IsNullOrWhiteSpace(Program.AutoOpenActor) && targetTab != AnalysisSubTab.Actors)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "[AutoOpen] actor selector='{0}' outcome=ignored detail=--actor requires --view actors.",
+                Program.AutoOpenActor);
+        }
 
         // Wait for the Analyze button to enable (the dependency check + file setup can lag well past a
         // fixed delay) before kicking analysis — the auto-open below depends on it actually running.
@@ -364,8 +402,50 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     {
         var view = Program.AutoOpenView?.Trim().ToLowerInvariant() ?? "";
         var log = BethesdaMultitool.Core.Diagnostics.Logger.Instance;
-        log.Info("[AutoOpen] view={0} ws={1} layer={2} — waiting for analysis + map populate…",
-            view, Program.AutoOpenWorldspace ?? "(densest)", Program.AutoOpenLayer ?? "(default)");
+        log.Info("[AutoOpen] view={0} ws={1} layer={2} actor={3} — waiting for analysis + requested view…",
+            view,
+            Program.AutoOpenWorldspace ?? "(densest)",
+            Program.AutoOpenLayer ?? "(default)",
+            Program.AutoOpenActor ?? "(none)");
+
+        if (targetTab == AnalysisSubTab.Actors)
+        {
+            var actorSelector = Program.AutoOpenActor?.Trim();
+            if (string.IsNullOrEmpty(actorSelector))
+            {
+                return; // Preserve interactive behavior: opening Actors never picks an arbitrary row.
+            }
+
+            // For a standalone plugin whose Actors tab was selected at analysis start, the browser
+            // is populated from the structural record index before the unrelated semantic parse.
+            // Join that early publication as soon as Parsing begins; Idle remains the fallback for
+            // DMPs and for a failed/unsupported structural population.
+            var actorsReadyOrAnalysisFinished = await WaitForAsync(
+                () => (_session.NpcBrowserPopulated &&
+                       _pipelinePhase is AnalysisPipelinePhase.Parsing or AnalysisPipelinePhase.LoadingMap)
+                      || _pipelinePhase == AnalysisPipelinePhase.Idle,
+                timeoutMs: 120_000);
+            if (!actorsReadyOrAnalysisFinished || !_session.HasEsmRecords)
+            {
+                log.Warn(
+                    "[AutoOpen] actor selector='{0}' outcome=failed detail=analysis did not complete with ESM records.",
+                    actorSelector);
+                return;
+            }
+
+            await _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync);
+            if (!_session.NpcBrowserPopulated || _npcBrowserService is null)
+            {
+                log.Warn(
+                    "[AutoOpen] actor selector='{0}' outcome=failed detail=NPC browser population did not succeed.",
+                    actorSelector);
+                return;
+            }
+
+            TrySelectSubTab(AnalysisSubTab.Actors);
+            SelectAutoOpenActor(actorSelector, log);
+            return;
+        }
 
         if (targetTab != AnalysisSubTab.World)
         {
@@ -663,7 +743,13 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                     _analysisResult, isEsmFile: fileType == AnalysisFileType.EsmFile));
             }
 
-            _session.Open(filePath, _analysisResult, fileType, openAccessor: fileType == AnalysisFileType.SaveFile);
+            // Keep standalone plugins mapped after analysis so follow-on views can reuse the
+            // retained record descriptors without copying and rescanning the whole ESM/ESP.
+            _session.Open(
+                filePath,
+                _analysisResult,
+                fileType,
+                openAccessor: fileType is AnalysisFileType.SaveFile or AnalysisFileType.EsmFile);
 
             // The type is settled now, so drop the sub-tabs that cannot apply to it.
             ConfigureSubTabsForFileType(fileType);
@@ -679,6 +765,32 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 _session.DecodedForms = _pendingDecodedForms;
                 _pendingSaveData = null;
                 _pendingDecodedForms = null;
+            }
+
+            // The Actors browser needs only the immutable structural MainRecords descriptors and
+            // the session mapping. Populate it now when it was the selected destination, before
+            // semantic parsing consumes unrelated record families. Awaiting this single-flight is
+            // also the lifetime guard: AdoptSemanticSession replaces the session accessor, so the
+            // structural reader must have finished with that accessor before semantic adoption.
+            if (fileType == AnalysisFileType.EsmFile &&
+                ReferenceEquals(selectedTabForAutoPopulate, NpcBrowserTab))
+            {
+                // Structural analysis is complete and this population belongs to the parse stage.
+                // Publishing that boundary before the awaited build lets --actor join the exact
+                // list immediately; otherwise the waiter still sees Scanning and needlessly waits
+                // for the unrelated semantic parse to start.
+                SetPipelinePhase(AnalysisPipelinePhase.Parsing);
+                StatusTextBlock.Text = "Preparing actors from analyzed record index...";
+                if (profile == null)
+                {
+                    await _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync);
+                }
+                else
+                {
+                    await profile.TimeAsync(
+                        "Structural actor population",
+                        () => _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync));
+                }
             }
 
             // Run semantic parse BEFORE loading HexViewer

@@ -72,7 +72,7 @@ internal static class NpcSkeletonLoader
         (byte[] Data, NifInfo Info)? skelRaw,
         string? animOverride = null)
     {
-        var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+        var skelDir = ResolveSkeletonDirectory(skeletonNifPath);
 
         // Custom animation override: resolve relative to skeleton directory
         if (animOverride != null)
@@ -247,8 +247,15 @@ internal static class NpcSkeletonLoader
             return @"meshes\" + normalizedPath;
         }
 
-        var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+        var skelDir = ResolveSkeletonDirectory(skeletonNifPath);
         return skelDir + normalizedPath;
+    }
+
+    internal static string ResolveSkeletonDirectory(string skeletonNifPath)
+    {
+        var normalizedPath = skeletonNifPath.Replace('/', '\\');
+        var separatorIndex = normalizedPath.LastIndexOf('\\');
+        return separatorIndex >= 0 ? normalizedPath[..(separatorIndex + 1)] : string.Empty;
     }
 
     internal static string? TryLoadSequenceParentBoneName(
@@ -261,7 +268,7 @@ internal static class NpcSkeletonLoader
             return null;
         }
 
-        var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+        var skelDir = ResolveSkeletonDirectory(skeletonNifPath);
         var kfPath = skelDir + kfRelPath;
         var raw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
 

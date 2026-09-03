@@ -1,6 +1,9 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
@@ -27,25 +30,66 @@ internal sealed class NpcAppearanceResolver
     /// <summary>Scans an ESM and builds a resolver over its NPC/creature/race/weapon records.</summary>
     public static NpcAppearanceResolver Build(byte[] esmData, bool bigEndian)
     {
-        var index = NpcAppearanceIndexBuilder.Build(esmData, bigEndian);
+        return Build(esmData, bigEndian, timingSink: null, cancellationToken: default);
+    }
+
+    internal static NpcAppearanceResolver Build(
+        byte[] esmData,
+        bool bigEndian,
+        Action<NpcAppearanceIndexBuildTiming>? timingSink,
+        CancellationToken cancellationToken)
+    {
+        var index = NpcAppearanceIndexBuilder.Build(
+            esmData,
+            bigEndian,
+            timingSink,
+            cancellationToken);
+        return new NpcAppearanceResolver(index);
+    }
+
+    /// <summary>
+    ///     Builds from the descriptor index and memory mapping retained by the ESM analysis session,
+    ///     avoiding a second whole-file read and flat record traversal when the Actors tab opens.
+    /// </summary>
+    internal static NpcAppearanceResolver Build(
+        IMemoryAccessor esmAccessor,
+        long esmLength,
+        IReadOnlyList<DetectedMainRecord> analyzedRecords,
+        bool bigEndian,
+        BethesdaGame game,
+        Action<NpcAppearanceIndexBuildTiming>? timingSink = null,
+        CancellationToken cancellationToken = default)
+    {
+        var index = NpcAppearanceIndexBuilder.Build(
+            esmAccessor,
+            esmLength,
+            analyzedRecords,
+            bigEndian,
+            game,
+            timingSink,
+            cancellationToken);
         return new NpcAppearanceResolver(index);
     }
 
     /// <summary>Resolves the head-only appearance of a single NPC by FormID, or <c>null</c> if not found.</summary>
-    public NpcAppearance? ResolveHeadOnly(uint formId, string pluginName)
+    public NpcAppearance? ResolveHeadOnly(
+        uint formId,
+        string pluginName,
+        ushort? previewPlayerLevel = null)
     {
         if (!_index.Npcs.TryGetValue(formId, out var npc))
         {
             return null;
         }
 
-        return _appearanceFactory.Build(formId, npc, pluginName);
+        return _appearanceFactory.Build(formId, npc, pluginName, previewPlayerLevel);
     }
 
     /// <summary>Resolves the head-only appearance of every NPC, optionally skipping unnamed ones.</summary>
     public List<NpcAppearance> ResolveAllHeadOnly(
         string pluginName,
-        bool filterNamed = false)
+        bool filterNamed = false,
+        ushort? previewPlayerLevel = null)
     {
         var results = new List<NpcAppearance>();
         foreach (var (formId, npc) in _index.Npcs)
@@ -55,7 +99,7 @@ internal sealed class NpcAppearanceResolver
                 continue;
             }
 
-            results.Add(_appearanceFactory.Build(formId, npc, pluginName));
+            results.Add(_appearanceFactory.Build(formId, npc, pluginName, previewPlayerLevel));
         }
 
         return results;
@@ -69,13 +113,15 @@ internal sealed class NpcAppearanceResolver
         NpcRecord npcRecord,
         string pluginName,
         NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null,
-        NpcEquipmentResolver.RuntimeEquipmentSelection? runtimeEquipmentSelection = null)
+        NpcEquipmentResolver.RuntimeEquipmentSelection? runtimeEquipmentSelection = null,
+        ushort? previewPlayerLevel = null)
     {
         return _appearanceFactory.BuildFromDmpRecord(
             npcRecord,
             pluginName,
             runtimeWeaponSelection,
-            runtimeEquipmentSelection);
+            runtimeEquipmentSelection,
+            previewPlayerLevel);
     }
 
     public IReadOnlyDictionary<uint, NpcScanEntry> GetAllNpcs()
