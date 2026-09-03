@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Games;
@@ -10,6 +11,37 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Viewer;
 
 public sealed class BethesdaViewerSceneTests
 {
+    [Fact]
+    public void ModelFamilyAnimations_OwnsAHandleFreeMetadataSnapshot()
+    {
+        var animations = new List<NifModelFamilyAnimationAsset>
+        {
+            new(@"meshes\actors\idle.kf", "idle.kf", 42, @"D:\Data\Actors.bsa")
+        };
+        var source = new NifModelFamilyAnimationCatalog(
+            @"meshes\actors\body.nif",
+            NifModelFamilyAnimationResolutionStatus.Resolved,
+            @"meshes\actors",
+            new NifModelFamilySkeletonAsset(
+                @"meshes\actors\skeleton.nif",
+                99,
+                @"D:\Data\Actors.bsa"),
+            animations,
+            false,
+            null);
+        var scene = new BethesdaViewerScene("body.nif", BethesdaViewerScenePurpose.RawNif);
+
+        scene.SetModelFamilyAnimations(source);
+        animations.Clear();
+
+        var snapshot = Assert.IsType<NifModelFamilyAnimationCatalog>(scene.ModelFamilyAnimations);
+        Assert.NotSame(source, snapshot);
+        Assert.NotSame(source.Skeleton, snapshot.Skeleton);
+        var animation = Assert.Single(snapshot.Animations);
+        Assert.Equal(@"meshes\actors\idle.kf", animation.VirtualPath);
+        Assert.NotSame(source.Animations, snapshot.Animations);
+    }
+
     [Fact]
     public void GlbBridge_RoundTripPreservesIndicesHierarchySkinAndNativeMaterialObject()
     {

@@ -51,6 +51,23 @@ public sealed class BethesdaViewerAnimationClockPolicyTests
     }
 
     [Fact]
+    public void Resolve_PingPongUsesTheFullForwardAndBackwardDisplayHorizon()
+    {
+        var clip = Clip(
+            loops: true,
+            Track(frequency: 0.5f, phase: 0f)) with
+        {
+            PingPongs = true
+        };
+
+        var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
+
+        Assert.Equal(4f, window.RawOriginSeconds);
+        Assert.Equal(16f, window.PresentationDurationSeconds);
+        Assert.Equal(9f, BethesdaViewerAnimationClockPolicy.GetDisplayTime(clip, window, 13f));
+    }
+
+    [Fact]
     public void Resolve_ZeroFrequencyNodeClockIsDormant()
     {
         var clip = Clip(loops: true, Track(frequency: 0f, phase: 3f));

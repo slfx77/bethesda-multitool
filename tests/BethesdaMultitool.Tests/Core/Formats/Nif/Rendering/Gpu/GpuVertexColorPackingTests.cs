@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
@@ -66,15 +67,31 @@ public sealed class GpuVertexColorPackingTests
     public void The_vertex_is_sixty_bytes_with_colour_at_offset_thirty_two()
     {
         // The input layout hard-codes these offsets (GpuMeshBufferFactory12.InputElements). If the
-        // struct and the layout ever disagree, the GPU reads each attribute from the wrong place and
-        // the failure is visual, not an exception — so pin both halves of the contract here.
+        // struct, shared dynamic-stream stride, and layout ever disagree, the GPU reads each
+        // attribute from the wrong place and the failure is visual, not an exception — so pin all
+        // three halves of the contract here.
         Assert.Equal(60, Marshal.SizeOf<GpuMeshUploader.GpuVertex>());
+        Assert.Equal(
+            Marshal.SizeOf<GpuMeshUploader.GpuVertex>(),
+            GpuMeshUploader.GpuVertexSize);
         Assert.Equal(32, (int)Marshal.OffsetOf<GpuMeshUploader.GpuVertex>(
             nameof(GpuMeshUploader.GpuVertex.VertexColorRgba)));
         Assert.Equal(36, (int)Marshal.OffsetOf<GpuMeshUploader.GpuVertex>(
             nameof(GpuMeshUploader.GpuVertex.Tangent)));
         Assert.Equal(48, (int)Marshal.OffsetOf<GpuMeshUploader.GpuVertex>(
             nameof(GpuMeshUploader.GpuVertex.Bitangent)));
+
+        var animatedPose = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "Viewer",
+            "BethesdaViewerAnimatedPose12.cs");
+        Assert.Contains(
+            "StrideInBytes = (uint)GpuMeshUploader.GpuVertexSize",
+            animatedPose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "part.WorkingVertices.Length * GpuMeshUploader.GpuVertexSize",
+            animatedPose,
+            StringComparison.Ordinal);
     }
 
     [Fact]

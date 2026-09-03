@@ -1,8 +1,10 @@
 #if WINDOWS_GUI
+using System.Diagnostics;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -80,6 +82,15 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private readonly HashSet<ID3D12PipelineState> _ownedMirrorPsos =
         new(ReferenceEqualityComparer.Instance);
 
+    // DXBC precompilation removes FXC from startup, but CreateGraphicsPipelineState can still ask
+    // the display driver to compile/link a hardware pipeline. Keep that cost separate from shader
+    // lookup and scene materialization: native-viewer captures have shown multi-minute gaps after
+    // the final shipped-DXBC hit, while ordinary profiler starts complete this same factory in a
+    // few milliseconds. These counters also cover lazy blend/grass PSOs created after startup.
+    private int _psoCreationCount;
+    private double _psoCreationMilliseconds;
+    private double _maxPsoCreationMilliseconds;
+
     private bool _disposed;
 
     public ReferencePipelineFactory12(
@@ -87,6 +98,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         GpuRootSignature12 rootSignature,
         BethesdaGame game)
     {
+        var constructionStarted = Stopwatch.GetTimestamp();
+        var constructionSucceeded = false;
         _gpu = gpu;
         _rootSignature = rootSignature;
         try
@@ -103,6 +116,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         var instancedVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1");
         var psBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1");
         _sharedRoute = new ShaderRoutePsos(blendedVsBytecode, psBytecode);
+        var basePsoGroup = BeginPsoGroup("base-opaque", game);
         // Standalone Bethesda scenes carry one authored world transform per mesh part rather than
         // thousands of repeated placements. Reuse the established per-draw vertex ABI for their
         // opaque path instead of manufacturing one-element instance buffers in the viewer.
@@ -138,16 +152,21 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             blendAttachment: null, depthWriteEnabled: true, decal: true);
         OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true,
             blendAttachment: null, depthWriteEnabled: true, decal: true);
+        CompletePsoGroup("base-opaque", game, basePsoGroup);
 
         if (FalloutModernStandardRequested)
         {
+            var specializationPsoGroup = BeginPsoGroup("fallout-specializations", game);
             TryCreateModernStandardOpaquePipelines();
             TryCreateDirectModernStandardOpaquePipelines();
+            CompletePsoGroup("fallout-specializations", game, specializationPsoGroup);
         }
         if (StarfieldDiffuseLitRequested)
         {
+            var specializationPsoGroup = BeginPsoGroup("starfield-specializations", game);
             TryCreateStarfieldDiffuseLitPipelines();
             TryCreateDirectStarfieldDiffuseLitPipelines();
+            CompletePsoGroup("starfield-specializations", game, specializationPsoGroup);
         }
 
         BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
@@ -174,6 +193,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         {
             var a2cPsBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
                 new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
+            var alphaToCoveragePsoGroup = BeginPsoGroup("alpha-to-coverage", game);
             DirectOpaqueBackA2CPso = CreatePipelineState(
                 blendedVsBytecode, a2cPsBytecode, doubleSided: false,
                 blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
@@ -206,6 +226,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
                 blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
             OpaqueDoubleA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: true,
                 blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
+            CompletePsoGroup("alpha-to-coverage", game, alphaToCoveragePsoGroup);
         }
         else
         {
@@ -229,12 +250,15 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         var shadowVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1",
             new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1"));
         var shadowPsBytecode = CompileEmbeddedShader("shadow.frag.hlsl", "main", "ps_5_1");
+        var shadowPsoGroup = BeginPsoGroup("shadow", game);
         ShadowOpaquePso = CreateShadowPipelineState(shadowVsBytecode, psBytecode: null);
         ShadowAlphaTestPso = CreateShadowPipelineState(shadowVsBytecode, shadowPsBytecode);
+        CompletePsoGroup("shadow", game, shadowPsoGroup);
 
         // Mirror-winding twins for the water-reflection color replay: only the BACK-CULLED opaque
         // PSOs need one (a mirrored viewProj flips screen-space winding); CullMode.None PSOs are
         // winding-agnostic and map to themselves. Decals are excluded from the replay entirely.
+        var mirrorPsoGroup = BeginPsoGroup("mirror", game);
         var mirrorBack = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false,
             blendAttachment: null, depthWriteEnabled: true, mirrorWinding: true);
         _ownedMirrorPsos.Add(mirrorBack);
@@ -282,15 +306,39 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             _ownedMirrorPsos.Add(mirrorA2C);
             _mirrorPsoMap[OpaqueBackA2CPso] = mirrorA2C;
         }
+        CompletePsoGroup("mirror", game, mirrorPsoGroup);
 
         _constructionTransaction!.Commit();
         _constructionTransaction = null;
+        constructionSucceeded = true;
         }
         catch
         {
             _constructionTransaction?.Dispose();
             _constructionTransaction = null;
             throw;
+        }
+        finally
+        {
+            var totalMilliseconds = Stopwatch.GetElapsedTime(constructionStarted).TotalMilliseconds;
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
+                "ReferencePipelineFactory12: construction timing game={0} outcome={1} total={2:F2} ms " +
+                "driverPso={3:F2} ms count={4} maxSingle={5:F2} ms.",
+                game,
+                constructionSucceeded ? "ready" : "failed",
+                totalMilliseconds,
+                _psoCreationMilliseconds,
+                _psoCreationCount,
+                _maxPsoCreationMilliseconds);
+            RendererProfilerTrace.Event("d3d12-reference-pso-construction", new Dictionary<string, object?>
+            {
+                ["game"] = game.ToString(),
+                ["outcome"] = constructionSucceeded ? "ready" : "failed",
+                ["totalMilliseconds"] = totalMilliseconds,
+                ["psoCreationMilliseconds"] = _psoCreationMilliseconds,
+                ["psoCreationCount"] = _psoCreationCount,
+                ["maxSinglePsoMilliseconds"] = _maxPsoCreationMilliseconds,
+            });
         }
     }
 
@@ -776,7 +824,18 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
-        return TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+        var psoStarted = Stopwatch.GetTimestamp();
+        var succeeded = false;
+        try
+        {
+            var pipeline = TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+            succeeded = true;
+            return pipeline;
+        }
+        finally
+        {
+            RecordPsoCreation("graphics", psoStarted, succeeded);
+        }
     }
 
     private void TryCreateModernStandardOpaquePipelines()
@@ -1083,7 +1142,82 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             SampleDescription = new SampleDescription(1, 0),
             SampleMask = uint.MaxValue,
         };
-        return TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+        var psoStarted = Stopwatch.GetTimestamp();
+        var succeeded = false;
+        try
+        {
+            var pipeline = TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+            succeeded = true;
+            return pipeline;
+        }
+        finally
+        {
+            RecordPsoCreation("shadow", psoStarted, succeeded);
+        }
+    }
+
+    private (int Count, double Milliseconds, long Timestamp) BeginPsoGroup(
+        string group,
+        BethesdaGame game)
+    {
+        BethesdaMultitool.Core.Diagnostics.Logger.Instance.Debug(
+            "ReferencePipelineFactory12: driver PSO group started game={0} group={1}.",
+            game,
+            group);
+        return (_psoCreationCount, _psoCreationMilliseconds, Stopwatch.GetTimestamp());
+    }
+
+    private void CompletePsoGroup(
+        string group,
+        BethesdaGame game,
+        (int Count, double Milliseconds, long Timestamp) before)
+    {
+        var count = _psoCreationCount - before.Count;
+        var psoMilliseconds = _psoCreationMilliseconds - before.Milliseconds;
+        var wallMilliseconds = Stopwatch.GetElapsedTime(before.Timestamp).TotalMilliseconds;
+        BethesdaMultitool.Core.Diagnostics.Logger.Instance.Debug(
+            "ReferencePipelineFactory12: driver PSO group completed game={0} group={1} " +
+            "count={2} driverPso={3:F2} ms wall={4:F2} ms.",
+            game,
+            group,
+            count,
+            psoMilliseconds,
+            wallMilliseconds);
+        RendererProfilerTrace.Event("d3d12-reference-pso-group", new Dictionary<string, object?>
+        {
+            ["game"] = game.ToString(),
+            ["group"] = group,
+            ["psoCreationCount"] = count,
+            ["psoCreationMilliseconds"] = psoMilliseconds,
+            ["wallMilliseconds"] = wallMilliseconds,
+        });
+    }
+
+    private void RecordPsoCreation(string kind, long started, bool succeeded)
+    {
+        var elapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        _psoCreationCount++;
+        _psoCreationMilliseconds += elapsedMilliseconds;
+        _maxPsoCreationMilliseconds = Math.Max(_maxPsoCreationMilliseconds, elapsedMilliseconds);
+
+        // Keep routine startup quiet. A single call above this threshold is already several frames
+        // and is exactly the driver-side stall that a shipped DXBC pack cannot eliminate.
+        if (elapsedMilliseconds < 100d)
+        {
+            return;
+        }
+
+        BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+            "ReferencePipelineFactory12: slow driver PSO call kind={0} outcome={1} elapsed={2:F2} ms.",
+            kind,
+            succeeded ? "ready" : "failed",
+            elapsedMilliseconds);
+        RendererProfilerTrace.Event("d3d12-reference-pso-slow", new Dictionary<string, object?>
+        {
+            ["kind"] = kind,
+            ["outcome"] = succeeded ? "ready" : "failed",
+            ["elapsedMilliseconds"] = elapsedMilliseconds,
+        });
     }
 
     private ID3D12PipelineState TrackConstructionPipeline(ID3D12PipelineState pipeline)

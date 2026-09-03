@@ -11,8 +11,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 internal static class GpuMeshUploader
 {
-    /// <summary>Interleaved <see cref="GpuVertex" /> stride in bytes (Sequential layout, packed floats).</summary>
-    public const int GpuVertexSize = 72;
+    /// <summary>
+    ///     Interleaved <see cref="GpuVertex" /> stride in bytes. Derive this from the sequential
+    ///     struct instead of repeating its layout: every transient animation/particle VBV consumes
+    ///     this value, and a stale stride makes the input assembler walk between packed vertices.
+    /// </summary>
+    public static readonly int GpuVertexSize = Marshal.SizeOf<GpuVertex>();
 
     /// <summary>
     ///     Converts a <see cref="RenderableSubmesh" /> to a GPU vertex array.

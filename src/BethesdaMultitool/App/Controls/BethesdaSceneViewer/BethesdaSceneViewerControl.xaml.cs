@@ -36,6 +36,9 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     private bool _hasPresentedFrame;
     private bool _sessionInitialized;
     private long _lastFrameTimestamp;
+    private int _streamingGpuIdleDrainCount;
+    private double _streamingGpuIdleDrainMilliseconds;
+    private bool _streamingGpuIdleDrainSummaryLogged;
 
     // Pointer state is intentionally local to this presentation camera; no world-view picking,
     // collision, cell navigation, or fly/walk state leaks into the asset viewer.
@@ -81,7 +84,20 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     internal void SetPresentationActive(bool active)
     {
         VerifyUiThread();
-        if (_disposed || _isPresentationActive == active) return;
+        if (_disposed) return;
+        if (_isPresentationActive == active)
+        {
+            // TabView can unload/rebuild its visual subtree without changing the host's logical
+            // selected-tab state. In that case the render loop/surface may have been detached while
+            // _isPresentationActive stayed true. Treat an idempotent true publication as a wake-up
+            // signal so selecting/loading a scene cannot sit Ready until the user toggles tabs.
+            if (active)
+            {
+                InvalidateViewport();
+            }
+
+            return;
+        }
 
         _isPresentationActive = active;
         if (!active)
@@ -135,6 +151,9 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         }
         _animationKfLoadInProgress = false;
         _animationLoadStatus = null;
+        _streamingGpuIdleDrainCount = 0;
+        _streamingGpuIdleDrainMilliseconds = 0;
+        _streamingGpuIdleDrainSummaryLogged = false;
         _scene = scene;
         // A session may validate/materialize synchronously, but host promotion must wait until this
         // exact scene has survived command recording, submission, and Present at least once.
@@ -142,6 +161,7 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         _camera.Frame(
             scene?.Bounds,
             scene?.Game ?? Core.Games.BethesdaGame.Unknown,
+            scene?.Purpose ?? BethesdaViewerScenePurpose.Unspecified,
             BethesdaViewerNativeSkyPolicy.ShouldUseDedicatedRawNifFraming(scene));
         if (_sessionInitialized && _renderSession is not null)
         {
@@ -169,6 +189,7 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         _camera.Frame(
             _scene?.Bounds,
             _scene?.Game ?? Core.Games.BethesdaGame.Unknown,
+            _scene?.Purpose ?? BethesdaViewerScenePurpose.Unspecified,
             BethesdaViewerNativeSkyPolicy.ShouldUseDedicatedRawNifFraming(_scene));
         InvalidateViewport();
     }

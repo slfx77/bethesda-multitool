@@ -9,6 +9,10 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "Viewer",
         "BethesdaViewerRenderSession12.cs");
 
+    private static string GraphicsContextSource() => SourceContract.ReadSource(
+        "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
+        "BethesdaSceneViewerGraphicsContext12.cs");
+
     [Fact]
     public void SessionMaterializesBeforeReadyAndRendersWaterBetweenDepthAndTransparentGeometry()
     {
@@ -26,7 +30,7 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
             build,
             "ReferenceMeshCache12.UploadDecodedMesh(",
             "ConfigureRawSkyRenderer(graphics, posed)",
-            "new ReferencePipelineFactory12(",
+            "graphics.GetOrCreateReferencePipelines(posed.Source.Game)",
             "new BethesdaViewerStaticRenderer12(",
             "ConfigureWaterRenderer(graphics, posed)",
             "BethesdaSceneViewerRenderState.Ready");
@@ -55,6 +59,26 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         Assert.Contains("Standalone water has no record-level WATR context", source, StringComparison.Ordinal);
         Assert.Contains("constants[(1 * 4) + 3] = 1f", source, StringComparison.Ordinal);
         Assert.Contains("neutral studio lighting", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReferencePipelinesAreBorrowedFromTheAppScopedGameCache()
+    {
+        var session = SessionSource();
+        var context = GraphicsContextSource();
+
+        Assert.Contains("graphics.GetOrCreateReferencePipelines(posed.Source.Game)", session,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DisposeSceneResourceNoThrow(pipelines, \"pipeline factory\")", session,
+            StringComparison.Ordinal);
+        Assert.Contains("Dictionary<BethesdaGame, ReferencePipelineFactory12>", context,
+            StringComparison.Ordinal);
+        Assert.Contains("_referencePipelines.TryGetValue(game, out var existing)", context,
+            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            context,
+            "DisposeOwnedNoThrow(pipelines, $\"{game} reference pipelines\")",
+            "DisposeOwnedNoThrow(RootSignature, \"root signature\")");
     }
 
     [Fact]
@@ -209,6 +233,26 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
     }
 
     [Fact]
+    public void PerSceneViewerUsesItsOwnNeutralDescriptorInsteadOfProcessSlotZero()
+    {
+        var renderer = StaticRendererSource();
+        var session = SessionSource();
+        var textureIndices = SourceContract.Extract(
+            renderer,
+            "TexIndices = new TexIndexQuad(",
+            "Specular = submesh.Specular,");
+
+        Assert.Contains("uint neutralTextureIndex", renderer, StringComparison.Ordinal);
+        Assert.Contains("_neutralTextureIndex = neutralTextureIndex;", renderer, StringComparison.Ordinal);
+        Assert.Contains("_textureCache.WhitePixel.BindlessIndex", session, StringComparison.Ordinal);
+        Assert.Contains("submesh.SpecularMap?.BindlessIndex ?? _neutralTextureIndex", textureIndices,
+            StringComparison.Ordinal);
+        Assert.Contains("submesh.Lighting30GlowMap?.BindlessIndex ?? _neutralTextureIndex", textureIndices,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("?? 0", textureIndices, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DirectModernSpecializationsAreClassifiedOnceAndFailClosedToTheUberPipeline()
     {
         var renderer = StaticRendererSource();
@@ -337,6 +381,9 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         var control = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
             "BethesdaSceneViewerControl.Animation.cs");
+        var kfBinder = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Viewer",
+            "BethesdaViewerKfAnimationBinder.cs");
         var xaml = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
             "BethesdaSceneViewerControl.xaml");
@@ -397,16 +444,20 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         Assert.DoesNotContain("&#x23F8;", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("\\u23F8", control, StringComparison.Ordinal);
         Assert.Contains("AnimationLoadKfButton_Click", control, StringComparison.Ordinal);
-        Assert.Contains("NifControllerSequenceNameTrackReader.ReadAll(data, nif)", control,
+        Assert.Contains("BethesdaViewerKfAnimationBinder.ParseAndBind(data, targetScene, file.Name)", control,
             StringComparison.Ordinal);
-        Assert.Contains("BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(", control,
+        Assert.Contains("NifControllerSequenceNameTrackReader.ReadAll(data, nif)", kfBinder,
+            StringComparison.Ordinal);
+        Assert.Contains("BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(", kfBinder,
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             control,
-            "targetScene.AnimationClips.Add(clip);",
-            "ReloadSessionAfterAnimationMutation(targetScene)",
+            "var firstAppendedClipIndex = targetScene.AnimationClips.Count;",
+            "targetScene.AnimationClips.Add(clip with { Name = uniqueName });",
+            "ReloadSessionAfterAnimationMutation(targetScene, firstAppendedClipIndex)",
             "_renderSession.SetScene(null);",
-            "_renderSession.SetScene(targetScene);");
+            "_renderSession.SetScene(targetScene);",
+            "_renderSession.SelectAnimationClip(preferredClipIndex);");
         Assert.Contains("AnimationClipComboBox_SelectionChanged", control, StringComparison.Ordinal);
         Assert.Contains("AnimationTimeline_ValueChanged", control, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromMilliseconds(100)", control, StringComparison.Ordinal);

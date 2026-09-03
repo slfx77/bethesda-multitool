@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using System.Diagnostics;
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -8,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.Viewer;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.Games;
@@ -22,8 +24,8 @@ namespace BethesdaMultitool;
 /// </summary>
 internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRenderSession12
 {
-    private const int AtmosphereClipPlaneFloat4Slot = 37;
-    private const uint AtmosphereBytes = (AtmosphereClipPlaneFloat4Slot + 1) * 16;
+    private const int AtmosphereClipPlaneFloat4Slot = AtmosphereConstantBufferLayout.ClipPlaneFloat4Slot;
+    private const uint AtmosphereBytes = AtmosphereConstantBufferLayout.ByteSize;
     private const float RawSkyPreviewHour = 12f;
     private static readonly Logger Log = Logger.Instance;
 
@@ -73,6 +75,11 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
          (_animationPlaying && _animatedPose?.HasAnimatedGeometry == true) ||
          _staticRenderer?.RequiresContinuousFrames == true ||
          !TexturesSettled);
+
+    public bool RequiresGpuIdleBeforeFrame =>
+        BethesdaViewerFrameSynchronizationPolicy.RequiresGpuIdleBeforeFrame(
+            _state == BethesdaSceneViewerRenderState.Ready,
+            TexturesSettled);
 
     public IReadOnlyList<string> AnimationClipNames => _animationClipNames;
 
@@ -435,6 +442,19 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         var posed = _posedScene ??
                     throw new InvalidOperationException("The Bethesda scene pose is unavailable.");
 
+        var buildStarted = Stopwatch.GetTimestamp();
+        var outcome = "faulted";
+        var meshUploadMilliseconds = 0d;
+        var rawSkyMilliseconds = 0d;
+        var referencePipelineMilliseconds = 0d;
+        var staticRendererMilliseconds = 0d;
+        var waterRendererMilliseconds = 0d;
+        Log.Debug(
+            "BethesdaSceneViewer: GPU-scene construction started game={0} purpose={1} parts={2}.",
+            posed.Source.Game,
+            posed.Source.Purpose,
+            posed.Source.MeshParts.Count);
+
         try
         {
             _textureResolver = new NifGpuTextureResolver(
@@ -458,6 +478,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             var sourceLabel = string.IsNullOrWhiteSpace(posed.Source.SourceLabel)
                 ? "Bethesda viewer scene"
                 : posed.Source.SourceLabel;
+            var meshUploadStarted = Stopwatch.GetTimestamp();
             var materialization = ReferenceMeshCache12.UploadDecodedMesh(
                 null,
                 sourceLabel,
@@ -465,6 +486,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                 _geometryArena,
                 graphics.DeletionQueue,
                 _textureCache);
+            meshUploadMilliseconds = Stopwatch.GetElapsedTime(meshUploadStarted).TotalMilliseconds;
             if (materialization.Status == ReferenceMeshCache12.MeshMaterializationStatus.RetryableFailure)
             {
                 throw new InvalidOperationException("GPU mesh materialization failed.");
@@ -473,6 +495,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             _mesh = materialization.Mesh;
             if (_mesh is null)
             {
+                outcome = "empty-materialization";
                 PublishState(
                     BethesdaSceneViewerRenderState.Faulted,
                     BuildEmptySceneStatus(posed));
@@ -482,15 +505,19 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
 
             ConfigureAnimationPlayer();
 
+            var rawSkyStarted = Stopwatch.GetTimestamp();
             ConfigureRawSkyRenderer(graphics, posed);
+            rawSkyMilliseconds = Stopwatch.GetElapsedTime(rawSkyStarted).TotalMilliseconds;
             var hasRawSkyCandidates = _rawSkyCandidates.Count > 0;
             var hasOrdinaryGeometry = _mesh.Submeshes.Any(submesh =>
                 submesh.IndexCount > 0 &&
                 !IsDedicatedRawSkySubmesh(posed, submesh));
             var hasWater = _mesh.WaterPlanesLocal.Count > 0;
             var alphaToCoverageFallbackCount = 0;
+            string? alphaToCoverageFallbackReason = null;
             if (!hasOrdinaryGeometry && !hasRawSkyCandidates && !hasWater)
             {
+                outcome = "no-drawable-content";
                 PublishState(
                     BethesdaSceneViewerRenderState.Faulted,
                     BuildEmptySceneStatus(posed));
@@ -501,27 +528,46 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             var hasGeometry = false;
             if (hasOrdinaryGeometry)
             {
-                _pipelines = new ReferencePipelineFactory12(
-                    graphics.Gpu,
-                    graphics.RootSignature,
+                // The Mesh and NPC viewers share one app-scoped D3D12 context. Their reference
+                // PSOs are scene-invariant within one game, so borrow the context's game-keyed
+                // factory instead of paying driver pipeline creation on every selected mesh/NPC scene.
+                Log.Debug(
+                    "BethesdaSceneViewer: reference-pipeline acquisition started game={0}.",
                     posed.Source.Game);
+                var referencePipelineStarted = Stopwatch.GetTimestamp();
+                _pipelines = graphics.GetOrCreateReferencePipelines(posed.Source.Game);
+                referencePipelineMilliseconds =
+                    Stopwatch.GetElapsedTime(referencePipelineStarted).TotalMilliseconds;
+                Log.Debug(
+                    "BethesdaSceneViewer: reference-pipeline acquisition completed game={0} elapsed={1:F2} ms.",
+                    posed.Source.Game,
+                    referencePipelineMilliseconds);
+                var staticRendererStarted = Stopwatch.GetTimestamp();
                 _staticRenderer = new BethesdaViewerStaticRenderer12(
                     _mesh,
                     posed,
                     _pipelines,
                     graphics.RingBuffer,
-                    graphics.DescriptorHeap);
+                    graphics.DescriptorHeap,
+                    _textureCache.WhitePixel.BindlessIndex);
+                staticRendererMilliseconds =
+                    Stopwatch.GetElapsedTime(staticRendererStarted).TotalMilliseconds;
                 hasGeometry = _staticRenderer.DrawableCount > 0;
                 alphaToCoverageFallbackCount = _staticRenderer.AlphaToCoverageFallbackCount;
+                alphaToCoverageFallbackReason = _staticRenderer.AlphaToCoverageFallbackReason;
             }
 
             if (hasWater)
             {
+                var waterRendererStarted = Stopwatch.GetTimestamp();
                 ConfigureWaterRenderer(graphics, posed);
+                waterRendererMilliseconds =
+                    Stopwatch.GetElapsedTime(waterRendererStarted).TotalMilliseconds;
             }
 
             if (!hasGeometry && !hasRawSkyCandidates && _waterRenderer is null)
             {
+                outcome = "no-materialized-draws";
                 PublishState(
                     BethesdaSceneViewerRenderState.Faulted,
                     BuildEmptySceneStatus(posed));
@@ -529,6 +575,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                 return;
             }
 
+            outcome = "ready";
             PublishState(
                 BethesdaSceneViewerRenderState.Ready,
                 BuildReadyStatus(
@@ -536,14 +583,44 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                     hasGeometry,
                     _rawSkyClassifiedPartCount > 0,
                     hasWater,
-                    alphaToCoverageFallbackCount));
+                    alphaToCoverageFallbackCount,
+                    alphaToCoverageFallbackReason));
         }
         catch (Exception ex)
         {
+            outcome = $"exception:{ex.GetType().Name}";
             ReleaseGpuScene(waitForIdle: false);
             PublishState(
                 BethesdaSceneViewerRenderState.Faulted,
                 $"Native Bethesda renderer setup failed: {ex.Message}");
+        }
+        finally
+        {
+            var totalMilliseconds = Stopwatch.GetElapsedTime(buildStarted).TotalMilliseconds;
+            Log.Info(
+                "BethesdaSceneViewer: GPU-scene construction timing game={0} outcome={1} total={2:F2} ms " +
+                "meshUpload={3:F2} ms rawSky={4:F2} ms referencePipelines={5:F2} ms " +
+                "staticRenderer={6:F2} ms waterRenderer={7:F2} ms.",
+                posed.Source.Game,
+                outcome,
+                totalMilliseconds,
+                meshUploadMilliseconds,
+                rawSkyMilliseconds,
+                referencePipelineMilliseconds,
+                staticRendererMilliseconds,
+                waterRendererMilliseconds);
+            RendererProfilerTrace.Event("bethesda-viewer-gpu-scene-construction", new Dictionary<string, object?>
+            {
+                ["game"] = posed.Source.Game.ToString(),
+                ["purpose"] = posed.Source.Purpose.ToString(),
+                ["outcome"] = outcome,
+                ["totalMilliseconds"] = totalMilliseconds,
+                ["meshUploadMilliseconds"] = meshUploadMilliseconds,
+                ["rawSkyMilliseconds"] = rawSkyMilliseconds,
+                ["referencePipelineMilliseconds"] = referencePipelineMilliseconds,
+                ["staticRendererMilliseconds"] = staticRendererMilliseconds,
+                ["waterRendererMilliseconds"] = waterRendererMilliseconds,
+            });
         }
     }
 
@@ -771,7 +848,8 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                 hasGeometry,
                 hasRawSky,
                 hasWater,
-                _staticRenderer?.AlphaToCoverageFallbackCount ?? 0));
+                _staticRenderer?.AlphaToCoverageFallbackCount ?? 0,
+                _staticRenderer?.AlphaToCoverageFallbackReason));
     }
 
     private static SkyGeometryLayer BuildRawSkyLayer(
@@ -963,9 +1041,9 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         _waterRenderer = null;
         DisposeSceneResourceNoThrow(waterRenderer, "water renderer");
         _staticRenderer = null;
-        var pipelines = _pipelines;
+        // Borrowed from BethesdaSceneViewerGraphicsContext12's game-keyed cache; the context owns
+        // and disposes it before its root signature. A scene switch only drops this reference.
         _pipelines = null;
-        DisposeSceneResourceNoThrow(pipelines, "pipeline factory");
         _textureCache = null;
         DisposeSceneResourceNoThrow(textureCache, "texture cache");
         var textureResolver = _textureResolver;
@@ -1062,7 +1140,8 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         bool hasGeometry,
         bool hasRawSky,
         bool hasWater,
-        int alphaToCoverageFallbackCount)
+        int alphaToCoverageFallbackCount,
+        string? alphaToCoverageFallbackReason)
     {
         var routes = new List<string>(3);
         if (hasRawSky && _rawSkyResidentLayerCount > 0)
@@ -1138,8 +1217,11 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         }
         if (alphaToCoverageFallbackCount > 0)
         {
+            var reason = string.IsNullOrWhiteSpace(alphaToCoverageFallbackReason)
+                ? "native A2C is unavailable"
+                : alphaToCoverageFallbackReason;
             message +=
-                $" {alphaToCoverageFallbackCount} alpha-to-coverage part(s) use blend fallback because the scene target is single-sampled.";
+                $" {alphaToCoverageFallbackCount} alpha-to-coverage part(s) use blend fallback because {reason}.";
         }
         if (posed.Warnings.Count > 0)
         {

@@ -36,6 +36,7 @@ internal static class NifExportExtractor
             shapeSkinInstanceMap);
         var treeAnimationShapes = NifSceneGraphWalker.CollectTreeAnimationShapes(nif, nodeChildren);
 
+        RemoveHiddenShapes(data, nif, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap);
         ApplyShapeFilter(data, nif, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap, filterShapeName);
         NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, worldTransforms, animOverrides);
 
@@ -57,6 +58,28 @@ internal static class NifExportExtractor
             MeshParts = meshParts,
             NamedNodeWorldTransforms = BuildNamedNodeWorldTransforms(nodes)
         };
+    }
+
+    private static void RemoveHiddenShapes(
+        byte[] data,
+        NifInfo nif,
+        Dictionary<int, int> shapeDataMap,
+        Dictionary<int, List<int>> shapePropertyMap,
+        Dictionary<int, int> shapeSkinInstanceMap)
+    {
+        // The hierarchy-preserving export/native-viewer path must honor the same NiAVObject
+        // APP_CULLED contract as NifGeometryExtractor. Keeping the nodes is intentional: hidden
+        // helper geometry may sit below animated bones whose transforms are still required by a
+        // visible skinned mesh. Only its draw-bearing shape is omitted.
+        var hiddenShapes = shapeDataMap.Keys
+            .Where(index => NifBlockParsers.IsHiddenShape(data, nif.Blocks[index], nif))
+            .ToArray();
+        foreach (var index in hiddenShapes)
+        {
+            shapeDataMap.Remove(index);
+            shapePropertyMap.Remove(index);
+            shapeSkinInstanceMap.Remove(index);
+        }
     }
 
     private static void ApplyShapeFilter(

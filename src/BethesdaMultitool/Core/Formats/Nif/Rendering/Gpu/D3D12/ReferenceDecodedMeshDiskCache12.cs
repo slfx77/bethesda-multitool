@@ -109,8 +109,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v87 entries deliberately discarded that stream and cannot reconstruct the material result.
     // v89: Starfield material UV scale/offset and reducible UVOffset controllers are baked into the
     // existing vertex/scroll payload. Warm v88 entries retain untransformed, static layer-zero UVs.
+    // v90: compatible embedded TES3 reverse-controller clocks are persisted with the animation rig.
+    // Warm v89 entries retain only ClipLoops and silently flatten CYCLE_REVERSE into a forward loop.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 89;
+    internal const int DecoderVersion = 90;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -391,6 +393,25 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(anim.ClipStart);
         writer.Write(anim.ClipStop);
         writer.Write(anim.ClipLoops);
+        writer.Write(anim.FullControllerCycle.HasValue);
+        if (anim.FullControllerCycle is { } controller)
+        {
+            if (!float.IsFinite(controller.Frequency) ||
+                !float.IsFinite(controller.Phase) ||
+                !float.IsFinite(controller.StartTime) ||
+                !float.IsFinite(controller.StopTime) ||
+                controller.StopTime <= controller.StartTime ||
+                !Enum.IsDefined(controller.Cycle))
+            {
+                throw new InvalidDataException("Cannot cache an invalid full controller cycle.");
+            }
+
+            writer.Write(controller.Frequency);
+            writer.Write(controller.Phase);
+            writer.Write(controller.StartTime);
+            writer.Write(controller.StopTime);
+            writer.Write((byte)controller.Cycle);
+        }
     }
 
     private static ReferenceDecodedMeshPayload12 ReadMesh(BinaryReader reader)
@@ -547,7 +568,41 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         var clipStart = reader.ReadSingle();
         var clipStop = reader.ReadSingle();
         var clipLoops = reader.ReadBoolean();
-        return new NifMeshAnimation(bones, tracks, textKeys, clipStart, clipStop, clipLoops);
+        NifControllerCycle? fullControllerCycle = null;
+        if (reader.ReadBoolean())
+        {
+            var frequency = reader.ReadSingle();
+            var phase = reader.ReadSingle();
+            var startTime = reader.ReadSingle();
+            var stopTime = reader.ReadSingle();
+            var cycleValue = reader.ReadByte();
+            if (!float.IsFinite(frequency) ||
+                !float.IsFinite(phase) ||
+                !float.IsFinite(startTime) ||
+                !float.IsFinite(stopTime) ||
+                stopTime <= startTime ||
+                cycleValue > (byte)NifCycleType.Clamp)
+            {
+                throw new InvalidDataException(
+                    "Invalid full controller cycle in decoded mesh cache.");
+            }
+
+            fullControllerCycle = new NifControllerCycle(
+                frequency,
+                phase,
+                startTime,
+                stopTime,
+                (NifCycleType)cycleValue);
+        }
+
+        return new NifMeshAnimation(
+            bones,
+            tracks,
+            textKeys,
+            clipStart,
+            clipStop,
+            clipLoops,
+            fullControllerCycle);
     }
 
     private static void WriteSubmesh(BinaryWriter writer, ReferenceDecodedSubmeshPayload12 submesh)

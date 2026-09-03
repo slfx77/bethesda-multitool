@@ -94,6 +94,27 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
         Assert.InRange(mapped, 0f, 2f);
     }
 
+    [Theory]
+    [InlineData(0f, 0f)]
+    [InlineData(1f, 1f)]
+    [InlineData(4f, 4f)]
+    [InlineData(5f, 3f)]
+    [InlineData(8f, 0f)]
+    [InlineData(-1f, 1f)]
+    public void MapTime_PingPongTraversesForwardThenBackward(float clock, float expected)
+    {
+        var mapped = BethesdaViewerAnimationPoseEvaluator.MapTime(
+            clock,
+            1f,
+            0f,
+            0f,
+            4f,
+            loops: true,
+            pingPongs: true);
+
+        Assert.Equal(expected, mapped, 4);
+    }
+
     private static void AssertClose(Vector3 expected, Vector3 actual)
     {
         Assert.InRange(Vector3.Distance(expected, actual), 0f, 1e-5f);

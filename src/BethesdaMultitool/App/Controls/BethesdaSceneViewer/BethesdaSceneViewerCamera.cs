@@ -36,6 +36,9 @@ internal sealed class BethesdaSceneViewerCamera
 
     private float _humanScale = 1f;
     private float _sceneRadius = 100f;
+    private BethesdaViewerBounds? _projectedFramingBounds;
+    private bool _automaticProjectedFraming;
+    private float _lastProjectedFramingAspect = float.NaN;
 
     internal Vector3 Target { get; private set; }
 
@@ -51,6 +54,7 @@ internal sealed class BethesdaSceneViewerCamera
     internal void Frame(
         BethesdaViewerBounds? bounds,
         BethesdaGame game,
+        BethesdaViewerScenePurpose purpose = BethesdaViewerScenePurpose.Unspecified,
         bool dedicatedRawSky = false)
     {
         _humanScale = GameProfiles.HumanScaleFactor(game);
@@ -67,12 +71,19 @@ internal sealed class BethesdaSceneViewerCamera
         {
             Target = finite.Center;
             _sceneRadius = MathF.Max(finite.Size.Length() * 0.5f, fallbackRadius * 0.01f);
+            _projectedFramingBounds = finite;
         }
         else
         {
             Target = Vector3.Zero;
             _sceneRadius = fallbackRadius;
+            _projectedFramingBounds = null;
         }
+
+        _automaticProjectedFraming =
+            _projectedFramingBounds.HasValue &&
+            BethesdaViewerPerspectiveFramingPolicy.ShouldUseProjectedBoundsFit(purpose);
+        _lastProjectedFramingAspect = float.NaN;
 
         AzimuthDegrees = DefaultAzimuthDegrees;
         // The orbit camera's elevation describes the eye position; Forward is its negation. The
@@ -97,6 +108,7 @@ internal sealed class BethesdaSceneViewerCamera
             ElevationDegrees + pixelDelta.Y * OrbitDegreesPerPixel,
             MinimumElevationDegrees,
             MaximumElevationDegrees);
+        _automaticProjectedFraming = false;
     }
 
     internal void Pan(Vector2 pixelDelta, float viewportHeight)
@@ -112,6 +124,7 @@ internal sealed class BethesdaSceneViewerCamera
         var worldPerPixel =
             2f * Distance * MathF.Tan(FieldOfViewRadians * 0.5f) / viewportHeight;
         Target += (-right * pixelDelta.X + up * pixelDelta.Y) * worldPerPixel;
+        _automaticProjectedFraming = false;
     }
 
     internal void Zoom(float wheelDelta)
@@ -123,12 +136,30 @@ internal sealed class BethesdaSceneViewerCamera
             Distance * MathF.Exp(-notches * ZoomExponentPerWheelNotch),
             MinimumDistance,
             MaximumDistance);
+        _automaticProjectedFraming = false;
     }
 
     internal BethesdaSceneViewerCameraFrame GetFrame(float aspectRatio)
     {
         var aspect = float.IsFinite(aspectRatio) && aspectRatio > 0f ? aspectRatio : 1f;
         var (eyeDirection, forward, right, up) = ResolveBasis();
+        if (_automaticProjectedFraming &&
+            _projectedFramingBounds is { } projectedBounds &&
+            (!float.IsFinite(_lastProjectedFramingAspect) ||
+             MathF.Abs(_lastProjectedFramingAspect - aspect) > 0.0001f) &&
+            BethesdaViewerPerspectiveFramingPolicy.TryResolveProjectedBoundsDistance(
+                projectedBounds,
+                eyeDirection,
+                right,
+                up,
+                FieldOfViewRadians,
+                aspect,
+                out var projectedDistance))
+        {
+            Distance = Math.Clamp(projectedDistance, MinimumDistance, MaximumDistance);
+            _lastProjectedFramingAspect = aspect;
+        }
+
         var position = Target + eyeDirection * Distance;
         var nearPlane = MathF.Max(_sceneRadius * 0.0001f, 0.001f * _humanScale);
         nearPlane = MathF.Min(nearPlane, MathF.Max(Distance * 0.25f, 0.001f * _humanScale));

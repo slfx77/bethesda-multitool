@@ -76,6 +76,19 @@ internal sealed record NifAnimBone(
     int SourceBlockIndex = -1);
 
 /// <summary>
+///     A compatible clock shared by every moving TES3 per-node controller in one embedded rig.
+///     This is deliberately independent of the selected ambient clip: a creature's plain
+///     <c>Idle</c> text-key window remains the normal preview, while the native Mesh Viewer can
+///     expose the complete authored controller traversal as a separate diagnostic clip.
+/// </summary>
+internal readonly record struct NifControllerCycle(
+    float Frequency,
+    float Phase,
+    float StartTime,
+    float StopTime,
+    NifCycleType Cycle);
+
+/// <summary>
 ///     A mesh's complete animation description: the bone tree, per-bone keyframe tracks (parallel to
 ///     <see cref="Bones" />; null = static bone), the authored text keys, and the resolved play window.
 ///     Both the TES3 per-node NiKeyframeController graph and the modern
@@ -88,7 +101,11 @@ internal sealed record NifMeshAnimation(
     NifAnimTextKey[] TextKeys,
     float ClipStart,
     float ClipStop,
-    bool ClipLoops)
+    bool ClipLoops,
+    // Present only when all active moving TES3 node controllers agree on one finite reverse clock.
+    // Placed-world playback continues to use the selected Clip* fields; the raw native viewer may
+    // offer this full controller window alongside Embedded Idle.
+    NifControllerCycle? FullControllerCycle = null)
 {
     public float ClipLength => ClipStop - ClipStart;
 }

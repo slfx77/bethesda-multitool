@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -13,11 +15,11 @@ public sealed partial class BethesdaSceneViewerControl
 {
     // Keep the mandatory b3 upload aligned with NifHeadlessRenderer.BindFlatAtmosphere: ten base
     // vectors, four matrices, four shadow vectors, six directional-ambient vectors,
-    // GrassSunColorScale, then ClipPlane. Zero lighting/fog fields select reference.frag's stable
+    // GrassSunColorScale, ClipPlane, then Skyrim's three matrix rows + mode. Zero lighting/fog fields select reference.frag's stable
     // 0.4 + 0.6*Lambert presentation light; the three non-zero W lanes retain HDR/emissive behavior
     // and disable clipping. A real contextual scene session may overwrite b3 after this baseline.
-    private const int NeutralAtmosphereClipPlaneFloat4Slot = 37;
-    private const int NeutralAtmosphereBytes = (NeutralAtmosphereClipPlaneFloat4Slot + 1) * 16;
+    private const int NeutralAtmosphereClipPlaneFloat4Slot = AtmosphereConstantBufferLayout.ClipPlaneFloat4Slot;
+    private const int NeutralAtmosphereBytes = (int)AtmosphereConstantBufferLayout.ByteSize;
     private const int EmptyPointLightBytes = 4 * 16;
     private static readonly byte[] NeutralAtmosphereConstants = CreateNeutralAtmosphereConstants();
     private static readonly byte[] EmptyPointLightConstants = CreateEmptyPointLightConstants();
@@ -190,6 +192,18 @@ public sealed partial class BethesdaSceneViewerControl
         if (state != BethesdaSceneViewerRenderState.Ready || _scene is null)
         {
             DetachRenderLoop();
+            CancelPendingCapture(
+                "The native Bethesda scene stopped being ready before capture could run.");
+        }
+
+        // A non-null scene commonly moves Ready -> Initializing -> Ready while the session replaces
+        // its GPU graph. Keep the already-bound SwapChainPanel surface across that transient state:
+        // no frames are recorded while the loop is detached, and destroying/recreating a composition
+        // swap chain for every mesh/NPC selection is both unnecessary and unsafe on the live 4x-MSAA
+        // path. No-scene, terminal fault, unload, and control disposal remain real ownership
+        // boundaries and still release the surface.
+        if (_scene is null || state == BethesdaSceneViewerRenderState.Faulted)
+        {
             ReleasePanelSurface();
         }
 
@@ -294,11 +308,40 @@ public sealed partial class BethesdaSceneViewerControl
         {
             if (_surface is null)
             {
-                _surface = GpuSwapChainSurface12.Create(
-                    _graphicsLease.Context.Gpu,
-                    RenderPanel,
+                var surfaceStarted = Stopwatch.GetTimestamp();
+                Log.Debug(
+                    "BethesdaSceneViewer: surface/tonemap construction started size={0}x{1}.",
                     width,
                     height);
+                try
+                {
+                    _surface = GpuSwapChainSurface12.Create(
+                        _graphicsLease.Context.Gpu,
+                        RenderPanel,
+                        width,
+                        height);
+                }
+                finally
+                {
+                    var elapsedMilliseconds =
+                        Stopwatch.GetElapsedTime(surfaceStarted).TotalMilliseconds;
+                    Log.Info(
+                        "BethesdaSceneViewer: surface/tonemap construction timing outcome={0} " +
+                        "size={1}x{2} elapsed={3:F2} ms.",
+                        _surface is null ? "failed" : "ready",
+                        width,
+                        height,
+                        elapsedMilliseconds);
+                    RendererProfilerTrace.Event(
+                        "bethesda-viewer-surface-construction",
+                        new Dictionary<string, object?>
+                        {
+                            ["outcome"] = _surface is null ? "failed" : "ready",
+                            ["width"] = width,
+                            ["height"] = height,
+                            ["elapsedMilliseconds"] = elapsedMilliseconds,
+                        });
+                }
                 if (_surface is null)
                 {
                     SetFaulted("The native Bethesda renderer could not bind its WinUI swap chain.");
@@ -435,6 +478,23 @@ public sealed partial class BethesdaSceneViewerControl
         Core.Formats.Nif.Rendering.Viewer.BethesdaViewerScene scene,
         float deltaSeconds)
     {
+        if (session.RequiresGpuIdleBeforeFrame)
+        {
+            // Async texture promotion rewrites a stable slot in the shader-visible bindless heap.
+            // BeginFrame waits only this ring slot; the other frame can still sample the placeholder
+            // descriptor. Drain every earlier direct submission before allowing that rewrite.
+            var drainStarted = Stopwatch.GetTimestamp();
+            graphics.WaitForGpuIdle();
+            var drainMilliseconds = Stopwatch.GetElapsedTime(drainStarted).TotalMilliseconds;
+            _streamingGpuIdleDrainCount++;
+            _streamingGpuIdleDrainMilliseconds += drainMilliseconds;
+            Log.Debug(
+                "BethesdaSceneViewer: texture-streaming descriptor drain #{0} completed in {1:F2} ms (cumulative {2:F2} ms).",
+                _streamingGpuIdleDrainCount,
+                drainMilliseconds,
+                _streamingGpuIdleDrainMilliseconds);
+        }
+
         var capture = TryPrepareCapture(graphics, surface);
         var submitted = false;
         var unfencedCaptureLifetimeTransferred = false;
@@ -469,7 +529,7 @@ public sealed partial class BethesdaSceneViewerControl
                 deltaSeconds);
             session.Render(frame);
 
-            surface.ResolveTo(commandList, backBuffer);
+            surface.ResolveTo(graphics.Recorder, backBuffer);
             if (capture is not null)
             {
                 capture.RecordCopy(commandList, backBuffer);
@@ -502,6 +562,16 @@ public sealed partial class BethesdaSceneViewerControl
             submittedFenceValue = submission.FenceValue;
             surface.Present();
             _hasPresentedFrame = true;
+            if (!_streamingGpuIdleDrainSummaryLogged &&
+                _streamingGpuIdleDrainCount > 0 &&
+                !session.RequiresGpuIdleBeforeFrame)
+            {
+                _streamingGpuIdleDrainSummaryLogged = true;
+                Log.Info(
+                    "BethesdaSceneViewer: texture streaming settled after {0} descriptor-safety drain(s), {1:F2} ms total GPU-idle wait.",
+                    _streamingGpuIdleDrainCount,
+                    _streamingGpuIdleDrainMilliseconds);
+            }
         }
         catch (Exception ex)
         {

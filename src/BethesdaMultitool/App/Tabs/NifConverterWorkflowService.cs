@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.CLI;
 
@@ -126,10 +129,13 @@ internal static class NifConverterWorkflowService
         string path,
         bool isArchive,
         string? texturePathOverride,
-        IProgress<NifViewerSourceLoadProgress>? progress = null)
+        IProgress<NifViewerSourceLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         return Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var totalTimer = Stopwatch.StartNew();
             progress?.Report(new NifViewerSourceLoadProgress(
                 isArchive
                     ? NifViewerSourceLoadPhase.OpeningArchiveIndexes
@@ -139,13 +145,19 @@ internal static class NifConverterWorkflowService
                 0));
 
             var texturePathsOverride = NifTextureSourcePathText.ParseOverride(texturePathOverride);
+            cancellationToken.ThrowIfCancellationRequested();
 
+            var openTimer = Stopwatch.StartNew();
             var service = isArchive
                 ? NifBrowserService.CreateFromBsa(path, texturePathsOverride)
                 : NifBrowserService.CreateFromDirectory(path, texturePathsOverride);
+            openTimer.Stop();
             try
             {
+                var relatedArchiveDiscovery = service.BeginRelatedArchiveDiscovery();
+                cancellationToken.ThrowIfCancellationRequested();
                 var nifFilesFound = 0;
+                var scanTimer = Stopwatch.StartNew();
                 var entries = service.ListNifFiles(scanProgress =>
                 {
                     nifFilesFound = scanProgress.NifFilesFound;
@@ -156,14 +168,44 @@ internal static class NifConverterWorkflowService
                         scanProgress.CurrentEntry,
                         scanProgress.TotalEntries,
                         scanProgress.NifFilesFound));
-                });
+                }, cancellationToken);
+                scanTimer.Stop();
 
+                cancellationToken.ThrowIfCancellationRequested();
                 progress?.Report(new NifViewerSourceLoadProgress(
                     NifViewerSourceLoadPhase.BuildingTree,
                     0,
                     null,
                     nifFilesFound));
-                var items = NifTreeViewItem.FromTreeEntries(entries);
+                var treeTimer = Stopwatch.StartNew();
+                var items = NifTreeViewItem.FromTreeEntries(entries, cancellationToken);
+                treeTimer.Stop();
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var discoveryWaitTimer = Stopwatch.StartNew();
+                if (!relatedArchiveDiscovery.IsCompleted)
+                {
+                    progress?.Report(new NifViewerSourceLoadProgress(
+                        NifViewerSourceLoadPhase.DiscoveringRelatedArchives,
+                        0,
+                        null,
+                        nifFilesFound));
+                }
+
+                relatedArchiveDiscovery.WaitAsync(cancellationToken).GetAwaiter().GetResult();
+                discoveryWaitTimer.Stop();
+                cancellationToken.ThrowIfCancellationRequested();
+                totalTimer.Stop();
+
+                Logger.Instance.Info(
+                    "NIF Viewer: source ready kind={0} files={1:N0} open={2:F2} ms scan={3:F2} ms tree={4:F2} ms related-archive-wait={5:F2} ms total={6:F2} ms; texture indexes deferred.",
+                    isArchive ? "archive" : "directory",
+                    nifFilesFound,
+                    openTimer.Elapsed.TotalMilliseconds,
+                    scanTimer.Elapsed.TotalMilliseconds,
+                    treeTimer.Elapsed.TotalMilliseconds,
+                    discoveryWaitTimer.Elapsed.TotalMilliseconds,
+                    totalTimer.Elapsed.TotalMilliseconds);
 
                 return new NifViewerSourceLoadResult(
                     service,
@@ -175,7 +217,7 @@ internal static class NifConverterWorkflowService
                 service.Dispose();
                 throw;
             }
-        });
+        }, cancellationToken);
     }
 
     internal static List<NifTreeViewItem> FilterTreeItems(
@@ -240,7 +282,10 @@ internal static class NifConverterWorkflowService
 
             cancellationToken.ThrowIfCancellationRequested();
             var info = NifBrowserService.GetNifInfo(nifData, item.DisplayName);
-            var build = service.BuildViewerSceneWithDiagnostics(nifData, item.DisplayName);
+            var build = service.BuildViewerSceneWithDiagnostics(
+                nifData,
+                item.DisplayName,
+                item.FullPath);
             cancellationToken.ThrowIfCancellationRequested();
             var glbBytes = !includeCompatibilityGlb || build.Scene is null
                 ? null
@@ -253,6 +298,35 @@ internal static class NifConverterWorkflowService
                 glbBytes,
                 null,
                 build.ExternalGeometry.IncompleteWarningMessage);
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Reads and binds only the selected catalog KF on a worker thread. The returned clips are
+    ///     transactional managed data; the tab publishes them only after rechecking service, scene,
+    ///     model-generation, and animation-generation identity on the UI thread.
+    /// </summary>
+    internal static Task<BethesdaViewerKfBindingResult> LoadModelFamilyAnimationAsync(
+        NifBrowserService service,
+        BethesdaViewerScene scene,
+        NifModelFamilyAnimationAsset asset,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(asset);
+
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var data = service.ReadModelFamilyAnimationData(asset, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var binding = BethesdaViewerKfAnimationBinder.ParseAndBind(
+                data,
+                scene,
+                asset.RelativePath);
+            cancellationToken.ThrowIfCancellationRequested();
+            return binding;
         }, cancellationToken);
     }
 
@@ -381,7 +455,8 @@ internal enum NifViewerSourceLoadPhase
     OpeningDirectory,
     ScanningArchiveEntries,
     ScanningDirectory,
-    BuildingTree
+    BuildingTree,
+    DiscoveringRelatedArchives
 }
 
 /// <summary>

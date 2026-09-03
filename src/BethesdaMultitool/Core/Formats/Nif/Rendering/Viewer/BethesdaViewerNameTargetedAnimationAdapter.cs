@@ -62,14 +62,7 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
             return Fail("The KF clip metadata is malformed.", out report);
         }
 
-        if (source.Cycle == NifCycleType.Reverse)
-        {
-            return Fail(
-                "Reverse/ping-pong KF cycles are not representable by the viewer clip contract.",
-                out report);
-        }
-
-        if (source.Cycle is not (NifCycleType.Loop or NifCycleType.Clamp))
+        if (source.Cycle is not (NifCycleType.Loop or NifCycleType.Reverse or NifCycleType.Clamp))
         {
             return Fail("The KF clip has an unknown cycle mode.", out report);
         }
@@ -193,10 +186,11 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
             source.Name,
             startTime,
             stopTime,
-            source.Cycle == NifCycleType.Loop,
+            source.Cycle != NifCycleType.Clamp,
             boundTracks.ToArray(),
             [],
-            textKeys);
+            textKeys,
+            source.Cycle == NifCycleType.Reverse);
         if (!BethesdaViewerAnimationValidator.TryValidate(
                 clip,
                 scene.Nodes.Count,

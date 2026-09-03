@@ -14,11 +14,14 @@ public sealed class NifTreeViewItem
     public bool IsExpanded { get; set; }
     public ObservableCollection<NifTreeViewItem> Children { get; } = [];
 
-    internal static List<NifTreeViewItem> FromTreeEntries(List<NifTreeEntry> entries)
+    internal static List<NifTreeViewItem> FromTreeEntries(
+        List<NifTreeEntry> entries,
+        CancellationToken cancellationToken = default)
     {
         var items = new List<NifTreeViewItem>();
         foreach (var entry in entries)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var item = new NifTreeViewItem
             {
                 DisplayName = entry.DisplayName,
@@ -29,6 +32,7 @@ public sealed class NifTreeViewItem
 
             foreach (var child in entry.Children)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 item.Children.Add(new NifTreeViewItem
                 {
                     DisplayName = child.DisplayName,

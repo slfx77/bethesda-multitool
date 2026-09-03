@@ -72,6 +72,79 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
         Assert.Null(BethesdaViewerNifAnimationAdapter.TryCreateClip(scene, Animation(9)));
     }
 
+    [Fact]
+    public void FullReverseControllerCycleIsASeparatePingPongClipWithoutReplacingIdle()
+    {
+        var scene = new BethesdaViewerScene("atronach_storm.nif", BethesdaViewerScenePurpose.RawNif);
+        scene.AddNode(
+            "Rock_5",
+            BethesdaViewerScene.RootNodeIndex,
+            Matrix4x4.Identity,
+            Matrix4x4.Identity,
+            BethesdaViewerNodeRole.Skeleton,
+            "Rock_5",
+            sourceBlockIndex: 9);
+        var animation = Animation(9) with
+        {
+            ClipStart = 47.4f,
+            ClipStop = 49.06667f,
+            FullControllerCycle = new NifControllerCycle(
+                1f,
+                0f,
+                0f,
+                49.06667f,
+                NifCycleType.Reverse)
+        };
+
+        var idle = BethesdaViewerNifAnimationAdapter.TryCreateClip(scene, animation);
+        var fullCycle = BethesdaViewerNifAnimationAdapter.TryCreateFullControllerCycleClip(
+            scene,
+            animation);
+
+        Assert.NotNull(idle);
+        Assert.Equal("Embedded Idle", idle.Name);
+        Assert.Equal(47.4f, idle.StartTime);
+        Assert.Equal(49.06667f, idle.EndTime);
+        Assert.True(idle.Loops);
+        Assert.False(idle.PingPongs);
+
+        Assert.NotNull(fullCycle);
+        Assert.Equal("Embedded Controller Cycle", fullCycle.Name);
+        Assert.Equal(0f, fullCycle.StartTime);
+        Assert.Equal(49.06667f, fullCycle.EndTime);
+        Assert.True(fullCycle.Loops);
+        Assert.True(fullCycle.PingPongs);
+        var window = BethesdaViewerAnimationClockPolicy.Resolve(fullCycle);
+        Assert.Equal(98.13334f, window.PresentationDurationSeconds, 4);
+    }
+
+    [Fact]
+    public void FullControllerCycleRejectsMetadataThatDisagreesWithMovingTracks()
+    {
+        var scene = new BethesdaViewerScene("mismatch.nif", BethesdaViewerScenePurpose.RawNif);
+        scene.AddNode(
+            "Bone_9",
+            BethesdaViewerScene.RootNodeIndex,
+            Matrix4x4.Identity,
+            Matrix4x4.Identity,
+            BethesdaViewerNodeRole.Skeleton,
+            "Bone",
+            sourceBlockIndex: 9);
+        var animation = Animation(9) with
+        {
+            FullControllerCycle = new NifControllerCycle(
+                2f,
+                0f,
+                0f,
+                2f,
+                NifCycleType.Reverse)
+        };
+
+        Assert.Null(BethesdaViewerNifAnimationAdapter.TryCreateFullControllerCycleClip(
+            scene,
+            animation));
+    }
+
     private static NifMeshAnimation Animation(int sourceBlockIndex)
     {
         return new NifMeshAnimation(

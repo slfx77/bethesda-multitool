@@ -23,7 +23,7 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
         SourceContract.AssertOrder(
             lifecycle,
             "session.Render(frame);",
-            "surface.ResolveTo(commandList, backBuffer);",
+            "surface.ResolveTo(graphics.Recorder, backBuffer);",
             "capture.RecordCopy(commandList, backBuffer);",
             "recording.Submit(capture);",
             "submittedFenceValue = submission.FenceValue;",

@@ -68,7 +68,10 @@ public sealed class NifModelFamilyAnimationResolverTests
                 @"meshes\characters\_male\armor\skeleton.nif",
                 @"meshes\characters\_male\skeleton.nif"
             ],
-            files.ReadPaths);
+            files.BoundedReadPaths);
+        Assert.Equal(NifModelFamilyAnimationResolver.MaximumEnumeratedFamilyEntries,
+            files.LastEnumerationLimit);
+        Assert.Equal(@"meshes\characters\_male\", files.LastEnumerationPrefix);
         Assert.DoesNotContain(
             catalog.Animations,
             animation => animation.VirtualPath.Contains(@"\variant\", StringComparison.OrdinalIgnoreCase));
@@ -134,6 +137,7 @@ public sealed class NifModelFamilyAnimationResolverTests
         Assert.Null(catalog.FamilyRoot);
         Assert.Empty(catalog.Animations);
         Assert.Empty(files.ReadPaths);
+        Assert.Empty(files.BoundedReadPaths);
         Assert.Equal(0, files.EnumerationCount);
     }
 
@@ -153,6 +157,7 @@ public sealed class NifModelFamilyAnimationResolverTests
         Assert.Equal(NifModelFamilyAnimationResolutionStatus.InvalidModel, catalog.Status);
         Assert.Null(catalog.Skeleton);
         Assert.Empty(files.ReadPaths);
+        Assert.Empty(files.BoundedReadPaths);
         Assert.Equal(0, files.EnumerationCount);
     }
 
@@ -195,6 +200,34 @@ public sealed class NifModelFamilyAnimationResolverTests
         Assert.True(catalog.IsEnumerationTruncated);
         Assert.Empty(catalog.Animations);
         Assert.Contains("withheld", catalog.Diagnostic, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("model remains viewable", catalog.Diagnostic, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Resolve_OversizedCanonicalSkeleton_IsRejectedWithoutReadingItsPayload()
+    {
+        using var files = new ResolverFileSystem();
+        files.AddFile(
+            @"meshes\characters\_male\skeleton.nif",
+            [2],
+            NifModelFamilyAnimationResolver.MaximumSkeletonPayloadBytes + 1,
+            "actors.bsa");
+        var inspector = new ResolverRigInspector()
+            .AddModel(1, "Bip01")
+            .AddSkeleton(2, "Bip01");
+
+        var catalog = NifModelFamilyAnimationResolver.Resolve(
+            files,
+            @"meshes\characters\_male\body.nif",
+            [1],
+            inspector);
+
+        Assert.Equal(
+            NifModelFamilyAnimationResolutionStatus.NoCompatibleCanonicalSkeleton,
+            catalog.Status);
+        Assert.Contains("16 MiB", catalog.Diagnostic, StringComparison.Ordinal);
+        Assert.Contains(@"meshes\characters\_male\skeleton.nif", files.BoundedReadPaths);
+        Assert.Empty(files.ReadPaths);
     }
 
     private sealed class ResolverRigInspector : INifModelFamilyRigInspector
@@ -235,7 +268,13 @@ public sealed class NifModelFamilyAnimationResolverTests
 
         internal List<string> ReadPaths { get; } = [];
 
+        internal List<string> BoundedReadPaths { get; } = [];
+
         internal int EnumerationCount { get; private set; }
+
+        internal int? LastEnumerationLimit { get; private set; }
+
+        internal string? LastEnumerationPrefix { get; private set; }
 
         public string Label => "resolver-test-vfs";
 
@@ -270,6 +309,21 @@ public sealed class NifModelFamilyAnimationResolverTests
                 .Data;
         }
 
+        public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
+        {
+            var normalized = Normalize(path);
+            BoundedReadPaths.Add(normalized);
+            var file = _files.FirstOrDefault(candidate =>
+                string.Equals(candidate.Entry.Path, normalized, StringComparison.OrdinalIgnoreCase));
+            return file.Entry is not null &&
+                   file.Entry.Size >= 0 &&
+                   file.Entry.Size <= maximumBytes &&
+                   file.Data is { } data &&
+                   data.LongLength <= maximumBytes
+                ? new GameFileReadResult(file.Entry, data)
+                : null;
+        }
+
         public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
         {
             EnumerationCount++;
@@ -284,6 +338,16 @@ public sealed class NifModelFamilyAnimationResolverTests
                 .Where(entry => !HonorRequestedPrefix ||
                                 string.IsNullOrEmpty(normalizedPrefix) ||
                                 entry.Path.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public GameFileEnumerationPage EnumerateFilesBounded(string? prefix, int maximumEntries)
+        {
+            LastEnumerationLimit = maximumEntries;
+            LastEnumerationPrefix = prefix;
+            var page = EnumerateFiles(prefix).Take(maximumEntries + 1).ToArray();
+            return new GameFileEnumerationPage(
+                page.Take(maximumEntries).ToArray(),
+                page.Length > maximumEntries);
         }
 
         public void Dispose()

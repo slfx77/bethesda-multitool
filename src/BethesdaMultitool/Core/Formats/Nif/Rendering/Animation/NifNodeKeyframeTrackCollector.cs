@@ -30,6 +30,7 @@ internal static class NifNodeKeyframeTrackCollector
 
         // Tracks per node block index, from the controller chains.
         var tracksByNode = new Dictionary<int, NifNodeTrack>();
+        var controllerHeadersByNode = new Dictionary<int, NifTimeControllerHeader>();
         foreach (var nodeIndex in nodeChildren.Keys)
         {
             var nodeName = NifBlockParsers.ReadBlockName(data, nif.Blocks[nodeIndex], nif);
@@ -62,6 +63,7 @@ internal static class NifNodeKeyframeTrackCollector
                     if (track is { HasAnyKeys: true })
                     {
                         tracksByNode[nodeIndex] = track;
+                        controllerHeadersByNode[nodeIndex] = header;
                         break;
                     }
                 }
@@ -94,6 +96,73 @@ internal static class NifNodeKeyframeTrackCollector
             return null; // degenerate/absent play window → treat as static
         }
 
-        return new NifMeshAnimation(bones, tracks, textKeys, window.Start, window.Stop, window.Loops);
+        var fullControllerCycle = ResolveCompatibleReverseCycle(
+            tracksByNode,
+            controllerHeadersByNode);
+        return new NifMeshAnimation(
+            bones,
+            tracks,
+            textKeys,
+            window.Start,
+            window.Stop,
+            window.Loops,
+            fullControllerCycle);
+    }
+
+    /// <summary>
+    ///     Retains CYCLE_REVERSE only when every moving track belongs to an active controller and
+    ///     the complete controller clocks agree exactly. A mixed graph cannot be represented by
+    ///     one viewer timeline, so it deliberately receives no full-controller clip.
+    /// </summary>
+    internal static NifControllerCycle? ResolveCompatibleReverseCycle(
+        IReadOnlyDictionary<int, NifNodeTrack> tracksByNode,
+        IReadOnlyDictionary<int, NifTimeControllerHeader> controllerHeadersByNode)
+    {
+        NifTimeControllerHeader candidate = default;
+        var foundMovingController = false;
+        foreach (var (nodeIndex, track) in tracksByNode)
+        {
+            if (!track.HasMotion)
+            {
+                continue;
+            }
+
+            if (!controllerHeadersByNode.TryGetValue(nodeIndex, out var header) ||
+                !header.IsActive ||
+                header.CycleType != NifCycleType.Reverse ||
+                !float.IsFinite(header.Frequency) ||
+                !float.IsFinite(header.Phase) ||
+                !float.IsFinite(header.StartTime) ||
+                !float.IsFinite(header.StopTime) ||
+                header.StopTime <= header.StartTime)
+            {
+                return null;
+            }
+
+            if (!foundMovingController)
+            {
+                candidate = header;
+                foundMovingController = true;
+                continue;
+            }
+
+            if (header.Frequency != candidate.Frequency ||
+                header.Phase != candidate.Phase ||
+                header.StartTime != candidate.StartTime ||
+                header.StopTime != candidate.StopTime ||
+                header.CycleType != candidate.CycleType)
+            {
+                return null;
+            }
+        }
+
+        return foundMovingController
+            ? new NifControllerCycle(
+                candidate.Frequency,
+                candidate.Phase,
+                candidate.StartTime,
+                candidate.StopTime,
+                candidate.CycleType)
+            : null;
     }
 }

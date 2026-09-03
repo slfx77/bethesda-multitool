@@ -97,6 +97,20 @@ public sealed class BethesdaViewerAnimationValidatorTests
         Assert.Contains("play window", error);
     }
 
+    [Fact]
+    public void RejectsPingPongFlagWithoutRepeatingCycle()
+    {
+        var clip = Clip(Track()) with
+        {
+            Loops = false,
+            PingPongs = true
+        };
+
+        Assert.False(BethesdaViewerAnimationValidator.TryValidate(clip, 1, 0, out var error));
+        Assert.NotNull(error);
+        Assert.Contains("play window", error);
+    }
+
     private static BethesdaViewerAnimationClip Clip(BethesdaViewerNodeAnimationTrack track)
     {
         return new BethesdaViewerAnimationClip(

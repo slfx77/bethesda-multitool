@@ -71,7 +71,9 @@ internal static class BethesdaViewerAnimationClockPolicy
             return new Window(clip.StartTime, 0f, clip.StartTime);
         }
 
-        var duration = clip.Loops ? longestPeriod : latestExit - earliestEntry;
+        var duration = clip.Loops
+            ? longestPeriod * (clip.PingPongs ? 2d : 1d)
+            : latestExit - earliestEntry;
         return new Window(
             ToFiniteFloat(earliestEntry),
             ToFiniteNonNegativeFloat(duration),

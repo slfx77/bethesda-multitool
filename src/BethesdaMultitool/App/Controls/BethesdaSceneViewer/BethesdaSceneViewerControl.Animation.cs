@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -12,7 +10,6 @@ namespace BethesdaMultitool;
 
 public sealed partial class BethesdaSceneViewerControl
 {
-    private const long MaximumKfBytes = 64L * 1024L * 1024L;
     private const string AnimationPlayGlyph = "\uE768";
     private const string AnimationPauseGlyph = "\uE769";
     private bool _synchronizingAnimationControls;
@@ -128,7 +125,7 @@ public sealed partial class BethesdaSceneViewerControl
                 return;
             }
 
-            if (properties.Size > (ulong)MaximumKfBytes)
+            if (properties.Size > (ulong)BethesdaViewerKfAnimationBinder.MaximumPayloadBytes)
             {
                 _animationLoadStatus = "KF was not loaded because it exceeds the 64 MiB safety limit.";
                 return;
@@ -141,96 +138,15 @@ public sealed partial class BethesdaSceneViewerControl
                 return;
             }
 
-            var nif = NifParser.Parse(data);
-            NifNameTargetedAnimationClip[] sources = nif is null
-                ? []
-                : NifControllerSequenceNameTrackReader.ReadAll(data, nif);
-            if (sources.Length == 0)
+            var binding = await Task.Run(
+                () => BethesdaViewerKfAnimationBinder.ParseAndBind(data, targetScene, file.Name));
+            if (_disposed || generation != _animationKfLoadGeneration ||
+                !ReferenceEquals(targetScene, _scene))
             {
-                _animationLoadStatus =
-                    "No supported controller sequence was found. Supported KF layouts are " +
-                    "Oblivion 20.0.0.4/.5 BS11 and Bethesda 20.2.0.7 BS streams.";
                 return;
             }
 
-            var suppressAccumulatedRootMotion = targetScene.Purpose is
-                BethesdaViewerScenePurpose.NpcAppearance or
-                BethesdaViewerScenePurpose.CreatureAppearance;
-            var accepted = new List<BethesdaViewerAnimationClip>(sources.Length);
-            var reports = new List<BethesdaViewerNameBindingReport>(sources.Length);
-            var occupiedNames = targetScene.AnimationClips
-                .Select(static clip => clip.Name)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var source in sources)
-            {
-                var clip = BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(
-                    targetScene,
-                    source,
-                    suppressAccumulatedRootMotion,
-                    out var report);
-                reports.Add(report);
-                if (clip is null)
-                {
-                    continue;
-                }
-
-                var uniqueName = MakeUniqueAnimationClipName(clip.Name, occupiedNames);
-                occupiedNames.Add(uniqueName);
-                accepted.Add(clip with { Name = uniqueName });
-            }
-
-            var unsupported = reports.Sum(static report => report.UnsupportedTransformTrackCount);
-            var unbound = reports.Sum(static report =>
-                report.MissingTargetTrackCount +
-                report.AmbiguousTargetTrackCount +
-                report.DuplicateSourceTrackCount +
-                report.DestinationCollisionTrackCount);
-            var suppressed = reports.Sum(static report => report.SuppressedAccumRootTrackCount);
-            if (accepted.Count == 0)
-            {
-                _animationLoadStatus = reports
-                    .Select(static report => report.FailureReason)
-                    .FirstOrDefault(static reason => !string.IsNullOrWhiteSpace(reason)) ??
-                    "No KF track bound uniquely to this scene's nodes.";
-                if (unsupported > 0)
-                {
-                    _animationLoadStatus +=
-                        $" {unsupported} BSpline/unsupported transform track(s) cannot be played.";
-                }
-                if (unbound > 0)
-                {
-                    _animationLoadStatus +=
-                        $" {unbound} non-unique or missing target track(s) were skipped.";
-                }
-                if (suppressed > 0)
-                {
-                    _animationLoadStatus +=
-                        $" {suppressed} accumulated-root track(s) were suppressed.";
-                }
-                return;
-            }
-
-            foreach (var clip in accepted)
-            {
-                targetScene.AnimationClips.Add(clip);
-            }
-
-            _animationLoadStatus =
-                $"Loaded {accepted.Count}/{sources.Length} sequence(s) from {file.Name}.";
-            if (unsupported > 0)
-            {
-                _animationLoadStatus += $" {unsupported} BSpline/unsupported transform track(s) are not played.";
-            }
-            if (unbound > 0)
-            {
-                _animationLoadStatus += $" {unbound} non-unique or missing target track(s) were skipped.";
-            }
-            if (suppressed > 0)
-            {
-                _animationLoadStatus += $" {suppressed} accumulated-root track(s) were suppressed.";
-            }
-
-            ReloadSessionAfterAnimationMutation(targetScene);
+            ApplyKfBindingResult(targetScene, binding);
         }
         catch (OperationCanceledException)
         {
@@ -259,7 +175,48 @@ public sealed partial class BethesdaSceneViewerControl
         }
     }
 
-    private void ReloadSessionAfterAnimationMutation(BethesdaViewerScene targetScene)
+    /// <summary>
+    ///     Publishes a worker-produced transactional KF binding into the exact current scene. The
+    ///     manual picker and model-family catalog share this boundary, so both routes update the
+    ///     existing native clip/play/pause/seek controls identically.
+    /// </summary>
+    internal bool ApplyKfBindingResult(
+        BethesdaViewerScene targetScene,
+        BethesdaViewerKfBindingResult binding)
+    {
+        VerifyUiThread();
+        ArgumentNullException.ThrowIfNull(targetScene);
+        ArgumentNullException.ThrowIfNull(binding);
+        if (_disposed || !ReferenceEquals(targetScene, _scene))
+        {
+            return false;
+        }
+
+        _animationLoadStatus = binding.Summary;
+        if (!binding.HasAcceptedClips)
+        {
+            SynchronizeAnimationControls();
+            return false;
+        }
+
+        var firstAppendedClipIndex = targetScene.AnimationClips.Count;
+        var occupiedNames = targetScene.AnimationClips
+            .Select(static clip => clip.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var clip in binding.AcceptedClips)
+        {
+            var uniqueName = MakeUniqueAnimationClipName(clip.Name, occupiedNames);
+            occupiedNames.Add(uniqueName);
+            targetScene.AnimationClips.Add(clip with { Name = uniqueName });
+        }
+
+        ReloadSessionAfterAnimationMutation(targetScene, firstAppendedClipIndex);
+        return true;
+    }
+
+    private void ReloadSessionAfterAnimationMutation(
+        BethesdaViewerScene targetScene,
+        int preferredClipIndex)
     {
         if (_disposed || !ReferenceEquals(targetScene, _scene))
         {
@@ -273,9 +230,17 @@ public sealed partial class BethesdaSceneViewerControl
             // producer scene so newly attached clips cannot mutate a live GPU/animation graph.
             _renderSession.SetScene(null);
             _renderSession.SetScene(targetScene);
+            if ((uint)preferredClipIndex < (uint)_renderSession.AnimationClipNames.Count)
+            {
+                // A republished scene normally starts playable clip zero. Select the first clip
+                // from this binding instead, retaining that load-time play policy while resetting
+                // to its authored start; a zero-duration clip remains stopped by session policy.
+                _renderSession.SelectAnimationClip(preferredClipIndex);
+            }
         }
 
         SynchronizeRenderState();
+        SynchronizeAnimationControls();
         InvalidateViewport();
     }
 
@@ -289,7 +254,7 @@ public sealed partial class BethesdaSceneViewerControl
             bufferSize: 64 * 1024,
             options: FileOptions.Asynchronous | FileOptions.SequentialScan);
         var length = stream.Length;
-        if (length < 0 || length > MaximumKfBytes)
+        if (length < 0 || length > BethesdaViewerKfAnimationBinder.MaximumPayloadBytes)
         {
             throw new InvalidDataException("KF exceeds the 64 MiB safety limit.");
         }

@@ -66,11 +66,14 @@ internal interface INifModelFamilyRigInspector
 /// </summary>
 internal static class NifModelFamilyAnimationResolver
 {
-    // Both limits are correctness boundaries as well as allocation guards. If the entry scan cannot
-    // finish, no partial KF list is returned because an unseen descendant skeleton could invalidate
-    // an already-seen animation. A completed scan may safely return the first deterministic KF page.
-    internal const int MaximumEnumeratedFamilyEntries = 50_000;
-    internal const int MaximumAnimationAssets = 10_000;
+    // These are UI discovery budgets, not statements about valid game data. If the bounded prefix
+    // page cannot prove the family complete, no partial KF list is returned because an unseen
+    // descendant skeleton could invalidate an already-seen animation. The selected model still
+    // publishes immediately with an explicit truncated catalog. A completed page may safely return
+    // the first deterministic animation page.
+    internal const int MaximumEnumeratedFamilyEntries = 8_192;
+    internal const int MaximumAnimationAssets = 2_048;
+    internal const long MaximumSkeletonPayloadBytes = 16L * 1024L * 1024L;
 
     private const int MaximumVirtualPathLength = 4096;
     private const int MaximumVirtualPathSegments = 256;
@@ -129,13 +132,15 @@ internal static class NifModelFamilyAnimationResolver
         foreach (var candidateDirectory in EnumerateAncestorDirectories(modelDirectory))
         {
             var candidatePath = Combine(candidateDirectory, CanonicalSkeletonFileName);
-            var stat = files.TryStat(candidatePath);
-            if (stat is null || files.TryReadAllBytes(candidatePath) is not { } candidateData)
+            var candidate = files.TryReadAllBytesBounded(
+                candidatePath,
+                MaximumSkeletonPayloadBytes);
+            if (candidate is null)
             {
                 continue;
             }
 
-            var skeletonRig = rigInspector.InspectSkeleton(candidateData);
+            var skeletonRig = rigInspector.InspectSkeleton(candidate.Data);
             if (skeletonRig is null || !IsCompatible(requiredBoneNames, skeletonRig.NodeNames))
             {
                 continue;
@@ -143,15 +148,16 @@ internal static class NifModelFamilyAnimationResolver
 
             var skeleton = new NifModelFamilySkeletonAsset(
                 candidatePath,
-                stat.Size,
-                stat.Source);
+                candidate.Entry.Size,
+                candidate.Entry.Source);
             return BuildCatalog(files, normalizedModelPath, candidateDirectory, skeleton);
         }
 
         return Empty(
             normalizedModelPath,
             NifModelFamilyAnimationResolutionStatus.NoCompatibleCanonicalSkeleton,
-            "No ancestor contained an exact canonical skeleton.nif covering every skin-bone name.");
+            "No ancestor contained a readable exact canonical skeleton.nif no larger than " +
+            $"{MaximumSkeletonPayloadBytes / (1024 * 1024)} MiB and covering every skin-bone name.");
     }
 
     private static NifModelFamilyAnimationCatalog BuildCatalog(
@@ -160,30 +166,33 @@ internal static class NifModelFamilyAnimationResolver
         string familyRoot,
         NifModelFamilySkeletonAsset skeleton)
     {
-        var entries = new List<GameFileEntry>();
+        var animationEntries = new List<GameFileEntry>();
+        var nestedFamilyRoots = new HashSet<string>(PathComparer);
         var seenPaths = new HashSet<string>(PathComparer);
-        var scannedEntryCount = 0;
         var prefix = familyRoot.Length == 0 ? null : familyRoot + "\\";
 
         try
         {
-            foreach (var entry in files.EnumerateFiles(prefix))
+            var page = files.EnumerateFilesBounded(
+                prefix,
+                MaximumEnumeratedFamilyEntries);
+            if (page.IsTruncated)
             {
-                if (scannedEntryCount == MaximumEnumeratedFamilyEntries)
-                {
-                    // We cannot prove that an unseen entry is not a nested skeleton declaration.
-                    return new NifModelFamilyAnimationCatalog(
-                        modelPath,
-                        NifModelFamilyAnimationResolutionStatus.Resolved,
-                        familyRoot,
-                        skeleton,
-                        [],
-                        true,
-                        $"Family enumeration exceeded the {MaximumEnumeratedFamilyEntries:N0}-entry safety limit; " +
-                        "the KF list was withheld to prevent cross-family leakage.");
-                }
+                // We cannot prove that an unseen entry is not a nested skeleton declaration.
+                return new NifModelFamilyAnimationCatalog(
+                    modelPath,
+                    NifModelFamilyAnimationResolutionStatus.Resolved,
+                    familyRoot,
+                    skeleton,
+                    [],
+                    true,
+                    $"Automatic family discovery exceeded its {MaximumEnumeratedFamilyEntries:N0}-entry " +
+                    $"bounded prefix budget ({prefix ?? "<root>"}); the KF list was withheld " +
+                    "to prevent cross-family leakage. The model remains viewable.");
+            }
 
-                scannedEntryCount++;
+            foreach (var entry in page.Entries)
+            {
                 if (!TryNormalizeVirtualPath(entry.Path, out var entryPath) ||
                     !IsStrictDescendant(entryPath, familyRoot) ||
                     !seenPaths.Add(entryPath))
@@ -191,7 +200,19 @@ internal static class NifModelFamilyAnimationResolver
                     continue;
                 }
 
-                entries.Add(entry with { Path = entryPath });
+                if (IsCanonicalSkeleton(entryPath))
+                {
+                    var nestedRoot = GetDirectory(entryPath);
+                    if (!PathComparer.Equals(nestedRoot, familyRoot))
+                    {
+                        nestedFamilyRoots.Add(nestedRoot);
+                    }
+                }
+                else if (HasExtension(entryPath, ".kf"))
+                {
+                    // Irrelevant meshes/textures never enter the retained discovery set.
+                    animationEntries.Add(entry with { Path = entryPath });
+                }
             }
         }
         catch (Exception exception) when (IsExpectedFileSystemFailure(exception))
@@ -206,14 +227,7 @@ internal static class NifModelFamilyAnimationResolver
                 $"Family enumeration failed ({exception.GetType().Name}); the KF list was withheld.");
         }
 
-        var nestedFamilyRoots = entries
-            .Where(entry => IsCanonicalSkeleton(entry.Path))
-            .Select(entry => GetDirectory(entry.Path))
-            .Where(directory => !PathComparer.Equals(directory, familyRoot))
-            .ToHashSet(PathComparer);
-
-        var animations = entries
-            .Where(entry => HasExtension(entry.Path, ".kf"))
+        var animations = animationEntries
             .Where(entry => !IsInsideNestedFamily(entry.Path, familyRoot, nestedFamilyRoots))
             .Select(entry => ToAnimationAsset(files, entry, familyRoot))
             .OrderBy(asset => RelativeDirectoryDepth(asset.RelativePath))

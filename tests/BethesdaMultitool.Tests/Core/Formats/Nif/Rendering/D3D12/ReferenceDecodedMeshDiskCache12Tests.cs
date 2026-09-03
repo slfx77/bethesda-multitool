@@ -125,13 +125,58 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // v86 appends regular BGSM emission plus its optional glow texture. v87 reclassifies decoded
         // Starfield Water-route geometry onto the existing water sentinel. v88 retains vertex-Lerp
         // RGBA and its mode. v89 bakes Starfield material UV transforms and reducible UVOffset loops
-        // into the existing UV/scroll payload. This assertion pins all ten bumps.
+        // into the existing UV/scroll payload. v90 persists a compatible embedded TES3 reverse
+        // controller clock instead of flattening it to ClipLoops. This assertion pins every bump.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
         Assert.Equal(default(StarfieldMaterialColorRenderState), loaded.StarfieldMaterialColor);
         Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
-        Assert.Equal(89, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(90, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsEmbeddedReverseControllerCycle()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var animation = new NifMeshAnimation(
+            [new NifAnimBone("Rock_5", -1, Vector3.Zero, Quaternion.Identity, 1f, 277)],
+            [new NifNodeTrack(
+                "Rock_5",
+                1f,
+                0f,
+                NifKeyInterpolation.Linear,
+                [],
+                NifKeyInterpolation.Linear,
+                [
+                    new NifVec3Key(0f, Vector3.Zero),
+                    new NifVec3Key(49.06667f, new Vector3(0f, 0f, 153.99197f))
+                ],
+                NifKeyInterpolation.Linear,
+                [])],
+            [new NifAnimTextKey(47.4f, "Idle: Start")],
+            47.4f,
+            49.06667f,
+            true,
+            new NifControllerCycle(1f, 0f, 0f, 49.06667f, NifCycleType.Reverse));
+        var payload = CreatePayload() with { Animation = animation };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        var loadedAnimation = Assert.IsType<NifMeshAnimation>(entry.Mesh?.Animation);
+        Assert.True(loadedAnimation.FullControllerCycle.HasValue);
+        var cycle = loadedAnimation.FullControllerCycle.Value;
+        Assert.Equal(1f, cycle.Frequency);
+        Assert.Equal(0f, cycle.Phase);
+        Assert.Equal(0f, cycle.StartTime);
+        Assert.Equal(49.06667f, cycle.StopTime);
+        Assert.Equal(NifCycleType.Reverse, cycle.Cycle);
+        Assert.Equal(47.4f, loadedAnimation.ClipStart);
+        Assert.Equal(49.06667f, loadedAnimation.ClipStop);
+        Assert.True(loadedAnimation.ClipLoops);
     }
 
     [Fact]

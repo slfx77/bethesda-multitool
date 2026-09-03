@@ -1,6 +1,8 @@
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Games;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool;
@@ -25,6 +27,7 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
 
     private readonly object _frameGate = new();
     private readonly ID3D12DescriptorHeap[] _descriptorHeaps;
+    private readonly Dictionary<BethesdaGame, ReferencePipelineFactory12> _referencePipelines = [];
     private bool _deviceTerminal;
     private bool _disposed;
     private bool _gpuDisposed;
@@ -157,6 +160,40 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
     }
 
     /// <summary>
+    ///     Returns the app-scoped reference PSOs for one game. Mesh and NPC scene changes borrow
+    ///     this factory instead of rebuilding the same direct/shadow/A2C pipeline family for every
+    ///     selection. The complete-frame gate also prevents a new game's driver PSO construction
+    ///     from racing another native viewer's command recording.
+    /// </summary>
+    internal ReferencePipelineFactory12 GetOrCreateReferencePipelines(BethesdaGame game)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        lock (_frameGate)
+        {
+            if (_deviceTerminal)
+            {
+                throw new InvalidOperationException(
+                    "The shared Bethesda D3D12 device was terminalized before pipeline creation.");
+            }
+
+            if (_referencePipelines.TryGetValue(game, out var existing))
+            {
+                Log.Debug(
+                    "BethesdaSceneViewer: reused app-scoped reference pipelines for {0}.",
+                    game);
+                return existing;
+            }
+
+            var created = new ReferencePipelineFactory12(Gpu, RootSignature, game);
+            _referencePipelines.Add(game, created);
+            Log.Info(
+                "BethesdaSceneViewer: cached app-scoped reference pipelines for {0}.",
+                game);
+            return created;
+        }
+    }
+
+    /// <summary>
     ///     Ends the shared device before a failed post-Execute submission can flow through SetFaulted
     ///     and release its surface/session graph. Idempotent because both viewer controls share this
     ///     context and the second one may observe the same terminal device on its next frame.
@@ -197,6 +234,11 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
         // The idle attempt above is deliberately the only queue signal in shared teardown. A device-
         // loss failure must not make Recorder.Dispose signal the same dead queue again, nor may one
         // failing COM release prevent the remaining ownership graph from being dismantled.
+        foreach (var (game, pipelines) in _referencePipelines)
+        {
+            DisposeOwnedNoThrow(pipelines, $"{game} reference pipelines");
+        }
+        _referencePipelines.Clear();
         DisposeOwnedNoThrow(DeletionQueue, "deletion queue");
         DisposeOwnedNoThrow(RootSignature, "root signature");
         DisposeOwnedNoThrow(DescriptorHeap, "descriptor heap");

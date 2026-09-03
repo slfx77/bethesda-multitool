@@ -60,6 +60,13 @@ internal interface IBethesdaSceneViewerRenderSession12 : IDisposable
     /// </summary>
     bool RequiresContinuousFrames { get; }
 
+    /// <summary>
+    ///     True when the session may overwrite persistent shader-visible descriptors while recording
+    ///     the next frame. The host must drain earlier direct-queue frames before beginning that
+    ///     recording; D3D12 does not snapshot descriptors referenced by an in-flight command list.
+    /// </summary>
+    bool RequiresGpuIdleBeforeFrame { get; }
+
     /// <summary>Names of independently selectable native animation clips on the current scene.</summary>
     IReadOnlyList<string> AnimationClipNames { get; }
 

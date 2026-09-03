@@ -5,8 +5,9 @@ using BethesdaMultitool.Core.Utils;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 /// <summary>
-///     Collects a <see cref="NifMeshAnimation" /> from the modern NiControllerManager graph
-///     (FO3/FNV/Skyrim ambient animated statics — NCR cloth flags, hanging signs): an idle-named
+///     Collects a <see cref="NifMeshAnimation" /> from a NiControllerManager graph
+///     (Oblivion/FO3/FNV/Skyrim ambient animated statics — arena spectators, NCR cloth flags,
+///     hanging signs): an idle-named
 ///     <c>NiControllerSequence</c>'s controlled blocks map node names to
 ///     <c>NiTransformInterpolator</c> → <c>NiTransformData</c>, read through the same
 ///     <see cref="NifKeyframeDataTrackReader" /> as the TES3 per-node graph — both eras compile onto
@@ -22,9 +23,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 ///     </para>
 ///     <para>
 ///         SCOPE: the 20.2.0.7 Bethesda stream's controlled-block form (string-table indices,
-///         29-byte stride — verified byte-level on nv_ncr_flag_s.nif). Oblivion's 20.0.0.x form
-///         resolves names through a NiStringPalette with per-block offsets (different stride) — a
-///         follow-up gate in this file when an Oblivion ambient asset needs it.
+///         29-byte stride — verified byte-level on nv_ncr_flag_s.nif) and Oblivion's
+///         20.0.0.4/.5 BS11 form (33-byte controlled blocks whose names resolve through a
+///         NiStringPalette). The latter reuses the standalone-KF reader because the embedded and
+///         standalone TES4 sequence payloads have the same byte contract.
 ///     </para>
 /// </summary>
 internal static class NifControllerSequenceTrackCollector
@@ -43,20 +45,32 @@ internal static class NifControllerSequenceTrackCollector
     // NiTransformInterpolator: static pose (Vec3 + Quat + float = 32 bytes), then Data ref.
     private const int InterpolatorDataRefOffset = 32;
 
+    private const uint OblivionBsVersion = 11;
+
     internal static NifMeshAnimation? Collect(
         byte[] data,
         NifInfo nif,
         bool preserveFileRootTransformAndTrack = false)
     {
-        if (nif.BinaryVersion != NifVersions.Gamebryo202007 || nif.BsVersion == 0)
+        var modern = nif.BinaryVersion == NifVersions.Gamebryo202007 && nif.BsVersion != 0;
+        var oblivion = IsOblivionPaletteSequenceStream(nif);
+        if (!modern && !oblivion)
         {
-            return null; // only the verified controlled-block form (see class docs)
+            return null; // only the verified controlled-block forms (see class docs)
         }
 
         var be = nif.IsBigEndian;
         if (ReadBsxFlags(data, nif, be) is { } bsxFlags && (bsxFlags & 0x1) == 0)
         {
             return null; // BSX present but not Animated — the engine never runs this manager
+        }
+
+        if (oblivion)
+        {
+            return CollectOblivionPaletteSequence(
+                data,
+                nif,
+                preserveFileRootTransformAndTrack);
         }
 
         var sequence = SelectIdleSequence(data, nif, be);
@@ -190,15 +204,162 @@ internal static class NifControllerSequenceTrackCollector
             bones, tracks, textKeys, startTime, stopTime, cycleType != CycleType.Clamp);
     }
 
+    private static NifMeshAnimation? CollectOblivionPaletteSequence(
+        byte[] data,
+        NifInfo nif,
+        bool preserveFileRootTransformAndTrack)
+    {
+        // The shared name reader owns the byte-sensitive 33-byte controlled-block and
+        // NiStringPalette validation. Keep the ambient-static policy here: an activation-only
+        // controller manager must remain at rest.
+        var sequence = SelectIdleNameTargetedSequence(
+            NifControllerSequenceNameTrackReader.ReadAll(data, nif));
+        if (sequence is null)
+        {
+            return null;
+        }
+
+        var nodeChildren = new Dictionary<int, List<int>>();
+        var shapeDataMap = new Dictionary<int, int>();
+        var shapePropertyMap = new Dictionary<int, List<int>>();
+        var shapeSkinInstanceMap = new Dictionary<int, int>();
+        NifSceneGraphWalker.ClassifyBlocks(
+            data,
+            nif,
+            nodeChildren,
+            shapeDataMap,
+            shapePropertyMap,
+            shapeSkinInstanceMap);
+
+        // A NiDefaultAVObjectPalette is authoritative when present: it can distinguish exporters'
+        // duplicate node names. Palette-less files may bind only to unambiguous authored node names.
+        var nodeByName = ReadObjectPalette(data, nif, nif.IsBigEndian) ??
+                         BuildUnambiguousNodeNameMap(data, nif, nodeChildren);
+        var duplicateSourceNames = sequence.Tracks
+            .Where(static track => !string.IsNullOrWhiteSpace(track.NodeName))
+            .GroupBy(static track => track.NodeName, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .Select(static group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var collidedNodes = new HashSet<int>();
+        var tracksByNode = new Dictionary<int, NifNodeTrack>();
+        foreach (var sourceTrack in sequence.Tracks)
+        {
+            var nodeName = sourceTrack.NodeName;
+            if (string.IsNullOrWhiteSpace(nodeName) ||
+                duplicateSourceNames.Contains(nodeName) ||
+                IsAccumulatedRootTarget(nodeName, sequence.AccumRootName) ||
+                !nodeByName.TryGetValue(nodeName, out var nodeBlock) ||
+                !nodeChildren.ContainsKey(nodeBlock) ||
+                collidedNodes.Contains(nodeBlock))
+            {
+                continue;
+            }
+
+            var track = sourceTrack with
+            {
+                // NiControllerSequence owns the outer clock; the TES4 transform interpolators do
+                // not carry independent frequency/phase fields.
+                Frequency = sequence.Frequency,
+                Phase = 0f
+            };
+            if (!track.HasAnyKeys)
+            {
+                continue;
+            }
+
+            if (!tracksByNode.TryAdd(nodeBlock, track))
+            {
+                // Two source names aliasing one object-palette destination are ambiguous. Remove
+                // the earlier claim as well; never choose whichever controlled block appeared first.
+                tracksByNode.Remove(nodeBlock);
+                collidedNodes.Add(nodeBlock);
+            }
+        }
+
+        if (!tracksByNode.Values.Any(static track => track.HasMotion) ||
+            NifAnimationRigBuilder.Build(
+                data,
+                nif,
+                nodeChildren,
+                shapeSkinInstanceMap,
+                tracksByNode,
+                preserveFileRootTransformAndTrack)
+            is not var (bones, tracks))
+        {
+            return null;
+        }
+
+        return new NifMeshAnimation(
+            bones,
+            tracks,
+            sequence.TextKeys,
+            sequence.StartTime,
+            sequence.StopTime,
+            sequence.Cycle != NifCycleType.Clamp);
+    }
+
+    private static bool IsOblivionPaletteSequenceStream(NifInfo nif)
+    {
+        return (nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005) &&
+               nif.BsVersion == OblivionBsVersion &&
+               nif.UserVersion is 10 or 11 &&
+               nif.HasInlineStrings &&
+               !nif.IsBigEndian;
+    }
+
+    private static bool IsAccumulatedRootTarget(string nodeName, string? accumRoot)
+    {
+        return !string.IsNullOrWhiteSpace(accumRoot) &&
+               (string.Equals(nodeName, accumRoot, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    nodeName,
+                    accumRoot + " NonAccum",
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Testable TES4 name-targeted form of the same idle-only ambient autoplay policy.</summary>
+    internal static NifNameTargetedAnimationClip? SelectIdleNameTargetedSequence(
+        IReadOnlyList<NifNameTargetedAnimationClip> sequences)
+    {
+        ArgumentNullException.ThrowIfNull(sequences);
+        return sequences.FirstOrDefault(static clip =>
+            clip is not null &&
+            !string.IsNullOrWhiteSpace(clip.Name) &&
+            clip.Name.Contains("idle", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>The BSXFlags value, or null when the NIF has no BSXFlags block (TES3/plain Gamebryo).</summary>
-    private static uint? ReadBsxFlags(byte[] data, NifInfo nif, bool be)
+    internal static uint? ReadBsxFlags(byte[] data, NifInfo nif, bool be)
     {
         foreach (var block in nif.Blocks)
         {
-            if (block.TypeName == "BSXFlags" && block.Size >= 8)
+            if (block.TypeName != "BSXFlags")
             {
-                return BinaryUtils.ReadUInt32(data, block.DataOffset + 4, be); // name(4) + flags
+                continue;
             }
+
+            var pos = block.DataOffset;
+            var end = block.DataOffset + block.Size;
+            if (pos < 0 || end < pos || end > data.Length)
+            {
+                return 0; // malformed present BSX fails closed as not Animated
+            }
+
+            if (nif.HasInlineStrings)
+            {
+                // TES4 NiIntegerExtraData: SizedString name immediately followed by the uint value.
+                if (NifBinaryCursor.ReadSizedString(data, ref pos, end, be) is null)
+                {
+                    return 0;
+                }
+            }
+            else
+            {
+                pos += 4; // modern NiExtraData name string-table index
+            }
+
+            return pos + 4 <= end ? BinaryUtils.ReadUInt32(data, pos, be) : 0;
         }
 
         return null;
@@ -287,6 +448,31 @@ internal static class NifControllerSequenceTrackCollector
             if (NifBlockParsers.ReadBlockName(data, nif.Blocks[nodeIndex], nif) is { Length: > 0 } name)
             {
                 map.TryAdd(name, nodeIndex);
+            }
+        }
+
+        return map;
+    }
+
+    private static Dictionary<string, int> BuildUnambiguousNodeNameMap(
+        byte[] data,
+        NifInfo nif,
+        Dictionary<int, List<int>> nodeChildren)
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var nodeIndex in nodeChildren.Keys)
+        {
+            if (NifBlockParsers.ReadBlockName(data, nif.Blocks[nodeIndex], nif) is not
+                { Length: > 0 } name || ambiguous.Contains(name))
+            {
+                continue;
+            }
+
+            if (!map.TryAdd(name, nodeIndex))
+            {
+                map.Remove(name);
+                ambiguous.Add(name);
             }
         }
 

@@ -21,8 +21,11 @@ public sealed class NifConverterGeometryCompletenessSourceContractTests
         var code = SourceContract.ReadAppSource("NifConverterTab.xaml.cs");
         var xaml = SourceContract.ReadAppSource("NifConverterTab.xaml");
 
-        Assert.Contains("service.BuildViewerSceneWithDiagnostics(nifData, item.DisplayName)", workflow,
-            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            workflow,
+            "service.BuildViewerSceneWithDiagnostics(",
+            "item.DisplayName,",
+            "item.FullPath);");
         Assert.Contains("build.ExternalGeometry.IncompleteWarningMessage", workflow,
             StringComparison.Ordinal);
         Assert.Contains("x:Name=\"NifViewerGeometryWarning\"", xaml, StringComparison.Ordinal);

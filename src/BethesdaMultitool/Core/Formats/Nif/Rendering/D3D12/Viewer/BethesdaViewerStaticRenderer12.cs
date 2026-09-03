@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -23,9 +24,11 @@ internal sealed class BethesdaViewerStaticRenderer12
 
     private readonly GpuDescriptorHeapAllocator12 _descriptorHeap;
     private readonly int _alphaToCoverageFallbackCount;
+    private readonly string? _alphaToCoverageFallbackReason;
     private readonly DepthOrderedDraw[] _depthOrdered;
     private readonly int _falloutSpecializationEligibleCount;
     private readonly int _falloutSpecializationUsedCount;
+    private readonly uint _neutralTextureIndex;
     private readonly ReferencePipelineFactory12 _pipelines;
     private readonly bool _requiresContinuousFrames;
     private readonly GpuRingBuffer12 _ringBuffer;
@@ -42,13 +45,15 @@ internal sealed class BethesdaViewerStaticRenderer12
         BethesdaViewerPosedScene12 posedScene,
         ReferencePipelineFactory12 pipelines,
         GpuRingBuffer12 ringBuffer,
-        GpuDescriptorHeapAllocator12 descriptorHeap)
+        GpuDescriptorHeapAllocator12 descriptorHeap,
+        uint neutralTextureIndex)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(posedScene);
         _pipelines = pipelines ?? throw new ArgumentNullException(nameof(pipelines));
         _ringBuffer = ringBuffer ?? throw new ArgumentNullException(nameof(ringBuffer));
         _descriptorHeap = descriptorHeap ?? throw new ArgumentNullException(nameof(descriptorHeap));
+        _neutralTextureIndex = neutralTextureIndex;
 
         var draws = mesh.Submeshes
             .Where(static submesh => submesh.IndexCount > 0)
@@ -62,7 +67,19 @@ internal sealed class BethesdaViewerStaticRenderer12
                 posedScene.Source.Purpose,
                 draw.NativeSemantics.SkyType))
             .ToArray();
-        var alphaToCoverageAvailable = _pipelines.AlphaToCoverageAvailable;
+        var alphaToCoverageMode = BethesdaViewerAlphaToCoveragePolicy.Resolve(
+            _pipelines.AlphaToCoverageAvailable,
+            Environment.GetEnvironmentVariable(BethesdaViewerAlphaToCoveragePolicy.EnvironmentVariable));
+        var alphaToCoverageAvailable = alphaToCoverageMode == BethesdaViewerAlphaToCoverageMode.Hardware;
+        _alphaToCoverageFallbackReason =
+            BethesdaViewerAlphaToCoveragePolicy.DescribeFallback(alphaToCoverageMode);
+        if (alphaToCoverageMode == BethesdaViewerAlphaToCoverageMode.BlendFallbackDisabled)
+        {
+            Logger.Instance.Info(
+                "BethesdaSceneViewer: native alpha-to-coverage disabled by {0}=0; " +
+                "using the established blend fallback while retaining scene MSAA.",
+                BethesdaViewerAlphaToCoveragePolicy.EnvironmentVariable);
+        }
         _alphaToCoverageFallbackCount = alphaToCoverageAvailable
             ? 0
             : routedDraws.Count(static draw =>
@@ -168,6 +185,8 @@ internal sealed class BethesdaViewerStaticRenderer12
     internal bool RequiresContinuousFrames => _requiresContinuousFrames;
 
     internal int AlphaToCoverageFallbackCount => _alphaToCoverageFallbackCount;
+
+    internal string? AlphaToCoverageFallbackReason => _alphaToCoverageFallbackReason;
 
     /// <summary>
     ///     One-time scene census for the narrow direct FO76/Starfield opaque families. Eligibility
@@ -734,9 +753,9 @@ internal sealed class BethesdaViewerStaticRenderer12
                 submesh.StarfieldOpacity?.BindlessIndex ??
                 submesh.ClassicParallaxHeightMap?.BindlessIndex ??
                 submesh.ClassicEnvMask?.BindlessIndex ??
-                submesh.SpecularMap?.BindlessIndex ?? 0,
+                submesh.SpecularMap?.BindlessIndex ?? _neutralTextureIndex,
                 submesh.GradientMap?.BindlessIndex ??
-                submesh.Lighting30GlowMap?.BindlessIndex ?? 0),
+                submesh.Lighting30GlowMap?.BindlessIndex ?? _neutralTextureIndex),
             Specular = submesh.Specular,
             CameraRight = new Vector4(cameraRight, 0f),
             CameraUp = new Vector4(cameraUp, 0f),

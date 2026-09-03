@@ -96,7 +96,8 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
                     track.Phase,
                     _clip.StartTime,
                     _clip.EndTime,
-                    _clip.Loops);
+                    _clip.Loops,
+                    _clip.PingPongs);
                 if (track.RotationKeys.Length > 0)
                 {
                     rotation = SampleRotation(
@@ -146,7 +147,8 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
         float phase,
         float startTime,
         float endTime,
-        bool loops)
+        bool loops,
+        bool pingPongs = false)
     {
         var safeClock = float.IsFinite(clockSeconds) ? clockSeconds : 0f;
         var safeFrequency = float.IsFinite(frequency) ? frequency : 1f;
@@ -165,8 +167,19 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
             return (float)Math.Clamp(mapped, startTime, endTime);
         }
 
-        var wrapped = (mapped - startTime) % duration;
-        return (float)(startTime + (wrapped < 0d ? wrapped + duration : wrapped));
+        var cycleDuration = pingPongs ? duration * 2d : duration;
+        var wrapped = (mapped - startTime) % cycleDuration;
+        if (wrapped < 0d)
+        {
+            wrapped += cycleDuration;
+        }
+
+        if (pingPongs && wrapped > duration)
+        {
+            wrapped = cycleDuration - wrapped;
+        }
+
+        return (float)(startTime + wrapped);
     }
 
     private static RestTransform Decompose(Matrix4x4 transform)

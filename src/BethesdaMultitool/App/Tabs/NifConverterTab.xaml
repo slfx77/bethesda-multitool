@@ -449,10 +449,15 @@
           <!-- Splitter: preview ↔ info/export -->
           <toolkit:GridSplitter Grid.Column="3" Style="{StaticResource ResizableSplitterStyle}" />
 
-          <!-- Right: Info + Export Panel -->
-          <ScrollViewer Grid.Column="4"
-                        VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="12" Padding="0,0,0,8">
+          <!-- Right: model information and the independently virtualized Animation catalog. -->
+          <TabView Grid.Column="4"
+                   IsAddTabButtonVisible="False"
+                   CanDragTabs="False"
+                   CanReorderTabs="False"
+                   TabWidthMode="Equal">
+            <TabViewItem Header="Info" IsClosable="False">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="12" Padding="0,0,0,8">
 
               <!-- NIF Info -->
               <TextBlock Text="NIF Info"
@@ -564,8 +569,90 @@
                   <KeyboardAccelerator Key="R" Modifiers="Control" />
                 </Button.KeyboardAccelerators>
               </Button>
-            </StackPanel>
-          </ScrollViewer>
+                </StackPanel>
+              </ScrollViewer>
+            </TabViewItem>
+
+            <TabViewItem Header="Animation" IsClosable="False">
+              <Grid Padding="0,4,0,8" RowSpacing="8">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                  x:Name="NifViewerAnimationSourcesText"
+                  Text="Select a NIF file to discover sibling animations"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  TextWrapping="Wrap" />
+
+                <!-- A ListView with an ItemsStackPanel virtualizes the resolver's bounded 10k page. -->
+                <ListView
+                  x:Name="NifViewerAnimationList"
+                  Grid.Row="1"
+                  SelectionMode="Single"
+                  SelectionChanged="NifViewerAnimationList_SelectionChanged"
+                  AutomationProperties.Name="Model-family KF animations">
+                  <ListView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <ItemsStackPanel CacheLength="2.0" />
+                    </ItemsPanelTemplate>
+                  </ListView.ItemsPanel>
+                  <ListView.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Padding="2,4" Spacing="1"
+                                  ToolTipService.ToolTip="{Binding VirtualPath}">
+                        <TextBlock Text="{Binding RelativePath}"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding SizeDisplay}"
+                                   FontSize="10"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="{Binding Source}"
+                                   FontSize="10"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock
+                  x:Name="NifViewerAnimationLoadStatusText"
+                  Grid.Row="2"
+                  Text="Select a KF to inspect its provenance"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  TextWrapping="Wrap"
+                  AutomationProperties.LiveSetting="Polite" />
+
+                <Grid Grid.Row="3" ColumnSpacing="8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Button
+                    x:Name="NifViewerLoadSelectedAnimationButton"
+                    Content="Load selected KF"
+                    HorizontalAlignment="Stretch"
+                    Click="NifViewerLoadSelectedAnimation_Click"
+                    IsEnabled="False"
+                    AutomationProperties.HelpText="Read and bind only the selected model-family KF" />
+                  <ProgressRing
+                    x:Name="NifViewerAnimationLoadingRing"
+                    Grid.Column="1"
+                    Width="20"
+                    Height="20"
+                    IsActive="False"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="Loading selected KF" />
+                </Grid>
+              </Grid>
+            </TabViewItem>
+          </TabView>
         </Grid>
       </TabViewItem>
     </TabView>

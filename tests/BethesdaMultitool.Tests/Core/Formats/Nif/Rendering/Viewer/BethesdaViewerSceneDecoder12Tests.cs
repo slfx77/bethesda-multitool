@@ -112,6 +112,7 @@ public sealed class BethesdaViewerSceneDecoder12Tests
                     [new BethesdaViewerMorphWeightKey(0f, morphWeights)])
             ],
             [new BethesdaViewerTextKey(0.5f, "middle")]);
+        animation = animation with { PingPongs = true };
         scene.AnimationClips.Add(animation);
         var stitchVertices = new[]
         {
@@ -187,6 +188,7 @@ public sealed class BethesdaViewerSceneDecoder12Tests
             decoded.MeshParts[2].Submesh.DiffuseTexturePath);
         Assert.Single(decoded.AnimationClips);
         Assert.NotSame(animation, decoded.AnimationClips[0]);
+        Assert.True(decoded.AnimationClips[0].PingPongs);
         Assert.Equal(skeletonNode, decoded.AnimationClips[0].NodeTracks[0].NodeIndex);
         Assert.NotSame(rotationKeys, decoded.AnimationClips[0].NodeTracks[0].RotationKeys);
         Assert.Equal(rotationKeys, decoded.AnimationClips[0].NodeTracks[0].RotationKeys);

@@ -74,7 +74,10 @@ internal sealed record BethesdaViewerAnimationClip(
     bool Loops,
     BethesdaViewerNodeAnimationTrack[] NodeTracks,
     BethesdaViewerMorphWeightTrack[] MorphWeightTracks,
-    BethesdaViewerTextKey[] TextKeys)
+    BethesdaViewerTextKey[] TextKeys,
+    // Gamebryo CYCLE_REVERSE is a repeating forward/backward traversal, not a forward loop.
+    // Kept separate from Loops so the existing clamp/loop contract remains source-compatible.
+    bool PingPongs = false)
 {
     internal float Duration => EndTime - StartTime;
 }

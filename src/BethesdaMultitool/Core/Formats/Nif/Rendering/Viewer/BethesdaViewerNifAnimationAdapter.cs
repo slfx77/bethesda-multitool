@@ -15,12 +15,73 @@ internal static class BethesdaViewerNifAnimationAdapter
         NifMeshAnimation animation,
         string? clipName = null)
     {
+        return TryCreateClip(
+            scene,
+            animation,
+            string.IsNullOrWhiteSpace(clipName) ? "Embedded Idle" : clipName,
+            animation.ClipStart,
+            animation.ClipStop,
+            animation.ClipLoops,
+            pingPongs: false);
+    }
+
+    /// <summary>
+    ///     Creates the explicit raw-viewer traversal for an embedded TES3 CYCLE_REVERSE graph.
+    ///     The normal text-key-selected Embedded Idle remains a separate first-class clip.
+    /// </summary>
+    internal static BethesdaViewerAnimationClip? TryCreateFullControllerCycleClip(
+        BethesdaViewerScene scene,
+        NifMeshAnimation animation)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(animation);
+        if (animation.FullControllerCycle is not { } controller ||
+            controller.Cycle != NifCycleType.Reverse ||
+            !float.IsFinite(controller.Frequency) ||
+            !float.IsFinite(controller.Phase) ||
+            !float.IsFinite(controller.StartTime) ||
+            !float.IsFinite(controller.StopTime) ||
+            controller.StopTime <= controller.StartTime)
+        {
+            return null;
+        }
+
+        // Treat persisted/caller-created metadata as untrusted. The collector only publishes the
+        // full lane when every moving track agrees; recheck that invariant at the viewer boundary.
+        foreach (var track in animation.Tracks)
+        {
+            if (track is { HasMotion: true } &&
+                (track.Frequency != controller.Frequency || track.Phase != controller.Phase))
+            {
+                return null;
+            }
+        }
+
+        return TryCreateClip(
+            scene,
+            animation,
+            "Embedded Controller Cycle",
+            controller.StartTime,
+            controller.StopTime,
+            loops: true,
+            pingPongs: true);
+    }
+
+    private static BethesdaViewerAnimationClip? TryCreateClip(
+        BethesdaViewerScene scene,
+        NifMeshAnimation animation,
+        string clipName,
+        float startTime,
+        float stopTime,
+        bool loops,
+        bool pingPongs)
+    {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(animation);
         if (animation.Bones.Length != animation.Tracks.Length ||
-            !float.IsFinite(animation.ClipStart) ||
-            !float.IsFinite(animation.ClipStop) ||
-            animation.ClipStop <= animation.ClipStart)
+            !float.IsFinite(startTime) ||
+            !float.IsFinite(stopTime) ||
+            stopTime <= startTime)
         {
             return null;
         }
@@ -74,15 +135,16 @@ internal static class BethesdaViewerNifAnimationAdapter
         }
 
         var clip = new BethesdaViewerAnimationClip(
-            string.IsNullOrWhiteSpace(clipName) ? "Embedded Idle" : clipName,
-            animation.ClipStart,
-            animation.ClipStop,
-            animation.ClipLoops,
+            clipName,
+            startTime,
+            stopTime,
+            loops,
             boundTracks.ToArray(),
             [],
             animation.TextKeys
                 .Select(static key => new BethesdaViewerTextKey(key.Time, key.Label))
-                .ToArray());
+                .ToArray(),
+            pingPongs);
         return BethesdaViewerAnimationValidator.TryValidate(
             clip,
             scene.Nodes.Count,

@@ -262,7 +262,8 @@ internal static class BethesdaViewerSceneDecoder12
             source.Loops,
             nodeTracks,
             morphTracks,
-            (BethesdaViewerTextKey[])source.TextKeys.Clone());
+            (BethesdaViewerTextKey[])source.TextKeys.Clone(),
+            source.PingPongs);
     }
 
     private static DecodedBethesdaViewerSubmeshSemantics12 SnapshotNativeSemantics(

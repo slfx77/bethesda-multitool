@@ -4,6 +4,7 @@ using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -26,6 +27,11 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private CancellationTokenSource? _nifViewerLoadCts;
     private Task? _nifViewerLoadTask;
     private int _nifViewerLoadGeneration;
+    private CancellationTokenSource? _nifViewerAnimationLoadCts;
+    private Task? _nifViewerAnimationLoadTask;
+    private int _nifViewerAnimationLoadGeneration;
+    private bool _nifViewerAnimationLoadInProgress;
+    private CancellationTokenSource? _nifViewerSourceLoadCts;
     private int _nifViewerSourceLoadingGeneration;
     private bool _nifViewerNativeReady;
     private TaskCompletionSource<BethesdaSceneViewerRenderState>? _nifViewerNativeOutcome;
@@ -353,21 +359,20 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                 return;
             }
 
-            NifModelViewer.Visibility = Visibility.Visible;
-
             // Set initial status after page loads. The WebView2 page renders its own
-            // "Select a NIF file to view" message via setStatus, so hide the XAML
-            // placeholder TextBlock to avoid rendering the same text twice stacked.
+            // "Select a NIF file to view" message via setStatus. Visibility remains owned by
+            // the exact faulted-scene path; successful Chromium startup alone must not place a
+            // transparent WebView over the native renderer.
             NifModelViewer.CoreWebView2.NavigationCompleted += async (_, _) =>
             {
                 try
                 {
                     await NifModelViewer.ExecuteScriptAsync("setStatus('Select a NIF file to view')");
-                    NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
                 }
                 catch
                 {
-                    // Page may not have setStatus yet — leave the XAML placeholder up as a fallback.
+                    // The exact faulted-scene load owns fallback presentation and will surface a
+                    // XAML status if the compatibility page cannot execute scripts.
                 }
             };
         }
@@ -376,7 +381,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             if (_nifViewerDisposed) return;
 
             CloseNifViewerCompatibilityHost();
-            NifViewerPlaceholderText.Text = $"WebView2 init failed: {ex.Message}";
+            ShowNifViewerPlaceholder($"WebView2 init failed: {ex.Message}");
         }
     }
 
@@ -427,6 +432,11 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private async Task LoadNifSourceAsync(string path, bool isArchive)
     {
         var sourceGeneration = unchecked(++_nifViewerLoadGeneration);
+        var previousSourceCancellation = _nifViewerSourceLoadCts;
+        previousSourceCancellation?.Cancel();
+        var sourceLoadCts = new CancellationTokenSource();
+        _nifViewerSourceLoadCts = sourceLoadCts;
+        var cancellationToken = sourceLoadCts.Token;
         _nifViewerSourceLoadingGeneration = sourceGeneration;
         _nifViewerScene = null;
         _nifViewer.ClearSource();
@@ -437,6 +447,9 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerSearchBox.Text = string.Empty;
         NifViewerFileCount.Text = string.Empty;
         NifViewerTextureSourcesText.Text = "Texture sources: resolving...";
+        SetNifViewerAnimationCatalog(
+            null,
+            "Select a NIF file to discover sibling animations");
         ToolTipService.SetToolTip(NifViewerTextureSourcesText, null);
         NifViewerExportGlbButton.IsEnabled = false;
         NifViewerRenderPngButton.IsEnabled = false;
@@ -449,10 +462,18 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
         try
         {
+            // Visibility/property changes do not paint until control returns to the dispatcher.
+            // Yield one turn before any synchronous cancellation drain or service disposal work.
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Show source progress before draining a superseded model load so a large source begins
             // with immediate feedback rather than an apparently frozen file list.
+            await CancelNifViewerAnimationLoadAndDrainAsync();
             await CancelNifViewerLoadAndDrainAsync();
-            if (sourceGeneration != _nifViewerLoadGeneration)
+            if (cancellationToken.IsCancellationRequested ||
+                sourceGeneration != _nifViewerLoadGeneration ||
+                _nifViewerDisposed)
             {
                 return;
             }
@@ -480,8 +501,11 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                 path,
                 isArchive,
                 overrideText,
-                progress);
-            if (sourceGeneration != _nifViewerLoadGeneration)
+                progress,
+                cancellationToken);
+            if (cancellationToken.IsCancellationRequested ||
+                sourceGeneration != _nifViewerLoadGeneration ||
+                _nifViewerDisposed)
             {
                 result.Service.Dispose();
                 return;
@@ -498,18 +522,30 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             PopulateNifTree(state.Items);
             NifViewerFileCount.Text = state.FileCountText;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A replacement source or tab disposal owns subsequent UI state.
+        }
         catch (Exception ex)
         {
-            if (sourceGeneration == _nifViewerLoadGeneration)
+            if (!_nifViewerDisposed && sourceGeneration == _nifViewerLoadGeneration)
             {
                 NifViewerTextureSourcesText.Text = "Texture sources: unavailable";
+                SetNifViewerAnimationCatalog(null, "Animation discovery unavailable.");
                 NifViewerFileCount.Text = $"Error: {ex.Message}";
             }
         }
         finally
         {
+            if (ReferenceEquals(_nifViewerSourceLoadCts, sourceLoadCts))
+            {
+                _nifViewerSourceLoadCts = null;
+            }
+
+            sourceLoadCts.Dispose();
+
             // A superseded source owns the panel and controls. Never let an older completion hide it.
-            if (_nifViewerSourceLoadingGeneration == sourceGeneration)
+            if (!_nifViewerDisposed && _nifViewerSourceLoadingGeneration == sourceGeneration)
             {
                 _nifViewerSourceLoadingGeneration = 0;
                 SetNifViewerSourceLoadingState(isLoading: false, status: null);
@@ -558,6 +594,10 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                 SetNifViewerSourceProgressIndeterminate(
                     $"Building mesh list for {progress.NifFilesFound:N0} NIF files...");
                 break;
+            case NifViewerSourceLoadPhase.DiscoveringRelatedArchives:
+                SetNifViewerSourceProgressIndeterminate(
+                    "Finishing related mesh, material, and texture discovery...");
+                break;
         }
     }
 
@@ -588,6 +628,11 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerTextureBrowseButton.IsEnabled = !isLoading;
         NifViewerSearchBox.IsEnabled = !isLoading;
         NifViewerTreeView.IsEnabled = !isLoading;
+        NifViewerAnimationList.IsEnabled = !isLoading && !_nifViewerAnimationLoadInProgress;
+        NifViewerLoadSelectedAnimationButton.IsEnabled =
+            !isLoading &&
+            !_nifViewerAnimationLoadInProgress &&
+            NifViewerAnimationList.SelectedItem is NifViewerAnimationCatalogItem;
     }
 
     private void PopulateNifTree(List<NifTreeViewItem> items)
@@ -613,7 +658,10 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
     private async Task LoadNifIntoViewerAsync(NifTreeViewItem item)
     {
+        // Model cancellation must snapshot _nifViewerLoadTask before the first possible yield;
+        // the invoking handler publishes this newly returned task immediately afterward.
         await CancelNifViewerLoadAndDrainAsync();
+        await CancelNifViewerAnimationLoadAndDrainAsync();
         var service = _nifBrowserService;
         if (service == null) return;
 
@@ -623,10 +671,14 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         var generation = unchecked(++_nifViewerLoadGeneration);
         TaskCompletionSource<BethesdaSceneViewerRenderState>? nativeOutcome = null;
 
+        // Each selection starts as a native attempt. A compatibility host retained from an
+        // earlier fault stays hidden until this exact scene has also produced a native fault.
+        ShowNifViewerNativeHost();
         _nifViewer.SelectNif(item);
         SetNifViewerGeometryWarning(null);
+        SetNifViewerAnimationCatalog(null, "Discovering model-family animations...");
+        NifModelLoadingRing.IsActive = true;
         NifModelLoadingRing.Visibility = Visibility.Visible;
-        NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
 
         try
         {
@@ -642,6 +694,8 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             {
                 return;
             }
+
+            SetNifViewerAnimationCatalog(result.Scene?.ModelFamilyAnimations);
 
             if (result.ErrorMessage != null)
             {
@@ -682,6 +736,10 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             }
 
             _nifViewerScene = result.Scene;
+            // Reassert the selected-tab state at publication time. TabView can rebuild its visual
+            // subtree while an archive/folder scan is running, leaving the cached presentation flag
+            // stale until the user toggles tabs even though the viewer is already visible.
+            NifSceneViewer.SetPresentationActive(ReferenceEquals(NifTabView.SelectedItem, NifViewerTab));
             NifSceneViewer.SetScene(result.Scene);
             NifSceneViewer.FrameScene();
             NifSceneViewer.InvalidateViewport();
@@ -720,6 +778,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
                     if (!_nifViewerNativeReady && _nifViewerWebViewInitialized)
                     {
+                        ShowNifViewerCompatibilityHost();
                         try
                         {
                             await NifModelViewer.ExecuteScriptAsync("setStatus('Loading compatibility model...')");
@@ -761,6 +820,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         {
             if (generation == _nifViewerLoadGeneration && ReferenceEquals(service, _nifBrowserService))
             {
+                SetNifViewerAnimationCatalog(null, "Animation discovery unavailable.");
                 if (!_nifViewerNativeReady)
                 {
                     _nifViewerScene = null;
@@ -787,6 +847,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             if (ReferenceEquals(_nifViewerLoadCts, loadCts))
             {
                 _nifViewerLoadCts = null;
+                NifModelLoadingRing.IsActive = false;
                 NifModelLoadingRing.Visibility = Visibility.Collapsed;
             }
 
@@ -796,23 +857,51 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
     private async Task SetNifViewerFallbackStatusAsync(string message)
     {
-        if (_nifViewerNativeReady) return;
-        if (!_nifViewerWebViewInitialized)
+        // Only a compatibility host already activated by an observed native fault may own this
+        // status. Parse/no-geometry failures have no renderable scene and use the XAML placeholder.
+        if (!_nifViewerNativeReady &&
+            _nifViewerWebViewInitialized &&
+            NifModelViewer.Visibility == Visibility.Visible)
         {
-            NifViewerPlaceholderText.Text = message;
-            NifViewerPlaceholderText.Visibility = Visibility.Visible;
-            return;
+            try
+            {
+                await NifModelViewer.ExecuteScriptAsync($"setStatus('{EscapeJsString(message)}')");
+                return;
+            }
+            catch when (!_nifViewerNativeReady)
+            {
+                // The compatibility page cannot present the message; the XAML owner takes over.
+            }
+            catch
+            {
+                // Native promotion closed the compatibility host while the script was in flight.
+                return;
+            }
         }
 
-        try
-        {
-            await NifModelViewer.ExecuteScriptAsync($"setStatus('{EscapeJsString(message)}')");
-        }
-        catch
-        {
-            NifViewerPlaceholderText.Text = message;
-            NifViewerPlaceholderText.Visibility = Visibility.Visible;
-        }
+        ShowNifViewerPlaceholder(message);
+    }
+
+    private void ShowNifViewerNativeHost()
+    {
+        NifModelViewer.Visibility = Visibility.Collapsed;
+        NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
+        NifSceneViewer.Visibility = Visibility.Visible;
+    }
+
+    private void ShowNifViewerCompatibilityHost()
+    {
+        NifSceneViewer.Visibility = Visibility.Collapsed;
+        NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
+        NifModelViewer.Visibility = Visibility.Visible;
+    }
+
+    private void ShowNifViewerPlaceholder(string message)
+    {
+        NifSceneViewer.Visibility = Visibility.Collapsed;
+        NifModelViewer.Visibility = Visibility.Collapsed;
+        NifViewerPlaceholderText.Text = message;
+        NifViewerPlaceholderText.Visibility = Visibility.Visible;
     }
 
     private async Task CancelNifViewerLoadAndDrainAsync()
@@ -839,6 +928,201 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         }
     }
 
+    private void SetNifViewerAnimationCatalog(
+        NifModelFamilyAnimationCatalog? catalog,
+        string? status = null)
+    {
+        NifViewerAnimationList.ItemsSource =
+            NifConverterViewModel.BuildAnimationCatalogItems(catalog);
+        NifViewerAnimationList.SelectedItem = null;
+        NifViewerAnimationSourcesText.Text = status ??
+                                             NifConverterViewModel.FormatAnimationSources(catalog);
+        NifViewerAnimationLoadStatusText.Text = status ?? (catalog switch
+        {
+            {
+                Status: NifModelFamilyAnimationResolutionStatus.Resolved,
+                Animations: { Count: > 0 }
+            } =>
+                "Select a KF, then load it into the native playback controls.",
+            { Status: NifModelFamilyAnimationResolutionStatus.Resolved } =>
+                "No KF candidates were found in this model family.",
+            _ => "No loadable model-family animation catalog."
+        });
+        _nifViewerAnimationLoadInProgress = false;
+        NifViewerAnimationLoadingRing.IsActive = false;
+        NifViewerAnimationLoadingRing.Visibility = Visibility.Collapsed;
+        NifViewerAnimationList.IsEnabled = true;
+        NifViewerLoadSelectedAnimationButton.IsEnabled = false;
+    }
+
+    private void NifViewerAnimationList_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        var selected = NifViewerAnimationList.SelectedItem as NifViewerAnimationCatalogItem;
+        NifViewerLoadSelectedAnimationButton.IsEnabled =
+            !_nifViewerAnimationLoadInProgress &&
+            selected is not null &&
+            _nifBrowserService is not null &&
+            _nifViewerScene?.ModelFamilyAnimations is not null;
+        if (selected is not null && !_nifViewerAnimationLoadInProgress)
+        {
+            NifViewerAnimationLoadStatusText.Text =
+                $"{selected.RelativePath} — {selected.SizeDisplay}\n{selected.Source}";
+        }
+    }
+
+    private async void NifViewerLoadSelectedAnimation_Click(object sender, RoutedEventArgs e)
+    {
+        var load = LoadSelectedModelFamilyAnimationAsync();
+        _nifViewerAnimationLoadTask = load;
+        await load;
+    }
+
+    private async Task LoadSelectedModelFamilyAnimationAsync()
+    {
+        await CancelNifViewerAnimationLoadAndDrainAsync();
+        var service = _nifBrowserService;
+        var targetScene = _nifViewerScene;
+        var selected = NifViewerAnimationList.SelectedItem as NifViewerAnimationCatalogItem;
+        var catalog = targetScene?.ModelFamilyAnimations;
+        if (_nifViewerDisposed ||
+            service is null ||
+            targetScene is null ||
+            selected is null ||
+            catalog is null ||
+            selected.CatalogIndex < 0 ||
+            selected.CatalogIndex >= catalog.Animations.Count)
+        {
+            return;
+        }
+
+        var asset = catalog.Animations[selected.CatalogIndex];
+        if (!string.Equals(asset.VirtualPath, selected.VirtualPath, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(asset.Source, selected.Source, StringComparison.OrdinalIgnoreCase) ||
+            asset.Size != selected.Size)
+        {
+            NifViewerAnimationLoadStatusText.Text =
+                "The selected catalog row is stale; reload the model before trying again.";
+            return;
+        }
+
+        var loadCts = new CancellationTokenSource();
+        _nifViewerAnimationLoadCts = loadCts;
+        var cancellationToken = loadCts.Token;
+        var animationGeneration = unchecked(++_nifViewerAnimationLoadGeneration);
+        var modelGeneration = _nifViewerLoadGeneration;
+        _nifViewerAnimationLoadInProgress = true;
+        NifViewerAnimationList.IsEnabled = false;
+        NifViewerLoadSelectedAnimationButton.IsEnabled = false;
+        NifViewerAnimationLoadingRing.Visibility = Visibility.Visible;
+        NifViewerAnimationLoadingRing.IsActive = true;
+        NifViewerAnimationLoadStatusText.Text = $"Loading {asset.RelativePath}…";
+
+        try
+        {
+            var binding = await NifConverterWorkflowService.LoadModelFamilyAnimationAsync(
+                service,
+                targetScene,
+                asset,
+                cancellationToken);
+            if (!IsCurrentNifViewerAnimationLoad(
+                    service,
+                    targetScene,
+                    modelGeneration,
+                    animationGeneration,
+                    cancellationToken))
+            {
+                return;
+            }
+
+            NifSceneViewer.ApplyKfBindingResult(targetScene, binding);
+            NifViewerAnimationLoadStatusText.Text = binding.Summary;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer source, model, or KF selection owns the visible state.
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and
+                                   not StackOverflowException)
+        {
+            if (IsCurrentNifViewerAnimationLoad(
+                    service,
+                    targetScene,
+                    modelGeneration,
+                    animationGeneration,
+                    cancellationToken))
+            {
+                NifViewerAnimationLoadStatusText.Text = $"KF load failed: {ex.Message}";
+                Logger.Instance.Warn("NIF Viewer catalog animation: {0}", ex.Message);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_nifViewerAnimationLoadCts, loadCts))
+            {
+                _nifViewerAnimationLoadCts = null;
+            }
+
+            if (!_nifViewerDisposed &&
+                animationGeneration == _nifViewerAnimationLoadGeneration &&
+                modelGeneration == _nifViewerLoadGeneration)
+            {
+                _nifViewerAnimationLoadInProgress = false;
+                NifViewerAnimationLoadingRing.IsActive = false;
+                NifViewerAnimationLoadingRing.Visibility = Visibility.Collapsed;
+                NifViewerAnimationList.IsEnabled = true;
+                NifViewerLoadSelectedAnimationButton.IsEnabled =
+                    NifViewerAnimationList.SelectedItem is NifViewerAnimationCatalogItem;
+            }
+
+            loadCts.Dispose();
+        }
+    }
+
+    private bool IsCurrentNifViewerAnimationLoad(
+        NifBrowserService service,
+        BethesdaViewerScene scene,
+        int modelGeneration,
+        int animationGeneration,
+        CancellationToken cancellationToken)
+    {
+        return !_nifViewerDisposed &&
+               !cancellationToken.IsCancellationRequested &&
+               modelGeneration == _nifViewerLoadGeneration &&
+               animationGeneration == _nifViewerAnimationLoadGeneration &&
+               ReferenceEquals(service, _nifBrowserService) &&
+               ReferenceEquals(scene, _nifViewerScene) &&
+               ReferenceEquals(scene, NifSceneViewer.Scene);
+    }
+
+    private async Task CancelNifViewerAnimationLoadAndDrainAsync()
+    {
+        // Snapshot before the first await; the click handler publishes the newly returned task as
+        // soon as CancelAsync yields, and reading the field later could make this operation await
+        // itself.
+        var load = _nifViewerAnimationLoadTask;
+        var cancellation = _nifViewerAnimationLoadCts;
+        if (cancellation is not null && !cancellation.IsCancellationRequested)
+        {
+            await cancellation.CancelAsync();
+        }
+
+        if (load is null || load.IsCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            await load;
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when a newer source/model/catalog selection supersedes the read.
+        }
+    }
+
     private void NifSceneViewer_RenderStateChanged(
         object? sender,
         BethesdaSceneViewerRenderStateChangedEventArgs e)
@@ -858,9 +1142,8 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         if (e.State != BethesdaSceneViewerRenderState.Ready || _nifViewerNativeReady) return;
 
         _nifViewerNativeReady = true;
-        NifModelViewer.Visibility = Visibility.Collapsed;
+        ShowNifViewerNativeHost();
         CloseNifViewerCompatibilityHost();
-        NifViewerPlaceholderText.Visibility = Visibility.Collapsed;
         if (_nifViewerScene is not null)
         {
             NifSceneViewer.SetScene(_nifViewerScene);
@@ -1076,9 +1359,18 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         if (disposing && !_nifViewerDisposed)
         {
             _nifViewerDisposed = true;
-            unchecked { _nifViewerLoadGeneration++; }
+            unchecked
+            {
+                _nifViewerLoadGeneration++;
+                _nifViewerAnimationLoadGeneration++;
+            }
+            _nifViewerSourceLoadingGeneration = 0;
+            _nifViewerSourceLoadCts?.Cancel();
+            _nifViewerSourceLoadCts = null;
             _nifViewerLoadCts?.Cancel();
             _nifViewerLoadCts = null;
+            _nifViewerAnimationLoadCts?.Cancel();
+            _nifViewerAnimationLoadCts = null;
             NifSceneViewer.RenderStateChanged -= NifSceneViewer_RenderStateChanged;
             NifSceneViewer.ClearScene();
             NifSceneViewer.Dispose();
@@ -1086,10 +1378,13 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
             var service = _nifBrowserService;
             _nifBrowserService = null;
-            var load = _nifViewerLoadTask;
-            if (service is not null && load is { IsCompleted: false })
+            var pendingLoads = new[] { _nifViewerLoadTask, _nifViewerAnimationLoadTask }
+                .Where(static task => task is { IsCompleted: false })
+                .Cast<Task>()
+                .ToArray();
+            if (service is not null && pendingLoads.Length > 0)
             {
-                _ = load.ContinueWith(
+                _ = Task.WhenAll(pendingLoads).ContinueWith(
                     static (_, state) => ((NifBrowserService)state!).Dispose(),
                     service,
                     CancellationToken.None,

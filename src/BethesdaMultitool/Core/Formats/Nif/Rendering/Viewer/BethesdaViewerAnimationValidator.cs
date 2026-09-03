@@ -17,7 +17,8 @@ internal static class BethesdaViewerAnimationValidator
             !float.IsFinite(clip.StartTime) ||
             !float.IsFinite(clip.EndTime) ||
             !float.IsFinite(duration) ||
-            duration <= 0f)
+            duration <= 0f ||
+            (clip.PingPongs && !clip.Loops))
         {
             error = "clip name or play window is invalid";
             return false;

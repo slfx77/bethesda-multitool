@@ -1,6 +1,7 @@
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool;
 
@@ -68,6 +69,63 @@ internal sealed class NifConverterViewModel
         return string.Join(", ", info.BlockTypeNames);
     }
 
+    /// <summary>
+    ///     Formats model-family provenance above the virtualized Animation catalog. Individual KFs
+    ///     stay in the list so this summary remains bounded even at the catalog's discovery cap.
+    /// </summary>
+    public static string FormatAnimationSources(NifModelFamilyAnimationCatalog? catalog)
+    {
+        if (catalog is null)
+        {
+            return "Model-family discovery unavailable.";
+        }
+
+        if (catalog.Status != NifModelFamilyAnimationResolutionStatus.Resolved)
+        {
+            return $"Status: {FormatAnimationStatus(catalog.Status)}" +
+                   (string.IsNullOrWhiteSpace(catalog.Diagnostic)
+                       ? string.Empty
+                       : $"\n{catalog.Diagnostic}");
+        }
+
+        var lines = new List<string>
+        {
+            "Status: Resolved",
+            $"Family: {catalog.FamilyRoot}",
+            catalog.Skeleton is null
+                ? "Skeleton: unavailable"
+                : $"Skeleton: {catalog.Skeleton.VirtualPath}\nSource: {catalog.Skeleton.Source}",
+            $"KF candidates: {catalog.Animations.Count:N0}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(catalog.Diagnostic))
+        {
+            lines.Add(catalog.Diagnostic);
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>Projects the immutable resolver order into lightweight right-panel rows.</summary>
+    public static IReadOnlyList<NifViewerAnimationCatalogItem> BuildAnimationCatalogItems(
+        NifModelFamilyAnimationCatalog? catalog)
+    {
+        if (catalog is null ||
+            catalog.Status != NifModelFamilyAnimationResolutionStatus.Resolved)
+        {
+            return [];
+        }
+
+        return catalog.Animations
+            .Select(static (asset, index) => new NifViewerAnimationCatalogItem(
+                index,
+                asset.RelativePath,
+                asset.VirtualPath,
+                asset.Source,
+                asset.Size))
+            .ToArray();
+    }
+
     /// <summary>Clamps a requested sprite render size to the supported 64-4096 px range.</summary>
     public static int ClampSpriteSize(double value)
     {
@@ -106,6 +164,19 @@ internal sealed class NifConverterViewModel
     {
         return items.Sum(i => i.IsDirectory ? i.Children.Count : 1);
     }
+
+    private static string FormatAnimationStatus(NifModelFamilyAnimationResolutionStatus status)
+    {
+        return status switch
+        {
+            NifModelFamilyAnimationResolutionStatus.InvalidModelPath => "Invalid model path",
+            NifModelFamilyAnimationResolutionStatus.InvalidModel => "Invalid model",
+            NifModelFamilyAnimationResolutionStatus.NoSkinBinding => "No skin binding",
+            NifModelFamilyAnimationResolutionStatus.NoCompatibleCanonicalSkeleton =>
+                "No compatible canonical skeleton",
+            _ => status.ToString()
+        };
+    }
 }
 
 /// <summary>View state after loading a NIF source: the file tree, texture-path display text, and file count label.</summary>
@@ -113,3 +184,14 @@ internal sealed record NifViewerSourceState(
     List<NifTreeViewItem> Items,
     string TexturePathsDisplay,
     string FileCountText);
+
+/// <summary>One lightweight row in the virtualized model-family Animation catalog.</summary>
+internal sealed record NifViewerAnimationCatalogItem(
+    int CatalogIndex,
+    string RelativePath,
+    string VirtualPath,
+    string Source,
+    long Size)
+{
+    public string SizeDisplay => $"{Size:N0} bytes";
+}

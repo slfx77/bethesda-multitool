@@ -146,19 +146,48 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
         Assert.Equal(1, report.SuppressedAccumRootTrackCount);
     }
 
-    // The cycle travels as an int because NifCycleType is internal, and a public xUnit theory
-    // parameter of an internal type is a CS0051 accessibility error.
-    [Theory]
-    [InlineData((int)NifCycleType.Reverse)]
-    [InlineData(99)]
-    public void TryCreateClip_ReverseAndUnknownCyclesFailClosed(int cycleValue)
+    [Fact]
+    public void TryCreateClip_ReverseCycleBecomesARepeatingPingPongClip()
     {
-        var cycle = (NifCycleType)cycleValue;
         var scene = SceneWithNode("Head", "Bip01 Head");
 
         var clip = BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(
             scene,
-            Clip(cycle: cycle, tracks: [Track("Bip01 Head")]),
+            Clip(
+                cycle: NifCycleType.Reverse,
+                tracks:
+                [
+                    Track(
+                        "Bip01 Head",
+                        new NifVec3Key(0f, Vector3.Zero),
+                        new NifVec3Key(4f, new Vector3(4f, 0f, 0f)))
+                ]),
+            false,
+            out var report);
+
+        Assert.NotNull(clip);
+        Assert.True(clip.Loops);
+        Assert.True(clip.PingPongs);
+        Assert.Null(report.FailureReason);
+        Assert.Empty(scene.AnimationClips);
+
+        var evaluator = new BethesdaViewerAnimationPoseEvaluator(
+            [Matrix4x4.Identity, Matrix4x4.Identity],
+            [null, 0],
+            clip);
+        var worlds = new Matrix4x4[2];
+        evaluator.EvaluateNodeWorlds(5f, worlds);
+        Assert.Equal(3f, worlds[1].Translation.X, 4);
+    }
+
+    [Fact]
+    public void TryCreateClip_UnknownCycleFailsClosed()
+    {
+        var scene = SceneWithNode("Head", "Bip01 Head");
+
+        var clip = BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(
+            scene,
+            Clip(cycle: (NifCycleType)99, tracks: [Track("Bip01 Head")]),
             false,
             out var report);
 

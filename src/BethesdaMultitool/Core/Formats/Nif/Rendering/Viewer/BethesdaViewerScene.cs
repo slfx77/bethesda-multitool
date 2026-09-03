@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
 
@@ -180,6 +181,15 @@ internal sealed class BethesdaViewerScene
     internal List<BethesdaViewerAnimationClip> AnimationClips { get; } = [];
 
     /// <summary>
+    ///     Deterministic external-skeleton/KF discovery metadata for a raw NIF. This is a deep
+    ///     metadata snapshot only: it deliberately contains no VFS, archive lease, reader, stream,
+    ///     payload bytes, or callback into the browser service. The Animation tab presents this
+    ///     catalog after scene publication and requests only a selected KF through the still-current
+    ///     browser service.
+    /// </summary>
+    internal NifModelFamilyAnimationCatalog? ModelFamilyAnimations { get; private set; }
+
+    /// <summary>
     ///     Bind-pose boundary matches captured after NPC/creature composition. Mesh-part and vertex
     ///     indices remain stable for the scene lifetime, allowing the native renderer to reapply the
     ///     same seam correction after every animated skinning update.
@@ -233,6 +243,19 @@ internal sealed class BethesdaViewerScene
     internal bool TryGetNodeIndex(string lookupName, out int nodeIndex)
     {
         return _namedNodes.TryGetValue(lookupName, out nodeIndex);
+    }
+
+    /// <summary>Copies a resolver catalog into the handle-free viewer contract.</summary>
+    internal void SetModelFamilyAnimations(NifModelFamilyAnimationCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        ModelFamilyAnimations = catalog with
+        {
+            Skeleton = catalog.Skeleton is null ? null : catalog.Skeleton with { },
+            Animations = catalog.Animations
+                .Select(static animation => animation with { })
+                .ToArray()
+        };
     }
 
     /// <summary>
