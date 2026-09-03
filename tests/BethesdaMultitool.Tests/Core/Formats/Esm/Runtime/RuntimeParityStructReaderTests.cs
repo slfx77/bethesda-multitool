@@ -686,7 +686,7 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         Assert.Equal(12, cell.GridX);
         Assert.Equal(-3, cell.GridY);
         Assert.Equal(worldspaceFormId, cell.WorldspaceFormId);
-        Assert.Equal((byte)0x02, cell.Flags);
+        Assert.Equal(0x02u, cell.Flags);
         Assert.Equal(128f, cell.WaterHeight);
         Assert.True(cell.HasPersistentObjects);
     }

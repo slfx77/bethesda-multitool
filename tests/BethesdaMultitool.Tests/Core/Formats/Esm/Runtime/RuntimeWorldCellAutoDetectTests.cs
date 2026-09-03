@@ -51,7 +51,7 @@ public sealed class RuntimeWorldCellAutoDetectTests : RuntimeStructReaderTestBas
         Assert.NotNull(cell);
         Assert.Equal(worldEntry.FormId, cell!.WorldspaceFormId);
         Assert.Equal(96f, cell.WaterHeight);
-        Assert.Equal((byte)0x02, cell.Flags);
+        Assert.Equal(0x02u, cell.Flags);
     }
 
     [Fact]

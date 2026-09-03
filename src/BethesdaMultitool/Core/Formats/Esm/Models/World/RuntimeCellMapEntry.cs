@@ -33,8 +33,17 @@ public record RuntimeCellMapEntry
     /// </summary>
     public uint? RawWorldspaceFormId { get; init; }
 
-    /// <summary>FormID of the associated LAND record (from pCellLand pointer).</summary>
+    /// <summary>
+    ///     FormID of the associated LAND record (from pCellLand pointer), evidence-gated on the
+    ///     per-dump empirical LAND FormType byte when one has been resolved.
+    /// </summary>
     public uint? LandFormId { get; init; }
+
+    /// <summary>
+    ///     Whether the raw (ungated) pCellLand follow yielded a plausible FormID. A struct-shift
+    ///     plausibility signal for the WRLD/CELL layout probe only — never a LAND link.
+    /// </summary>
+    public bool HasLandPointer { get; init; }
 
     /// <summary>
     ///     FormIDs of placed references currently linked from TESObjectCELL.listReferences.

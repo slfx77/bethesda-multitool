@@ -791,6 +791,10 @@ public sealed class RecordParser
                 Worldspaces = result.Worldspaces,
                 Cells = result.Cells,
                 Climate = result.Climate,
+                // Interior CELLs resolve their LTMP references through this typed collection.
+                // The schema-primary result keeps LGTM only as GenericEsmRecords, so omitting the
+                // typed bridge silently discarded Skyrim's decoded lighting-template DATA.
+                LightingTemplates = result.LightingTemplates,
                 Weather = result.Weather,
                 WeatherSettings = result.WeatherSettings,
                 VolumetricLightingSettings = result.VolumetricLightingSettings,
@@ -823,6 +827,12 @@ public sealed class RecordParser
                 Furniture = result.Furniture,
                 StaticCollections = result.StaticCollections,
                 BendableSplines = result.BendableSplines,
+                // TREE.ICON/CNAM are render inputs, not browser-only schema detail. Keep the
+                // accessor-independent typed records on schema-primary loads so detached semantic
+                // sources (the renderer profiler closes the ESM mapping before building WorldViewData)
+                // still retain their leaf-atlas and dimming metadata. The parallel generic TREEs use
+                // lazy DecodedTreeSource nodes and cannot be decoded after that mapping is closed.
+                Trees = result.Trees,
                 ModelPathIndex = result.ModelPathIndex,
                 AlternateTexturesByFormId = result.AlternateTexturesByFormId,
                 BaseMaterialSwapFormIds = result.BaseMaterialSwapFormIds,

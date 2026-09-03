@@ -1,3 +1,6 @@
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -14,6 +17,35 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 [Collection(SequentialIntegrationGroup.Name)]
 public class OblivionSchemaParseIntegrationTests
 {
+    [Fact]
+    public async Task Oblivion_Detached_Source_Retains_SpeedTree_Icon_Metadata()
+    {
+        var esm = RealAssetPaths.Masters.Oblivion();
+        BucketBTestGuard.SkipUnlessEnabled();
+        Assert.SkipUnless(esm is not null,
+            "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
+
+        // This is the profiler/load-order path: LoadSourceAsync deliberately disposes the ESM mapping
+        // before returning its record graph. Generic TREE.DecodedTree is lazy and cannot read ICON/CNAM
+        // after that point, so the schema->typed bridge must carry the accessor-independent TreeRecords.
+        var source = await SemanticSourceSetBuilder.LoadSourceAsync(
+            new SemanticSourceRequest
+            {
+                FilePath = esm!,
+                FileType = AnalysisFileType.EsmFile
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var map = SpeedTreeRecordSource.BuildLeafTextureMap(source.Records);
+
+        Assert.True(source.Records.Trees.Count > 100,
+            $"Expected the schema->typed bridge to retain Oblivion TREE records; got {source.Records.Trees.Count}.");
+        Assert.Equal(@"textures\trees\leaves\shrubboxwoodleaves.dds",
+            map[@"trees\ShrubBoxwood.spt"]);
+        Assert.Equal(@"textures\trees\leaves\shrubenglishhollyleaves.dds",
+            map[@"trees\ShrubEnglishHolly.spt"]);
+    }
+
     [Fact]
     public async Task Oblivion_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {

@@ -46,9 +46,9 @@ internal static class SpeedTreeMetadata
         using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         var records = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize).ParseAll();
 
-        // SpeedTreeRecordSource walks BOTH the typed Trees list (FNV/FO3, where TREE is deliberately absent
-        // from GenericRecords) and the generic records (Oblivion/Skyrim/FO4). A GenericRecords-only scan
-        // silently resolved no ICON at all on FNV/FO3.
+        // SpeedTreeRecordSource walks BOTH the typed Trees list (production loads) and generic TREEs
+        // (bare schema-driven collections/fixtures). A GenericRecords-only scan silently resolved no
+        // ICON at all on FNV/FO3.
         foreach (var entry in SpeedTreeRecordSource.Enumerate(records))
         {
             map[entry.ArchivePath] = new TreeMetadata(

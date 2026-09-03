@@ -30,8 +30,10 @@ public sealed record SpeedTreeRecordEntry(
 ///             cannot walk).
 ///         </item>
 ///         <item>
-///             Schema-primary games (Oblivion/Skyrim/FO4/FO76) keep TREE as a generic record and leave
-///             <see cref="RecordCollection.Trees" /> empty — the schema→typed bridge does not overlay it.
+///             Bare schema-driven collections keep TREE as a generic record. Production schema-primary
+///             loads also overlay the accessor-independent typed TREE list so renderer-profiler/load-order
+///             sources retain ICON/CNAM after their ESM mapping is closed, but generic-only fixtures and
+///             direct schema-parser consumers still exercise this path.
 ///         </item>
 ///     </list>
 ///     A consumer that walks only one collection therefore silently loses every tree on the other family of

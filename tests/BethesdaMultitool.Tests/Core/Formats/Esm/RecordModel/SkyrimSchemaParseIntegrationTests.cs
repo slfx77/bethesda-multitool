@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.WorldData;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -15,6 +17,44 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 [Collection(SequentialIntegrationGroup.Name)]
 public class SkyrimSchemaParseIntegrationTests
 {
+    [Fact]
+    public async Task Dragonsreach_CellFlagsKeepInteriorLightingWhileShowingSky()
+    {
+        var esm = RealAssetPaths.Masters.Skyrim();
+        BucketBTestGuard.SkipUnlessEnabled();
+        Assert.SkipUnless(esm is not null,
+            "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
+
+        var result = await RealAssetEsmCache.LoadAsync(
+            esm!, TestContext.Current.CancellationToken);
+        var cell = Assert.Single(result.Records.Cells,
+            candidate => candidate.FormId == 0x000165A3 && candidate.EditorId == "WhiterunDragonsreach");
+        var sky = SkySceneContextResolver.Resolve(cell, null, null);
+
+        Assert.Equal(0xA1u, cell.Flags);
+        Assert.Equal(CellDataFlagSemantics.Creation, cell.DataFlagSemantics);
+        Assert.True(cell.IsInterior);
+        Assert.True(cell.ShowsSky);
+        Assert.False(cell.UsesSkyLighting);
+        Assert.False(cell.BehavesLikeExterior);
+        Assert.True(sky.RendersExteriorSky);
+        Assert.False(sky.BehavesLikeExterior);
+        Assert.Equal(0x0006175Du, cell.LightingTemplateFormId);
+        Assert.Equal(0x00036ED2u, cell.ImageSpaceFormId);
+        Assert.NotNull(cell.LightingData);
+        Assert.Equal(0x0040505Bu, Assert.IsType<uint>(cell.LightingData!["AmbientColor"]));
+        Assert.Equal(6300f, Assert.IsType<float>(cell.LightingData["FogFar"]));
+        Assert.Equal(7000f, Assert.IsType<float>(cell.LightingData["FogClipDistance"]));
+        Assert.Equal(6u, cell.LightingTemplateInheritanceFlags);
+
+        var template = Assert.Single(result.Records.LightingTemplates,
+            candidate => candidate.FormId == 0x0006175D);
+        Assert.NotNull(template.LightingData);
+        Assert.Equal(0x004A4940u, Assert.IsType<uint>(template.LightingData!["DirectionalColor"]));
+        Assert.Equal(0x00475358u, Assert.IsType<uint>(template.LightingData["FogColor"]));
+        Assert.Equal(2000f, Assert.IsType<float>(template.LightingData["FogFar"]));
+    }
+
     [Fact]
     public async Task Skyrim_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {

@@ -284,7 +284,7 @@ public class CellLinkageWorldspaceInferenceTests
 
         Assert.Equal(1, reclassified);
         Assert.True(cells[0].IsInterior);
-        Assert.Equal(0x53, cells[0].Flags); // 0x52 | 0x01
+        Assert.Equal(0x53u, cells[0].Flags); // 0x52 | 0x01
         Assert.False(cells[1].IsInterior);
         Assert.True(cells[2].IsInterior);
         Assert.False(cells[3].IsInterior);

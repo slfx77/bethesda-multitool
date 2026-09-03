@@ -26,6 +26,28 @@ internal static class SubrecordCellAndMiscSchemas
             Description = "Cell Lighting"
         };
 
+        // XCLL - Skyrim cell lighting (92 bytes). The generated Skyrim/xEdit schema is the
+        // 40-byte FO3/FNV prefix followed by wbAmbientColors (six directional RGB colors,
+        // specular RGB, and fresnel power), far-fog color/max, light fade distances, and the
+        // embedded LTMP inheritance word. Retail Skyrim LE confirms this exact shape on
+        // WhiterunDragonsreach (CELL 0x000165A3); its last word is 0x00000006. Keep this
+        // length-specific instead of accepting arbitrary long XCLLs: FO4/FO76 append different
+        // height-fog fields and must get their own reviewed schemas rather than a truncated parse.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("XCLL", null, 92)] = new SubrecordSchema(
+            F.UInt32("AmbientColor"), F.UInt32("DirectionalColor"),
+            F.UInt32("FogColor"), F.Float("FogNear"), F.Float("FogFar"),
+            F.Int32("DirectionalRotationXY"), F.Int32("DirectionalRotationZ"),
+            F.Float("DirectionalFade"), F.Float("FogClipDistance"), F.Float("FogPow"),
+            F.UInt32("DirectionalAmbientPositiveX"), F.UInt32("DirectionalAmbientNegativeX"),
+            F.UInt32("DirectionalAmbientPositiveY"), F.UInt32("DirectionalAmbientNegativeY"),
+            F.UInt32("DirectionalAmbientPositiveZ"), F.UInt32("DirectionalAmbientNegativeZ"),
+            F.UInt32("DirectionalAmbientSpecular"), F.Float("DirectionalAmbientFresnelPower"),
+            F.UInt32("FogColorFar"), F.Float("FogMax"),
+            F.Float("LightFadeBegin"), F.Float("LightFadeEnd"), F.UInt32("Inherits"))
+        {
+            Description = "Cell Lighting (Skyrim, directional ambient and embedded inheritance)"
+        };
+
         // XCLL - Cell Lighting (36 bytes) — TES4. Identical to the 40-byte form MINUS the trailing
         // FogPow float (xEdit's TES4 CELL 'Lighting' ends at Fog Clip Dist; see the generated
         // OblivionSchema field list). Measured on retail masters: Oblivion.esm carries 1,770 XCLL
@@ -375,6 +397,22 @@ internal static class SubrecordCellAndMiscSchemas
             Description = "Water Related Waters"
         };
 
+        // LNAM - LSCR Location (12 bytes, repeated): Direct (CELL/WRLD), Indirect (WRLD), Grid Y,
+        // Grid X per xEdit. Until 2026-09-02 a 12-byte LSCR LNAM fell through to the generic
+        // 4-byte "Load Screen FormID" LNAM schema, which happens to be byte-correct on retail
+        // (every retail Indirect/grid tail is zero, so a whole-dword swap of two int16s cannot be
+        // told from the right one) but is wrong by construction for a nonzero grid pair.
+        // Measured three-way 2026-09-02: all LSCR convert byte-identical to PC apart from two
+        // records whose LNAM ORDER the Xbox master itself reverses (genuine content, unordered).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("LNAM", "LSCR", 12)] = new SubrecordSchema(
+            F.FormId("Direct"),
+            F.FormId("Indirect"),
+            F.Int16("Grid Y"),
+            F.Int16("Grid X"))
+        {
+            Description = "Load Screen Location"
+        };
+
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "WATR", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "WATR", 2)] = new SubrecordSchema(F.UInt16("Damage"))
         {
@@ -404,6 +442,32 @@ internal static class SubrecordCellAndMiscSchemas
             F.Float("FogPower"))
         {
             Description = "Lighting Template Data"
+        };
+
+        // Skyrim LGTM DATA is also 92 bytes, but unlike CELL XCLL the generated schema leaves the
+        // 32 bytes at offset 40 opaque (the template's directional ambient cube is the separate
+        // DALC subrecord). Preserve that block byte-for-byte without assigning semantics: retail
+        // template 0x0006175D used by Dragonsreach has a nonzero word inside it and confirms the
+        // far-fog color starts at offset 72.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "LGTM", 92)] = new SubrecordSchema(
+            F.UInt32("AmbientColor"),
+            F.UInt32("DirectionalColor"),
+            F.UInt32("FogColor"),
+            F.Float("FogNear"),
+            F.Float("FogFar"),
+            F.Int32("DirectionalRotationXY"),
+            F.Int32("DirectionalRotationZ"),
+            F.Float("DirectionalFade"),
+            F.Float("FogClipDist"),
+            F.Float("FogPower"),
+            F.Bytes("OpaqueLightingExtension", 32),
+            F.UInt32("FogColorFar"),
+            F.Float("FogMax"),
+            F.Float("LightFadeBegin"),
+            F.Float("LightFadeEnd"),
+            F.Padding(4))
+        {
+            Description = "Lighting Template Data (Skyrim)"
         };
 
         // ========================================================================

@@ -19,8 +19,8 @@ internal sealed record CellSkeleton
     public int? GridX { get; init; }
     public int? GridY { get; init; }
 
-    /// <summary>Cell flags byte mirrored from <c>CellRecord.Flags</c> (bit 0 = interior, bit 1 = has-water).</summary>
-    public byte Flags { get; init; }
+    /// <summary>Cell DATA flags mirrored from <c>CellRecord.Flags</c> (bit 0 = interior, bit 1 = has-water).</summary>
+    public uint Flags { get; init; }
 
     public bool IsInterior => (Flags & 0x01) != 0;
     public bool HasWater => (Flags & 0x02) != 0;

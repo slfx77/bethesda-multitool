@@ -303,7 +303,7 @@ internal static class CellLinkageHandler
                 continue;
             }
 
-            cells[i] = cell with { Flags = (byte)(cell.Flags | 0x01) };
+            cells[i] = cell with { Flags = cell.Flags | 0x01u };
             reclassified++;
         }
 

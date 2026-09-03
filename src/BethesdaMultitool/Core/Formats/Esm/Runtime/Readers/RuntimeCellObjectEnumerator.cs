@@ -154,21 +154,28 @@ internal sealed class RuntimeCellObjectEnumerator
         // Walk the BSExtraData linked list for encounter zone, music, acoustic, image space
         var cellExtras = ReadCellExtraData(view);
 
+        // pCellLand is followed TWICE on purpose, and the two results serve different consumers.
+        // The raw (ungated) follow is a structural signal: at the correct struct shift the slot
+        // holds null or a pointer to some TESForm, at a wrong shift it holds garbage — exactly
+        // what the WRLD/CELL layout probe needs, and all it may consume. The gated follow
+        // additionally demands the target's FormType byte equal the per-dump EMPIRICAL LAND byte
+        // (`_context.ResolvedLandFormType`, mesh-yield resolved; the byte drifts across builds so
+        // neither a literal nor the layout DB may stand in) and is what the cells CSV / cell map
+        // report as the LAND link. The first attempt (2026-09-01) gated the ONLY follow, so the
+        // probe lost its signal too: xex21's margin collapsed 11 → 0 and cell classification
+        // shifted until a gridless exterior hit the planner's hard guard. Decoupled 2026-09-02.
+        var rawLandFormId = view.FormIdPointer("pCellLand", "TESObjectCELL");
+        var landFormId = _context.ResolvedLandFormType is { } landFormType
+            ? view.FormIdPointer("pCellLand", "TESObjectCELL", landFormType)
+            : rawLandFormId;
+
         return new RuntimeCellProbeSnapshot(
             formId,
             NormalizeString(displayName) ?? view.BsString("cFullName", "TESFullName"),
             flags,
             ReadReportableHeight(buffer, waterHeightOffset),
             view.FormIdPointer("pWorldSpace", "TESObjectCELL", 0x41),
-            // DELIBERATELY ungated, second attempt (2026-09-01): gating this on the per-dump
-            // empirical LAND byte (`_context.ResolvedLandFormType`) is correct in principle — the
-            // byte drifts across builds, so neither a literal nor the layout DB may stand in —
-            // but measured on xex21 the gate's rejections ripple into the WRLD/CELL shift probe's
-            // scores (margin collapsed 11 → 0) and shifted downstream cell classification until a
-            // real gridless exterior cell reached the planner's hard guard. The follow's blast
-            // radius while ungated is only the runtime cells CSV and probe scoring, so the honest
-            // trade is to stay ungated until the probe/classification stop consuming this link.
-            view.FormIdPointer("pCellLand", "TESObjectCELL"),
+            landFormId,
             referenceListOffset.HasValue
                 ? ReadCellReferenceFormIds(buffer, referenceListOffset.Value)
                 : [],
@@ -183,7 +190,8 @@ internal sealed class RuntimeCellObjectEnumerator
             cellExtras.MusicTypeFormId,
             cellExtras.AcousticSpaceFormId,
             cellExtras.ImageSpaceFormId,
-            autoWaterLoaded);
+            autoWaterLoaded,
+            rawLandFormId);
     }
 
     internal static CellRecord? BuildCellRecord(
@@ -392,7 +400,10 @@ internal sealed class RuntimeCellObjectEnumerator
         uint? MusicTypeFormId = null,
         uint? AcousticSpaceFormId = null,
         uint? ImageSpaceFormId = null,
-        bool? AutoWaterLoaded = null);
+        bool? AutoWaterLoaded = null,
+        // Ungated pCellLand follow — a struct-shift plausibility signal for the WRLD/CELL layout
+        // probe ONLY. Consumers that report a LAND link read the gated LandFormId.
+        uint? RawLandFormId = null);
 
     #region BSExtraData Linked List (Cell ExtraDataList)
 

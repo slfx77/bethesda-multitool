@@ -141,10 +141,12 @@ internal static class RuntimeWorldCellLayoutProbe
                 details.Append($"Cells={cellMap.Cells.Count}, ");
             }
 
+            // HasLandPointer is the raw (ungated) pCellLand plausibility signal; the gated
+            // LandFormId must never feed the shift score (see ScoreCellSample).
             if (cellMap.Cells.Any(cell =>
                     cell.WorldspaceFormId == entry.FormId ||
                     cell.ReferenceFormIds.Count > 0 ||
-                    cell.LandFormId is > 0))
+                    cell.HasLandPointer))
             {
                 score += 2;
                 details.Append("LinkedCells, ");
@@ -213,7 +215,10 @@ internal static class RuntimeWorldCellLayoutProbe
         var probeData = reader.ReadRuntimeCellProbeSnapshot(entry);
         if (probeData != null)
         {
-            if (probeData.LandFormId is > 0)
+            // Structural plausibility of the pCellLand slot (raw, ungated follow) — NOT the
+            // evidence-gated LandFormId, which depends on the per-dump LAND byte and would fold
+            // the gate's rejections into the shift score (the 2026-09-01 margin collapse).
+            if (probeData.RawLandFormId is > 0)
             {
                 score += 1;
                 details.Append("LAND, ");

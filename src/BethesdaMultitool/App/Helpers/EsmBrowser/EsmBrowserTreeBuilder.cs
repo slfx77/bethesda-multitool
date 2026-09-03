@@ -121,8 +121,8 @@ internal static class EsmBrowserTreeBuilder
             ("Doors", Pick(result.Doors, "DOOR")),
             ("Statics", Pick(result.Statics, "STAT")),
             // Typed since the PWAT (2026-08-06) / TREE (2026-08-07) migrations out of
-            // GenericRecords. Pick() keeps schema-primary games working, where both still
-            // arrive as generic records.
+            // GenericRecords. Pick() also keeps bare schema-driven collections and fixtures
+            // working when they carry only the generic representation.
             ("Trees", Pick(result.Trees, "TREE")),
             ("Placeable Water", Pick(result.PlaceableWaters, "PWAT")),
             ("Furniture", result.Furniture),

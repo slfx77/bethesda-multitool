@@ -241,10 +241,20 @@ public sealed class RuntimeStructReader
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         if (landEntries is { Count: > 0 })
         {
-            // Correlation-resolved LAND byte for evidence-gating cell→LAND pointer follows.
+            // Correlation-resolved LAND byte for evidence-gating the cell→LAND pointer follow
+            // (RuntimeCellObjectEnumerator: the gated LandFormId; the WRLD/CELL layout probe keeps
+            // scoring the raw ungated follow, so this gate can no longer move the shift margin).
             // Empty on low-confidence dumps (mesh-yield resolution runs after cell enumeration),
-            // where the pCellLand follow stays ungated as before.
+            // where the follow stays ungated. Logged at Info so a conversion log shows whether
+            // the gate was live — the 2026-09-02 A/B needed exactly that fact.
             context.ResolvedLandFormType = landEntries[0].FormType;
+            Logger.Instance.Info(
+                "[LAND gate] pCellLand follows gated on empirical LAND FormType 0x{0:X2} ({1} LAND entries).",
+                landEntries[0].FormType, landEntries.Count);
+        }
+        else
+        {
+            Logger.Instance.Info("[LAND gate] no LAND entries at reader creation — pCellLand follow ungated.");
         }
 
         var refrLayoutProbe = RuntimeRefrReader.ProbeRefrLayout(context, refrEntries);

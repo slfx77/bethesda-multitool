@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -346,7 +347,12 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     }
 
                     break;
-                case "DATA" when sub.DataLength == 40:
+                // FO3/FNV use the 40-byte lighting prefix. Skyrim retains that prefix and adds
+                // 32 opaque schema bytes plus far-fog/max and light-fade fields (92 bytes total); its
+                // directional ambient cube lives in the separate DALC subrecord. Match exact,
+                // reviewed layouts so FO4/FO76's longer height-fog structures are not truncated.
+                case "DATA" when sub.DataLength == 40
+                                      || sub.DataLength == 92 && Context.Game == BethesdaGame.Skyrim:
                 {
                     if (SubrecordSchemaView.TryRead("DATA", "LGTM", subData, record.IsBigEndian) is { } v)
                     {

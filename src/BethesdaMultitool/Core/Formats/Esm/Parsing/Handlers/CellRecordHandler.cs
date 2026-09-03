@@ -407,7 +407,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         string? fullName = null;
         int? gridX = null;
         int? gridY = null;
-        byte flags = 0;
+        uint flags = 0;
         float? waterHeight = null;
         uint? waterFormId = null;
         string? starfieldWaterType = null;
@@ -418,6 +418,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         uint? climateFormId = null;
         uint? lightingTemplateFormId = null;
         uint? lightingTemplateInheritanceFlags = null;
+        uint? embeddedLightingTemplateInheritanceFlags = null;
         Dictionary<string, object?>? lightingData = null;
         List<uint>? radiationRegionFormIds = null;
 
@@ -434,7 +435,19 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     fullName = Context.ReadFullName(subData);
                     break;
                 case "DATA" when sub.DataLength >= 1:
-                    flags = subData[0];
+                    // Classic CELL DATA is U8, Skyrim/FO4 are U16, and Fallout 76 accepts
+                    // U16/U32. Preserve every authored bit instead of truncating Creation's
+                    // Use Sky Lighting flag (bit 8) to the low byte.
+                    flags = sub.DataLength switch
+                    {
+                        >= 4 => record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(subData),
+                        >= 2 => record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt16BigEndian(subData)
+                            : BinaryPrimitives.ReadUInt16LittleEndian(subData),
+                        _ => subData[0]
+                    };
                     break;
                 case "XCLC" when sub.DataLength >= 8:
                 {
@@ -493,15 +506,20 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
-                // 40 = FO3/FNV+, 36 = TES4 (same layout without the trailing FogPow float). The gate
-                // was 40-exact, which silently discarded EVERY Oblivion cell's authored lighting
-                // (all 1,770 XCLLs in Oblivion.esm are 36 bytes) and left interiors on engine
-                // fallback defaults. SubrecordSchemaView resolves the right layout by length.
-                case "XCLL" when sub.DataLength is 40 or 36:
+                // 36 = TES4, 40 = FO3/FNV, 92 = Skyrim. Skyrim extends the common 40-byte prefix
+                // with directional ambient colors, far-fog/fade values, and an EMBEDDED inheritance
+                // word. Do not use a >= gate: FO4/FO76 append different height-fog layouts which need
+                // their own reviewed schemas rather than being silently truncated as Skyrim data.
+                case "XCLL" when (sub.DataLength is 36 or 40)
+                                      || sub.DataLength == 92 && Context.Game == BethesdaGame.Skyrim:
                 {
                     if (SubrecordSchemaView.TryRead("XCLL", "CELL", subData, record.IsBigEndian) is { } v)
                     {
                         lightingData = v.Raw;
+                        if (sub.DataLength == 92)
+                        {
+                            embeddedLightingTemplateInheritanceFlags = v.UInt32("Inherits");
+                        }
                     }
 
                     break;
@@ -570,6 +588,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
             WorldspaceAssignmentSource = cellWorldspace > 0 ? "CellGrup" : null,
             Flags = flags,
+            DataFlagSemantics = CellFlagSemanticsForGame(Context.Game),
             WaterHeight = waterHeight,
             WaterFormId = waterFormId,
             StarfieldWaterType = starfieldWaterType,
@@ -579,7 +598,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             ImageSpaceFormId = imageSpaceFormId,
             ClimateFormId = climateFormId,
             LightingTemplateFormId = lightingTemplateFormId,
-            LightingTemplateInheritanceFlags = lightingTemplateInheritanceFlags,
+            // Skyrim stores this word at the end of its 92-byte XCLL. A separate LNAM is the
+            // classic representation and remains the fallback for the legacy layouts.
+            LightingTemplateInheritanceFlags = embeddedLightingTemplateInheritanceFlags
+                                                ?? lightingTemplateInheritanceFlags,
             LightingData = lightingData,
             RadiationRegionFormIds = radiationRegionFormIds ?? (IReadOnlyList<uint>)[],
             PlacedObjects = cellRefs,
@@ -624,6 +646,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             GridY = gridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
             WorldspaceAssignmentSource = cellWorldspace > 0 ? "CellGrup" : null,
+            DataFlagSemantics = CellFlagSemanticsForGame(Context.Game),
             PlacedObjects = cellRefs,
             HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
             IsPersistentCell = isPersistentCell,
@@ -642,7 +665,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     ///     (memory dumps) fall back to the grid-presence heuristic unchanged.
     /// </summary>
     private bool ApplyStructuralCellClassification(
-        uint formId, uint cellWorldspace, ref int? gridX, ref int? gridY, byte flags)
+        uint formId, uint cellWorldspace, ref int? gridX, ref int? gridY, uint flags)
     {
         var containers = Context.ScanResult.PersistentCellContainerFormIds;
         if (containers.Count > 0 && cellWorldspace > 0)
@@ -669,7 +692,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         return IsPersistentCellContainer(flags, gridX, gridY, cellWorldspace);
     }
 
-    private static bool IsPersistentCellContainer(byte flags, int? gridX, int? gridY, uint cellWorldspace)
+    private static bool IsPersistentCellContainer(uint flags, int? gridX, int? gridY, uint cellWorldspace)
     {
         var isInterior = (flags & 0x01) != 0;
         return cellWorldspace > 0 && !isInterior && (!gridX.HasValue || !gridY.HasValue);
@@ -710,7 +733,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         entry);
                 }
 
-                return reader.ReadRuntimeCell(entry);
+                return StampCellFlagSemantics(reader.ReadRuntimeCell(entry));
             },
             MergeCell,
             "cells");
@@ -960,6 +983,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 ? runtime.CandidateWorldspaceFormIds
                 : esm.CandidateWorldspaceFormIds,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
+            DataFlagSemantics = esm.DataFlagSemantics != CellDataFlagSemantics.Unknown
+                ? esm.DataFlagSemantics
+                : runtime.DataFlagSemantics,
             WaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(esm.WaterHeight ?? runtime.WaterHeight),
             AutoWaterLoaded = esm.AutoWaterLoaded ?? runtime.AutoWaterLoaded,
             WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
@@ -1017,6 +1043,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
         mergedCell = mergedCell with
         {
+            DataFlagSemantics = CellFlagSemanticsForGame(Context.Game),
             WorldspaceAssignmentSource = mapEntry.WorldspaceFormId.HasValue
                 ? "RuntimeCellMap"
                 : mergedCell.WorldspaceAssignmentSource
@@ -1036,6 +1063,27 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             PlacedObjects = placedObjects,
             HasPersistentObjects = mergedCell.HasPersistentObjects || placedObjects.Exists(obj => obj.IsPersistent)
         };
+    }
+
+    private static CellDataFlagSemantics CellFlagSemanticsForGame(BethesdaGame game)
+    {
+        return game is BethesdaGame.Skyrim
+            or BethesdaGame.Fallout4
+            or BethesdaGame.Fallout76
+            or BethesdaGame.Starfield
+            ? CellDataFlagSemantics.Creation
+            : game == BethesdaGame.Fallout3
+                ? CellDataFlagSemantics.Fallout3
+                : game == BethesdaGame.Unknown
+                ? CellDataFlagSemantics.Unknown
+                : CellDataFlagSemantics.ClassicBit7;
+    }
+
+    private CellRecord? StampCellFlagSemantics(CellRecord? cell)
+    {
+        return cell is null
+            ? null
+            : cell with { DataFlagSemantics = CellFlagSemanticsForGame(Context.Game) };
     }
 
     private List<PlacedReference> ResolvePlacedReferencesByFormIds(

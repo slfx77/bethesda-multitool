@@ -61,7 +61,10 @@ public sealed class CellEncoder : IRecordEncoder
         // DATA — 1 byte cell flags. Bit 0 = interior; clear it for exterior.
         // The model's IsInterior is computed from Flags bit 0 already, but we sanitize:
         // if cell.IsInterior, force bit 0 on; else force it off.
-        var rawFlags = cell.Flags;
+        // This legacy conversion encoder currently emits the classic one-byte DATA shape. The
+        // semantic model retains wider Creation flags for rendering/parsing, but this writer's
+        // existing target format remains U8 until modern plugin emission is implemented.
+        var rawFlags = (byte)cell.Flags;
         var emitWater = ShouldEmitCellWater(cell, warnings);
         var dataFlags = cell.IsInterior
             ? (byte)(rawFlags | 0x01)
@@ -85,15 +88,18 @@ public sealed class CellEncoder : IRecordEncoder
             subs.Add(SchemaModelSerializer.SerializeSubrecord("XCLC", "", 12, cell, XclcExtractors));
         }
 
+        var embedsLightingInheritance = cell.LightingData?.ContainsKey("Inherits") == true;
+
         // LTMP / LNAM — lighting template and inheritance flags. LNAM (inheritance flags) is
         // only meaningful paired with LTMP; FNVEdit flags lone LNAM as "unexpected (or out of
         // order)". Without an explicit LTMP, the cell inherits the worldspace default — that's
-        // the safe behavior, so we drop a stray LNAM rather than synthesize a zero LTMP.
+        // the safe behavior, so we drop a stray LNAM rather than synthesize a zero LTMP. Skyrim's
+        // 92-byte XCLL embeds this word, so emitting LNAM as well would fabricate a second source.
         if (cell.LightingTemplateFormId.HasValue)
         {
             subs.Add(EncodeFormIdSubrecord("LTMP", cell.LightingTemplateFormId.Value));
 
-            if (cell.LightingTemplateInheritanceFlags.HasValue)
+            if (cell.LightingTemplateInheritanceFlags.HasValue && !embedsLightingInheritance)
             {
                 var lnam = new byte[4];
                 SubrecordEncoder.WriteUInt32(lnam, 0, cell.LightingTemplateInheritanceFlags.Value);
@@ -127,11 +133,13 @@ public sealed class CellEncoder : IRecordEncoder
         // new DMP-only cells where no master CELL exists to supply ambient/fog lighting.
         if (cell.LightingData is not null)
         {
-            // Pick the layout the parsed dictionary actually carries: TES4 XCLL is 36 bytes and has
-            // no FogPow, FO3/FNV+ is 40 and does. Serializing a 36-byte TES4 dictionary against the
-            // 40-byte schema would fabricate a FogPow field. (The DMP->ESP converter only targets
-            // FO3/FNV, so 40 stays the normal path; this keeps a TES4 round-trip honest.)
-            var xcllLength = cell.LightingData.ContainsKey("FogPow") ? 40 : 36;
+            // Pick the layout the parsed dictionary actually carries: TES4 is 36 bytes, FO3/FNV
+            // is 40, and Skyrim's reviewed shape is 92 with an embedded Inherits word. Using the
+            // 40-byte schema for Skyrim would silently discard its directional ambient/far-fog
+            // fields and inheritance mask on a typed round trip.
+            var xcllLength = embedsLightingInheritance
+                ? 92
+                : cell.LightingData.ContainsKey("FogPow") ? 40 : 36;
             var schema = SubrecordSchemaRegistry.GetSchema("XCLL", "CELL", xcllLength);
             if (schema is not null)
             {

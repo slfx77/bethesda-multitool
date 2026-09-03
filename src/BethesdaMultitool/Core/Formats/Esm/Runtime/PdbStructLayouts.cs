@@ -87,6 +87,13 @@ internal static class PdbStructLayouts
     ///     FormType bytes that have specialized hand-written readers and should NOT
     ///     use the generic PDB-based reader (to avoid duplicate/conflicting fields).
     /// </summary>
+    // ⚠ ASPC (0x0E) and MSET (0x6F) DO have typed readers (RuntimeAcousticSpaceReader,
+    // RuntimeMediaSetReader) yet are deliberately ABSENT from this set: both produce a
+    // GenericEsmRecord and are reached only through RuntimeStructReader.ReadGenericRecord's
+    // per-type switch, which the generic merge (RecordParserContext.MergeRuntimeGenericRecords)
+    // invokes precisely for the types this set does NOT contain. Listing them here would make
+    // that merge skip them and neither reader would ever run (audited 2026-09-02; the cost of
+    // leaving them out is one redundant shift-probe grouping in RuntimeGenericReader).
     private static readonly HashSet<byte> SpecializedFormTypes =
     [
         0x08, // FACT — RuntimeActorReader

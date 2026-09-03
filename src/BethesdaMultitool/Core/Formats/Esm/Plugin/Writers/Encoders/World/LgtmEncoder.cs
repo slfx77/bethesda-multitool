@@ -5,10 +5,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
 /// <summary>
 ///     Encodes a <see cref="LightingTemplateRecord" /> (LGTM) as PC-format subrecord bytes.
-///     Lighting templates store the DATA(40B) typed fields as a schema-parsed dictionary —
+///     Lighting templates store the DATA(40B FO3/FNV, 92B Skyrim) typed fields as a
+///     schema-parsed dictionary —
 ///     this encoder re-serializes via the schema.
-///     fopdoc canonical order: EDID, DATA(40B: ambient/directional/fog colors + fog near/far +
-///     directional rotation + fog clip distance + fog power).
+///     Canonical order: EDID, DATA.
 /// </summary>
 public sealed class LgtmEncoder : IRecordEncoder
 {
@@ -29,7 +29,8 @@ public sealed class LgtmEncoder : IRecordEncoder
 
         if (lgtm.LightingData is not null)
         {
-            var schema = SubrecordSchemaRegistry.GetSchema("DATA", "LGTM", 40);
+            var dataLength = lgtm.LightingData.ContainsKey("FogColorFar") ? 92 : 40;
+            var schema = SubrecordSchemaRegistry.GetSchema("DATA", "LGTM", dataLength);
             if (schema is not null)
             {
                 subs.Add(new EncodedSubrecord("DATA",
@@ -39,7 +40,7 @@ public sealed class LgtmEncoder : IRecordEncoder
             {
                 warnings.Add(
                     $"New LGTM 0x{lgtm.FormId:X8} schema lookup failed — emitting zero-filled DATA.");
-                subs.Add(new EncodedSubrecord("DATA", new byte[40]));
+                subs.Add(new EncodedSubrecord("DATA", new byte[dataLength]));
             }
         }
 

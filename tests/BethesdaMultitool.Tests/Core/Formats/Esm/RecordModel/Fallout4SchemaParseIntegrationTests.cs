@@ -104,7 +104,7 @@ public class Fallout4SchemaParseIntegrationTests
             cell => cell.FormId == 0x0000DD60);
         Assert.Equal(-20, sanctuary.GridX);
         Assert.Equal(21, sanctuary.GridY);
-        Assert.Equal((byte)0x02, sanctuary.Flags);
+        Assert.Equal(0x02u, sanctuary.Flags);
         Assert.True(sanctuary.HasWater);
         var sanctuaryWaterHeight = Assert.IsType<float>(sanctuary.WaterHeight);
         Assert.Equal(0x7F7FFFFFu,

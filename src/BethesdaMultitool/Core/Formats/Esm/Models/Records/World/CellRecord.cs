@@ -3,6 +3,29 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>
+///     Meaning of the high CELL DATA flag bits. TES3/Oblivion/FNV use bit 7 for
+///     "behaves like exterior", Fallout 3 uses bit 6, and Creation-era games instead
+///     use bit 7 for "show sky" plus bit 8 for the independent "use sky lighting" option.
+/// </summary>
+public enum CellDataFlagSemantics : byte
+{
+    /// <summary>
+    ///     Source game was unavailable. Preserve the historical/classic bit-7 interpretation so
+    ///     hand-built records and partial dump recoveries do not silently change behavior.
+    /// </summary>
+    Unknown = 0,
+
+    /// <summary>TES3/Oblivion/Fallout: New Vegas flags, with Behave Like Exterior at bit 7.</summary>
+    ClassicBit7 = 1,
+
+    /// <summary>Fallout 3 flags, with Behave Like Exterior at bit 6.</summary>
+    Fallout3 = 2,
+
+    /// <summary>Skyrim and later Creation-engine flags.</summary>
+    Creation = 3
+}
+
+/// <summary>
 ///     Parsed Cell record with placed objects.
 ///     Aggregates data from CELL main record header and associated REFR/ACHR/ACRE records.
 /// </summary>
@@ -43,17 +66,46 @@ public record CellRecord
     /// </summary>
     public IReadOnlyList<uint> CandidateWorldspaceFormIds { get; init; } = [];
 
-    /// <summary>Cell flags from DATA subrecord.</summary>
-    public byte Flags { get; init; }
+    /// <summary>
+    ///     Cell flags from the DATA subrecord. This is intentionally 32-bit: Skyrim/FO4 use a
+    ///     16-bit value and Fallout 76 can carry either 16 or 32 bits, while the classic games use
+    ///     only the low byte.
+    /// </summary>
+    public uint Flags { get; init; }
+
+    /// <summary>The game-family interpretation to apply to <see cref="Flags" />.</summary>
+    public CellDataFlagSemantics DataFlagSemantics { get; init; }
 
     /// <summary>Whether this is an interior cell.</summary>
     public bool IsInterior => (Flags & 0x01) != 0;
 
     /// <summary>
-    ///     Whether this interior uses exterior sky/weather semantics (CELL DATA bit 7). This is the
-    ///     canonical interpretation used by rendering, image-space selection, and capture telemetry.
+    ///     Whether a classic-family interior uses exterior sky/weather semantics (DATA bit 7).
+    ///     Unknown sources retain this historical interpretation for compatibility; Creation-family
+    ///     records never report this from their unrelated Show Sky bit.
     /// </summary>
-    public bool BehavesLikeExterior => IsInterior && (Flags & 0x80) != 0;
+    public bool BehavesLikeExterior =>
+        IsInterior &&
+        (DataFlagSemantics switch
+        {
+            CellDataFlagSemantics.Creation => false,
+            CellDataFlagSemantics.Fallout3 => (Flags & 0x40u) != 0,
+            // Unknown retains the historical bit-7 behavior for compatibility with synthetic records
+            // and partial recoveries whose source game could not be classified.
+            _ => (Flags & 0x80u) != 0
+        });
+
+    /// <summary>Whether a Creation-family interior exposes the sky (DATA bit 7).</summary>
+    public bool ShowsSky =>
+        IsInterior &&
+        DataFlagSemantics == CellDataFlagSemantics.Creation &&
+        (Flags & 0x80u) != 0;
+
+    /// <summary>Whether a Creation-family interior requests sky lighting (DATA bit 8).</summary>
+    public bool UsesSkyLighting =>
+        IsInterior &&
+        DataFlagSemantics == CellDataFlagSemantics.Creation &&
+        (Flags & 0x100u) != 0;
 
     /// <summary>Whether this cell has water.</summary>
     public bool HasWater => (Flags & 0x02) != 0;

@@ -267,9 +267,11 @@ public static class FlagRegistry
         new(0x02, "Has Water"),
         new(0x04, "No Travel (Invert Fast Travel)"),
         new(0x08, "No LOD Water"),
-        new(0x20, "Public Place"),
-        new(0x40, "Hand Changed"),
-        new(0x80, "Behave Like Exterior")
+        new(0x10, "Public Area (Fallout 3)"),
+        new(0x20, "Public Area (TES3/Oblivion/FNV/Creation) / Hand Changed (Fallout 3)"),
+        new(0x40, "Hand Changed (TES3/Oblivion/FNV/Creation) / Behave Like Exterior (Fallout 3)"),
+        new(0x80, "Behave Like Exterior (TES3/Oblivion/FNV) / Show Sky (Creation)"),
+        new(0x100, "Use Sky Lighting (Creation)")
     ];
 
     // ================================================================

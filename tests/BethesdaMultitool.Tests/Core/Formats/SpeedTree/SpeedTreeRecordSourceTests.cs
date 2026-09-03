@@ -12,7 +12,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
 ///     resolved NO <c>TREE.ICON</c> on FNV/FO3 and fell back to the <c>.spt</c>'s dev-era leaf material —
 ///     for <c>trees\whiteoak01.spt</c> that is <c>TreeWOakLeaves01b.tga</c>, which never shipped (the
 ///     retail atlas is <c>textures\trees\leaves\whiteoakleaves01.dds</c>), so its leaf cards rendered
-///     untextured. Schema-primary games (Oblivion) keep TREE in GenericRecords, so BOTH must be walked.
+///     untextured. Bare schema-driven collections and synthetic fixtures may keep TREE only in
+///     GenericRecords, so BOTH must be walked.
 /// </summary>
 public sealed class SpeedTreeRecordSourceTests
 {
@@ -55,7 +56,7 @@ public sealed class SpeedTreeRecordSourceTests
     [Fact]
     public void BuildLeafTextureMap_GenericRecordOnly_StillResolves()
     {
-        // Schema-primary games (Oblivion/Skyrim/FO4) leave Trees empty and keep TREE generic.
+        // Bare schema-driven collections and synthetic fixtures can leave Trees empty and keep TREE generic.
         var records = new RecordCollection
         {
             GenericRecords =

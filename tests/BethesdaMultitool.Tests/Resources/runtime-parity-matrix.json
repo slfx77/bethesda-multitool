@@ -1768,13 +1768,13 @@
         "damage (sAttackDamage uint16 at +56)",
         "opacity (cAlpha uint8 at +128)",
         "sound FormID (pWaterSound pointer at +140)",
-        "WaterShaderData 196B at +148 (shared schema with ESM DNAM)"
+        "WaterShaderData 196B at +148 (shared schema with ESM DNAM)",
+        "related waters GNAM Daytime/Nighttime/Underwater (pWaterWeatherControl = TESWaterForm*[3] at +344, each element type-validated as WATR; read since 2026-09-02)"
       ],
       "derived": [],
       "esmOnly": [
         "noise normal map (NiPointer<BSRenderedTexture> — runtime render object only)",
-        "spell pointer (pSpellItem at +392 — not exposed by model)",
-        "pWaterWeatherControl (unknown PDB type 0x000270E8)"
+        "spell pointer (pSpellItem at +392 — not exposed by model)"
       ]
     },
     "evidence": [

@@ -12,7 +12,10 @@ public record LightingTemplateRecord
     /// <summary>Editor ID.</summary>
     public string? EditorId { get; init; }
 
-    /// <summary>Lighting data fields (from DATA subrecord, 40 bytes, schema-parsed).</summary>
+    /// <summary>
+    ///     Lighting data fields from the schema-parsed DATA subrecord (40 bytes in FO3/FNV,
+    ///     92 bytes in Skyrim).
+    /// </summary>
     public Dictionary<string, object?>? LightingData { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
