@@ -135,7 +135,7 @@ internal static class ArenaRecordSource
         {
             FormId = ClassicFormIdScheme.Compose(ProvinceDomain, (uint)province.Index + 1),
             RecordType = ProvinceRecordType,
-            EditorId = ToEditorId(province.Name),
+            EditorId = ClassicRecordNaming.ToEditorId(province.Name),
             FullName = province.Name,
             Fields = fields
         };
@@ -167,7 +167,7 @@ internal static class ArenaRecordSource
         {
             FormId = ClassicFormIdScheme.Compose(LocationDomain, LocationIndex(province.Index, location.Slot)),
             RecordType = LocationRecordType,
-            EditorId = ToEditorId($"{province.Name}_{location.Name}"),
+            EditorId = ClassicRecordNaming.ToEditorId($"{province.Name}_{location.Name}"),
             FullName = location.Name,
             Fields = fields
         };
@@ -180,18 +180,6 @@ internal static class ArenaRecordSource
     private static uint LocationIndex(int provinceIndex, int slot)
     {
         return ((uint)provinceIndex << 8) | (uint)slot;
-    }
-
-    /// <summary>Turns a display name into an editor-id-shaped token.</summary>
-    private static string ToEditorId(string name)
-    {
-        var builder = new System.Text.StringBuilder(name.Length);
-        foreach (var character in name)
-        {
-            builder.Append(char.IsLetterOrDigit(character) ? character : '_');
-        }
-
-        return builder.ToString();
     }
 
     /// <summary>

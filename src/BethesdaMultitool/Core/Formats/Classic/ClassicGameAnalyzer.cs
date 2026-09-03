@@ -11,8 +11,8 @@ namespace BethesdaMultitool.Core.Formats.Classic;
 ///     (<see cref="ClassicFormIdScheme" /> ids), and everything downstream — stats/list/show/diff,
 ///     the resolver, the GUI Records tab — consumes it exactly as it consumes the Morrowind parse.
 ///     <para>
-///         Arena synthesizes today. The remaining per-game synthesizers (Fallout PRO/MSG/MAP,
-///         Daggerfall MAPS, …) plug into the same switch as their format layers land. A game whose
+///         Arena and Daggerfall synthesize today. The remaining per-game synthesizers (Fallout
+///         PRO/MSG/MAP, …) plug into the same switch as their format layers land. A game whose
 ///         synthesizer has not landed yet still resolves and returns an empty collection stamped
 ///         with its profile, so the plumbing above it is exercised from the first milestone.
 ///     </para>
@@ -38,11 +38,17 @@ internal static class ClassicGameAnalyzer
                 "(no profile's install markers matched the directory or its ancestors).");
         }
 
+        // The install root is where the markers matched; the data lives under the profile's loose
+        // root (Daggerfall's ARENA2, empty for Arena whose root IS the data directory).
+        var dataRoot = Path.Combine(root, resolvedProfile.ClassicLooseRoot);
         var records = new RecordCollection { Game = resolvedProfile.Game };
         switch (resolvedProfile.Game)
         {
             case BethesdaGame.Arena:
-                ArenaRecordSource.Populate(root, records, cancellationToken);
+                ArenaRecordSource.Populate(dataRoot, records, cancellationToken);
+                break;
+            case BethesdaGame.Daggerfall:
+                DaggerfallRecordSource.Populate(dataRoot, records, cancellationToken);
                 break;
             default:
                 // No synthesizer for this game yet — the empty collection is the honest answer.
