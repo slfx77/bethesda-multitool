@@ -3,6 +3,7 @@ using BethesdaMultitool.CLI.Rendering.Map;
 using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Classic;
+using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Games;
 using Spectre.Console;
 
@@ -191,6 +192,45 @@ public static class ClassicCommand
     {
         var (bytes, name) = LoadMapSource(input, entryName);
 
+        if (DaggerfallWoodsFile.IsWoodsFileName(name))
+        {
+            var woods = DaggerfallWoodsFile.Parse(bytes, name);
+            var heights = woods.HeightMap.Span;
+            var max = 0;
+            var sea = 0;
+            foreach (var h in heights)
+            {
+                max = Math.Max(max, h);
+                if (h <= 3)
+                {
+                    sea++;
+                }
+            }
+
+            AnsiConsole.MarkupLine(
+                "[bold cyan]{0}[/] — Daggerfall world heightmap {1}x{2}, elevation 0..{3}, {4:P0} at sea level, 5x5 sub-grid per pixel",
+                Markup.Escape(name),
+                DaggerfallWoodsFile.Width,
+                DaggerfallWoodsFile.Height,
+                max,
+                (double)sea / heights.Length);
+            return;
+        }
+
+        if (DaggerfallPakFile.IsPakFileName(name))
+        {
+            var pak = DaggerfallPakFile.Parse(bytes, name);
+            var values = pak.Values.Distinct().Order().ToList();
+            AnsiConsole.MarkupLine(
+                "[bold cyan]{0}[/] — Daggerfall world overlay {1}x{2}, {3} distinct value(s): {4}",
+                Markup.Escape(name),
+                DaggerfallPakFile.Width,
+                DaggerfallPakFile.Height,
+                values.Count,
+                string.Join(", ", values));
+            return;
+        }
+
         if (name.EndsWith(".RMD", StringComparison.OrdinalIgnoreCase))
         {
             var chunk = ArenaRmdFile.Parse(bytes, name);
@@ -289,9 +329,23 @@ public static class ClassicCommand
     {
         var (bytes, name) = LoadMapSource(input, entryName);
 
-        var layers = name.EndsWith(".RMD", StringComparison.OrdinalIgnoreCase)
-            ? ArenaMapRenderer.RenderRmd(ArenaRmdFile.Parse(bytes, name), name, outputDir, scale)
-            : ArenaMapRenderer.RenderMif(ArenaMifFile.Parse(bytes, name), outputDir, scale);
+        IReadOnlyList<ArenaMapRenderer.RenderedLayer> layers;
+        if (DaggerfallWoodsFile.IsWoodsFileName(name))
+        {
+            layers = [DaggerfallMapRenderer.RenderHeightMap(DaggerfallWoodsFile.Parse(bytes, name), outputDir, scale)];
+        }
+        else if (DaggerfallPakFile.IsPakFileName(name))
+        {
+            layers = [DaggerfallMapRenderer.RenderOverlay(DaggerfallPakFile.Parse(bytes, name), outputDir, scale)];
+        }
+        else if (name.EndsWith(".RMD", StringComparison.OrdinalIgnoreCase))
+        {
+            layers = ArenaMapRenderer.RenderRmd(ArenaRmdFile.Parse(bytes, name), name, outputDir, scale);
+        }
+        else
+        {
+            layers = ArenaMapRenderer.RenderMif(ArenaMifFile.Parse(bytes, name), outputDir, scale);
+        }
 
         AnsiConsole.MarkupLine("[green]Wrote {0} layer image(s)[/]", layers.Count);
         foreach (var layer in layers)
