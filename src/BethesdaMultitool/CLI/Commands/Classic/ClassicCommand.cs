@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using BethesdaMultitool.CLI.Rendering.Map;
 using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
@@ -364,10 +365,11 @@ public static class ClassicCommand
     {
         var command = new Command(
             "text",
-            "Dump a classic game's authored text (Arena: TEMPLATE.DAT strings + .INF on-screen text)");
+            "Dump a classic game's authored text (Arena: TEMPLATE.DAT strings + .INF on-screen text; " +
+            "Daggerfall: TEXT.RSC strings + BOOKS)");
         var inputArg = new Argument<string>("input")
         {
-            Description = "Install/data directory, or a single TEMPLATE.DAT or .INF file"
+            Description = "Install/data directory, or a single TEMPLATE.DAT, .INF, TEXT.RSC or BOKnnnnn.TXT file"
         };
         var filterOption = new Option<string?>("--filter", "-f")
         {
@@ -375,7 +377,7 @@ public static class ClassicCommand
         };
         var sourceOption = new Option<string>("--source", "-s")
         {
-            Description = "Which sources to read: template, inf, or all",
+            Description = "Which sources to read: template, inf (Arena), text, books (Daggerfall), or all",
             DefaultValueFactory = _ => "all"
         };
         var limitOption = new Option<int>("--limit", "-l")
@@ -410,32 +412,20 @@ public static class ClassicCommand
         return command;
     }
 
+    private static readonly string[] TextSources = ["all", "template", "inf", "text", "books"];
+
     private static void Run(string input, string source, string? filter, int limit)
     {
-        var wantTemplate = source is "all" or "template";
-        var wantInf = source is "all" or "inf";
-        if (!wantTemplate && !wantInf)
+        if (Array.IndexOf(TextSources, source) < 0)
         {
-            throw new InvalidOperationException($"Unknown --source '{source}'. Use template, inf, or all.");
+            throw new InvalidOperationException($"Unknown --source '{source}'. Use {string.Join(", ", TextSources)}.");
         }
 
         var printed = 0;
 
         if (File.Exists(input))
         {
-            var name = Path.GetFileName(input);
-            var bytes = File.ReadAllBytes(input);
-            if (name.EndsWith(".INF", StringComparison.OrdinalIgnoreCase))
-            {
-                // A loose .INF is plaintext, but one the user extracted from GLOBAL.BSA is not.
-                var inf = ArenaInfFile.Parse(bytes, name, ArenaInfFile.IsProbablyEncrypted(bytes));
-                PrintInf(inf, filter, limit, ref printed);
-            }
-            else
-            {
-                PrintTemplate(ArenaTemplateDat.Parse(bytes), filter, limit, ref printed);
-            }
-
+            PrintFile(input, filter, limit, ref printed);
             WriteFooter(printed);
             return;
         }
@@ -445,21 +435,78 @@ public static class ClassicCommand
             throw new FileNotFoundException($"Input not found: {input}", input);
         }
 
-        var root = Path.GetFullPath(input);
-        var profile = ClassicGameLocator.DetectFromDirectory(root)
-                      ?? throw new InvalidOperationException(
-                          $"'{root}' is not a recognizable classic game install (no profile's markers matched).");
-
-        if (profile.Game != BethesdaGame.Arena)
-        {
-            throw new NotSupportedException(
-                $"'classic text' does not read {profile.Game} yet — its text formats land with its game vertical. " +
-                "Arena is supported today.");
-        }
-
+        var (profile, root) = DetectInstall(Path.GetFullPath(input));
         AnsiConsole.MarkupLine("[bold cyan]{0}[/] — [grey]{1}[/]", profile.Game, Markup.Escape(root));
         AnsiConsole.WriteLine();
 
+        switch (profile.Game)
+        {
+            case BethesdaGame.Arena:
+                RunArena(root, source is "all" or "template", source is "all" or "inf", filter, limit, ref printed);
+                break;
+            case BethesdaGame.Daggerfall:
+                RunDaggerfall(Path.Combine(root, profile.ClassicLooseRoot), source is "all" or "text",
+                    source is "all" or "books", filter, limit, ref printed);
+                break;
+            default:
+                throw new NotSupportedException(
+                    $"'classic text' does not read {profile.Game} yet — its text formats land with its game vertical. " +
+                    "Arena and Daggerfall are supported today.");
+        }
+
+        WriteFooter(printed);
+    }
+
+    /// <summary>
+    ///     Resolves the install a directory belongs to. Markers are install-root relative, and the
+    ///     data directory (Daggerfall's ARENA2) is the natural thing to pass, so the parent is
+    ///     tried when the directory itself is a profile's loose root.
+    /// </summary>
+    private static (GameProfile Profile, string Root) DetectInstall(string directory)
+    {
+        if (ClassicGameLocator.DetectFromDirectory(directory) is { } profile)
+        {
+            return (profile, directory);
+        }
+
+        var parent = Path.GetDirectoryName(directory);
+        if (parent is not null
+            && ClassicGameLocator.DetectFromDirectory(parent) is { } parentProfile
+            && string.Equals(Path.GetFileName(directory), parentProfile.ClassicLooseRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return (parentProfile, parent);
+        }
+
+        throw new InvalidOperationException(
+            $"'{directory}' is not a recognizable classic game install (no profile's markers matched).");
+    }
+
+    private static void PrintFile(string input, string? filter, int limit, ref int printed)
+    {
+        var name = Path.GetFileName(input);
+        var bytes = File.ReadAllBytes(input);
+        if (name.EndsWith(".INF", StringComparison.OrdinalIgnoreCase))
+        {
+            // A loose .INF is plaintext, but one the user extracted from GLOBAL.BSA is not.
+            var inf = ArenaInfFile.Parse(bytes, name, ArenaInfFile.IsProbablyEncrypted(bytes));
+            PrintInf(inf, filter, limit, ref printed);
+        }
+        else if (name.Equals(DaggerfallTextFile.FileName, StringComparison.OrdinalIgnoreCase))
+        {
+            PrintTextRecords(DaggerfallTextFile.Parse(bytes), filter, limit, ref printed);
+        }
+        else if (DaggerfallBookFile.IsBookFileName(name))
+        {
+            PrintBook(DaggerfallBookFile.Parse(bytes, name), filter, limit, ref printed);
+        }
+        else
+        {
+            PrintTemplate(ArenaTemplateDat.Parse(bytes), filter, limit, ref printed);
+        }
+    }
+
+    private static void RunArena(string root, bool wantTemplate, bool wantInf, string? filter, int limit, ref int printed)
+    {
         if (wantTemplate)
         {
             var templatePath = Path.Combine(root, "TEMPLATE.DAT");
@@ -482,8 +529,107 @@ public static class ClassicCommand
                     filter, limit, ref printed);
             }
         }
+    }
 
-        WriteFooter(printed);
+    private static void RunDaggerfall(string dataRoot, bool wantText, bool wantBooks, string? filter, int limit, ref int printed)
+    {
+        if (wantText)
+        {
+            var textPath = Path.Combine(dataRoot, DaggerfallTextFile.FileName);
+            if (File.Exists(textPath))
+            {
+                PrintTextRecords(DaggerfallTextFile.Parse(File.ReadAllBytes(textPath)), filter, limit, ref printed);
+            }
+        }
+
+        if (wantBooks && (limit == 0 || printed < limit))
+        {
+            var booksDirectory = Path.Combine(dataRoot, "BOOKS");
+            if (!Directory.Exists(booksDirectory))
+            {
+                return;
+            }
+
+            var bookPaths = Directory.EnumerateFiles(booksDirectory)
+                .Where(p => DaggerfallBookFile.IsBookFileName(Path.GetFileName(p)))
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase);
+            foreach (var path in bookPaths)
+            {
+                if (limit > 0 && printed >= limit)
+                {
+                    break;
+                }
+
+                PrintBook(DaggerfallBookFile.Parse(File.ReadAllBytes(path), Path.GetFileName(path)), filter, limit, ref printed);
+            }
+        }
+    }
+
+    private static void PrintTextRecords(DaggerfallTextFile text, string? filter, int limit, ref int printed)
+    {
+        var wroteHeader = false;
+        foreach (var record in text.Records)
+        {
+            if (limit > 0 && printed >= limit)
+            {
+                return;
+            }
+
+            var matches = record.Subrecords.Where(s => Matches(s, filter)).ToList();
+            if (matches.Count == 0 && !Matches(record.Id.ToString(CultureInfo.InvariantCulture), filter))
+            {
+                continue;
+            }
+
+            if (!wroteHeader)
+            {
+                AnsiConsole.MarkupLine("[bold]{0}[/]", DaggerfallTextFile.FileName);
+                wroteHeader = true;
+            }
+
+            AnsiConsole.MarkupLine("  [yellow]#{0}[/] [grey]{1} variant(s)[/]", record.Id, record.Subrecords.Count);
+            foreach (var variant in filter is null ? record.Subrecords : matches)
+            {
+                foreach (var line in variant.Split('\n'))
+                {
+                    AnsiConsole.MarkupLine("    {0}", Markup.Escape(line));
+                }
+            }
+
+            printed++;
+        }
+    }
+
+    private static void PrintBook(DaggerfallBookFile book, string? filter, int limit, ref int printed)
+    {
+        if (limit > 0 && printed >= limit)
+        {
+            return;
+        }
+
+        var headerMatches = Matches(book.Title, filter) || Matches(book.Author, filter) || Matches(book.Name, filter);
+        var pages = book.PageTexts
+            .Select((pageText, index) => (Index: index, Text: pageText))
+            .Where(p => headerMatches || Matches(p.Text, filter))
+            .ToList();
+        if (pages.Count == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.MarkupLine("[bold]{0}[/] — [yellow]{1}[/] [grey]by {2}{3}, {4} page(s)[/]",
+            Markup.Escape(book.Name), Markup.Escape(book.Title), Markup.Escape(book.Author),
+            book.IsNaughty ? ", naughty" : string.Empty, book.Pages.Count);
+        foreach (var (index, pageText) in pages)
+        {
+            AnsiConsole.MarkupLine("  [grey]page {0}[/]", index + 1);
+            foreach (var line in pageText.Split('\n'))
+            {
+                AnsiConsole.MarkupLine("    {0}", Markup.Escape(line));
+            }
+        }
+
+        printed++;
     }
 
     private static void PrintTemplate(ArenaTemplateDat template, string? filter, int limit, ref int printed)

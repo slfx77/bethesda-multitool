@@ -81,9 +81,12 @@ sprite info <file> [-e <entry>]            # Frame count/sizes/offsets without w
 
 # Classic (pre-Morrowind) commands
 classic text <install-dir>                 # Dump authored text from a classic install
-classic text <TEMPLATE.DAT|file.INF>       # ...or from one file
-#   -s/--source template|inf|all, -f/--filter <substr>, -l/--limit N
-#   Arena today: TEMPLATE.DAT strings + .INF on-screen text, riddles and door keys.
+classic text <TEMPLATE.DAT|file.INF>       # ...or from one file (also TEXT.RSC / BOKnnnnn.TXT)
+#   -s/--source template|inf|text|books|all, -f/--filter <substr>, -l/--limit N
+#   Arena: TEMPLATE.DAT strings + .INF on-screen text, riddles and door keys.
+#   Daggerfall (pass DF\DAGGER or ARENA2): TEXT.RSC (1,408 records; 0xFF-separated variants
+#   printed as "#id N variant(s)") + BOOKS (91 books, page by page; DOS code page 437 text —
+#   BOK10000 is German with ü/ä/ö/ß).
 video info <file> [-e <entry>]             # FLIC geometry, frame count, fps, palette switches
 video export <file> -o <dir> [--every N]   # Render FLIC frames to PNG
 #   Arena .FLC/.CEL (Autodesk FLIC, magic 0xAF12). A FLIC stores header+1 frame blocks — the
@@ -106,8 +109,9 @@ classic map export <file> -o <dir>         # Render voxel layers to PNG (--scale
 # stats/list/show also accept a classic INSTALL DIRECTORY (those games have no single plugin
 #   file). Arena synthesizes ATPL (TEMPLATE.DAT strings), AINF (.INF level definitions),
 #   ALOC (CITYDATA world-map locations) and APRV (provinces) — 1,186 records on a retail install.
-#   Daggerfall (pass DF\DAGGER, the dir holding ARENA2) synthesizes DREG (62 regions) and DLOC
-#   (15,251 MAPS.BSA locations: type, map pixel, buildings, dungeon blocks) — 15,313 records.
+#   Daggerfall (pass DF\DAGGER, the dir holding ARENA2) synthesizes DREG (62 regions), DLOC
+#   (15,251 MAPS.BSA locations: type, map pixel, buildings, dungeon blocks), DTXT (1,408 TEXT.RSC
+#   strings with their variants) and DBOK (91 books with page text) — 16,812 records.
 
 # Render commands (output: PNG sprites)
 render <path> -o <dir>                     # Render single NIF to PNG

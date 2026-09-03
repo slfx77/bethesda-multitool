@@ -190,6 +190,83 @@ public class DaggerfallRecordSourceTests
     }
 
     [Fact]
+    public void BuildTextRecord_CarriesIdVariantsAndText()
+    {
+        var text = DaggerfallTextFile.Parse(DaggerfallTextFixture.TextRsc(
+            (5, [.. "PERSONALITY"u8, 0xFD, .. " Personality governs"u8, 0xFC, 0xFF, .. "Alt"u8, 0xF8])));
+
+        var record = DaggerfallRecordSource.BuildTextRecord(text.Records[0]);
+
+        Assert.Equal("DTXT", record.RecordType);
+        Assert.Equal("TEXT0005", record.EditorId);
+        Assert.Equal("PERSONALITY Personality governs", record.FullName);
+        Assert.Equal(DaggerfallRecordSource.TextDomain, ClassicFormIdScheme.DomainOf(record.FormId));
+        Assert.Equal(5u, ClassicFormIdScheme.IndexOf(record.FormId));
+        Assert.Equal(5, record.Fields["Id"]);
+        Assert.Equal(2, record.Fields["Variants"]);
+        Assert.Equal("PERSONALITY Personality governs", record.Fields["Text00"]);
+        Assert.Equal("Alt", record.Fields["Text01"]);
+        Assert.Equal(true, record.Fields["InputCursor"]);
+    }
+
+    [Fact]
+    public void BuildBookRecord_CarriesHeaderAndPages()
+    {
+        var book = DaggerfallBookFile.Parse(
+            DaggerfallTextFixture.Book("A Tale of Kieran", "Vegepythicus, editor", "naughty", 400, 2,
+                DaggerfallTextFixture.Page("Once upon"), [0x00, .. "a time."u8, 0x00, 0xF6]),
+            "BOK00001.TXT");
+
+        var record = DaggerfallRecordSource.BuildBookRecord(book);
+
+        Assert.Equal("DBOK", record.RecordType);
+        Assert.Equal("BOK00001", record.EditorId);
+        Assert.Equal("A Tale of Kieran", record.FullName);
+        Assert.Equal(DaggerfallRecordSource.BookDomain, ClassicFormIdScheme.DomainOf(record.FormId));
+        Assert.Equal(1u, ClassicFormIdScheme.IndexOf(record.FormId));
+        Assert.Equal("Vegepythicus, editor", record.Fields["Author"]);
+        Assert.Equal(2, record.Fields["Pages"]);
+        Assert.Equal(400u, record.Fields["Price"]);
+        Assert.Equal(2, record.Fields["Unknown1"]);
+        Assert.Equal(true, record.Fields["Naughty"]);
+        Assert.Equal("Once upon", record.Fields["Page00"]);
+        Assert.Equal("a time.", record.Fields["Page01"]);
+
+        var tame = DaggerfallRecordSource.BuildBookRecord(DaggerfallBookFile.Parse(
+            DaggerfallTextFixture.Book("T", "A", "", 1, 1, DaggerfallTextFixture.Page("x")), "BOK00002.TXT"));
+        Assert.False(tame.Fields.ContainsKey("Naughty"));
+    }
+
+    [Fact]
+    public void Populate_ReadsTextAndBooks_WithoutTheMapsArchive()
+    {
+        var dataRoot = Path.Combine(Path.GetTempPath(), "bmt-df-text-" + Guid.NewGuid().ToString("N"));
+        var books = Path.Combine(dataRoot, "BOOKS");
+        Directory.CreateDirectory(books);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dataRoot, "TEXT.RSC"), DaggerfallTextFixture.TextRsc(
+                (0, DaggerfallTextFixture.Bytes("zero")),
+                (1, DaggerfallTextFixture.Bytes("one"))));
+            File.WriteAllBytes(Path.Combine(books, "BOK00000.TXT"),
+                DaggerfallTextFixture.Book("T", "A", "", 1, 1, DaggerfallTextFixture.Page("x")));
+            File.WriteAllBytes(Path.Combine(books, "README.TXT"), DaggerfallTextFixture.Bytes("not a book"));
+
+            var records = new RecordCollection { Game = BethesdaGame.Daggerfall };
+            DaggerfallRecordSource.Populate(dataRoot, records);
+
+            Assert.Equal(3, records.GenericRecords.Count);
+            Assert.Equal(2, records.GenericRecords.Count(r => r.RecordType == "DTXT"));
+            Assert.Equal(1, records.GenericRecords.Count(r => r.RecordType == "DBOK"));
+            Assert.Equal(3, records.GenericRecords.Select(r => r.FormId).Distinct().Count());
+        }
+        finally
+        {
+            Directory.Delete(dataRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Populate_WithoutTheArchive_AddsNothing()
     {
         var directory = Path.Combine(Path.GetTempPath(), "bmt-df-empty-" + Guid.NewGuid().ToString("N"));

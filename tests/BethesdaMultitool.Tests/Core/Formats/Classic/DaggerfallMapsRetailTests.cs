@@ -119,7 +119,7 @@ public sealed class DaggerfallMapsRetailTests
         var result = await ClassicGameAnalyzer.LoadAsync(installRoot);
 
         Assert.Equal(BethesdaGame.Daggerfall, result.Records.Game);
-        Assert.Equal(62 + 15_251, result.Records.GenericRecords.Count);
+        Assert.Equal(15_251, result.Records.GenericRecords.Count(r => r.RecordType == DaggerfallRecordSource.LocationRecordType));
         Assert.Equal(62, result.Records.GenericRecords.Count(r => r.RecordType == DaggerfallRecordSource.RegionRecordType));
         Assert.Equal(result.Records.GenericRecords.Count, result.Records.GenericRecords.Select(r => r.FormId).Distinct().Count());
     }

@@ -5,10 +5,12 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 namespace BethesdaMultitool.Core.Formats.Classic;
 
 /// <summary>
-///     Synthesizes browsable records from a Daggerfall install's <c>MAPS.BSA</c>: one <c>DREG</c>
-///     per region (all 62, the 17 authored-empty ones included — they are named entities the
-///     political overlay refers to) and one <c>DLOC</c> per location, carrying the map-table
-///     classification and coordinates plus the exterior and dungeon summaries.
+///     Synthesizes browsable records from a Daggerfall install. From <c>MAPS.BSA</c>: one
+///     <c>DREG</c> per region (all 62, the 17 authored-empty ones included — they are named
+///     entities the political overlay refers to) and one <c>DLOC</c> per location, carrying the
+///     map-table classification and coordinates plus the exterior and dungeon summaries. From
+///     <c>TEXT.RSC</c>: one <c>DTXT</c> per string-table record with its subrecord variants. From
+///     <c>BOOKS/</c>: one <c>DBOK</c> per book with its pages.
 /// </summary>
 internal static class DaggerfallRecordSource
 {
@@ -18,13 +20,26 @@ internal static class DaggerfallRecordSource
     /// <summary>Domain byte for <c>DLOC</c> (location) records.</summary>
     public const byte LocationDomain = 0x11;
 
+    /// <summary>Domain byte for <c>DTXT</c> (TEXT.RSC string) records.</summary>
+    public const byte TextDomain = 0x12;
+
+    /// <summary>Domain byte for <c>DBOK</c> (book) records.</summary>
+    public const byte BookDomain = 0x13;
+
     /// <summary>The record signature used for a region.</summary>
     public const string RegionRecordType = "DREG";
 
     /// <summary>The record signature used for a location.</summary>
     public const string LocationRecordType = "DLOC";
 
+    /// <summary>The record signature used for a TEXT.RSC record.</summary>
+    public const string TextRecordType = "DTXT";
+
+    /// <summary>The record signature used for a book.</summary>
+    public const string BookRecordType = "DBOK";
+
     private const string MapsArchiveName = "MAPS.BSA";
+    private const string BooksDirectoryName = "BOOKS";
 
     /// <summary>
     ///     Reads <paramref name="dataRoot" /> (the ARENA2 directory) and appends every synthesized
@@ -36,21 +51,110 @@ internal static class DaggerfallRecordSource
         ArgumentNullException.ThrowIfNull(records);
 
         var archivePath = Path.Combine(dataRoot, MapsArchiveName);
-        if (!File.Exists(archivePath))
+        if (File.Exists(archivePath))
         {
-            return;
-        }
-
-        var maps = DaggerfallMapsFile.Open(archivePath);
-        foreach (var region in maps.Regions)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            records.GenericRecords.Add(BuildRegionRecord(region));
-            foreach (var location in region.Locations)
+            var maps = DaggerfallMapsFile.Open(archivePath);
+            foreach (var region in maps.Regions)
             {
-                records.GenericRecords.Add(BuildLocationRecord(region, location));
+                cancellationToken.ThrowIfCancellationRequested();
+                records.GenericRecords.Add(BuildRegionRecord(region));
+                foreach (var location in region.Locations)
+                {
+                    records.GenericRecords.Add(BuildLocationRecord(region, location));
+                }
             }
         }
+
+        var textPath = Path.Combine(dataRoot, DaggerfallTextFile.FileName);
+        if (File.Exists(textPath))
+        {
+            var text = DaggerfallTextFile.Parse(File.ReadAllBytes(textPath));
+            foreach (var record in text.Records)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                records.GenericRecords.Add(BuildTextRecord(record));
+            }
+        }
+
+        var booksDirectory = Path.Combine(dataRoot, BooksDirectoryName);
+        if (Directory.Exists(booksDirectory))
+        {
+            var bookPaths = Directory.EnumerateFiles(booksDirectory)
+                .Where(p => DaggerfallBookFile.IsBookFileName(Path.GetFileName(p)))
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase);
+            foreach (var path in bookPaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                records.GenericRecords.Add(BuildBookRecord(DaggerfallBookFile.Parse(File.ReadAllBytes(path), Path.GetFileName(path))));
+            }
+        }
+    }
+
+    /// <summary>Builds the record form of one TEXT.RSC record.</summary>
+    public static GenericEsmRecord BuildTextRecord(DaggerfallTextRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["Id"] = record.Id,
+            ["Variants"] = record.Subrecords.Count,
+            ["Bytes"] = record.Raw.Length
+        };
+
+        var raw = record.Raw.Span;
+        if (raw.IndexOf(DaggerfallTextTokens.InputCursor) >= 0)
+        {
+            fields["InputCursor"] = true;
+        }
+
+        for (var i = 0; i < record.Subrecords.Count; i++)
+        {
+            fields[$"Text{i:D2}"] = ClassicRecordNaming.OneLine(record.Subrecords[i]);
+        }
+
+        var first = record.Subrecords.FirstOrDefault(s => s.Length > 0);
+        return new GenericEsmRecord
+        {
+            FormId = ClassicFormIdScheme.Compose(TextDomain, (uint)record.Id),
+            RecordType = TextRecordType,
+            EditorId = $"TEXT{record.Id:D4}",
+            FullName = first is null ? null : ClassicRecordNaming.Summarize(first),
+            Fields = fields
+        };
+    }
+
+    /// <summary>Builds the record form of one book.</summary>
+    public static GenericEsmRecord BuildBookRecord(DaggerfallBookFile book)
+    {
+        ArgumentNullException.ThrowIfNull(book);
+
+        var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["Author"] = book.Author,
+            ["Pages"] = book.Pages.Count,
+            ["Price"] = book.Price,
+            ["Unknown1"] = (int)book.Unknown1
+        };
+
+        if (book.IsNaughty)
+        {
+            fields["Naughty"] = true;
+        }
+
+        for (var i = 0; i < book.PageTexts.Count; i++)
+        {
+            fields[$"Page{i:D2}"] = ClassicRecordNaming.OneLine(book.PageTexts[i]);
+        }
+
+        return new GenericEsmRecord
+        {
+            FormId = ClassicFormIdScheme.Compose(BookDomain, (uint)book.Number),
+            RecordType = BookRecordType,
+            EditorId = Path.GetFileNameWithoutExtension(book.Name),
+            FullName = book.Title,
+            Fields = fields
+        };
     }
 
     /// <summary>Builds the record form of one region.</summary>
