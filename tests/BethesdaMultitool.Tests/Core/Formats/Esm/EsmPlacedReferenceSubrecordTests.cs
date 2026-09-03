@@ -241,11 +241,13 @@ public sealed class EsmPlacedReferenceSubrecordTests
     public void ExtractRefrRecordsFromParsed_AcceptsRequiredXbsdPrefixWithoutOptionalWindByte()
     {
         const uint refrFormId = 0x00150520;
+        const uint baseFormId = 0x00106F19;
         var record = new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = "REFR", FormId = refrFormId },
             Subrecords =
             [
+                MakeFormIdSubrecord("NAME", baseFormId),
                 new ParsedSubrecord
                 {
                     Signature = "XBSD",
@@ -267,10 +269,15 @@ public sealed class EsmPlacedReferenceSubrecordTests
     [Fact]
     public void ExtractRefrRecordsFromParsed_IgnoresTruncatedXbsd()
     {
+        const uint baseFormId = 0x00106F19;
         var record = new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = "REFR", FormId = 0x00150530 },
-            Subrecords = [new ParsedSubrecord { Signature = "XBSD", Data = new byte[19] }]
+            Subrecords =
+            [
+                MakeFormIdSubrecord("NAME", baseFormId),
+                new ParsedSubrecord { Signature = "XBSD", Data = new byte[19] }
+            ]
         };
 
         var scanResult = new EsmRecordScanResult();

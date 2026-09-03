@@ -380,7 +380,7 @@ internal static class WorldMapOverlayBuilder
     ///     <c>TREE</c> record's <c>ICON</c> field (the `.spt`'s own leaf material is a dev-era path that
     ///     often never shipped — e.g. WhiteOak's `treewoakleaves01b` vs the shipped `WhiteOakLeaves01.dds`).
     ///     <see cref="SpeedTreeRecordSource" /> walks BOTH the typed <c>Trees</c> list (FNV/FO3) and the
-    ///     generic records (Oblivion/Skyrim/FO4); scanning only one drops every tree on the other family.
+    ///     generic records (bare schema-driven collections and fixtures); scanning only one drops valid trees.
     /// </summary>
     private static Dictionary<string, string> BuildSpeedTreeLeafTextures(RecordCollection semantic) =>
         SpeedTreeRecordSource.BuildLeafTextureMap(semantic);
@@ -509,7 +509,8 @@ internal static class WorldMapOverlayBuilder
                 }
 
                 // Later MODS entries for the same shape win (engine applies the array in order).
-                overrides[entry.ShapeName] = new ShapeTextureOverride(diffuse, normal);
+                overrides[entry.ShapeName] = new ShapeTextureOverride(
+                    diffuse, normal, entry.TextureSetFormId, entry.Index);
             }
 
             if (AlternateTextureSet.Create(overrides) is { } set)

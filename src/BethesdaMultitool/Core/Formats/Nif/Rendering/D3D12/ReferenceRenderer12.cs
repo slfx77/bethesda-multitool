@@ -21,6 +21,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Orchestration;
@@ -335,6 +336,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // OPAQUE pass (→ deeper GPU-state cause) or routed to BLEND at runtime. Remove after diagnosis.
     private static readonly string? AlphaDebugFilter = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_ALPHA_DEBUG");
     private readonly HashSet<string> _alphaDebugLogged = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _referenceOverrideTraceLogged = new(StringComparer.Ordinal);
 
     // Camera world-space right/up for per-card SpeedTree leaf billboards, set each frame by the host
     // (WorldView3DControl) from the inverse view matrix — same source as the sky billboards. Defaults to
@@ -1673,6 +1675,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             EnvironmentVariables.Get("FALLOUT_VIEWER_BLEND_TRACE")?.Replace("0x", "", StringComparison.OrdinalIgnoreCase),
             System.Globalization.NumberStyles.HexNumber, null, out var blendTraceId)
             ? blendTraceId
+            : 0;
+
+    /// <summary>
+    ///     Opt-in provenance audit for one placed reference. When the target reaches a texture-ready
+    ///     main-scene batch, <c>reference-texture-override</c> records the retained REFR/base/MODS
+    ///     identity and verifies the resolved DDS keys are present on the materialized GPU submesh.
+    ///     Unset in normal runs, so there is no per-reference work on the hot path.
+    /// </summary>
+    private static readonly uint ReferenceOverrideTraceFormId =
+        uint.TryParse(
+            EnvironmentVariables.Get("FALLOUT_VIEWER_REFERENCE_OVERRIDE_TRACE")
+                ?.Replace("0x", "", StringComparison.OrdinalIgnoreCase),
+            System.Globalization.NumberStyles.HexNumber, null, out var referenceOverrideTraceId)
+            ? referenceOverrideTraceId
             : 0;
 
     /// <summary>
@@ -3365,6 +3381,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             }
         }
 
+        TraceReferenceTextureOverrides(r, mesh);
+
         var anySubmeshDrawn = false;
         var relWorldMatrix = r.WorldMatrix;
         relWorldMatrix.Translation -= state.RenderOrigin;
@@ -3520,6 +3538,85 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             state.Drawn++;
         }
 
+    }
+
+    private void TraceReferenceTextureOverrides(
+        in RenderableReference reference,
+        CachedNifMesh12 mesh)
+    {
+        if (ReferenceOverrideTraceFormId == 0 || reference.FormId != ReferenceOverrideTraceFormId)
+        {
+            return;
+        }
+
+        var overrides = reference.AlternateTextures?.Overrides;
+        if (overrides is null || overrides.Count == 0)
+        {
+            if (_referenceOverrideTraceLogged.Add($"{reference.FormId:x8}:missing"))
+            {
+                RendererProfilerTrace.Event("reference-texture-override", new Dictionary<string, object?>
+                {
+                    ["referenceFormIdHex"] = $"0x{reference.FormId:X8}",
+                    ["baseFormIdHex"] = $"0x{reference.BaseFormId:X8}",
+                    ["modelPath"] = reference.ModelPath,
+                    ["meshVariantKey"] = reference.AlternateTextures?.VariantKey,
+                    ["outcome"] = "missing-alternate-texture-set",
+                    ["batchAdmitted"] = false,
+                });
+            }
+
+            return;
+        }
+
+        foreach (var (shapeName, textureOverride) in overrides)
+        {
+            var signature =
+                $"{reference.FormId:x8}:{reference.MeshId:x8}:{shapeName}:" +
+                $"{textureOverride.TextureSetFormId:x8}:{textureOverride.Index}";
+            if (!_referenceOverrideTraceLogged.Add(signature))
+            {
+                continue;
+            }
+
+            var diffuseKey = textureOverride.Diffuse is { Length: > 0 } diffuse
+                ? GpuTextureCache12.NormalizeCacheKey(diffuse)
+                : null;
+            var normalKey = textureOverride.Normal is { Length: > 0 } normal
+                ? GpuTextureCache12.NormalizeCacheKey(normal, isNormalMap: true)
+                : null;
+            var matches = mesh.Submeshes.Where(submesh =>
+                    (diffuseKey is null || string.Equals(
+                        submesh.Diffuse.CacheKey, diffuseKey, StringComparison.OrdinalIgnoreCase)) &&
+                    (normalKey is null || string.Equals(
+                        submesh.Normal.CacheKey, normalKey, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            var first = matches.FirstOrDefault();
+
+            RendererProfilerTrace.Event("reference-texture-override", new Dictionary<string, object?>
+            {
+                ["referenceFormIdHex"] = $"0x{reference.FormId:X8}",
+                ["baseFormIdHex"] = $"0x{reference.BaseFormId:X8}",
+                ["modelPath"] = reference.ModelPath,
+                ["meshIdHex"] = $"0x{reference.MeshId:X8}",
+                ["meshVariantKey"] = reference.AlternateTextures?.VariantKey,
+                ["shapeName"] = shapeName,
+                ["textureSetFormIdHex"] = $"0x{textureOverride.TextureSetFormId:X8}",
+                ["modsIndex"] = textureOverride.Index,
+                ["expectedDiffuse"] = diffuseKey,
+                ["expectedNormal"] = normalKey,
+                ["matchingGpuSubmeshes"] = matches.Length,
+                ["sourceBlockIndex"] = first?.SourceBlockIndex ?? -1,
+                ["diffuseResident"] = first?.Diffuse.IsResident ?? false,
+                ["normalResident"] = first?.Normal.IsResident ?? false,
+                ["submissionRoute"] = first is null
+                    ? "none"
+                    : first.AlphaRenderMode == NifAlphaRenderMode.Blend || first.IsBillboard
+                        ? "blended"
+                        : "opaque-instanced",
+                ["outcome"] = matches.Length > 0 ? "override-applied-batch-admitted" : "override-not-applied",
+                ["batchAdmitted"] = matches.Length > 0,
+            });
+        }
     }
 
     private void ProcessShadowBatchReference(

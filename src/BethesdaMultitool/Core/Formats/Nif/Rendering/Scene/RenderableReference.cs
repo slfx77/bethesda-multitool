@@ -47,7 +47,9 @@ internal readonly record struct RenderableReference(
     float GrassWaveMultiplier = 0f,
     // FO4-family BNDS bases intentionally have no MODL. Their generated tube rides the ordinary
     // reference batch/cache path under ModelPath's synthetic CacheKey.
-    BendableSplineRenderMesh? BendableSplineMesh = null)
+    BendableSplineRenderMesh? BendableSplineMesh = null,
+    // Retained for opt-in render-path audits. The normal draw path keys on MeshId and never reads it.
+    uint BaseFormId = 0)
 {
     /// <summary>
     ///     Cull-sphere radius (world units) used for a reference whose base record has NO OBND, until its
@@ -297,7 +299,8 @@ internal readonly record struct RenderableReference(
             IsImposterModelPath(placement.ModelPath, game) ||
             IsLodDuplicateBaseEditorId(placement.BaseEditorId),
             category,
-            alternateTextures);
+            alternateTextures,
+            BaseFormId: placement.BaseFormId);
     }
 
     /// <summary>
@@ -352,8 +355,9 @@ internal readonly record struct RenderableReference(
             placement.IsInitiallyDisabled || xespDisabled,
             IsMarker: false,
             IsImposter: false,
-            category,
-            BendableSplineMesh: mesh);
+            Category: category,
+            BendableSplineMesh: mesh,
+            BaseFormId: placement.BaseFormId);
     }
 
     private static void DumpRefr(PlacedReference p, Matrix4x4 world)

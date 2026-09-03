@@ -7,7 +7,14 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 ///     <c>MODS</c> entry after its TXST FormID has been resolved to actual texture paths. Either path
 ///     may be null (TXST slot absent) — a null leaves the mesh's own baked path in place.
 /// </summary>
-public readonly record struct ShapeTextureOverride(string? Diffuse, string? Normal);
+public readonly record struct ShapeTextureOverride(
+    string? Diffuse,
+    string? Normal,
+    // Audit-only MODS provenance. Zero/-1 preserve source compatibility for synthetic sets and
+    // older callers; render identity intentionally remains path-derived below so equivalent TXSTs
+    // still share one decoded/GPU mesh variant.
+    uint TextureSetFormId = 0,
+    int Index = -1);
 
 /// <summary>
 ///     A base object's fully-resolved alternate-texture set: shape name → texture override, plus a

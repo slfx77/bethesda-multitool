@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 ///     Wire-format tests for the <c>MODS</c> ("Alternate Textures") subrecord decoder — the most
 ///     byte-sensitive piece of the alternate-texture feature. Grounded in the confirmed real record:
 ///     FNV STAT "…AtomicWranglerTall" carries <c>MODS</c> mapping shape <c>BB04:13</c> → TXST
-///     <c>0x0016A885</c> → index 0.
+///     <c>0x0016A885</c> → index 1.
 /// </summary>
 public sealed class AlternateTextureParserTests
 {
@@ -49,34 +49,34 @@ public sealed class AlternateTextureParserTests
     [InlineData(true)] // Xbox 360 big-endian
     public void Parse_DecodesTheAtomicWranglerBillboardEntry(bool bigEndian)
     {
-        var mods = BuildMods(bigEndian, ("BB04:13", 0x0016A885u, 0));
+        var mods = BuildMods(bigEndian, ("BB04:13", 0x0016A885u, 1));
 
         var entries = AlternateTextureParser.Parse(mods, bigEndian);
 
         var entry = Assert.Single(entries);
         Assert.Equal("BB04:13", entry.ShapeName);
         Assert.Equal(0x0016A885u, entry.TextureSetFormId);
-        Assert.Equal(0, entry.Index);
+        Assert.Equal(1, entry.Index);
     }
 
     [Fact]
     public void Parse_ExactBytes_MatchesConfirmedLittleEndianLayout()
     {
         // The literal bytes captured from FalloutNV.esm (PC): count=1, nameLen=7, "BB04:13",
-        // TXST 0x0016A885, index 0.
+        // TXST 0x0016A885, index 1.
         byte[] mods =
         [
             0x01, 0x00, 0x00, 0x00,
             0x07, 0x00, 0x00, 0x00,
             0x42, 0x42, 0x30, 0x34, 0x3A, 0x31, 0x33, // "BB04:13"
             0x85, 0xA8, 0x16, 0x00,
-            0x00, 0x00, 0x00, 0x00
+            0x01, 0x00, 0x00, 0x00
         ];
 
         var entry = Assert.Single(AlternateTextureParser.Parse(mods, false));
         Assert.Equal("BB04:13", entry.ShapeName);
         Assert.Equal(0x0016A885u, entry.TextureSetFormId);
-        Assert.Equal(0, entry.Index);
+        Assert.Equal(1, entry.Index);
     }
 
     [Fact]
