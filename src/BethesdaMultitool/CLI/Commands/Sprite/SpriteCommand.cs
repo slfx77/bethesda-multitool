@@ -19,6 +19,31 @@ public static class SpriteCommand
         return command;
     }
 
+    /// <summary>
+    ///     Arena and Daggerfall share the .IMG/.CIF/.RCI extensions with different codecs, so the
+    ///     game must be chosen. Auto sniffs the palette file beside the source (ART_PAL.COL means
+    ///     Daggerfall); the option overrides it for files sitting somewhere else.
+    /// </summary>
+    private static Option<string> CreateGameOption()
+    {
+        return new Option<string>("--game", "-g")
+        {
+            Description = "Which game's decoders to use: auto (default), arena, or daggerfall",
+            DefaultValueFactory = _ => "auto"
+        };
+    }
+
+    private static ClassicSpriteGame ParseGame(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "auto" => ClassicSpriteGame.Auto,
+            "arena" => ClassicSpriteGame.Arena,
+            "daggerfall" or "df" => ClassicSpriteGame.Daggerfall,
+            _ => throw new NotSupportedException($"Unknown --game '{value}'. Use auto, arena, or daggerfall.")
+        };
+    }
+
     private static Command CreateRenderCommand()
     {
         var command = new Command("render", "Decode a sprite/image (loose file or archive entry) to PNG frames");
@@ -41,9 +66,11 @@ public static class SpriteCommand
                           "default: embedded palette, else PAL.COL beside the source"
         };
         command.Arguments.Add(inputArg);
+        var gameOption = CreateGameOption();
         command.Options.Add(entryOption);
         command.Options.Add(outputOption);
         command.Options.Add(paletteOption);
+        command.Options.Add(gameOption);
         command.SetAction((parseResult, _) =>
         {
             try
@@ -52,11 +79,13 @@ public static class SpriteCommand
                     parseResult.GetValue(inputArg)!,
                     parseResult.GetValue(entryOption),
                     parseResult.GetValue(outputOption)!,
-                    parseResult.GetValue(paletteOption));
+                    parseResult.GetValue(paletteOption),
+                    ParseGame(parseResult.GetValue(gameOption)!));
 
                 AnsiConsole.MarkupLine(
-                    "[green]Wrote {0} frame(s)[/] (palette: {1})",
+                    "[green]Wrote {0} frame(s)[/] ({1}; palette: {2})",
                     result.Frames.Count,
+                    result.Game,
                     Markup.Escape(result.PaletteSource));
                 foreach (var frame in result.Frames)
                 {
@@ -89,7 +118,9 @@ public static class SpriteCommand
             Description = "Virtual path of the entry inside the archive input"
         };
         command.Arguments.Add(inputArg);
+        var gameOption = CreateGameOption();
         command.Options.Add(entryOption);
+        command.Options.Add(gameOption);
         command.SetAction((parseResult, _) =>
         {
             try
@@ -97,7 +128,9 @@ public static class SpriteCommand
                 var frames = SpriteRenderPipeline.Inspect(
                     parseResult.GetValue(inputArg)!,
                     parseResult.GetValue(entryOption),
-                    out var logicalName);
+                    ParseGame(parseResult.GetValue(gameOption)!),
+                    out var logicalName,
+                    out var resolvedGame);
 
                 var table = new Table { Border = TableBorder.Rounded };
                 table.AddColumn("Frame");
@@ -111,7 +144,11 @@ public static class SpriteCommand
                         $"({frames[i].XOffset},{frames[i].YOffset})");
                 }
 
-                AnsiConsole.MarkupLine("[bold cyan]{0}[/] — {1} frame(s)", Markup.Escape(logicalName), frames.Count);
+                AnsiConsole.MarkupLine(
+                    "[bold cyan]{0}[/] — {1} frame(s) [grey]({2})[/]",
+                    Markup.Escape(logicalName),
+                    frames.Count,
+                    resolvedGame);
                 AnsiConsole.Write(table);
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)

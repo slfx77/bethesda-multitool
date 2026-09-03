@@ -277,6 +277,21 @@ public class DaggerfallImgFileTests
     }
 
     [Fact]
+    public void Parse_PixelDataLengthField_IsNeverConsultedOnADecode()
+    {
+        // The header's pixel-data-length field is redundant in retail (always width*height) and
+        // the reference never reads it when decoding. Pin that: a wildly wrong declared length
+        // over well-formed width*height data must decode identically to a correct one.
+        var data = new byte[] { 1, 2, 3, 4, 5, 6 };
+        var lying = BuildHeadered(48, 5, 3, 2, 0, data, declaredDataLength: 9999);
+        var honest = BuildHeadered(48, 5, 3, 2, 0, data);
+
+        Assert.Equal(
+            DaggerfallImgFile.Parse(honest, "SOME00I0.IMG").Bitmap.Indices,
+            DaggerfallImgFile.Parse(lying, "SOME00I0.IMG").Bitmap.Indices);
+    }
+
+    [Fact]
     public void Parse_EmptyGeometry_Throws()
     {
         var file = BuildHeadered(0, 0, 0, 5, 0, []);

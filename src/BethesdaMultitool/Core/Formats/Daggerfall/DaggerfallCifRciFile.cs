@@ -1,3 +1,14 @@
+// Deliberate divergences from the reference (adversarially reviewed 2026-09-02), none reachable
+// on retail data:
+//   * A weapon CIF whose wield record consumes the whole file parses as one record; the
+//     reference's do-while unconditionally reads an animation header past EOF and rejects the
+//     file. Ending exactly at EOF is well-formed here.
+//   * An uncompressed record declaring pixelDataLength > width*height yields exactly
+//     width*height pixels; the reference carries the surplus tail bytes in its Data array.
+//     (pixelDataLength < width*height throws, where the reference zero-pads.)
+//   * An RCI smaller than one record throws; the reference computes a zero record count and
+//     reports success with nothing in it.
+//
 // Ported from daggerfall-unity's DaggerfallConnect API (MIT License),
 //   https://github.com/Interkarma/daggerfall-unity — Assets/Scripts/API/CifRciFile.cs plus the
 //   shared IMG header layout and RLE codec in BaseImageFile.cs. License texts are collected

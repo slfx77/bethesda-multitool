@@ -2,6 +2,19 @@
 //   https://github.com/Interkarma/daggerfall-unity — Assets/Scripts/API/ImgFile.cs plus the
 //   shared IMG header layout and RLE codec in BaseImageFile.cs. License texts are collected
 //   centrally in THIRD_PARTY_LICENSES.
+//
+// Deliberate divergences from the reference (adversarially reviewed 2026-09-02):
+//   * Name matching is CASE-INSENSITIVE where the reference compares exactly. Retail names are
+//     uppercase and Windows filesystems are case-insensitive, so a lowercase 'titl00i0.img' is
+//     the same file — the reference would silently treat it as a plain, non-palettized image.
+//   * Compression 0x0002 decodes through the shared byte-code RLE; the reference's IMG reader
+//     never consults the compression word and reads raw unconditionally, which would misdecode a
+//     genuinely RLE IMG. No retail IMG exercises the path. Consequently, in the RLE path an
+//     embedded palette is read after the CONSUMED compressed bytes, a position the reference's
+//     always-raw reader has no counterpart for.
+//   * Bounds violations throw InvalidDataException naming the file; the reference zero-pads
+//     short reads. The internally inconsistent 44-byte headerless table entry therefore throws
+//     here instead of yielding a mostly-zero 22x22 image.
 
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Imaging;
