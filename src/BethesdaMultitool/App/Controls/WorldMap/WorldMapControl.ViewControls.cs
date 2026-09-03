@@ -144,6 +144,7 @@ public sealed partial class WorldMapControl
         Wire(p.WaterCheckBox, WaterCheckBox_Changed);
         Wire(p.MapMarkersCheckBox, MapMarkersCheckBox_Changed);
         Wire(p.DisabledCheckBox, DisabledCheckBox_Changed);
+        Wire(p.MasterTerrainCheckBox, MasterTerrainCheckBox_Changed);
         Wire(p.RenderedObjectsCheckBox, RenderedObjectsCheckBox_Changed);
         Wire(p.ShadeVertexColorsCheckBox, ShadeVertexColorsCheckBox_Changed);
         Wire(p.ShadeHillshadeCheckBox, ShadeHillshadeCheckBox_Changed);
@@ -244,6 +245,21 @@ public sealed partial class WorldMapControl
         }
 
         MapCanvas?.Invalidate();
+    }
+
+    /// <summary>
+    ///     Raised when the DMP-only "Master ESM terrain" checkbox changes. Same contract as the 3D
+    ///     control's event of the same name: the terrain SOURCE is decided when the host tab builds
+    ///     the shared world data, so the control can only ask the host to rebuild.
+    /// </summary>
+    public event EventHandler<bool>? MasterTerrainPreviewToggled;
+
+    private void MasterTerrainCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        // Hidden for non-dump scenes, but guard anyway so a latent replay can never rebuild.
+        if (_data?.IsMemoryDump != true) return;
+        MasterTerrainPreviewToggled?.Invoke(this, SettingsPanel.MasterTerrainCheckBox.IsChecked == true);
     }
 
     private void ShadeVertexColorsCheckBox_Changed(object sender, RoutedEventArgs e)

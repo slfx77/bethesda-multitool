@@ -544,6 +544,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         _data = data;
         _cellSize = data.CellWorldSize;
+        // DMP-only data-source checkbox (mirrors the 3D panel's): swapping terrain sources only
+        // makes sense when the scene came from a memory dump.
+        SettingsPanel.MasterTerrainCheckBox.Visibility =
+            data.IsMemoryDump ? Visibility.Visible : Visibility.Collapsed;
         // The top-down "Rendered models" overlay bakes placement lists through this same cache, so
         // seed the category index here too (idempotent with the 3D control's LoadData).
         data.RenderCache.CategoryIndex = data.CategoryIndex;

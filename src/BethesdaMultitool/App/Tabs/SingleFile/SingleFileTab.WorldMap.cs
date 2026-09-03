@@ -479,6 +479,12 @@ public sealed partial class SingleFileTab
     {
         if (_useMasterTerrainPreview == useMasterTerrain) return;
         _useMasterTerrainPreview = useMasterTerrain;
+        // Both panels carry a checkbox for this one tab-owned state (the 3D panel's and the 2D
+        // panel's — the default view mode is 2D, so the toggle must be reachable there too). Keep
+        // the other one in step: writing the same value to the source checkbox is a no-op, and the
+        // other's Checked/Unchecked re-enters this handler only to hit the equality early-out.
+        WorldMapControl.SettingsPanel.MasterTerrainCheckBox.IsChecked = useMasterTerrain;
+        WorldView3DControl.SettingsPanel.MasterTerrainCheckBox.IsChecked = useMasterTerrain;
         // If another reset+re-fire (e.g. a Load Order change) already has a populate in flight,
         // the single-flight runner schedules nothing new here — PopulateWorldMapAsync's
         // stale-retry loop is what guarantees the newest generation still gets built.

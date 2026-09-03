@@ -73,6 +73,13 @@
         <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" Content="Initially disabled" IsChecked="False"
                   AutomationProperties.Name="Initially disabled"
                   ToolTipService.ToolTip="Show objects flagged initially-disabled" />
+        <!--  Memory dumps only (visibility gated from LoadData). Mirrors the 3D panel's checkbox of
+              the same name: the terrain source is decided when the host tab builds the shared world
+              data, so either checkbox flips the same tab-owned state and both are kept in sync.  -->
+        <CheckBox x:Name="MasterTerrainCheckBox" x:FieldModifier="internal" Content="Master ESM terrain"
+                  IsChecked="True" Visibility="Collapsed"
+                  AutomationProperties.Name="Master ESM terrain"
+                  ToolTipService.ToolTip="Fill terrain the dump lost from the Load Order's master ESMs (preview placements the way the converted plugin shows them in-game); off = only the terrain the dump itself preserved" />
         <CheckBox x:Name="RenderedObjectsCheckBox" x:FieldModifier="internal" Content="Rendered models"
                   IsChecked="False"
                   IsEnabled="False"
