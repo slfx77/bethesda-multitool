@@ -93,6 +93,12 @@ internal static class EnvironmentVariables
         public const string D3D12Debug = "FALLOUT_VIEWER_D3D12_DEBUG";
         public const string D3D12GpuBasedValidation = "FALLOUT_VIEWER_D3D12_GBV";
         public const string Dred = "FALLOUT_VIEWER_DRED";
+        /// <summary>
+        ///     Development escape hatch: exact <c>1</c> bypasses the validated shipped DXBC pack
+        ///     and compiles embedded HLSL source. Release builds normally use the pack; a missing,
+        ///     stale, or corrupt pack falls back to source automatically without this setting.
+        /// </summary>
+        public const string ShaderSourceCompile = "FALLOUT_VIEWER_SHADER_SOURCE_COMPILE";
         public const string Worldspace = "FALLOUT_VIEWER_WORLDSPACE";
         public const string DumpReference = "FALLOUT_VIEWER_DUMP_REFR";
 

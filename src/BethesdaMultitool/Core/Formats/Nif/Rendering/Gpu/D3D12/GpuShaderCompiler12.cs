@@ -45,14 +45,29 @@ internal static class GpuShaderCompiler12
     /// <summary>Logical-name prefix stamped onto every shader by the csproj EmbeddedResource item.</summary>
     private const string ResourcePrefix = "BethesdaMultitool.Shaders.";
 
+    /// <summary>
+    ///     Compile settings that participate in the shipped-pack fingerprint. Keep the API revision
+    ///     in this one decision site if compiler behavior changes; the actual enum values are derived
+    ///     from the same constants passed to <c>Compiler.Compile</c> below.
+    /// </summary>
+    internal static string BytecodeCompilerContract { get; } = FormattableString.Invariant(
+        $"Vortice.D3DCompiler={typeof(Compiler).Assembly.GetName().Version};Compiler.Compile/v1;ShaderFlags={(int)EnableUnboundedDescriptorTables};EffectFlags={(int)EffectFlags.None}");
+
     private static readonly Logger Log = Logger.Instance;
 
     private static readonly Lazy<FrozenDictionary<string, string>> Index = new(BuildIndex);
 
+    private static readonly Lazy<GpuShaderBytecodePack12?> ShippedBytecodePack = new(
+        LoadShippedBytecodePack,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
     private static readonly ConcurrentDictionary<string, byte[]> BytecodeCache = new(StringComparer.Ordinal);
+
+    private static readonly ConcurrentDictionary<string, byte> MissingShippedKeys = new(StringComparer.Ordinal);
 
     private static long _compileCount;
     private static long _cacheHitCount;
+    private static long _precompiledHitCount;
     private static double _totalCompileMilliseconds;
 
     /// <summary>Shader file name → manifest resource name. Exact, case-insensitive on the file name.</summary>
@@ -62,6 +77,8 @@ internal static class GpuShaderCompiler12
 
     internal static long CacheHitCount => Interlocked.Read(ref _cacheHitCount);
 
+    internal static long PrecompiledHitCount => Interlocked.Read(ref _precompiledHitCount);
+
     /// <summary>
     ///     Compiles <paramref name="fileName" /> (e.g. <c>reference.frag.hlsl</c>), returning DXBC
     ///     bytecode. Repeat requests for the same (file, entry, profile, macros) are served from a
@@ -70,7 +87,7 @@ internal static class GpuShaderCompiler12
     internal static byte[] Compile(
         string fileName, string entryPoint, string profile, params ShaderMacro[] macros)
     {
-        var effectiveMacros = ShadowComparisonPcf12.ApplyRuntimeOptIn(profile, macros);
+        var effectiveMacros = ShadowComparisonPcf12.ApplyRuntimeOptIn(fileName, profile, macros);
         var key = BuildCacheKey(fileName, entryPoint, profile, effectiveMacros);
         if (BytecodeCache.TryGetValue(key, out var cached))
         {
@@ -78,6 +95,43 @@ internal static class GpuShaderCompiler12
             ShadowComparisonPcf12.TraceSuccessfulShader(
                 fileName, entryPoint, profile, effectiveMacros, key, cached, cacheHit: true);
             return cached;
+        }
+
+        var shippedPack = ShippedBytecodePack.Value;
+        if (shippedPack is not null && shippedPack.TryGetBytecode(key, out var precompiled))
+        {
+            // TryAdd makes the race accounting unambiguous. Entries are immutable process-lifetime
+            // arrays, and this dictionary never removes a key.
+            var added = BytecodeCache.TryAdd(key, precompiled);
+            var selectedPrecompiled = added ? precompiled : BytecodeCache[key];
+            if (added)
+            {
+                Interlocked.Increment(ref _precompiledHitCount);
+                Log.Debug(
+                    "GpuShaderCompiler12: shipped DXBC {0} [{1}/{2}{3}] " +
+                    "(precompiled={4} cacheHits={5})",
+                    fileName, entryPoint, profile, DescribeMacros(effectiveMacros),
+                    PrecompiledHitCount, CacheHitCount);
+            }
+            else
+            {
+                Interlocked.Increment(ref _cacheHitCount);
+            }
+
+            ShadowComparisonPcf12.TraceSuccessfulShader(
+                fileName, entryPoint, profile, effectiveMacros, key, selectedPrecompiled,
+                cacheHit: !added);
+            return selectedPrecompiled;
+        }
+
+        if (shippedPack is not null && MissingShippedKeys.TryAdd(key, 0))
+        {
+            // A successfully validated pack has the exact ShaderPermutations key set. Reaching this
+            // branch therefore identifies a production compile request missing from that inventory.
+            Log.Warn(
+                "GpuShaderCompiler12: shipped pack has no key '{0}'; compiling source. " +
+                "Add the runtime permutation to ShaderPermutations.All.",
+                key);
         }
 
         var bytecode = CompileSource(
@@ -182,7 +236,60 @@ internal static class GpuShaderCompiler12
         return map.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string BuildCacheKey(
+    private static GpuShaderBytecodePack12? LoadShippedBytecodePack()
+    {
+        if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ShaderSourceCompile))
+        {
+            Log.Info(
+                "GpuShaderCompiler12: {0}=1; shipped DXBC is disabled and source compilation is forced.",
+                EnvironmentVariables.Viewer.ShaderSourceCompile);
+            return null;
+        }
+
+        var path = Path.Combine(AppContext.BaseDirectory, GpuShaderBytecodePack12.DefaultFileName);
+        if (!File.Exists(path))
+        {
+            // Expected for tests-only/non-Windows output trees and explicit pack-disabled builds:
+            // retaining embedded sources is the deliberate recovery fallback, not a startup error.
+            Log.Debug(
+                "GpuShaderCompiler12: shipped DXBC pack not found at '{0}'; source compilation is enabled.",
+                path);
+            return null;
+        }
+
+        try
+        {
+            var expectedKeys = GpuShaderBytecodePack12.CurrentPermutationKeys();
+            var expectedFingerprint = GpuShaderBytecodePack12.ComputeCurrentFingerprint();
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                64 * 1024,
+                FileOptions.SequentialScan);
+            var pack = GpuShaderBytecodePack12.Read(stream, expectedFingerprint, expectedKeys);
+            Log.Info(
+                "GpuShaderCompiler12: loaded {0} shipped DXBC permutations from '{1}'.",
+                pack.Count,
+                path);
+            return pack;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Never let packaging damage turn into a blank renderer: the embedded HLSL compiler is
+            // intentionally still shipped, and every rejected pack safely takes that path.
+            Log.Warn(
+                "GpuShaderCompiler12: rejected shipped DXBC pack '{0}' ({1}: {2}); " +
+                "source compilation remains enabled.",
+                path,
+                ex.GetType().Name,
+                ex.Message);
+            return null;
+        }
+    }
+
+    internal static string BuildCacheKey(
         string fileName, string entryPoint, string profile, ShaderMacro[] macros)
     {
         return $"{fileName}|{entryPoint}|{profile}|{DescribeMacros(macros)}";

@@ -129,6 +129,9 @@ internal static class ShaderPermutations
         // normal with no surface normal at all, and compose ambient ADDITIVELY — neither expressible
         // as a uniform on the shared path. Selected by GrassShaderProfile.ForGame(Oblivion).
         new("reference_grass_oblivion.vert.hlsl", "main", "vs_5_1", None, "Oblivion grass (GRASS2020.vso)"),
+        new("reference_grass_oblivion.vert.hlsl", "main", "vs_5_1",
+            [new ShaderMacro("GRASS_INSTANCED", "1")],
+            "Oblivion grass: instanced + blended ABI"),
         new("reference_grass_oblivion.frag.hlsl", "main", "ps_5_1", None, "Oblivion grass (GRASS2002.pso)"),
         // Per-game shader #2, and the first on the INSTANCED axis. Retail FO3/FNV lights grass from
         // terrain data baked per instance at placement time (land normal + land-colour luminance),
@@ -171,6 +174,8 @@ internal static class ShaderPermutations
         new("tonemap.frag.hlsl", "mainAvg", "ps_5_1", None, "log-average luminance reduction"),
         new("tonemap.frag.hlsl", "mainAdapt", "ps_5_1", None, "eye adaptation"),
         new("bloom.frag.hlsl", "mainDownsample16", "ps_5_1", None, "bloom downsample"),
+        new("bloom.frag.hlsl", "mainSkyrimLuminance4", "ps_5_1", None, "Skyrim filtered luminance reduction"),
+        new("bloom.frag.hlsl", "mainSkyrimDownsample16", "ps_5_1", None, "Skyrim scalar luminance reduction"),
         new("bloom.frag.hlsl", "main", "ps_5_1", None, "bloom bright-pass"),
         new("bloom.frag.hlsl", "mainBlur", "ps_5_1", None, "bloom separable blur"),
         new("cellgrid.vert.hlsl", "main", "vs_5_1", None, "navmesh / selection / cell-grid overlays"),
@@ -325,7 +330,9 @@ internal static class ShaderPermutations
         {
             new("water.vert.hlsl", "main", "vs_5_1", None, "water surface"),
             new("water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1", None, "FNV noise prepass: scroll+blend"),
-            new("water_noise.comp.hlsl", "mainNormal", "cs_5_1", None, "FNV noise prepass: normal")
+            new("water_noise.comp.hlsl", "mainNormal", "cs_5_1", None, "FNV noise prepass: normal"),
+            new("water_noise.comp.hlsl", "mainDownsample", "cs_5_1", None,
+                "FNV noise prepass: mip downsample")
         };
 
         // File axis (the game, per WaterProfile.PixelShaderFile) x occlusion axis (read-only DSV).

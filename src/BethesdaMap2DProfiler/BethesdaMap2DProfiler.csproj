@@ -24,6 +24,21 @@
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+    <ShaderBytecodePackFileName>BethesdaMultitool.Shaders.dxbcpack</ShaderBytecodePackFileName>
+    <!-- The optional top-down 3D path hosts WorldView3DControl in this project's TargetDir, so its
+         referenced renderer pack must remain a physical sibling of this executable. -->
+    <PropagateShaderBytecodePackFromProjectReference
+        Condition="'$(PropagateShaderBytecodePackFromProjectReference)' == '' and
+                   '$(BuildTestsOnly)' != 'true' and
+                   '$(DesignTimeBuild)' != 'true' and
+                   ('$(GenerateShaderBytecodePackOnBuild)' == '' or '$(GenerateShaderBytecodePackOnBuild)' == 'true') and
+                   $([MSBuild]::IsOSPlatform('Windows'))">true</PropagateShaderBytecodePackFromProjectReference>
+    <_ShaderBytecodePackPropagationEnabled
+        Condition="'$(PropagateShaderBytecodePackFromProjectReference)' == 'true' and
+                   '$(BuildTestsOnly)' != 'true' and
+                   '$(DesignTimeBuild)' != 'true' and
+                   '$(GenerateShaderBytecodePackOnBuild)' != 'false' and
+                   $([MSBuild]::IsOSPlatform('Windows'))">true</_ShaderBytecodePackPropagationEnabled>
   </PropertyGroup>
 
   <!-- Fast test builds (-p:BuildTestsOnly=true) drop the BethesdaMultitool net10.0-windows TFM
@@ -39,7 +54,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\BethesdaMultitool\BethesdaMultitool.csproj" />
+    <ProjectReference Include="..\BethesdaMultitool\BethesdaMultitool.csproj">
+      <ShaderBytecodePackProducer>true</ShaderBytecodePackProducer>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -58,8 +75,57 @@
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
                              Condition="$([System.String]::new('%(FullPath)').Contains('BethesdaMultitool')) AND
+                                        '%(Filename)%(Extension)' != '$(ShaderBytecodePackFileName)' AND
                                         !$([System.String]::new('%(FullPath)').Contains('bin')) AND
                                         !$([System.String]::new('%(FullPath)').Contains('.nuget'))" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Reuse BethesdaMultitool's explicit producer target rather than guessing its configuration /
+       platform output path. The ordinary ProjectReference build has completed before this hook. -->
+  <Target Name="CopyShaderBytecodePackFromBethesdaMultitool"
+          AfterTargets="Build"
+          Condition="'$(_ShaderBytecodePackPropagationEnabled)' == 'true'">
+    <ItemGroup>
+      <_ShaderBytecodePackProducerProject Include="@(ProjectReference)"
+          Condition="'%(ProjectReference.ShaderBytecodePackProducer)' == 'true'" />
+    </ItemGroup>
+    <Error Condition="'@(_ShaderBytecodePackProducerProject)' == ''"
+           Text="No ProjectReference is marked as the shader-bytecode-pack producer." />
+    <Error Condition="'@(_ShaderBytecodePackProducerProject->Count())' != '1'"
+           Text="Exactly one ProjectReference must be marked as the shader-bytecode-pack producer." />
+    <MSBuild Projects="@(_ShaderBytecodePackProducerProject)"
+             Targets="GetShaderBytecodePackOutput"
+             Properties="Configuration=$(Configuration);Platform=$(Platform);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)"
+             BuildInParallel="false"
+             RebaseOutputs="false">
+      <Output TaskParameter="TargetOutputs" ItemName="_Map2DShaderBytecodePackSource" />
+    </MSBuild>
+    <Error Condition="'@(_Map2DShaderBytecodePackSource->Count())' != '1'"
+           Text="BethesdaMultitool did not return exactly one generated shader bytecode pack." />
+    <Copy SourceFiles="@(_Map2DShaderBytecodePackSource)"
+          DestinationFolder="$(TargetDir)"
+          SkipUnchangedFiles="true">
+      <Output TaskParameter="CopiedFiles" ItemName="_Map2DShaderBytecodePack" />
+    </Copy>
+    <ItemGroup>
+      <FileWrites Include="@(_Map2DShaderBytecodePack)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Single-file publication keeps the runtime-looked-up pack external to the bundle. -->
+  <Target Name="IncludeShaderBytecodePackInMap2DProfilerPublish"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          DependsOnTargets="CopyShaderBytecodePackFromBethesdaMultitool"
+          Condition="'$(_ShaderBytecodePackPropagationEnabled)' == 'true'">
+    <Error Condition="'@(_Map2DShaderBytecodePack->Count())' != '1'"
+           Text="The map profiler shader bytecode pack was not copied before publish item resolution." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_Map2DShaderBytecodePack)">
+        <RelativePath>%(_Map2DShaderBytecodePack.Filename)%(_Map2DShaderBytecodePack.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 

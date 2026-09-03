@@ -23,6 +23,11 @@ public sealed class ShaderInventoryTests
     private static readonly Regex IncludeDirective = new(
         @"#include\s+""([^""]+)""", RegexOptions.Compiled);
 
+    private static readonly Regex EntryPointDeclaration = new(
+        @"^\s*(?:\[[^\r\n\]]+\]\s*)*(?:[A-Za-z_]\w*(?:\s*<[^>\r\n]+>)?)\s+" +
+        @"(main[A-Za-z0-9_]*)\s*\(",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
     private static string[] EmbeddedShaderNames()
     {
         return
@@ -100,6 +105,32 @@ public sealed class ShaderInventoryTests
     }
 
     [Fact]
+    public void EveryDeclaredMainEntryPointIsReachedByAPermutation()
+    {
+        // A file-level check cannot see a second entry point in an already-covered shader. That
+        // allowed water_noise.comp.hlsl/mainDownsample to compile from source in shipped Release
+        // builds even though the other two functions in the same file were in the DXBC pack.
+        var covered = ShaderPermutations.All
+            .Select(permutation => (permutation.File, permutation.EntryPoint))
+            .ToHashSet();
+        var missing = Directory
+            .EnumerateFiles(ShaderDirectory, "*.hlsl", SearchOption.AllDirectories)
+            .SelectMany(path => EntryPointDeclaration
+                .Matches(File.ReadAllText(path))
+                .Select(match => (File: Path.GetFileName(path), EntryPoint: match.Groups[1].Value)))
+            .Distinct()
+            .Where(entry => !covered.Contains(entry))
+            .OrderBy(entry => entry.File, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.EntryPoint, StringComparer.Ordinal)
+            .Select(entry => $"{entry.File} [{entry.EntryPoint}]")
+            .ToArray();
+
+        Assert.True(
+            missing.Length == 0,
+            $"Declared shader entry points absent from ShaderPermutations.All: {string.Join(", ", missing)}");
+    }
+
+    [Fact]
     public void EveryPermutationNamesAnEmbeddedShader()
     {
         var embedded = EmbeddedShaderNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -119,9 +150,9 @@ public sealed class ShaderInventoryTests
         // exactly this: a macro that appears in no .hlsl file, producing a byte-identical duplicate
         // of the FO4 permutation while implying FO76 had its own coverage.
         var duplicates = ShaderPermutations.All
-            .GroupBy(p => $"{p.File}|{p.EntryPoint}|{p.Profile}|" +
-                          string.Join(",",
-                              p.Macros.Select(m => $"{m.Name}={m.Definition}").Order(StringComparer.Ordinal)),
+            .GroupBy(
+                p => GpuShaderCompiler12.BuildCacheKey(
+                    p.File, p.EntryPoint, p.Profile, p.Macros),
                 StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)

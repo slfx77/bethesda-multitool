@@ -40,12 +40,13 @@ internal static class ShadowComparisonPcf12
     ///     Adds the experiment macro only to pixel shaders and only for the exact value <c>1</c>.
     ///     An explicit caller macro wins, which keeps compiler tests able to force either branch.
     /// </summary>
-    internal static ShaderMacro[] ApplyRuntimeOptIn(string profile, ShaderMacro[] macros) =>
-        Apply(profile, macros, RuntimeEnvironmentValue);
+    internal static ShaderMacro[] ApplyRuntimeOptIn(
+        string fileName, string profile, ShaderMacro[] macros) =>
+        Apply(fileName, profile, macros, RuntimeEnvironmentValue);
 
     /// <summary>Pure overload for policy tests; <paramref name="environmentValue" /> is untrusted.</summary>
     internal static ShaderMacro[] Apply(
-        string profile, ShaderMacro[] macros, string? environmentValue)
+        string fileName, string profile, ShaderMacro[] macros, string? environmentValue)
     {
         if (!string.Equals(environmentValue, "1", StringComparison.Ordinal) ||
             !profile.StartsWith("ps_", StringComparison.Ordinal) ||
@@ -54,7 +55,30 @@ internal static class ShadowComparisonPcf12
             return macros;
         }
 
+        // Adding an otherwise-unused macro still creates a distinct bytecode-pack/cache key. Keep
+        // the experiment on permutations that actually include shadow_sampling.hlsli; otherwise an
+        // opt-in run would fall out of the validated pack and invoke FXC for unrelated pixel shaders.
+        if (!IsShadowReceiverPermutation(fileName, macros))
+        {
+            return macros;
+        }
+
         return [.. macros, new ShaderMacro(ShaderMacroName, "1")];
+    }
+
+    private static bool IsShadowReceiverPermutation(string fileName, ShaderMacro[] macros)
+    {
+        if (!ShadowReceiverPixelShaders.Contains(fileName))
+        {
+            return false;
+        }
+
+        // water_fo4.frag.hlsl includes the shared shadow implementation only inside its
+        // architectural branch. The classic FO4 and FO76-optics permutations are not receivers.
+        return !fileName.Equals("water_fo4.frag.hlsl", StringComparison.OrdinalIgnoreCase) ||
+               macros.Any(static macro =>
+                   string.Equals(macro.Name, "FO4_WATER_ARCHITECTURAL", StringComparison.Ordinal) &&
+                   string.Equals(macro.Definition, "1", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -106,7 +130,7 @@ internal static class ShadowComparisonPcf12
     {
         fields = null;
         if (!profile.StartsWith("ps_", StringComparison.Ordinal) ||
-            !ShadowReceiverPixelShaders.Contains(fileName))
+            !IsShadowReceiverPermutation(fileName, effectiveMacros))
         {
             return false;
         }

@@ -26,6 +26,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Application icon for both CLI and GUI executables -->
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <ShaderBytecodePackFileName>BethesdaMultitool.Shaders.dxbcpack</ShaderBytecodePackFileName>
+    <!-- Platform/configuration output trees share this seed cache. The final TargetDir copy is
+         still validated against the just-built assembly before it can be returned or published. -->
+    <ShaderBytecodePackCachePath
+        Condition="'$(ShaderBytecodePackCachePath)' == ''">$(BaseIntermediateOutputPath)shader-bytecode-cache\$(ShaderBytecodePackFileName)</ShaderBytecodePackCachePath>
   </PropertyGroup>
 
   <!-- Ensure multi-target restore materializes RID-specific assets for both CLI and GUI builds. -->
@@ -75,6 +80,11 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <EnableMsixTooling>true</EnableMsixTooling>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN;WINDOWS_GUI</DefineConstants>
+    <!-- Every interactive Windows build ships the authoritative HLSL inventory as validated DXBC.
+         The shared seed means Debug normally pays only the freshness check, while tests-only and
+         non-Windows builds retain the embedded-source fallback. -->
+    <GenerateShaderBytecodePackOnBuild
+        Condition="'$(GenerateShaderBytecodePackOnBuild)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</GenerateShaderBytecodePackOnBuild>
     <!-- Single-file for GUI (bundles into one exe, ~66 MB compressed) -->
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
@@ -170,5 +180,68 @@
     <Compile Remove="App.xaml.cs" />
     <None Remove="app.manifest" />
   </ItemGroup>
+
+  <!-- Generate a physical DXBC sidecar from the just-built assembly. A missing platform-specific
+       TargetDir copy may be seeded from the shared intermediate cache, but the CLI validator ALWAYS
+       runs against that final copy before it is returned or published. Do not add Inputs/Outputs to
+       this target: a newer stale/corrupt seed must never bypass fingerprint/key/digest validation.
+       Calling the DLL through the dotnet host keeps the step synchronous even though the Windows
+       apphost is WinExe. A rejected seed is regenerated atomically through CompileSource. -->
+  <Target Name="GenerateShaderBytecodePack"
+          AfterTargets="Build"
+          Condition="'$(GenerateShaderBytecodePackOnBuild)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(ShaderBytecodePackCachePath)'))" />
+    <Copy SourceFiles="$(ShaderBytecodePackCachePath)"
+          DestinationFiles="$(TargetDir)$(ShaderBytecodePackFileName)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(ShaderBytecodePackCachePath)') and !Exists('$(TargetDir)$(ShaderBytecodePackFileName)')">
+      <Output TaskParameter="CopiedFiles" ItemName="_SeededShaderBytecodePack" />
+    </Copy>
+    <Message Condition="'@(_SeededShaderBytecodePack)' != ''"
+             Importance="High"
+             Text="Seeded shader bytecode pack from $(ShaderBytecodePackCachePath); validating against $(TargetPath)." />
+    <Exec Command="dotnet &quot;$(TargetPath)&quot; --no-gui --plain build-shader-bytecode-pack &quot;$(TargetDir)$(ShaderBytecodePackFileName)&quot;" />
+    <Copy SourceFiles="$(TargetDir)$(ShaderBytecodePackFileName)"
+          DestinationFiles="$(ShaderBytecodePackCachePath)"
+          SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <FileWrites Include="$(TargetDir)$(ShaderBytecodePackFileName)" />
+      <FileWrites Include="$(ShaderBytecodePackCachePath)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- ProjectReference consumers query this target instead of guessing BethesdaMultitool's bin
+       layout. Returns is the explicit cross-project contract: the exact generated physical file,
+       together with the destination name/publish metadata consumers must preserve. -->
+  <Target Name="GetShaderBytecodePackOutput"
+          DependsOnTargets="GenerateShaderBytecodePack"
+          Returns="@(_ShaderBytecodePackOutput)"
+          Condition="'$(GenerateShaderBytecodePackOnBuild)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(TargetDir)$(ShaderBytecodePackFileName)')"
+           Text="The generated shader bytecode pack was not found at $(TargetDir)$(ShaderBytecodePackFileName)." />
+    <ItemGroup>
+      <_ShaderBytecodePackOutput Include="$(TargetDir)$(ShaderBytecodePackFileName)">
+        <TargetPath>$(ShaderBytecodePackFileName)</TargetPath>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </_ShaderBytecodePackOutput>
+    </ItemGroup>
+  </Target>
+
+  <!-- Keep the pack beside a published single-file executable. Bundling it into the executable
+       would make AppContext.BaseDirectory lookup fail; this metadata deliberately keeps it physical. -->
+  <Target Name="IncludeShaderBytecodePackInPublish"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          DependsOnTargets="GetShaderBytecodePackOutput"
+          Condition="'$(GenerateShaderBytecodePackOnBuild)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_ShaderBytecodePackOutput)">
+        <RelativePath>%(_ShaderBytecodePackOutput.TargetPath)</RelativePath>
+        <CopyToPublishDirectory>%(_ShaderBytecodePackOutput.CopyToPublishDirectory)</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>%(_ShaderBytecodePackOutput.ExcludeFromSingleFile)</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 
 </Project>

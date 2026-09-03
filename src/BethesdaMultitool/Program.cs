@@ -9,10 +9,44 @@ namespace BethesdaMultitool;
 
 /// <summary>
 ///     Cross-platform CLI entry point for Bethesda Multitool.
-///     On Windows with GUI build, this delegates to the GUI app unless --no-gui is specified.
+///     On Windows with GUI build, this delegates to the GUI app unless a registered root command
+///     or the explicit <c>--no-gui</c> compatibility switch selects the command-line host.
 /// </summary>
 public static class Program
 {
+    private static readonly HashSet<string> CliRootCommandNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "search",
+        "stats",
+        "list",
+        "show",
+        "diff",
+        "convert-nif",
+        "convert-ddx",
+        "esm",
+        "archive",
+        "bsa",
+        "ba2",
+        "btd",
+        "dialogue",
+        "papyrus",
+        "world",
+        "repack",
+        "rtti",
+        "save",
+        "dmp",
+        "render",
+        "sprite",
+        "classic",
+        "audio",
+        "video",
+        "export",
+        "analyze",
+        "report",
+        "version-track",
+        "build-shader-bytecode-pack"
+    };
+
     /// <summary>
     ///     File path to auto-load when GUI starts (set via --file parameter).
     /// </summary>
@@ -25,6 +59,13 @@ public static class Program
     ///     default tab.
     /// </summary>
     public static string? AutoOpenView { get; internal set; }
+
+    /// <summary>
+    ///     Exact actor selector used with <c>--view actors</c> (set via <c>--actor</c>). Accepts a
+    ///     hexadecimal/decimal FormID or an exact, unique Editor ID/full name. Null leaves the actor
+    ///     list unselected, preserving the normal interactive startup behavior.
+    /// </summary>
+    public static string? AutoOpenActor { get; internal set; }
 
     /// <summary>
     ///     Worldspace name substring to auto-select on the world map (set via --worldspace, e.g.
@@ -58,10 +99,11 @@ public static class Program
         ArgumentNullException.ThrowIfNull(args);
 
 #if WINDOWS_GUI
-        if (!IsCliMode(args))
+        if (!ShouldRunCli(args))
         {
             AutoLoadFile = GetAutoLoadFile(args);
             AutoOpenView = GetFlagValue(args, "--view");
+            AutoOpenActor = GetFlagValue(args, "--actor");
             AutoOpenWorldspace = GetFlagValue(args, "--worldspace");
             AutoOpenLayer = GetFlagValue(args, "--layer");
             AutoRenderedModels = args.Any(a => a.Equals("--rendered-models", StringComparison.OrdinalIgnoreCase));
@@ -144,6 +186,8 @@ public static class Program
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());
         rootCommand.Subcommands.Add(VersionTrackCommand.Create());
+        rootCommand.Subcommands.Add(
+            CLI.Commands.Diagnostics.BuildShaderBytecodePackCommand.Create());
 
         var exitCode = rootCommand.Parse(args).Invoke();
 
@@ -260,14 +304,44 @@ public static class Program
     }
 
 
-#if WINDOWS_GUI
-    private static bool IsCliMode(string[] args)
+    /// <summary>
+    ///     Selects the command-line host when the caller either opts out of the GUI explicitly or
+    ///     supplies a registered root command. A packaged Windows executable must not turn a valid
+    ///     invocation such as <c>archive list ...</c> into an apparently hung, empty GUI merely
+    ///     because the caller omitted the historical <c>--no-gui</c> compatibility flag.
+    /// </summary>
+    internal static bool ShouldRunCli(string[] args)
     {
-        return args.Length > 0 && (
-            args.Any(a => a.Equals("--no-gui", StringComparison.OrdinalIgnoreCase)) ||
-            args.Any(a => a.Equals("-n", StringComparison.OrdinalIgnoreCase)));
+        ArgumentNullException.ThrowIfNull(args);
+
+        if (args.Any(static argument =>
+                argument.Equals("--no-gui", StringComparison.OrdinalIgnoreCase) ||
+                argument.Equals("-n", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // These no-value CLI presentation/diagnostic switches may legally precede a subcommand.
+        // Stop at any other option so values belonging to GUI flags (for example
+        // `--actor archive`) cannot accidentally select the CLI host.
+        foreach (var argument in args)
+        {
+            if (argument.Equals("--plain", StringComparison.OrdinalIgnoreCase) ||
+                argument.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase) ||
+                argument.Equals("--resource-stats", StringComparison.OrdinalIgnoreCase) ||
+                argument.Equals("--verbose", StringComparison.OrdinalIgnoreCase) ||
+                argument.Equals("-v", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return !argument.StartsWith('-') && CliRootCommandNames.Contains(argument);
+        }
+
+        return false;
     }
 
+#if WINDOWS_GUI
     private static string? GetAutoLoadFile(string[] args)
     {
         var fileArg = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");

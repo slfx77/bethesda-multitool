@@ -8,25 +8,69 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
 public sealed class ShadowComparisonPcfTests
 {
     [Fact]
-    public void RuntimeOptInIsExactAndPixelShaderOnly()
+    public void RuntimeOptInIsExactAndShadowReceiverOnly()
     {
-        var enabled = ShadowComparisonPcf12.Apply("ps_5_1", [], "1");
+        var enabled = ShadowComparisonPcf12.Apply(
+            "reference.frag.hlsl", "ps_5_1", [], "1");
         var macro = Assert.Single(enabled);
         Assert.Equal(ShadowComparisonPcf12.ShaderMacroName, macro.Name);
         Assert.Equal("1", macro.Definition);
 
-        Assert.Empty(ShadowComparisonPcf12.Apply("vs_5_1", [], "1"));
-        Assert.Empty(ShadowComparisonPcf12.Apply("cs_5_1", [], "1"));
-        Assert.Empty(ShadowComparisonPcf12.Apply("ps_5_1", [], null));
-        Assert.Empty(ShadowComparisonPcf12.Apply("ps_5_1", [], "0"));
-        Assert.Empty(ShadowComparisonPcf12.Apply("ps_5_1", [], "true"));
-        Assert.Empty(ShadowComparisonPcf12.Apply("ps_5_1", [], " 1"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "reference.vert.hlsl", "vs_5_1", [], "1"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "water_modern.comp.hlsl", "cs_5_1", [], "1"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "sky_geo.frag.hlsl", "ps_5_1", [], "1"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "water_fo4.frag.hlsl", "ps_5_1", [], "1"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "reference.frag.hlsl", "ps_5_1", [], null));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "reference.frag.hlsl", "ps_5_1", [], "0"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "reference.frag.hlsl", "ps_5_1", [], "true"));
+        Assert.Empty(ShadowComparisonPcf12.Apply(
+            "reference.frag.hlsl", "ps_5_1", [], " 1"));
+
+        var architecturalWater = ShadowComparisonPcf12.Apply(
+            "water_fo4.frag.hlsl",
+            "ps_5_1",
+            [new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1")],
+            "1");
+        Assert.Contains(
+            architecturalWater,
+            macro => macro.Name == ShadowComparisonPcf12.ShaderMacroName && macro.Definition == "1");
 
         var explicitOff = new[]
         {
             new ShaderMacro(ShadowComparisonPcf12.ShaderMacroName, "0")
         };
-        Assert.Same(explicitOff, ShadowComparisonPcf12.Apply("ps_5_1", explicitOff, "1"));
+        Assert.Same(explicitOff, ShadowComparisonPcf12.Apply(
+            "reference.frag.hlsl", "ps_5_1", explicitOff, "1"));
+    }
+
+    [Fact]
+    public void RuntimeOptInNeverFallsOutsideThePrecompiledPermutationInventory()
+    {
+        var shippedKeys = GpuShaderBytecodePack12.CurrentPermutationKeys()
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var permutation in ShaderPermutations.All)
+        {
+            var effectiveMacros = ShadowComparisonPcf12.Apply(
+                permutation.File,
+                permutation.Profile,
+                permutation.Macros,
+                "1");
+            var runtimeKey = GpuShaderCompiler12.BuildCacheKey(
+                permutation.File,
+                permutation.EntryPoint,
+                permutation.Profile,
+                effectiveMacros);
+
+            Assert.Contains(runtimeKey, shippedKeys);
+        }
     }
 
     [Fact]
@@ -151,7 +195,7 @@ public sealed class ShadowComparisonPcfTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuShaderCompiler12.cs");
         SourceContract.AssertOrder(compiler,
-            "var effectiveMacros = ShadowComparisonPcf12.ApplyRuntimeOptIn(profile, macros);",
+            "var effectiveMacros = ShadowComparisonPcf12.ApplyRuntimeOptIn(fileName, profile, macros);",
             "BuildCacheKey(fileName, entryPoint, profile, effectiveMacros);",
             "entryPoint, profile, effectiveMacros);");
     }
@@ -249,11 +293,13 @@ public sealed class ShadowComparisonPcfTests
             "if (BytecodeCache.TryGetValue(key, out var cached))",
             "ShadowComparisonPcf12.TraceSuccessfulShader(",
             "cacheHit: true);",
+            "shippedPack.TryGetBytecode(key, out var precompiled)",
+            "cacheHit: !added);",
             "var bytecode = CompileSource(",
             "var selectedBytecode = BytecodeCache.GetOrAdd(key, bytecode);",
             "ShadowComparisonPcf12.TraceSuccessfulShader(",
             "return selectedBytecode;");
-        Assert.Equal(2,
+        Assert.Equal(3,
             SourceContract.CountOccurrences(compiler, "ShadowComparisonPcf12.TraceSuccessfulShader("));
     }
 }
