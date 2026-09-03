@@ -102,8 +102,9 @@ internal static class FnvActiveAdtBasePolicy
     /// <summary>
     ///     CPU oracle for shipped PC <c>SLS2000</c>. The normal-map RGB is decoded to signed space and
     ///     normalized without any bump-scale adjustment. The per-vertex light is transformed by the
-    ///     authored T/B/N rows and normalized after that transform. Their dot remains signed; only the
-    ///     component-wise <c>Ambient + Sun * dot</c> result is clamped at zero. The base sample is first
+    ///     authored T/B/N rows and normalized after that transform. Their dot is saturated by the
+    ///     shipped <c>dp3_sat_pp</c> instruction before the component-wise
+    ///     <c>Ambient + Sun * NdotL</c> result is clamped at zero. The base sample is first
     ///     multiplied by vertex RGB for the classified vertex-color variant, then by that shade.
     /// </summary>
     internal static FnvActiveAdtBaseEvaluation EvaluateSls2000(
@@ -135,8 +136,11 @@ internal static class FnvActiveAdtBasePolicy
             Vector3.Dot(vertexNormal, lightData));
         var normalizedTangentSpaceLight = Vector3.Normalize(tangentSpaceLight);
 
-        var rawSignedDot = Vector3.Dot(normalizedDecodedNormal, normalizedTangentSpaceLight);
-        var shade = Vector3.Max(ambientRgb + sunRgb * rawSignedDot, Vector3.Zero);
+        var saturatedNdotL = Math.Clamp(
+            Vector3.Dot(normalizedDecodedNormal, normalizedTangentSpaceLight),
+            0f,
+            1f);
+        var shade = Vector3.Max(ambientRgb + sunRgb * saturatedNdotL, Vector3.Zero);
         var effectiveBaseRgb = baseRgb;
         if (classifierMode == FnvClassicBasicShaderMode.Sls1013VertexColor)
         {
@@ -148,7 +152,7 @@ internal static class FnvActiveAdtBasePolicy
         return new FnvActiveAdtBaseEvaluation(
             normalizedDecodedNormal,
             normalizedTangentSpaceLight,
-            rawSignedDot,
+            saturatedNdotL,
             shade,
             rgb);
     }
@@ -174,6 +178,6 @@ internal readonly record struct FnvActiveAdtBaseEligibility(
 internal readonly record struct FnvActiveAdtBaseEvaluation(
     Vector3 NormalizedDecodedNormal,
     Vector3 NormalizedTangentSpaceLight,
-    float RawSignedDot,
+    float SaturatedNdotL,
     Vector3 Shade,
     Vector3 Rgb);

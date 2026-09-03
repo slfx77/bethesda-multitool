@@ -56,6 +56,14 @@ cbuffer Atmosphere : register(b3)
     // below-plane geometry). Neutral default (0,0,0,1) ⇒ clip(+1) never fires — branchless no-op
     // for the main pass. Consumers: terrain + reference PS entry.
     float4 uClipPlane;
+    // Appended Skyrim-only retail DALC representation. SkyrimSE's CPU writer reduces the six
+    // authored faces to an affine NiTransform, uploaded to BSLightingShader as row_major float3x4;
+    // the PS evaluates that matrix against float4(worldNormal, 1). Other games keep these zero and
+    // continue through the raw six-face projection above.
+    float4 uSkyrimDirectionalAmbientRow0;
+    float4 uSkyrimDirectionalAmbientRow1;
+    float4 uSkyrimDirectionalAmbientRow2;
+    float4 uDirectionalAmbientMode; // x = 1: use Skyrim's retail affine projection
 };
 
 #endif // ATMOSPHERE_HLSLI

@@ -50,7 +50,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     }
 
     [Fact]
-    public void PixelShaderUsesExactActiveSls2000SignedDp3AggregateClampAndToggleComposite()
+    public void PixelShaderUsesExactActiveSls2000SaturatedDp3AggregateClampAndToggleComposite()
     {
         var shader = ReadShader("reference.frag.hlsl");
         var exactStart = shader.IndexOf(
@@ -61,10 +61,10 @@ public sealed class FnvClassicBasicShaderSourceContractTests
         Assert.Contains("normalize(normalSample.rgb * 2.0 - 1.0)", exactDot,
             StringComparison.Ordinal);
         Assert.Contains(
-            "fnvActiveAdtBaseNdotL = dot(activeAdtNormal, input.vFnvActiveAdtBaseLight);",
+            "fnvActiveAdtBaseNdotL = saturate(dot(activeAdtNormal, input.vFnvActiveAdtBaseLight));",
             exactDot,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("saturate(", exactDot, StringComparison.Ordinal);
+        Assert.Contains("saturate(dot(", exactDot, StringComparison.Ordinal);
 
         var compositeStart = shader.IndexOf("// SLS2000 Toggles.x", StringComparison.Ordinal);
         var compositeEnd = shader.IndexOf("// FNV sun specular", compositeStart, StringComparison.Ordinal);

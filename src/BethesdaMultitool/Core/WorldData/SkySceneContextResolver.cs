@@ -3,12 +3,15 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
-///     Pure scene classification for weather-driven sky rendering. CELL DATA bit 7 is the single
-///     authority for "behaves like exterior"; callers must not independently reinterpret that bit.
+///     Pure scene classification for weather-driven sky rendering. Classic "behaves like exterior"
+///     and Creation "show sky" are deliberately separate: the latter exposes sky geometry without
+///     replacing the cell's authored interior lighting and image-space semantics.
 /// </summary>
 internal readonly record struct ResolvedSkySceneContext(
     bool IsInterior,
     bool BehavesLikeExterior,
+    bool ShowsSky,
+    bool UsesSkyLighting,
     bool RendersExteriorSky,
     WorldspaceRecord? Worldspace,
     uint? CellClimateFormId,
@@ -37,17 +40,25 @@ internal static class SkySceneContextResolver
             return new ResolvedSkySceneContext(
                 false,
                 false,
+                false,
+                false,
                 true,
                 selectedExteriorWorldspace,
                 null,
                 selectedExteriorWorldspace?.ClimateFormId);
         }
 
-        if (!selectedInterior.BehavesLikeExterior)
+        var behavesLikeExterior = selectedInterior.BehavesLikeExterior;
+        var showsSky = selectedInterior.ShowsSky;
+        var usesSkyLighting = selectedInterior.UsesSkyLighting;
+        var rendersExteriorSky = behavesLikeExterior || showsSky;
+        if (!rendersExteriorSky)
         {
             return new ResolvedSkySceneContext(
                 true,
                 false,
+                false,
+                usesSkyLighting,
                 false,
                 null,
                 // Retain the authored XCCM identity for diagnostics even though it is not applied.
@@ -61,7 +72,9 @@ internal static class SkySceneContextResolver
             : null;
         return new ResolvedSkySceneContext(
             true,
-            true,
+            behavesLikeExterior,
+            showsSky,
+            usesSkyLighting,
             true,
             parent,
             selectedInterior.ClimateFormId,

@@ -110,7 +110,7 @@ public sealed class FnvActiveAdtBasePolicyTests
         VectorAssert.Equal(Vector3.UnitX, result.NormalizedDecodedNormal);
         VectorAssert.Equal(new Vector3(inverseRootTen, 3f * inverseRootTen, 0f),
             result.NormalizedTangentSpaceLight);
-        Assert.Equal(inverseRootTen, result.RawSignedDot, 6);
+        Assert.Equal(inverseRootTen, result.SaturatedNdotL, 6);
         VectorAssert.Equal(new Vector3(inverseRootTen), result.Shade);
         VectorAssert.Equal(result.Shade, result.Rgb);
 
@@ -128,11 +128,11 @@ public sealed class FnvActiveAdtBasePolicyTests
             Vector3.One,
             Vector3.One);
         VectorAssert.Equal(result.NormalizedDecodedNormal, halfMagnitude.NormalizedDecodedNormal);
-        Assert.Equal(result.RawSignedDot, halfMagnitude.RawSignedDot, 6);
+        Assert.Equal(result.SaturatedNdotL, halfMagnitude.SaturatedNdotL, 6);
     }
 
     [Fact]
-    public void Sls2000Oracle_KeepsSignedDotAndClampsOnlyTheFinalShade()
+    public void Sls2000Oracle_SaturatesNdotLBeforeAddingAmbient()
     {
         var result = FnvActiveAdtBasePolicy.EvaluateSls2000(
             FnvClassicBasicShaderMode.Sls1009,
@@ -146,9 +146,9 @@ public sealed class FnvActiveAdtBasePolicyTests
             new Vector3(0.8f, 0.4f, 0.2f),
             new Vector3(0.01f));
 
-        Assert.Equal(-1f, result.RawSignedDot, 6);
-        VectorAssert.Equal(new Vector3(0f, 0.75f, 0.25f), result.Shade);
-        VectorAssert.Equal(new Vector3(0f, 0.3f, 0.05f), result.Rgb);
+        Assert.Equal(0f, result.SaturatedNdotL, 6);
+        VectorAssert.Equal(new Vector3(0.25f, 1.25f, 0.5f), result.Shade);
+        VectorAssert.Equal(new Vector3(0.2f, 0.5f, 0.1f), result.Rgb);
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public sealed class FnvActiveAdtBasePolicyTests
 
         VectorAssert.Equal(new Vector3(0.15f, 0.075f, 0.225f), ordinary.Rgb);
         VectorAssert.Equal(new Vector3(0.12f, 0.03f, 0.045f), vertexColor.Rgb);
-        Assert.Equal(ordinary.RawSignedDot, vertexColor.RawSignedDot, 6);
+        Assert.Equal(ordinary.SaturatedNdotL, vertexColor.SaturatedNdotL, 6);
         VectorAssert.Equal(ordinary.Shade, vertexColor.Shade);
     }
 

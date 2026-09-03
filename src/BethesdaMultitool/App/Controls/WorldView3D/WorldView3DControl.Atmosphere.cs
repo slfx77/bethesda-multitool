@@ -72,8 +72,9 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Canonical sky context for the loaded cell/worldspace. A DATA-bit-7 interior resolves its
-    ///     retained parent WRLD and renders the exterior sky; ordinary interiors resolve neither.
+    ///     Canonical sky context for the loaded cell/worldspace. Classic Behave Like Exterior and
+    ///     Creation Show Sky both expose a sky, but only the classic flag replaces the cell's
+    ///     interior lighting/image-space classification.
     /// </summary>
     private ResolvedSkySceneContext CurrentSkySceneContext()
     {
@@ -113,7 +114,7 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     The climate driving the sky for an exterior worldspace or DATA-bit-7 interior, via the
+    ///     The climate driving the sky for an exterior worldspace or sky-bearing interior, via the
     ///     engine's precedence:
     ///     <list type="number">
     ///         <item>the selected CELL's classic <c>XCCM</c> climate override;</item>
@@ -334,8 +335,8 @@ public sealed partial class WorldView3DControl
     {
         _starfieldEnvironmentAppliedChannels = StarfieldEnvironmentApproximationChannels.None;
         _starfieldEnvironmentRejectedChannels = StarfieldEnvironmentApproximationChannels.None;
-        // Cell DATA flag 0x80 = "behave like exterior" (xEdit): those interiors keep the exterior
-        // sun/weather atmosphere by engine design.
+        // Classic CELL DATA bit 7 means "behave like exterior" and replaces interior atmosphere.
+        // Creation bit 7 only means "show sky", so those cells still resolve their authored XCLL/LGTM.
         var skyContext = CurrentSkySceneContext();
         if (_selectedInterior is { } cell && _data is not null && !skyContext.BehavesLikeExterior)
         {
@@ -436,9 +437,8 @@ public sealed partial class WorldView3DControl
                     activeWeather?.Hdr))
             : Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(game, interior);
         var engineImagespaceFamily = GameProfiles.For(game).UsesEngineImagespaceDefaults;
-        // Semantic Creation-family IMGS resolution is independent of the selected display operator.
-        // Skyrim retains its family while GammaAces is active so the non-imagespace scene scales can
-        // run without enabling the still-incomplete CreationModern cinematic/exposure shader.
+        // Semantic Creation-family IMGS resolution is independent of the selected display operator;
+        // Skyrim's recovered retail route and FO4's staged modern route share this record selection.
         var modernImagespaceFamily = settings.ModernFamily is not null;
         var imageSpaceWorld = skyContext.Worldspace;
         var cellContext = CurrentImageSpaceCellContext();

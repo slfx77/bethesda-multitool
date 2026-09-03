@@ -139,9 +139,10 @@ public static class AtmosphereState
     ///     specific fields to come from the TEMPLATE even when XCLL is present (Skyrim-style LTMP
     ///     inherit bits; FO3/FNV cells usually carry a full XCLL and no flags).
     ///     Dictionary keys are the shared XCLL/LGTM schema names (SubrecordCellAndMiscSchemas):
-    ///     AmbientColor / DirectionalColor / FogColor (packed R|G&lt;&lt;8|B&lt;&lt;16),
-    ///     FogNear / FogFar / FogPow (floats), DirectionalRotationXY / DirectionalRotationZ
-    ///     (degrees, ints), DirectionalFade (float).
+    ///     AmbientColor / DirectionalColor / FogColor / FogColorFar (packed
+    ///     R|G&lt;&lt;8|B&lt;&lt;16), FogNear / FogFar / FogPow / FogMax (floats),
+    ///     DirectionalRotationXY / DirectionalRotationZ (degrees, ints), DirectionalFade (float),
+    ///     and Skyrim's six DirectionalAmbient* faces.
     /// </summary>
     public static Resolved ResolveInterior(
         IReadOnlyDictionary<string, object?>? cellLighting,
@@ -158,6 +159,7 @@ public static class AtmosphereState
         const uint inheritRotation = 1u << 5;
         const uint inheritFade = 1u << 6;
         const uint inheritFogPower = 1u << 8;
+        const uint inheritFogMax = 1u << 9;
 
         object? Pick(string key, uint inheritBit)
         {
@@ -192,11 +194,41 @@ public static class AtmosphereState
             };
         }
 
+        static ResolvedAmbientCube? AsDirectionalAmbientCube(
+            IReadOnlyDictionary<string, object?>? lighting)
+        {
+            if (lighting is null)
+            {
+                return null;
+            }
+
+            Vector3? Face(string key)
+            {
+                return lighting.TryGetValue(key, out var value) ? AsColor(value) : null;
+            }
+
+            var positiveX = Face("DirectionalAmbientPositiveX");
+            var negativeX = Face("DirectionalAmbientNegativeX");
+            var positiveY = Face("DirectionalAmbientPositiveY");
+            var negativeY = Face("DirectionalAmbientNegativeY");
+            var positiveZ = Face("DirectionalAmbientPositiveZ");
+            var negativeZ = Face("DirectionalAmbientNegativeZ");
+            return positiveX.HasValue && negativeX.HasValue &&
+                   positiveY.HasValue && negativeY.HasValue &&
+                   positiveZ.HasValue && negativeZ.HasValue
+                ? new ResolvedAmbientCube(
+                    positiveX.Value, negativeX.Value,
+                    positiveY.Value, negativeY.Value,
+                    positiveZ.Value, negativeZ.Value)
+                : null;
+        }
+
         // Neutral defaults for a cell with neither XCLL nor a template (rare): readable gray ambient,
         // soft white top-down directional, fog effectively off.
         var ambient = AsColor(Pick("AmbientColor", inheritAmbient)) ?? new Vector3(0.33f, 0.33f, 0.33f);
         var directional = AsColor(Pick("DirectionalColor", inheritDirectional)) ?? new Vector3(0.45f, 0.45f, 0.45f);
         var fogColor = AsColor(Pick("FogColor", inheritFogColor)) ?? new Vector3(0.05f, 0.05f, 0.05f);
+        var fogFarColor = AsColor(Pick("FogColorFar", inheritFogColor)) ?? fogColor;
         var fogNear = AsFloat(Pick("FogNear", inheritFogNear)) ?? DefaultFogNear;
         var fogFar = AsFloat(Pick("FogFar", inheritFogFar)) ?? DefaultFogFar;
         // Key-name trap: the XCLL schema names it FogPow, the LGTM DATA schema FogPower — check both.
@@ -205,6 +237,14 @@ public static class AtmosphereState
         var fade = AsFloat(Pick("DirectionalFade", inheritFade)) ?? 1f;
         var rotXy = AsFloat(Pick("DirectionalRotationXY", inheritRotation)) ?? 0f;
         var rotZ = AsFloat(Pick("DirectionalRotationZ", inheritRotation)) ?? 0f;
+        var fogMaxOpacity = AsFloat(Pick("FogMax", inheritFogMax)) ?? 1f;
+        // Skyrim XCLL carries the six directional ambient faces inline. If ambient is inherited,
+        // do not leak the cell's cube over a template's uniform ambient color; a null cube makes
+        // the shader use that resolved uniform ambient. (Skyrim LGTM stores its cube separately in
+        // DALC, which is outside this dictionary.)
+        var directionalAmbient = (inheritanceFlags & inheritAmbient) != 0
+            ? AsDirectionalAmbientCube(templateLighting)
+            : AsDirectionalAmbientCube(cellLighting) ?? AsDirectionalAmbientCube(templateLighting);
 
         // Directional-light direction from the authored XY/Z rotations (degrees). Structural stand-in
         // pending an engine decompile of the interior directional setup: yaw = Z, pitch = XY below
@@ -240,21 +280,21 @@ public static class AtmosphereState
             fogColor, // interiors have no sky: the fog color doubles as the void/background tint
             fogColor,
             fogColor,
-            fogColor,
+            fogFarColor,
             fogNear,
             fogFar,
             MathF.Max(fogPower, 0.01f),
             // Max fog opacity. A fully opaque interior far-fog is a hard wall: past FogFar nothing
             // is visible at all, which is what made rooms unreadable when the camera started back
             // from the geometry. Cells that authored no usable range get none of it.
-            fogEnabled ? 1f : 0f,
+            fogEnabled ? Math.Clamp(fogMaxOpacity, 0f, 1f) : 0f,
             Vector4.One,
             Vector4.Zero,
             Vector4.One,
             Vector4.One,
             0f,
             0f,
-            null,
+            directionalAmbient,
             fogColor,
             fogColor);
     }
@@ -1423,9 +1463,10 @@ public static class AtmosphereState
     }
 
     /// <summary>
-    ///     Runtime directional-ambient cube sampled from WTHR DALC. The retail lighting convention
-    ///     weights the signed X/Y/Z face by the squared corresponding normal component, so the three
-    ///     selected weights sum to one for a unit normal.
+    ///     Runtime directional-ambient cube sampled from WTHR DALC or interior CELL lighting.
+    ///     Projection remains game-scoped: Skyrim packs these faces into its retail affine
+    ///     <c>float3x4</c>, while Fallout 76 retains the six-face squared-normal path pending its
+    ///     own shader oracle.
     /// </summary>
     public readonly record struct ResolvedAmbientCube(
         Vector3 PositiveX,

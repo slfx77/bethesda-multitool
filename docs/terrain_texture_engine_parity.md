@@ -331,8 +331,9 @@ so the Xbox PDB enum names can be used to label the PC records.
   `outside-active-adt-base-subset`; dormant SLS1009/SLS1013 counters remain
   zero.
 - `SLS2000` normalizes both decoded `NormalMap.rgb` and the complete authored
-  T/B/N-transformed directional-light vector, preserves their raw signed dot,
-  and computes `shade = max(AmbientColor.rgb + PSLightColor.rgb * dot, 0)`
+  T/B/N-transformed directional-light vector, saturates their dot product with
+  the shipped `dp3_sat_pp`, and computes
+  `shade = max(AmbientColor.rgb + PSLightColor.rgb * saturate(dot), 0)`
   component-wise. RGB is `BaseMap.rgb * shade`, optionally multiplied by vertex
   RGB when `Toggles.x` selects that branch. This route has no bump scale, shadow
   sample, local-light loop, directional ambient cube, emission term, or

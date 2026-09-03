@@ -81,7 +81,17 @@ float3 AtmosphereLight(float3 N, float3 worldPos, float2 pixelPosition, float su
     float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
     float3 unitNormal = normalize(N);
     float3 ambient = uAmbientColor.rgb;
-    if (uAmbientPositiveX.w > 0.5)
+    if (uDirectionalAmbientMode.x > 0.5)
+    {
+        // Skyrim retail BSLightingShader: dp4 each row of the CPU-packed DirectionalAmbient
+        // float3x4 against the normalized world-space normal with homogeneous w=1.
+        float4 ambientNormal = float4(unitNormal, 1.0);
+        ambient = float3(
+            dot(uSkyrimDirectionalAmbientRow0, ambientNormal),
+            dot(uSkyrimDirectionalAmbientRow1, ambientNormal),
+            dot(uSkyrimDirectionalAmbientRow2, ambientNormal));
+    }
+    else if (uAmbientPositiveX.w > 0.5)
     {
         float3 normalSquared = unitNormal * unitNormal;
         ambient = (unitNormal.x >= 0.0 ? uAmbientPositiveX.rgb : uAmbientNegativeX.rgb) * normalSquared.x +
