@@ -235,11 +235,32 @@ internal sealed class FakeGameFileSystem : IGameFileSystem
         return _byPath.TryGetValue(Normalize(path), out var entry) ? new byte[entry.Size] : null;
     }
 
+    public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
+    {
+        if (!_byPath.TryGetValue(Normalize(path), out var entry) ||
+            entry.Size < 0 ||
+            entry.Size > maximumBytes ||
+            entry.Size > int.MaxValue)
+        {
+            return null;
+        }
+
+        return new GameFileReadResult(entry, new byte[checked((int)entry.Size)]);
+    }
+
     public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
     {
         var normalizedPrefix = prefix is null ? null : Normalize(prefix);
         return _entries.Where(e => string.IsNullOrEmpty(normalizedPrefix)
                                    || Normalize(e.Path).StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public GameFileEnumerationPage EnumerateFilesBounded(string? prefix, int maximumEntries)
+    {
+        var page = EnumerateFiles(prefix).Take(maximumEntries + 1).ToArray();
+        return new GameFileEnumerationPage(
+            page.Take(maximumEntries).ToArray(),
+            page.Length > maximumEntries);
     }
 
     public void Dispose()
