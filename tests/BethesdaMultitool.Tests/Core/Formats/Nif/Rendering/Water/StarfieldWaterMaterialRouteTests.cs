@@ -402,10 +402,10 @@ public sealed class StarfieldWaterMaterialRouteTests
         var metallicRoughness = Assert.IsType<MaterialChannel>(
             material.FindChannel("MetallicRoughness"));
         Assert.Null(metallicRoughness.Texture);
-        Assert.Equal(0f, metallicRoughness.Parameter.X);
+        Assert.Equal(0f, ParameterAt(metallicRoughness, 0));
         Assert.Equal(
             StarfieldWaterMaterialRoute.MeshViewerRoughness,
-            metallicRoughness.Parameter.Y,
+            ParameterAt(metallicRoughness, 1),
             3);
         Assert.Equal(
             StarfieldWaterMaterialRoute.MeshViewerIndexOfRefraction,
@@ -413,15 +413,15 @@ public sealed class StarfieldWaterMaterialRouteTests
             3);
         Assert.Equal(
             StarfieldWaterMaterialRoute.MeshViewerTransmission,
-            Assert.IsType<MaterialChannel>(material.FindChannel("Transmission")).Parameter.X,
+            ParameterAt(Assert.IsType<MaterialChannel>(material.FindChannel("Transmission")), 0),
             3);
         Assert.Equal(
             StarfieldWaterMaterialRoute.MeshViewerClearCoat,
-            Assert.IsType<MaterialChannel>(material.FindChannel("ClearCoat")).Parameter.X,
+            ParameterAt(Assert.IsType<MaterialChannel>(material.FindChannel("ClearCoat")), 0),
             3);
         Assert.Equal(
             StarfieldWaterMaterialRoute.MeshViewerClearCoatRoughness,
-            Assert.IsType<MaterialChannel>(material.FindChannel("ClearCoatRoughness")).Parameter.X,
+            ParameterAt(Assert.IsType<MaterialChannel>(material.FindChannel("ClearCoatRoughness")), 0),
             3);
         var normal = Assert.IsType<MaterialChannel>(material.FindChannel("Normal"));
         var normalTexture = Assert.IsType<SharpGLTF.Schema2.Texture>(normal.Texture);
@@ -441,6 +441,14 @@ public sealed class StarfieldWaterMaterialRouteTests
         var extras = Assert.IsType<JsonObject>(material.Extras);
         Assert.True(extras[StarfieldWaterMaterialRoute.MeshViewerMaterialExtrasKey]!.GetValue<bool>());
     }
+
+    /// <summary>
+    ///     SharpGLTF 1.0.6 obsoleted <c>MaterialChannel.Parameter</c> (a vector packed from the
+    ///     channel's parameters in declaration order) in favour of <c>Parameters</c>. Index i is the
+    ///     old vector's component i, so the assertions keep their original meaning.
+    /// </summary>
+    private static float ParameterAt(MaterialChannel channel, int index) =>
+        Convert.ToSingle(channel.Parameters[index].Value);
 
     private static NifTextureResolver CreateResolver(
         string shaderRoute,

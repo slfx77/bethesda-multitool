@@ -70,7 +70,9 @@ public sealed class ReferenceSubmeshDecoder12Tests
             ShaderMetadata = new NifShaderTextureMetadata
             {
                 PropertyType = "BSLightingShaderProperty",
-                ShaderFlags = 0u,
+                // Bit 0 = SLSF1_Specular. NifSpecularPolicy reads a PRESENT flag word literally
+                // (only a null word keeps specular on), so the fixture must set the bit it asserts.
+                ShaderFlags = 0x1u,
                 ShaderFlags2 = 0u
             },
             EffectTint = (0.1f, 0.2f, 0.3f),
