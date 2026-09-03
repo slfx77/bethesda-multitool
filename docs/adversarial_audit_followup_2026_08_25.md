@@ -1942,3 +1942,144 @@ session's active battleground), the probe/classification decoupling that would l
 pCellLand gate return, and the standing opens (ATXT-cell captures at ≥1920×1080 per the
 2026-09-01 resolution ruling, LSCR LNAM synthetic-only, `pWaterWeatherControl`).
 
+
+### Viewer master-terrain toggle + 1920px ATXT captures (2026-09-02)
+
+**Two rulings from the user opened this pass:** (1) "512px is usually far too small for a
+capture. 1920x1080 is the minimal acceptable resolution." — the standing "512px terrain captures
+owed" item was mis-specified; (2) the Decision-3 viewer toggle is approved, "conditioned so that
+it doesn't appear at all unless the loaded file is a DMP".
+
+**Toggle — what shipped.** A DMP-only `Master ESM terrain` checkbox in the 3D settings panel's
+Terrain group (Visibility expander, outside `TerrainDependentControls` because it is a
+data-source switch that also changes the 2D map). Semantics follow the user's own wording —
+"preview placements the way the converted ESM will show them": ON (default) = dump-preserved
+LAND where it survived + the Load Order masters' LAND where it did not (the in-game result of
+installing the plugin over its master), OFF = exactly what the dump preserved. Mechanics:
+- OFF threads a new `carryBaseTerrainIntoCells:false` through `MergeWith → MergeCells /
+  MergeWorldspaces → MergeCellPair`, nulling the three `override ?? base` terrain carries for
+  the DMP overlay only (every other caller keeps engine semantics).
+- ON additionally runs a NEW viewer-shaped `EsmLandEnricher.EnrichCellsWithMasterEsmLandFallback
+  (cells, masterCells)` after the captured-cell filter: grid-keyed (reaches FormID-diverged and
+  synthetic cells the FormID-keyed merge cannot), per-category via `MergeForEmission` (partial
+  LAND gains only its missing categories; Runtime layers lose to authored per the 08-31 ruling),
+  per-half last-wins master index, a completeness fast path — and, the part the converter-shaped
+  overload never did, a **heightmap fill** for cells with neither `Heightmap` nor
+  `RuntimeTerrainMesh`, because the 3D decode reads exactly those two fields and visual
+  categories alone leave recovered placements floating. The converter-shaped overload stays
+  (ruled "keep"), documented as unwired; its inputs only exist in the conversion pipeline.
+- Rebuild goes through the same reset path a Load Order change uses (`WorldRenderCache` is
+  reference-keyed with no invalidate; 2D and 3D share one `WorldViewData`).
+- Profiler parity: both headless data loaders run the same default-ON enrichment for dump
+  primaries, so a capture cannot diverge from the app (standing directive).
+
+**Adversarial review (8 agents; 1 confirmed major, 3 refuted, 9 minors, 8 of them fixed).**
+The confirmed major was pre-existing and my feature added a trigger: the world-map populate is
+strictly single-flight (`RunExclusiveAsync` returns the in-flight task), so a reset+re-fire that
+landed mid-populate scheduled nothing while the running pass discarded its stale result — the map
+stayed on the placeholder until a sub-tab switch (reachable via toggle → Load Order "Clear All",
+and via two rapid Load Order applies before this pass). Fixed at the shared level:
+`PopulateWorldMapAsync` now loops a `PopulateWorldMapPassAsync` while a pass ends STALE
+(generation moved on, map unpopulated, session still has data); teardown stays terminal.
+Minors fixed: `MergeWorldspaces` was not gated (latent `ws.Cells` disagreement, masked by the
+relink); first-wins grid index (now per-half last-wins, a visual-only master cell can no longer
+starve the heightmap); always-clone + lazy-BTD materialisation (completeness fast path);
+profiler loaders lacked the enrichment; `--capture-topdown-terrain-color` accepted outside
+`--capture-topdown` (now fails closed) and missing from the usage-agreement test; two stale
+comments. Refuted: a save-file path claim (unreachable — saves return before the merge), a
+focus-collapse a11y claim, and a "never-converging depth pre-pass" claim about the new
+resolution (the gate is resolution-relative by design and the batch path ships that mode).
+Deliberately not done: a mirrored checkbox on the 2D panel (the toggle is unreachable in the
+default 2D view mode without switching to 3D; the effect is still visible there) and a
+source-contract pin for the field/checkbox default mirror — both follow-ups if wanted.
+
+**Capture resolution ruling applied.** `--capture-topdown` renders square at
+`max(--capture-width, --capture-height)` with the batch path's max-dimension lift (the old
+hardcoded 512 is gone); `CaptureWidth/Height` defaults 768×480 → 1920×1080 (the stale
+`PreservesPerspectiveDefaultsForCompatibility` pin rewritten to the ruling); new
+`--capture-topdown-terrain-color` opts the single-shot path into self-contained coloured
+terrain (default keeps the 2D-map-overlay-comparable transparent ground).
+
+**ATXT-affected cells captured at 1920×1920 (owed since round 8b).** The +9 restored layers
+localise to four LANDs of xex44 — 0x000DB102 (+1, the doc's named record), 0x000DB111 (+4),
+0x000DDF9F (+2), 0x000DDFA1 (+2) — plus two LANDs (0x000E262F, 0x000E2637) that exist only in
+the final output (R9 re-homing). All six cells were captured A/B (793 baseline vs 802 final,
+`TestOutput/atxt_captures/`, composites under `composites/`), the visibly-changed ones also
+against the vanilla master. Findings: every restored layer is `TextureFormId = 0` (engine
+default) at the L0 slot the baseline had visibly skipped; layer structure and VTXT content now
+byte-match retail per `esm semdiff` (only the benign PlatformFlag pad byte and a 3-unit VHGT
+offset differ), and the renderer already treats FormID 0 as
+`CellLayerWeightTable.EngineDefaultSentinelFormId`. Visible effect is a small blend region in
+0x000DB111 to nil elsewhere — correct, the default texture is the surrounding dirt. Both
+re-homed LANDs diff clean against retail. One capture (0x000DDFA1 final) came out as a blue
+"water" cell; the user identified it: the capture fired before terrain streaming converged
+(the run took 2× its siblings), so the worldspace water plane drew unoccluded —
+`--capture-topdown`'s `IsComplete` covers overlay/reference streaming, not terrain-colour
+residency. Recaptured warm; the settle gap is recorded as an open item for the single-shot path
+(the batch path already has a deadline + `settled` flag).
+
+**Validation.** The shared tree was unbuildable for the test gate throughout (the concurrent session's files broke and healed minute to minute), so validation ran in a HEAD worktree carrying the full uncommitted set minus their two mid-refactor test files: full both-TFM build GREEN (main, WinUI App, both profilers, tests); fast suite 10,802 tests — 10,491 green, 268 skipped, 43 failed, every failure attributable to the concurrent session's uncommitted work (ten new Starfield/FO76/BendableSpline typed collections absent from the inventory + runtime-parity matrices, their PNDT keep-both merge, the XBSD parser, and rendering/water/Starfield source-contract pins) and none referencing cells, terrain, LAND, the enricher, capture options or the settings panel; the touched classes plus the accessibility and source-contract ratchets ran 65/65 green in a targeted pass. The shared tree's own build confirmed the App TFM and profiler compile (only their test files failed there). The profiler exe built with these changes produced every capture.
+
+
+### Open items carried through (2026-09-02, third pass)
+
+**pCellLand evidence gate — probe decoupled, gate LIVE, emission unchanged.** The W7 gate had
+been tried and reverted because the WRLD/CELL shift probe scored the *typed* LAND link
+(`RuntimeWorldCellLayoutProbe.ScoreCellSample` on `LandFormId is > 0`, and the world sample's
+`LinkedCells` signal on the same field), so gating the follow starved the probe of a structural
+signal and collapsed xex21's margin 11 → 0. The enumerator now follows `pCellLand` twice with
+different consumers: a raw ungated follow (`RuntimeCellProbeSnapshot.RawLandFormId`,
+`RuntimeCellMapEntry.HasLandPointer`) that only the layout probe scores — at the right shift the
+slot holds null or a pointer to *some* TESForm, at a wrong shift garbage, which is all the probe
+needs — and the gated follow (`LandFormId`, target FormType must equal the per-dump empirical
+LAND byte from `RuntimeMemoryContext.ResolvedLandFormType`) that the cells CSV / cell map report.
+`CreateWithAutoDetect` now logs whether the gate is live. Measured: xex21 `[LAND gate] pCellLand
+follows gated on empirical LAND FormType 0x42 (36 LAND entries)`, probe winner World +0 / Cell −8
+at score 184, **margin 9**, conversion **byte-identical** to the pre-change baseline (77,085
+records, 11,510,605 B, same hash); xex44 reports `no LAND entries at reader creation` (the
+documented low-confidence path — its LAND byte is mesh-yield-resolved after cell enumeration, so
+the follow stays ungated there) and converts **byte-identical** to the round-9 final `rw_xex44.esm` (99,891 records, 14,150,622 B, probe margin 11 — so the "margin 11" the revert note quoted was xex44's; xex21's own is 9). The gate's blast radius is the CSV,
+exactly as the revert note predicted.
+
+**Single-shot `--capture-topdown` settle gate.** The loop broke on the first `IsComplete`; the
+batch path never trusted that (quiescence can report true between one stream stage finishing and
+the next being requested) and demands two consecutive complete passes agreeing on the drawn
+count. The single-shot path now requires the same, plus pixel identity between the two passes
+(FNV-1a over the readback; the overlay pins its water clock, so a settled scene is pixel-stable
+while a mid-stream pass cannot repeat its image). This is the defect behind the 0x000DDFA1
+"water" capture — complete=True at attempt 18 with terrain colour not yet resident.
+
+**2D-panel mirror of the master-terrain toggle.** `WorldMapSettingsPanel` gets its own
+`MasterTerrainCheckBox` (Visibility expander, DMP-only via `WorldMapControl.LoadData`), raising
+the same-shaped `MasterTerrainPreviewToggled`; the tab owns the state and pushes `IsChecked` to
+both checkboxes on any change (the source write is a no-op, the mirror's event re-enters only to
+hit the equality early-out). The default view mode is 2D, so the toggle is now reachable where
+its effect is visible.
+
+**`TESWaterForm.pWaterWeatherControl` — read at last.** The parity matrix carried it as "unknown
+PDB type"; the layout DB says `TESWaterForm *[]`, 12 bytes at +344 — three water pointers, i.e.
+the engine's slot for WATR **GNAM Related Waters** (Daytime / Nighttime / Underwater in xEdit
+order). `RuntimeWaterReader.ReadRelatedWaters` reads them type-validated as WATR into
+`WaterRecord.RelatedWater` under the GNAM schema's field names (so `WatrEncoder` emits GNAM
+unchanged); an unresolved slot records FormID 0 like retail, and a record with no evidenced slot
+carries null so the runtime overlay (`RecordModelUnion.Fill`, fill-only) can never override an
+ESM-parsed GNAM with zeros. Two tests. Matrix row updated.
+
+**LSCR LNAM — exercised on real data, and a latent schema hole closed.** `esm semdiff` of every
+LSCR in the whole-master 360→PC conversion against retail: all identical except 2 records whose
+two LNAM subrecords appear in the opposite order — the three-way byte diff shows the **Xbox master
+itself** stores them reversed (unordered location list; genuine content, now in CLAUDE.md's
+known-differences list). The exercise also showed the 12-byte LSCR LNAM (Direct, Indirect, Grid Y,
+Grid X) matched the generic 4-byte LNAM schema — byte-correct on retail only because every retail
+tail is zero, wrong by construction for a nonzero grid pair (two int16s swapped as one dword). A
+`(LNAM, LSCR, 12)` schema now names the four fields; pinned by `LscrLocationSchemaTests`.
+
+**ASPC / MSET "missing from `HasSpecializedReader`" — by design, now documented.** Both typed
+readers produce a `GenericEsmRecord` and are reached only through
+`RuntimeStructReader.ReadGenericRecord`'s per-type switch, which `MergeRuntimeGenericRecords`
+invokes precisely for the types the set does NOT contain; listing them would skip that merge and
+neither reader would ever run. The set carries the explanation; the only cost of the omission is
+one redundant shift-probe grouping.
+
+**Validation.** Full both-TFM build green for every non-test assembly (main, WinUI App with the 2D mirror, both profilers with the settle rule); the shared tree's test project needed three of the concurrent session's mid-edit files sidelined to compile, then the fast suite ran 10,857 tests: 10,574 green, 273 skipped, 10 failed — all ten the concurrent session's rendering/water/Starfield source-contract pins (down from 43 in the previous pass as they progress), none touching terrain, cells, LAND, probes, the water reader, the LSCR schema, capture options or either settings panel. Every touched class (`LscrLocationSchemaTests`, `RuntimeWaterReaderRelatedWatersTests`, `RuntimeParityMatrixTests`, `XamlAccessibilityRatchetTests`, both settings-panel source-contract classes, `RendererProfilerOptionsTests`, `EsmLandEnricherMasterTerrainTests`, `RecordCollectionCellMergeTests`) passed. Conversions: xex21 and xex44 both byte-identical to their baselines with the probe decoupled and the gate live on xex21.
+
