@@ -721,7 +721,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             }
 
             return ResolveExisting(
-                cacheKey, existing, commandList, collisionOnly: false, ref uploadBudget);
+                cacheKey, existing, commandList, false, ref uploadBudget);
         }
 
         FrameCacheMisses++;
@@ -736,7 +736,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         StoreDecodedCache(cacheKey, WrapGeneratedSpline(generated));
         _meshLru.Set(cacheKey, node);
         return ResolveExisting(
-            cacheKey, node, commandList, collisionOnly: false, ref uploadBudget);
+            cacheKey, node, commandList, false, ref uploadBudget);
     }
 
     private static DecodedNifMesh12 WrapGeneratedSpline(BendableSplineRenderMesh generated)
@@ -759,7 +759,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             IsEmissive: false,
             LocalBoundsCenter: generated.LocalBoundsCenter,
             LocalBoundsRadius: generated.LocalBoundsRadius,
-            IsBillboard: false);
+            IsBillboard: false,
+            // Retail's no-TNAM path binds DefaultTexture_SplineMap, a generated opaque 0x808080
+            // pixel. The ordinary untextured-material lane creates the identical pinned 1x1
+            // synthetic texture while explicit TNAM paths leave this null and bind their DDS.
+            MaterialDiffuse: generated.SolidDiffuseColor);
 
         // Retail also builds two capsule collision spans. Until that narrow collision shape is
         // reconstructed, AbsentOrUnsupported deliberately admits the existing solid visual-soup

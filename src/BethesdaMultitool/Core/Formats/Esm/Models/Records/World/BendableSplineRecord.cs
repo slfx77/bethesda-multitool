@@ -32,9 +32,9 @@ public sealed record BendableSplineRecord
 }
 
 /// <summary>
-///     The fixed 32-byte BNDS DNAM payload documented by the Fallout 4 and Fallout 76 record
-///     definitions. The raw U16 tile-mode value is retained rather than collapsed to a bool so
-///     malformed or future authored values are not silently rewritten by the parser.
+///     The fixed 28-byte BNDS DNAM payload used by Fallout 4 retail and the FO4/FO76 schemas.
+///     The raw U16 tile-mode value is retained rather than collapsed to a bool so malformed or
+///     future authored values are not silently rewritten by the parser.
 /// </summary>
 public sealed record BendableSplineDefinitionData
 {
@@ -46,7 +46,8 @@ public sealed record BendableSplineDefinitionData
 
     public bool TilesRelativeToLength => TilesRelativeToLengthRaw != 0;
 
-    public Vector4 DefaultColor { get; init; }
+    /// <summary>Retail NiColor RGB. DNAM carries no alpha component.</summary>
+    public Vector3 DefaultColor { get; init; }
 
     public float WindSensibility { get; init; }
 

@@ -65,7 +65,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
-                case "DNAM" when sub.DataLength == 32:
+                case "DNAM" when sub.DataLength == 28:
                     splineData = BendableSplineDataReader.ReadDefinition(subData, record.IsBigEndian);
                     break;
                 case "TNAM" when sub.DataLength == 4:

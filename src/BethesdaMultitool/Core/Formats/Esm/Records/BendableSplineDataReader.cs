@@ -8,15 +8,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Records;
 /// <summary>Endian-aware decoders shared by both ESM record paths.</summary>
 internal static class BendableSplineDataReader
 {
-    private const int DefinitionDataSize = 32;
+    private const int DefinitionDataSize = 28;
     private const int RequiredPlacementDataSize = 20;
 
     internal static BendableSplineDefinitionData? ReadDefinition(
         ReadOnlySpan<byte> data,
         bool bigEndian)
     {
-        // BNDS.DNAM is fixed-size in both the FO4 and FO76 definitions. Rejecting other sizes
-        // prevents a same-signature future layout from being silently interpreted as this one.
+        // FO4 retail ships 28 bytes: float tiles, two U16s, NiColor RGB, then two wind floats.
+        // The generated FO4 and FO76 schemas agree. Rejecting other sizes prevents the previously
+        // assumed (but retail-incompatible) RGBA layout from silently shifting both wind fields.
         if (data.Length != DefinitionDataSize)
         {
             return null;
@@ -27,13 +28,12 @@ internal static class BendableSplineDataReader
             DefaultTileCount = ReadFloat(data, 0, bigEndian),
             DefaultSliceCount = ReadUInt16(data, 4, bigEndian),
             TilesRelativeToLengthRaw = ReadUInt16(data, 6, bigEndian),
-            DefaultColor = new Vector4(
+            DefaultColor = new Vector3(
                 ReadFloat(data, 8, bigEndian),
                 ReadFloat(data, 12, bigEndian),
-                ReadFloat(data, 16, bigEndian),
-                ReadFloat(data, 20, bigEndian)),
-            WindSensibility = ReadFloat(data, 24, bigEndian),
-            WindFlexibility = ReadFloat(data, 28, bigEndian)
+                ReadFloat(data, 16, bigEndian)),
+            WindSensibility = ReadFloat(data, 20, bigEndian),
+            WindFlexibility = ReadFloat(data, 24, bigEndian)
         };
     }
 

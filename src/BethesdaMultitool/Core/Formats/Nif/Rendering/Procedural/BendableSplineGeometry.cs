@@ -17,6 +17,7 @@ internal sealed record BendableSplineRenderMesh(
     ushort[] Indices,
     string? DiffuseTexturePath,
     string? NormalMapTexturePath,
+    Vector3? SolidDiffuseColor,
     Vector3 LocalBoundsCenter,
     float LocalBoundsRadius,
     int SegmentCount,
@@ -36,6 +37,11 @@ internal static class BendableSplineGeometry
     internal const float DefaultSegmentLengthPercentage = 0.04f;
     internal const int CurveSubdivisionCount = 48;
     internal const int MinimumSegmentCount = 8;
+
+    // BSGraphics::State::CreateDefaultTextures creates DefaultTexture_SplineMap as one
+    // FORMAT_R8G8B8A8_UNORM pixel containing 0xff808080. Keep the byte-derived value instead of
+    // rounding it to 0.5 so the synthetic texture is byte-identical to the retail fallback.
+    internal static readonly Vector3 DefaultSplineMapColor = new(128f / 255f);
 
     private const float PositionEpsilon = 1e-6f;
     private const float EndDistanceEpsilon = 0.001f;
@@ -110,13 +116,16 @@ internal static class BendableSplineGeometry
         var vertices = new GpuMeshUploader.GpuVertex[(int)vertexCount];
         var indices = new ushort[(int)indexCount];
         var radius = placement.Thickness * 0.5f;
-        var color = new Vector4(
-            Math.Clamp(definition.DefaultColor.X, 0f, 1f),
-            Math.Clamp(definition.DefaultColor.Y, 0f, 1f),
-            Math.Clamp(definition.DefaultColor.Z, 0f, 1f),
-            // Retail's non-wind path writes opaque alpha; DNAM's fourth color float is not used
-            // as coverage by BSProceduralGeometry::BendableSpline::CreateInstance.
-            1f);
+        var usesWindShader = definition.WindSensibility > 0f;
+        // CreateInstance initially uses WHITE vertex RGB when a TNAM texture set is present, but
+        // the non-wind loop deliberately overwrites it with DNAM RGB. Therefore only the authored
+        // wind+TNAM combination remains white; no-TNAM wind retains the DNAM tint.
+        var vertexRgb = usesWindShader && textureSet is not null
+            ? Vector3.One
+            : new Vector3(
+                Math.Clamp(definition.DefaultColor.X, 0f, 1f),
+                Math.Clamp(definition.DefaultColor.Y, 0f, 1f),
+                Math.Clamp(definition.DefaultColor.Z, 0f, 1f));
         var tileCount = definition.TilesRelativeToLength
             ? curve.TotalLength * definition.DefaultTileCount
             : definition.DefaultTileCount;
@@ -145,12 +154,25 @@ internal static class BendableSplineGeometry
             {
                 WriteRing(
                     vertices, 0, segmentStart, direction, ringX, ringY, radius,
-                    sliceCount, 0f, color);
+                    sliceCount, 0f, new Vector4(vertexRgb, usesWindShader ? 0f : 1f));
             }
 
             WriteRing(
                 vertices, segmentIndex + 1, segmentEnd, direction, ringX, ringY, radius,
-                sliceCount, (segmentIndex + 1f) / segmentCount * tileCount, color);
+                sliceCount, (segmentIndex + 1f) / segmentCount * tileCount,
+                new Vector4(vertexRgb, usesWindShader ? 0f : 1f));
+        }
+
+        if (usesWindShader)
+        {
+            ApplyWindVertexColors(
+                vertices,
+                start,
+                control,
+                end,
+                placement,
+                definition.WindSensibility,
+                vertexRgb);
         }
 
         var index = 0;
@@ -182,6 +204,7 @@ internal static class BendableSplineGeometry
             indices,
             textureSet?.DiffuseTexture,
             textureSet?.NormalTexture,
+            textureSet is null ? DefaultSplineMapColor : null,
             boundsCenter,
             boundsRadius,
             segmentCount,
@@ -212,6 +235,69 @@ internal static class BendableSplineGeometry
         return oneMinusT * oneMinusT * start +
                2f * oneMinusT * t * control +
                t * t * end;
+    }
+
+    /// <summary>
+    ///     Reproduces the per-vertex alpha payload that Fallout 4's spline grass shader consumes as
+    ///     wind displacement weight. This is shader data, not coverage. Dynamic deformation remains
+    ///     a separate renderer concern, but retaining the exact payload prevents a later wind route
+    ///     from requiring another geometry rebuild.
+    /// </summary>
+    private static void ApplyWindVertexColors(
+        GpuMeshUploader.GpuVertex[] vertices,
+        Vector3 start,
+        Vector3 control,
+        Vector3 end,
+        BendableSplinePlacementData placement,
+        float windSensibility,
+        Vector3 vertexRgb)
+    {
+        var weights = new float[vertices.Length];
+        var chord = end - start;
+        var chordLengthSquared = chord.LengthSquared();
+        var chordLength = MathF.Sqrt(chordLengthSquared);
+        var detachedEnd = placement.WindDetachedEnd ?? false;
+        var minimum = float.PositiveInfinity;
+        var maximum = float.NegativeInfinity;
+
+        for (var i = 0; i < vertices.Length; i++)
+        {
+            var chordT = Math.Clamp(
+                Vector3.Dot(vertices[i].Position - start, chord) / chordLengthSquared,
+                0f,
+                1f);
+            // Retail performs this for every tube-surface vertex, not once per generated ring. For
+            // an attached end it replaces chord T with the perpendicular distance from the
+            // symmetric local-space Bezier point to the endpoint chord. XBSD always yields
+            // Start=-HalfExtents and End=+HalfExtents, so that chord passes through the origin.
+            var weight = detachedEnd
+                ? chordT
+                : Vector3.Cross(chord, EvaluateQuadratic(start, control, end, chordT)).Length() /
+                  chordLength;
+            weights[i] = weight;
+            minimum = MathF.Min(minimum, weight);
+            maximum = MathF.Max(maximum, weight);
+        }
+
+        var range = maximum - minimum;
+        var amplitude = placement.Slack * windSensibility / placement.Thickness;
+        if (!(range > PositionEpsilon) || !float.IsFinite(amplitude))
+        {
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                vertices[i].VertexColor = new Vector4(vertexRgb, 0f);
+            }
+
+            return;
+        }
+
+        for (var i = 0; i < vertices.Length; i++)
+        {
+            var value = (weights[i] - minimum) * amplitude / range;
+            vertices[i].VertexColor = new Vector4(
+                vertexRgb,
+                float.IsFinite(value) ? value : 0f);
+        }
     }
 
     private static SampledCurve SampleCurve(Vector3 start, Vector3 control, Vector3 end)
@@ -326,10 +412,6 @@ internal static class BendableSplineGeometry
 
     private static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
-
-    private static bool IsFinite(Vector4 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) && float.IsFinite(value.W);
 
     private readonly record struct SampledCurve(
         Vector3[] Points,

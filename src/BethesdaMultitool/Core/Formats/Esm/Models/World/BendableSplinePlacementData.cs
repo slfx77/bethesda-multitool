@@ -3,9 +3,10 @@ using System.Numerics;
 namespace BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 /// <summary>
-///     Fallout 4-family REFR <c>XBSD</c> spline parameters. These are the authored instance values
-///     only; this model deliberately does not infer endpoints, a local axis, or the engine's sag
-///     equation from the half extents.
+///     Fallout 4-family REFR <c>XBSD</c> spline parameters. Retail
+///     <c>TESObjectREFR::GetSplineGenerationParams</c> maps <see cref="HalfExtents" /> to symmetric
+///     local endpoints (<c>Start=-HalfExtents</c>, <c>End=+HalfExtents</c>); the procedural renderer
+///     owns the recovered sag/tessellation math rather than baking derived values into this transport.
 /// </summary>
 public sealed record BendableSplinePlacementData
 {

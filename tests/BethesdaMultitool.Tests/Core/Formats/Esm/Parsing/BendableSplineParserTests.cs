@@ -39,7 +39,7 @@ public sealed class BendableSplineParserTests
         Assert.Equal((ushort)12, spline.Data.DefaultSliceCount);
         Assert.Equal((ushort)2, spline.Data.TilesRelativeToLengthRaw);
         Assert.True(spline.Data.TilesRelativeToLength);
-        Assert.Equal(new Vector4(0.2f, 0.4f, 0.6f, 0.8f), spline.Data.DefaultColor);
+        Assert.Equal(new Vector3(0.2f, 0.4f, 0.6f), spline.Data.DefaultColor);
         Assert.Equal(1.25f, spline.Data.WindSensibility);
         Assert.Equal(0.75f, spline.Data.WindFlexibility);
     }
@@ -49,7 +49,7 @@ public sealed class BendableSplineParserTests
     {
         var bytes = BuildRecordBytes(SplineFormId, "BNDS", false,
             ("EDID", NullTermString("WorkshopWire")),
-            ("DNAM", new byte[31]),
+            ("DNAM", new byte[27]),
             ("TNAM", BuildUInt32(TextureSetFormId, false)));
 
         var spline = ParseSingle(bytes, false);
@@ -57,6 +57,30 @@ public sealed class BendableSplineParserTests
         Assert.Equal("WorkshopWire", spline.EditorId);
         Assert.Equal(TextureSetFormId, spline.TextureSetFormId);
         Assert.Null(spline.Data);
+    }
+
+    [Fact]
+    public void ParseBendableSplines_Fo4RetailTwentyEightByteDnam_DoesNotShiftWindFields()
+    {
+        // Fallout4.esm 0x0001D971 BlackWireSpline01, retained verbatim. The old 32-byte/RGBA
+        // assumption rejected every shipped BNDS and would also have read wind/flex four bytes late.
+        var retailDnam = Convert.FromHexString(
+            "0000803F030000008382823E8382823E8382823E0000000000000000");
+        var bytes = BuildRecordBytes(SplineFormId, "BNDS", false,
+            ("EDID", NullTermString("BlackWireSpline01")),
+            ("DNAM", retailDnam));
+
+        var spline = ParseSingle(bytes, false);
+
+        Assert.NotNull(spline.Data);
+        Assert.Equal(1f, spline.Data!.DefaultTileCount);
+        Assert.Equal((ushort)3, spline.Data.DefaultSliceCount);
+        Assert.False(spline.Data.TilesRelativeToLength);
+        Assert.Equal(0.254902f, spline.Data.DefaultColor.X, 6);
+        Assert.Equal(Vector3.Zero, new Vector3(
+            spline.Data.WindSensibility,
+            spline.Data.WindFlexibility,
+            0f));
     }
 
     private static BendableSplineRecord ParseSingle(
@@ -95,16 +119,15 @@ public sealed class BendableSplineParserTests
 
     private static byte[] BuildDefinition(bool bigEndian)
     {
-        var bytes = new byte[32];
+        var bytes = new byte[28];
         WriteFloat(bytes, 0, 3.5f, bigEndian);
         WriteUInt16(bytes, 4, 12, bigEndian);
         WriteUInt16(bytes, 6, 2, bigEndian);
         WriteFloat(bytes, 8, 0.2f, bigEndian);
         WriteFloat(bytes, 12, 0.4f, bigEndian);
         WriteFloat(bytes, 16, 0.6f, bigEndian);
-        WriteFloat(bytes, 20, 0.8f, bigEndian);
-        WriteFloat(bytes, 24, 1.25f, bigEndian);
-        WriteFloat(bytes, 28, 0.75f, bigEndian);
+        WriteFloat(bytes, 20, 1.25f, bigEndian);
+        WriteFloat(bytes, 24, 0.75f, bigEndian);
         return bytes;
     }
 
