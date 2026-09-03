@@ -13,9 +13,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 /// </summary>
 internal sealed class Ba2TextureArchiveSource(
     Ba2Extractor extractor,
-    Dictionary<string, Ba2FileRecord> fileIndex,
+    IReadOnlyDictionary<string, Ba2FileRecord> fileIndex,
     IDisposable ownedHandle) : INifTextureSource
 {
+    internal IReadOnlyDictionary<string, Ba2FileRecord> FileIndex { get; } = fileIndex;
+
     public DecodedTexture? TryLoad(string path)
     {
         try
@@ -31,12 +33,12 @@ internal sealed class Ba2TextureArchiveSource(
 
     public bool Exists(string path)
     {
-        return fileIndex.ContainsKey(path);
+        return FileIndex.ContainsKey(path);
     }
 
     public byte[]? TryLoadRaw(string path)
     {
-        if (!fileIndex.TryGetValue(path, out var fileRecord))
+        if (!FileIndex.TryGetValue(path, out var fileRecord))
         {
             return null;
         }
@@ -54,7 +56,7 @@ internal sealed class Ba2TextureArchiveSource(
     public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
     {
         metadata = default;
-        if (!fileIndex.TryGetValue(path, out var fileRecord))
+        if (!FileIndex.TryGetValue(path, out var fileRecord))
         {
             return false;
         }

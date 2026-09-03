@@ -103,6 +103,36 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         }
     }
 
+    public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+        if (maximumBytes > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        }
+
+        if (TryGetReader() is not { } reader || reader.FindEntry(path) is not { } entry ||
+            entry.Size < 0 || entry.Size > maximumBytes)
+        {
+            return null;
+        }
+
+        try
+        {
+            var data = reader.ExtractBounded(entry, maximumBytes);
+            return new GameFileReadResult(ToEntry(entry), data);
+        }
+        catch (Exception ex) when (IsExtractionFailure(ex))
+        {
+            Logger.Instance.Info(
+                "Vfs: bounded archive entry failed to extract, treating as absent: {0}!{1} ({2})",
+                Label,
+                path,
+                ex.Message);
+            return null;
+        }
+    }
+
     public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
     {
         if (TryGetReader() is not { } reader)
@@ -111,14 +141,33 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         }
 
         var normalizedPrefix = prefix is null ? null : VfsPath.Normalize(prefix);
-        foreach (var entry in reader.ListFiles())
+        foreach (var entry in EnumerateArchiveEntries(reader))
         {
-            var normalized = VfsPath.Normalize(entry.FullPath);
+            var normalized = VfsPath.Normalize(entry.Path);
             if (VfsPath.MatchesPrefix(normalized, normalizedPrefix))
             {
-                yield return new GameFileEntry(normalized, entry.Size, Label);
+                yield return entry with { Path = normalized };
             }
         }
+    }
+
+    public GameFileEnumerationPage EnumerateFilesBounded(
+        string? prefix,
+        int maximumEntries)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumEntries);
+        var entries = new List<GameFileEntry>(Math.Min(maximumEntries, 4096));
+        foreach (var entry in EnumerateFiles(prefix))
+        {
+            if (entries.Count == maximumEntries)
+            {
+                return new GameFileEnumerationPage(entries, true);
+            }
+
+            entries.Add(entry);
+        }
+
+        return new GameFileEnumerationPage(entries, false);
     }
 
     public void Dispose()
@@ -193,6 +242,39 @@ public sealed class ArchiveFileSystem : IGameFileSystem
     {
         return ex is IOException or InvalidDataException or NotSupportedException or EndOfStreamException
             or ArgumentException or OverflowException;
+    }
+
+    /// <summary>
+    ///     Walks the parsed BSA/BA2 records directly. Calling ArchiveReader.ListFiles here would
+    ///     first allocate a format-neutral snapshot for every archive entry, defeating a bounded
+    ///     prefix consumer that stops after a small UI discovery page.
+    /// </summary>
+    private IEnumerable<GameFileEntry> EnumerateArchiveEntries(ArchiveReader reader)
+    {
+        if (reader.Bsa is { } bsa)
+        {
+            foreach (var file in bsa.AllFiles)
+            {
+                yield return new GameFileEntry(file.FullPath, file.Size, Label);
+            }
+
+            yield break;
+        }
+
+        if (reader.Ba2 is { } ba2)
+        {
+            foreach (var file in ba2.Files)
+            {
+                yield return new GameFileEntry(file.FullPath, file.RealSize, Label);
+            }
+
+            yield break;
+        }
+
+        foreach (var entry in reader.ListFiles())
+        {
+            yield return new GameFileEntry(entry.FullPath, entry.Size, Label);
+        }
     }
 
     private GameFileEntry ToEntry(ArchiveReader.ArchiveEntry entry)

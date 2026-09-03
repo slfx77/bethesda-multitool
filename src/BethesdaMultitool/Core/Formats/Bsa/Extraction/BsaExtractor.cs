@@ -416,6 +416,26 @@ public sealed class BsaExtractor : IDisposable
     /// </summary>
     public byte[] ExtractFile(BsaFileRecord file)
     {
+        return ExtractFileCore(file, maximumOutputBytes: null);
+    }
+
+    /// <summary>
+    ///     Extracts only when both the stored entry and declared decompressed payload fit a caller's
+    ///     strict allocation bound. The compressed-size prefix is checked before renting or
+    ///     allocating payload buffers.
+    /// </summary>
+    internal byte[] ExtractFileBounded(BsaFileRecord file, long maximumOutputBytes)
+    {
+        if (maximumOutputBytes < 0 || maximumOutputBytes > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumOutputBytes));
+        }
+
+        return ExtractFileCore(file, maximumOutputBytes);
+    }
+
+    private byte[] ExtractFileCore(BsaFileRecord file, long? maximumOutputBytes)
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         // Determine if this file is compressed
@@ -424,6 +444,12 @@ public sealed class BsaExtractor : IDisposable
         // Calculate data offset and size (use long for offset arithmetic)
         var dataOffset = (long)file.Offset;
         var dataSize = (int)file.Size;
+        if (maximumOutputBytes is { } storedLimit && dataSize > storedLimit)
+        {
+            throw new InvalidDataException(
+                $"BSA entry '{file.FullPath}' stores {dataSize} bytes, exceeding the " +
+                $"{storedLimit}-byte caller limit");
+        }
 
         // The record's byte range must lie inside the archive, past the header (36 bytes for
         // v103-105, 12 for Morrowind). The MMF view is rounded up to page granularity, so an
@@ -473,6 +499,12 @@ public sealed class BsaExtractor : IDisposable
                 throw new InvalidDataException(
                     $"BSA compressed entry '{file.FullPath}' declares uncompressed size " +
                     $"{uncompressedSize} bytes, exceeding the {MaxDecompressedFileSize}-byte cap");
+            }
+            if (maximumOutputBytes is { } outputLimit && uncompressedSize > outputLimit)
+            {
+                throw new InvalidDataException(
+                    $"BSA compressed entry '{file.FullPath}' declares {uncompressedSize} " +
+                    $"decompressed bytes, exceeding the {outputLimit}-byte caller limit");
             }
 
             var compressedSize = dataSize - 4;
@@ -528,6 +560,13 @@ public sealed class BsaExtractor : IDisposable
         }
 
         // Uncompressed - just read the data
+        if (maximumOutputBytes is { } uncompressedLimit && dataSize > uncompressedLimit)
+        {
+            throw new InvalidDataException(
+                $"BSA entry '{file.FullPath}' contains {dataSize} bytes, exceeding the " +
+                $"{uncompressedLimit}-byte caller limit");
+        }
+
         var uncompressedResult = new byte[dataSize];
         _view.ReadArray(dataOffset, uncompressedResult, 0, dataSize);
         return uncompressedResult;

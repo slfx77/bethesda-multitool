@@ -80,6 +80,48 @@ public class Ba2WiringTests
         }
     }
 
+    [Fact]
+    public void Factory_SharedBa2Resolvers_ReuseOneImmutablePathIndex()
+    {
+        var payload = "shared-index"u8.ToArray();
+        var ba2 = Path.Combine(Path.GetTempPath(), $"ba2shared_{Guid.NewGuid():N}.ba2");
+        File.WriteAllBytes(ba2, BuildGnrlBa2WithTexture("textures\\shared.dds", payload));
+        var registry = new BethesdaMultitool.Core.Vfs.ArchiveHandleRegistry();
+        try
+        {
+            var firstSources = NifTextureArchiveSourceFactory.Create(registry, ba2);
+            var secondSources = NifTextureArchiveSourceFactory.Create(registry, ba2);
+            try
+            {
+                var first = Assert.IsType<Ba2TextureArchiveSource>(Assert.Single(firstSources));
+                var second = Assert.IsType<Ba2TextureArchiveSource>(Assert.Single(secondSources));
+
+                Assert.Same(first.FileIndex, second.FileIndex);
+                Assert.Equal(payload, first.TryLoadRaw("textures\\shared.dds"));
+                Assert.Equal(payload, second.TryLoadRaw("textures\\shared.dds"));
+                Assert.Equal(1, registry.OpenHandleCount);
+            }
+            finally
+            {
+                foreach (var source in secondSources)
+                {
+                    source.Dispose();
+                }
+
+                foreach (var source in firstSources)
+                {
+                    source.Dispose();
+                }
+            }
+
+            Assert.Equal(0, registry.OpenHandleCount);
+        }
+        finally
+        {
+            File.Delete(ba2);
+        }
+    }
+
     /// <summary>Minimal version-1 DX10 BA2: one texture entry with zero chunks, no name table.</summary>
     private static byte[] BuildDx10Ba2()
     {

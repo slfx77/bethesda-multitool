@@ -37,6 +37,17 @@ internal sealed class BsaBackend : IArchiveBackend
             .ToList();
     }
 
+    public IEnumerable<string> EnumerateFilePaths()
+    {
+        foreach (var folder in Extractor.Archive.Folders)
+        {
+            foreach (var file in folder.Files)
+            {
+                yield return file.FullPath;
+            }
+        }
+    }
+
     public byte[] Extract(ArchiveEntry entry)
     {
         return entry.Record is BsaFileRecord record

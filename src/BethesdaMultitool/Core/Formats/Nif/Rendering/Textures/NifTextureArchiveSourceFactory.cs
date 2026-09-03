@@ -64,10 +64,11 @@ internal static class NifTextureArchiveSourceFactory
         try
         {
             // ArchiveReader dispatched BSA/BA2 by magic at open; the source disposes the LEASE —
-            // the reader itself is shared state owned by the registry.
+            // the reader itself is shared state owned by the registry. Its immutable typed path
+            // index is shared too, so CPU and GPU resolvers do not each rebuild a million-entry map.
             return lease.Reader.AsBsaExtractor is { } bsaExtractor
-                ? new NifTextureArchiveSource(bsaExtractor, BuildBsaIndex(bsaExtractor), lease)
-                : new Ba2TextureArchiveSource(lease.Reader.AsBa2Extractor!, BuildBa2Index(lease.Reader.AsBa2Extractor!),
+                ? new NifTextureArchiveSource(bsaExtractor, lease.Reader.GetBsaFileIndex(), lease)
+                : new Ba2TextureArchiveSource(lease.Reader.AsBa2Extractor!, lease.Reader.GetBa2FileIndex(),
                     lease);
         }
         catch

@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
@@ -13,6 +16,16 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 /// </summary>
 internal static class BsaDiscovery
 {
+    private const int MaximumCachedDirectories = 32;
+
+    private static readonly StringComparer DirectoryComparer =
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    private static readonly ConcurrentDictionary<string, DiscoveryCacheSlot> DirectoryCache =
+        new(DirectoryComparer);
+
+    private static readonly object CacheMaintenanceGate = new();
+
     internal static BsaDiscoveryResult Discover(string esmPath)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(esmPath));
@@ -26,18 +39,47 @@ internal static class BsaDiscovery
     /// </summary>
     internal static BsaDiscoveryResult DiscoverInDirectory(string dir)
     {
+        return DiscoverInDirectoryCore(dir, knownArchive: null);
+    }
+
+    /// <summary>
+    ///     Content-classifies a directory while trusting content flags derived from one already-open
+    ///     archive. The selected container is not parsed or streamed a second time, but the returned
+    ///     result is the same full-directory shape and populates the ordinary directory cache so a
+    ///     later selection of another sibling can reuse it.
+    /// </summary>
+    internal static BsaDiscoveryResult DiscoverInDirectoryWithKnownArchive(
+        string dir,
+        string selectedArchivePath,
+        bool selectedHasMeshes,
+        bool selectedHasTextures)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(selectedArchivePath);
+        return DiscoverInDirectoryCore(
+            dir,
+            new KnownArchiveClassification(
+                Path.GetFullPath(selectedArchivePath),
+                selectedHasMeshes,
+                selectedHasTextures));
+    }
+
+    private static BsaDiscoveryResult DiscoverInDirectoryCore(
+        string dir,
+        KnownArchiveClassification? knownArchive)
+    {
         if (!Directory.Exists(dir))
         {
             return BsaDiscoveryResult.Empty;
         }
 
-        var bsaPaths = Directory.GetFiles(dir, "*.bsa")
+        dir = Path.GetFullPath(dir);
+        var allBsaPaths = Directory.GetFiles(dir, "*.bsa")
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var ba2Paths = Directory.GetFiles(dir, "*.ba2")
+        var allBa2Paths = Directory.GetFiles(dir, "*.ba2")
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (bsaPaths.Length == 0 && ba2Paths.Length == 0)
+        if (allBsaPaths.Length == 0 && allBa2Paths.Length == 0)
         {
             // A game-install ROOT is a natural directory to hand this API (asset-donor dirs get
             // configured that way), and its archives live one level down in Data\. Falling through
@@ -46,23 +88,52 @@ internal static class BsaDiscovery
             // looking obviously wrong — the FO3 and FNV-final corpus donors shipped exactly this
             // way and contributed nothing.
             var dataDir = Path.Combine(dir, "Data");
-            return Directory.Exists(dataDir) ? DiscoverInDirectory(dataDir) : BsaDiscoveryResult.Empty;
+            return Directory.Exists(dataDir)
+                ? DiscoverInDirectoryCore(dataDir, knownArchive)
+                : BsaDiscoveryResult.Empty;
         }
 
+        var identity = allBsaPaths
+            .Concat(allBa2Paths)
+            .Select(static path =>
+            {
+                var file = new FileInfo(path);
+                return new ArchiveFileIdentity(
+                    Path.GetFullPath(path),
+                    file.Length,
+                    file.LastWriteTimeUtc.Ticks);
+            })
+            .ToArray();
+        var cacheSlot = GetCacheSlot(dir);
+        lock (cacheSlot.Gate)
+        {
+            if (cacheSlot.Identity is { } cachedIdentity &&
+                cachedIdentity.AsSpan().SequenceEqual(identity) &&
+                cacheSlot.Result is { } cachedResult)
+            {
+                return cachedResult;
+            }
+
+            var result = ClassifyArchives(allBsaPaths, allBa2Paths, knownArchive);
+            cacheSlot.Identity = identity;
+            cacheSlot.Result = result;
+            return result;
+        }
+    }
+
+    private static BsaDiscoveryResult ClassifyArchives(
+        IReadOnlyList<string> bsaPaths,
+        IReadOnlyList<string> ba2Paths,
+        KnownArchiveClassification? knownArchive)
+    {
         var meshes = new List<string>();
         var textures = new List<string>();
         foreach (var path in bsaPaths)
         {
-            var (hasMeshes, hasTextures) = ClassifyContent(path);
-            if (hasMeshes)
-            {
-                meshes.Add(path);
-            }
-
-            if (hasTextures)
-            {
-                textures.Add(path);
-            }
+            var classification = TryGetKnownClassification(path, knownArchive, out var known)
+                ? known
+                : ClassifyContent(path);
+            AddClassification(path, classification, meshes, textures);
         }
 
         // BA2 (Fallout 4 / Fallout 76). DX10 archives hold textures only; GNRL archives hold
@@ -72,6 +143,12 @@ internal static class BsaDiscovery
         // prefixes (BA2 has no BSA-style content-flag bits).
         foreach (var path in ba2Paths)
         {
+            if (TryGetKnownClassification(path, knownArchive, out var known))
+            {
+                AddClassification(path, known, meshes, textures);
+                continue;
+            }
+
             var header = Ba2Parser.TryReadHeader(path);
             if (header is null)
             {
@@ -85,15 +162,7 @@ internal static class BsaDiscovery
             }
 
             var (hasMeshes, hasTextures) = ClassifyBa2GeneralContent(path);
-            if (hasMeshes)
-            {
-                meshes.Add(path);
-            }
-
-            if (hasTextures)
-            {
-                textures.Add(path);
-            }
+            AddClassification(path, (hasMeshes, hasTextures), meshes, textures);
         }
 
         if (meshes.Count == 0 && textures.Count == 0)
@@ -102,6 +171,83 @@ internal static class BsaDiscovery
         }
 
         return new BsaDiscoveryResult(meshes.ToArray(), textures.ToArray(), true);
+    }
+
+    private static bool TryGetKnownClassification(
+        string path,
+        KnownArchiveClassification? knownArchive,
+        out (bool Meshes, bool Textures) classification)
+    {
+        if (knownArchive is { } known &&
+            DirectoryComparer.Equals(Path.GetFullPath(path), known.Path))
+        {
+            classification = (known.Meshes, known.Textures);
+            return true;
+        }
+
+        classification = default;
+        return false;
+    }
+
+    private static void AddClassification(
+        string path,
+        (bool Meshes, bool Textures) classification,
+        List<string> meshes,
+        List<string> textures)
+    {
+        if (classification.Meshes)
+        {
+            meshes.Add(path);
+        }
+
+        if (classification.Textures)
+        {
+            textures.Add(path);
+        }
+    }
+
+    private static DiscoveryCacheSlot GetCacheSlot(string cacheKey)
+    {
+        if (!DirectoryCache.ContainsKey(cacheKey) && DirectoryCache.Count >= MaximumCachedDirectories)
+        {
+            // Discovery normally touches only one installed Data directory per open document, but
+            // bound the process cache for long-running automation that walks many temporary games.
+            lock (CacheMaintenanceGate)
+            {
+                if (DirectoryCache.Count >= MaximumCachedDirectories)
+                {
+                    foreach (var existing in DirectoryCache.Keys)
+                    {
+                        if (!DirectoryComparer.Equals(existing, cacheKey) &&
+                            DirectoryCache.TryRemove(existing, out _))
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return DirectoryCache.GetOrAdd(cacheKey, static _ => new DiscoveryCacheSlot());
+    }
+
+    private readonly record struct ArchiveFileIdentity(
+        string Path,
+        long Length,
+        long LastWriteTimeUtcTicks);
+
+    private readonly record struct KnownArchiveClassification(
+        string Path,
+        bool Meshes,
+        bool Textures);
+
+    private sealed class DiscoveryCacheSlot
+    {
+        internal object Gate { get; } = new();
+
+        internal ArchiveFileIdentity[]? Identity { get; set; }
+
+        internal BsaDiscoveryResult? Result { get; set; }
     }
 
     /// <summary>
@@ -174,38 +320,102 @@ internal static class BsaDiscovery
     {
         try
         {
-            var archive = Ba2Parser.Parse(ba2Path);
+            // Classification needs only the trailing path table. Ba2Parser.Parse first materializes
+            // every 36-byte GNRL record and every name into a retained object graph; on a current
+            // Starfield install, archive discovery would do that for more than 1.6 million entries
+            // even though those graphs are thrown away immediately. Seek straight to the name table
+            // and stream it instead. This preserves content-based classification for oddly named mod
+            // archives while keeping application startup proportional to path bytes, not record
+            // allocations.
+            using var stream = new FileStream(
+                ba2Path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                64 * 1024,
+                FileOptions.SequentialScan);
+            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+            var header = Ba2Header.Read(reader);
+            if (header.Type != Ba2HeaderType.General || !header.HasNameTable)
+            {
+                return (false, false);
+            }
+
+            stream.Seek(checked((long)header.NameTableOffset), SeekOrigin.Begin);
             var hasMeshes = false;
             var hasTextures = false;
-            foreach (var file in archive.AllFiles)
+            var nameBuffer = ArrayPool<byte>.Shared.Rent(ushort.MaxValue);
+            try
             {
-                var path = file.FullPath;
-                // "geometries\" counts as mesh content: Starfield splits vertex/index buffers out of
-                // its NIFs into hash-named blobs under that root. Meshes01 contains both kinds today,
-                // while an archive holding only geometry blobs would otherwise classify as NEITHER
-                // meshes nor textures and be dropped from the mesh set entirely.
-                if (path.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase) ||
-                    path.StartsWith("geometries\\", StringComparison.OrdinalIgnoreCase))
+                for (uint index = 0; index < header.FileCount; index++)
                 {
-                    hasMeshes = true;
-                }
-                else if (path.StartsWith("textures\\", StringComparison.OrdinalIgnoreCase) ||
-                         path.StartsWith("materials\\", StringComparison.OrdinalIgnoreCase))
-                {
-                    hasTextures = true;
-                }
+                    var length = reader.ReadUInt16();
+                    var nameBytes = nameBuffer.AsSpan(0, length);
+                    stream.ReadExactly(nameBytes);
 
-                if (hasMeshes && hasTextures)
-                {
-                    break;
+                    // Prefixes are ASCII even though the rest of a BA2 path is UTF-8. Compare the
+                    // raw bytes so a textures-only Starfield archive can scan hundreds of thousands
+                    // of names without allocating a byte[] and string for every discarded path.
+                    // "geometries\" counts as mesh content: Starfield splits vertex/index buffers
+                    // out of its NIFs into hash-named blobs under that root.
+                    if (HasBa2Root(nameBytes, "meshes"u8) ||
+                        HasBa2Root(nameBytes, "geometries"u8))
+                    {
+                        hasMeshes = true;
+                    }
+                    else if (HasBa2Root(nameBytes, "textures"u8) ||
+                             HasBa2Root(nameBytes, "materials"u8))
+                    {
+                        hasTextures = true;
+                    }
+
+                    if (hasMeshes && hasTextures)
+                    {
+                        break;
+                    }
                 }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(nameBuffer);
             }
 
             return (hasMeshes, hasTextures);
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or
+                                   UnauthorizedAccessException or OverflowException)
         {
             return (false, false);
         }
+    }
+
+    private static bool HasBa2Root(ReadOnlySpan<byte> path, ReadOnlySpan<byte> root)
+    {
+        if (path.Length <= root.Length)
+        {
+            return false;
+        }
+
+        var separator = path[root.Length];
+        if (separator != (byte)'/' && separator != (byte)'\\')
+        {
+            return false;
+        }
+
+        for (var index = 0; index < root.Length; index++)
+        {
+            var value = path[index];
+            if (value is >= (byte)'A' and <= (byte)'Z')
+            {
+                value += (byte)('a' - 'A');
+            }
+
+            if (value != root[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

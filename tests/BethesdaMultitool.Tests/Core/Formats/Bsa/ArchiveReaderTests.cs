@@ -30,6 +30,9 @@ public class ArchiveReaderTests
             Assert.Single(entries);
             Assert.Equal("meshes\\clutter\\bottle.nif", entries[0].FullPath);
             Assert.Equal(NifPayload, reader.Extract(entries[0]));
+            Assert.Equal(NifPayload, reader.ExtractBounded(entries[0], NifPayload.Length));
+            Assert.Throws<InvalidDataException>(() =>
+                reader.ExtractBounded(entries[0], NifPayload.Length - 1));
 
             // ReadFile by path, accepting either separator; a miss returns null.
             Assert.Equal(NifPayload, reader.ReadFile("meshes\\clutter\\bottle.nif"));

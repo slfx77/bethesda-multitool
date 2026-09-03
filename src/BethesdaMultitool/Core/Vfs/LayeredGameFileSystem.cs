@@ -56,6 +56,25 @@ public sealed class LayeredGameFileSystem : IGameFileSystem
         return null;
     }
 
+    public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+        if (maximumBytes > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        }
+
+        foreach (var layer in Layers)
+        {
+            if (layer.TryReadAllBytesBounded(path, maximumBytes) is { } read)
+            {
+                return read;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Enumerates the union; a path appearing in multiple layers yields only the winning copy.</summary>
     public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
     {
@@ -70,6 +89,42 @@ public sealed class LayeredGameFileSystem : IGameFileSystem
                 }
             }
         }
+    }
+
+    public GameFileEnumerationPage EnumerateFilesBounded(
+        string? prefix,
+        int maximumEntries)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumEntries);
+        var entries = new List<GameFileEntry>(Math.Min(maximumEntries, 4096));
+        var seen = new HashSet<string>(VfsPath.Comparer);
+        foreach (var layer in Layers)
+        {
+            var page = layer.EnumerateFilesBounded(prefix, maximumEntries);
+            foreach (var entry in page.Entries)
+            {
+                if (!seen.Add(entry.Path))
+                {
+                    continue;
+                }
+
+                if (entries.Count == maximumEntries)
+                {
+                    return new GameFileEnumerationPage(entries, true);
+                }
+
+                entries.Add(entry);
+            }
+
+            // An unseen tail might contain a non-shadowed entry or a nested family boundary.
+            // Without pagination there is no safe way to prove otherwise, so fail closed.
+            if (page.IsTruncated)
+            {
+                return new GameFileEnumerationPage(entries, true);
+            }
+        }
+
+        return new GameFileEnumerationPage(entries, false);
     }
 
     public void Dispose()

@@ -171,6 +171,36 @@ public sealed class BsaMalformedTests : IDisposable
     }
 
     [Fact]
+    public void ExtractFileBounded_RejectsStoredBytesBeforeAllocatingPayload()
+    {
+        using var extractor = new BsaExtractor(WriteBsa(BuildV104Bsa(Payload)));
+        var record = Assert.Single(extractor.Archive.AllFiles);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            extractor.ExtractFileBounded(record, maximumOutputBytes: 4));
+
+        Assert.Contains("stores", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("caller limit", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractFileBounded_RejectsDeclaredDecompressedBytesBeforeOutputAllocation()
+    {
+        var payload = new byte[1024];
+        var compressedEntry = BuildZlibEntry(payload);
+        Assert.True(compressedEntry.Length < 64); // fixture must reach the prefix-specific gate
+        using var extractor = new BsaExtractor(WriteBsa(
+            BuildV104Bsa(compressedEntry, compressionToggle: true)));
+        var record = Assert.Single(extractor.Archive.AllFiles);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            extractor.ExtractFileBounded(record, maximumOutputBytes: 64));
+
+        Assert.Contains("decompressed bytes", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("caller limit", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExtractFile_XMemCodecEntry_ThrowsNamedNotSupported()
     {
         // 0x0203 = XMemCodec | IncludeFileNames | IncludeDirectoryNames. Without the explicit

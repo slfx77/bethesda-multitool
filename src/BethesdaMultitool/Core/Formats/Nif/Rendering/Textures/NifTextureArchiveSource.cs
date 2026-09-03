@@ -11,12 +11,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 /// </summary>
 internal sealed class NifTextureArchiveSource(
     BsaExtractor extractor,
-    Dictionary<string, BsaFileRecord> fileIndex,
+    IReadOnlyDictionary<string, BsaFileRecord> fileIndex,
     IDisposable ownedHandle) : INifTextureSource
 {
     public BsaExtractor Extractor { get; } = extractor;
 
-    public Dictionary<string, BsaFileRecord> FileIndex { get; } = fileIndex;
+    public IReadOnlyDictionary<string, BsaFileRecord> FileIndex { get; } = fileIndex;
 
     public DecodedTexture? TryLoad(string path)
     {

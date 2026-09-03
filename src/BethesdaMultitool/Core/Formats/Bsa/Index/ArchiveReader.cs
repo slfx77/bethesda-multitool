@@ -23,11 +23,22 @@ public sealed class ArchiveReader : IDisposable
     // the old `_byPath ??= BuildIndex()` let concurrent first calls each build a full private
     // index (wasted work; last assignment won).
     private readonly Lazy<Dictionary<string, ArchiveEntry>> _byPath;
+    private readonly Lazy<IReadOnlyDictionary<string, BsaFileRecord>> _bsaFileIndex;
+    private readonly Lazy<IReadOnlyDictionary<string, Ba2FileRecord>> _ba2FileIndex;
 
     private ArchiveReader(IArchiveBackend backend)
     {
         _backend = backend;
         _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
+        // Texture resolvers use the format records directly so extraction stays allocation-free.
+        // Keep those immutable path maps on the shared reader: CPU decode, native D3D12 upload,
+        // and any other resolver leasing this handle then pay the O(entry-count) build only once.
+        _bsaFileIndex = new Lazy<IReadOnlyDictionary<string, BsaFileRecord>>(
+            BuildBsaFileIndex,
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        _ba2FileIndex = new Lazy<IReadOnlyDictionary<string, Ba2FileRecord>>(
+            BuildBa2FileIndex,
+            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     /// <summary>The format backend — the seam <c>ArchiveHandleRegistry</c> shares handles through.</summary>
@@ -82,10 +93,67 @@ public sealed class ArchiveReader : IDisposable
         return _backend.ListFiles();
     }
 
+    /// <summary>
+    ///     Streams virtual paths in archive order. BA2 and classic BSA backends serve these from
+    ///     their parsed records directly, so browse-only scans do not first allocate an
+    ///     <see cref="ArchiveEntry" /> wrapper for every non-NIF asset.
+    /// </summary>
+    public IEnumerable<string> EnumerateFilePaths()
+    {
+        return _backend.EnumerateFilePaths();
+    }
+
     /// <summary>Extracts an entry returned by <see cref="ListFiles" /> to bytes. Thread-safe.</summary>
     public byte[] Extract(ArchiveEntry entry)
     {
         return _backend.Extract(entry);
+    }
+
+    /// <summary>
+    ///     Extracts an entry only when its stored and decompressed forms fit the caller's strict
+    ///     allocation bound. Classic BSA checks its embedded decompressed-size prefix before
+    ///     allocating; BA2 metadata already carries the real size.
+    /// </summary>
+    internal byte[] ExtractBounded(ArchiveEntry entry, long maximumBytes)
+    {
+        if (maximumBytes < 0 || maximumBytes > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        }
+
+        if (entry.Size < 0 || entry.Size > maximumBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive entry '{entry.FullPath}' is {entry.Size} bytes, exceeding the " +
+                $"{maximumBytes}-byte caller limit.");
+        }
+
+        byte[] data;
+        if (_backend is BsaBackend bsa && entry.Record is BsaFileRecord bsaRecord)
+        {
+            data = bsa.Extractor.ExtractFileBounded(bsaRecord, maximumBytes);
+        }
+        else
+        {
+            if (entry.Record is Ba2FileRecord ba2Record &&
+                ba2Record.PackedSize > maximumBytes)
+            {
+                throw new InvalidDataException(
+                    $"BA2 entry '{entry.FullPath}' stores {ba2Record.PackedSize} packed bytes, " +
+                    $"exceeding the {maximumBytes}-byte caller limit.");
+            }
+
+            data = _backend.Extract(entry);
+        }
+
+        if (data.LongLength > maximumBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive entry '{entry.FullPath}' expanded to {data.LongLength} bytes, exceeding " +
+                $"the {maximumBytes}-byte caller limit.");
+        }
+
+        return data;
     }
 
     /// <summary>
@@ -118,7 +186,22 @@ public sealed class ArchiveReader : IDisposable
     /// </summary>
     public byte[]? ReadFile(string fullPath)
     {
-        return FindEntry(fullPath) is { } entry ? Extract(entry) : null;
+        var normalized = Normalize(fullPath);
+        if (_backend is BsaBackend bsa)
+        {
+            return GetBsaFileIndex().TryGetValue(normalized, out var record)
+                ? bsa.Extractor.ExtractFile(record)
+                : null;
+        }
+
+        if (_backend is Ba2Backend ba2)
+        {
+            return GetBa2FileIndex().TryGetValue(normalized, out var record)
+                ? ba2.Extractor.ExtractFile(record)
+                : null;
+        }
+
+        return FindEntry(normalized) is { } entry ? Extract(entry) : null;
     }
 
     /// <summary>
@@ -130,12 +213,76 @@ public sealed class ArchiveReader : IDisposable
         return _byPath.Value.TryGetValue(Normalize(fullPath), out var entry) ? entry : null;
     }
 
+    /// <summary>
+    ///     Shared, immutable path index over the parsed BSA records. The dictionary is built at
+    ///     most once per reader even when CPU and GPU texture resolvers arrive concurrently.
+    /// </summary>
+    internal IReadOnlyDictionary<string, BsaFileRecord> GetBsaFileIndex()
+    {
+        if (AsBsaExtractor is null)
+        {
+            throw new InvalidOperationException("The archive is not a BSA.");
+        }
+
+        return _bsaFileIndex.Value;
+    }
+
+    /// <summary>
+    ///     Shared, immutable path index over the parsed BA2 records. The dictionary is built at
+    ///     most once per reader even when CPU and GPU texture resolvers arrive concurrently.
+    /// </summary>
+    internal IReadOnlyDictionary<string, Ba2FileRecord> GetBa2FileIndex()
+    {
+        if (AsBa2Extractor is null)
+        {
+            throw new InvalidOperationException("The archive is not a BA2.");
+        }
+
+        return _ba2FileIndex.Value;
+    }
+
     private Dictionary<string, ArchiveEntry> BuildIndex()
     {
         var map = new Dictionary<string, ArchiveEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in ListFiles())
         {
             map[Normalize(entry.FullPath)] = entry;
+        }
+
+        return map;
+    }
+
+    private IReadOnlyDictionary<string, BsaFileRecord> BuildBsaFileIndex()
+    {
+        var extractor = AsBsaExtractor
+            ?? throw new InvalidOperationException("The archive is not a BSA.");
+        var map = new Dictionary<string, BsaFileRecord>(
+            extractor.Archive.TotalFiles,
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var file in extractor.Archive.AllFiles)
+        {
+            if (!string.IsNullOrEmpty(file.FullPath))
+            {
+                map[Normalize(file.FullPath)] = file;
+            }
+        }
+
+        return map;
+    }
+
+    private IReadOnlyDictionary<string, Ba2FileRecord> BuildBa2FileIndex()
+    {
+        var extractor = AsBa2Extractor
+            ?? throw new InvalidOperationException("The archive is not a BA2.");
+        var map = new Dictionary<string, Ba2FileRecord>(
+            extractor.Archive.TotalFiles,
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var file in extractor.Archive.AllFiles)
+        {
+            if (!string.IsNullOrEmpty(file.FullPath))
+            {
+                map[Normalize(file.FullPath)] = file;
+            }
         }
 
         return map;

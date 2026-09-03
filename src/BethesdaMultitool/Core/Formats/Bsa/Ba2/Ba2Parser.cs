@@ -3,6 +3,8 @@
 // libfo76utils/src/ba2file.cpp, https://github.com/fo76utils/fo76utils). Record layouts are the
 // documented BA2 layouts; this code is not derived from any copyleft implementation.
 
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 
@@ -38,13 +40,16 @@ public static class Ba2Parser
 
         var fileCount = (int)header.FileCount;
         var files = new List<Ba2FileRecord>(fileCount);
-        var readRecord = header.Type == Ba2HeaderType.Texture
-            ? (Func<BinaryReader, int, Ba2FileRecord>)ReadTextureRecord
-            : ReadGeneralRecord;
+        // Extensions are four-byte tags and repeat heavily (often every record in an archive is
+        // "nif", "mesh", or "dds"). Decode each distinct tag once instead of allocating a byte[]
+        // and string for every one of hundreds of thousands of records.
+        var extensions = new Dictionary<uint, string>();
 
         for (var i = 0; i < fileCount; i++)
         {
-            files.Add(readRecord(reader, i));
+            files.Add(header.Type == Ba2HeaderType.Texture
+                ? ReadTextureRecord(reader, i, extensions)
+                : ReadGeneralRecord(reader, i, extensions));
         }
 
         if (header.HasNameTable)
@@ -66,24 +71,44 @@ public static class Ba2Parser
         Stream stream, BinaryReader reader, Ba2Header header, List<Ba2FileRecord> files)
     {
         stream.Seek((long)header.NameTableOffset, SeekOrigin.Begin);
-        for (var i = 0; i < files.Count; i++)
+        var nameBuffer = ArrayPool<byte>.Shared.Rent(ushort.MaxValue);
+        try
         {
-            var length = reader.ReadUInt16();
-            var nameBytes = reader.ReadBytes(length);
-            files[i].Name = Encoding.UTF8.GetString(nameBytes).Replace('/', '\\');
+            for (var i = 0; i < files.Count; i++)
+            {
+                var length = reader.ReadUInt16();
+                var nameBytes = nameBuffer.AsSpan(0, length);
+                stream.ReadExactly(nameBytes);
+                for (var byteIndex = 0; byteIndex < nameBytes.Length; byteIndex++)
+                {
+                    if (nameBytes[byteIndex] == (byte)'/')
+                    {
+                        nameBytes[byteIndex] = (byte)'\\';
+                    }
+                }
+
+                files[i].Name = Encoding.UTF8.GetString(nameBytes);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(nameBuffer);
         }
     }
 
     // GNRL record (36 bytes): name hash, extension, dir hash, flags, data offset (u64),
     // packed size, real size, trailing alignment dword.
-    private static Ba2FileRecord ReadGeneralRecord(BinaryReader reader, int index)
+    private static Ba2FileRecord ReadGeneralRecord(
+        BinaryReader reader,
+        int index,
+        Dictionary<uint, string> extensions)
     {
         return new Ba2FileRecord
         {
             Kind = Ba2HeaderType.General,
             Index = index,
             NameHash = reader.ReadUInt32(),
-            Extension = ReadExtension(reader),
+            Extension = ReadExtension(reader, extensions),
             DirHash = reader.ReadUInt32(),
             Flags = reader.ReadUInt32(),
             Offset = reader.ReadUInt64(),
@@ -96,10 +121,13 @@ public static class Ba2Parser
     // DX10 record (24 bytes) followed by ChunkCount × 24-byte chunk records. The two bytes at
     // offset 22-23 are a little-endian flag word: bit 0 (low byte) marks a cubemap; the high byte
     // is the surface tile mode (8 = linear/PC, other values = Xbox-tiled).
-    private static Ba2FileRecord ReadTextureRecord(BinaryReader reader, int index)
+    private static Ba2FileRecord ReadTextureRecord(
+        BinaryReader reader,
+        int index,
+        Dictionary<uint, string> extensions)
     {
         var nameHash = reader.ReadUInt32();
-        var extension = ReadExtension(reader);
+        var extension = ReadExtension(reader, extensions);
         var dirHash = reader.ReadUInt32();
 
         var unknown = reader.ReadByte();
@@ -141,9 +169,25 @@ public static class Ba2Parser
         };
     }
 
-    private static string ReadExtension(BinaryReader reader)
+    private static string ReadExtension(BinaryReader reader, Dictionary<uint, string> extensions)
     {
-        return Encoding.ASCII.GetString(reader.ReadBytes(4)).TrimEnd('\0');
+        var packed = reader.ReadUInt32();
+        if (extensions.TryGetValue(packed, out var extension))
+        {
+            return extension;
+        }
+
+        Span<byte> bytes = stackalloc byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes, packed);
+        var nullIndex = bytes.IndexOf((byte)0);
+        if (nullIndex >= 0)
+        {
+            bytes = bytes[..nullIndex];
+        }
+
+        extension = Encoding.ASCII.GetString(bytes);
+        extensions.Add(packed, extension);
+        return extension;
     }
 
     /// <summary>

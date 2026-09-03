@@ -95,6 +95,33 @@ public sealed class GameFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void ArchiveFileSystem_BoundedEnumeration_ReportsAnIncompletePrefixPage()
+    {
+        var bsa = WriteBsa("family.bsa",
+        [
+            ("meshes\\family\\a.kf", PayloadFor(1)),
+            ("meshes\\family\\b.kf", PayloadFor(2)),
+            ("meshes\\family\\c.kf", PayloadFor(3)),
+            ("textures\\unrelated.dds", PayloadFor(4))
+        ]);
+        using var fs = GameFileSystem.OpenArchive(bsa);
+
+        var truncated = fs.EnumerateFilesBounded("meshes/family/", 2);
+        Assert.Equal(2, truncated.Entries.Count);
+        Assert.True(truncated.IsTruncated);
+        Assert.All(
+            truncated.Entries,
+            entry => Assert.StartsWith(
+                @"meshes\family\",
+                entry.Path,
+                StringComparison.OrdinalIgnoreCase));
+
+        var complete = fs.EnumerateFilesBounded(@"meshes\family\", 3);
+        Assert.Equal(3, complete.Entries.Count);
+        Assert.False(complete.IsTruncated);
+    }
+
+    [Fact]
     public void LooseFileSystem_ReadsAndRejectsEscapes()
     {
         var loose = Path.Combine(_root, "Data");
@@ -112,6 +139,84 @@ public sealed class GameFileSystemTests : IDisposable
         Assert.False(fs.Exists(@"..\Data\textures\loose.dds"));
         Assert.False(fs.Exists(@"C:\Windows\notepad.exe"));
         Assert.Null(fs.TryReadAllBytes(@"..\secrets.txt"));
+    }
+
+    [Fact]
+    public void LooseFileSystem_BoundedRead_RejectsBeforeAllocatingAnOversizedPayload()
+    {
+        var loose = Path.Combine(_root, "Data");
+        Directory.CreateDirectory(Path.Combine(loose, "meshes"));
+        var payload = PayloadFor(17);
+        File.WriteAllBytes(Path.Combine(loose, "meshes", "skeleton.nif"), payload);
+
+        using var fs = new LooseFileSystem(loose);
+        Assert.Null(fs.TryReadAllBytesBounded("meshes/skeleton.nif", payload.Length - 1));
+
+        var read = fs.TryReadAllBytesBounded(@"meshes\skeleton.nif", payload.Length);
+        Assert.NotNull(read);
+        Assert.Equal(payload, read!.Data);
+        Assert.Equal(payload.Length, read.Entry.Size);
+        Assert.Equal(loose, read.Entry.Source);
+    }
+
+    [Fact]
+    public void ArchiveFileSystem_BoundedRead_ChecksCompressedBsaExpandedSize()
+    {
+        const string path = "meshes\\actors\\skeleton.nif";
+        var payload = new byte[4096];
+        var bsa = WriteBsa("compressed-skeleton.bsa", [(path, payload)], compressed: true);
+        using var fs = GameFileSystem.OpenArchive(bsa);
+
+        var storedSize = Assert.IsType<GameFileEntry>(fs.TryStat(path)).Size;
+        Assert.True(storedSize < payload.LongLength);
+        Assert.Null(fs.TryReadAllBytesBounded(path, storedSize));
+
+        var read = fs.TryReadAllBytesBounded(path, payload.LongLength);
+        Assert.NotNull(read);
+        Assert.Equal(payload, read!.Data);
+        Assert.EndsWith(
+            "compressed-skeleton.bsa",
+            read.Entry.Source,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ArchiveFileSystem_BoundedRead_RejectsOversizedBa2RealPayload()
+    {
+        const string path = "meshes\\actors\\skeleton.nif";
+        var payload = PayloadFor(27);
+        var ba2 = Path.Combine(_root, "skeletons.ba2");
+        File.WriteAllBytes(
+            ba2,
+            BethesdaMultitool.Tests.Core.Formats.Bsa.ArchiveReaderTests.BuildGnrlBa2(
+                0x4242,
+                path,
+                payload));
+        using var fs = GameFileSystem.OpenArchive(ba2);
+
+        Assert.Null(fs.TryReadAllBytesBounded(path, payload.Length - 1));
+        var read = fs.TryReadAllBytesBounded(path, payload.Length);
+        Assert.NotNull(read);
+        Assert.Equal(payload, read!.Data);
+        Assert.Equal(payload.Length, read.Entry.Size);
+        Assert.EndsWith("skeletons.ba2", read.Entry.Source, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void LayeredFileSystem_BoundedRead_ReturnsTheActualReadableFallbackSource()
+    {
+        const string path = "meshes\\actors\\skeleton.nif";
+        WriteBsa("aaa.bsa", [(path, new byte[4096])], compressed: true);
+        var fallbackPayload = PayloadFor(37);
+        WriteBsa("bbb.bsa", [(path, fallbackPayload)]);
+
+        using var fs = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        Assert.EndsWith("aaa.bsa", fs.TryStat(path)!.Source, StringComparison.OrdinalIgnoreCase);
+
+        var read = fs.TryReadAllBytesBounded(path, 256);
+        Assert.NotNull(read);
+        Assert.Equal(fallbackPayload, read!.Data);
+        Assert.EndsWith("bbb.bsa", read.Entry.Source, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

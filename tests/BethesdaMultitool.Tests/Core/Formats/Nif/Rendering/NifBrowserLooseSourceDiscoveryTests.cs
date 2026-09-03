@@ -1,5 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -141,6 +143,68 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
             var model = ModelRoot.ReadGLB(stream);
             Assert.NotEmpty(model.LogicalMeshes);
             Assert.Contains(model.LogicalMeshes, mesh => mesh.Primitives.Count > 0);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildViewerScene_LooseDataMeshes_AttachesCanonicalModelFamilyMetadata()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory("nifbrowser_loose_animation_family_").FullName;
+        try
+        {
+            var dataRoot = Directory.CreateDirectory(Path.Combine(tempRoot, "Game", "Data")).FullName;
+            var meshesRoot = Directory.CreateDirectory(Path.Combine(dataRoot, "meshes")).FullName;
+            var familyRoot = Directory.CreateDirectory(
+                Path.Combine(meshesRoot, "characters", "_male")).FullName;
+            var geometryRoot = Directory.CreateDirectory(
+                Path.Combine(dataRoot, "geometries", "test")).FullName;
+            var nifPath = Path.Combine(familyRoot, "body.nif");
+            File.WriteAllBytes(nifPath, BuildStarfieldNif(@"test\triangle"));
+            File.WriteAllBytes(Path.Combine(geometryRoot, "triangle.mesh"), BuildStarfieldMesh());
+            File.WriteAllBytes(Path.Combine(familyRoot, "skeleton.nif"), [2]);
+            File.WriteAllBytes(Path.Combine(familyRoot, "idle.kf"), [3, 4]);
+
+            NifModelFamilyAnimationCatalog? catalog;
+            byte[]? payload;
+            using (var service = NifBrowserService.CreateFromDirectory(meshesRoot))
+            {
+                var nifData = service.ReadNifData(nifPath);
+                Assert.NotNull(nifData);
+
+                var build = service.BuildViewerSceneWithDiagnostics(
+                    nifData!,
+                    "body.nif",
+                    nifPath,
+                    new AlwaysCompatibleRigInspector());
+
+                var scene = Assert.IsType<BethesdaViewerScene>(build.Scene);
+                catalog = scene.ModelFamilyAnimations;
+                var resolved = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
+                var selected = Assert.Single(resolved.Animations);
+                payload = service.ReadModelFamilyAnimationData(selected);
+                var oversized = selected with
+                {
+                    Size = BethesdaViewerKfAnimationBinder.MaximumPayloadBytes + 1
+                };
+                Assert.Throws<InvalidDataException>(() =>
+                    service.ReadModelFamilyAnimationData(oversized));
+            }
+
+            var snapshot = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
+            Assert.Equal(NifModelFamilyAnimationResolutionStatus.Resolved, snapshot.Status);
+            Assert.Equal(@"meshes\characters\_male\body.nif", snapshot.ModelPath);
+            Assert.Equal(@"meshes\characters\_male", snapshot.FamilyRoot);
+            Assert.Equal(@"meshes\characters\_male\skeleton.nif", snapshot.Skeleton?.VirtualPath);
+            Assert.Equal(dataRoot, snapshot.Skeleton?.Source);
+            var animation = Assert.Single(snapshot.Animations);
+            Assert.Equal(@"meshes\characters\_male\idle.kf", animation.VirtualPath);
+            Assert.Equal("idle.kf", animation.RelativePath);
+            Assert.Equal(dataRoot, animation.Source);
+            Assert.Equal(new byte[] { 3, 4 }, payload);
         }
         finally
         {
@@ -303,5 +367,14 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         {
             bytes.AddRange(BitConverter.GetBytes(direction));
         }
+    }
+
+    private sealed class AlwaysCompatibleRigInspector : INifModelFamilyRigInspector
+    {
+        public NifModelFamilyModelRig? InspectModel(byte[] data) =>
+            new(["Bip01"]);
+
+        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data) =>
+            new(["Bip01"]);
     }
 }

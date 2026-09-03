@@ -71,6 +71,8 @@ public sealed class NifConverterTextureArchiveStateSourceContractTests
         Assert.Contains("Scanning archive entries:", code, StringComparison.Ordinal);
         Assert.Contains("Scanning folder:", code, StringComparison.Ordinal);
         Assert.Contains("Building mesh list for", code, StringComparison.Ordinal);
+        Assert.Contains("Finishing related mesh, material, and texture discovery...", code,
+            StringComparison.Ordinal);
         Assert.Contains("_nifViewerSourceLoadingGeneration == sourceGeneration", code,
             StringComparison.Ordinal);
 
@@ -79,9 +81,42 @@ public sealed class NifConverterTextureArchiveStateSourceContractTests
         Assert.Contains("NifViewerSourceLoadPhase.ScanningArchiveEntries", workflow,
             StringComparison.Ordinal);
         Assert.Contains("NifViewerSourceLoadPhase.BuildingTree", workflow, StringComparison.Ordinal);
-        Assert.Contains("Action<NifBrowserScanProgress>? progress", browser, StringComparison.Ordinal);
-        Assert.Contains("new NifBrowserScanProgress(0, files.Count, 0)", browser,
+        Assert.Contains("service.BeginRelatedArchiveDiscovery()", workflow, StringComparison.Ordinal);
+        Assert.Contains("NifViewerSourceLoadPhase.DiscoveringRelatedArchives", workflow,
             StringComparison.Ordinal);
+        Assert.Contains("relatedArchiveDiscovery.WaitAsync(cancellationToken)", workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("Action<NifBrowserScanProgress>? progress", browser, StringComparison.Ordinal);
+        Assert.Contains("new NifBrowserScanProgress(0, totalEntries, 0)", browser,
+            StringComparison.Ordinal);
+        Assert.Contains("_archive.EnumerateFilePaths()", browser, StringComparison.Ordinal);
+        Assert.Contains("DiscoverInDirectoryWithKnownArchive", browser, StringComparison.Ordinal);
+        Assert.DoesNotContain("_archive.ListFiles()", browser, StringComparison.Ordinal);
         Assert.Contains("public void ClearSource()", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ViewerSourceLoadingYieldsForPaint_AndPropagatesCancellationThroughTreeProjection()
+    {
+        var code = SourceContract.ReadAppSource("NifConverterTab.xaml.cs");
+        var workflow = SourceContract.ReadAppSource("NifConverterWorkflowService.cs");
+        var treeItem = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Tabs", "Models", "NifTreeViewItem.cs");
+
+        Assert.Contains("private CancellationTokenSource? _nifViewerSourceLoadCts;", code,
+            StringComparison.Ordinal);
+        Assert.Contains("await Task.Yield();", code, StringComparison.Ordinal);
+        Assert.Contains("catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)",
+            code, StringComparison.Ordinal);
+        Assert.Contains("_nifViewerSourceLoadCts?.Cancel();", code, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken cancellationToken = default", workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("}, cancellationToken);", workflow, StringComparison.Ordinal);
+        Assert.Contains("service.ListNifFiles(scanProgress =>", workflow, StringComparison.Ordinal);
+        Assert.Contains("}, cancellationToken);", workflow, StringComparison.Ordinal);
+        Assert.Contains("NifTreeViewItem.FromTreeEntries(entries, cancellationToken)", workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("cancellationToken.ThrowIfCancellationRequested();", treeItem,
+            StringComparison.Ordinal);
     }
 }

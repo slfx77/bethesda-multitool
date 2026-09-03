@@ -35,6 +35,7 @@ public class Ba2ParserTests
             Assert.Equal("data\\packed.txt", archive.Files[1].FullPath);
             Assert.False(archive.Files[0].Compressed);
             Assert.True(archive.Files[1].Compressed);
+            Assert.Same(archive.Files[0].Extension, archive.Files[1].Extension);
         }
         finally
         {
@@ -309,7 +310,8 @@ public class Ba2ParserTests
 
             // Name table (u16 length + UTF-8 bytes)
             WriteName(bw, "data\\plain.txt");
-            WriteName(bw, "data\\packed.txt");
+            // The parser normalizes archive separators without allocating a second path string.
+            WriteName(bw, "data/packed.txt");
         }
 
         var path = Path.Combine(Path.GetTempPath(), $"ba2test_{Guid.NewGuid():N}.ba2");

@@ -10,9 +10,14 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class Ba2Backend : IArchiveBackend
 {
+    private readonly Lazy<IReadOnlyList<ArchiveEntry>> _files;
+
     public Ba2Backend(Ba2Extractor extractor)
     {
         Extractor = extractor;
+        _files = new Lazy<IReadOnlyList<ArchiveEntry>>(
+            () => Extractor.Archive.Files.Select(ToEntry).ToArray(),
+            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     /// <summary>The backing extractor, for callers that need record-typed extraction.</summary>
@@ -24,9 +29,26 @@ internal sealed class Ba2Backend : IArchiveBackend
 
     public int TotalFiles => Extractor.Archive.TotalFiles;
 
+    /// <summary>
+    ///     Diagnostic seam for proving path-only/read-by-path consumers have not forced the much
+    ///     larger format-neutral entry projection.
+    /// </summary>
+    internal bool HasMaterializedEntryProjection => _files.IsValueCreated;
+
     public IReadOnlyList<ArchiveEntry> ListFiles()
     {
-        return Extractor.Archive.Files.Select(ToEntry).ToList();
+        // ArchiveReader path-only consumers do not force this projection. Once a caller needs full
+        // extraction metadata, retain one immutable projection instead of recreating hundreds of
+        // thousands of wrappers for ListFiles, path indexing, and folder statistics independently.
+        return _files.Value;
+    }
+
+    public IEnumerable<string> EnumerateFilePaths()
+    {
+        foreach (var file in Extractor.Archive.Files)
+        {
+            yield return file.FullPath;
+        }
     }
 
     public byte[] Extract(ArchiveEntry entry)

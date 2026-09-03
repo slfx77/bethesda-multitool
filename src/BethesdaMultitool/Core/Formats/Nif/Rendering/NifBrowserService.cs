@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -27,56 +30,99 @@ internal sealed class NifBrowserService : IDisposable
     private readonly ArchiveReader? _archive;
     private readonly ArchiveLease? _archiveLease;
     private readonly string? _archivePath;
+    private readonly DeferredArchiveSourceSet? _archiveSourceSet;
+    private readonly string[] _eagerTexturePaths;
+    private readonly IGameFileSystem _modelFamilyFiles;
+    private readonly string? _modelFamilyLooseRoot;
     private readonly string? _rootDirectory;
     private readonly SynchronizedLazyDisposable<MeshArchiveSet>? _siblingMeshArchives;
-    private readonly string[] _siblingMeshArchivePaths;
-    private readonly NifTextureResolver _textureResolver;
+    private readonly SynchronizedLazyDisposable<NifTextureResolver> _textureResolver;
 
     private NifBrowserService(
         string? rootDirectory,
         ArchiveLease? archiveLease,
-        NifTextureResolver textureResolver,
         string[] texturePaths,
+        IGameFileSystem modelFamilyFiles,
+        string? modelFamilyLooseRoot,
         string? archivePath = null,
-        string[]? siblingMeshArchivePaths = null)
+        DeferredArchiveSourceSet? archiveSourceSet = null)
     {
         _rootDirectory = rootDirectory;
         _archiveLease = archiveLease;
         _archive = archiveLease?.Reader;
         _archivePath = archivePath;
-        _textureResolver = textureResolver;
-        TexturePaths = texturePaths;
-        _siblingMeshArchivePaths = siblingMeshArchivePaths ?? [];
-        if (_siblingMeshArchivePaths.Length > 0)
+        _archiveSourceSet = archiveSourceSet;
+        _eagerTexturePaths = [.. texturePaths];
+        _textureResolver = new SynchronizedLazyDisposable<NifTextureResolver>(() =>
+        {
+            var resolverPaths = TexturePaths;
+            return resolverPaths.Length > 0
+                ? new NifTextureResolver(resolverPaths)
+                : new NifTextureResolver();
+        });
+        _modelFamilyFiles = modelFamilyFiles;
+        _modelFamilyLooseRoot = modelFamilyLooseRoot;
+        if (_archiveSourceSet is not null)
         {
             _siblingMeshArchives = new SynchronizedLazyDisposable<MeshArchiveSet>(
-                () => MeshArchiveSet.Open(
-                    _siblingMeshArchivePaths[0],
-                    _siblingMeshArchivePaths.Length == 1 ? null : _siblingMeshArchivePaths[1..]));
+                () =>
+                {
+                    var siblingPaths = _archiveSourceSet.Get().SiblingMeshArchivePaths;
+                    if (siblingPaths.Length == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "A sibling mesh archive set was requested when discovery found none.");
+                    }
+
+                    return MeshArchiveSet.Open(
+                        siblingPaths[0],
+                        siblingPaths.Length == 1 ? null : siblingPaths[1..]);
+                });
         }
     }
 
     public bool IsBsaMode => _archive != null;
 
     /// <summary>
-    ///     Texture sources actually in use (either caller-supplied or auto-detected).
+    ///     Ordered texture sources configured for this browser (caller-supplied first, then
+    ///     auto-detected). Paths remain metadata until a model/render/export path first borrows the
+    ///     lazily owned resolver.
     /// </summary>
-    internal string[] TexturePaths { get; }
+    internal string[] TexturePaths =>
+        _archiveSourceSet?.Get().TexturePaths ?? _eagerTexturePaths;
 
     /// <summary>
     ///     Deterministic external-geometry search order. The archive explicitly opened by the user is
     ///     always first; content-discovered siblings follow in ordinal-ignore-case path order with
     ///     an ordinal tie-breaker.
     /// </summary>
-    internal IReadOnlyList<string> ExternalMeshArchivePaths => _archivePath is null
-        ? _siblingMeshArchivePaths
-        : [_archivePath, .. _siblingMeshArchivePaths];
+    internal IReadOnlyList<string> ExternalMeshArchivePaths
+    {
+        get
+        {
+            var siblingPaths = _archiveSourceSet?.Get().SiblingMeshArchivePaths ?? [];
+            return _archivePath is null
+                ? siblingPaths
+                : [_archivePath, .. siblingPaths];
+        }
+    }
+
+    /// <summary>
+    ///     Starts archive sibling classification without waiting for it. The source-loading workflow
+    ///     uses this to overlap cold GNRL name-table I/O with selected-archive NIF enumeration; all
+    ///     consumers still join the same task before observing paths or resolving an asset.
+    /// </summary>
+    internal Task BeginRelatedArchiveDiscovery() =>
+        _archiveSourceSet?.Begin() ?? Task.CompletedTask;
 
     public void Dispose()
     {
+        // A modern extraction can borrow the resolver while its external-mesh callback reads the
+        // selected/sibling archives. Close the synchronized use gate before releasing those owners.
+        _textureResolver.Dispose();
+        _modelFamilyFiles.Dispose();
         _siblingMeshArchives?.Dispose();
         _archiveLease?.Dispose();
-        _textureResolver.Dispose();
     }
 
     /// <summary>
@@ -87,11 +133,26 @@ internal sealed class NifBrowserService : IDisposable
     /// </summary>
     internal static NifBrowserService CreateFromDirectory(string rootDir, string[]? texturePaths = null)
     {
+        rootDir = Path.GetFullPath(rootDir);
         texturePaths = MergeTextureSources(texturePaths, DiscoverTextureSources(rootDir));
-        var resolver = texturePaths.Length > 0
-            ? new NifTextureResolver(texturePaths)
-            : new NifTextureResolver();
-        return new NifBrowserService(rootDir, null, resolver, texturePaths);
+        var modelFamilyLooseRoot = FindModelFamilyLooseRoot(rootDir);
+        IGameFileSystem modelFamilyFiles = new DeferredGameFileSystem(
+            $"model-family:{modelFamilyLooseRoot}",
+            () => CreateDirectoryModelFamilyFileSystem(modelFamilyLooseRoot));
+        try
+        {
+            return new NifBrowserService(
+                rootDir,
+                null,
+                texturePaths,
+                modelFamilyFiles,
+                modelFamilyLooseRoot);
+        }
+        catch
+        {
+            modelFamilyFiles.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -107,33 +168,38 @@ internal sealed class NifBrowserService : IDisposable
         // Shared handle: the browser is long-lived and read-only, and its meshes archive often
         // overlaps what the 3D viewer / extractor tab already hold open.
         var archiveLease = ArchiveHandleRegistry.Shared.Acquire(archivePath);
-        NifTextureResolver? resolver = null;
+        IGameFileSystem? modelFamilyFiles = null;
         try
         {
-            var discovery = DiscoverSiblingArchives(archivePath);
-            var siblingMeshArchivePaths = discovery.MeshesBsaPaths
-                .Select(Path.GetFullPath)
-                .Where(path => !string.Equals(path, archivePath, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(path => path, StringComparer.Ordinal)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            texturePaths = MergeTextureSources(texturePaths, discovery.TexturesBsaPaths);
-            resolver = texturePaths.Length > 0
-                ? new NifTextureResolver(texturePaths)
-                : new NifTextureResolver();
+            // The selected archive is already fully parsed by the shared lease. Classify its parsed
+            // paths once, then let deferred directory discovery trust those flags instead of
+            // streaming a large GNRL BA2 name table from disk a second time.
+            var selectedContent = ClassifyOpenArchiveContent(archiveLease.Reader);
+            var preferredTexturePaths = texturePaths?.ToArray() ?? [];
+            var archiveSourceSet = new DeferredArchiveSourceSet(() =>
+                DiscoverArchiveSourceSet(
+                    archivePath,
+                    preferredTexturePaths,
+                    selectedContent.Meshes,
+                    selectedContent.Textures));
+            modelFamilyFiles = new DeferredGameFileSystem(
+                $"model-family:{archivePath}",
+                () => CreateArchiveModelFamilyFileSystem(
+                    archivePath,
+                    archiveSourceSet.Get().SiblingMeshArchivePaths));
             return new NifBrowserService(
                 null,
                 archiveLease,
-                resolver,
-                texturePaths,
+                preferredTexturePaths,
+                modelFamilyFiles,
+                null,
                 archivePath,
-                siblingMeshArchivePaths);
+                archiveSourceSet);
         }
         catch
         {
-            // A failed source-set or texture-resolver open must not strand shared registry leases.
-            resolver?.Dispose();
+            // A failed source-set open must not strand the selected archive's shared registry lease.
+            modelFamilyFiles?.Dispose();
             archiveLease.Dispose();
             throw;
         }
@@ -142,16 +208,23 @@ internal sealed class NifBrowserService : IDisposable
     /// <summary>
     ///     List all NIF files available for browsing.
     /// </summary>
-    internal List<NifTreeEntry> ListNifFiles(Action<NifBrowserScanProgress>? progress = null)
+    internal List<NifTreeEntry> ListNifFiles(
+        Action<NifBrowserScanProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_archive != null)
         {
-            return ListNifFilesFromArchive(_archive.ListFiles(), progress);
+            return ListNifFilesFromArchive(
+                _archive.EnumerateFilePaths(),
+                _archive.TotalFiles,
+                progress,
+                cancellationToken);
         }
 
         if (_rootDirectory != null)
         {
-            return ListNifFilesFromDirectory(_rootDirectory, progress);
+            return ListNifFilesFromDirectory(_rootDirectory, progress, cancellationToken);
         }
 
         return [];
@@ -226,7 +299,9 @@ internal sealed class NifBrowserService : IDisposable
     /// </summary>
     internal NifBrowserViewerSceneBuildResult BuildViewerSceneWithDiagnostics(
         byte[] nifData,
-        string sourceLabel)
+        string sourceLabel,
+        string? sourcePath = null,
+        INifModelFamilyRigInspector? modelFamilyRigInspector = null)
     {
         var externalGeometryResolutions = new List<NifExternalGeometryResolution>();
         var externalGeometryDecodeFailures = new List<string>();
@@ -237,6 +312,100 @@ internal sealed class NifBrowserService : IDisposable
             byte[]? parsedData = null,
             NifInfo? parsedNif = null)
         {
+            NifModelFamilyAnimationCatalog? modelFamilyAnimations = null;
+            if (exportScene is not null && parsedData is not null && parsedNif is not null)
+            {
+                try
+                {
+                    modelFamilyAnimations = modelFamilyRigInspector is null
+                        ? ResolveModelFamilyAnimations(sourcePath ?? sourceLabel, parsedData)
+                        : ResolveModelFamilyAnimations(
+                            sourcePath ?? sourceLabel,
+                            parsedData,
+                            modelFamilyRigInspector);
+
+                    // A custom rig inspector is a path/VFS test seam whose synthetic skeleton bytes
+                    // are not necessarily parseable NIFs. Production discovery always uses the real
+                    // inspector and must install the selected canonical rest graph before any KF can
+                    // bind to this scene.
+                    if (modelFamilyRigInspector is null &&
+                        modelFamilyAnimations.Skeleton is { } skeleton)
+                    {
+                        if (!TryReadModelFamilySkeletonData(
+                                skeleton,
+                                out var skeletonData,
+                                out var skeletonReadDiagnostic))
+                        {
+                            modelFamilyAnimations = WithholdModelFamilyAnimations(
+                                modelFamilyAnimations,
+                                skeletonReadDiagnostic);
+                            Log.Warn(
+                                "NifBrowserService: canonical rig for '{0}' was not applied: {1}",
+                                sourcePath ?? sourceLabel,
+                                skeletonReadDiagnostic);
+                        }
+                        else if (!BethesdaViewerExternalSkeletonRigAdapter.TryApply(
+                                     exportScene,
+                                     skeletonData!,
+                                     out var reboundScene,
+                                     out var rigDiagnostic))
+                        {
+                            // Keep the raw model viewable in its authored static state, but expose no
+                            // standalone KF that could animate its flattened/ambiguous bone stubs.
+                            modelFamilyAnimations = WithholdModelFamilyAnimations(
+                                modelFamilyAnimations,
+                                rigDiagnostic);
+                            Log.Warn(
+                                "NifBrowserService: canonical rig for '{0}' was rejected: {1}",
+                                sourcePath ?? sourceLabel,
+                                rigDiagnostic);
+                        }
+                        else
+                        {
+                            exportScene = reboundScene;
+                            Log.Info(
+                                "NifBrowserService: canonical rig for '{0}' applied: {1}",
+                                sourcePath ?? sourceLabel,
+                                rigDiagnostic);
+
+                            if (TryAttachModelFamilyRigidHead(
+                                    reboundScene,
+                                    modelFamilyAnimations.ModelPath,
+                                    out var assembledScene,
+                                    out var siblingDiagnostic))
+                            {
+                                exportScene = assembledScene;
+                                Log.Info(
+                                    "NifBrowserService: rigid model-family sibling for '{0}' applied: {1}",
+                                    sourcePath ?? sourceLabel,
+                                    siblingDiagnostic);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(siblingDiagnostic))
+                            {
+                                // The canonical body rig remains valid and its KFs remain safe to
+                                // expose. A malformed optional rigid sibling must not undo that work.
+                                Log.Warn(
+                                    "NifBrowserService: rigid model-family sibling for '{0}' was ignored: {1}",
+                                    sourcePath ?? sourceLabel,
+                                    siblingDiagnostic);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and
+                                           not StackOverflowException and
+                                           not OperationCanceledException)
+                {
+                    // External animation discovery/application is optional presentation data. It
+                    // must not turn a renderable raw model into a failed Mesh Viewer load.
+                    Log.Warn(
+                        "NifBrowserService: model-family animation setup for '{0}' was ignored: {1}",
+                        sourcePath ?? sourceLabel,
+                        ex.Message);
+                    modelFamilyAnimations = null;
+                }
+            }
+
             var viewerScene = exportScene is null
                 ? null
                 : BethesdaViewerSceneGlbAdapter.FromGlbScene(
@@ -247,6 +416,11 @@ internal sealed class NifBrowserService : IDisposable
                     textureSourcePaths: TexturePaths);
             if (viewerScene is not null && parsedData is not null && parsedNif is not null)
             {
+                if (modelFamilyAnimations is not null)
+                {
+                    viewerScene.SetModelFamilyAnimations(modelFamilyAnimations);
+                }
+
                 NifMeshAnimation? animation = null;
                 try
                 {
@@ -302,6 +476,18 @@ internal sealed class NifBrowserService : IDisposable
                         {
                             viewerScene.AnimationClips.Add(clip);
                         }
+
+                        // Keep the ambient/text-key-selected Embedded Idle first. A compatible
+                        // TES3 CYCLE_REVERSE graph additionally exposes its complete controller
+                        // window so the native viewer can seek the authored forward/backward pass.
+                        var controllerCycleClip =
+                            BethesdaViewerNifAnimationAdapter.TryCreateFullControllerCycleClip(
+                                viewerScene,
+                                animation);
+                        if (controllerCycleClip is not null)
+                        {
+                            viewerScene.AnimationClips.Add(controllerCycleClip);
+                        }
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException and
                                                not StackOverflowException and
@@ -354,12 +540,13 @@ internal sealed class NifBrowserService : IDisposable
         GlbScene? scene;
         if (nif.Blocks.Any(block => NifSceneGraphWalker.SelfContainedShapeTypes.Contains(block.TypeName)))
         {
-            var model = NifGeometryExtractor.Extract(
-                data,
-                nif,
-                _textureResolver,
-                externalMeshLoader: LoadExternalGeometry,
-                onExternalMeshDecodeFailure: RecordExternalGeometryDecodeFailure);
+            var model = _textureResolver.Use(textureResolver =>
+                NifGeometryExtractor.Extract(
+                    data,
+                    nif,
+                    textureResolver,
+                    externalMeshLoader: LoadExternalGeometry,
+                    onExternalMeshDecodeFailure: RecordExternalGeometryDecodeFailure));
             if (model is not null)
             {
                 AddStarfieldNormalMapRequests(model);
@@ -394,6 +581,259 @@ internal sealed class NifBrowserService : IDisposable
     }
 
     /// <summary>
+    ///     Resolves a selected NIF's canonical external skeleton and bounded KF family through the
+    ///     browser-owned VFS. The returned catalog is metadata only; it contains no archive reader,
+    ///     lease, stream, or payload delegate and remains safe to snapshot onto a viewer scene.
+    /// </summary>
+    internal NifModelFamilyAnimationCatalog ResolveModelFamilyAnimations(
+        string modelPath,
+        byte[] modelData)
+    {
+        return NifModelFamilyAnimationResolver.Resolve(
+            _modelFamilyFiles,
+            ToModelFamilyVirtualPath(modelPath),
+            modelData);
+    }
+
+    /// <summary>Test seam for path/VFS wiring without manufacturing a binary skinned NIF.</summary>
+    internal NifModelFamilyAnimationCatalog ResolveModelFamilyAnimations(
+        string modelPath,
+        byte[] modelData,
+        INifModelFamilyRigInspector rigInspector)
+    {
+        return NifModelFamilyAnimationResolver.Resolve(
+            _modelFamilyFiles,
+            ToModelFamilyVirtualPath(modelPath),
+            modelData,
+            rigInspector);
+    }
+
+    private bool TryReadModelFamilySkeletonData(
+        NifModelFamilySkeletonAsset asset,
+        out byte[]? data,
+        out string diagnostic)
+    {
+        data = null;
+        diagnostic = string.Empty;
+        if (!IsSafeModelFamilyVirtualPath(asset.VirtualPath, ".nif") ||
+            string.IsNullOrWhiteSpace(asset.Source) ||
+            asset.Size < 0 ||
+            asset.Size > NifModelFamilyAnimationResolver.MaximumSkeletonPayloadBytes)
+        {
+            diagnostic = "The canonical skeleton catalog entry violates its path/size safety contract.";
+            return false;
+        }
+
+        var current = _modelFamilyFiles.TryReadAllBytesBounded(
+            asset.VirtualPath,
+            NifModelFamilyAnimationResolver.MaximumSkeletonPayloadBytes);
+        if (current is null)
+        {
+            diagnostic = "The canonical skeleton is no longer readable from the model-family source.";
+            return false;
+        }
+
+        if (!string.Equals(current.Entry.Path, asset.VirtualPath, StringComparison.OrdinalIgnoreCase) ||
+            current.Entry.Size != asset.Size ||
+            !string.Equals(current.Entry.Source, asset.Source, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostic =
+                "The canonical skeleton's path, size, or winning source changed during scene assembly.";
+            return false;
+        }
+
+        data = current.Data;
+        return true;
+    }
+
+    /// <summary>
+    ///     Adds the exact classic creature <c>*head.nif</c> sibling after the canonical external
+    ///     skeleton has been installed. Absence is normal; presence plus an invalid/ambiguous rigid
+    ///     hierarchy fails closed and leaves <paramref name="riggedScene" /> untouched.
+    /// </summary>
+    private bool TryAttachModelFamilyRigidHead(
+        GlbScene riggedScene,
+        string modelPath,
+        out GlbScene result,
+        out string? diagnostic)
+    {
+        result = riggedScene;
+        diagnostic = null;
+        if (!BethesdaViewerRigidSiblingAssembler.TryResolveHeadSibling(
+                modelPath,
+                out var siblingPath,
+                out var targetNodeName))
+        {
+            return false;
+        }
+
+        try
+        {
+            var entry = _modelFamilyFiles.TryStat(siblingPath);
+            if (entry is null)
+            {
+                return false;
+            }
+
+            if (entry.Size < 0 || entry.Size > BethesdaViewerRigidSiblingAssembler.MaximumPayloadBytes)
+            {
+                diagnostic =
+                    $"Exact sibling '{siblingPath}' exceeds the bounded rigid-attachment payload contract.";
+                return false;
+            }
+
+            var current = _modelFamilyFiles.TryReadAllBytesBounded(
+                siblingPath,
+                BethesdaViewerRigidSiblingAssembler.MaximumPayloadBytes);
+            if (current is null ||
+                !string.Equals(current.Entry.Path, siblingPath, StringComparison.OrdinalIgnoreCase) ||
+                current.Entry.Size != entry.Size ||
+                !string.Equals(current.Entry.Source, entry.Source, StringComparison.OrdinalIgnoreCase))
+            {
+                diagnostic = $"Exact sibling '{siblingPath}' changed or became unreadable during scene assembly.";
+                return false;
+            }
+
+            var (siblingData, siblingNif) = ParseAndConvert(current.Data);
+            if (siblingNif is null)
+            {
+                diagnostic = $"Exact sibling '{siblingPath}' is not a readable NIF.";
+                return false;
+            }
+
+            var siblingScene = NifExportSceneBuilder.Build(siblingData, siblingNif, siblingPath);
+            if (siblingScene is null)
+            {
+                diagnostic = $"Exact sibling '{siblingPath}' contains no supported renderable parts.";
+                return false;
+            }
+
+            var attached = BethesdaViewerRigidSiblingAssembler.TryAttach(
+                riggedScene,
+                siblingScene,
+                siblingPath,
+                targetNodeName,
+                out result,
+                out var attachDiagnostic);
+            diagnostic = attachDiagnostic;
+            return attached;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and
+                                   not StackOverflowException and
+                                   not OperationCanceledException)
+        {
+            result = riggedScene;
+            diagnostic = $"Exact sibling '{siblingPath}' could not be assembled ({ex.GetType().Name}).";
+            return false;
+        }
+    }
+
+    private static NifModelFamilyAnimationCatalog WithholdModelFamilyAnimations(
+        NifModelFamilyAnimationCatalog catalog,
+        string diagnostic)
+    {
+        var combinedDiagnostic = string.IsNullOrWhiteSpace(catalog.Diagnostic)
+            ? diagnostic
+            : catalog.Diagnostic + " " + diagnostic;
+        return catalog with
+        {
+            Animations = [],
+            Diagnostic = combinedDiagnostic +
+                         " Standalone KF playback was withheld; the raw model remains viewable."
+        };
+    }
+
+    /// <summary>
+    ///     Lazily reads one catalog-selected KF while preserving the catalog's winning source.
+    ///     Metadata is revalidated before payload access, and both loose/archive paths enforce the
+    ///     viewer's strict 64 MiB stored/decompressed allocation bound before parsing.
+    /// </summary>
+    internal byte[] ReadModelFamilyAnimationData(
+        NifModelFamilyAnimationAsset asset,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsSafeKfVirtualPath(asset.VirtualPath) ||
+            string.IsNullOrWhiteSpace(asset.Source) ||
+            asset.Size < 0 ||
+            asset.Size > BethesdaViewerKfAnimationBinder.MaximumPayloadBytes)
+        {
+            throw new InvalidDataException(
+                "The selected KF catalog entry violates the 64 MiB path/size safety contract.");
+        }
+
+        var current = _modelFamilyFiles.TryStat(asset.VirtualPath) ??
+                      throw new FileNotFoundException(
+                          "The selected KF is no longer present in the current model-family source.",
+                          asset.VirtualPath);
+        if (current.Size != asset.Size ||
+            !string.Equals(current.Source, asset.Source, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "The selected KF's size or winning source changed after its catalog was published; " +
+                "reload the model before trying again.");
+        }
+
+        if (current.Size > BethesdaViewerKfAnimationBinder.MaximumPayloadBytes)
+        {
+            throw new InvalidDataException("KF exceeds the 64 MiB safety limit.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        byte[] data;
+        var isLooseSource = _modelFamilyLooseRoot is not null &&
+                            string.Equals(
+                                current.Source,
+                                _modelFamilyLooseRoot,
+                                StringComparison.OrdinalIgnoreCase);
+        if (isLooseSource)
+        {
+            data = ReadBoundedLooseModelFamilyFile(
+                current.Path,
+                BethesdaViewerKfAnimationBinder.MaximumPayloadBytes);
+        }
+        else
+        {
+            if (!File.Exists(current.Source))
+            {
+                throw new FileNotFoundException(
+                    "The archive containing the selected KF is no longer available.",
+                    current.Source);
+            }
+
+            using var archiveLease = ArchiveHandleRegistry.Shared.Acquire(current.Source);
+            var archiveEntry = archiveLease.Reader.FindEntry(current.Path) ??
+                               throw new FileNotFoundException(
+                                   "The selected KF is no longer present in its catalogued archive.",
+                                   current.Path);
+            if (archiveEntry.Size != current.Size)
+            {
+                throw new InvalidDataException(
+                    "The selected KF's archive metadata changed after its catalog was published; " +
+                    "reload the model before trying again.");
+            }
+
+            data = archiveLease.Reader.ExtractBounded(
+                archiveEntry,
+                BethesdaViewerKfAnimationBinder.MaximumPayloadBytes);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (data.LongLength != current.Size &&
+            // Classic BSA catalog sizes describe stored bytes (and may include an embedded name),
+            // so exact extracted length is unavailable until the bounded read has completed.
+            (isLooseSource ||
+             !string.Equals(Path.GetExtension(current.Source), ".bsa", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidDataException(
+                "The selected KF's extracted size no longer matches its catalog metadata.");
+        }
+
+        return data;
+    }
+
+    /// <summary>
     ///     Export-only projection of a native viewer scene. Animation channels unsupported by the
     ///     legacy GLB DTO remain native; static node, mesh, material, and skin state is handed to the
     ///     existing GLB writer unchanged.
@@ -401,9 +841,10 @@ internal sealed class NifBrowserService : IDisposable
     internal byte[] ExportViewerSceneToGlb(BethesdaViewerScene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        return GlbWriter.WriteToBytes(
-            BethesdaViewerSceneGlbAdapter.ToGlbScene(scene),
-            _textureResolver);
+        return _textureResolver.Use(textureResolver =>
+            GlbWriter.WriteToBytes(
+                BethesdaViewerSceneGlbAdapter.ToGlbScene(scene),
+                textureResolver));
     }
 
     /// <summary>
@@ -431,26 +872,29 @@ internal sealed class NifBrowserService : IDisposable
         var (data, nif) = ParseAndConvert(nifData);
         if (nif == null) return null;
 
-        var model = NifGeometryExtractor.Extract(
-            data,
-            nif,
-            _textureResolver,
-            externalMeshLoader: ReadExternalGeometryBlob);
-        if (model == null || !model.HasGeometry) return null;
-        AddStarfieldNormalMapRequests(model);
+        return _textureResolver.Use(textureResolver =>
+        {
+            var model = NifGeometryExtractor.Extract(
+                data,
+                nif,
+                textureResolver,
+                externalMeshLoader: ReadExternalGeometryBlob);
+            if (model == null || !model.HasGeometry) return null;
+            AddStarfieldNormalMapRequests(model);
 
-        var result = NifSpriteRenderer.Render(
-            model,
-            _textureResolver,
-            1.0f,
-            32,
-            spriteSize,
-            azimuth,
-            elevation,
-            spriteSize);
-        if (result == null) return null;
+            var result = NifSpriteRenderer.Render(
+                model,
+                textureResolver,
+                1.0f,
+                32,
+                spriteSize,
+                azimuth,
+                elevation,
+                spriteSize);
+            if (result == null) return null;
 
-        return PngWriter.EncodeRgba(result.Pixels, result.Width, result.Height);
+            return PngWriter.EncodeRgba(result.Pixels, result.Width, result.Height);
+        });
     }
 
     /// <summary>
@@ -499,7 +943,8 @@ internal sealed class NifBrowserService : IDisposable
             // Most Starfield blobs are beside their NIF in the opened archive. Build/index sibling
             // archives only after that fast path misses, so FO76/classic browsing pays no extra open
             // cost and single-archive Starfield meshes do not acquire unnecessary leases.
-            if (_siblingMeshArchives is not null)
+            var siblingPaths = _archiveSourceSet?.Get().SiblingMeshArchivePaths ?? [];
+            if (siblingPaths.Length > 0 && _siblingMeshArchives is not null)
             {
                 var sibling = _siblingMeshArchives.Use(archives =>
                 {
@@ -575,17 +1020,324 @@ internal sealed class NifBrowserService : IDisposable
 
     #region Private Helpers
 
+    private sealed record ArchiveSourceSet(
+        string[] TexturePaths,
+        string[] SiblingMeshArchivePaths);
+
+    /// <summary>
+    ///     Single-flight owner for the only part of archive source opening that must inspect every
+    ///     sibling GNRL name table. Callers can start the work for overlap or synchronously join it
+    ///     on first texture/source metadata access or a selected-archive geometry miss.
+    /// </summary>
+    private sealed class DeferredArchiveSourceSet
+    {
+        private readonly Lazy<Task<ArchiveSourceSet>> _discovery;
+
+        internal DeferredArchiveSourceSet(Func<ArchiveSourceSet> factory)
+        {
+            ArgumentNullException.ThrowIfNull(factory);
+            _discovery = new Lazy<Task<ArchiveSourceSet>>(
+                () => StartObserved(factory),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        internal Task Begin() => _discovery.Value;
+
+        internal ArchiveSourceSet Get() =>
+            _discovery.Value.GetAwaiter().GetResult();
+
+        private static Task<ArchiveSourceSet> StartObserved(Func<ArchiveSourceSet> factory)
+        {
+            var task = Task.Run(factory);
+            _ = task.ContinueWith(
+                static completed => _ = completed.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return task;
+        }
+    }
+
+    /// <summary>
+    ///     Delays both loose/archive family mount construction and archive discovery until the
+    ///     resolver actually touches the VFS. In particular, an invalid or unskinned NIF returns
+    ///     after rig inspection without opening or enumerating any sibling animation source.
+    /// </summary>
+    private sealed class DeferredGameFileSystem : IGameFileSystem
+    {
+        private readonly SynchronizedLazyDisposable<IGameFileSystem> _files;
+
+        internal DeferredGameFileSystem(string label, Func<IGameFileSystem> factory)
+        {
+            Label = label;
+            _files = new SynchronizedLazyDisposable<IGameFileSystem>(factory);
+        }
+
+        public string Label { get; }
+
+        public bool Exists(string path) => _files.Use(files => files.Exists(path));
+
+        public GameFileEntry? TryStat(string path) => _files.Use(files => files.TryStat(path));
+
+        public byte[]? TryReadAllBytes(string path) =>
+            _files.Use(files => files.TryReadAllBytes(path));
+
+        public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes) =>
+            _files.Use(files => files.TryReadAllBytesBounded(path, maximumBytes));
+
+        public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
+        {
+            // Materialize while the synchronized owner is held: returning a provider's lazy
+            // iterator would let browser disposal race archive enumeration outside the gate.
+            return _files.Use(files => files.EnumerateFiles(prefix).ToArray());
+        }
+
+        public GameFileEnumerationPage EnumerateFilesBounded(
+            string? prefix,
+            int maximumEntries) =>
+            _files.Use(files => files.EnumerateFilesBounded(prefix, maximumEntries));
+
+        public void Dispose() => _files.Dispose();
+    }
+
+    /// <summary>
+    ///     Mounts loose assets first, followed by content-classified mesh archives. Archive layers
+    ///     are lazy and registry-backed: opening a folder does not parse them, and a later KF lookup
+    ///     shares handles with every other browser/render pipeline using the same archive.
+    /// </summary>
+    private static IGameFileSystem CreateDirectoryModelFamilyFileSystem(string looseRoot)
+    {
+        var layers = new List<IGameFileSystem> { new LooseFileSystem(looseRoot) };
+        var archivePaths = BsaDiscovery.DiscoverInDirectory(looseRoot).MeshesBsaPaths
+            .Select(Path.GetFullPath)
+            .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static path => path, StringComparer.Ordinal)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var archivePath in archivePaths)
+        {
+            layers.Add(ArchiveFileSystem.CreateLazy(archivePath, ArchiveHandleRegistry.Shared));
+        }
+
+        return layers.Count == 1
+            ? layers[0]
+            : new LayeredGameFileSystem(layers);
+    }
+
+    private byte[] ReadBoundedLooseModelFamilyFile(string virtualPath, long maximumBytes)
+    {
+        var normalized = VfsPath.Normalize(virtualPath);
+        if (_modelFamilyLooseRoot is null ||
+            !IsSafeKfVirtualPath(normalized))
+        {
+            throw new InvalidDataException("The selected KF path is not a safe loose-file path.");
+        }
+
+        var osRelative = Path.DirectorySeparatorChar == '\\'
+            ? normalized
+            : normalized.Replace('\\', Path.DirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(_modelFamilyLooseRoot, osRelative));
+        var relativeCheck = Path.GetRelativePath(_modelFamilyLooseRoot, fullPath);
+        if (Path.IsPathRooted(relativeCheck) ||
+            relativeCheck.Equals("..", StringComparison.Ordinal) ||
+            relativeCheck.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The selected KF path escapes the loose asset root.");
+        }
+
+        using var stream = new FileStream(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            options: FileOptions.SequentialScan);
+        var length = stream.Length;
+        if (length < 0 || length > maximumBytes)
+        {
+            throw new InvalidDataException("KF exceeds the 64 MiB safety limit.");
+        }
+
+        var data = new byte[checked((int)length)];
+        stream.ReadExactly(data);
+        if (stream.Length != length)
+        {
+            throw new InvalidDataException("KF changed while it was being read.");
+        }
+
+        return data;
+    }
+
+    private static bool IsSafeKfVirtualPath(string path)
+    {
+        return IsSafeModelFamilyVirtualPath(path, ".kf");
+    }
+
+    private static bool IsSafeModelFamilyVirtualPath(string path, string extension)
+    {
+        var normalized = VfsPath.Normalize(path);
+        return normalized.Length is > 0 and <= 4096 &&
+               !Path.IsPathRooted(normalized) &&
+               normalized.EndsWith(extension, StringComparison.OrdinalIgnoreCase) &&
+               normalized.Split('\\').Length <= 256 &&
+               normalized.Split('\\').All(static segment =>
+                   segment.Length > 0 &&
+                   segment is not "." and not ".." &&
+                   !segment.Contains(':') &&
+                   !segment.Contains('\0'));
+    }
+
+    /// <summary>
+    ///     Mounts the archive explicitly selected by the user first, then deterministic sibling mesh
+    ///     archives. Every layer acquires its own shared lease lazily; the browser owns and disposes
+    ///     the layered VFS, while viewer scenes receive metadata snapshots only.
+    /// </summary>
+    private static IGameFileSystem CreateArchiveModelFamilyFileSystem(
+        string archivePath,
+        IReadOnlyList<string> siblingMeshArchivePaths)
+    {
+        var layers = new List<IGameFileSystem>(siblingMeshArchivePaths.Count + 1)
+        {
+            ArchiveFileSystem.CreateLazy(archivePath, ArchiveHandleRegistry.Shared)
+        };
+        foreach (var siblingPath in siblingMeshArchivePaths)
+        {
+            layers.Add(ArchiveFileSystem.CreateLazy(siblingPath, ArchiveHandleRegistry.Shared));
+        }
+
+        return layers.Count == 1
+            ? layers[0]
+            : new LayeredGameFileSystem(layers);
+    }
+
+    /// <summary>
+    ///     Chooses the root against which canonical Data-relative model-family paths are expressed.
+    ///     A selected <c>Data\meshes</c> subtree is rebased to Data so loose and archive paths share
+    ///     the same <c>meshes\...</c> identity. Arbitrary extracted folders retain their own root.
+    /// </summary>
+    private static string FindModelFamilyLooseRoot(string selectedRoot)
+    {
+        selectedRoot = Path.GetFullPath(selectedRoot);
+        var dataChild = Path.Combine(selectedRoot, "Data");
+        if (Directory.Exists(Path.Combine(dataChild, "meshes")))
+        {
+            return dataChild;
+        }
+
+        for (var current = new DirectoryInfo(selectedRoot); current is not null; current = current.Parent)
+        {
+            if (string.Equals(current.Name, "meshes", StringComparison.OrdinalIgnoreCase) &&
+                current.Parent is { } dataRoot)
+            {
+                return dataRoot.FullName;
+            }
+        }
+
+        return selectedRoot;
+    }
+
+    private string ToModelFamilyVirtualPath(string modelPath)
+    {
+        if (_modelFamilyLooseRoot is null)
+        {
+            return VfsPath.Normalize(modelPath);
+        }
+
+        try
+        {
+            var fullPath = Path.IsPathRooted(modelPath)
+                ? Path.GetFullPath(modelPath)
+                : Path.GetFullPath(Path.Combine(_rootDirectory ?? _modelFamilyLooseRoot, modelPath));
+            return VfsPath.Normalize(Path.GetRelativePath(_modelFamilyLooseRoot, fullPath));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            // Let NifModelFamilyAnimationResolver return its precise InvalidModelPath diagnostic.
+            return modelPath;
+        }
+    }
+
     /// <summary>
     ///     Content-classifies sibling archives once so texture/material sources and external-geometry
     ///     fallback archives share the same discovery result. Filename matching is deliberately not
     ///     used: a combined <c>&lt;Mod&gt; - Main.bsa</c> may contribute to both sets.
     /// </summary>
-    private static BsaDiscoveryResult DiscoverSiblingArchives(string bsaPath)
+    private static BsaDiscoveryResult DiscoverSiblingArchives(
+        string bsaPath,
+        bool selectedHasMeshes,
+        bool selectedHasTextures)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(bsaPath));
         if (dir == null) return BsaDiscoveryResult.Empty;
 
-        return BsaDiscovery.DiscoverInDirectory(dir);
+        return BsaDiscovery.DiscoverInDirectoryWithKnownArchive(
+            dir,
+            bsaPath,
+            selectedHasMeshes,
+            selectedHasTextures);
+    }
+
+    private static ArchiveSourceSet DiscoverArchiveSourceSet(
+        string archivePath,
+        IReadOnlyList<string> preferredTexturePaths,
+        bool selectedHasMeshes,
+        bool selectedHasTextures)
+    {
+        var discovery = DiscoverSiblingArchives(
+            archivePath,
+            selectedHasMeshes,
+            selectedHasTextures);
+        var siblingMeshArchivePaths = discovery.MeshesBsaPaths
+            .Select(Path.GetFullPath)
+            .Where(path => !string.Equals(path, archivePath, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(path => path, StringComparer.Ordinal)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var texturePaths = MergeTextureSources(preferredTexturePaths, discovery.TexturesBsaPaths);
+        return new ArchiveSourceSet(texturePaths, siblingMeshArchivePaths);
+    }
+
+    private static (bool Meshes, bool Textures) ClassifyOpenArchiveContent(ArchiveReader archive)
+    {
+        if (archive.Ba2?.Header.Type == Ba2HeaderType.Texture)
+        {
+            return (false, true);
+        }
+
+        if (archive.Bsa is { } bsa && bsa.Header.FileFlags != BsaFileFlags.None)
+        {
+            return (
+                bsa.Header.FileFlags.HasFlag(BsaFileFlags.Meshes),
+                bsa.Header.FileFlags.HasFlag(BsaFileFlags.Textures));
+        }
+
+        var hasMeshes = false;
+        var hasTextures = false;
+        foreach (var path in archive.EnumerateFilePaths())
+        {
+            if (HasArchiveRoot(path, "meshes") || HasArchiveRoot(path, "geometries"))
+            {
+                hasMeshes = true;
+            }
+            else if (HasArchiveRoot(path, "textures") || HasArchiveRoot(path, "materials"))
+            {
+                hasTextures = true;
+            }
+
+            if (hasMeshes && hasTextures)
+            {
+                break;
+            }
+        }
+
+        return (hasMeshes, hasTextures);
+    }
+
+    private static bool HasArchiveRoot(string path, string root)
+    {
+        return path.Length > root.Length &&
+               path.StartsWith(root, StringComparison.OrdinalIgnoreCase) &&
+               path[root.Length] is '\\' or '/';
     }
 
     /// <summary>
@@ -726,7 +1478,8 @@ internal sealed class NifBrowserService : IDisposable
 
     private static List<NifTreeEntry> ListNifFilesFromDirectory(
         string rootDir,
-        Action<NifBrowserScanProgress>? progress)
+        Action<NifBrowserScanProgress>? progress,
+        CancellationToken cancellationToken)
     {
         var entries = new List<NifTreeEntry>();
         var dirGroups = new Dictionary<string, NifTreeEntry>(StringComparer.OrdinalIgnoreCase);
@@ -735,9 +1488,12 @@ internal sealed class NifBrowserService : IDisposable
         // A recursive filesystem enumeration has no trustworthy total without paying for a second
         // traversal. Report a running NIF count instead of presenting a fabricated percentage.
         progress?.Invoke(new NifBrowserScanProgress(0, null, 0));
+        var lastProgressTimestamp = Stopwatch.GetTimestamp();
+        var lastReportedNifCount = 0;
 
         foreach (var file in Directory.EnumerateFiles(rootDir, "*.nif", SearchOption.AllDirectories))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             nifFilesFound++;
             var relativePath = Path.GetRelativePath(rootDir, file);
             var dirPart = Path.GetDirectoryName(relativePath) ?? "";
@@ -773,20 +1529,31 @@ internal sealed class NifBrowserService : IDisposable
                 });
             }
 
-            if (nifFilesFound == 1 || (nifFilesFound & 63) == 0)
+            // Progress<T> posts to the UI dispatcher. Bound the production rate so a fast loose
+            // scan cannot leave thousands of stale callbacks ahead of the completed mesh tree.
+            if (nifFilesFound == 1 ||
+                Stopwatch.GetElapsedTime(lastProgressTimestamp) >= TimeSpan.FromMilliseconds(100))
             {
                 progress?.Invoke(new NifBrowserScanProgress(nifFilesFound, null, nifFilesFound));
+                lastProgressTimestamp = Stopwatch.GetTimestamp();
+                lastReportedNifCount = nifFilesFound;
             }
         }
 
-        progress?.Invoke(new NifBrowserScanProgress(nifFilesFound, null, nifFilesFound));
+        cancellationToken.ThrowIfCancellationRequested();
+        if (lastReportedNifCount != nifFilesFound)
+        {
+            progress?.Invoke(new NifBrowserScanProgress(nifFilesFound, null, nifFilesFound));
+        }
 
         return entries.OrderBy(e => !e.IsDirectory).ThenBy(e => e.DisplayName).ToList();
     }
 
     private static List<NifTreeEntry> ListNifFilesFromArchive(
-        IReadOnlyList<ArchiveReader.ArchiveEntry> files,
-        Action<NifBrowserScanProgress>? progress)
+        IEnumerable<string> filePaths,
+        int totalEntries,
+        Action<NifBrowserScanProgress>? progress,
+        CancellationToken cancellationToken)
     {
         // BSA has a folder tree; BA2 is a flat list — group both by the directory portion of the path
         // so the browser shows the same folder grouping regardless of container.
@@ -794,14 +1561,17 @@ internal sealed class NifBrowserService : IDisposable
         var dirGroups = new Dictionary<string, NifTreeEntry>(StringComparer.OrdinalIgnoreCase);
         var nifFilesFound = 0;
 
-        // ListFiles has materialized the real archive-entry total. This is the first point at which a
-        // determinate progress value is honest; archive/index initialization before this remains opaque.
-        progress?.Invoke(new NifBrowserScanProgress(0, files.Count, 0));
+        // The parsed archive header supplies the real total without first projecting a second entry
+        // graph. Archive/index initialization before this remains opaque.
+        progress?.Invoke(new NifBrowserScanProgress(0, totalEntries, 0));
+        var progressStride = Math.Max(1L, ((long)totalEntries + 63L) / 64L);
+        var nextProgressEntry = progressStride;
+        var currentEntry = 0;
 
-        for (var index = 0; index < files.Count; index++)
+        foreach (var fullPath in filePaths)
         {
-            var file = files[index];
-            var fullPath = file.FullPath;
+            cancellationToken.ThrowIfCancellationRequested();
+            currentEntry++;
             if (fullPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
             {
                 nifFilesFound++;
@@ -830,19 +1600,31 @@ internal sealed class NifBrowserService : IDisposable
                 }
             }
 
-            var currentEntry = index + 1;
-            if ((currentEntry & 255) == 0 || currentEntry == files.Count)
+            // Keep dispatcher traffic bounded independent of archive size. A 1.6-million-entry
+            // Starfield BA2 now emits at most 64 scan updates instead of roughly 6,250.
+            if (currentEntry >= nextProgressEntry || currentEntry == totalEntries)
             {
-                progress?.Invoke(new NifBrowserScanProgress(currentEntry, files.Count, nifFilesFound));
+                progress?.Invoke(new NifBrowserScanProgress(currentEntry, totalEntries, nifFilesFound));
+                nextProgressEntry += progressStride;
             }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (currentEntry != 0 && currentEntry != totalEntries)
+        {
+            // A backend reporting a stale/corrupt count remains observable without lying about the
+            // header total used by the progress bar.
+            progress?.Invoke(new NifBrowserScanProgress(currentEntry, totalEntries, nifFilesFound));
         }
 
         foreach (var dir in dirGroups.Values)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             dir.Children.Sort((a, b) =>
                 string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return entries.OrderBy(e => !e.IsDirectory).ThenBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

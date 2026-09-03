@@ -11,6 +11,22 @@ namespace BethesdaMultitool.Core.Vfs;
 public sealed record GameFileEntry(string Path, long Size, string Source);
 
 /// <summary>
+///     One successfully bounded payload read together with the exact layer that supplied it.
+///     Keeping provenance beside the bytes prevents a layered read that falls through an
+///     unextractable override from being mislabeled with the earlier layer's metadata.
+/// </summary>
+public sealed record GameFileReadResult(GameFileEntry Entry, byte[] Data);
+
+/// <summary>
+///     A deterministic prefix page. <see cref="IsTruncated" /> means at least one matching entry
+///     was deliberately not materialized, so callers that require a complete subtree must fail
+///     closed instead of treating <see cref="Entries" /> as a complete catalog.
+/// </summary>
+public sealed record GameFileEnumerationPage(
+    IReadOnlyList<GameFileEntry> Entries,
+    bool IsTruncated);
+
+/// <summary>
 ///     A read-only virtual filesystem over game assets — one BSA, one BA2, a loose-file Data
 ///     directory, or an ordered layering of all three (see <see cref="LayeredGameFileSystem" />).
 ///     This is the shared API the archive formats are parsed through, so consumers stop caring
@@ -47,10 +63,27 @@ public interface IGameFileSystem : IDisposable
     byte[]? TryReadAllBytes(string path);
 
     /// <summary>
+    ///     Reads at most <paramref name="maximumBytes" /> decompressed bytes, or returns null when
+    ///     absent, unextractable, or over budget. Implementations must reject both stored and
+    ///     expanded sizes before allocating an over-budget payload. The result identifies the
+    ///     actual readable layer rather than a possibly-unreadable stat-first override.
+    /// </summary>
+    GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes);
+
+    /// <summary>
     ///     Enumerates entries, optionally filtered to virtual paths starting with
     ///     <paramref name="prefix" /> (case-insensitive, separator-normalized).
     /// </summary>
     IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null);
+
+    /// <summary>
+    ///     Materializes no more than <paramref name="maximumEntries" /> matching entries. This is
+    ///     the bounded alternative for automatic UI discovery, where enumerating an entire broad
+    ///     archive family would otherwise block publication of the selected model.
+    /// </summary>
+    GameFileEnumerationPage EnumerateFilesBounded(
+        string? prefix,
+        int maximumEntries);
 }
 
 /// <summary>Path normalization shared by every <see cref="IGameFileSystem" /> implementation.</summary>

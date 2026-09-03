@@ -1,5 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -123,6 +125,66 @@ public sealed class NifBrowserSiblingMeshArchiveTests
                 .SelectMany(static mesh => mesh.Primitives)
                 .Sum(static primitive => primitive.GetVertexAccessor("POSITION").AsVector3Array().Count);
             Assert.Equal(3, exportedVertexCount);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildViewerScene_SiblingArchiveFamily_SnapshotsProvenanceWithoutRetainingHandles()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory("nifbrowser_archive_animation_family_").FullName;
+        try
+        {
+            var primaryArchive = Path.Combine(tempRoot, "Starfield - Meshes01.ba2");
+            var siblingArchive = Path.Combine(tempRoot, "Starfield - Meshes02.ba2");
+            const string skeletonPath = @"meshes\test\skeleton.nif";
+            const string animationPath = @"meshes\test\idle.kf";
+            File.WriteAllBytes(
+                primaryArchive,
+                BuildGnrlBa2(
+                    (NifPath, BuildStarfieldNif(@"primary\triangle", @"sibling\triangle")),
+                    (PrimaryMeshPath, BuildStarfieldMesh()),
+                    (skeletonPath, [2])));
+            File.WriteAllBytes(
+                siblingArchive,
+                BuildGnrlBa2(
+                    (SiblingMeshPath, BuildStarfieldMesh()),
+                    (animationPath, [3, 4])));
+
+            NifModelFamilyAnimationCatalog? catalog;
+            byte[]? payload;
+            using (var service = NifBrowserService.CreateFromBsa(primaryArchive))
+            {
+                var nifData = service.ReadNifData(NifPath);
+                Assert.NotNull(nifData);
+
+                var build = service.BuildViewerSceneWithDiagnostics(
+                    nifData!,
+                    "crossarchive.nif",
+                    NifPath,
+                    new AlwaysCompatibleRigInspector());
+
+                var scene = Assert.IsType<BethesdaViewerScene>(build.Scene);
+                catalog = scene.ModelFamilyAnimations;
+                var resolved = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
+                var selected = Assert.Single(resolved.Animations);
+                payload = service.ReadModelFamilyAnimationData(selected);
+                Assert.Throws<InvalidDataException>(() =>
+                    service.ReadModelFamilyAnimationData(selected with { Source = primaryArchive }));
+            }
+
+            // Service disposal closes every registry-backed VFS lease. The scene retains only this
+            // copied catalog, so archive provenance remains readable while the files are deletable.
+            var snapshot = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
+            Assert.Equal(NifModelFamilyAnimationResolutionStatus.Resolved, snapshot.Status);
+            Assert.Equal(Path.GetFullPath(primaryArchive), snapshot.Skeleton?.Source);
+            var animation = Assert.Single(snapshot.Animations);
+            Assert.Equal(animationPath, animation.VirtualPath);
+            Assert.Equal(Path.GetFullPath(siblingArchive), animation.Source);
+            Assert.Equal(new byte[] { 3, 4 }, payload);
         }
         finally
         {
@@ -344,5 +406,14 @@ public sealed class NifBrowserSiblingMeshArchiveTests
         {
             bytes.AddRange(BitConverter.GetBytes(direction));
         }
+    }
+
+    private sealed class AlwaysCompatibleRigInspector : INifModelFamilyRigInspector
+    {
+        public NifModelFamilyModelRig? InspectModel(byte[] data) =>
+            new(["Bip01"]);
+
+        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data) =>
+            new(["Bip01"]);
     }
 }

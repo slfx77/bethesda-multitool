@@ -53,6 +53,51 @@ public sealed class LooseFileSystem : IGameFileSystem
         }
     }
 
+    public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+        if (maximumBytes > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        }
+
+        if (Resolve(path) is not { } full)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var stream = new FileStream(
+                full,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 64 * 1024,
+                options: FileOptions.SequentialScan);
+            var length = stream.Length;
+            if (length < 0 || length > maximumBytes)
+            {
+                return null;
+            }
+
+            var data = new byte[checked((int)length)];
+            stream.ReadExactly(data);
+            if (stream.Length != length)
+            {
+                return null;
+            }
+
+            return new GameFileReadResult(
+                new GameFileEntry(VfsPath.Normalize(path), length, Label),
+                data);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
     {
         if (!Directory.Exists(_root))
@@ -69,6 +114,25 @@ public sealed class LooseFileSystem : IGameFileSystem
                 yield return new GameFileEntry(relative, new FileInfo(file).Length, Label);
             }
         }
+    }
+
+    public GameFileEnumerationPage EnumerateFilesBounded(
+        string? prefix,
+        int maximumEntries)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumEntries);
+        var entries = new List<GameFileEntry>(Math.Min(maximumEntries, 4096));
+        foreach (var entry in EnumerateFiles(prefix))
+        {
+            if (entries.Count == maximumEntries)
+            {
+                return new GameFileEnumerationPage(entries, true);
+            }
+
+            entries.Add(entry);
+        }
+
+        return new GameFileEnumerationPage(entries, false);
     }
 
     public void Dispose()

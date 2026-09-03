@@ -29,6 +29,19 @@ internal interface IArchiveBackend : IDisposable
     /// <summary>All entries, folder trees flattened. Called once per index build; may allocate.</summary>
     IReadOnlyList<ArchiveEntry> ListFiles();
 
+    /// <summary>
+    ///     Enumerates virtual paths without requiring callers that only need names to retain a
+    ///     second, format-neutral entry graph. Backends whose parsed archive already owns its path
+    ///     strings should override this; the compatibility default preserves every other format.
+    /// </summary>
+    IEnumerable<string> EnumerateFilePaths()
+    {
+        foreach (var entry in ListFiles())
+        {
+            yield return entry.FullPath;
+        }
+    }
+
     /// <summary>Extracts an entry produced by this backend's <see cref="ListFiles" />. Thread-safe.</summary>
     byte[] Extract(ArchiveEntry entry);
 
