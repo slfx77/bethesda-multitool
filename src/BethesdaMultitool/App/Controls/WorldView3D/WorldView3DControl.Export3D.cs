@@ -258,7 +258,7 @@ public sealed partial class WorldView3DControl
                     capturePolicy, isComplete, isFullySettled);
                 if (captureReadback)
                 {
-                    target.RecordReadback(cmd);
+                    target.RecordReadback(recorder);
                 }
                 else
                 {

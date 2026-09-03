@@ -1,7 +1,7 @@
 // Tonemap resolve pass. Samples the HDR scene color (R16G16B16A16_FLOAT, values may exceed 1 —
 // emissive glow, sun specular) and maps it to the 8-bit display range.
 //
-// Five operators (uParams0.z = mode):
+// Seven operators (uParams0.z = mode):
 //   0 LegacyClamp — plain saturate in this composite. Morrowind and the static
 //     FALLOUT_VIEWER_HDR=0 8-bit scene-target kill-switch land here.
 //   1 GammaAces — decode 2.2 -> exposure -> ACES filmic -> encode 1/2.2. The scene renders in
@@ -25,10 +25,12 @@
 //     no exposure, adapted-average sample, or bloom.
 //   5 ClassicSdrBloom — the classic launcher's middle "Bloom" state: SDR clamp + bright-pass
 //     bloom at neutral exposure + classic grade. Stand-in for the unrecovered LDR [BlurShader].
+//   6 EngineSkyrim — shipped Oldrim BSImagespaceShaderHDRTonemapBlendCinematic equation, exact staged
+//     ceil(/4) reduction, exact two-lane light adaptation, and the recovered separable bloom effect.
+//     This provenance does not claim Special Edition parity; SSE remains unverified.
 //
-// mainAdapt consumes the classic recursive DownSample16 chain's 1x1 result and applies ADAPT.
-// mainAvg retains the sparse-grid average only for the default-off modern path, whose reduction
-// topology has not been recovered.
+// mainAdapt consumes the classic recursive DownSample16 chain's 1x1 result, or performs Skyrim's
+// fused final 16-tap reduction + ADAPT when history exists. mainAvg is only the modern stand-in.
 
 Texture2D    uHdr    : register(t0);
 Texture2D    uAvgLum : register(t1);
@@ -41,7 +43,7 @@ cbuffer TonemapParams : register(b0)
     float4 uParams1; // x = Saturation, y = ContrastAvgLum, z = Contrast, w = Brightness
     float4 uParams2; // xyz = Tint color, w = TintAmount
     float4 uParams3; // x = UpperLUMClamp, y = AdaptFactor(current weight), z = bloom, w = retained cinematic flags (classic shader does not consume)
-    float4 uParams4; // modern: x/y exposure min/max, z middle gray, w retained Tonemap-E
+    float4 uParams4; // modern: x/y exposure min/max, z middle gray, w Tonemap-E; Skyrim: x fast factor, yz source texel
     float4 uParams5; // modern: x white, y eye strength, z receive-bloom threshold, w family (0 Skyrim/1 FO4)
 };
 
@@ -72,6 +74,30 @@ float3 ApplyClassicCinematic(float3 c)
     return uParams1.z * (uParams1.w * c - uParams1.y) + uParams1.y;
 }
 
+float3 ApplySkyrimTonemapBlendCinematic(float3 scene, float3 bloom)
+{
+    // Installed Oldrim 1.9.32 imagespace002.fxp pair 13. Keep the shader's 0.2125/0.7154/0.0721
+    // coefficients and operation order; this is not the nearby 0.2126 Rec.709 approximation.
+    const float3 SkyrimLuma = float3(0.2125, 0.7154, 0.0721);
+    float2 adapted = uAvgLum.Sample(uSampler, float2(0.5, 0.5)).xy;
+    float adaptedSlow = adapted.x;
+    float adaptedFast = adapted.y;
+    float luminance = dot(scene, SkyrimLuma);
+    float q = luminance * (adaptedFast / adaptedSlow);
+    float mapped = q * (1.0 + q / (uParams5.x * uParams5.x)) / (1.0 + q);
+    if (luminance < 0.0)
+    {
+        mapped = 0.0;
+    }
+
+    float3 hdr = scene * (mapped / luminance)
+        + bloom * saturate(uParams5.z - mapped);
+    float gray = dot(hdr, SkyrimLuma);
+    float3 graded = lerp(gray.xxx, hdr, uParams1.x);
+    graded = lerp(graded, gray * uParams2.xyz, uParams2.w);
+    return uParams1.z * (uParams1.w * graded - adaptedSlow) + adaptedSlow;
+}
+
 float4 main(PSInput input) : SV_Target
 {
     float4 hdr = uHdr.Sample(uSampler, input.vUv);
@@ -89,6 +115,16 @@ float4 main(PSInput input) : SV_Target
         float3 lin = pow(max(hdr.rgb, 0.0), 2.2);
         lin = AcesFilmic(lin * uParams0.x);
         return float4(pow(lin, 1.0 / 2.2), hdr.a);
+    }
+
+    // EngineSkyrim is numerically above ClassicSdrBloom, so it must dispatch before mode >= 4.5.
+    if (uParams0.z >= 5.5)
+    {
+        float3 bloom = uParams3.z > 0.5
+            ? uBloom.Sample(uSampler, input.vUv).rgb
+            : 0.0;
+        float3 c = ApplySkyrimTonemapBlendCinematic(hdr.rgb * uParams0.x, bloom);
+        return float4(c, hdr.a);
     }
 
     // ClassicSdrBloom (mode 5) — the classic launcher's middle "Bloom" state: SDR clamp at
@@ -165,9 +201,59 @@ float4 ApplyAdapt(float3 averageColor)
     return float4(adapted, 1.0);
 }
 
-// Classic path: t0 is the final 1x1 result of the recursive /4 DownSample16 chain.
+float2 ApplySkyrimAdapt(float luminance)
+{
+    // A value greater than one is the shared explicit no-history sentinel. Retail's clear path seeds
+    // both lanes from the newly reduced luminance before normal temporal updates begin.
+    float2 adapted = luminance.xx;
+    if (uParams3.y <= 1.0)
+    {
+        float2 previous = uAvgLum.SampleLevel(uSampler, float2(0.5, 0.5), 0).xy;
+        float2 delta = luminance.xx - previous;
+        // Pair 21 routes Param.w (slow) to Avg.x and Param.z (fast) to Avg.y.
+        float2 factors = float2(uParams3.y, uParams4.x);
+        float2 stepMagnitude = min(
+            abs(delta),
+            max(abs(delta * factors), float2(1.0 / 256.0, 1.0 / 256.0)));
+        adapted = previous + sign(delta) * stepMagnitude;
+    }
+
+    return adapted;
+}
+
+float SkyrimFinalLuminance(float2 uv)
+{
+    // Pair 21 consumes fDownSample1024NoFiltering: a row-major 4x4 grid with half-texel offsets and
+    // the exact 1/16 payload in every entry. uParams4.yz is the retained reduction source texel size.
+    float weight = asfloat(0x3D800000u);
+    float luminance = 0.0;
+    [unroll]
+    for (int y = 0; y < 4; y++)
+    {
+        [unroll]
+        for (int x = 0; x < 4; x++)
+        {
+            float2 offset = float2((float)x - 1.5, (float)y - 1.5);
+            luminance += uHdr.SampleLevel(uSampler, uv + offset * uParams4.yz, 0).r * weight;
+        }
+    }
+    return luminance;
+}
+
+// Classic t0 is already 1x1. Skyrim normally fuses its last 16-tap reduction into this pass; the
+// no-history sentinel identifies retail's first-frame path, which instead directly seeds from the
+// 1x1 value produced by slot 6.
 float4 mainAdapt(PSInput input) : SV_Target
 {
+    if (uParams0.z >= 5.5)
+    {
+        float luminance = uParams3.y > 1.0
+            ? uHdr.SampleLevel(uSampler, float2(0.5, 0.5), 0).r
+            : SkyrimFinalLuminance(input.vUv);
+        float2 adapted = ApplySkyrimAdapt(luminance);
+        return float4(adapted, luminance, 1.0);
+    }
+
     float3 averageColor = uHdr.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
     return ApplyAdapt(averageColor);
 }

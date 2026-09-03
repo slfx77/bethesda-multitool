@@ -104,7 +104,7 @@ public sealed class CollisionOverlayLineSourceContractTests
         // into the back buffer AFTER the HDR scene resolves + tonemaps.
         SourceContract.AssertOrder(
             frame,
-            "surface.ResolveTo(cmd, backBuffer);",
+            "surface.ResolveTo(recorder, backBuffer);",
             "_collisionDebug.Render(",
             "ldrTarget: true");
     }

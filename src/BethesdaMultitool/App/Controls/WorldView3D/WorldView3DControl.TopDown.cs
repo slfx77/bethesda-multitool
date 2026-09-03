@@ -304,7 +304,7 @@ public sealed partial class WorldView3DControl
                     _water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);
                 }
 
-                target.RecordReadback(cmd);
+                target.RecordReadback(recorder);
             }
             finally
             {

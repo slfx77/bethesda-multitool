@@ -31,7 +31,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <see cref="ResourceStates.RenderTarget" />) around <see cref="Record" />.
 ///     </para>
 /// </summary>
-internal sealed class GpuTonemapPass12 : IDisposable
+internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParticipant12
 {
     // SRV ring depth: one call = fixed 3-descriptor groups (t0/t1/t2) for ADAPT, every possible
     // recursive DownSample16 level, both bloom rows, and the main composite. Groups are cycled so a
@@ -48,7 +48,11 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private const int ReductionRtvStart = 2;
     private const int BrightPassBlurRtvSlot = ReductionRtvStart + ClassicHdrPassPlan.MaxReductionLevels;
     private const int BlurRtvSlot = BrightPassBlurRtvSlot + 1;
-    private const int RtvDescriptorCount = BlurRtvSlot + 1;
+    private const int RtvBankSize = BlurRtvSlot + 1;
+    // Two banks retain the floor-quarter and ceiling-quarter target families concurrently. A live
+    // cross-game switch can therefore stop using one family without rewriting descriptors or
+    // destroying resources still referenced by an in-flight frame.
+    private const int RtvDescriptorCount = RtvBankSize * 2;
     private readonly ID3D12PipelineState _adaptPso;
     private readonly ID3D12PipelineState _avgPso;
     private readonly uint _avgRtvDescriptorSize;
@@ -62,14 +66,18 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private readonly ID3D12PipelineState _bloomPso;
     private readonly ID3D12PipelineState _blurPso;
     private readonly ID3D12PipelineState _downsamplePso;
+    private readonly ID3D12PipelineState _skyrimDownsamplePso;
+    private readonly ID3D12PipelineState _skyrimLuminancePso;
 
     private readonly GpuDevice12 _gpu;
 
     private readonly ID3D12PipelineState _pso;
 
-    // Recursive /4 DownSample16 targets. Level 0 is retained as the BrightPassBlur source; the final
-    // level is 1x1 and feeds ADAPT. The two bloom targets hold vertical BPBLUR and horizontal BLUR.
-    private readonly ID3D12Resource?[] _reductionTextures =
+    // Recursive /4 DownSample16 targets. Level 0 is retained as the BrightPassBlur source. Classic
+    // ends at 1x1; primed Skyrim frames retain the preceding level for fused reduction + ADAPT.
+    private ID3D12Resource?[] _reductionTextures =
+        new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
+    private ID3D12Resource?[] _alternateReductionTextures =
         new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
 
     private readonly ID3D12RootSignature _rootSignature;
@@ -81,13 +89,30 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private ID3D12Resource? _bloomTexture;
     private int _bloomWidth;
     private ID3D12Resource? _brightPassBlurTexture;
+    private int _alternateBloomHeight;
+    private ID3D12Resource? _alternateBloomTexture;
+    private int _alternateBloomWidth;
+    private ID3D12Resource? _alternateBrightPassBlurTexture;
+    private int _alternateClassicSourceHeight;
+    private int _alternateClassicSourceWidth;
+    private HdrReductionDimensionRule _alternateClassicDimensionRule;
+    private int _alternateReductionLevelCount;
+    private int _alternateRtvBank = 1;
     private int _classicSourceHeight;
     private int _classicSourceWidth;
+    private HdrReductionDimensionRule _classicDimensionRule;
+    private int _classicRtvBank;
     // A failed constructor never reaches GpuSwapChainSurface12 ownership. Track each COM resource
     // until the whole immutable tonemap graph exists, then transfer it to the normal Dispose path.
     private TonemapConstructionTransaction? _constructionTransaction = new();
     private bool _disposed;
-    private bool _lastAdaptiveMode;
+    // Null represents a non-adaptive composite. Keep the exact adaptive operator identity rather
+    // than only a bool: Skyrim stores two scalar luminance lanes in the history texture, whereas
+    // the classic FO3/FNV/Bloom path stores RGB. Reinterpreting either layout after a live mode
+    // switch corrupts exposure until it happens to converge again.
+    private GpuTonemapMode? _lastAdaptiveMode;
+    private TonemapLogicalHistoryState? _historyBeforeCurrentCommandList;
+    private GpuCommandRecorder12? _historyTransactionRecorder;
     private Format _lastHistoryFormat = Format.Unknown;
     private int _lastHistoryHeight;
     private ulong _lastHistoryKey = ulong.MaxValue;
@@ -105,7 +130,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
 
         // Root: [0] SRV table (t0 = HDR scene, t1 = 1×1 adapted average color, t2 = bloom); [1]
         // 24×32-bit root constants (b0, six float4s — tonemap/cinematic + modern semantic params
-        // draws, repacked as bloom params for the bloom draws); one linear-clamp static sampler (s0).
+        // draws, repacked as bloom params for the bloom draws); linear-clamp s0 plus point-clamp s1
+        // for Skyrim's explicitly unfiltered slot-6 reduction.
         var srvRange = new DescriptorRange1
         {
             RangeType = DescriptorRangeType.ShaderResourceView,
@@ -120,9 +146,23 @@ internal sealed class GpuTonemapPass12 : IDisposable
             new RootConstants(0, 0, 24),
             ShaderVisibility.Pixel);
 
-        var sampler = new StaticSamplerDescription(
+        var linearSampler = new StaticSamplerDescription(
             0,
             Filter.MinMagMipLinear,
+            TextureAddressMode.Clamp,
+            TextureAddressMode.Clamp,
+            TextureAddressMode.Clamp,
+            0f,
+            1,
+            ComparisonFunction.Never,
+            StaticBorderColor.OpaqueBlack,
+            0f,
+            float.MaxValue,
+            ShaderVisibility.Pixel,
+            0);
+        var pointSampler = new StaticSamplerDescription(
+            1,
+            Filter.MinMagMipPoint,
             TextureAddressMode.Clamp,
             TextureAddressMode.Clamp,
             TextureAddressMode.Clamp,
@@ -138,7 +178,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var desc = new RootSignatureDescription1(
             RootSignatureFlags.None,
             new[] { srvTable, rootConstants },
-            new[] { sampler });
+            new[] { linearSampler, pointSampler });
         _rootSignature = TrackConstructionResource(device.CreateRootSignature(desc));
 
         var vs = CompileEmbeddedShader("tonemap.vert.hlsl", "main", "vs_5_1");
@@ -179,8 +219,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
         };
         _pso = TrackConstructionResource(device.CreateGraphicsPipelineState(psoDesc));
 
-        // The modern stand-in still computes a sparse average in mainAvg. Classic mode instead runs
-        // the recursive reduction below and mainAdapt only performs temporal adaptation/clamping.
+        // The modern stand-in still computes a sparse average in mainAvg. Engine modes instead run
+        // their recursive reductions below; Skyrim's mainAdapt also fuses the final retail step.
         var avgPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAvg", "ps_5_1");
         var avgPsoDesc = psoDesc;
         avgPsoDesc.PixelShader = avgPs;
@@ -200,6 +240,20 @@ internal sealed class GpuTonemapPass12 : IDisposable
         downsamplePsoDesc.PixelShader = downsamplePs;
         downsamplePsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
         _downsamplePso = TrackConstructionResource(device.CreateGraphicsPipelineState(downsamplePsoDesc));
+
+        var skyrimLuminancePs = CompileEmbeddedShader(
+            "bloom.frag.hlsl", "mainSkyrimLuminance4", "ps_5_1");
+        var skyrimLuminancePsoDesc = downsamplePsoDesc;
+        skyrimLuminancePsoDesc.PixelShader = skyrimLuminancePs;
+        _skyrimLuminancePso = TrackConstructionResource(
+            device.CreateGraphicsPipelineState(skyrimLuminancePsoDesc));
+
+        var skyrimDownsamplePs = CompileEmbeddedShader(
+            "bloom.frag.hlsl", "mainSkyrimDownsample16", "ps_5_1");
+        var skyrimDownsamplePsoDesc = downsamplePsoDesc;
+        skyrimDownsamplePsoDesc.PixelShader = skyrimDownsamplePs;
+        _skyrimDownsamplePso = TrackConstructionResource(
+            device.CreateGraphicsPipelineState(skyrimDownsamplePsoDesc));
 
         var bloomPs = CompileEmbeddedShader("bloom.frag.hlsl", "main", "ps_5_1");
         var bloomPsoDesc = psoDesc;
@@ -264,10 +318,16 @@ internal sealed class GpuTonemapPass12 : IDisposable
         return resource;
     }
 
-    /// <summary>Whether the most recently recorded pass invalidated its eye-adaptation history.</summary>
+    /// <summary>
+    ///     Whether the latest recorded pass invalidated eye-adaptation history. Restored to the
+    ///     preceding submitted value if that pass's command list is aborted.
+    /// </summary>
     internal bool LastHistoryReset { get; private set; }
 
-    /// <summary>Comma-separated authoritative invalidation inputs for <see cref="LastHistoryReset" />.</summary>
+    /// <summary>
+    ///     Comma-separated authoritative invalidation inputs for <see cref="LastHistoryReset" />;
+    ///     transactional with the same command list.
+    /// </summary>
     internal string? LastHistoryResetReason { get; private set; }
 
     public void Dispose()
@@ -278,15 +338,12 @@ internal sealed class GpuTonemapPass12 : IDisposable
         _avgRtvHeap.Dispose();
         _avgTextures[0].Dispose();
         _avgTextures[1].Dispose();
-        for (var i = 0; i < _reductionTextures.Length; i++)
-        {
-            _reductionTextures[i]?.Dispose();
-        }
-
-        _brightPassBlurTexture?.Dispose();
-        _bloomTexture?.Dispose();
+        DisposeActiveClassicTargets();
+        DisposeAlternateClassicTargets();
         _blurPso.Dispose();
         _bloomPso.Dispose();
+        _skyrimDownsamplePso.Dispose();
+        _skyrimLuminancePso.Dispose();
         _downsamplePso.Dispose();
         _adaptPso.Dispose();
         _avgPso.Dispose();
@@ -302,13 +359,14 @@ internal sealed class GpuTonemapPass12 : IDisposable
     ///     <see cref="GpuSceneFormats.LdrOutput" />). Sets its own descriptor heap + PSO; the caller
     ///     should re-establish its own heap afterward if it records further work.
     /// </summary>
+    /// <param name="recorder">Owns the open command list and its submit/abort transaction.</param>
     /// <param name="settings">Operator + engine/cinematic parameters (see <see cref="GpuTonemapSettings" />).</param>
     /// <param name="enabled">
     ///     False → passthrough clamp. Bit identity with the legacy LDR path additionally requires
     ///     the static 8-bit scene-target kill-switch; a float MSAA target clamps after resolve.
     /// </param>
     public unsafe void Record(
-        ID3D12GraphicsCommandList cmd,
+        GpuCommandRecorder12 recorder,
         ID3D12Resource hdrTexture,
         Format hdrFormat,
         CpuDescriptorHandle ldrRtv,
@@ -321,6 +379,12 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             return;
         }
+
+        // The descriptor/resource caches below are safe to retain if this list is abandoned, but
+        // ping-pong selection and history identity describe GPU work that does not exist until the
+        // list reaches the queue. Snapshot those logical fields once per open command list.
+        BeginLogicalHistoryTransaction(recorder);
+        var cmd = recorder.CommandList;
 
         // Cycle a fixed group layout per call. ADAPT reads the final reduction + previous history;
         // DS16 groups form the recursive /4 chain; BPBLUR reads level 0 + the fresh adapted average;
@@ -354,7 +418,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var engineMode = executionPlan.EngineMode;
         var adaptiveMode = executionPlan.AdaptiveMode;
         var historyKeyChanged = settings.HistoryKey != _lastHistoryKey;
-        var adaptiveModeChanged = adaptiveMode != _lastAdaptiveMode;
+        var adaptiveModeIdentity = adaptiveMode ? settings.Mode : (GpuTonemapMode?)null;
+        var adaptiveModeChanged = adaptiveModeIdentity != _lastAdaptiveMode;
         var targetResourceChanged = !ReferenceEquals(hdrTexture, _lastHistoryTarget);
         var targetSizeChanged = width != _lastHistoryWidth || height != _lastHistoryHeight;
         var targetFormatChanged = hdrFormat != _lastHistoryFormat;
@@ -379,7 +444,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             _adaptPrimed = false;
             _lastHistoryKey = settings.HistoryKey;
-            _lastAdaptiveMode = adaptiveMode;
+            _lastAdaptiveMode = adaptiveModeIdentity;
             _lastHistoryTarget = hdrTexture;
             _lastHistoryWidth = width;
             _lastHistoryHeight = height;
@@ -387,12 +452,23 @@ internal sealed class GpuTonemapPass12 : IDisposable
         }
 
         var bloomActive = executionPlan.BloomActive;
+        var skyrimRetailMode = engineMode && settings.Mode == GpuTonemapMode.EngineSkyrim;
+        var historyWasPrimed = _adaptPrimed;
         var classicPlan = engineMode
-            ? ClassicHdrPassPlan.Create(width, height, bloomActive, settings.BlurPasses)
+            ? skyrimRetailMode
+                ? ClassicHdrPassPlan.CreateSkyrim(width, height, historyWasPrimed, bloomActive)
+                : ClassicHdrPassPlan.Create(width, height, bloomActive, settings.BlurPasses)
             : default;
         if (engineMode)
         {
-            EnsureClassicTargets(classicPlan);
+            // Allocate the complete no-history chain once. Later Skyrim frames omit the final 1x1
+            // target draw and fuse it into ADAPT, but must not dispose in-flight first-frame targets.
+            // bloomActive mirrors the execution plan, exactly as the non-Skyrim arm does by
+            // reusing classicPlan: the allocation must cover the same slots the frame will draw.
+            var allocationPlan = skyrimRetailMode
+                ? ClassicHdrPassPlan.CreateSkyrim(width, height, false, bloomActive)
+                : classicPlan;
+            EnsureClassicTargets(allocationPlan);
         }
 
         // ADAPT group. Classic t0 is the recursive chain's final 1x1 value; the modern stand-in keeps
@@ -462,6 +538,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         // ADAPT does not even sample the undefined freshly-created/reset texture; lerp(..., 1) is not
         // sufficient because a compiler MAD can propagate NaN from the unused endpoint.
         var adaptFactor = _adaptPrimed ? settings.AdaptFactor : 2f;
+        var adaptFactorFast = _adaptPrimed ? settings.AdaptFactorFast : 2f;
 
         var modernFamily = settings.ModernFamily ==
                            ImageSpaceModernFamily.Fallout4
@@ -473,31 +550,46 @@ internal sealed class GpuTonemapPass12 : IDisposable
             settings.Saturation, settings.ContrastAvgLum, settings.Contrast, settings.Brightness,
             settings.TintR, settings.TintG, settings.TintB, settings.TintAmount,
             settings.UpperLumClamp, adaptFactor, bloomActive ? 1f : 0f, (float)settings.CinematicFlags,
-            settings.AutoExposureMin, settings.AutoExposureMax, settings.MiddleGray, settings.TonemapE,
+            settings.Mode == GpuTonemapMode.EngineSkyrim ? adaptFactorFast : settings.AutoExposureMin,
+            settings.AutoExposureMax, settings.MiddleGray, settings.TonemapE,
             settings.White, settings.EyeAdaptStrength, settings.ReceiveBloomThreshold, modernFamily
         };
+        if (skyrimRetailMode)
+        {
+            var adaptSourceLevel = classicPlan.GetReductionLevel(classicPlan.DownsampleDrawCount - 1);
+            p[17] = 1f / adaptSourceLevel.TargetWidth;
+            p[18] = 1f / adaptSourceLevel.TargetHeight;
+        }
 
         cmd.SetGraphicsRootSignature(_rootSignature);
         cmd.SetDescriptorHeaps(1, new[] { _srvHeap });
         cmd.SetGraphicsRoot32BitConstants(1, 24, p, 0);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
 
-        // Classic reduction: retain level zero for bloom, then continue recursively to the 1x1 value
-        // consumed by ADAPT. The authored BlurPasses scalar never changes this draw count.
+        // Engine reduction: classic continues to 1x1; Skyrim uses its RGB/luminance/scalar stages and
+        // on primed frames leaves the last 16 taps for ADAPT. BlurPasses never changes draw count.
         if (engineMode)
         {
             var downsampleConstants = stackalloc float[16];
             for (var i = 0; i < 16; i++) downsampleConstants[i] = 0f;
-            cmd.SetPipelineState(_downsamplePso);
             for (var levelIndex = 0; levelIndex < classicPlan.DownsampleDrawCount; levelIndex++)
             {
+                cmd.SetPipelineState(skyrimRetailMode
+                    ? levelIndex switch
+                    {
+                        0 => _downsamplePso,
+                        1 => _skyrimLuminancePso,
+                        _ => _skyrimDownsamplePso
+                    }
+                    : _downsamplePso);
                 var level = classicPlan.GetReductionLevel(levelIndex);
                 downsampleConstants[4] = 1f / level.SourceWidth;
                 downsampleConstants[5] = 1f / level.SourceHeight;
                 cmd.SetGraphicsRoot32BitConstants(1, 16, downsampleConstants, 0);
 
                 var rtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-                rtv.Ptr += (nuint)((ReductionRtvStart + levelIndex) * _avgRtvDescriptorSize);
+                rtv.Ptr += (nuint)((_classicRtvBank * RtvBankSize + ReductionRtvStart + levelIndex) *
+                                   _avgRtvDescriptorSize);
                 var gpuDownsample = heapGpu;
                 gpuDownsample.Ptr += GroupOffset(DownsampleGroupStart + levelIndex);
                 cmd.SetGraphicsRootDescriptorTable(0, gpuDownsample);
@@ -558,7 +650,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
             cmd.RSSetScissorRect(_bloomWidth, _bloomHeight);
             cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
             var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            brightPassRtv.Ptr += BrightPassBlurRtvSlot * _avgRtvDescriptorSize;
+            brightPassRtv.Ptr +=
+                (nuint)((_classicRtvBank * RtvBankSize + BrightPassBlurRtvSlot) * _avgRtvDescriptorSize);
             var brightPassGpu = heapGpu;
             brightPassGpu.Ptr += GroupOffset(BrightPassBlurGroup);
             cmd.SetGraphicsRootDescriptorTable(0, brightPassGpu);
@@ -576,7 +669,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             b[5] = 0f;
             cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
             var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            blurRtv.Ptr += BlurRtvSlot * _avgRtvDescriptorSize;
+            blurRtv.Ptr += (nuint)((_classicRtvBank * RtvBankSize + BlurRtvSlot) * _avgRtvDescriptorSize);
             var blurGpu = heapGpu;
             blurGpu.Ptr += GroupOffset(BlurGroup);
             cmd.SetGraphicsRootDescriptorTable(0, blurGpu);
@@ -601,39 +694,138 @@ internal sealed class GpuTonemapPass12 : IDisposable
         cmd.DrawInstanced(3, 1, 0, 0);
     }
 
+    private void BeginLogicalHistoryTransaction(GpuCommandRecorder12 recorder)
+    {
+        ArgumentNullException.ThrowIfNull(recorder);
+        if (_historyTransactionRecorder is not null)
+        {
+            if (!ReferenceEquals(_historyTransactionRecorder, recorder))
+            {
+                throw new InvalidOperationException(
+                    "A tonemap pass cannot participate in multiple open command lists.");
+            }
+
+            return;
+        }
+
+        var snapshot = CaptureLogicalHistory();
+        recorder.EnlistCurrentFrame(this);
+        _historyBeforeCurrentCommandList = snapshot;
+        _historyTransactionRecorder = recorder;
+    }
+
+    void IGpuCommandSubmissionParticipant12.OnCommandListSubmitted()
+    {
+        // Record mutated the working logical state in command order. Submission makes that state
+        // authoritative, so committing only has to discard the rollback snapshot.
+        ClearLogicalHistoryTransaction();
+    }
+
+    void IGpuCommandSubmissionParticipant12.OnCommandListAborted()
+    {
+        if (_historyBeforeCurrentCommandList is { } snapshot)
+        {
+            RestoreLogicalHistory(snapshot);
+        }
+
+        // Deliberately retain lazy reduction/bloom allocations and descriptor-ring progress. They
+        // are valid reusable CPU allocations; only state that claimed GPU history is rolled back.
+        ClearLogicalHistoryTransaction();
+    }
+
+    private TonemapLogicalHistoryState CaptureLogicalHistory() => new(
+        _adaptPrimed,
+        _avgWriteIndex,
+        _lastAdaptiveMode,
+        _lastHistoryFormat,
+        _lastHistoryHeight,
+        _lastHistoryKey,
+        _lastHistoryTarget,
+        _lastHistoryWidth,
+        LastHistoryReset,
+        LastHistoryResetReason);
+
+    private void RestoreLogicalHistory(in TonemapLogicalHistoryState snapshot)
+    {
+        _adaptPrimed = snapshot.AdaptPrimed;
+        _avgWriteIndex = snapshot.AvgWriteIndex;
+        _lastAdaptiveMode = snapshot.LastAdaptiveMode;
+        _lastHistoryFormat = snapshot.LastHistoryFormat;
+        _lastHistoryHeight = snapshot.LastHistoryHeight;
+        _lastHistoryKey = snapshot.LastHistoryKey;
+        _lastHistoryTarget = snapshot.LastHistoryTarget;
+        _lastHistoryWidth = snapshot.LastHistoryWidth;
+        LastHistoryReset = snapshot.LastHistoryReset;
+        LastHistoryResetReason = snapshot.LastHistoryResetReason;
+    }
+
+    private void ClearLogicalHistoryTransaction()
+    {
+        _historyBeforeCurrentCommandList = null;
+        _historyTransactionRecorder = null;
+    }
+
     /// <summary>
-    ///     Lazily (re)creates every recursive /4 reduction target plus the quarter-resolution
-    ///     vertical BrightPassBlur intermediate and horizontal plain-blur output. Dispose-and-recreate
-    ///     on size change is safe: the live path resizes via <c>GpuSwapChainSurface12</c>'s
-    ///     GPU-idle Resize, and offscreen targets are fixed-size for their lifetime.
+    ///     Lazily creates every recursive /4 reduction target plus the quarter-resolution vertical
+    ///     BrightPassBlur intermediate and horizontal plain-blur output. Floor- and ceiling-quarter
+    ///     families are retained in separate descriptor banks, so a live game/mode switch never
+    ///     destroys resources still referenced by an in-flight frame. Dispose-and-recreate on size
+    ///     change remains safe: the live path resizes via <c>GpuSwapChainSurface12</c>'s GPU-idle
+    ///     Resize, and offscreen targets are fixed-size for their lifetime.
     /// </summary>
     private void EnsureClassicTargets(in ClassicHdrPassPlan plan)
     {
-        if (_reductionTextures[0] != null
-            && _brightPassBlurTexture != null
-            && _bloomTexture != null
-            && _classicSourceWidth == plan.SourceWidth
-            && _classicSourceHeight == plan.SourceHeight
-            && _reductionLevelCount == plan.DownsampleDrawCount)
+        if (ActiveClassicTargetsMatch(plan))
         {
             return;
         }
 
-        for (var i = 0; i < _reductionTextures.Length; i++)
+        var activeAllocated = _reductionTextures[0] is not null;
+        if (activeAllocated &&
+            (_classicSourceWidth != plan.SourceWidth || _classicSourceHeight != plan.SourceHeight))
         {
-            _reductionTextures[i]?.Dispose();
-            _reductionTextures[i] = null;
+            // The size-change contract guarantees GPU idle, so both cached families can be
+            // reclaimed here. Rule-only switches below deliberately retain the old family.
+            DisposeActiveClassicTargets();
+            DisposeAlternateClassicTargets();
+            activeAllocated = false;
         }
 
-        _brightPassBlurTexture?.Dispose();
-        _brightPassBlurTexture = null;
-        _bloomTexture?.Dispose();
-        _bloomTexture = null;
+        if (AlternateClassicFamilyMatches(plan))
+        {
+            SwapClassicTargetSets();
+            if (ActiveClassicTargetsMatch(plan))
+            {
+                return;
+            }
 
-        _classicSourceWidth = plan.SourceWidth;
-        _classicSourceHeight = plan.SourceHeight;
-        _reductionLevelCount = plan.DownsampleDrawCount;
-        for (var levelIndex = 0; levelIndex < plan.DownsampleDrawCount; levelIndex++)
+            activeAllocated = true;
+        }
+        else if (activeAllocated && _classicDimensionRule != plan.DimensionRule)
+        {
+            if (_alternateReductionTextures[0] is not null)
+            {
+                throw new InvalidOperationException(
+                    "Both retained HDR target families are occupied by an unexpected layout.");
+            }
+
+            // Move the old family, its metadata, and its untouched RTV bank aside. Its resources
+            // remain alive until a GPU-idle resize or pass disposal.
+            SwapClassicTargetSets();
+            activeAllocated = false;
+        }
+
+        if (!activeAllocated)
+        {
+            _classicSourceWidth = plan.SourceWidth;
+            _classicSourceHeight = plan.SourceHeight;
+            _classicDimensionRule = plan.DimensionRule;
+            _reductionLevelCount = 0;
+        }
+
+        for (var levelIndex = _reductionLevelCount;
+             levelIndex < plan.DownsampleDrawCount;
+             levelIndex++)
         {
             var level = plan.GetReductionLevel(levelIndex);
             var texture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
@@ -646,32 +838,55 @@ internal sealed class GpuTonemapPass12 : IDisposable
                     1, 1, 1, 0,
                     ResourceFlags.AllowRenderTarget),
                 ResourceStates.PixelShaderResource);
-            texture.Name = $"TonemapClassicDownsample_{levelIndex}_{level.TargetWidth}x{level.TargetHeight}";
+            try
+            {
+                texture.Name =
+                    $"TonemapClassicDownsample_Bank{_classicRtvBank}_{levelIndex}_{level.TargetWidth}x{level.TargetHeight}";
+                var rtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+                rtv.Ptr += (nuint)((_classicRtvBank * RtvBankSize + ReductionRtvStart + levelIndex) *
+                                   _avgRtvDescriptorSize);
+                _gpu.Device.CreateRenderTargetView(texture, null, rtv);
+            }
+            catch
+            {
+                // Do not leak an uninstalled COM resource when naming/RTV creation fails. Earlier
+                // levels remain cached and their count below lets a later attempt resume precisely.
+                texture.Dispose();
+                throw;
+            }
+
             _reductionTextures[levelIndex] = texture;
-            var rtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            rtv.Ptr += (nuint)((ReductionRtvStart + levelIndex) * _avgRtvDescriptorSize);
-            _gpu.Device.CreateRenderTargetView(texture, null, rtv);
+            _reductionLevelCount = levelIndex + 1;
         }
+        _reductionLevelCount = Math.Max(_reductionLevelCount, plan.DownsampleDrawCount);
 
         var bloomLevel = plan.GetReductionLevel(0);
         _bloomWidth = bloomLevel.TargetWidth;
         _bloomHeight = bloomLevel.TargetHeight;
-        _brightPassBlurTexture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
-            new HeapProperties(HeapType.Default),
-            HeapFlags.None,
-            ResourceDescription.Texture2D(
-                Format.R16G16B16A16_Float,
-                (uint)_bloomWidth,
-                (uint)_bloomHeight,
-                1, 1, 1, 0,
-                ResourceFlags.AllowRenderTarget),
-            ResourceStates.PixelShaderResource);
-        _brightPassBlurTexture.Name = $"TonemapClassicBrightPassVertical_{_bloomWidth}x{_bloomHeight}";
-        var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-        brightPassRtv.Ptr += BrightPassBlurRtvSlot * _avgRtvDescriptorSize;
-        _gpu.Device.CreateRenderTargetView(_brightPassBlurTexture, null, brightPassRtv);
+        if (plan.BloomEnabled && _brightPassBlurTexture is null)
+        {
+            _brightPassBlurTexture = CreateClassicBloomTarget(
+                $"TonemapClassicBrightPassVertical_Bank{_classicRtvBank}_{_bloomWidth}x{_bloomHeight}");
+            var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+            brightPassRtv.Ptr +=
+                (nuint)((_classicRtvBank * RtvBankSize + BrightPassBlurRtvSlot) * _avgRtvDescriptorSize);
+            _gpu.Device.CreateRenderTargetView(_brightPassBlurTexture, null, brightPassRtv);
+        }
 
-        _bloomTexture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+        if (plan.BloomEnabled && _bloomTexture is null)
+        {
+            _bloomTexture = CreateClassicBloomTarget(
+                $"TonemapClassicBlurHorizontal_Bank{_classicRtvBank}_{_bloomWidth}x{_bloomHeight}");
+            var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+            blurRtv.Ptr +=
+                (nuint)((_classicRtvBank * RtvBankSize + BlurRtvSlot) * _avgRtvDescriptorSize);
+            _gpu.Device.CreateRenderTargetView(_bloomTexture, null, blurRtv);
+        }
+    }
+
+    private ID3D12Resource CreateClassicBloomTarget(string name)
+    {
+        var texture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
             new HeapProperties(HeapType.Default),
             HeapFlags.None,
             ResourceDescription.Texture2D(
@@ -681,10 +896,89 @@ internal sealed class GpuTonemapPass12 : IDisposable
                 1, 1, 1, 0,
                 ResourceFlags.AllowRenderTarget),
             ResourceStates.PixelShaderResource);
-        _bloomTexture.Name = $"TonemapClassicBlurHorizontal_{_bloomWidth}x{_bloomHeight}";
-        var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-        blurRtv.Ptr += BlurRtvSlot * _avgRtvDescriptorSize;
-        _gpu.Device.CreateRenderTargetView(_bloomTexture, null, blurRtv);
+        texture.Name = name;
+        return texture;
+    }
+
+    private bool ActiveClassicTargetsMatch(in ClassicHdrPassPlan plan)
+    {
+        return _reductionTextures[0] is not null
+               && (!plan.BloomEnabled ||
+                   (_brightPassBlurTexture is not null && _bloomTexture is not null))
+               && _classicSourceWidth == plan.SourceWidth
+               && _classicSourceHeight == plan.SourceHeight
+               && _classicDimensionRule == plan.DimensionRule
+               && _reductionLevelCount >= plan.DownsampleDrawCount;
+    }
+
+    private bool AlternateClassicFamilyMatches(in ClassicHdrPassPlan plan)
+    {
+        return _alternateReductionTextures[0] is not null
+               && _alternateClassicSourceWidth == plan.SourceWidth
+               && _alternateClassicSourceHeight == plan.SourceHeight
+               && _alternateClassicDimensionRule == plan.DimensionRule;
+    }
+
+    private void SwapClassicTargetSets()
+    {
+        (_reductionTextures, _alternateReductionTextures) =
+            (_alternateReductionTextures, _reductionTextures);
+        (_brightPassBlurTexture, _alternateBrightPassBlurTexture) =
+            (_alternateBrightPassBlurTexture, _brightPassBlurTexture);
+        (_bloomTexture, _alternateBloomTexture) = (_alternateBloomTexture, _bloomTexture);
+        (_bloomWidth, _alternateBloomWidth) = (_alternateBloomWidth, _bloomWidth);
+        (_bloomHeight, _alternateBloomHeight) = (_alternateBloomHeight, _bloomHeight);
+        (_classicSourceWidth, _alternateClassicSourceWidth) =
+            (_alternateClassicSourceWidth, _classicSourceWidth);
+        (_classicSourceHeight, _alternateClassicSourceHeight) =
+            (_alternateClassicSourceHeight, _classicSourceHeight);
+        (_classicDimensionRule, _alternateClassicDimensionRule) =
+            (_alternateClassicDimensionRule, _classicDimensionRule);
+        (_reductionLevelCount, _alternateReductionLevelCount) =
+            (_alternateReductionLevelCount, _reductionLevelCount);
+        (_classicRtvBank, _alternateRtvBank) = (_alternateRtvBank, _classicRtvBank);
+    }
+
+    private void DisposeActiveClassicTargets()
+    {
+        DisposeClassicResources(_reductionTextures, _brightPassBlurTexture, _bloomTexture);
+        _brightPassBlurTexture = null;
+        _bloomTexture = null;
+        _classicSourceWidth = 0;
+        _classicSourceHeight = 0;
+        _reductionLevelCount = 0;
+        _bloomWidth = 0;
+        _bloomHeight = 0;
+    }
+
+    private void DisposeAlternateClassicTargets()
+    {
+        DisposeClassicResources(
+            _alternateReductionTextures,
+            _alternateBrightPassBlurTexture,
+            _alternateBloomTexture);
+        _alternateBrightPassBlurTexture = null;
+        _alternateBloomTexture = null;
+        _alternateClassicSourceWidth = 0;
+        _alternateClassicSourceHeight = 0;
+        _alternateReductionLevelCount = 0;
+        _alternateBloomWidth = 0;
+        _alternateBloomHeight = 0;
+    }
+
+    private static void DisposeClassicResources(
+        ID3D12Resource?[] reductionTextures,
+        ID3D12Resource? brightPassBlurTexture,
+        ID3D12Resource? bloomTexture)
+    {
+        for (var i = 0; i < reductionTextures.Length; i++)
+        {
+            reductionTextures[i]?.Dispose();
+            reductionTextures[i] = null;
+        }
+
+        brightPassBlurTexture?.Dispose();
+        bloomTexture?.Dispose();
     }
 
     /// <summary>
@@ -696,6 +990,18 @@ internal sealed class GpuTonemapPass12 : IDisposable
     {
         return GpuShaderCompiler12.Compile(name, entryPoint, profile);
     }
+
+    private readonly record struct TonemapLogicalHistoryState(
+        bool AdaptPrimed,
+        int AvgWriteIndex,
+        GpuTonemapMode? LastAdaptiveMode,
+        Format LastHistoryFormat,
+        int LastHistoryHeight,
+        ulong LastHistoryKey,
+        ID3D12Resource? LastHistoryTarget,
+        int LastHistoryWidth,
+        bool LastHistoryReset,
+        string? LastHistoryResetReason);
 
     private sealed class TonemapConstructionTransaction : IDisposable
     {

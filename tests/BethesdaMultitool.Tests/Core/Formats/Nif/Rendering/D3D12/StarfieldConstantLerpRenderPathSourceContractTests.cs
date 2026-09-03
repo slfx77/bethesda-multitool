@@ -60,7 +60,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             decoder, "StarfieldMaterialColor: sub.StarfieldMaterialColor") >= 2);
         SourceContract.AssertOrder(
             disk,
-            "internal const int DecoderVersion = 89;",
+            "internal const int DecoderVersion = 90;",
             "writer.Write(submesh.ClassicEnvironmentMapIsSphereMap);",
             "WriteStarfieldMaterialColor(writer, submesh.StarfieldMaterialColor);",
             "WriteStarfieldMaterialAlpha(writer, submesh.StarfieldMaterialAlpha);");

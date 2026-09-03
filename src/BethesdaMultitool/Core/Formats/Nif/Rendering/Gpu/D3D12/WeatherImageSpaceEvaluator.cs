@@ -290,7 +290,9 @@ internal static class WeatherImageSpaceEvaluator
             TintG = W(static s => s.TintG),
             TintB = W(static s => s.TintB),
             LutTexturePath = dominant.Lut,
-            BloomEnabled = false
+            // The blended Oldrim IMGS values feed its recovered blur route. Special Edition and
+            // FO4/FO76 remain unverified, so the latter family stays neutral here.
+            BloomEnabled = template.ModernFamily == ImageSpaceModernFamily.Skyrim
         };
     }
 
@@ -673,8 +675,11 @@ internal static class WeatherImageSpaceEvaluator
         var luts = string.Join(",", sources.Where(s => !string.IsNullOrWhiteSpace(s.Lut))
             .Select(s => $"{s.Lut}@{F(s.Weight)}"));
         if (luts.Length == 0) luts = "none";
+        var bloomStatus = settings.ModernFamily == ImageSpaceModernFamily.Skyrim
+            ? "oldrim-recovered/sse-unverified"
+            : "neutral";
         return $"modern hour={F(hour)} bands=[{selected}] family={settings.ModernFamily} " +
-               $"eye={F(settings.EyeAdaptSpeed)} bloom(th={F(settings.BrightClamp)},s={F(settings.BrightScale)},neutral) " +
+               $"eye={F(settings.EyeAdaptSpeed)} bloom(th={F(settings.BrightClamp)},s={F(settings.BrightScale)},{bloomStatus}) " +
                $"exposure={F(settings.AutoExposureMin)}..{F(settings.AutoExposureMax)} middle={F(settings.MiddleGray)} " +
                $"tonemapE={F(settings.TonemapE)} sun={F(settings.SunlightScale)} sky={F(settings.SkyScale)} " +
                $"cin={F(settings.Saturation)}/{F(settings.Brightness)}/{F(settings.Contrast)} luts=[{luts}](retained-only)";

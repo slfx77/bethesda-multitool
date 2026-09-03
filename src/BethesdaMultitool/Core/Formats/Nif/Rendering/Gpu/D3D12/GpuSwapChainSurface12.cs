@@ -730,9 +730,11 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     ///     Call <see cref="FinishBackBuffer" /> after those overlays. Every HDR scene target is
     ///     restored to its render state for the next frame.
     /// </summary>
-    public void ResolveTo(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer)
+    public void ResolveTo(GpuCommandRecorder12 recorder, ID3D12Resource backBuffer)
     {
         if (_msaaColor is null) return;
+        ArgumentNullException.ThrowIfNull(recorder);
+        var cmd = recorder.CommandList;
 
         // WATER001 borrows _hdrResolve in the MSAA path. Restore its ordinary ResolveDest baseline
         // defensively so a missed host cleanup cannot make the final resolve use a PSR-state dest.
@@ -759,7 +761,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         var backRtv =
  new CpuDescriptorHandle(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), (int)index, _rtvDescriptorSize);
         cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.RenderTarget);
-        _tonemap.Record(cmd, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height, TonemapSettings, _tonemapEnabled);
+        _tonemap.Record(recorder, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height,
+            TonemapSettings, _tonemapEnabled);
 
         // 3. Restore scene-target states for next frame.
         if (_hdrResolve is not null)

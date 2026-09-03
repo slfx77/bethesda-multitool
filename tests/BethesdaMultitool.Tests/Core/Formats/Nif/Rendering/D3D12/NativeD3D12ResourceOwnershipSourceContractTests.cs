@@ -145,7 +145,7 @@ public sealed class NativeD3D12ResourceOwnershipSourceContractTests
         var tonemapConstructor = SourceContract.Extract(
             tonemap,
             "public GpuTonemapPass12(",
-            "/// <summary>Whether the most recently recorded pass");
+            "///     Whether the latest recorded pass invalidated eye-adaptation history.");
         var surface = D3D12Source("Gpu", "D3D12", "GpuSwapChainSurface12.cs");
         var surfaceConstructor = SourceContract.Extract(
             surface,

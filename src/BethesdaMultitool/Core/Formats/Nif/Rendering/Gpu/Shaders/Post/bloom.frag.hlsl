@@ -1,4 +1,5 @@
-// FNV recovered bloom topology (shared with the other classic paths pending their binary oracles):
+// Recovered D3D9-era bloom topology. FNV and installed Oldrim 1.9.32 independently prove the same
+// two-pass blur topology and all seven IEEE-754 kernel rows; Skyrim Special Edition is unverified:
 //   HDR scene -> recursive DownSample16 chain to 1x1 for ADAPT; retain the first /4 level for a
 //   vertical BrightPassBlur draw -> horizontal plain-blur draw -> composite.
 // BlurPasses is stored by the data formats but is not a repeated-pass counter in this shader chain.
@@ -13,6 +14,7 @@
 Texture2D    uSource  : register(t0);
 Texture2D    uAvgLum  : register(t1);
 SamplerState uSampler : register(s0);
+SamplerState uPointSampler : register(s1);
 
 cbuffer BloomParams : register(b0)
 {
@@ -28,8 +30,9 @@ struct PSInput
     float2 vUv      : TEXCOORD0;
 };
 
-// Bit-exact weights recovered from the seven ImageSpaceEffectBlur tables in the retail FNV XEX.
-// Keeping the original IEEE-754 payloads also avoids depending on a shader compiler's exp result.
+// Bit-exact weights recovered from the seven ImageSpaceEffectBlur tables in the retail FNV XEX and
+// independently matched against Oldrim's aBlurWeights initializer. Keeping the original IEEE-754
+// payloads also avoids depending on a shader compiler's exp result.
 float ClassicBrightPassWeight(int radius, int distance)
 {
     if (radius == 1)
@@ -104,6 +107,52 @@ float4 mainDownsample16(PSInput input) : SV_Target
         uSource.SampleLevel(uSampler, input.vUv + float2( 1.0,  1.0) * texel, 0).rgb +
         uSource.SampleLevel(uSampler, input.vUv + float2(-1.0,  1.0) * texel, 0).rgb;
     return float4(sum * 0.25, 1.0);
+}
+
+// Skyrim ImageSpaceEffectHDR slot 5 when BSShaderManager::bFPFiltering is true. The recovered
+// fDownSample1024 table is {(-1,-1),(-1,+1),(+1,-1),(+1,+1)}, with weight 0x3E800000.
+// Unlike the RGB slot-4 pass, this stage projects each decoded fetch to retail luminance.
+float4 mainSkyrimLuminance4(PSInput input) : SV_Target
+{
+    const float3 SkyrimLuma = float3(0.2125, 0.7154, 0.0721);
+    float weight = asfloat(0x3E800000u);
+    float2 texel = uBloom1.xy;
+    float luminance =
+        dot(uSource.SampleLevel(uSampler, input.vUv + float2(-1.0,  1.0) * texel, 0).rgb, SkyrimLuma) * weight;
+    luminance +=
+        dot(uSource.SampleLevel(uSampler, input.vUv + float2(-1.0, -1.0) * texel, 0).rgb, SkyrimLuma) * weight;
+    luminance +=
+        dot(uSource.SampleLevel(uSampler, input.vUv + float2( 1.0, -1.0) * texel, 0).rgb, SkyrimLuma) * weight;
+    luminance +=
+        dot(uSource.SampleLevel(uSampler, input.vUv + float2( 1.0,  1.0) * texel, 0).rgb, SkyrimLuma) * weight;
+    return float4(luminance.xxx, 1.0);
+}
+
+// Skyrim slot 6: the fDownSample1024NoFiltering table is the row-major 4x4 grid whose axes are
+// {-1.5,-0.5,+0.5,+1.5}; every exact table weight is 0x3D800000 (1/16). Retail binds
+// FILTER_NEAREST for this slot (unlike filtered slots 5 and 9). That distinction is observable on
+// the odd ceil(/4) stages, whose output UVs do not map every half-offset to an exact source center.
+float SkyrimDownsample16Scalar(float2 uv, float2 texel)
+{
+    float weight = asfloat(0x3D800000u);
+    float luminance = 0.0;
+    [unroll]
+    for (int y = 0; y < 4; y++)
+    {
+        [unroll]
+        for (int x = 0; x < 4; x++)
+        {
+            float2 offset = float2((float)x - 1.5, (float)y - 1.5);
+            luminance += uSource.SampleLevel(uPointSampler, uv + offset * texel, 0).r * weight;
+        }
+    }
+    return luminance;
+}
+
+float4 mainSkyrimDownsample16(PSInput input) : SV_Target
+{
+    float luminance = SkyrimDownsample16Scalar(input.vUv, uBloom1.xy);
+    return float4(luminance.xxx, 1.0);
 }
 
 float4 main(PSInput input) : SV_Target

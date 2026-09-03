@@ -16,9 +16,10 @@ internal enum GpuTonemapMode
     LegacyClamp = 0,
 
     /// <summary>
-    ///     Gamma-corrected ACES filmic: decode 2.2 → exposure → curve → encode 1/2.2. Stand-in for the
-    ///     Creation-era games (Skyrim/FO4/FO76) until their imagespace stage is ported. The decode/encode
-    ///     pair fixes the "washed out" look of running ACES directly on the gamma-space scene values.
+    ///     Gamma-corrected ACES filmic: decode 2.2 → exposure → curve → encode 1/2.2. Stand-in for
+    ///     FO4/FO76 until their imagespace stage is ported, and a diagnostic override for other games.
+    ///     The decode/encode pair fixes the "washed out" look of running ACES directly on gamma-space
+    ///     scene values.
     /// </summary>
     GammaAces = 1,
 
@@ -34,8 +35,8 @@ internal enum GpuTonemapMode
     EngineFo3Fnv = 2,
 
     /// <summary>
-    ///     Default-off Skyrim/FO4-family increment. Authored auto exposure and cinematic values are
-    ///     active; unrecovered filmic/LUT/bloom topology is deliberately identity/disabled.
+    ///     Default-off FO4-family increment. Authored auto exposure and cinematic values are active;
+    ///     unrecovered filmic/LUT/bloom topology is deliberately identity/disabled.
     /// </summary>
     CreationModern = 3,
 
@@ -59,7 +60,14 @@ internal enum GpuTonemapMode
     ///     scene at neutral exposure (no eye-adapt scaling, no HDR display operator) and adds the
     ///     bloom term over it, then applies the classic grade (neutral for Oblivion — no IMGS).
     /// </summary>
-    ClassicSdrBloom = 5
+    ClassicSdrBloom = 5,
+
+    /// <summary>
+    ///     Oldrim's recovered <c>BSImagespaceShaderHDRTonemapBlendCinematic</c> display equation,
+    ///     two-lane light adaptation, and separable bright-pass bloom. This is the Skyrim default;
+    ///     the Special Edition imagespace implementation remains unverified.
+    /// </summary>
+    EngineSkyrim = 6
 }
 
 /// <summary>
@@ -100,6 +108,10 @@ internal readonly record struct GpuTonemapModeTraits(
             GpuTonemapMode.GammaAces => new GpuTonemapModeTraits(true, false, false, false),
             GpuTonemapMode.EngineFo3Fnv => new GpuTonemapModeTraits(true, true, true, true),
             GpuTonemapMode.CreationModern => new GpuTonemapModeTraits(true, false, true, false),
+            // Oldrim has its own recovered ceiling-/4 reduction and two-lane adaptation. Its blur
+            // effect shares the same exact two-pass topology and IEEE weight rows as this classic
+            // infrastructure; Special Edition remains unverified.
+            GpuTonemapMode.EngineSkyrim => new GpuTonemapModeTraits(true, true, true, true),
             // The standalone cinematic effect is an LDR grade, not an HDR display operator.
             GpuTonemapMode.CinematicFo3Fnv => new GpuTonemapModeTraits(false, false, false, false),
             // SDR display, but the classic reduction + adaptation still run: the bloom
@@ -155,12 +167,18 @@ internal readonly record struct GpuTonemapSettings
     /// <summary>
     ///     Temporal eye-adaptation blend factor for THIS frame: the weight of the CURRENT scene
     ///     average (engine ADAPT pass: <c>k = EyeAdaptSpeed^clamp(15·dt, 0, 1)</c>, new = (1−k)·prev +
-    ///     k·current). 1 = instant adaptation — the right value for single-frame headless captures
-    ///     and the first live frame; the live frame path computes it from the frame delta +
-    ///     <see cref="EyeAdaptSpeed" />. It also stabilizes the modern path's still-provisional sparse
-    ///     average against camera motion.
+    ///     k·current). Live and repeated offscreen capture frames compute it from their actual frame
+    ///     delta plus <see cref="EyeAdaptSpeed" />; the pass itself supplies a no-history sentinel on
+    ///     the first frame. It also stabilizes the modern path's still-provisional sparse average
+    ///     against camera motion.
     /// </summary>
     public float AdaptFactor { get; init; }
+
+    /// <summary>
+    ///     Skyrim HDR's fast adapted-luminance factor for this frame. <see cref="AdaptFactor" /> carries
+    ///     its slow factor in <see cref="GpuTonemapMode.EngineSkyrim" />; other modes ignore this lane.
+    /// </summary>
+    public float AdaptFactorFast { get; init; }
 
     /// <summary>
     ///     Stable identity of the explicit eye-adaptation clear generation. Routine classic CELL,
@@ -210,14 +228,14 @@ internal readonly record struct GpuTonemapSettings
     public float TintAmount { get; init; }
 
     /// <summary>
-    ///     BrightPassBlur bloom stage on/off. Engine-mode only this cut (Skyrim/FO4 bloom rides their
-    ///     imagespace port). Runtime-flippable with no pipeline rebuild — the pass is simply skipped.
+    ///     BrightPassBlur bloom stage on/off. Recovered for the classic FO3/FNV route and Oldrim;
+    ///     FO4/FO76 remain disabled. Runtime-flippable with no pipeline rebuild — the pass is skipped.
     /// </summary>
     public bool BloomEnabled { get; init; }
 
     /// <summary>
-    ///     IMGS HDR: diagonal blur-row radius in bloom texels. The recovered FNV path truncates the
-    ///     authored float, then clamps to 1..7 to select the 3..15-tap shader family.
+    ///     IMGS HDR: blur-row radius in bloom texels. The recovered FNV and Oldrim paths truncate the
+    ///     authored float, then clamp to 1..7 to select the 3..15-tap shader family.
     /// </summary>
     public float BlurRadius { get; init; }
 
@@ -457,7 +475,7 @@ internal readonly record struct GpuTonemapSettings
             return settings with
             {
                 Mode = mode,
-                BloomEnabled = mode is GpuTonemapMode.ClassicSdrBloom or GpuTonemapMode.EngineFo3Fnv
+                BloomEnabled = GpuTonemapModeTraits.For(mode, true).AllowsClassicBloom
                                && settings.BloomEnabled && guiBloomEnabled,
                 EmissiveMult = 1f,
                 HistoryKey = historyKey
@@ -475,7 +493,7 @@ internal readonly record struct GpuTonemapSettings
                 // wins over the GUI's automatic cinematic choice. The GUI engine-HDR gate still
                 // neutralizes scene-side HDR multipliers.
                 Mode = mode,
-                BloomEnabled = mode == GpuTonemapMode.EngineFo3Fnv
+                BloomEnabled = GpuTonemapModeTraits.For(mode, true).AllowsClassicBloom
                                && settings.BloomEnabled && guiBloomEnabled,
                 EmissiveMult = 1f,
                 HistoryKey = historyKey
@@ -489,7 +507,7 @@ internal readonly record struct GpuTonemapSettings
             return settings with
             {
                 Mode = forcedMode,
-                BloomEnabled = forcedMode == GpuTonemapMode.EngineFo3Fnv
+                BloomEnabled = GpuTonemapModeTraits.For(forcedMode, true).AllowsClassicBloom
                                && settings.BloomEnabled && guiBloomEnabled,
                 HistoryKey = historyKey
             };
@@ -535,7 +553,9 @@ internal readonly record struct GpuTonemapSettings
         if (!hdrActive) return 1f;
         if (settings.ModernFamily is not null)
         {
-            return game == BethesdaGame.Skyrim && settings.Mode != GpuTonemapMode.CreationModern
+            return game == BethesdaGame.Skyrim
+                   && settings.Mode is not GpuTonemapMode.CreationModern
+                       and not GpuTonemapMode.EngineSkyrim
                 ? EncodePhysicalScaleForGammaScene(settings.SunlightScale)
                 : settings.SunlightScale;
         }
@@ -563,20 +583,24 @@ internal readonly record struct GpuTonemapSettings
 
     /// <summary>
     ///     Resolves the Creation-era non-imagespace sky multiplier separately from the display operator.
-    ///     Skyrim's default fallback scene is gamma-encoded, so a physical linear multiplier must be
-    ///     gamma-encoded before it is applied to the sky colors. CreationModern retains the authored raw
-    ///     value because that diagnostic path owns its own (still incomplete) imagespace equation.
+    ///     A diagnostic GammaAces Skyrim scene is gamma-encoded, so a physical linear multiplier must
+    ///     be gamma-encoded before it is applied to the sky colors. CreationModern and EngineSkyrim
+    ///     retain the authored raw value because their imagespace equations own that scene route.
     /// </summary>
     internal static float ResolveSceneSkyScale(
         GpuTonemapSettings settings, BethesdaGame game, bool hdrActive, bool isInterior)
     {
         if (!hdrActive || settings.ModernFamily is null) return 1f;
-        if (game == BethesdaGame.Skyrim && settings.Mode != GpuTonemapMode.CreationModern)
+        if (game == BethesdaGame.Skyrim
+            && settings.Mode is not GpuTonemapMode.CreationModern
+                and not GpuTonemapMode.EngineSkyrim)
         {
             return EncodePhysicalScaleForGammaScene(settings.SkyScale);
         }
 
-        return settings.Mode == GpuTonemapMode.CreationModern ? settings.SkyScale : 1f;
+        return settings.Mode is GpuTonemapMode.CreationModern or GpuTonemapMode.EngineSkyrim
+            ? settings.SkyScale
+            : 1f;
     }
 
     /// <summary>
@@ -597,9 +621,10 @@ internal readonly record struct GpuTonemapSettings
             Mode = GpuTonemapMode.CreationModern,
             ModernFamily = family,
             // The recovered manager path proves the authored exposure values are retained, but not
-            // Skyrim/FO4's temporal response equation. Instant replacement is the neutral behavior:
-            // it avoids silently borrowing the classic FO3/FNV adaptation curve.
+            // FO4's temporal response equation. EngineSkyrim replaces these provisional values with
+            // the recovered Oldrim slow/fast factors per frame.
             AdaptFactor = 1f,
+            AdaptFactorFast = 1f,
             UpperLumClamp = 65504f,
             AutoExposureMin = 1f,
             AutoExposureMax = 1f,
@@ -609,7 +634,50 @@ internal readonly record struct GpuTonemapSettings
             SunlightScale = 1f,
             GrassScale = 1f,
             SkyScale = 1f,
-            BloomEnabled = false
+            // Oldrim's two-pass blur route is recovered; FO4/FO76 bloom remains unverified.
+            BloomEnabled = family == ImageSpaceModernFamily.Skyrim
+        };
+    }
+
+    /// <summary>
+    ///     Resolves the temporal weight carried by one live or capture frame. Keeping this policy in
+    ///     one place prevents offscreen acceptance captures from silently using the struct defaults
+    ///     (instant adaptation) while the visible viewport runs the recovered time-based equation.
+    /// </summary>
+    internal static GpuTonemapSettings ResolvePerFrameAdaptation(
+        GpuTonemapSettings settings,
+        float deltaSeconds)
+    {
+        deltaSeconds = Math.Max(float.IsFinite(deltaSeconds) ? deltaSeconds : 0f, 0f);
+        if (settings.Mode == GpuTonemapMode.EngineSkyrim)
+        {
+            var factors = SkyrimImageSpaceReference.ResolveAdaptationFactors(
+                settings.EyeAdaptSpeed,
+                settings.EyeAdaptStrength,
+                deltaSeconds);
+            return settings with
+            {
+                AdaptFactor = factors.Slow,
+                AdaptFactorFast = factors.Fast
+            };
+        }
+
+        if (settings.Mode == GpuTonemapMode.CreationModern)
+        {
+            // The modern temporal response has not been recovered. Replace the average immediately
+            // instead of applying the unrelated FO3/FNV ADAPT equation.
+            return settings with { AdaptFactor = 1f };
+        }
+
+        if (settings.EyeAdaptSpeed <= 0f)
+        {
+            return settings;
+        }
+
+        var speed = Math.Clamp(settings.EyeAdaptSpeed, 0.01f, 0.999f);
+        return settings with
+        {
+            AdaptFactor = MathF.Pow(speed, Math.Clamp(15f * deltaSeconds, 0f, 1f))
         };
     }
 
@@ -635,9 +703,9 @@ internal readonly record struct GpuTonemapSettings
                 SunlightScale = hdr.SunlightScale,
                 GrassScale = hdr.SunlightScale,
                 SkyScale = hdr.SkyScale,
-                // The recovered FO4 code proves these values are blended and handed to the manager,
-                // but not the bloom render topology. Keep it disabled until that shader oracle lands.
-                BloomEnabled = false
+                // Oldrim's ImageSpaceEffectBlur topology and shader family are recovered. The same
+                // statement is not made for Special Edition or FO4/FO76.
+                BloomEnabled = hdr.Family == ImageSpaceModernFamily.Skyrim
             };
         }
 
@@ -683,8 +751,9 @@ internal readonly record struct GpuTonemapSettings
     /// <summary>
     ///     Default operator per game family: FO3/FNV = their IMGS-driven engine HDR stage; Oblivion =
     ///     the same recovered HDR operator with neutral cinematic grading (its values come from WTHR HNAM),
-    ///     Morrowind = legacy clamp (pre-HDR engine), everything else = gamma-corrected ACES.
-    ///     <c>FALLOUT_VIEWER_TONEMAP=off|aces|engine|modern</c> overrides for A/Bs.
+    ///     Skyrim = its recovered retail HDR route, Morrowind = legacy clamp (pre-HDR engine), and
+    ///     the remaining families = gamma-corrected ACES unless their diagnostic route is enabled.
+    ///     <c>FALLOUT_VIEWER_TONEMAP=off|aces|engine|modern|skyrim-retail</c> overrides for A/Bs.
     /// </summary>
     public static GpuTonemapSettings ForGame(BethesdaGame game, bool interior = false)
     {
@@ -694,12 +763,9 @@ internal readonly record struct GpuTonemapSettings
             BethesdaGame.Oblivion => ForOblivionWeather(null),
             BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas =>
                 interior ? EngineInteriorDefaults : EngineExteriorDefaults,
-            // Retain Skyrim's semantic family even while GammaAces remains the default display
-            // operator. This lets its non-imagespace SunlightScale/SkyScale resolve independently
-            // without enabling the unrecovered cinematic/exposure pipeline.
             BethesdaGame.Skyrim => ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
             {
-                Mode = ModernPipelineEnabled ? GpuTonemapMode.CreationModern : GpuTonemapMode.GammaAces
+                Mode = GpuTonemapMode.EngineSkyrim
             },
             BethesdaGame.Fallout4 or BethesdaGame.Fallout76 when ModernPipelineEnabled =>
                 ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4),
@@ -748,6 +814,7 @@ internal readonly record struct GpuTonemapSettings
             "aces" => GpuTonemapMode.GammaAces,
             "engine" => GpuTonemapMode.EngineFo3Fnv,
             "modern" => GpuTonemapMode.CreationModern,
+            "skyrim" or "skyrim-retail" => GpuTonemapMode.EngineSkyrim,
             _ => null
         };
     }
@@ -771,8 +838,8 @@ internal readonly record struct GpuTonemapSettings
             settings = settings with { BloomEnabled = true };
         }
 
-        // Modern bloom topology has not been recovered. Keep this bounded opt-in from accidentally
-        // running the FO3/FNV chain even when the global diagnostic bloom override is enabled.
+        // FO4/FO76 bloom topology has not been recovered. Keep this bounded opt-in from accidentally
+        // running the D3D9-era chain even when the global diagnostic bloom override is enabled.
         if (settings.Mode == GpuTonemapMode.CreationModern)
         {
             settings = settings with { BloomEnabled = false };

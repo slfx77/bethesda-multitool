@@ -73,6 +73,8 @@ public sealed class GpuTonemapSettingsTests
     // --- Hdr: each family's engine HDR operator; authored scene multipliers survive. ---
     [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, true, -1,
         (int)GpuTonemapMode.EngineFo3Fnv, true, false)]
+    [InlineData(BethesdaGame.Skyrim, (int)GpuTonemapGuiMode.Hdr, true, -1,
+        (int)GpuTonemapMode.EngineSkyrim, true, false)]
     [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, true, (int)GpuTonemapMode.LegacyClamp,
         (int)GpuTonemapMode.LegacyClamp, false, false)]
     [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, true, (int)GpuTonemapMode.GammaAces,
@@ -92,7 +94,7 @@ public sealed class GpuTonemapSettingsTests
         var authored = GpuTonemapSettings.EngineExteriorDefaults with
         {
             Mode = game == BethesdaGame.Skyrim
-                ? GpuTonemapMode.GammaAces
+                ? GpuTonemapMode.EngineSkyrim
                 : GpuTonemapMode.EngineFo3Fnv,
             EmissiveMult = 7f,
             BloomEnabled = true,
@@ -225,6 +227,7 @@ public sealed class GpuTonemapSettingsTests
     [InlineData(true, (int)GpuTonemapMode.EngineFo3Fnv, false, 1f, true, true, false)]
     [InlineData(true, (int)GpuTonemapMode.EngineFo3Fnv, true, 0f, true, true, false)]
     [InlineData(true, (int)GpuTonemapMode.CreationModern, true, 1f, false, true, false)]
+    [InlineData(true, (int)GpuTonemapMode.EngineSkyrim, true, 1f, true, true, true)]
     [InlineData(true, (int)GpuTonemapMode.CinematicFo3Fnv, true, 1f, false, false, false)]
     // ClassicSdrBloom schedules the full classic chain (the bright pass thresholds against the
     // adapted average) even though its composite is an SDR clamp.
@@ -557,7 +560,7 @@ public sealed class GpuTonemapSettingsTests
     [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapMode.EngineFo3Fnv, true)]
     [InlineData(BethesdaGame.Fallout3, (int)GpuTonemapMode.EngineFo3Fnv, true)]
     [InlineData(BethesdaGame.Oblivion, (int)GpuTonemapMode.EngineFo3Fnv, true)]
-    [InlineData(BethesdaGame.Skyrim, (int)GpuTonemapMode.GammaAces, false)]
+    [InlineData(BethesdaGame.Skyrim, (int)GpuTonemapMode.EngineSkyrim, true)]
     [InlineData(BethesdaGame.Morrowind, (int)GpuTonemapMode.LegacyClamp, false)]
     public void ForGame_BloomFollowsEngineMode(BethesdaGame game, int expectedMode, bool expectedBloom)
     {
@@ -640,7 +643,7 @@ public sealed class GpuTonemapSettingsTests
     }
 
     [Fact]
-    public void ModernPipeline_IsDefaultOffAndExplicitlyOptedIn()
+    public void ModernPipeline_Fallout4IsOptInWhileSkyrimUsesRecoveredRetailRoute()
     {
         var previous = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE");
         var previousTonemap = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP");
@@ -649,14 +652,16 @@ public sealed class GpuTonemapSettingsTests
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", null);
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP", null);
             var skyrimDefault = GpuTonemapSettings.ForGame(BethesdaGame.Skyrim);
-            Assert.Equal(GpuTonemapMode.GammaAces, skyrimDefault.Mode);
+            Assert.Equal(GpuTonemapMode.EngineSkyrim, skyrimDefault.Mode);
             Assert.Equal(ImageSpaceModernFamily.Skyrim, skyrimDefault.ModernFamily);
+            Assert.True(skyrimDefault.BloomEnabled);
             Assert.Equal(GpuTonemapMode.GammaAces, GpuTonemapSettings.ForGame(BethesdaGame.Fallout4).Mode);
             Assert.Null(GpuTonemapSettings.ForGame(BethesdaGame.Fallout4).ModernFamily);
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", "1");
             var skyrimEnabled = GpuTonemapSettings.ForGame(BethesdaGame.Skyrim);
-            Assert.Equal(GpuTonemapMode.CreationModern, skyrimEnabled.Mode);
+            Assert.Equal(GpuTonemapMode.EngineSkyrim, skyrimEnabled.Mode);
             Assert.Equal(ImageSpaceModernFamily.Skyrim, skyrimEnabled.ModernFamily);
+            Assert.True(skyrimEnabled.BloomEnabled);
             var enabled = GpuTonemapSettings.ForGame(BethesdaGame.Fallout4);
             Assert.Equal(GpuTonemapMode.CreationModern, enabled.Mode);
             Assert.Equal(ImageSpaceModernFamily.Fallout4, enabled.ModernFamily);
@@ -667,6 +672,27 @@ public sealed class GpuTonemapSettingsTests
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", previous);
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP", previousTonemap);
         }
+    }
+
+    [Fact]
+    public void ResolvePerFrameAdaptation_SkyrimUsesRecoveredSlowAndFastFactors()
+    {
+        var settings = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
+        {
+            Mode = GpuTonemapMode.EngineSkyrim,
+            EyeAdaptSpeed = 30f,
+            EyeAdaptStrength = 2f
+        };
+        const float deltaSeconds = 1f / 60f;
+        var expected = SkyrimImageSpaceReference.ResolveAdaptationFactors(
+            settings.EyeAdaptSpeed,
+            settings.EyeAdaptStrength,
+            deltaSeconds);
+
+        var actual = GpuTonemapSettings.ResolvePerFrameAdaptation(settings, deltaSeconds);
+
+        Assert.Equal(expected.Slow, actual.AdaptFactor, 6);
+        Assert.Equal(expected.Fast, actual.AdaptFactorFast, 6);
     }
 
     [Fact]

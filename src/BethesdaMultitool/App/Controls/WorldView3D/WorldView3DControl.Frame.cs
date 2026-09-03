@@ -358,24 +358,11 @@ public sealed partial class WorldView3DControl
         _lastFrameStartTimestamp = now;
 
         // Per-frame refresh is a cheap struct assignment; keeps the tonemap operator in lockstep with
-        // interior/exterior + worldspace switches without invalidation bookkeeping. AdaptFactor is the
-        // engine ADAPT blend weight for THIS frame (k = EyeAdaptSpeed^clamp(15·dt, 0, 1)) — the temporal
-        // smoothing that keeps the sparse-grid exposure from flickering while the camera moves.
-        var tonemap = ResolveTonemapSettings();
-        if (tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern)
-        {
-            // The modern temporal response has not been recovered. Replace the average immediately
-            // instead of applying the unrelated FO3/FNV ADAPT equation.
-            tonemap = tonemap with { AdaptFactor = 1f };
-        }
-        else if (tonemap.EyeAdaptSpeed > 0f)
-        {
-            var speed = Math.Clamp(tonemap.EyeAdaptSpeed, 0.01f, 0.999f);
-            tonemap = tonemap with
-            {
-                AdaptFactor = MathF.Pow(speed, Math.Clamp(15f * Math.Max(deltaSeconds, 0f), 0f, 1f))
-            };
-        }
+        // interior/exterior + worldspace switches without invalidation bookkeeping. Classic modes use
+        // AdaptFactor as their recovered single ADAPT weight. EngineSkyrim instead carries retail's
+        // slow factor there and its fast factor in AdaptFactorFast.
+        var tonemap = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+            .ResolvePerFrameAdaptation(ResolveTonemapSettings(), deltaSeconds);
 
         _surface12.TonemapSettings = tonemap;
         // Record the RAW timestep for the frame profiler before clamping: the clamp would hide
@@ -1975,7 +1962,7 @@ public sealed partial class WorldView3DControl
         // (nor be tonemapped/eye-adapted themselves — a debug overlay's brightness must not track
         // scene exposure). Collision additionally draws camera-relative because its large absolute
         // coordinates wobbled against camera-relative reference geometry in the HDR frame.
-        surface.ResolveTo(cmd, backBuffer);
+        surface.ResolveTo(recorder, backBuffer);
 
         // A retained selection is allowed while Meshes is hidden, but its reference-derived outline
         // follows the live reference layer. Export framing is independent, so include it explicitly
@@ -2263,7 +2250,35 @@ public sealed partial class WorldView3DControl
         /// </summary>
         public Vector4 ClipPlane;
 
-        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16 + 16 + 16;
+        // Skyrim's retail BSLightingShader consumes a row-major float3x4, not the six raw cube
+        // faces. Kept after the shared cube so Fallout 76 and every manual neutral b3 writer retain
+        // their existing offsets. DirectionalAmbientMode.x == 1 selects these rows in the shader.
+        public Vector4 SkyrimDirectionalAmbientRow0;
+        public Vector4 SkyrimDirectionalAmbientRow1;
+        public Vector4 SkyrimDirectionalAmbientRow2;
+        public Vector4 DirectionalAmbientMode;
+
+        public const uint ByteSize = AtmosphereConstantBufferLayout.ByteSize;
+
+        static AtmosphereConstants()
+        {
+            Debug.Assert(
+                (uint)System.Runtime.InteropServices.Marshal.SizeOf<AtmosphereConstants>() == ByteSize,
+                "AtmosphereConstants must remain byte-identical to atmosphere.hlsli.");
+            Debug.Assert(
+                System.Runtime.InteropServices.Marshal.OffsetOf<AtmosphereConstants>(nameof(ClipPlane)).ToInt32() ==
+                AtmosphereConstantBufferLayout.ClipPlaneFloat4Slot * AtmosphereConstantBufferLayout.Float4ByteSize);
+            Debug.Assert(
+                System.Runtime.InteropServices.Marshal.OffsetOf<AtmosphereConstants>(
+                    nameof(SkyrimDirectionalAmbientRow0)).ToInt32() ==
+                AtmosphereConstantBufferLayout.SkyrimDirectionalAmbientRow0Float4Slot *
+                AtmosphereConstantBufferLayout.Float4ByteSize);
+            Debug.Assert(
+                System.Runtime.InteropServices.Marshal.OffsetOf<AtmosphereConstants>(
+                    nameof(DirectionalAmbientMode)).ToInt32() ==
+                AtmosphereConstantBufferLayout.DirectionalAmbientModeFloat4Slot *
+                AtmosphereConstantBufferLayout.Float4ByteSize);
+        }
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -2284,6 +2299,8 @@ public sealed partial class WorldView3DControl
         {
             var directionalAmbient = AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
                 game, AuthoredSkyArchitecture.ExplicitOverride, a.DirectionalAmbient);
+            var useSkyrimDirectionalAmbient = SkyrimDirectionalAmbientTransform.TryCreate(
+                game, directionalAmbient, out var skyrimDirectionalAmbient);
 
             return new()
             {
@@ -2329,6 +2346,18 @@ public sealed partial class WorldView3DControl
                     : Vector4.Zero,
                 AmbientNegativeZ = directionalAmbient is { } cubeNz
                     ? new Vector4(cubeNz.NegativeZ, 0f)
+                    : Vector4.Zero,
+                SkyrimDirectionalAmbientRow0 = useSkyrimDirectionalAmbient
+                    ? skyrimDirectionalAmbient.Row0
+                    : Vector4.Zero,
+                SkyrimDirectionalAmbientRow1 = useSkyrimDirectionalAmbient
+                    ? skyrimDirectionalAmbient.Row1
+                    : Vector4.Zero,
+                SkyrimDirectionalAmbientRow2 = useSkyrimDirectionalAmbient
+                    ? skyrimDirectionalAmbient.Row2
+                    : Vector4.Zero,
+                DirectionalAmbientMode = useSkyrimDirectionalAmbient
+                    ? new Vector4(1f, 0f, 0f, 0f)
                     : Vector4.Zero
             };
         }

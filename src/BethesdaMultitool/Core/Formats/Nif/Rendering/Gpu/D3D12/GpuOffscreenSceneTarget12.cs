@@ -514,8 +514,10 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     ///     tonemap into the 8-bit output; copy that into the readback buffer. All states round-trip so
     ///     the target is reusable next cycle. Must be the last thing recorded before EndFrame.
     /// </summary>
-    public void RecordReadback(ID3D12GraphicsCommandList cmd)
+    public void RecordReadback(GpuCommandRecorder12 recorder)
     {
+        ArgumentNullException.ThrowIfNull(recorder);
+        var cmd = recorder.CommandList;
         // The MSAA WATER001 path borrows _hdrResolveTex. Restore its ordinary ResolveDest baseline
         // defensively before the final capture resolve/tonemap cycle.
         RestoreWaterOpaqueSnapshot(cmd);
@@ -541,7 +543,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         }
 
         // 2. Tonemap HDR → LDR output.
-        _tonemap.Record(cmd, hdrSource, ColorFormat, _ldrRtvHandle, Width, Height, TonemapSettings, _tonemapEnabled);
+        _tonemap.Record(recorder, hdrSource, ColorFormat, _ldrRtvHandle, Width, Height,
+            TonemapSettings, _tonemapEnabled);
 
         // 3. Copy LDR output → readback, restoring every state.
         cmd.ResourceBarrierTransition(_ldrOutputTex, ResourceStates.RenderTarget, ResourceStates.CopySource);

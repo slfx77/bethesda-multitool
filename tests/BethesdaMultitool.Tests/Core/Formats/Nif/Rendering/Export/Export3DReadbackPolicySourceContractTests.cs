@@ -25,14 +25,14 @@ public sealed class Export3DReadbackPolicySourceContractTests
             "isFullySettled = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: true);",
             "captureReadback = ExportTileCaptureDecision.ShouldCapture(",
             "if (captureReadback)",
-            "target.RecordReadback(cmd);",
+            "target.RecordReadback(recorder);",
             "target.FinishFrameWithoutReadback(cmd);",
             "if (!captureReadback)",
             "return new Export3DRenderResult(null, isComplete, isFullySettled);",
             "var ssBytes = target.ReadbackToBytes();",
             "return new Export3DRenderResult(readback, isComplete, isFullySettled);");
 
-        Assert.Equal(1, SourceContract.CountOccurrences(render, "target.RecordReadback(cmd);"));
+        Assert.Equal(1, SourceContract.CountOccurrences(render, "target.RecordReadback(recorder);"));
         Assert.Equal(1, SourceContract.CountOccurrences(render, "target.ReadbackToBytes();"));
     }
 

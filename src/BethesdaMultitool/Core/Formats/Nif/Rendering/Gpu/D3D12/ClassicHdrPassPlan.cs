@@ -17,6 +17,12 @@ internal readonly record struct ClassicHdrReductionLevel(
     int TargetWidth,
     int TargetHeight);
 
+internal enum HdrReductionDimensionRule
+{
+    FloorQuarter,
+    CeilingQuarter
+}
+
 /// <summary>
 ///     Allocation-free description of the recovered classic HDR pass order. DownSample16 is repeated
 ///     until both dimensions reach one; the first result is also the bloom source. The bloom effect
@@ -33,18 +39,24 @@ internal readonly record struct ClassicHdrPassPlan
         int sourceWidth,
         int sourceHeight,
         int downsampleDrawCount,
-        bool bloomEnabled)
+        bool bloomEnabled,
+        HdrReductionDimensionRule dimensionRule,
+        bool finalReductionInAdapt)
     {
         SourceWidth = sourceWidth;
         SourceHeight = sourceHeight;
         DownsampleDrawCount = downsampleDrawCount;
         BloomEnabled = bloomEnabled;
+        DimensionRule = dimensionRule;
+        FinalReductionInAdapt = finalReductionInAdapt;
     }
 
     public int SourceWidth { get; }
     public int SourceHeight { get; }
     public int DownsampleDrawCount { get; }
     public bool BloomEnabled { get; }
+    public HdrReductionDimensionRule DimensionRule { get; }
+    public bool FinalReductionInAdapt { get; }
     public static int AdaptDrawCount => 1;
     public int BrightPassBlurDrawCount => BloomEnabled ? 1 : 0;
     public int BlurDrawCount => BloomEnabled ? 1 : 0;
@@ -79,7 +91,60 @@ internal readonly record struct ClassicHdrPassPlan
             }
         } while (targetWidth > 1 || targetHeight > 1);
 
-        return new ClassicHdrPassPlan(width, height, levels, bloomEnabled);
+        return new ClassicHdrPassPlan(
+            width,
+            height,
+            levels,
+            bloomEnabled,
+            HdrReductionDimensionRule.FloorQuarter,
+            false);
+    }
+
+    /// <summary>
+    ///     Oldrim's recovered HDR chain (SSE remains unverified). Every target dimension is
+    ///     max(ceil(source/4), 1). Once adaptation history exists, retail stops at the source of the
+    ///     final 1x1 reduction and slot 9 fuses that last 16-tap reduction with the two-lane temporal
+    ///     update. The retained slot-4 result is also the source of Oldrim's two-draw bloom effect.
+    /// </summary>
+    public static ClassicHdrPassPlan CreateSkyrim(
+        int width,
+        int height,
+        bool historyAvailable,
+        bool bloomEnabled)
+    {
+        width = Math.Max(width, 1);
+        height = Math.Max(height, 1);
+
+        var targetWidth = CeilingQuarter(width);
+        var targetHeight = CeilingQuarter(height);
+        var levels = 1; // Slot 4 always renders the first retained reduction.
+        while (targetWidth > 1 || targetHeight > 1)
+        {
+            var nextWidth = CeilingQuarter(targetWidth);
+            var nextHeight = CeilingQuarter(targetHeight);
+            if (historyAvailable && nextWidth == 1 && nextHeight == 1)
+            {
+                break;
+            }
+
+            targetWidth = nextWidth;
+            targetHeight = nextHeight;
+            levels++;
+            if (levels > MaxReductionLevels)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(width),
+                    $"Skyrim HDR reduction exceeds {MaxReductionLevels} levels ({width}x{height}).");
+            }
+        }
+
+        return new ClassicHdrPassPlan(
+            width,
+            height,
+            levels,
+            bloomEnabled,
+            HdrReductionDimensionRule.CeilingQuarter,
+            historyAvailable);
     }
 
     public ClassicHdrReductionLevel GetReductionLevel(int index)
@@ -93,8 +158,8 @@ internal readonly record struct ClassicHdrPassPlan
         var sourceHeight = SourceHeight;
         for (var level = 0; level <= index; level++)
         {
-            var targetWidth = Math.Max(sourceWidth / 4, 1);
-            var targetHeight = Math.Max(sourceHeight / 4, 1);
+            var targetWidth = ReduceDimension(sourceWidth);
+            var targetHeight = ReduceDimension(sourceHeight);
             if (level == index)
             {
                 return new ClassicHdrReductionLevel(
@@ -106,6 +171,18 @@ internal readonly record struct ClassicHdrPassPlan
         }
 
         throw new InvalidOperationException("Unreachable classic HDR reduction level.");
+    }
+
+    private int ReduceDimension(int value)
+    {
+        return DimensionRule == HdrReductionDimensionRule.CeilingQuarter
+            ? CeilingQuarter(value)
+            : Math.Max(value / 4, 1);
+    }
+
+    private static int CeilingQuarter(int value)
+    {
+        return Math.Max(value / 4 + (value % 4 == 0 ? 0 : 1), 1);
     }
 
     public ClassicHdrPassKind GetPassKind(int index)
