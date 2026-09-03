@@ -52,6 +52,17 @@ internal sealed record RendererProfilerOptions
     /// <summary>Render distance in cells. Null = keep the worldspace/bookmark default (16 cells).</summary>
     internal float? RenderDistanceCells { get; init; }
 
+    /// <summary>
+    ///     Optional bounded scene radius for a standalone one-shot perspective capture. Unlike
+    ///     <see cref="RenderDistanceCells" />, this capture-only scope may be smaller than the live
+    ///     viewer's four-cell interaction floor. Exterior demand uses the viewer's axis-aligned square
+    ///     XY footprint: cells are admitted by Chebyshev distance / cell-AABB intersection. Content
+    ///     outside that footprint is excluded by design, while the expanded far plane preserves vertical
+    ///     geometry belonging to in-scope cells. The capture still has to reach a clean, stable fixpoint
+    ///     inside the declared scope.
+    /// </summary>
+    internal float? CaptureLocalRadiusCells { get; init; }
+
     internal double StallThresholdMilliseconds { get; init; } = 50;
     internal bool ForceGpuTimestamps { get; init; }
     internal bool ShowFrameStats { get; init; } = true;
@@ -433,6 +444,12 @@ internal sealed record RendererProfilerOptions
                                       terrain (like the batch path) instead of the depth-only
                                       transparent ground that mirrors the 2D map overlay.
           --capture-frame <path>      Render one perspective frame to a PNG, then exit.
+          --capture-local-radius-cells <f>
+                                      Bound standalone --capture-frame scene demand to this positive
+                                      half-extent in cells (axis-aligned square XY footprint; Chebyshev
+                                      distance). Outside content is EXCLUDED BY DESIGN and reported as
+                                      such; in-scope work must settle.
+                                      Requires a static single frame; cannot use --render-distance.
           --trim-working-set-before-settle
                                       Diagnostic only; with --capture-frame, force one non-compacting
                                       full GC and trim this process's working set before phase-two settle.
@@ -528,6 +545,7 @@ internal sealed record RendererProfilerOptions
         float? captureCenterY = null;
         float? captureZ = null;
         string? captureFrame = null;
+        float? captureLocalRadiusCells = null;
         var trimWorkingSetBeforeSettle = false;
         string? captureWorldspaceName = null;
         string? captureInterior = null;
@@ -860,6 +878,15 @@ internal sealed record RendererProfilerOptions
                 case "--capture-frame":
                     captureFrame = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-local-radius-cells":
+                    if (!TryReadPositiveFloat(args, ref i, arg, out var captureLocalRadius, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    captureLocalRadiusCells = captureLocalRadius;
                     break;
 
                 case "--trim-working-set-before-settle":
@@ -1215,6 +1242,35 @@ internal sealed record RendererProfilerOptions
             return Fail(out options);
         }
 
+        if (captureLocalRadiusCells is not null && string.IsNullOrWhiteSpace(captureFrame))
+        {
+            error = "--capture-local-radius-cells requires standalone one-shot --capture-frame.";
+            return Fail(out options);
+        }
+
+        if (captureLocalRadiusCells is not null && renderDistanceCells is not null)
+        {
+            error = "--capture-local-radius-cells cannot be combined with --render-distance.";
+            return Fail(out options);
+        }
+
+        if (captureLocalRadiusCells is not null &&
+            (!string.IsNullOrWhiteSpace(captureTopDown) ||
+             !string.IsNullOrWhiteSpace(captureTopDownBatch) ||
+             normalizedScenarioName is not null ||
+             durationSeconds is not null))
+        {
+            error = "--capture-local-radius-cells is valid only with standalone one-shot --capture-frame.";
+            return Fail(out options);
+        }
+
+        if (captureLocalRadiusCells is not null &&
+            (captureMotionFrames != 1 || cameraMotion != RendererCameraMotionKind.Static))
+        {
+            error = "--capture-local-radius-cells requires a static single-frame capture.";
+            return Fail(out options);
+        }
+
         if (trimWorkingSetBeforeSettle &&
             (!string.IsNullOrWhiteSpace(captureTopDown) ||
              !string.IsNullOrWhiteSpace(captureTopDownBatch) ||
@@ -1308,6 +1364,7 @@ internal sealed record RendererProfilerOptions
             CameraMotion = cameraMotion,
             CameraSpeed = cameraSpeed,
             RenderDistanceCells = renderDistanceCells,
+            CaptureLocalRadiusCells = captureLocalRadiusCells,
             StallThresholdMilliseconds = stallThresholdMs,
             ForceGpuTimestamps = forceGpuTimestamps,
             ShowFrameStats = showFrameStats,

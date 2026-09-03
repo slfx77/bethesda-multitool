@@ -143,6 +143,7 @@ public static class Program
                     ["captureAnimationTimeSeconds"] = options.CaptureAnimationTimeSeconds,
                     ["capturePitchDegrees"] = options.CapturePitchDegrees,
                     ["captureYawDegrees"] = options.CaptureYawDegrees,
+                    ["captureLocalRadiusCells"] = options.CaptureLocalRadiusCells,
                     ["captureSettleTimeoutSeconds"] = options.CaptureSettleTimeoutSeconds,
                     // Record raw architectural overrides in the startup trace. Game-scoped effective
                     // state is recorded by the scene capture after the input's game has been decoded.

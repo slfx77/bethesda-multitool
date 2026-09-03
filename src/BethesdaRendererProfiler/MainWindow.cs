@@ -561,6 +561,16 @@ internal sealed partial class MainWindow : Window, IDisposable
             _worldView.TopDownMaxFinalDimension = Math.Max(px, _worldView.TopDownMaxFinalDimension);
 
             TopDownRender? render = null;
+            // IsComplete alone is not trusted (same reasoning as TopDownBatchCapture's
+            // RenderUntilSettledAsync): quiescence can report true in the window between one stream
+            // stage finishing and the next being requested. Measured 2026-09-02 on a 1-cell colored-
+            // terrain capture: complete=True at attempt 18 with the terrain colour not yet resident,
+            // so the worldspace water plane drew unoccluded and a dry cell captured as water. Settle
+            // here = two consecutive complete passes that agree on the drawn count AND on the pixels
+            // (the overlay pins its water clock, so a settled scene renders pixel-stable, while a
+            // mid-stream pass cannot repeat its image because the next pass draws what streamed in).
+            var lastCompleteDrawn = -1;
+            var lastCompleteHash = 0UL;
             for (var attempt = 0; attempt < 200; attempt++)
             {
                 render = await provider.RenderTopDownAsync(
@@ -589,7 +599,18 @@ internal sealed partial class MainWindow : Window, IDisposable
                     attempt, render.Width, render.Height, render.IsComplete, Coverage(render.Bgra));
                 if (render.IsComplete)
                 {
-                    break;
+                    var hash = HashPixels(render.Bgra);
+                    if (render.ReferenceDrawn == lastCompleteDrawn && hash == lastCompleteHash)
+                    {
+                        break;
+                    }
+
+                    lastCompleteDrawn = render.ReferenceDrawn;
+                    lastCompleteHash = hash;
+                }
+                else
+                {
+                    lastCompleteDrawn = -1;
                 }
 
                 await Task.Delay(300);
@@ -712,6 +733,24 @@ internal sealed partial class MainWindow : Window, IDisposable
             // Applying the pose first also lets the phase-2 scenario snapshot it and pin it against
             // incidental input for the rest of the run.
             var framedPose = ApplyRequestedFraming("Capture", out var movedCamera);
+            var captureScopeChanged = false;
+            if (_options.CaptureLocalRadiusCells is { } localRadiusCells)
+            {
+                var scopedPose = framedPose with
+                {
+                    RenderDistance = localRadiusCells * _worldView.Profiler_CellWorldSize
+                };
+                captureScopeChanged = scopedPose.RenderDistance != framedPose.RenderDistance;
+                SetPerspectiveCapturePose(scopedPose);
+                framedPose = _worldView.Profiler_CameraPose;
+                LogCaptureScopeState(
+                    "activated",
+                    _worldView.Profiler_CaptureSceneCensus,
+                    lastUnsettledTerms: "",
+                    referenceBatchBuildTrigger:
+                        _worldView.Profiler_ReferenceStats?.ReferenceBatchBuildTrigger ?? 0,
+                    gateAccepted: false);
+            }
 
             Console.WriteLine(
                 $"[Capture] framing pos=({framedPose.Position.X:0},{framedPose.Position.Y:0}," +
@@ -733,7 +772,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             // white cards into the capture), so afterwards poll reference-streaming quiescence while the
             // scenario keeps driving frames — time-boxed so a permanently-missing asset can't hang us.
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
-            await Task.Delay(movedCamera ? 7000 : 3000);
+            await Task.Delay(movedCamera || captureScopeChanged ? 7000 : 3000);
             // Pure delay-polling is valid here because the scenario keeps driving frames (stats only
             // advance when frames render). Time-boxed: a permanently-missing asset can pin the counter.
             var quiesceTimer = Stopwatch.StartNew();
@@ -748,29 +787,34 @@ internal sealed partial class MainWindow : Window, IDisposable
             // which terms never settled.
             var quiesceTimerInterval = TimeSpan.FromMilliseconds(250);
             var census = _worldView.Profiler_CaptureSceneCensus;
-            var streak = 0;
-            var lastDirt = "";
+            var settlementTracker = new ProfileSceneSettlementTracker();
+            settlementTracker.ObserveForCapture(
+                census,
+                _worldView.Profiler_ReferenceStats?.ReferenceBatchBuildTrigger ?? 0);
             var quiesced = false;
             while (quiesceTimer.Elapsed < settleTimeout)
             {
                 await Task.Delay(quiesceTimerInterval);
                 var next = _worldView.Profiler_CaptureSceneCensus;
-                if (next.IsClean && next == census)
-                {
-                    if (++streak >= 4)
-                    {
-                        quiesced = true;
-                        break;
-                    }
-                }
-                else
-                {
-                    lastDirt = next.DescribeDirt(census);
-                    streak = 0;
-                }
-
                 census = next;
+                if (settlementTracker.ObserveForCapture(
+                        next,
+                        _worldView.Profiler_ReferenceStats?.ReferenceBatchBuildTrigger ?? 0))
+                {
+                    quiesced = true;
+                    break;
+                }
             }
+
+            var lastDirt = settlementTracker.LastDirt;
+            var finalReferenceBatchTrigger =
+                _worldView.Profiler_ReferenceStats?.ReferenceBatchBuildTrigger ?? 0;
+            LogCaptureScopeState(
+                quiesced ? "settled" : "timeout",
+                census,
+                lastDirt,
+                finalReferenceBatchTrigger,
+                quiesced);
 
             if (workingSetTrimSession is { } trimSession)
             {
@@ -796,15 +840,19 @@ internal sealed partial class MainWindow : Window, IDisposable
             {
                 Log.Error(streamingError!);
                 Console.Error.WriteLine(streamingError);
-                RendererProfilerTrace.Event("capture-streaming-timeout", new Dictionary<string, object?>
-                {
-                    ["timeoutSeconds"] = _options.CaptureSettleTimeoutSeconds,
-                    ["elapsedMilliseconds"] = quiesceTimer.ElapsedMilliseconds,
-                    ["requestedWorldspace"] = _options.CaptureWorldspaceName,
-                    ["actualWorldspace"] = _worldView.Profiler_SelectedWorldspaceEditorId,
-                    ["requestedWeather"] = _options.CaptureWeatherName,
-                    ["actualWeather"] = _worldView.Profiler_ActiveWeatherEditorId
-                });
+                var timeoutFields = BuildCaptureScopeFields(
+                    "timeout",
+                    census,
+                    lastDirt,
+                    finalReferenceBatchTrigger,
+                    gateAccepted: false);
+                timeoutFields["timeoutSeconds"] = _options.CaptureSettleTimeoutSeconds;
+                timeoutFields["elapsedMilliseconds"] = quiesceTimer.ElapsedMilliseconds;
+                timeoutFields["requestedWorldspace"] = _options.CaptureWorldspaceName;
+                timeoutFields["actualWorldspace"] = _worldView.Profiler_SelectedWorldspaceEditorId;
+                timeoutFields["requestedWeather"] = _options.CaptureWeatherName;
+                timeoutFields["actualWeather"] = _worldView.Profiler_ActiveWeatherEditorId;
+                RendererProfilerTrace.Event("capture-streaming-timeout", timeoutFields);
                 ExitProfiler("capture-streaming-timeout", 1);
                 return;
             }
@@ -831,29 +879,51 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            // Re-assert the framing after the settle. The pose was applied before phase 2 so streaming and
-            // the live window both tracked it; this only guards against a late atmosphere/worldspace
-            // refresh or incidental input having moved the camera during the settle. It is idempotent when
-            // nothing drifted, and it reports when something did rather than silently capturing elsewhere.
-            // Compare on framing only. RenderDistance is also part of the pose record and the phase-2
-            // scenario legitimately rewrites it from --render-distance, so restoring framedPose wholesale
-            // would silently revert the requested view distance.
+            // The settled census is valid only for the pose that produced it. A late atmosphere/worldspace
+            // refresh or incidental input can move the camera after phase 2; silently restoring the requested
+            // framing here would capture a different demand footprint without settling it. Fail closed instead
+            // and require a fresh run. Compare framing only: RenderDistance is also part of the pose record and
+            // phase 2 legitimately rewrites it from --render-distance.
             var settledPose = _worldView.Profiler_CameraPose;
-            var restoredPose = settledPose with
+            var expectedPose = settledPose with
             {
                 Position = framedPose.Position, Yaw = framedPose.Yaw, Pitch = framedPose.Pitch
             };
-            if (settledPose != restoredPose)
+            if (settledPose != expectedPose)
             {
-                Console.WriteLine(
-                    $"[Capture] camera drifted during settle: pos=({settledPose.Position.X:0}," +
-                    $"{settledPose.Position.Y:0},{settledPose.Position.Z:0}) " +
+                var driftError =
+                    $"[Capture] FAILED: camera drifted after the streaming fixpoint; settled pos=" +
+                    $"({settledPose.Position.X:0},{settledPose.Position.Y:0},{settledPose.Position.Z:0}) " +
                     $"yaw={settledPose.Yaw * (180f / MathF.PI):0.#}° " +
-                    $"pitch={settledPose.Pitch * (180f / MathF.PI):0.#}° — restoring the requested framing.");
-                _worldView.Profiler_SetCameraPose(restoredPose);
+                    $"pitch={settledPose.Pitch * (180f / MathF.PI):0.#}°, requested pos=" +
+                    $"({framedPose.Position.X:0},{framedPose.Position.Y:0},{framedPose.Position.Z:0}) " +
+                    $"yaw={framedPose.Yaw * (180f / MathF.PI):0.#}° " +
+                    $"pitch={framedPose.Pitch * (180f / MathF.PI):0.#}°. No image was written; " +
+                    "the requested footprint must settle again.";
+                Log.Error(driftError);
+                Console.Error.WriteLine(driftError);
+                var driftFields = BuildCaptureScopeFields(
+                    "pose-drift",
+                    census,
+                    lastDirt,
+                    finalReferenceBatchTrigger,
+                    gateAccepted: false);
+                driftFields["requestedCameraX"] = framedPose.Position.X;
+                driftFields["requestedCameraY"] = framedPose.Position.Y;
+                driftFields["requestedCameraZ"] = framedPose.Position.Z;
+                driftFields["requestedCameraYaw"] = framedPose.Yaw;
+                driftFields["requestedCameraPitch"] = framedPose.Pitch;
+                driftFields["actualCameraX"] = settledPose.Position.X;
+                driftFields["actualCameraY"] = settledPose.Position.Y;
+                driftFields["actualCameraZ"] = settledPose.Position.Z;
+                driftFields["actualCameraYaw"] = settledPose.Yaw;
+                driftFields["actualCameraPitch"] = settledPose.Pitch;
+                RendererProfilerTrace.Event("capture-pose-drift-after-settle", driftFields);
+                ExitProfiler("capture-pose-drift-after-settle", 1);
+                return;
             }
 
-            var capturePose = _worldView.Profiler_CameraPose;
+            var capturePose = settledPose;
 
             // Collapse the live view so the capture frame doesn't share the command recorder with a live one.
             _worldView.Visibility = Visibility.Collapsed;
@@ -902,7 +972,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                         position += forward * _options.CaptureMotionForwardStep;
                     }
 
-                    _worldView.Profiler_SetCameraPose(
+                    SetPerspectiveCapturePose(
                         previous with { Yaw = yaw, Pitch = pitch, Position = position });
                     capturePose = _worldView.Profiler_CameraPose;
 
@@ -1004,6 +1074,15 @@ internal sealed partial class MainWindow : Window, IDisposable
             captureFields["weather"] = _worldView.Profiler_ActiveWeatherEditorId;
             captureFields["gameHour"] = _options.CaptureHour;
             captureFields["gameDay"] = _options.CaptureDay;
+            foreach (var (key, value) in BuildCaptureScopeFields(
+                         "image",
+                         census,
+                         lastDirt,
+                         finalReferenceBatchTrigger,
+                         gateAccepted: true))
+            {
+                captureFields[key] = value;
+            }
             RendererProfilerTrace.Event("capture-image", captureFields);
         }
         catch (Exception ex)
@@ -1016,6 +1095,105 @@ internal sealed partial class MainWindow : Window, IDisposable
         {
             ExitProfiler("capture-complete");
         }
+    }
+
+    private void SetPerspectiveCapturePose(RendererProfilerCameraPose pose)
+    {
+        if (_options.CaptureLocalRadiusCells is not null)
+        {
+            _worldView.Profiler_SetCaptureCameraPose(pose);
+        }
+        else
+        {
+            _worldView.Profiler_SetCameraPose(pose);
+        }
+    }
+
+    private void LogCaptureScopeState(
+        string phase,
+        in CaptureSceneCensus census,
+        string lastUnsettledTerms,
+        int referenceBatchBuildTrigger,
+        bool gateAccepted)
+    {
+        var fields = BuildCaptureScopeFields(
+            phase,
+            census,
+            lastUnsettledTerms,
+            referenceBatchBuildTrigger,
+            gateAccepted);
+        RendererProfilerTrace.Event("capture-scope", fields);
+
+        if (_options.CaptureLocalRadiusCells is { } requestedCells)
+        {
+            var stats = _worldView.Profiler_ReferenceStats;
+            var pending = census.DescribeDirt(census);
+            Console.WriteLine(
+                $"[Capture] scope={phase} BOUNDED-LOCAL requested={requestedCells:0.###}c " +
+                $"effective={_worldView.Profiler_CameraPose.RenderDistance / _worldView.Profiler_CellWorldSize:0.###}c; " +
+                $"outside-square-footprint content EXCLUDED BY DESIGN (count not enumerated); " +
+                $"cells={stats?.ReferenceCellsVisited ?? 0} candidates={stats?.ReferenceCandidates ?? 0} " +
+                $"drawn={stats?.ReferenceDrawn ?? 0} pending={(pending.Length == 0 ? "none" : pending)}.");
+        }
+    }
+
+    private Dictionary<string, object?> BuildCaptureScopeFields(
+        string phase,
+        in CaptureSceneCensus census,
+        string lastUnsettledTerms,
+        int referenceBatchBuildTrigger,
+        bool gateAccepted)
+    {
+        var requestedCells = _options.CaptureLocalRadiusCells;
+        var local = requestedCells is not null;
+        var referenceStats = _worldView.Profiler_ReferenceStats;
+        var rawPending = census.DescribeDirt(census);
+        var frameCeilingMaintenanceAccepted =
+            !census.IsClean && census.IsCleanOrFrameCeilingMaintenance(referenceBatchBuildTrigger);
+        return new Dictionary<string, object?>
+        {
+            ["captureScopePhase"] = phase,
+            ["captureScopeMode"] = local ? "bounded-local-radius" : "interactive-radius",
+            ["captureScopeShape"] = "axis-aligned-square-xy-footprint",
+            ["captureScopeDistanceMetric"] = "xy-chebyshev",
+            ["captureScopeCellAdmission"] = "cell-aabb-intersects-footprint",
+            ["captureScopeIsPartialByDesign"] = local,
+            ["captureScopeRequestedRadiusCells"] = requestedCells,
+            ["captureScopeEffectiveRadiusCells"] =
+                _worldView.Profiler_CameraPose.RenderDistance / _worldView.Profiler_CellWorldSize,
+            ["captureScopeInteractiveMinimumRadiusCells"] =
+                _worldView.Profiler_InteractiveMinimumRenderDistanceCells,
+            ["captureScopeEffectiveFarPlaneWorldUnits"] = _worldView.Profiler_CameraFarPlane,
+            ["captureScopeFarPlanePolicy"] = "expanded-vertical-coverage-for-in-scope-square-footprint",
+            ["captureScopeOutsideRadiusExcluded"] = local,
+            ["captureScopeOutsideRadiusExcludedCount"] = null,
+            ["captureScopeOutsideRadiusCountStatus"] = local ? "not-enumerated" : "not-applicable",
+            ["captureScopeGateAccepted"] = gateAccepted,
+            ["captureScopeRawCensusClean"] = census.IsClean,
+            ["captureScopeFrameCeilingMaintenanceAccepted"] = frameCeilingMaintenanceAccepted,
+            ["captureScopePendingTerms"] = rawPending.Length == 0 ? "none" : rawPending,
+            ["captureScopeLastUnsettledTerms"] =
+                lastUnsettledTerms.Length == 0 ? "none" : lastUnsettledTerms,
+            ["captureScopeReferenceCellsVisited"] = referenceStats?.ReferenceCellsVisited,
+            ["captureScopeReferenceCandidates"] = referenceStats?.ReferenceCandidates,
+            ["captureScopeReferenceInstances"] = census.ReferenceInstances,
+            ["captureScopeReferenceDrawn"] = census.ReferenceDrawn,
+            ["captureScopeReferenceSubmeshDraws"] = census.ReferenceSubmeshDraws,
+            ["captureScopeReferenceBatchBuildInProgress"] = census.ReferenceBatchBuildInProgress,
+            ["captureScopeReferenceBatchBuildTrigger"] = referenceBatchBuildTrigger,
+            ["captureScopeQueuedDecodes"] = census.QueuedDecodes,
+            ["captureScopeActiveDecodes"] = census.ActiveDecodes,
+            ["captureScopeGpuUploads"] = census.GpuUploads,
+            ["captureScopeTextureActiveResolves"] = census.TextureActiveResolves,
+            ["captureScopeTexturePendingResolves"] = census.TexturePendingResolves,
+            ["captureScopeTexturePendingUploads"] = census.TexturePendingUploads,
+            ["captureScopeTexturesWithheld"] = census.TexturesWithheld,
+            ["captureScopeTerrainUploads"] = census.TerrainUploads,
+            ["captureScopeTerrainTextureActiveResolves"] = census.TerrainTextureActiveResolves,
+            ["captureScopeTerrainTextureResolves"] = census.TerrainTextureResolves,
+            ["captureScopeTerrainTextureUploads"] = census.TerrainTextureUploads,
+            ["captureScopeTerrainDrawsTruncated"] = census.TerrainDrawsTruncated
+        };
     }
 
     private bool ValidateCaptureSelection(string selectorKind, string? requested, string? actual)
@@ -1104,6 +1282,28 @@ internal sealed partial class MainWindow : Window, IDisposable
         }
 
         return (double)opaque / total;
+    }
+
+    /// <summary>
+    ///     FNV-1a over the readback, 8 bytes at a time — the pixel-stability half of the single-shot
+    ///     top-down settle rule (two consecutive complete passes must agree byte-for-byte).
+    /// </summary>
+    private static ulong HashPixels(byte[] bgra)
+    {
+        const ulong prime = 1099511628211UL;
+        var hash = 14695981039346656037UL;
+        var words = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(bgra.AsSpan());
+        foreach (var word in words)
+        {
+            hash = (hash ^ word) * prime;
+        }
+
+        for (var i = words.Length * 8; i < bgra.Length; i++)
+        {
+            hash = (hash ^ bgra[i]) * prime;
+        }
+
+        return hash;
     }
 
     private static byte[] BgraToRgba(byte[] bgra)

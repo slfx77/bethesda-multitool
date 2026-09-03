@@ -33,25 +33,52 @@ internal sealed class ProfileSceneSettlementTracker
     /// </summary>
     internal bool Observe(in CaptureSceneCensus census)
     {
+        return ObserveCore(census, acceptFrameCeilingMaintenance: false, referenceBatchBuildTrigger: 0);
+    }
+
+    /// <summary>
+    ///     Capture-only observation that admits an otherwise-clean FrameCeiling maintenance sweep.
+    ///     FrameCeiling periodically rebuilds the already-published reference batches by design; it
+    ///     is not unfinished scene demand. Every other pending term remains fatal to the streak, and
+    ///     <see cref="Observe" /> stays strict for live-profile settlement.
+    /// </summary>
+    internal bool ObserveForCapture(in CaptureSceneCensus census, int referenceBatchBuildTrigger)
+    {
+        return ObserveCore(
+            census,
+            acceptFrameCeilingMaintenance: true,
+            referenceBatchBuildTrigger: referenceBatchBuildTrigger);
+    }
+
+    private bool ObserveCore(
+        in CaptureSceneCensus census,
+        bool acceptFrameCeilingMaintenance,
+        int referenceBatchBuildTrigger)
+    {
+        var comparable = acceptFrameCeilingMaintenance &&
+                         census.IsCleanOrFrameCeilingMaintenance(referenceBatchBuildTrigger)
+            ? census with { ReferenceBatchBuildInProgress = false }
+            : census;
+
         if (_previous is not { } previous)
         {
             Consecutive = 0;
-            RetainDirt(census.DescribeDirt(census));
-            _previous = census;
+            RetainDirt(comparable.DescribeDirt(comparable));
+            _previous = comparable;
             return false;
         }
 
-        if (census.IsClean && census == previous)
+        if (comparable.IsClean && comparable == previous)
         {
             Consecutive++;
         }
         else
         {
             Consecutive = 0;
-            RetainDirt(census.DescribeDirt(previous));
+            RetainDirt(comparable.DescribeDirt(previous));
         }
 
-        _previous = census;
+        _previous = comparable;
         return Consecutive >= _requiredConsecutive;
     }
 

@@ -43,6 +43,15 @@ public sealed partial class WorldView3DControl
     internal RendererProfilerCameraPose Profiler_CameraPose =>
         new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
 
+    internal float Profiler_CameraFarPlane => _camera.FarPlane;
+
+    /// <summary>
+    ///     The live viewer's interaction floor. Capture telemetry exposes this beside any explicit
+    ///     bounded local radius so a subminimum evidence frame cannot be mistaken for the normal
+    ///     interactive scene scope.
+    /// </summary>
+    internal float Profiler_InteractiveMinimumRenderDistanceCells => MinRenderDistanceCells;
+
     /// <summary>
     ///     Exact D3D12 surface size used by scored live frames. Layout dimensions are expressed in
     ///     device-independent pixels and cannot prove that a post-profile capture used the benchmark
@@ -639,6 +648,33 @@ public sealed partial class WorldView3DControl
             -MathF.PI * 0.5f + 0.01f,
             MathF.PI * 0.5f - 0.01f);
         SetRenderDistance(pose.RenderDistance);
+    }
+
+    /// <summary>
+    ///     Profiler-only pose setter for an explicitly bounded one-shot capture. It deliberately
+    ///     bypasses <see cref="SetRenderDistance" /> so a local evidence frame may use less than the
+    ///     live UI's four-cell floor; it does not synchronize the settings slider or change the
+    ///     interactive funnel. Callers must label the excluded outside-radius content in telemetry
+    ///     and still wait for a clean fixpoint inside this radius.
+    /// </summary>
+    internal void Profiler_SetCaptureCameraPose(RendererProfilerCameraPose pose)
+    {
+        if (!float.IsFinite(pose.RenderDistance) || pose.RenderDistance <= 0f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pose),
+                pose.RenderDistance,
+                "Capture render distance must be finite and positive.");
+        }
+
+        _camera.Position = pose.Position;
+        _camera.Yaw = pose.Yaw;
+        _camera.Pitch = Math.Clamp(
+            pose.Pitch,
+            -MathF.PI * 0.5f + 0.01f,
+            MathF.PI * 0.5f - 0.01f);
+        _renderDistance = pose.RenderDistance;
+        _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z) + 2f * _cellSize;
     }
 
     /// <summary>

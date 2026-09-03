@@ -43,9 +43,10 @@ internal static class NifHeadlessRenderer
 {
     // Keep the manual verifier upload in lockstep with
     // WorldView3DControl.AtmosphereConstants: ten base vectors, four matrices, four shadow
-    // vectors, six directional-ambient vectors, GrassSunColorScale, then ClipPlane.
-    private const int AtmosphereClipPlaneFloat4Slot = 37;
-    private const int AtmosphereBytes = (AtmosphereClipPlaneFloat4Slot + 1) * 16;
+    // vectors, six directional-ambient vectors, GrassSunColorScale, ClipPlane, then Skyrim's
+    // three retail ambient-transform rows + mode.
+    private const int AtmosphereClipPlaneFloat4Slot = AtmosphereConstantBufferLayout.ClipPlaneFloat4Slot;
+    private const int AtmosphereBytes = (int)AtmosphereConstantBufferLayout.ByteSize;
 
     public static int Run(string[] args)
     {
@@ -457,7 +458,7 @@ internal static class NifHeadlessRenderer
                     waterDraws = water.Render(viewProj, cylinder);
                 }
 
-                target.RecordReadback(cmd);
+                target.RecordReadback(recorder);
                 recorder.EndFrame();
 
                 var fenceValue = recorder.LastSubmittedFenceValue;
@@ -752,7 +753,7 @@ internal static class NifHeadlessRenderer
                         water.Render(viewProj, cylinder);
                     }
 
-                    target.RecordReadback(cmd);
+                    target.RecordReadback(recorder);
                     recorder.EndFrame();
                     WaitForFence(gpu.FrameFence, recorder.LastSubmittedFenceValue);
                     gpu.PumpDebugMessages();

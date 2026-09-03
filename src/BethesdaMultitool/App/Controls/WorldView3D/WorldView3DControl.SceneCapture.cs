@@ -25,6 +25,16 @@ namespace BethesdaMultitool;
 public sealed partial class WorldView3DControl
 {
     /// <summary>
+    ///     Long-edge limit for a one-shot perspective capture. Unlike projection export tiles,
+    ///     a perspective frame is not stitched, so applying <see cref="Export3DMaxTileDimension" />
+    ///     here silently changed the requested dimensions (for example 2560x1440 became
+    ///     2048x1440) and broke the profiler's exact-size contract. This matches the profiler CLI
+    ///     limit and the D3D12 maximum texture dimension; allocation can still fail cleanly when a
+    ///     requested target is too large for the available GPU memory.
+    /// </summary>
+    private const int PerspectiveCaptureMaxDimension = 16384;
+
+    /// <summary>
     ///     Sample count the capture's depth SRV reports to the water/reference shaders. 1 whenever
     ///     the SRV views the target's single-sample MAX-resolved depth copy (the preferred MSAA
     ///     path); the raw target sample count only on the legacy multisampled-binding fallback.
@@ -407,8 +417,8 @@ public sealed partial class WorldView3DControl
                      "the capture may contain withheld submeshes / placeholder textures.");
         }
 
-        var w = Math.Clamp(pixelWidth, 1, Export3DMaxTileDimension);
-        var h = Math.Clamp(pixelHeight, 1, Export3DMaxTileDimension);
+        var w = Math.Clamp(pixelWidth, 1, PerspectiveCaptureMaxDimension);
+        var h = Math.Clamp(pixelHeight, 1, PerspectiveCaptureMaxDimension);
 
         GpuOffscreenSceneTarget12 target;
         try
@@ -438,7 +448,12 @@ public sealed partial class WorldView3DControl
         // so repeated captures were byte-comparable, but that is a different exposure operator from
         // the one on screen: the engine tonemap divides by a running adapted average, so pinning it
         // changes every pixel and makes capture-vs-live brightness incomparable.
-        var tonemap = ResolveTonemapSettings();
+        var captureFrameStart = Stopwatch.GetTimestamp();
+        var captureDeltaSeconds = (float)Stopwatch
+            .GetElapsedTime(_lastFrameStartTimestamp, captureFrameStart).TotalSeconds;
+        _lastFrameStartTimestamp = captureFrameStart;
+        var tonemap = GpuTonemapSettings.ResolvePerFrameAdaptation(
+            ResolveTonemapSettings(), captureDeltaSeconds);
         var weatherImageSpaceEvaluation = _weatherImageSpaceEvaluation;
         target.TonemapSettings = tonemap;
         var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
@@ -1093,7 +1108,7 @@ public sealed partial class WorldView3DControl
 
                 if (!isPrime)
                 {
-                    target.RecordReadback(cmd);
+                    target.RecordReadback(recorder);
                 }
 
                 // Return the pass to the target's documented ResolveDest/CopyDest + DepthWrite
@@ -1207,7 +1222,7 @@ public sealed partial class WorldView3DControl
             captureReferenceStats,
             captureWaterStats,
             captureTerrainStats,
-            target, w, h, animationTimeSeconds ?? 0f);
+            target, w, h, animationTimeSeconds);
 
         fenceValue = recorder.LastSubmittedFenceValue;
         _gpu12!.PumpDebugMessages();
@@ -1487,7 +1502,7 @@ public sealed partial class WorldView3DControl
         GpuOffscreenSceneTarget12 target,
         int pixelWidth,
         int pixelHeight,
-        float animationTimeSeconds)
+        float? animationTimeSeconds)
     {
         static float[] Vec3(Vector3 value) => [value.X, value.Y, value.Z];
         static float[] Vec4(Vector4 value) => [value.X, value.Y, value.Z, value.W];
@@ -1507,6 +1522,8 @@ public sealed partial class WorldView3DControl
         var interior = _selectedInterior;
         var skyContext = CurrentSkySceneContext();
         var behavesLikeExterior = skyContext.BehavesLikeExterior;
+        var showsSky = skyContext.ShowsSky;
+        var usesSkyLighting = skyContext.UsesSkyLighting;
         var worldspace = skyContext.Worldspace;
         var climate = ResolveClimate(skyContext);
         var weatherSettingsResolution = ResolveClimateDefaultWeatherSettings(skyContext);
@@ -1546,7 +1563,7 @@ public sealed partial class WorldView3DControl
             transitionCloudU[i] = transition.ScrollVelocity.X;
             transitionCloudV[i] = transition.ScrollVelocity.Y;
             var pinnedOffset = WeatherCloudTransitionResolver.OffsetAtTime(
-                transition.ScrollVelocity, animationTimeSeconds);
+                transition.ScrollVelocity, animationTimeSeconds ?? 0f);
             transitionCloudOffsetU[i] = pinnedOffset.X;
             transitionCloudOffsetV[i] = pinnedOffset.Y;
             if (weatherTransition.OutgoingWeather is null)
@@ -1599,7 +1616,7 @@ public sealed partial class WorldView3DControl
         fields["capturePixelWidth"] = pixelWidth;
         fields["capturePixelHeight"] = pixelHeight;
         fields["captureMsaa"] = target.IsMsaa;
-        fields["animationClockPinned"] = true;
+        fields["animationClockPinned"] = animationTimeSeconds is not null;
         fields["animationClockSeconds"] = animationTimeSeconds;
         fields["sourceFilePath"] = _data?.SourceFilePath;
         fields["sourceFileName"] = _data?.SourceFilePath is { Length: > 0 } sourcePath
@@ -1618,7 +1635,11 @@ public sealed partial class WorldView3DControl
         }
         else
         {
-            sceneKind = behavesLikeExterior ? "interior-behaves-like-exterior" : "interior";
+            sceneKind = behavesLikeExterior
+                ? "interior-behaves-like-exterior"
+                : showsSky
+                    ? "interior-shows-sky"
+                    : "interior";
         }
 
         fields["sceneKind"] = sceneKind;
@@ -1633,10 +1654,10 @@ public sealed partial class WorldView3DControl
                 worldspaceIdentityUnavailableReason =
                     "the selected exterior cell set is not linked to a retained WRLD record";
             }
-            else if (behavesLikeExterior)
+            else if (skyContext.RendersExteriorSky)
             {
                 worldspaceIdentityUnavailableReason =
-                    "the selected exterior-behaving interior has no retained parent WRLD record";
+                    "the selected sky-bearing interior has no retained parent WRLD record";
             }
             else
             {
@@ -1653,6 +1674,8 @@ public sealed partial class WorldView3DControl
             ? "the active scene is not an interior"
             : null;
         fields["interiorBehavesLikeExterior"] = behavesLikeExterior;
+        fields["interiorShowsSky"] = showsSky;
+        fields["interiorUsesSkyLighting"] = usesSkyLighting;
         fields["cellClimateOverrideFormId"] = skyContext.CellClimateFormId;
         fields["cellClimateOverrideFormIdHex"] = skyContext.CellClimateFormId is { } cellClimateId
             ? $"0x{cellClimateId:X8}"
@@ -2190,6 +2213,7 @@ public sealed partial class WorldView3DControl
         fields["tonemapTargetLum"] = tonemap.TargetLum;
         fields["tonemapUpperLumClamp"] = tonemap.UpperLumClamp;
         fields["tonemapAdaptFactor"] = tonemap.AdaptFactor;
+        fields["tonemapAdaptFactorFast"] = tonemap.AdaptFactorFast;
         fields["tonemapEyeAdaptSpeed"] = tonemap.EyeAdaptSpeed;
         fields["tonemapEmissiveMult"] = tonemap.EmissiveMult;
         fields["tonemapSunlightScale"] = tonemap.SunlightScale;
@@ -2234,6 +2258,10 @@ public sealed partial class WorldView3DControl
         else if (tonemap.Mode == GpuTonemapMode.CreationModern)
         {
             weatherImageSpaceApplication = "creation-modern-full";
+        }
+        else if (tonemap.Mode == GpuTonemapMode.EngineSkyrim)
+        {
+            weatherImageSpaceApplication = "skyrim-retail-display-exact-reduction-no-bloom";
         }
         else
         {

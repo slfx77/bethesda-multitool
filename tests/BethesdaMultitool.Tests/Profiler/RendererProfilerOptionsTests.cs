@@ -11,6 +11,7 @@ public sealed class RendererProfilerOptionsTests
         "--capture-topdown",
         "--capture-topdown-terrain-color",
         "--capture-frame",
+        "--capture-local-radius-cells",
         "--profile-end-capture",
         "--trim-working-set-before-settle",
         "--capture-width",
@@ -73,6 +74,7 @@ public sealed class RendererProfilerOptionsTests
             Assert.False(options.TrimWorkingSetBeforeSettle);
             Assert.Null(options.ProfileSettleTimeoutSeconds);
             Assert.Null(options.ProfileEndCapturePath);
+            Assert.Null(options.CaptureLocalRadiusCells);
             Assert.Equal(RendererProfilerOptions.DefaultStressScene, options.StressScene);
         });
     }
@@ -440,6 +442,7 @@ public sealed class RendererProfilerOptionsTests
             {
                 "--input", input,
                 "--capture-frame", capture,
+                "--capture-local-radius-cells", "1.25",
                 "--trim-working-set-before-settle",
                 "--capture-worldspace-name", "WastelandNV",
                 "--capture-weather", "NVWastelandClear",
@@ -465,7 +468,41 @@ public sealed class RendererProfilerOptionsTests
             Assert.Equal(1024, options.CaptureWidth);
             Assert.Equal(512, options.CaptureHeight);
             Assert.Equal(90, options.CaptureSettleTimeoutSeconds);
+            Assert.Equal(1.25f, options.CaptureLocalRadiusCells);
             Assert.True(options.TrimWorkingSetBeforeSettle);
+        });
+    }
+
+    [Theory]
+    [InlineData(null, null, "requires standalone one-shot --capture-frame")]
+    [InlineData("--render-distance", "4", "cannot be combined with --render-distance")]
+    [InlineData("--capture-topdown", "topdown.png", "standalone one-shot")]
+    [InlineData("--duration-seconds", "30", "standalone one-shot")]
+    [InlineData("--capture-motion-frames", "2", "static single-frame")]
+    [InlineData("--camera-motion", "orbit", "static single-frame")]
+    public void TryParse_RejectsCaptureLocalRadiusOutsideStandalonePerspectiveCapture(
+        string? competingOption,
+        string? competingValue,
+        string expectedError)
+    {
+        WithInput(input =>
+        {
+            var args = new List<string>
+            {
+                "--input", input,
+                "--capture-local-radius-cells", "1"
+            };
+            if (competingOption is null)
+            {
+                // Deliberately omit --capture-frame.
+            }
+            else
+            {
+                args.AddRange(["--capture-frame", "frame.png", competingOption, competingValue!]);
+            }
+
+            Assert.False(RendererProfilerOptions.TryParse(args.ToArray(), out _, out var error));
+            Assert.Contains(expectedError, error, StringComparison.OrdinalIgnoreCase);
         });
     }
 
@@ -537,6 +574,9 @@ public sealed class RendererProfilerOptionsTests
     [InlineData("--capture-animation-time", "Infinity", "finite non-negative")]
     [InlineData("--capture-yaw", "NaN", "finite number")]
     [InlineData("--capture-settle-timeout-seconds", "0", "positive integer")]
+    [InlineData("--capture-local-radius-cells", "0", "positive number")]
+    [InlineData("--capture-local-radius-cells", "NaN", "positive number")]
+    [InlineData("--capture-local-radius-cells", "Infinity", "positive number")]
     public void TryParse_RejectsInvalidCaptureValues(string option, string value, string expectedError)
     {
         WithInput(input =>

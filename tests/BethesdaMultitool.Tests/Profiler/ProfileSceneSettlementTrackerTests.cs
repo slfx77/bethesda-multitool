@@ -94,6 +94,53 @@ public sealed class ProfileSceneSettlementTrackerTests
         Assert.Contains("QueuedDecodes=1", tracker.LastDirt, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ObserveForCapture_NormalizesOnlyFrameCeilingMaintenanceAcrossStableDemand()
+    {
+        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var clean = Census();
+        var maintenance = Census(referenceBatchBuildInProgress: true);
+        var trigger = CaptureSceneCensus.FrameCeilingBatchBuildTriggerCode;
+
+        Assert.False(tracker.ObserveForCapture(clean, trigger));
+        Assert.False(tracker.ObserveForCapture(maintenance, trigger));
+        Assert.True(tracker.ObserveForCapture(clean, trigger));
+
+        Assert.Equal(2, tracker.Consecutive);
+        Assert.Equal(string.Empty, tracker.LastDirt);
+    }
+
+    [Fact]
+    public void ObserveForCapture_FrameCeilingNeverExcusesOtherPendingWork()
+    {
+        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var dirty = Census(
+            activeReferenceTextureResolves: 1,
+            referenceBatchBuildInProgress: true);
+        var trigger = CaptureSceneCensus.FrameCeilingBatchBuildTriggerCode;
+
+        Assert.False(tracker.ObserveForCapture(dirty, trigger));
+        Assert.False(tracker.ObserveForCapture(dirty, trigger));
+        Assert.False(tracker.ObserveForCapture(dirty, trigger));
+
+        Assert.Equal(0, tracker.Consecutive);
+        Assert.Contains("ReferenceBatchBuildInProgress=true", tracker.LastDirt, StringComparison.Ordinal);
+        Assert.Contains("TextureActiveResolves=1", tracker.LastDirt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Observe_StrictProfileGateStillRejectsFrameCeilingMaintenance()
+    {
+        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 1);
+        var maintenance = Census(referenceBatchBuildInProgress: true);
+
+        Assert.False(tracker.Observe(maintenance));
+        Assert.False(tracker.Observe(maintenance));
+
+        Assert.Equal(0, tracker.Consecutive);
+        Assert.Contains("ReferenceBatchBuildInProgress=true", tracker.LastDirt, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -107,7 +154,8 @@ public sealed class ProfileSceneSettlementTrackerTests
         int referenceInstances = 100,
         int queuedDecodes = 0,
         int activeReferenceTextureResolves = 0,
-        int activeTerrainTextureResolves = 0)
+        int activeTerrainTextureResolves = 0,
+        bool referenceBatchBuildInProgress = false)
     {
         var references = new WorldRenderStats
         {
@@ -117,6 +165,7 @@ public sealed class ProfileSceneSettlementTrackerTests
             ReferenceMeshMissing = 10,
             ReferenceQueuedDecodes = queuedDecodes,
             ReferenceTextureActiveResolves = activeReferenceTextureResolves,
+            ReferenceBatchBuildInProgress = referenceBatchBuildInProgress,
             WaterDraws = 5
         };
         var terrain = new WorldRenderStats

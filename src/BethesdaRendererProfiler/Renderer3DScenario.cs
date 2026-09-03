@@ -25,7 +25,18 @@ internal sealed class Renderer3DScenario : IDisposable
         _control = control;
         _options = options;
         _initialPose = control.Profiler_CameraPose;
-        if (options.RenderDistanceCells is { } cells)
+        if (options.CaptureLocalRadiusCells is { } captureCells)
+        {
+            // Standalone perspective captures may opt into a smaller, explicitly-reported scope
+            // than the interactive four-cell floor. Keep that radius pinned throughout both settle
+            // phases; using the normal pose setter on any tick would silently clamp it back to 4c.
+            _initialPose = _initialPose with
+            {
+                RenderDistance = captureCells * control.Profiler_CellWorldSize
+            };
+            control.Profiler_SetCaptureCameraPose(_initialPose);
+        }
+        else if (options.RenderDistanceCells is { } cells)
         {
             // Bump the view distance above the bookmark default and apply it immediately so the
             // whole run (and the first frame) renders at the requested distance.
@@ -92,7 +103,7 @@ internal sealed class Renderer3DScenario : IDisposable
             elapsed);
         if (_control.Profiler_CameraPose != pose)
         {
-            _control.Profiler_SetCameraPose(pose);
+            ApplyPose(pose);
         }
 
         var elapsedMs = _clock.ElapsedMilliseconds;
@@ -100,6 +111,18 @@ internal sealed class Renderer3DScenario : IDisposable
         {
             _lastMotionLogMilliseconds = elapsedMs;
             RendererProfilerTrace.Event("camera-motion", BuildEventFields("sample", pose, elapsed));
+        }
+    }
+
+    private void ApplyPose(RendererProfilerCameraPose pose)
+    {
+        if (_options.CaptureLocalRadiusCells is not null)
+        {
+            _control.Profiler_SetCaptureCameraPose(pose);
+        }
+        else
+        {
+            _control.Profiler_SetCameraPose(pose);
         }
     }
 

@@ -48,7 +48,7 @@ public sealed class WorldViewVisibilityParitySourceContractTests
             StringComparison.Ordinal);
 
         Assert.Contains(
-            "if(captureTerrainEnabled){_terrain!.Render(viewProj,cylinder);}",
+            "if(captureTerrainEnabled){_terrain!.Render(viewProj,cylinder,captureRenderOrigin);}",
             compact,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -111,9 +111,15 @@ public sealed class WorldViewVisibilityParitySourceContractTests
             "private RendererProfilerScenarioSnapshot BuildProfilerScenarioSnapshot");
         var coreCompact = Compact(core);
         Assert.Contains(
-            "captureReferencesEnabled?_references!.LastStats:null," +
-            "captureWaterEnabled?_water!.LastStats:null," +
-            "captureTerrainEnabled?_terrain!.LastStats:null,",
+            "varcaptureReferenceStats=captureReferencesEnabled?_references!.LastStats:null;",
+            coreCompact,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "varcaptureWaterStats=captureWaterEnabled?_water!.LastStats:null;",
+            coreCompact,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "varcaptureTerrainStats=captureTerrainEnabled?_terrain!.LastStats:null;",
             coreCompact,
             StringComparison.Ordinal);
 
@@ -125,6 +131,11 @@ public sealed class WorldViewVisibilityParitySourceContractTests
         Assert.Contains(
             "if(referenceStatsisnull||_referencesisnull){" +
             "fields[\"belowWaterBlendPartition\"]=null;}",
+            telemetryCompact,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "fields[\"animationClockPinned\"]=animationTimeSecondsisnotnull;" +
+            "fields[\"animationClockSeconds\"]=animationTimeSeconds;",
             telemetryCompact,
             StringComparison.Ordinal);
         Assert.DoesNotContain("varterrainStats=_showTerrain", telemetryCompact, StringComparison.Ordinal);
