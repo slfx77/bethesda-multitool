@@ -166,3 +166,6 @@ docs/facegen_head_rendering_pipeline.md
 # research + backlog note trees; curated docs live directly under docs/ and stay tracked.
 docs/research/
 docs/backlog/
+
+# Session scratch dumps (retail probes, capture builds, diagnose scripts) — never source.
+scratchpad/
