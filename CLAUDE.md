@@ -71,8 +71,12 @@ archive compare <fileA> <fileB>     # Compare two BSA headers/folder hashes
 sprite render <file> -o <dir>              # Decode a loose image to PNG frames
 sprite render <archive> -e <entry> -o <d>  # ...or an entry inside an archive
 sprite info <file> [-e <entry>]            # Frame count/sizes/offsets without writing PNGs
-#   Palette resolution: embedded > --palette <file> > PAL.COL, then ART_PAL.COL, beside the source.
-#   Today: Arena IMG/MNU/SET/CIF/DFA/CFA + Daggerfall TEXTURE.nnn (record-labelled rNN_fMM output).
+#   -g/--game auto|arena|daggerfall: Arena and Daggerfall SHARE .IMG/.CIF/.RCI with different
+#     codecs. auto sniffs the palette beside the source (ART_PAL.COL = Daggerfall, else Arena).
+#   Palette resolution: embedded > --palette <file> > the format's own routing (DF IMG names
+#     FMAP_PAL/NIGHTSKY/DANKBMAP/MAP.PAL for special screens) > PAL.COL > ART_PAL.COL beside the source.
+#   Today: Arena IMG/MNU/SET/CIF/DFA/CFA; Daggerfall TEXTURE.nnn, IMG (headered + 72 headerless
+#     by SIZE table), CIF (plain + weapon animations), RCI. Multi-record output is labelled rNN[_fMM].
 #   Raw 768-byte .PAL files are range-sniffed: all components <= 63 = 6-bit VGA (promote), else 8-bit.
 
 # Classic (pre-Morrowind) commands
@@ -93,11 +97,17 @@ classic exe <A.EXE> [-o <out>] [--info]    # Unpack the PKLITE-compressed Arena 
 classic map info <file> [-e <entry>]       # Map dimensions, levels, .INF refs, locks/triggers
 classic map export <file> -o <dir>         # Render voxel layers to PNG (--scale px/voxel)
 #   Arena .MIF (LZHUF layers) and .RMD (word-RLE wilderness chunks); -e reads from GLOBAL.BSA.
+#   Daggerfall WOODS.WLD (1000x500 heightmap -> greyscale PNG; 5x5 sub-grid per pixel read on
+#   demand) and CLIMATE/POLITIC.PAK (1001x500 RLE overlays -> hue-per-value PNG).
 #   Layer colours are DIAGNOSTIC (stable hue per voxel id, 0 = black), not the game's textures:
 #   resolving real textures needs the level .INF plus tables still inside the packed A.EXE.
+#   Daggerfall SKYnn.DAT (32 sets, 64 frames each, one palette PER FRAME) render via `sprite render`;
+#   SKYPAL.DAT beside them is a palette pair, not a sky set.
 # stats/list/show also accept a classic INSTALL DIRECTORY (those games have no single plugin
 #   file). Arena synthesizes ATPL (TEMPLATE.DAT strings), AINF (.INF level definitions),
 #   ALOC (CITYDATA world-map locations) and APRV (provinces) — 1,186 records on a retail install.
+#   Daggerfall (pass DF\DAGGER, the dir holding ARENA2) synthesizes DREG (62 regions) and DLOC
+#   (15,251 MAPS.BSA locations: type, map pixel, buildings, dungeon blocks) — 15,313 records.
 
 # Render commands (output: PNG sprites)
 render <path> -o <dir>                     # Render single NIF to PNG
@@ -334,6 +344,7 @@ The `SubrecordSchemaRegistry` defines field types:
 
 Many records differ between Xbox and PC due to genuine content differences, not conversion issues:
 
+- **LSCR LNAM order**: the Xbox master lists a load screen's LNAM (location) subrecords in the opposite order to PC (2 retail records affected; every other LSCR byte-identical after conversion) — an unordered list, genuine content, not a converter bug (measured 2026-09-02 three-way)
 - **LVLO padding bytes**: Xbox has `FA 06`, PC has `15 06` - both are valid, semantically equivalent
 - **AIDT unused bytes**: Xbox has zeros, PC has non-zero values - likely PC-only data
 - **Various counts**: Xbox has more/fewer records in some categories (REFR +2369, etc.)

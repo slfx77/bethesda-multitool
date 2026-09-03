@@ -170,10 +170,20 @@ daggerfall-unity (DaggerfallConnect) - Daggerfall format decoders
 Source: https://github.com/Interkarma/daggerfall-unity
 License: MIT
 
-The Daggerfall TEXTURE.nnn decoder (Core/Formats/Daggerfall/DaggerfallTextureFile.cs)
-is ported from the DaggerfallConnect API layer (Assets/Scripts/API/TextureFile.cs and
-BaseImageFile.cs). Further Daggerfall decoders port from the same layer as they land;
-each ported file names its upstream source in a header comment.
+The Daggerfall decoders under Core/Formats/Daggerfall/ are ported from the
+DaggerfallConnect API layer (Assets/Scripts/API/):
+  DaggerfallTextureFile.cs  <- TextureFile.cs, BaseImageFile.cs
+  DaggerfallImgFile.cs      <- ImgFile.cs
+  DaggerfallCifRciFile.cs   <- CifRciFile.cs
+  DaggerfallPakFile.cs      <- PakFile.cs
+  DaggerfallSkyFile.cs      <- SkyFile.cs
+  DaggerfallWoodsFile.cs    <- WoodsFile.cs
+  DaggerfallMapsFile.cs     <- MapsFile.cs (region names, MAPS.BSA readers), DFRegion.cs,
+                               DFLocation.cs (location/dungeon/building enums)
+  DaggerfallTextFile.cs     <- TextFile.cs (TEXT.RSC index + token grammar)
+  DaggerfallBookFile.cs     <- BookFile.cs (BOOKS/BOKnnnnn.TXT header)
+Further Daggerfall decoders port from the same layer as they land; each ported file names
+its upstream source in a header comment.
 
 MIT License
 
