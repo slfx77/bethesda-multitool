@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
@@ -73,5 +74,20 @@ public sealed class LegacyWaterAnimationTests
     public void NullProbeIsRejectedRatherThanSilentlyTreatedAsAbsent()
     {
         Assert.Throws<ArgumentNullException>(() => LegacyWaterAnimation.ExistingFramePaths(null!));
+    }
+
+    [Fact]
+    public void TelemetryOnlyRelabelsTheGeneratedOblivionFftSobelSurface()
+    {
+        Assert.Equal("oblivion-fft-sobel", LegacyWaterAnimation.TelemetryName(
+            BethesdaGame.Oblivion, LegacySurfaceFrameSource.OblivionFftSobel, "legacy-standin"));
+        Assert.Equal("legacy-standin", LegacyWaterAnimation.TelemetryName(
+            BethesdaGame.Oblivion, LegacySurfaceFrameSource.AuthoredDisk, "legacy-standin"));
+        Assert.Equal("legacy-standin", LegacyWaterAnimation.TelemetryName(
+            BethesdaGame.Oblivion, LegacySurfaceFrameSource.None, "legacy-standin"));
+        Assert.Equal("legacy-standin", LegacyWaterAnimation.TelemetryName(
+            BethesdaGame.Morrowind, LegacySurfaceFrameSource.AuthoredDisk, "legacy-standin"));
+        Assert.Equal("fo4-modern-0x141", LegacyWaterAnimation.TelemetryName(
+            BethesdaGame.Fallout4, LegacySurfaceFrameSource.OblivionFftSobel, "fo4-modern-0x141"));
     }
 }

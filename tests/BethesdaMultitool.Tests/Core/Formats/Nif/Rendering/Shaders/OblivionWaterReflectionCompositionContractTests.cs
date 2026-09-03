@@ -68,16 +68,64 @@ public sealed class OblivionWaterReflectionCompositionContractTests
     }
 
     [Fact]
-    public void SynthesizedSurfaceFramesUploadWithAMipChain()
+    public void OblivionFftSobelFramesUploadAsOneLevelRuntimeTargets()
     {
-        // The 2026-08-08 review flagged the mipless CreateFromRgba upload as an aggravator of the
-        // surface pattern (unfiltered minification of the 128² normal frames).
+        // Oblivion.exe 1.2.0.416 NiDX9RenderedTextureData::CreateSurf (0x00761730) calls
+        // IDirect3DDevice9::CreateTexture through vtable slot 0x5C with Levels=1 (push 1 at
+        // 0x007617DF). The synthesized CPU frames stand in for that dynamic one-level target;
+        // box-filtered lower mips would erase frequencies before WATER007's implicit sample.
+        var host = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Controls", "WorldView3D",
+            "WorldView3DControl.Cells.cs");
+        var resolver = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "TerrainTextureResolver12.cs");
         var cache = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuTextureCache12.cs");
+
+        SourceContract.AssertOrder(host,
+            "frames.Add(_textureResolver12.GetOrCreateSyntheticBindlessIndex(",
+            "synthesized[i],",
+            "generateMips: false));");
         Assert.Contains(
+            "bool generateMips = true)", resolver, StringComparison.Ordinal);
+        Assert.Contains(
+            "_textureCache.GetOrCreateSynthetic(key, width, height, rgba, generateMips)",
+            resolver, StringComparison.Ordinal);
+        Assert.Contains(
+            "bool generateMips = true)", cache, StringComparison.Ordinal);
+        Assert.Contains(
+            "_solidTextureFactory.CreateFromRgba(width, height, rgba, generateMips)",
+            cache, StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "_solidTextureFactory.CreateFromRgba(width, height, rgba, true)",
             cache, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SunGateMatchesRecoveredTes4WriterAndWater007Saturation()
+    {
+        // Oblivion.exe's PC lighting writer stores FUN_00544b00() * 100 in SunDir.w
+        // (tes4_sun_position_decompiled.txt 663-664), and WATER007 consumes c2.w through mov_sat
+        // (oblivion_water_pkg013.asm 388/570). Our shared atmosphere CB stores the normalized
+        // visibility instead, so the TES4 shader must apply both the recovered scale and clamp.
+        var shader = SourceContract.ReadShaderSource("water_oblivion.frag.hlsl");
+
+        Assert.Contains(
+            "float sunGate = lit ? saturate(uSunDirIntensity.w * 100.0) : 1.0;",
+            shader, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "float sunGate = lit ? max(uSunDirIntensity.w, 0.0) : 1.0;",
+            shader, StringComparison.Ordinal);
+
+        var writer = SourceContract.ReadSource("tools", "GhidraProject", "tes4_sun_position_decompiled.txt");
+        Assert.Contains(
+            "_DAT_00b45e00 = (float)(fVar11 * (float10)100.0);",
+            writer, StringComparison.Ordinal);
+        var water007 = SourceContract.ReadSource(
+            "tools", "GhidraProject", "oblivion_water_shaders", "oblivion_water_pkg013.asm");
+        Assert.Contains("mov_sat r0.w, c2/*SunDir*/.wwww", water007, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -161,6 +161,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // host at load. Morrowind samples the selected frame as diffuse; Oblivion WATER000 samples it
     // as its global animated normal. WATR TNAM is a separate per-water detail input.
     private uint[]? _legacyAnimatedFrames;
+    private LegacySurfaceFrameSource _legacyAnimatedFrameSource;
 
     private readonly List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.Core.WorldData.WorldWaterCell> _visibleWaterScratch = new();
@@ -1098,12 +1099,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     /// <summary>
-    ///     Supplies the bindless indices of the legacy <c>water00–31.dds</c> animation, resolved by
-    ///     the host at worldspace load. Morrowind interprets the selected texture as diffuse;
-    ///     Oblivion WATER000 interprets it as NormalMap. Null/empty preserves the established fallback.
+    ///     Supplies the legacy surface-animation bindless indices and their provenance, resolved by
+    ///     the host at worldspace load. Morrowind interprets authored frames as diffuse; Oblivion
+    ///     WATER000 interprets either authored replacers or the generated FFT/Sobel frames as NormalMap.
+    ///     Null/empty preserves the established fallback and clears the provenance tag.
     /// </summary>
-    public void SetLegacyAnimatedFrames(uint[]? frameBindlessIndices) =>
+    public void SetLegacyAnimatedFrames(
+        uint[]? frameBindlessIndices,
+        LegacySurfaceFrameSource frameSource)
+    {
         _legacyAnimatedFrames = frameBindlessIndices;
+        _legacyAnimatedFrameSource = frameBindlessIndices is { Length: > 0 }
+            ? frameSource
+            : LegacySurfaceFrameSource.None;
+    }
 
     /// <summary>
     ///     Video-settings "Water ripples" toggle (retail <c>bUseWaterDisplacements:Water</c>; the
@@ -1650,11 +1659,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 : "the active WATR appearance carries no authored texture path; a procedural normal fallback is used";
         }
         LastStats.WaterTelemetryUnavailableReason = telemetryUnavailableReason;
-        LastStats.WaterPipeline = ModernWaterPipeline.TelemetryName(
+        LastStats.WaterPipeline = LegacyWaterAnimation.TelemetryName(
             _game,
-            explicitlyEnabled: false,
-            resourcesReady: false,
-            prepassesRecorded: false);
+            _legacyAnimatedFrameSource,
+            ModernWaterPipeline.TelemetryName(
+                _game,
+                explicitlyEnabled: false,
+                resourcesReady: false,
+                prepassesRecorded: false));
         if (_waterCells.Count == 0 && _nifWaterPlanes.Count == 0) return 0;
 
         var started = StartTiming();
@@ -2090,12 +2102,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             _game == BethesdaGame.Starfield &&
             _waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox &&
             _starfieldApproximation is not null;
-        LastStats.WaterPipeline = ModernWaterPipeline.TelemetryName(
+        LastStats.WaterPipeline = LegacyWaterAnimation.TelemetryName(
             _game,
-            ModernPipelineEnabled,
-            modernResourcesReady,
-            modernPrepassesRecorded,
-            modernTechnique);
+            _legacyAnimatedFrameSource,
+            ModernWaterPipeline.TelemetryName(
+                _game,
+                ModernPipelineEnabled,
+                modernResourcesReady,
+                modernPrepassesRecorded,
+                modernTechnique));
         if (useFallout76Optics)
         {
             LastStats.WaterPipeline = "fo76-optics-reference-approx";
@@ -2137,10 +2152,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         var normalIndex1 = _normalBindlessIndices[0];
         var normalIndex2 = _normalBindlessIndices[1];
         var normalIndex3 = _normalBindlessIndices[2];
-        if (_waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox)
+        if (_game == BethesdaGame.Skyrim ||
+            _waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox)
         {
-            // The Starfield shader samples the ordered indices directly rather than NoiseIndex, so
-            // apply the video setting to each input instead of leaving its animated maps live.
+            // Skyrim's direct three-layer branch and the Starfield shader sample the ordered indices
+            // rather than NoiseIndex, so apply the video setting to every authored input instead of
+            // leaving those animated maps live behind a nominally disabled ripple field.
             normalIndex1 = ApplyRippleToggle(normalIndex1);
             normalIndex2 = ApplyRippleToggle(normalIndex2);
             normalIndex3 = ApplyRippleToggle(normalIndex3);

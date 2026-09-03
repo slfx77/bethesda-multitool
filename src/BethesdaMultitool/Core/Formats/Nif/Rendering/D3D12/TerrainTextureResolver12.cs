@@ -214,9 +214,14 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     ///     Used for the Oblivion water-surface animation frames the engine generates at runtime
     ///     (retail ships no <c>water00-31.dds</c>) — see <c>OblivionWaterSurfaceSynthesizer</c>.
     /// </summary>
-    public uint GetOrCreateSyntheticBindlessIndex(string key, int width, int height, byte[] rgba)
+    public uint GetOrCreateSyntheticBindlessIndex(
+        string key,
+        int width,
+        int height,
+        byte[] rgba,
+        bool generateMips = true)
     {
-        return _textureCache.GetOrCreateSynthetic(key, width, height, rgba).BindlessIndex;
+        return _textureCache.GetOrCreateSynthetic(key, width, height, rgba, generateMips).BindlessIndex;
     }
 
     /// <summary>

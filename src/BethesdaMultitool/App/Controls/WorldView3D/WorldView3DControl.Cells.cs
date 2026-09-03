@@ -143,7 +143,7 @@ public sealed partial class WorldView3DControl
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
-        _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
+        BindLegacyAnimatedWaterFrames(appearance);
         _water?.SetOblivionDetailTexture(oblivionDetailIndex);
         if (_water is not null)
         {
@@ -180,19 +180,21 @@ public sealed partial class WorldView3DControl
     ///     Resolves the shared 32-frame <c>textures\water\water00–31.dds</c> animation. Morrowind
     ///     samples it as a diffuse surface, while Oblivion WATER000 samples it as the global animated
     ///     normal input; using WATR TNAM for that slot was incorrect because TNAM is per-water detail
-    ///     content (and DefaultWater's TNAM is empty). Null for every other game.
+    ///     content (and DefaultWater's TNAM is empty). The result carries its origin so renderer
+    ///     telemetry can distinguish retail's generated FFT/Sobel surface from authored replacers.
     /// </summary>
-    private uint[]? ResolveLegacyAnimatedWaterFrames()
+    private (uint[]? Frames, LegacySurfaceFrameSource Source) ResolveLegacyAnimatedWaterFrames(
+        WaterAppearance? appearance = null)
     {
         if (_data is null || _textureResolver12 is null)
         {
-            return null;
+            return (null, LegacySurfaceFrameSource.None);
         }
 
         var frameRole = WaterProfile.ForGame(_data.Game).LegacyFrames;
         if (frameRole == LegacySurfaceFrameRole.None)
         {
-            return null;
+            return (null, LegacySurfaceFrameSource.None);
         }
 
         var frames = new List<uint>(LegacyWaterAnimation.FrameCount);
@@ -210,31 +212,47 @@ public sealed partial class WorldView3DControl
             }
         }
 
-        // Retail Oblivion ships NO water00-31.dds — the engine GENERATES its 32-frame surface
-        // animation at runtime from ini [Water] settings (uSurfaceFrameCount=32, uSurfaceFPS=12,
-        // uSurfaceTextureSize=128). With zero disk/BSA frames the surface stayed on the static
-        // procedural ripple ("water isn't animated"). Synthesize the seamless loop instead and
-        // feed it through the same plumbing; disk frames (mod replacers) still win when present.
-        // Morrowind (Diffuse role) always resolves its BSA-shipped frames above and never gets here.
+        var frameSource = frames.Count > 0
+            ? LegacySurfaceFrameSource.AuthoredDisk
+            : LegacySurfaceFrameSource.None;
+
+        // Retail Oblivion ships NO water00-31.dds. Its WATERHMAP000..006 path continuously evolves
+        // a 128² FFT surface from the active WATR's wind/amplitude/frequency fields. Sample that
+        // recovered model into the viewer's ini-sized 32-frame/12-FPS plumbing; disk frames (mod
+        // replacers) still win when present. Morrowind (Diffuse role) ships frames and never gets here.
         if (frames.Count == 0 &&
             _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Oblivion &&
             frameRole == LegacySurfaceFrameRole.GlobalNormal)
         {
+            frameSource = LegacySurfaceFrameSource.OblivionFftSobel;
             var synthesized = BethesdaMultitool.Core.Formats.Nif.Rendering.Water
-                .OblivionWaterSurfaceSynthesizer.GenerateFrames();
+                .OblivionWaterSurfaceSynthesizer.GenerateFrames(appearance?.Surface);
+            var settingsKey = BethesdaMultitool.Core.Formats.Nif.Rendering.Water
+                .OblivionWaterSurfaceSynthesizer.GetSettingsKey(appearance?.Surface);
             for (var i = 0; i < synthesized.Length; i++)
             {
                 frames.Add(_textureResolver12.GetOrCreateSyntheticBindlessIndex(
-                    $"synthetic:oblivion-water-surface:{i:D2}",
+                    $"synthetic:oblivion-water-surface:{settingsKey}:{i:D2}",
                     BethesdaMultitool.Core.Formats.Nif.Rendering.Water
                         .OblivionWaterSurfaceSynthesizer.TextureSize,
                     BethesdaMultitool.Core.Formats.Nif.Rendering.Water
                         .OblivionWaterSurfaceSynthesizer.TextureSize,
-                    synthesized[i]));
+                    synthesized[i],
+                    generateMips: false));
             }
         }
 
-        return frames.Count > 0 ? frames.ToArray() : null;
+        return frames.Count > 0
+            ? (frames.ToArray(), frameSource)
+            : (null, LegacySurfaceFrameSource.None);
+    }
+
+    private void BindLegacyAnimatedWaterFrames(WaterAppearance? appearance = null)
+    {
+        if (_water is null) return;
+
+        var (frames, source) = ResolveLegacyAnimatedWaterFrames(appearance);
+        _water.SetLegacyAnimatedFrames(frames, source);
     }
 
     private uint?[]? ResolveWaterNormalIndices(
@@ -339,6 +357,11 @@ public sealed partial class WorldView3DControl
         var starfieldApproximation = _data.Game == BethesdaGame.Starfield
             ? StarfieldWaterApproximation.FromWaterRecord(selection.Water)
             : null;
+        if (_data.Game == BethesdaGame.Oblivion)
+        {
+            BindLegacyAnimatedWaterFrames(appearance);
+        }
+
         _water.SetAppearance(
             appearance,
             ResolveWaterNormalIndices(appearance, starfieldApproximation));
@@ -475,7 +498,6 @@ public sealed partial class WorldView3DControl
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
-        _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         var waterSelection = WaterAppearanceSelectionResolver.Resolve(
             cell: interior,
             worldspace: null,
@@ -483,6 +505,7 @@ public sealed partial class WorldView3DControl
             game: _data.Game,
             isInterior: true);
         var appearance = WaterAppearance.FromWaterRecord(waterSelection.Water);
+        BindLegacyAnimatedWaterFrames(appearance);
         var starfieldApproximation = _data.Game == BethesdaGame.Starfield
             ? StarfieldWaterApproximation.FromWaterRecord(waterSelection.Water)
             : null;

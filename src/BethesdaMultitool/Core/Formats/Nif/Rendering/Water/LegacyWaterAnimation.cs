@@ -1,4 +1,14 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+
+/// <summary>Identifies where the legacy surface-animation frames actually came from.</summary>
+internal enum LegacySurfaceFrameSource
+{
+    None,
+    AuthoredDisk,
+    OblivionFftSobel
+}
 
 /// <summary>
 ///     Shared contract for the 32-frame <c>textures\water\water00..31.dds</c> animation used by
@@ -8,6 +18,25 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 internal static class LegacyWaterAnimation
 {
     internal const int FrameCount = 32;
+    internal const string OblivionFftSobelTelemetryName = "oblivion-fft-sobel";
+
+    /// <summary>
+    ///     Preserves the established pipeline label unless the active Oblivion frame set is the
+    ///     generated WATERHMAP FFT/Sobel surface. Authored replacer frames deliberately remain on
+    ///     the legacy label: having the same bindless shape does not make their provenance equal.
+    /// </summary>
+    internal static string TelemetryName(
+        BethesdaGame game,
+        LegacySurfaceFrameSource frameSource,
+        string establishedPipeline)
+    {
+        ArgumentNullException.ThrowIfNull(establishedPipeline);
+
+        return game == BethesdaGame.Oblivion &&
+               frameSource == LegacySurfaceFrameSource.OblivionFftSobel
+            ? OblivionFftSobelTelemetryName
+            : establishedPipeline;
+    }
 
     internal static string FramePath(int frameIndex)
     {

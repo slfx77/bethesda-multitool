@@ -34,10 +34,9 @@ internal sealed unsafe class GpuSolidTextureFactory12
     ///     aware). Same one-shot direct-queue path as the 1×1 solids; used for the handful of
     ///     synthesized textures (e.g. the Oblivion water-surface animation frames the engine
     ///     generates at runtime and retail never ships on disk). With
-    ///     <paramref name="generateMips" /> a full CPU box-filtered mip chain is uploaded — the
-    ///     2026-08-08 water review flagged the mipless upload as an aggravator of the surface
-    ///     pattern (unfiltered minification of a 128² normal map); shaders that renormalize after
-    ///     decode tolerate the plain channel average.
+    ///     <paramref name="generateMips" /> a full CPU box-filtered mip chain is uploaded. Callers
+    ///     representing one-level runtime render targets leave it disabled so implicit sampling
+    ///     follows the source resource's level availability.
     /// </summary>
     internal GpuTextureCache12.Entry CreateFromRgba(int width, int height, byte[] rgba, bool generateMips = false)
     {

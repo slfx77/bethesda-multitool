@@ -18,7 +18,11 @@ float4 main(PSInput input) : SV_Target
     bool lit = uSunColorLighting.w > 0.5;
     float3 sunDir = lit ? normalize(uSunDirIntensity.xyz) : kSunDir;
     float3 sunCol = lit ? uSunColorLighting.rgb : kSunColor;
-    float sunGate = lit ? max(uSunDirIntensity.w, 0.0) : 1.0;
+    // Retail PC writes FUN_00544b00() * 100 into SunDir.w (tes4_sun_position_decompiled.txt
+    // 663-664), then WATER007 applies mov_sat to c2.w (oblivion_water_pkg013.asm 388/570).
+    // The shared atmosphere CB carries the normalized visibility, so reproduce both operations
+    // here: TES4's glint stays fully enabled through all but the final 1% of the sun fade.
+    float sunGate = lit ? saturate(uSunDirIntensity.w * 100.0) : 1.0;
     uint noiseIndex = uNoiseParams.x;
     // Surface tile: uSurface0.x is game-resolved by WaterRenderer12.ResolveSurfaceUvScale — for
     // Oblivion the WATER007 VS interpolant t7.zw = worldXY · (3/4096), i.e. a 4096/3 ≈ 1365.33
