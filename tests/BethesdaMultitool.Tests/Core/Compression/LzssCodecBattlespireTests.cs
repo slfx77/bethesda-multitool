@@ -4,11 +4,19 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Compression;
 
 /// <summary>
-///     Hand-derived vectors for <see cref="LzssCodec.DecompressBattlespire" />, the per-entry BSA
-///     codec clean-roomed from battlespire-tools' <c>bsa_format.txt</c>. Every expected output is
-///     worked out on paper from the spec's rules, and the vectors deliberately exercise the three
-///     ways this variant differs from Arena's: the byte-swapped code pair, the split window
-///     prefill (0x20 then 0x00 for the last 18), and the input-driven stop.
+///     Vectors for <see cref="LzssCodec.DecompressBattlespire" />, the per-entry BSA codec. They
+///     exercise the three ways this variant differs from Arena's: the code pair's packing
+///     (<c>offset = first | ((second &amp; 0xF0) &lt;&lt; 4)</c>, length in the second byte's low
+///     nibble), the split window prefill (0x20, then 0x00 for the last 18 bytes), and the
+///     input-driven stop.
+///     <para>
+///         These vectors were derived from <c>bsa_format.txt</c>'s bit table on 2026-08-31 and had
+///         the two code bytes the wrong way round; the retail check of the day only looked at each
+///         mesh's <c>v2.7</c> signature, which a literal-only first flag byte decodes correctly
+///         either way, so the error survived until a whole record was parsed (2026-09-03). They
+///         now follow battlespire-tools' working decoder, and a real-asset test decodes entire
+///         archives rather than signatures.
+///     </para>
 /// </summary>
 public class LzssCodecBattlespireTests
 {
@@ -26,8 +34,8 @@ public class LzssCodecBattlespireTests
     {
         // One literal 'A' lands at window position 4078 (the write origin). The code then reads
         // three bytes from absolute offset 4078 — overlapping its own output, so 'A' repeats.
-        // Code bytes: first = lengthNibble<<4 | offsetHigh = 0x0F, second = offset low = 0xEE.
-        byte[] input = [0x01, (byte)'A', 0x0F, 0xEE];
+        // Code bytes: first = offset low (0xEE), second = offset high nibble (0xF) + length 0.
+        byte[] input = [0x01, (byte)'A', 0xEE, 0xF0];
 
         Assert.Equal("AAAA"u8.ToArray(), LzssCodec.DecompressBattlespire(input));
     }
@@ -46,7 +54,7 @@ public class LzssCodecBattlespireTests
     {
         // Offset 4090 sits in the final 18 bytes, which this variant zeroes instead of spacing —
         // the Arena codec would produce 0x20 here, which is exactly why the two must not merge.
-        byte[] input = [0x00, 0x0F, 0xFA];
+        byte[] input = [0x00, 0xFA, 0xF0];
 
         Assert.Equal([0x00, 0x00, 0x00], LzssCodec.DecompressBattlespire(input));
     }
@@ -56,7 +64,7 @@ public class LzssCodecBattlespireTests
     {
         // Offset 4095 is the last (zeroed) cell; the next two reads wrap to 0 and 1, which are
         // still space-prefilled.
-        byte[] input = [0x00, 0x0F, 0xFF];
+        byte[] input = [0x00, 0xFF, 0xF0];
 
         Assert.Equal([0x00, 0x20, 0x20], LzssCodec.DecompressBattlespire(input));
     }
@@ -65,7 +73,7 @@ public class LzssCodecBattlespireTests
     public void Decompress_LengthNibble_AddsThree()
     {
         // Length nibble 0xC -> 15 bytes, all from the space prefill.
-        byte[] input = [0x00, 0xC0, 0x00];
+        byte[] input = [0x00, 0x00, 0x0C];
 
         var result = LzssCodec.DecompressBattlespire(input);
 
@@ -86,22 +94,18 @@ public class LzssCodecBattlespireTests
     [Fact]
     public void Decompress_IsNotBitCompatibleWithTheArenaVariant()
     {
-        // The same three bytes read as a code by both variants: Battlespire takes the FIRST byte
-        // as length+offset-high and reads offset 0 (spaces); Arena takes the SECOND byte that way
-        // and biases the offset by +18. Identical input, different output — the proof the two
-        // codecs cannot be merged.
+        // A code of all zeroes reads offset 0 under both variants, so both yield spaces.
         byte[] input = [0x00, 0x00, 0x00];
 
-        var battlespire = LzssCodec.DecompressBattlespire(input);
-        var arena = LzssCodec.Decompress(input, 3);
+        Assert.Equal([0x20, 0x20, 0x20], LzssCodec.DecompressBattlespire(input));
+        Assert.Equal([0x20, 0x20, 0x20], LzssCodec.Decompress(input, 3));
 
-        Assert.Equal([0x20, 0x20, 0x20], battlespire);
-        Assert.Equal([0x20, 0x20, 0x20], arena);
+        // Where they diverge: the window's tail. Offset 4090 lands in the final 18 cells, which
+        // Battlespire zeroes and Arena leaves as spaces — identical input, different output, which
+        // is why the two codecs cannot be merged.
+        byte[] tail = [0x00, 0xFA, 0xF0];
 
-        // Where they diverge: length nibble placement. 0xC0 0x00 is 15 bytes under Battlespire
-        // (length in the first byte) but 3 bytes under Arena (length in the second byte's low
-        // nibble, which is 0 here).
-        Assert.Equal(15, LzssCodec.DecompressBattlespire([0x00, 0xC0, 0x00]).Length);
-        Assert.Equal(3, LzssCodec.Decompress([0x00, 0xC0, 0x00], 3).Length);
+        Assert.Equal([0x00, 0x00, 0x00], LzssCodec.DecompressBattlespire(tail));
+        Assert.All(LzssCodec.Decompress(tail, 3), b => Assert.Equal(0x20, b));
     }
 }

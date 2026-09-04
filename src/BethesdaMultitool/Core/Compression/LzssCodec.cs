@@ -30,13 +30,19 @@ internal static class LzssCodec
     private const int WindowMask = 0x0FFF;
 
     /// <summary>
-    ///     Decode the Battlespire per-entry BSA compression (clean-room from ariscop's
-    ///     battlespire-tools <c>bsatool/bsa_format.txt</c>, Unlicense). Same LZSS family as the
-    ///     Arena codec but NOT bit-compatible with it, in three ways this method must not blur:
-    ///     the code pair is byte-swapped (first byte = length high nibble + offset high nibble,
-    ///     second byte = offset low 8 bits), the window prefill is 0x20 for the first 4,078 bytes
-    ///     but 0x00 for the final 18 (Arena is 0x20 throughout), and the output size is not stored
-    ///     anywhere — decoding is input-driven and returns whatever the stream produces.
+    ///     Decode the Battlespire per-entry BSA compression (from ariscop's battlespire-tools
+    ///     <c>bsatool</c>, Unlicense). Same LZSS family as the Arena codec but NOT bit-compatible
+    ///     with it, in three ways this method must not blur: the code pair packs the window offset
+    ///     as <c>first | ((second &amp; 0xF0) &lt;&lt; 4)</c> with the length in the second byte's low
+    ///     nibble, the window prefill is 0x20 for the first 4,078 bytes but 0x00 for the final 18
+    ///     (Arena is 0x20 throughout), and the output size is not stored anywhere — decoding is
+    ///     input-driven and returns whatever the stream produces.
+    ///     <para>
+    ///         The code-pair order was WRONG here until 2026-09-03. Every stream still began with a
+    ///         literal-only flag byte, so a Battlespire mesh's <c>v2.7</c> signature decoded
+    ///         correctly and hid the bug; everything after the first back-reference was garbage.
+    ///         Verify this codec on a whole record, never on its first bytes.
+    ///     </para>
     /// </summary>
     public static byte[] DecompressBattlespire(ReadOnlySpan<byte> input)
     {
@@ -88,9 +94,11 @@ internal static class LzssCodec
                 var first = input[inPos++];
                 var second = input[inPos++];
 
-                // Offset is an ABSOLUTE window position, not a distance back from the cursor.
-                var offset = ((first & 0x0F) << 8) | second;
-                var length = (first >> 4) + 3;
+                // Offset is an ABSOLUTE window position, not a distance back from the cursor: the
+                // first byte is its low eight bits, the second byte's high nibble its top four,
+                // and the second byte's low nibble the length.
+                var offset = first | ((second & 0xF0) << 4);
+                var length = (second & 0x0F) + 3;
 
                 for (var i = 0; i < length; i++)
                 {

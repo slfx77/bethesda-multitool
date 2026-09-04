@@ -27,9 +27,17 @@ internal static class ClassicGameAnalyzer
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var located = Directory.Exists(filePath)
-            ? ClassicGameLocator.DetectFromDirectory(filePath) is { } profile ? (profile, Path.GetFullPath(filePath)) : null
-            : ClassicGameLocator.DetectRootForFile(filePath);
+        (Core.Games.GameProfile Profile, string Root)? located;
+        if (Directory.Exists(filePath))
+        {
+            located = ClassicGameLocator.DetectFromDirectory(filePath) is { } profile
+                ? (profile, Path.GetFullPath(filePath))
+                : null;
+        }
+        else
+        {
+            located = ClassicGameLocator.DetectRootForFile(filePath);
+        }
 
         if (located is not var (resolvedProfile, root))
         {
@@ -49,6 +57,9 @@ internal static class ClassicGameAnalyzer
                 break;
             case BethesdaGame.Daggerfall:
                 DaggerfallRecordSource.Populate(dataRoot, records, cancellationToken);
+                break;
+            case BethesdaGame.Battlespire:
+                BattlespireRecordSource.Populate(dataRoot, records, cancellationToken);
                 break;
             default:
                 // No synthesizer for this game yet — the empty collection is the honest answer.

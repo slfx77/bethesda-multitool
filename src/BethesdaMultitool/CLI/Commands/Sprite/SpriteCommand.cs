@@ -40,7 +40,8 @@ public static class SpriteCommand
             "auto" => ClassicSpriteGame.Auto,
             "arena" => ClassicSpriteGame.Arena,
             "daggerfall" or "df" => ClassicSpriteGame.Daggerfall,
-            _ => throw new NotSupportedException($"Unknown --game '{value}'. Use auto, arena, or daggerfall.")
+            "battlespire" or "bs" => ClassicSpriteGame.Battlespire,
+            _ => throw new NotSupportedException($"Unknown --game '{value}'. Use auto, arena, daggerfall, or battlespire.")
         };
     }
 

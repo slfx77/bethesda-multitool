@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Arena;
+using BethesdaMultitool.Core.Formats.Battlespire;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
@@ -17,7 +18,10 @@ internal enum ClassicSpriteGame
     /// <summary>Decide from the palette file beside the source: ART_PAL.COL means Daggerfall, else Arena.</summary>
     Auto,
     Arena,
-    Daggerfall
+    Daggerfall,
+
+    /// <summary>Battlespire, whose <c>.BSI</c> images carry their own palettes.</summary>
+    Battlespire
 }
 
 /// <summary>
@@ -174,6 +178,13 @@ internal static class SpriteRenderPipeline
 
     private static Decoded DecodeFrames(byte[] bytes, string logicalName, ClassicSpriteGame game)
     {
+        // A .BSI is Battlespire's and nobody else's, and it carries its own palettes, so the
+        // extension decides regardless of which game was resolved.
+        if (BsiFile.IsBsiFileName(logicalName))
+        {
+            return DecodeBsi(bytes, logicalName);
+        }
+
         // Daggerfall's TEXTURE.nnn sets are named by convention, not extension, and are
         // unambiguous whichever game was resolved.
         if (DaggerfallTextureFile.IsTextureFileName(logicalName))
@@ -186,6 +197,35 @@ internal static class SpriteRenderPipeline
         return game == ClassicSpriteGame.Daggerfall
             ? DecodeDaggerfall(bytes, logicalName)
             : DecodeArena(bytes, logicalName);
+    }
+
+    /// <summary>
+    ///     Battlespire images: every frame of every image in the file, labelled <c>iNN_fMM</c> when
+    ///     the file holds more than one image. The palette comes from the image's own CMAP chunk;
+    ///     HICL only fills the even slots and cannot render the retail art, which indexes all 256.
+    /// </summary>
+    private static Decoded DecodeBsi(byte[] bytes, string logicalName)
+    {
+        var file = BsiFile.Parse(bytes, logicalName);
+        var images = new List<IndexedBitmap>();
+        var labels = new List<string>();
+        var palettes = new List<Palette>();
+        var fallback = Palette.FromRgb8(new byte[768]);
+
+        for (var i = 0; i < file.Images.Count; i++)
+        {
+            var image = file.Images[i];
+            var palette = image.ColorMap ?? image.HighColor ?? fallback;
+            for (var f = 0; f < image.Frames.Count; f++)
+            {
+                images.Add(image.Frames[f]);
+                palettes.Add(palette);
+                labels.Add($"i{i:D2}_f{f:D2}");
+            }
+        }
+
+        // One image: let the pipeline's own single/multi-frame naming apply.
+        return new Decoded(images, file.Images.Count == 1 ? null : labels, palettes[0], null, TransparentZero: false, palettes);
     }
 
     private static Decoded DecodeArena(byte[] bytes, string logicalName)
