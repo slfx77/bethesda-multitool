@@ -16,6 +16,13 @@ internal sealed class OwnershipVtableResolver
     private const int MaxVtableScanBack = 512;
 
     /// <summary>
+    ///     Backward window sizes tried, largest first. All multiples of 4 so the walk inside the
+    ///     window stays 4-aligned, and 0 is included so a referrer at the very start of a captured
+    ///     run still gets its own word examined.
+    /// </summary>
+    private static readonly int[] BackwardWindowSizes = [512, 256, 128, 64, 32, 16, 8, 4, 0];
+
+    /// <summary>
     ///     Maps PDB class name to (formType, list of char* pointer field offsets).
     /// </summary>
     private readonly Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)>
@@ -30,9 +37,22 @@ internal sealed class OwnershipVtableResolver
     private readonly BufferAnalysisContext _ctx;
 
     /// <summary>
+    ///     VA-space reader for the backward window. A flat file-offset read cannot fail closed at a
+    ///     region boundary; this one does.
+    /// </summary>
+    private readonly RuntimeMemoryContext _memory;
+
+    /// <summary>
     ///     Hardcoded NiObject class to string field offsets (not in PDB layouts).
     /// </summary>
     private readonly Dictionary<string, List<(int Offset, string Label)>> _niObjectFieldIndex;
+
+    /// <summary>
+    ///     Reused backward-window buffer. Safe as instance state because
+    ///     <see cref="SecondPassOwnershipResolver.Resolve" /> walks its hits on one thread; revisit
+    ///     this if that loop is ever parallelised.
+    /// </summary>
+    private readonly byte[] _window = new byte[MaxVtableScanBack + 4];
 
     public OwnershipVtableResolver(
         BufferAnalysisContext ctx,
@@ -41,28 +61,57 @@ internal sealed class OwnershipVtableResolver
         Dictionary<string, List<(int Offset, string Label)>> niObjectFieldIndex)
     {
         _ctx = ctx;
+        _memory = new RuntimeMemoryContext(new MmfMemoryAccessor(ctx.Accessor), ctx.FileSize, ctx.MinidumpInfo);
         _classNameFieldIndex = classNameFieldIndex;
         _charPointerFieldIndex = charPointerFieldIndex;
         _niObjectFieldIndex = niObjectFieldIndex;
     }
 
-    internal RuntimeStringOwnershipClaim? TryVtableReverseLookup(
-        RuntimeStringHit hit, long referrerFileOffset, uint referrerVa)
+    /// <summary>
+    ///     Read the largest captured window ending just past the referrer word, into
+    ///     <see cref="_window" />. Returns how many bytes precede the referrer inside it, or -1 when
+    ///     even the referrer's own word is unreadable in VA space.
+    /// </summary>
+    private int TryReadBackwardWindow(uint referrerVa)
     {
-        // Scan backwards from the referrer to find a vtable pointer
-        var scanStart = referrerFileOffset;
-        var maxScanBack = Math.Min(MaxVtableScanBack, referrerFileOffset);
-        for (var backOffset = 0L; backOffset <= maxScanBack; backOffset += 4)
+        foreach (var back in BackwardWindowSizes)
         {
-            var candidateOffset = scanStart - backOffset;
-            if (candidateOffset < 0)
+            if ((uint)back > referrerVa)
             {
-                break;
+                continue;
             }
 
-            var candidateBytes = new byte[4];
-            _ctx.Accessor.ReadArray(candidateOffset, candidateBytes, 0, 4);
-            var candidateVtable = BinaryPrimitives.ReadUInt32BigEndian(candidateBytes);
+            if (_memory.ReadBytesAtVaInto(
+                    Xbox360MemoryUtils.VaToLong(referrerVa - (uint)back), _window, 0, back + 4))
+            {
+                return back;
+            }
+        }
+
+        return -1;
+    }
+
+    internal RuntimeStringOwnershipClaim? TryVtableReverseLookup(RuntimeStringHit hit, uint referrerVa)
+    {
+        // Scan backwards from the referrer to find a vtable pointer.
+        //
+        // This walks VA space, not file-offset space. Until 2026-09-04 the candidate was read at
+        // `referrerFileOffset - backOffset` while the resulting object base was computed as
+        // `referrerVa - backOffset`. Minidump regions are laid out contiguously by FILE OFFSET
+        // while their VAs are arbitrary, so any referrer within 512 bytes of a region start walked
+        // into the PREVIOUS region's bytes and then attributed that unrelated allocation's vtable —
+        // and its field labels — to this string. Reading one VA-space window instead both fixes
+        // that and replaces up to 129 four-byte reads with a single stitched read.
+        var maxScanBack = TryReadBackwardWindow(referrerVa);
+        if (maxScanBack < 0)
+        {
+            return null;
+        }
+
+        for (var backOffset = 0; backOffset <= maxScanBack; backOffset += 4)
+        {
+            var candidateVtable =
+                BinaryPrimitives.ReadUInt32BigEndian(_window.AsSpan(maxScanBack - backOffset, 4));
 
             if (!Xbox360MemoryUtils.IsModulePointer(candidateVtable))
             {

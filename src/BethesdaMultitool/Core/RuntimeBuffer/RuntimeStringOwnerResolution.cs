@@ -17,4 +17,12 @@ public sealed class RuntimeStringOwnerResolution
     public string? OwnerRecordType { get; init; }
     public string? OwnerFieldOrSubrecord { get; init; }
     public IReadOnlyList<(long FileOffset, long Va, string? Context)>? AllReferrers { get; init; }
+
+    /// <summary>
+    ///     How much this claim can be trusted, from <see cref="ClaimSource" />. Derived rather than
+    ///     stored so it can never disagree with the source it describes, and so every construction
+    ///     site gets it without having to remember to set it.
+    /// </summary>
+    public OwnershipConfidence? Confidence =>
+        ClaimSource.HasValue ? OwnershipConfidenceMap.For(ClaimSource.Value) : null;
 }

@@ -31,13 +31,33 @@ internal sealed class OwnershipTextMatcher
     private readonly Dictionary<string, GmstRecord>? _gmstTextLookup;
 
     /// <summary>
+    ///     VA-space reader for the cFormEditorID step-back. Fails closed at region boundaries,
+    ///     which a flat file-offset read cannot do.
+    /// </summary>
+    private readonly RuntimeMemoryContext _memory;
+
+    /// <summary>
     ///     Set of all PDB class names (for cFormEditorID fallback validation).
     /// </summary>
     private readonly HashSet<string> _pdbClassNames;
 
+    /// <summary>
+    ///     Shortest unclassified string allowed to claim an owner by exact text match.
+    ///     <para>
+    ///         The text matchers below are exact dictionary lookups against inventories we already
+    ///         recovered, so an <c>Other</c> string that matches one is just as much evidence as a
+    ///         classified one — see <see cref="CanTryTextMatch" />. Very short text is the one place
+    ///         that reasoning weakens: "Yes" or "Doc" can equal a real EditorID or dialogue line by
+    ///         coincidence rather than identity, so a cross-category promotion needs a few
+    ///         characters behind it. Classified hits are unaffected.
+    ///     </para>
+    /// </summary>
+    private const int MinUnclassifiedTextMatchLength = 6;
+
     public OwnershipTextMatcher(BufferAnalysisContext ctx)
     {
         _ctx = ctx;
+        _memory = new RuntimeMemoryContext(new MmfMemoryAccessor(ctx.Accessor), ctx.FileSize, ctx.MinidumpInfo);
         _editorIdTextLookup = BuildEditorIdTextLookup();
         _gmstTextLookup = BuildGmstTextLookup();
         _dialogueTextLookup = BuildDialogueTextLookup();
@@ -46,12 +66,37 @@ internal sealed class OwnershipTextMatcher
     }
 
     /// <summary>
+    ///     Whether a hit may attempt an exact-text claim against the inventory for
+    ///     <paramref name="preferred" />.
+    ///     <para>
+    ///         Until 2026-09-03 each matcher required the hit to already carry its own category,
+    ///         which made the shape classifier a gatekeeper on evidence it has nothing to do with:
+    ///         these are exact dictionary lookups, so a string that equals a known EditorID *is*
+    ///         that EditorID whether or not it looked like one. The classifier is deliberately
+    ///         strict — a dialogue line needs 25+ characters with spaces, an EditorID 6+ starting
+    ///         uppercase — so short lines and lowercase IDs were classified <c>Other</c> and then
+    ///         denied the one test that would have named them. Unclassified text is now allowed to
+    ///         try, subject to <see cref="MinUnclassifiedTextMatchLength" />.
+    ///     </para>
+    /// </summary>
+    private static bool CanTryTextMatch(RuntimeStringHit hit, StringCategory preferred)
+    {
+        if (hit.Category == preferred)
+        {
+            return true;
+        }
+
+        return hit.Category == StringCategory.Other
+               && hit.Text.Length >= MinUnclassifiedTextMatchLength;
+    }
+
+    /// <summary>
     ///     Match ReferencedOwnerUnknown EditorId strings by text content
     ///     against the known EditorID inventory.
     /// </summary>
     internal RuntimeStringOwnershipClaim? TryEditorIdTextMatch(RuntimeStringHit hit)
     {
-        if (_editorIdTextLookup == null || hit.Category != StringCategory.EditorId)
+        if (_editorIdTextLookup == null || !CanTryTextMatch(hit, StringCategory.EditorId))
         {
             return null;
         }
@@ -77,7 +122,7 @@ internal sealed class OwnershipTextMatcher
     /// </summary>
     internal RuntimeStringOwnershipClaim? TryGameSettingTextMatch(RuntimeStringHit hit)
     {
-        if (hit.Category != StringCategory.GameSetting)
+        if (!CanTryTextMatch(hit, StringCategory.GameSetting))
         {
             return null;
         }
@@ -121,7 +166,7 @@ internal sealed class OwnershipTextMatcher
     /// </summary>
     internal RuntimeStringOwnershipClaim? TryDialogueTextMatch(RuntimeStringHit hit)
     {
-        if (_dialogueTextLookup == null || hit.Category != StringCategory.DialogueLine)
+        if (_dialogueTextLookup == null || !CanTryTextMatch(hit, StringCategory.DialogueLine))
         {
             return null;
         }
@@ -196,6 +241,14 @@ internal sealed class OwnershipTextMatcher
     ///     Low-priority fallback: check if an EditorId string is at cFormEditorID (+16)
     ///     relative to any TESForm vtable among its referrers. Only matches EditorId-category
     ///     strings and runs after all higher-confidence strategies.
+    ///     <para>
+    ///         Deliberately still category-gated, unlike the exact-text matchers above. This one is
+    ///         POSITIONAL — it infers ownership from a string sitting at a plausible field offset
+    ///         near a vtable, not from the string equalling anything known — and its own comment
+    ///         notes TESForms are densely packed, so it is already the weakest strategy here.
+    ///         Opening it to unclassified text would let arbitrary bytes near a form claim an
+    ///         owner on position alone.
+    ///     </para>
     /// </summary>
     internal RuntimeStringOwnershipClaim? TryCFormEditorIdFallback(RuntimeStringHit hit)
     {
@@ -207,14 +260,14 @@ internal sealed class OwnershipTextMatcher
         var allReferrers = hit.OwnerResolution.AllReferrers;
         if (allReferrers is { Count: > 0 })
         {
-            foreach (var (fileOffset, va, _) in allReferrers)
+            foreach (var (_, va, _) in allReferrers)
             {
                 if (va < 0 || va > uint.MaxValue)
                 {
                     continue;
                 }
 
-                var claim = TryCFormEditorIdAtReferrer(hit, fileOffset, (uint)va);
+                var claim = TryCFormEditorIdAtReferrer(hit, (uint)va);
                 if (claim != null)
                 {
                     return claim;
@@ -224,21 +277,18 @@ internal sealed class OwnershipTextMatcher
             return null;
         }
 
-        if (hit.OwnerResolution.ReferrerFileOffset == null || hit.OwnerResolution.ReferrerVa == null)
+        if (hit.OwnerResolution.ReferrerVa is not (>= 0 and <= uint.MaxValue))
         {
             return null;
         }
 
-        return TryCFormEditorIdAtReferrer(hit,
-            hit.OwnerResolution.ReferrerFileOffset.Value,
-            (uint)hit.OwnerResolution.ReferrerVa.Value);
+        return TryCFormEditorIdAtReferrer(hit, (uint)hit.OwnerResolution.ReferrerVa.Value);
     }
 
     /// <summary>
     ///     Check if the referrer is at offset +16 (cFormEditorID) from a TESForm vtable.
     /// </summary>
-    private RuntimeStringOwnershipClaim? TryCFormEditorIdAtReferrer(
-        RuntimeStringHit hit, long referrerFileOffset, uint referrerVa)
+    private RuntimeStringOwnershipClaim? TryCFormEditorIdAtReferrer(RuntimeStringHit hit, uint referrerVa)
     {
         // cFormEditorID is at offset +16 from TESForm base.
         // TESForm base has vtable at +0. So vtable is at referrer - 16.
@@ -247,14 +297,19 @@ internal sealed class OwnershipTextMatcher
             return null;
         }
 
-        var vtableFileOffset = referrerFileOffset - 16;
-        if (vtableFileOffset < 0)
+        // Step back in VA space, not file-offset space. Until 2026-09-04 this read at
+        // referrerFileOffset - 16: minidump regions are laid out contiguously by FILE OFFSET while
+        // their VAs are arbitrary, so a referrer within 16 bytes of a region start read the
+        // PREVIOUS region's trailing bytes and then attributed that unrelated allocation's vtable
+        // to this string. ReadBytesAtVaInto fails closed instead of splicing across the boundary.
+        var vtableVa = referrerVa - 16u;
+        var vtableBytes = new byte[4];
+        if (!_memory.ReadBytesAtVaInto(Xbox360MemoryUtils.VaToLong(vtableVa), vtableBytes, 0, 4))
         {
             return null;
         }
 
-        var vtableBytes = new byte[4];
-        _ctx.Accessor.ReadArray(vtableFileOffset, vtableBytes, 0, 4);
+        var vtableFileOffset = _ctx.VaToFileOffset(vtableVa);
         var vtablePtr = BinaryPrimitives.ReadUInt32BigEndian(vtableBytes);
 
         if (!Xbox360MemoryUtils.IsModulePointer(vtablePtr))
@@ -281,11 +336,11 @@ internal sealed class OwnershipTextMatcher
         return new RuntimeStringOwnershipClaim(
             hit.FileOffset,
             hit.VirtualAddress,
-            "SecondPassVtable",
+            "SecondPassCFormEditorIdPosition",
             $"{recordCode} ({rtti.Value.ClassName})",
             null,
             vtableFileOffset,
-            ClaimSource.SecondPassVtable,
+            ClaimSource.SecondPassCFormEditorIdPosition,
             recordCode,
             "TESForm.cFormEditorID");
     }

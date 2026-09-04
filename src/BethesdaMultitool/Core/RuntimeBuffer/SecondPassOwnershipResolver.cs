@@ -30,6 +30,8 @@ internal sealed class SecondPassOwnershipResolver
 
     private readonly BufferAnalysisContext _ctx;
 
+    private readonly OwnershipContainmentResolver _containmentResolver;
+
     private readonly OwnershipTextMatcher _textMatcher;
     private readonly OwnershipVtableResolver _vtableResolver;
 
@@ -50,6 +52,7 @@ internal sealed class SecondPassOwnershipResolver
         _vtableResolver = new OwnershipVtableResolver(
             ctx, classNameFieldIndex, charPointerFieldIndex, niObjectFieldIndex);
         _textMatcher = new OwnershipTextMatcher(ctx);
+        _containmentResolver = new OwnershipContainmentResolver(ctx);
     }
 
     /// <summary>
@@ -76,6 +79,12 @@ internal sealed class SecondPassOwnershipResolver
 
             // Content-based file path matching: asset paths with known extensions
             claim ??= OwnershipTextMatcher.TryAssetPathContentMatch(hit);
+
+            // Containment: which runtime object physically holds one of the referring pointers.
+            // Placed after the strategies that can name a FIELD, because this one names only the
+            // owner and a raw offset — but before the positional cFormEditorID guess, since
+            // "the address is inside this object" is evidence and "it is near one" is not.
+            claim ??= _containmentResolver.TryContainmentMatch(hit);
 
             // Low-priority fallback: cFormEditorID at +16 for EditorId strings
             // near any TESForm vtable. Runs last since TESForms are densely packed.
@@ -148,7 +157,7 @@ internal sealed class SecondPassOwnershipResolver
                 }
 
                 var claim = TryBSStringTReverseLookup(hit, fileOffset, (uint)va);
-                claim ??= _vtableResolver.TryVtableReverseLookup(hit, fileOffset, (uint)va);
+                claim ??= _vtableResolver.TryVtableReverseLookup(hit, (uint)va);
 
                 if (claim != null)
                 {
@@ -169,7 +178,7 @@ internal sealed class SecondPassOwnershipResolver
         var singleVa = (uint)hit.OwnerResolution.ReferrerVa.Value;
 
         var result = TryBSStringTReverseLookup(hit, singleFileOffset, singleVa);
-        result ??= _vtableResolver.TryVtableReverseLookup(hit, singleFileOffset, singleVa);
+        result ??= _vtableResolver.TryVtableReverseLookup(hit, singleVa);
         return result;
     }
 
@@ -267,7 +276,10 @@ internal sealed class SecondPassOwnershipResolver
                 $"{match.RecordCode} [{candidateFormId:X8}]",
                 candidateFormId,
                 candidateBaseFileOffset.Value,
-                ClaimSource.SecondPassReverse,
+                // The relaxed pass skipped BSStringT length validation, so it must not be counted
+                // as its strict sibling — until 2026-09-04 both reported SecondPassReverse and
+                // ClaimSource.SecondPassReverseRelaxed was assigned nowhere.
+                relaxed ? ClaimSource.SecondPassReverseRelaxed : ClaimSource.SecondPassReverse,
                 match.RecordCode,
                 match.FieldLabel);
         }

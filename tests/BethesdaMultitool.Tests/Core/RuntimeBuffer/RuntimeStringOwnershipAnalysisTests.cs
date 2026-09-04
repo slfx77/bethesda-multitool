@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.RuntimeBuffer;
+using BethesdaMultitool.Core.Strings;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.RuntimeBuffer;
@@ -33,8 +34,16 @@ public sealed class RuntimeStringOwnershipAnalysisTests
             result.OwnershipAnalysis.AllHits[1].FileOffset);
     }
 
+    /// <summary>
+    ///     Ownership analysis covers UNCLASSIFIED text too, as of 2026-09-03. It used to skip
+    ///     every <c>Other</c> hit, which on xex44 meant 880,167 of 1,030,933 strings were never
+    ///     asked whether anything in the dump pointed at them — and when the question was finally
+    ///     put, 15,863 of them turned out to be owned outright and 133,784 more had live inbound
+    ///     pointers. The category is still recorded per hit, so reports can separate recognised
+    ///     text from the rest; what changed is that the rest gets a measured answer.
+    /// </summary>
     [Fact]
-    public void ExtractStringDataOnly_FiltersOtherCategoryOutOfOwnershipReports()
+    public void ExtractStringDataOnly_AnalyzesUnclassifiedTextInsteadOfSkippingIt()
     {
         var data = new byte[256];
         WriteCString(data, 0x20, @"meshes\props\crate01.nif");
@@ -42,8 +51,11 @@ public sealed class RuntimeStringOwnershipAnalysisTests
 
         var result = Analyze(data, CreateCoverage(data.Length, StringGap(0, data.Length)));
 
-        Assert.Single(result.OwnershipAnalysis.AllHits);
-        Assert.DoesNotContain(result.OwnershipAnalysis.AllHits, hit => hit.Text == "abcd");
+        Assert.Equal(2, result.OwnershipAnalysis.AllHits.Count);
+        var other = Assert.Single(result.OwnershipAnalysis.AllHits, hit => hit.Text == "abcd");
+        Assert.Equal(StringCategory.Other, other.Category);
+        // Nothing points at it here, so it lands in the honest bucket rather than being invisible.
+        Assert.Equal(RuntimeStringOwnershipStatus.Unreferenced, other.OwnershipStatus);
         Assert.Equal(1, result.StringPool.Other);
     }
 
@@ -230,6 +242,47 @@ public sealed class RuntimeStringOwnershipAnalysisTests
         Assert.Equal(RuntimeStringOwnershipStatus.ReferencedOwnerUnknown, hit.OwnershipStatus);
         Assert.Equal(1, hit.InboundPointerCount);
         Assert.Equal(BaseVa + 0x80, hit.OwnerResolution?.ReferrerVa);
+    }
+
+    /// <summary>
+    ///     Containment resolution (2026-09-03): when the pointer that references a string lies
+    ///     INSIDE a known runtime object's byte span, that object holds the pointer and therefore
+    ///     owns the string — no BSStringT wrapper, resolvable vtable or recognisable text needed.
+    ///     This is the same fixture as
+    ///     <see cref="ExtractStringDataOnly_InboundPointerWithoutOwner_IsReferencedOwnerUnknown" />
+    ///     with one runtime form placed so that its extent covers the referrer, which is the whole
+    ///     difference between "owner unknown" and a named owner.
+    /// </summary>
+    [Fact]
+    public void ExtractStringDataOnly_ReferrerInsideKnownFormSpan_IsOwnedByContainment()
+    {
+        var data = new byte[256];
+        WriteCString(data, 0x40, "SomeRuntimeAllocatedStringValue");
+        WriteBeUInt32(data, 0x80, BaseVa + 0x40);
+
+        // Form starts 4 bytes before the referrer, so the pointer sits at field offset +4 — past
+        // the vtable slot the resolver refuses, and inside any real struct layout.
+        var result = Analyze(
+            data,
+            CreateCoverage(data.Length, StringGap(0, data.Length)),
+            [
+                new RuntimeEditorIdEntry
+                {
+                    EditorId = "ContainingForm",
+                    FormId = 0x00555555,
+                    FormType = 42,
+                    TesFormOffset = 0x7C,
+                    TesFormPointer = BaseVa + 0x7C
+                }
+            ]);
+
+        var hit = Assert.Single(
+            result.OwnershipAnalysis.OwnedHits, h => h.Text == "SomeRuntimeAllocatedStringValue");
+        Assert.Equal(ClaimSource.SecondPassContainment, hit.OwnerResolution?.ClaimSource);
+        Assert.Equal(0x00555555u, hit.OwnerResolution?.OwnerFormId);
+        Assert.Equal("ContainingForm", hit.OwnerResolution?.OwnerName);
+        // The field cannot be named without a layout for it, so the raw offset is the claim.
+        Assert.Equal("+0x4", hit.OwnerResolution?.OwnerFieldOrSubrecord);
     }
 
     [Fact]
