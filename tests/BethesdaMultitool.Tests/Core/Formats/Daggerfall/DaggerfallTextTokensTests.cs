@@ -86,7 +86,7 @@ public class DaggerfallTextTokensTests
     public void SplitSubrecords_WithoutSeparators_IsOneSubrecord_EvenWhenEmpty()
     {
         Assert.Single(DaggerfallTextTokens.SplitSubrecords("plain"u8.ToArray()));
-        Assert.Single(DaggerfallTextTokens.SplitSubrecords(new byte[0]));
+        Assert.Single(DaggerfallTextTokens.SplitSubrecords(ReadOnlyMemory<byte>.Empty));
 
         // Nothing past an end-of-record byte belongs to the record.
         byte[] bytes = [.. "x"u8, 0xFE, 0xFF, .. "y"u8];

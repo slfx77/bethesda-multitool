@@ -92,18 +92,49 @@ public sealed class DaggerfallTextRetailTests
     }
 
     [Fact]
+    public void EveryQuestTextFile_ReadsAsATextRscImage()
+    {
+        var root = RequireArena2();
+        var names = DaggerfallQuestFile.EnumerateNames(root);
+
+        // 232 QBN and 229 QRC files make 234 base names: 227 paired, 5 compiled-only and 2
+        // text-only (M0B40Y04 and P0B10L08 — the latter's QBN is named P0B1XL08).
+        Assert.Equal(234, names.Count);
+        var quests = names.Select(name => DaggerfallQuestFile.Load(root, name)).ToList();
+        Assert.Equal(229, quests.Count(q => q.Text is not null));
+        Assert.Equal(232, quests.Count(q => q.Compiled.Length > 0));
+        Assert.Equal(227, quests.Count(q => q.Text is not null && q.Compiled.Length > 0));
+        Assert.Equal(["M0B40Y04", "P0B10L08"], quests.Where(q => q.Compiled.Length == 0).Select(q => q.Name));
+
+        var messages = quests.SelectMany(q => q.Text?.Records ?? []).ToList();
+        Assert.Equal(3_359, messages.Count);
+        Assert.All(messages, m => Assert.InRange(m.Id, 1_000, 2_999));
+
+        // Undecoded, but two header facts hold across every retail QBN: word 18 is always 60, and
+        // 225 of the 232 open with sixteen zero bytes.
+        var compiled = quests.Where(q => q.Compiled.Length > 0).ToList();
+        Assert.All(compiled, q => Assert.Equal(60, q.CompiledHeader[18]));
+        Assert.Equal(225, compiled.Count(q => q.Compiled.Span[..16].TrimEnd((byte)0).Length == 0));
+
+        var vampire = quests.Single(q => q.Name == "$CUREVAM");
+        Assert.Equal(5_219, vampire.Compiled.Length);
+        Assert.NotNull(vampire.Text);
+        Assert.NotEmpty(vampire.Text.Records[0].Text);
+    }
+
+    [Fact]
     public async Task Analyzer_AddsTextAndBookRecordsToTheInstall()
     {
         var arena2 = RequireArena2();
         var installRoot = Path.GetDirectoryName(arena2)!;
 
-        var result = await ClassicGameAnalyzer.LoadAsync(installRoot);
+        var result = await ClassicGameAnalyzer.LoadAsync(installRoot, TestContext.Current.CancellationToken);
 
         Assert.Equal(BethesdaGame.Daggerfall, result.Records.Game);
         var records = result.Records.GenericRecords;
         Assert.Equal(1_408, records.Count(r => r.RecordType == DaggerfallRecordSource.TextRecordType));
         Assert.Equal(91, records.Count(r => r.RecordType == DaggerfallRecordSource.BookRecordType));
-        Assert.Equal(62 + 15_251 + 1_408 + 91, records.Count);
+        Assert.Equal(234, records.Count(r => r.RecordType == DaggerfallRecordSource.QuestRecordType));
         Assert.Equal(records.Count, records.Select(r => r.FormId).Distinct().Count());
     }
 }

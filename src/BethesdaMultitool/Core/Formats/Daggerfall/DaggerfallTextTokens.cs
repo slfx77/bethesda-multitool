@@ -106,9 +106,13 @@ internal static class DaggerfallTextTokens
         var lines = new List<string>();
         var line = new StringBuilder();
 
-        for (var i = 0; i < bytes.Length; i++)
+        // A while loop, not a for: two controls consume an argument byte and the end-of-record byte
+        // stops the walk, so the cursor advances by more than one in places.
+        var i = 0;
+        while (i < bytes.Length)
         {
             var value = bytes[i];
+            i++;
             if (IsText(value))
             {
                 line.Append((char)value);
