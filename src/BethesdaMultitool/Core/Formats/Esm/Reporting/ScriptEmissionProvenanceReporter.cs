@@ -47,6 +47,7 @@ internal static class ScriptEmissionProvenanceReporter
         {
             ScriptSourceTextOrigin.DmpFragment => "dmp-fragment",
             ScriptSourceTextOrigin.RuntimeSameObject => "runtime-same-object",
+            ScriptSourceTextOrigin.DecompiledFromBytecode => "decompiled-from-bytecode",
             _ => "unattributed-same-dump"
         };
         var scda = GetOptionalSingle(subrecords, "SCDA");

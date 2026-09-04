@@ -43,15 +43,20 @@ internal static class DialogueResultScriptParser
                 decompiledText,
                 block.Variables,
                 block.ReferencedObjects,
-                isBigEndianBytecode);
+                isBigEndianBytecode,
+                editorId);
             var isIncomplete = HasInconsistentExecutableBundle(block)
                                || !sourceDecision.ExecutableBundleSafe;
             resultScripts.Add(new DialogueResultScript
             {
                 SourceText = sourceDecision.SourceText,
+                // A decompiled fallback is not the fragment's own text, so it must not inherit
+                // the fragment's provenance — reports separate the two.
                 SourceTextOrigin = sourceDecision.SourceText is null
                     ? ScriptSourceTextOrigin.None
-                    : sourceOrigin,
+                    : sourceDecision.SourceIsDecompiled
+                        ? ScriptSourceTextOrigin.DecompiledFromBytecode
+                        : sourceOrigin,
                 IsDmpDerived = isDmpDerived,
                 DecompiledText = decompiledText,
                 CompiledData = block.CompiledData,

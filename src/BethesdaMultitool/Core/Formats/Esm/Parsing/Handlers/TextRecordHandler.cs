@@ -248,7 +248,10 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 decompiledText,
                 curVariables,
                 curReferencedObjects,
-                isBigEndianBytecode);
+                isBigEndianBytecode,
+                !string.IsNullOrWhiteSpace(editorId)
+                    ? $"{editorId}_Menu_{menuItems.Count + 1}"
+                    : $"TERM_{record.FormId:X8}_Menu_{menuItems.Count + 1}");
             var hasInconsistentBundle = curScriptBundleAmbiguous
                                         || curSerializedLocals.IsMalformed
                                         || curHasMalformedSerializedHeader
@@ -277,7 +280,9 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 DecompiledText = decompiledText,
                 SourceTextOrigin = sourceDecision.SourceText is null
                     ? ScriptSourceTextOrigin.None
-                    : sourceOrigin,
+                    : sourceDecision.SourceIsDecompiled
+                        ? ScriptSourceTextOrigin.DecompiledFromBytecode
+                        : sourceOrigin,
                 IsDmpDerived = isDmpDerived,
                 Variables = curVariables.Count > 0 ? [..curVariables] : [],
                 ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : [],

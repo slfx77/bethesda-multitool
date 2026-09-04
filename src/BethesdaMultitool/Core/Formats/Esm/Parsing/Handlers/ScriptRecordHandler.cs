@@ -327,7 +327,8 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             script.DecompiledText,
             script.Variables,
             script.ReferencedObjects,
-            script.IsBigEndian);
+            script.IsBigEndian,
+            ScriptRecordEmissionPolicy.ResolveEditorId(script));
         if (decision.BundleIssue is not null)
         {
             var safety = script.CompiledData is { Length: > 0 }
@@ -356,7 +357,9 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             SourceText = decision.SourceText,
             SourceTextOrigin = decision.SourceText is null
                 ? ScriptSourceTextOrigin.None
-                : script.SourceTextOrigin,
+                : decision.SourceIsDecompiled
+                    ? ScriptSourceTextOrigin.DecompiledFromBytecode
+                    : script.SourceTextOrigin,
             IsIncompleteExecutableBundle = !decision.ExecutableBundleSafe
         });
     }
@@ -385,8 +388,15 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         ScriptRecord captured,
         ScriptRecord evaluated)
     {
+        // This status describes the CAPTURED text's correspondence with the bytecode, which is
+        // what provenance reports are asking about. A decompiled substitution is emitted source
+        // but never an accepted capture — since the 2026-09-03 ruling a rejected capture is
+        // replaced rather than dropped, so "has text" alone no longer implies "was verified".
+        var sourceIsDecompiled =
+            evaluated.SourceTextOrigin == ScriptSourceTextOrigin.DecompiledFromBytecode;
         var hasAcceptedSource = !string.IsNullOrEmpty(evaluated.SourceText)
                                 && evaluated.SourceTextOrigin != ScriptSourceTextOrigin.None
+                                && !sourceIsDecompiled
                                 && !evaluated.IsIncompleteExecutableBundle;
         ScriptSourceCorrespondenceStatus status;
         if (hasAcceptedSource)
@@ -398,7 +408,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         else
         {
             status = !string.IsNullOrEmpty(captured.SourceText)
-                     && string.IsNullOrEmpty(evaluated.SourceText)
+                     && (string.IsNullOrEmpty(evaluated.SourceText) || sourceIsDecompiled)
                 ? ScriptSourceCorrespondenceStatus.Rejected
                 : ScriptSourceCorrespondenceStatus.Unverified;
         }

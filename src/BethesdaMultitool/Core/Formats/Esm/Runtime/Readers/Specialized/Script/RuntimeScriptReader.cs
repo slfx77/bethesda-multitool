@@ -196,7 +196,9 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             SourceText = sourceDecision.SourceText,
             SourceTextOrigin = sourceDecision.SourceText is null
                 ? ScriptSourceTextOrigin.None
-                : sourceOrigin,
+                : sourceDecision.SourceIsDecompiled
+                    ? ScriptSourceTextOrigin.DecompiledFromBytecode
+                    : sourceOrigin,
             IsDmpDerived = true,
             DecompiledText = decompiledText,
             CompiledData = compiledData,

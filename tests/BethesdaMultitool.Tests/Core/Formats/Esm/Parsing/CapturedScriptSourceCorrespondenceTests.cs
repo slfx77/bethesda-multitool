@@ -52,8 +52,13 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
 
         var result = ScriptRecordHandler.EnforceCapturedSourceCorrespondence(script);
 
-        Assert.Null(result.SourceText);
-        Assert.Equal(ScriptSourceTextOrigin.None, result.SourceTextOrigin);
+        // The stale capture names the wrong ref, so it is still rejected as source evidence.
+        // USER RULING 2026-09-03: what ships in its place is the SCDA's own decompilation —
+        // which names DebugBCTrooperREF, the ref the bytecode actually calls.
+        Assert.Equal(ScriptSourceTextOrigin.DecompiledFromBytecode, result.SourceTextOrigin);
+        Assert.NotNull(result.SourceText);
+        Assert.Contains("DebugBCTrooperREF", result.SourceText, StringComparison.Ordinal);
+        Assert.DoesNotContain("BCHostageREF.GetDead", result.SourceText, StringComparison.Ordinal);
         Assert.Equal(ScriptSourceCorrespondenceStatus.Rejected,
             result.SourceTextCorrespondenceStatus);
         var diagnostic = _output.ToString();
@@ -79,7 +84,10 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
         var result = ScriptRecordHandler.EnforceCapturedSourceCorrespondence(
             CompiledSource(source, decompiled));
 
-        Assert.Null(result.SourceText);
+        // The capture is still refused for this comparer category; per the 2026-09-03 ruling the
+        // bytecode's own decompilation is emitted in its place rather than nothing.
+        Assert.Equal(ScriptSourceTextOrigin.DecompiledFromBytecode, result.SourceTextOrigin);
+        Assert.Equal(ScriptSourceCorrespondenceStatus.Rejected, result.SourceTextCorrespondenceStatus);
         Assert.Contains($"[{expectedCategory}=1]", _output.ToString(), StringComparison.Ordinal);
     }
 
@@ -159,19 +167,25 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
     }
 
     [Fact]
-    public void StandaloneContract_DropsSourceWithDifferentScriptIdentity()
+    public void StandaloneContract_ReplacesSourceWithDifferentScriptIdentity()
     {
         const string text = "scn DifferentScript\nBegin GameMode\nEnd";
         var decision = CapturedScriptEmissionContract.EvaluateStandalone(
             CompleteStandalone(text, text));
 
-        Assert.Null(decision.Script.SourceText);
+        // Identity mismatch still disqualifies the capture; the decompilation replaces it and
+        // carries the record's own resolved EDID as its scn line.
         Assert.Contains("does not exactly match EDID", decision.SourceIssue, StringComparison.Ordinal);
+        Assert.Equal(ScriptSourceTextOrigin.DecompiledFromBytecode, decision.Script.SourceTextOrigin);
+        // Identity comes from the record, never from the rejected text: the replacement is named
+        // for the EDID, so it satisfies the very rule that disqualified the capture.
+        Assert.Contains("ScriptName CapturedScript", decision.Script.SourceText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("DifferentScript", decision.Script.SourceText!, StringComparison.Ordinal);
         Assert.False(decision.Script.IsIncompleteExecutableBundle);
     }
 
     [Fact]
-    public void StandaloneContract_DropsSourceWhenLocalStorageDoesNotMatchSlsd()
+    public void StandaloneContract_ReplacesSourceWhenLocalStorageDoesNotMatchSlsd()
     {
         const string text = "scn CapturedScript\nshort LocalState";
         var decision = CapturedScriptEmissionContract.EvaluateStandalone(
@@ -181,8 +195,11 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
                 Variables = [new ScriptVariableInfo(1, "localstate", 0)]
             });
 
-        Assert.Null(decision.Script.SourceText);
         Assert.Contains("storage does not match", decision.SourceIssue, StringComparison.Ordinal);
+        // The replacement's declaration block is generated from the SLSD table itself, so the
+        // storage class it prints is correct by construction (type 0 → non-integer).
+        Assert.Equal(ScriptSourceTextOrigin.DecompiledFromBytecode, decision.Script.SourceTextOrigin);
+        Assert.Contains("float localstate", decision.Script.SourceText!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -223,7 +240,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
     [InlineData("Begin GameMode\nEnd", "declaration count")]
     [InlineData("float RenamedLocal\nBegin GameMode\nEnd", "no unique exact SCTX declaration")]
     [InlineData("short ExactLocal\nBegin GameMode\nEnd", "storage does not match")]
-    public void InlineContract_DropsSourceWhenLocalDeclarationDoesNotMatchInlineTable(
+    public void InlineContract_ReplacesSourceWhenLocalDeclarationDoesNotMatchInlineTable(
         string source,
         string expectedIssue)
     {
@@ -239,12 +256,15 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
 
         Assert.True(decision.ExecutableBundleSafe);
         Assert.Null(decision.BundleIssue);
-        Assert.Null(decision.SourceText);
+        // The mismatched capture is refused; the decompilation takes its place and declares
+        // exactly the one local the inline SLSD/SCVR table carries.
         Assert.Contains(expectedIssue, decision.SourceIssue, StringComparison.Ordinal);
+        Assert.True(decision.SourceIsDecompiled);
+        Assert.Contains("float ExactLocal", decision.SourceText!, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void InlineContract_DropsSourceWhenInlineTableRepeatsScvrName()
+    public void InlineContract_EmitsNoDeclarationBlockWhenInlineTableRepeatsScvrName()
     {
         const string source = "float ExactLocal\nfloat OtherLocal\nBegin GameMode\nEnd";
         var decision = CapturedScriptEmissionContract.EvaluateInline(
@@ -262,8 +282,11 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
 
         Assert.True(decision.ExecutableBundleSafe);
         Assert.Null(decision.BundleIssue);
-        Assert.Null(decision.SourceText);
         Assert.Contains("occurs more than once", decision.SourceIssue, StringComparison.Ordinal);
+        // A duplicated SCVR name means no declaration block can agree with the table, so the
+        // replacement says so in a comment rather than printing a block that contradicts it.
+        Assert.True(decision.SourceIsDecompiled);
+        Assert.Contains("could not be declared", decision.SourceText!, StringComparison.Ordinal);
     }
 
     [Fact]

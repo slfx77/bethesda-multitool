@@ -89,7 +89,11 @@ internal static class InlineScriptReferenceValidator
             return new Result(false, ImmutableArray<uint>.Empty, issue, null, null);
         }
 
-        var sourceContractIssue = sourceDecision.SourceIssue is null
+        // Only an actually-omitted SCTX is a contract issue. Since the 2026-09-03 ruling a
+        // rejected capture is replaced by the SCDA decompilation rather than dropped, so the
+        // decision carries both a reason and a SourceText — reporting that as "omitted" would
+        // describe the opposite of what shipped.
+        var sourceContractIssue = sourceDecision.SourceIssue is null || sourceDecision.SourceText is not null
             ? null
             : new Issue(
                 scriptPath,

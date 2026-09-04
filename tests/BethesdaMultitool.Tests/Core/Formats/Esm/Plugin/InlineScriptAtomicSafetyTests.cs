@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -309,7 +310,7 @@ public sealed class InlineScriptAtomicSafetyTests
     [InlineData("INFO")]
     [InlineData("PACK")]
     [InlineData("TERM")]
-    public void CapturedInlineScript_RenamedLocalOmitsOnlyStaleSctx(string ownerType)
+    public void CapturedInlineScript_RenamedLocalReplacesStaleSctxWithDecompilation(string ownerType)
     {
         const string source = "float DifferentLocal\nBegin GameMode\nEnd";
         var script = CapturedCompiledScript(source, "Begin GameMode\nEnd") with
@@ -321,17 +322,21 @@ public sealed class InlineScriptAtomicSafetyTests
 
         Assert.NotEmpty(encoded.Subrecords);
         Assert.Contains(encoded.Subrecords, sub => sub.Signature == "SCDA");
-        Assert.DoesNotContain(encoded.Subrecords, sub => sub.Signature == "SCTX");
-        Assert.Contains(encoded.Warnings, warning =>
-            warning.Contains("SCTX omitted", StringComparison.Ordinal)
-            && warning.Contains("no unique exact SCTX declaration", StringComparison.Ordinal));
+        // USER RULING 2026-09-03: the stale capture is still rejected — but the record now
+        // ships the SCDA's own decompilation instead of nothing, so the declaration block
+        // agrees with SLSD/SCVR by construction ("ExactLocal", not the stale "DifferentLocal").
+        var sctx = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCTX");
+        var text = Encoding.ASCII.GetString(sctx.Bytes);
+        Assert.Contains("Decompiled from captured SCDA", text, StringComparison.Ordinal);
+        Assert.Contains("ExactLocal", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("DifferentLocal", text, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData("INFO")]
     [InlineData("PACK")]
     [InlineData("TERM")]
-    public void CapturedInlineScript_StaleSourceIsOmittedButBytecodeRemains(string ownerType)
+    public void CapturedInlineScript_StaleSourceIsReplacedByDecompilation(string ownerType)
     {
         var encoded = EncodeOwner(
             ownerType,
@@ -339,9 +344,12 @@ public sealed class InlineScriptAtomicSafetyTests
 
         Assert.NotEmpty(encoded.Subrecords);
         Assert.Contains(encoded.Subrecords, sub => sub.Signature == "SCDA");
-        Assert.DoesNotContain(encoded.Subrecords, sub => sub.Signature == "SCTX");
-        Assert.Contains(encoded.Warnings, warning =>
-            warning.Contains("SCTX omitted", StringComparison.Ordinal));
+        // The stale line ("Set Local to 1") contradicted the bytecode, so it is still refused;
+        // what ships is the bytecode's own rendering, which cannot contradict it.
+        var sctx = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCTX");
+        var text = Encoding.ASCII.GetString(sctx.Bytes);
+        Assert.Contains("Decompiled from captured SCDA", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Set Local to 1", text, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -10,7 +10,19 @@ public enum ScriptSourceTextOrigin
 {
     None,
     DmpFragment,
-    RuntimeSameObject
+    RuntimeSameObject,
+
+    /// <summary>
+    ///     No captured source text survived (or the captured text could not be proven against the
+    ///     bytecode), so the emitted SCTX was decompiled from the same record's accepted SCDA and
+    ///     given a synthesized declaration block from its own SLSD/SCVR table.
+    ///     <para>
+    ///         USER RULING 2026-09-03: compiled scripts are preserved and converted to PC format,
+    ///         and their source text is emitted if present or as the decompilation if not — a
+    ///         recovered script must never ship with bytecode and no readable source.
+    ///     </para>
+    /// </summary>
+    DecompiledFromBytecode
 }
 
 /// <summary>

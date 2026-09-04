@@ -589,7 +589,10 @@ public class ScriptDialogueEncoderTests
 
         Assert.Equal(2, scripts.Count);
         Assert.Equal("orphan source", scripts[0].SourceText);
-        Assert.Null(scripts[1].SourceText);
+        // The compiled block must never inherit the preceding block's text. Since the
+        // 2026-09-03 ruling it does carry source — its own SCDA decompilation, not the orphan's.
+        Assert.DoesNotContain("orphan source", scripts[1].SourceText ?? "", StringComparison.Ordinal);
+        Assert.Equal(ScriptSourceTextOrigin.DecompiledFromBytecode, scripts[1].SourceTextOrigin);
         Assert.Equal(compiled, scripts[1].CompiledData);
     }
 
