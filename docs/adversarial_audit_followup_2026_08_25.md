@@ -2615,8 +2615,76 @@ the A/B pairs above are internally consistent, cross-round absolute comparisons 
 
 ### Still deferred (unchanged by this round)
 
-`pdb_class_sizes.json` + a `PdbAnalyzer classsizes` command; the claim resolver and its tiers; the
-ancestry-keyed field index (the base chains are now recovered, so "derives from `NiObjectNET` ⇒ `+8`
-is `m_kName`" is one step away); interval-containment field lookup to replace
-`OwnershipVtableResolver`'s exact-offset `FirstOrDefault`; retiring `TryVtableReverseLookup`;
-template demangling. Separately: the 70-type `Simple<T>` empty-override policy remains open.
+`pdb_class_sizes.json` + a `PdbAnalyzer classsizes` command; the claim resolver and its tiers;
+interval-containment field lookup to replace `OwnershipVtableResolver`'s exact-offset
+`FirstOrDefault`; retiring `TryVtableReverseLookup`; template demangling. Separately: the 70-type
+`Simple<T>` empty-override policy remains open.
+
+---
+
+## Round 12b (2026-09-04) — the ancestry lever, refuted; and a ruling I broke
+
+### ⛔ Ancestry-keyed field naming is REFUTED. Do not build it.
+
+The premise was that recovered base chains would let a class with no layout inherit field meaning
+from a base that has one. **`pdb_layouts.json` is already ancestry-flattened** — 144 of its 449
+`auxStructs` entries carry inherited fields, each tagged with the declaring `owner`, and `NiNode`'s
+entry literally reads `+8 owner=NiObjectNET m_kName`. The motivating example never needed an
+ancestry join; it needed the aux table to be *read*.
+
+Measured against the 24 classes holding the most unowned strings on xex44 (11,141 strings):
+
+| bucket | classes | strings | share |
+|---|---:|---:|---:|
+| templates — can never join a PDB name | 5 | 4,530 | 40.7% |
+| class already in the DB (ancestry adds nothing) | 4 | 1,037 | 9.3% |
+| **base exists AND supplies a name** | **1** | **101** | **0.9%** |
+| base exists but declares no string field | 9 | 2,873 | 25.8% |
+| neither class nor any base in the DB | 5 | 2,600 | 23.3% |
+
+The entire ancestry payoff is one class — `BSXFlags` → `NiExtraData.m_kName@+8`.
+
+### What was built instead: read the data we already ship
+
+`BuildFieldIndices` walked only the 116 FormType layouts; the **449 `auxStructs` had never been
+read**. Now both are swept, plus three widenings: `NiFixedString` accepted as a string field (a
+4-byte struct whose sole member is a `char*` at +0 — the entire Gamebryo naming family, previously
+invisible), `BSSimpleList<char…>` heads accepted at their own offset labelled `[0]` (the first word
+is the head element), and one level of composition into embedded structs that have their own layout.
+`PdbStructLayouts.AuxStructs` was added because the only way in was a name-keyed `TryGet`.
+
+**Clean A/B on one tree, xex44, identical `Analyzed` (1,030,933): Owned 153,622 → 153,810, +188.**
+`SecondPassVtable` +286 gross, of which 84 were previously `TextContentMatch` and 14 previously
+`SecondPassContainment`. Modest, because real heap objects carry **derived** vtables
+(`BSFadeNode`, `NiTriShape`, `BSAnimGroupSequence`) and the derived classes are absent from the
+layout database — only their bases are present.
+
+### ⛔⚠⚠ THE RULING I BROKE: the PDBs POSTDATE every dump
+
+**USER RULING, previously stated more than once.** `Sample/PDB/**` comes from a prototype and the
+final game and postdates the whole `Sample/MemoryDump/` corpus. It fits the **newest** dumps and
+**drifts on older ones, which sit nearer Fallout 3's layout.** So a struct size or offset from
+`pdb_layouts.json` describes an Aug-2010 build, not necessarily the dump being analysed. Same
+principle as the standing "FormType MUST stay empirical" ruling: **the dump is the authority, the
+PDB is a hint.**
+
+I inverted it. An audit "found" the hand-written `BuildNiObjectFieldIndex` contradicted the PDB —
+`Script` +144/+152 against a 100-byte struct, `BGSTerminal` +208/+216 against 184,
+`TESModelTextureSwap` +44 against 32, `TESLoadScreen` +68 pointing at a form pointer — declared them
+out-of-bounds false claims, and deleted them. Measured cost on xex44: **−944 claims**, which I
+briefly reported as a correctness win. A referrer only counts when it genuinely points at an
+extracted string, so 944 hits landing on exactly those offsets is evidence they are **right for that
+build**. All entries restored.
+
+**Rules now in force.** Never prune an empirical offset by diffing against `pdb_layouts.json`.
+Layer instead — the PDB index is consulted first and wins wherever it has a matching offset; the
+empirical table fires only where it does not, which is exactly the older-build case. A hit count is
+evidence. `OwnershipFieldIndexBuilderTests` pins the contradicted offsets as a regression guard
+pointing the opposite way to the obvious cleanup.
+
+⚠ **Unguarded consequence.** `RuntimeObjectInventory.BuildDeclaredSizes` sizes object extents from
+the same PDB regardless of which dump is loaded, so Round 12's 179,152 "declared size" objects and
+its 1,407 exact-size gate figure inherit this drift. Any future `pdb_class_sizes.json` work inherits
+it too, and would widen the exposure from 565 classes to ~14,800.
+
+107 tests pass (106 + 1 Bucket-B skip).
