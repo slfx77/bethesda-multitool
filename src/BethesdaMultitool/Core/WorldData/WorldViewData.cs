@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
@@ -353,12 +354,12 @@ internal sealed class WorldViewData
         new Dictionary<uint, LightRecord>();
 
     /// <summary>
-    ///     REGN/LIGH FormID to normalized RGB for placed-reference XEMI links. External-emittance
-    ///     NIF properties consume this during variant mesh baking instead of their ignored material
-    ///     emissive multiplier.
+    ///     REGN/LIGH FormID to runtime color source for placed-reference XEMI links. LIGH and
+    ///     runtime-captured REGN values are constant; plugin REGNs resolve their linked weather's
+    ///     Effect Lighting time band per draw.
     /// </summary>
-    public IReadOnlyDictionary<uint, Vector3> ExternalEmittanceColorsByFormId { get; init; } =
-        new Dictionary<uint, Vector3>();
+    public IReadOnlyDictionary<uint, ExternalEmittanceSource> ExternalEmittanceSourcesByFormId { get; init; } =
+        new Dictionary<uint, ExternalEmittanceSource>();
 
     /// <summary>
     ///     Placed-reference FormIDs whose XESP enable-parent CHAIN resolves to disabled in the initial

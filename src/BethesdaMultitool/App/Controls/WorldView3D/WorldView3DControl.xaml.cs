@@ -507,7 +507,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     private ResolvedWaterAppearanceSelection _waterAppearanceSelection;
 
-    // Single-sample HDR opaque-scene snapshot sampled only by the bounded FNV WATER001 route.
+    // Single-sample HDR opaque-scene snapshot sampled by bounded FNV WATER001 and Skyrim
+    // BSWaterShader refraction routes.
     // Like _depthSrv, the persistent slot survives surface unload and is rewritten after resize.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation?
         _waterOpaqueSnapshotSrv;
@@ -647,7 +648,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Resolve placed REFR base FormIDs to LIGH definitions during the same one-time cell bake.
         // This is independent of ModelPath, so meshless lights still become emitter-only entries.
         data.RenderCache.LightIndex = data.LightsByFormId;
-        data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceColorsByFormId;
+        data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceSourcesByFormId;
         data.RenderCache.LandTextureIndex = data.LandTexturesByFormId;
         data.RenderCache.GrassIndex = data.GrassesByFormId;
         data.RenderCache.Game = data.Game;

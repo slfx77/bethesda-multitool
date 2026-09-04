@@ -1330,12 +1330,19 @@ public sealed partial class WorldView3DControl
     private void RenderSky(Matrix4x4 viewProj, Vector3 domeCenter,
         (Vector3 Right, Vector3 Up)? billboardBasis = null,
         float? animationTimeSeconds = null,
-        float skyColorScale = 1f,
+        SceneSkyColorTransform? skyColorTransform = null,
         bool advanceCloudScroll = true)
     {
         EnsureSkyTexturesResolved();
-        var atmo = AtmosphereState.ApplySkyColorScale(
-            ResolveSceneAtmosphere(_gameHour, lightingEnabled: true), skyColorScale);
+        var transform = skyColorTransform ?? SceneSkyColorTransform.Identity;
+        // Keep the private sky draw's authored rows raw: retail adds HNAM[7] AFTER the atmosphere
+        // vertex-weight blend. Pre-adding to all three rows is only algebraically equivalent when the
+        // quantized vertex weights sum to exactly one. The shared b3/water consumers are transformed
+        // separately in BindAtmosphereConstants and the reflection clear paths.
+        var atmo = ResolveSceneAtmosphere(_gameHour, lightingEnabled: true);
+        // Preserve the existing FO4-family multiplicative route without pre-applying Skyrim's bias.
+        // Skyrim resolves Scale=1; FO4 currently resolves Bias=0 pending its own consumer audit.
+        var scaledAtmo = AtmosphereState.ApplySkyColorTransform(atmo, transform.Scale, bias: 0f);
         var exterior = CurrentSkySceneContext().RendersExteriorSky;
 
         // The weather already authors per-layer PNAM tint and JNAM opacity. Keep the host gates neutral:
@@ -1347,16 +1354,41 @@ public sealed partial class WorldView3DControl
         // supplied by the sky state rather than that commonly-zero padding byte.
         var starFade = atmo.StarsDrawAlpha;
         var domeStarFade = exterior ? starFade : 0f;
-        // Real sky-dome NIF geometry centered on the camera: atmosphere gradient + stars + cloud layers,
-        // each on its authored UVs. Per-layer textures were resolved in EnsureSkyTexturesResolved.
-        _skyGeometry?.Render(viewProj, domeCenter,
-            atmo.SkyTopColor, atmo.SkyLowerColor, atmo.AuthoredHorizonColor, atmo.SkyHorizonColor,
-            cloudTint, cloudOpacity, starTint, domeStarFade, _gameHour, _currentClimateTiming,
-            _data?.Game ?? BethesdaGame.Unknown, animationTimeSeconds, advanceCloudScroll);
+        var game = _data?.Game ?? BethesdaGame.Unknown;
 
-        if (exterior)
+        // Real sky-dome NIF geometry centered on the camera, using each layer's authored UVs. A local
+        // submitter keeps both the unified route and FO3/FNV's recovered split route on identical inputs.
+        void RenderGeometry(SkyGeometryPass12 pass, bool advanceScroll)
         {
-            RenderSkyBillboards(viewProj, atmo, domeCenter, billboardBasis);
+            _skyGeometry?.Render(viewProj, domeCenter,
+                scaledAtmo.SkyTopColor, scaledAtmo.SkyLowerColor,
+                scaledAtmo.AuthoredHorizonColor, scaledAtmo.SkyHorizonColor,
+                cloudTint, cloudOpacity, starTint, domeStarFade, _gameHour, _currentClimateTiming,
+                game, animationTimeSeconds, advanceScroll,
+                skyColorBias: transform.Bias,
+                pass: pass);
+        }
+
+        if (exterior && SkyRenderPassPolicy12.UsesFallout3NewVegasSunOrder(game))
+        {
+            // FNV Sky::GetRenderPasses order: atmosphere/stars -> alpha sun base -> clouds ->
+            // additive sun glare. Advance retained cloud offsets only on the first geometry submit;
+            // the later cloud stage and a second reflection draw reuse that same frame's offsets.
+            RenderGeometry(SkyGeometryPass12.AtmosphereAndStars, advanceCloudScroll);
+            RenderSkyBillboards(viewProj, atmo, domeCenter, billboardBasis, SkyBillboardPass12.SunBase);
+            RenderGeometry(SkyGeometryPass12.Clouds, advanceScroll: false);
+            RenderSkyBillboards(
+                viewProj, atmo, domeCenter, billboardBasis, SkyBillboardPass12.SunGlareAndMoons);
+        }
+        else
+        {
+            // Preserve the existing all-geometry-then-all-billboards ordering for Skyrim, Oblivion,
+            // FO4-family, Starfield, Morrowind, and unknown inputs.
+            RenderGeometry(SkyGeometryPass12.All, advanceCloudScroll);
+            if (exterior)
+            {
+                RenderSkyBillboards(viewProj, atmo, domeCenter, billboardBasis);
+            }
         }
     }
 
@@ -1365,7 +1397,8 @@ public sealed partial class WorldView3DControl
     // caller with lighting forced on); the moon uses the game-family profile's recovered path where an
     // oracle exists (FO3/FNV rotated arm, Skyrim per-moon rotated arms, FO4-family triangle wave).
     private void RenderSkyBillboards(Matrix4x4 viewProj, AtmosphereState.Resolved atmo, Vector3 domeCenter,
-        (Vector3 Right, Vector3 Up)? basisOverride = null)
+        (Vector3 Right, Vector3 Up)? basisOverride = null,
+        SkyBillboardPass12 pass = SkyBillboardPass12.All)
     {
         if (_skyBillboards is null)
         {
@@ -1493,7 +1526,8 @@ public sealed partial class WorldView3DControl
             sunDir, sunFade, sunTint, sunGlareFade, sunGlareTint,
             sunSizes.Disc, sunSizes.Glare, _sunDiscTexIndex, _sunGlareTexIndex,
             moonDir, moonFade, moonTint, moonTex, moonHalf,
-            secundaDir, secundaFade, moonTint, secundaTex, moon2Half);
+            secundaDir, secundaFade, moonTint, secundaTex, moon2Half,
+            pass);
     }
 
     private float? GmstFloat(string editorId)

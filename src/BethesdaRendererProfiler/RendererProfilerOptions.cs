@@ -222,6 +222,13 @@ internal sealed record RendererProfilerOptions
     internal string? CaptureFramePath { get; init; }
 
     /// <summary>
+    ///     Diagnostic-only one-shot capture option. Disables only the viewer's distance-fog gate;
+    ///     HDR, bloom, imagespace selection, shadows, weather, and every other render setting remain
+    ///     unchanged so the result isolates fog from the normal perspective capture.
+    /// </summary>
+    internal bool CaptureNoFog { get; init; }
+
+    /// <summary>
     ///     Diagnostic-only one-shot capture option. Immediately before the perspective capture's
     ///     phase-two settle, force a blocking non-compacting full GC and ask Windows to trim this
     ///     process's working set. The settle still uses its normal readiness contract; page faults
@@ -444,6 +451,8 @@ internal sealed record RendererProfilerOptions
                                       terrain (like the batch path) instead of the depth-only
                                       transparent ground that mirrors the 2D map overlay.
           --capture-frame <path>      Render one perspective frame to a PNG, then exit.
+          --capture-no-fog           Diagnostic only; disable distance fog for --capture-frame while
+                                      preserving HDR, bloom, imagespace, shadows, and weather.
           --capture-local-radius-cells <f>
                                       Bound standalone --capture-frame scene demand to this positive
                                       half-extent in cells (axis-aligned square XY footprint; Chebyshev
@@ -545,6 +554,7 @@ internal sealed record RendererProfilerOptions
         float? captureCenterY = null;
         float? captureZ = null;
         string? captureFrame = null;
+        var captureNoFog = false;
         float? captureLocalRadiusCells = null;
         var trimWorkingSetBeforeSettle = false;
         string? captureWorldspaceName = null;
@@ -878,6 +888,10 @@ internal sealed record RendererProfilerOptions
                 case "--capture-frame":
                     captureFrame = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
+                    break;
+
+                case "--capture-no-fog":
+                    captureNoFog = true;
                     break;
 
                 case "--capture-local-radius-cells":
@@ -1242,6 +1256,24 @@ internal sealed record RendererProfilerOptions
             return Fail(out options);
         }
 
+        if (captureNoFog && string.IsNullOrWhiteSpace(captureFrame))
+        {
+            error = "--capture-no-fog requires standalone one-shot --capture-frame.";
+            return Fail(out options);
+        }
+
+        if (captureNoFog &&
+            (!string.IsNullOrWhiteSpace(captureTopDown) ||
+             !string.IsNullOrWhiteSpace(captureTopDownBatch) ||
+             normalizedScenarioName is not null ||
+             durationSeconds is not null ||
+             captureMotionFrames != 1 ||
+             cameraMotion != RendererCameraMotionKind.Static))
+        {
+            error = "--capture-no-fog is valid only with a standalone static one-shot --capture-frame.";
+            return Fail(out options);
+        }
+
         if (captureLocalRadiusCells is not null && string.IsNullOrWhiteSpace(captureFrame))
         {
             error = "--capture-local-radius-cells requires standalone one-shot --capture-frame.";
@@ -1394,6 +1426,7 @@ internal sealed record RendererProfilerOptions
             CaptureCenterY = captureCenterY,
             CaptureZ = captureZ,
             CaptureFramePath = string.IsNullOrWhiteSpace(captureFrame) ? null : Path.GetFullPath(captureFrame),
+            CaptureNoFog = captureNoFog,
             TrimWorkingSetBeforeSettle = trimWorkingSetBeforeSettle,
             CaptureWorldspaceName = captureWorldspaceName,
             CaptureInterior = captureInterior?.Trim(),

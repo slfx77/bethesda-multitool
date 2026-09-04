@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -508,7 +509,10 @@ public sealed partial class BethesdaSceneViewerControl
             var sceneRtv = surface.MsaaColorRtv;
             var sceneDsv = surface.DepthStencilView;
 
-            commandList.ClearRenderTargetView(sceneRtv, new Color4(0.025f, 0.03f, 0.04f, 1f));
+            var sceneClear = BethesdaViewerPresentationPolicy.ResolveSceneClearColor(scene.Purpose);
+            commandList.ClearRenderTargetView(
+                sceneRtv,
+                new Color4(sceneClear.X, sceneClear.Y, sceneClear.Z, sceneClear.W));
             commandList.ClearDepthStencilView(sceneDsv, ClearFlags.Depth, 0f, 0);
             commandList.OMSetRenderTargets(sceneRtv, sceneDsv);
             commandList.RSSetViewport(new Viewport(0f, 0f, surface.Width, surface.Height, 0f, 1f));

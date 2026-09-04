@@ -134,6 +134,7 @@ public static class Program
                     ["stallThresholdMs"] = options.StallThresholdMilliseconds,
                     ["gpuTimestamps"] = options.ForceGpuTimestamps,
                     ["captureFrame"] = options.CaptureFramePath,
+                    ["captureNoFog"] = options.CaptureNoFog,
                     ["captureWidth"] = options.CaptureWidth,
                     ["captureHeight"] = options.CaptureHeight,
                     ["captureRequestedWorldspace"] = options.CaptureWorldspaceName,

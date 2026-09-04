@@ -255,6 +255,23 @@ internal static class EnvironmentVariables
         public const string WaterReflection = "FALLOUT_VIEWER_WATER_REFLECTION";
 
         /// <summary>
+        ///     Oblivion WATERHMAP FFT grid (default ON/high): unset or any value other than "0"
+        ///     reproduces retail <c>bUseWaterHiRes=1</c> with the 256²/eight-stage spectrum. "0"
+        ///     selects the recovered 128²/seven-stage branch for a controlled retail-setting A/B.
+        /// </summary>
+        public const string OblivionWaterHighResolution =
+            "FALLOUT_VIEWER_OBLIVION_WATER_HIGH_RES";
+
+        /// <summary>
+        ///     Diagnostic-only TES4 WATER007 displacement-normal input. "neutral-zero" binds a
+        ///     flat encoded normal with zero blend; "radial-impulse" binds a deterministic analytic
+        ///     normal with full blend. Unset/invalid disables the input. This does not claim to
+        ///     reproduce the still-unrecovered WATERDISPLACE simulation.
+        /// </summary>
+        public const string OblivionWaterDisplacementProbe =
+            "FALLOUT_VIEWER_OBLIVION_WATER_DISPLACEMENT_PROBE";
+
+        /// <summary>
         ///     Parallel establishment cull (default ON): the visible cells are partitioned
         ///     across the thread pool and the per-partition survivors merged in cell order. Set to "0"
         ///     for the single-threaded loop — the A/B lever for the cull's cost and for proving the

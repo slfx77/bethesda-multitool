@@ -99,6 +99,17 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
+    ///     Change only the fog gate for a diagnostic capture. Keeping this separate from the legacy
+    ///     five-switch scenario funnel is important: that funnel also remaps the three-state HDR UI
+    ///     and imagespace selection, which would invalidate a fog-only A/B capture.
+    /// </summary>
+    internal void Profiler_SetFogEnabled(bool fogEnabled)
+    {
+        _showFog = fogEnabled;
+        LightingPanel.FogEnabled = fogEnabled;
+    }
+
+    /// <summary>
     ///     Resolve an authored fixture from the loaded semantic ESM rather than trusting a camera
     ///     bookmark alone. Both FormIDs and the model path are required, and the reference must be
     ///     owned by the requested worldspace.

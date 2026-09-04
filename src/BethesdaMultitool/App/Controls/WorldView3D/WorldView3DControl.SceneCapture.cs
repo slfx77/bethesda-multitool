@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using BethesdaMultitool.Core;
@@ -8,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.WorldData;
 
@@ -188,7 +190,7 @@ public sealed partial class WorldView3DControl
     private bool TryRenderCaptureWaterReflection(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd,
         Matrix4x4 viewProjSky,
-        float sceneSkyScale,
+        SceneSkyColorTransform sceneSkyTransform,
         GpuOffscreenSceneTarget12 target)
     {
         if (!WaterReflectionActive || _water is null ||
@@ -201,8 +203,8 @@ public sealed partial class WorldView3DControl
         try
         {
             reflectionTarget.RestoreWaterOpaqueSnapshot(cmd);
-            var reflectionClear =
-                ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor * sceneSkyScale;
+            var reflectionClear = sceneSkyTransform.Apply(
+                ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor);
             reflectionTarget.Bind(cmd, new Vortice.Mathematics.Color4(
                 reflectionClear.X, reflectionClear.Y, reflectionClear.Z, 1f));
             // Mirror about the camera's horizontal plane. The sky viewProj is translation-free with
@@ -214,7 +216,7 @@ public sealed partial class WorldView3DControl
             // integrates once per Render, so advancing here would drift the reflected clouds off
             // the sky's own.
             RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
-                skyColorScale: sceneSkyScale, advanceCloudScroll: false);
+                skyColorTransform: sceneSkyTransform, advanceCloudScroll: false);
             // Bind only when THIS capture's copy actually recorded — a failed prepare would hand
             // water a never-written image.
             return reflectionTarget.TryPrepareWaterOpaqueSnapshot(cmd);
@@ -284,7 +286,7 @@ public sealed partial class WorldView3DControl
             }
 
             target.ReleaseDedicatedWaterOpaqueSnapshotResource();
-            Log.Warn("WorldView3DControl: WATER001 capture snapshot SRV creation failed; using WATER003: {0}",
+            Log.Warn("WorldView3DControl: water refraction snapshot SRV creation failed; using the RT-free fallback: {0}",
                 ex.Message);
             return false;
         }
@@ -461,7 +463,7 @@ public sealed partial class WorldView3DControl
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
             HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: _selectedInterior is not null);
-        var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
+        var sceneSkyTransform = GpuTonemapSettings.ResolveSceneSkyColorTransform(
             tonemap,
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
             HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
@@ -502,33 +504,31 @@ public sealed partial class WorldView3DControl
         // keeps running at wall-clock speed; only the prime/readback frames are pinned so repeated
         // captures remain byte-comparable regardless of load and streaming duration.
         var weatherTransition = ResolveSelectedWeatherTransition();
-        var currentWind = (weatherTransition.CurrentWeather?.Data?.WindSpeed ?? 0) / 255f;
-        var outgoingWind = (weatherTransition.OutgoingWeather?.Data?.WindSpeed ?? 0) / 255f;
-        float weatherWind;
-        if (_selectedInterior is not null)
-        {
-            weatherWind = 0f;
-        }
-        else if (weatherTransition.OutgoingWeather is null)
-        {
-            weatherWind = currentWind;
-        }
-        else
-        {
-            weatherWind = outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
-        }
-
-        var effectiveWind = _windStrength ?? weatherWind;
+        var splineWeatherWind = Fo4BendableSplineWind.ResolveWeather(
+            weatherTransition.CurrentWeather?.Data,
+            weatherTransition.OutgoingWeather?.Data,
+            weatherTransition.CurrentWeatherWeight,
+            _selectedInterior is not null,
+            WindDirection);
+        var effectiveWind = _windStrength ?? splineWeatherWind.NormalizedSpeed;
         _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
             _data?.Game ?? Core.Games.BethesdaGame.Unknown));
         // Live wind clock unless the caller pinned the animation clock (see the parameter docs).
         if (animationTimeSeconds is { } pinnedWind)
         {
-            _references?.SetWindForCapture(WindDirection, effectiveWind, pinnedWind);
+            _references?.SetWindForCapture(
+                splineWeatherWind.Direction,
+                effectiveWind,
+                pinnedWind,
+                splineWeatherWind.NormalizedTurbulence);
         }
         else
         {
-            _references?.SetWind(WindDirection, effectiveWind, _windClockSeconds);
+            _references?.SetWind(
+                splineWeatherWind.Direction,
+                effectiveWind,
+                _windClockSeconds,
+                splineWeatherWind.NormalizedTurbulence);
         }
 
         // Diagnostic: log the resolved atmosphere so a wrong sky COLOR can be told apart from a wrong
@@ -585,7 +585,7 @@ public sealed partial class WorldView3DControl
             $"moonPathFade={masserFade:0.00} moonAlpha={masserDrawAlpha:0.00} " +
             $"moonFrac={(_data?.MoonPrimaryHalfSizeFraction?.ToString("0.000") ?? "null")}/{(_data?.MoonSecondaryHalfSizeFraction?.ToString("0.000") ?? "null")} " +
             $"profileFrac={MoonProfile.PrimaryHalfSizeFraction:0.000}/{MoonProfile.SecondaryHalfSizeFraction:0.000} game={_data?.Game} " +
-            $"tonemap={tonemap.Mode}/bloom:{tonemap.BloomEnabled}/target:{tonemap.TargetLum:0.000}/contrast:{tonemap.Contrast:0.000}/brightness:{tonemap.Brightness:0.000}/sunScale:{sceneSunlightScale:0.000}/skyScale:{sceneSkyScale:0.000} " +
+            $"tonemap={tonemap.Mode}/bloom:{tonemap.BloomEnabled}/target:{tonemap.TargetLum:0.000}/contrast:{tonemap.Contrast:0.000}/brightness:{tonemap.Brightness:0.000}/sunScale:{sceneSunlightScale:0.000}/skyTransform:{sceneSkyTransform.Scale:0.000}x+{sceneSkyTransform.Bias:0.000} " +
             $"weatherIMAD={_weatherImageSpaceTelemetry} " +
             // Placed lights had no user-visible surface at all (HUD or capture line) — a zero here
             // was indistinguishable from "the feature works but is subtle", which is what made an
@@ -630,12 +630,12 @@ public sealed partial class WorldView3DControl
         var captureWaterOpaqueSnapshotSrvReady = false;
         if (captureWaterEnabled)
         {
-            var initialFnvWater001Preflight = _water!.GetFnvWater001Preflight(
+            var initialWaterOpaqueSceneSnapshotRequest = _water!.TryRequestWaterOpaqueSceneSnapshot(
                 cylinder,
                 isPerspectiveProjection: true);
-            captureWaterOpaqueSnapshotSrvReady = initialFnvWater001Preflight.Candidate &&
-                                                 TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
-            _water.SetFnvWater001Snapshot(null, 0, 0);
+            captureWaterOpaqueSnapshotSrvReady = initialWaterOpaqueSceneSnapshotRequest &&
+                                                  TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
+            _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
             // Clear the LIVE window's planar-reflection binding: its bindless index and the scene
             // dimensions the shader divides by are set by the live frame path, so an in-app capture
             // would otherwise sample the live window's mirrored sky at the live window's scale (and
@@ -660,7 +660,7 @@ public sealed partial class WorldView3DControl
             recorder.BeginFrame();
             var cmd = recorder.CommandList;
             var captureShadowRingReserved = false;
-            var captureFnvWater001SnapshotPrepared = false;
+            var captureWaterOpaqueSceneSnapshotPrepared = false;
             var captureWaterTransparencyPartitioned = false;
             var captureDepthSampled = false;
             var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
@@ -753,7 +753,7 @@ public sealed partial class WorldView3DControl
                     // Sky ALWAYS uses the translation-free view (same rule as the live frame): the dome is
                     // camera-centred, so its only correct frame is one with the camera at the origin.
                     RenderSky(viewProjSky, Vector3.Zero, animationTimeSeconds: animationTimeSeconds,
-                        skyColorScale: sceneSkyScale);
+                        skyColorTransform: sceneSkyTransform);
                     // …then the water's planar sky reflection, exactly as the live frame does it
                     // (WorldView3DControl.Frame.cs). This is a CAPTURE-owned pass at the capture's
                     // own dimensions, so the water shader's screen-UV lookup divides by the same
@@ -762,7 +762,7 @@ public sealed partial class WorldView3DControl
                     // from the coordinates that reported it. Skipped when the scene mirror below
                     // will overwrite the target with mirrored scene content anyway.
                     _captureWaterReflectionBound = !captureSceneMirrorPlanned &&
-                                                   TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale,
+                                                   TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyTransform,
                                                        target);
                 }
 
@@ -797,8 +797,8 @@ public sealed partial class WorldView3DControl
                             * viewProj;
 
                         captureMirrorTarget.RestoreWaterOpaqueSnapshot(cmd);
-                        var mirrorClear = ResolveSceneAtmosphere(_gameHour, _showLighting)
-                            .SkyHorizonColor * sceneSkyScale;
+                        var mirrorClear = sceneSkyTransform.Apply(
+                            ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor);
                         captureMirrorTarget.Bind(cmd, new Vortice.Mathematics.Color4(
                             mirrorClear.X, mirrorClear.Y, mirrorClear.Z, 1f));
                         var mirroredCameraAbs = new Vector3(
@@ -817,7 +817,7 @@ public sealed partial class WorldView3DControl
                             lightViewportHeight: captureMirrorTarget.Height);
                         RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
                             animationTimeSeconds: animationTimeSeconds,
-                            skyColorScale: sceneSkyScale, advanceCloudScroll: false);
+                            skyColorTransform: sceneSkyTransform, advanceCloudScroll: false);
                         if (captureTerrainEnabled)
                         {
                             _terrain!.RenderMirror(captureMirrorViewProj, cylinder);
@@ -882,22 +882,22 @@ public sealed partial class WorldView3DControl
                     // water/effects sample the post-opaque depth copy recorded above. Without this
                     // branch a "stream on" capture rendered the legacy split — the A/B instrument
                     // could never show the stream it claimed to verify.
-                    var fnvWater001Preflight = _water!.GetFnvWater001Preflight(
+                    var waterOpaqueSceneSnapshotRequested = _water!.TryRequestWaterOpaqueSceneSnapshot(
                         cylinder,
                         isPerspectiveProjection: true);
-                    if (fnvWater001Preflight.Candidate &&
+                    if (waterOpaqueSceneSnapshotRequested &&
                         captureWaterOpaqueSnapshotSrvReady &&
                         target.TryPrepareWaterOpaqueSnapshot(cmd))
                     {
-                        captureFnvWater001SnapshotPrepared = true;
-                        _water.SetFnvWater001Snapshot(
+                        captureWaterOpaqueSceneSnapshotPrepared = true;
+                        _water.SetWaterOpaqueSceneSnapshot(
                             _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
                             checked((uint)target.Width),
                             checked((uint)target.Height));
                     }
                     else
                     {
-                        _water.SetFnvWater001Snapshot(null, 0, 0);
+                        _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
                     }
 
                     // Reservation HANDOFF, not release: the blended capacity plan inside
@@ -954,11 +954,11 @@ public sealed partial class WorldView3DControl
 
                     _water.FinishTransparencyStream();
 
-                    _water.SetFnvWater001Snapshot(null, 0, 0);
-                    if (captureFnvWater001SnapshotPrepared)
+                    _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                    if (captureWaterOpaqueSceneSnapshotPrepared)
                     {
                         target.RestoreWaterOpaqueSnapshot(cmd);
-                        captureFnvWater001SnapshotPrepared = false;
+                        captureWaterOpaqueSceneSnapshotPrepared = false;
                     }
                 }
                 else
@@ -978,22 +978,22 @@ public sealed partial class WorldView3DControl
 
                         // Re-arm each pass: Render consumes the preflight and one-shot descriptor. NIF
                         // planes always remain on WATER003; the contract inspects generated CELL water.
-                        var fnvWater001Preflight = _water!.GetFnvWater001Preflight(
+                        var waterOpaqueSceneSnapshotRequested = _water!.TryRequestWaterOpaqueSceneSnapshot(
                             cylinder,
                             isPerspectiveProjection: true);
-                        if (fnvWater001Preflight.Candidate &&
+                        if (waterOpaqueSceneSnapshotRequested &&
                             captureWaterOpaqueSnapshotSrvReady &&
                             target.TryPrepareWaterOpaqueSnapshot(cmd))
                         {
-                            captureFnvWater001SnapshotPrepared = true;
-                            _water.SetFnvWater001Snapshot(
+                            captureWaterOpaqueSceneSnapshotPrepared = true;
+                            _water.SetWaterOpaqueSceneSnapshot(
                                 _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
                                 checked((uint)target.Width),
                                 checked((uint)target.Height));
                         }
                         else
                         {
-                            _water.SetFnvWater001Snapshot(null, 0, 0);
+                            _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
                         }
                     }
 
@@ -1034,11 +1034,11 @@ public sealed partial class WorldView3DControl
                         }
                     }
 
-                    _water?.SetFnvWater001Snapshot(null, 0, 0);
-                    if (captureFnvWater001SnapshotPrepared)
+                    _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                    if (captureWaterOpaqueSceneSnapshotPrepared)
                     {
                         target.RestoreWaterOpaqueSnapshot(cmd);
-                        captureFnvWater001SnapshotPrepared = false;
+                        captureWaterOpaqueSceneSnapshotPrepared = false;
                     }
 
                     if (captureReferencesUseDepth)
@@ -1118,8 +1118,8 @@ public sealed partial class WorldView3DControl
                     _ringBuffer12!.ReleaseTailReservation();
                 }
 
-                _water?.SetFnvWater001Snapshot(null, 0, 0);
-                if (captureFnvWater001SnapshotPrepared)
+                _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                if (captureWaterOpaqueSceneSnapshotPrepared)
                 {
                     target.RestoreWaterOpaqueSnapshot(cmd);
                 }
@@ -1151,8 +1151,8 @@ public sealed partial class WorldView3DControl
                     // Stream mode: forget queued batches + free the deferred tail reservation
                     // (no-op when the legacy branch ran).
                     _water?.AbandonTransparencyStream();
-                    _water?.SetFnvWater001Snapshot(null, 0, 0);
-                    if (captureFnvWater001SnapshotPrepared)
+                    _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                    if (captureWaterOpaqueSceneSnapshotPrepared)
                     {
                         target.RestoreWaterOpaqueSnapshot(cmd);
                     }
@@ -2229,11 +2229,18 @@ public sealed partial class WorldView3DControl
             HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: interior is not null);
         fields["tonemapSkyScale"] = tonemap.SkyScale;
-        fields["sceneSkyScale"] = GpuTonemapSettings.ResolveSceneSkyScale(
+        var sceneSkyTransform = GpuTonemapSettings.ResolveSceneSkyColorTransform(
             tonemap,
             game,
             HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: interior is not null);
+        fields["sceneSkyScale"] = sceneSkyTransform.Scale;
+        fields["sceneSkyBias"] = sceneSkyTransform.Bias;
+        fields["sceneSkyOperation"] = sceneSkyTransform.Bias != 0f
+            ? "add"
+            : sceneSkyTransform.Scale != 1f
+                ? "multiply"
+                : "identity";
         fields["tonemapSaturation"] = tonemap.Saturation;
         fields["tonemapContrastAvgLum"] = tonemap.ContrastAvgLum;
         fields["tonemapContrast"] = tonemap.Contrast;
@@ -2243,6 +2250,25 @@ public sealed partial class WorldView3DControl
         fields["tonemapBloomEnabled"] = tonemap.BloomEnabled;
         fields["tonemapBlurRadius"] = tonemap.BlurRadius;
         fields["tonemapBlurPasses"] = tonemap.BlurPasses;
+        var bloomExecution = GpuTonemapExecutionPlan.Create(
+            enabled: true,
+            tonemap.Mode,
+            tonemap.BloomEnabled,
+            tonemap.BrightScale);
+        var tes4BloomTopology = bloomExecution.EngineMode
+                                && tonemap.Mode == GpuTonemapMode.EngineFo3Fnv
+                                && tonemap.ClassicBloomTopology ==
+                                ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative;
+        var bloomPlan = tes4BloomTopology
+            ? ClassicHdrPassPlan.CreateTes4(
+                pixelWidth, pixelHeight, bloomExecution.BloomActive, tonemap.BlurPasses)
+            : ClassicHdrPassPlan.Create(
+                pixelWidth, pixelHeight, bloomExecution.BloomActive, tonemap.BlurPasses);
+        fields["tonemapClassicBloomTopology"] = bloomPlan.BloomTopology.ToString();
+        fields["tonemapEffectiveBlurPairs"] = bloomPlan.BloomEnabled ? bloomPlan.BlurPairCount : 0;
+        fields["tonemapBrightPassDraws"] = bloomPlan.BrightPassDrawCount;
+        fields["tonemapBrightPassBlurDraws"] = bloomPlan.BrightPassBlurDrawCount;
+        fields["tonemapBlurAxisDraws"] = bloomPlan.BlurDrawCount;
         fields["tonemapBrightScale"] = tonemap.BrightScale;
         fields["tonemapBrightClamp"] = tonemap.BrightClamp;
         fields["tonemapModernFamily"] = tonemap.ModernFamily?.ToString();
@@ -2593,6 +2619,66 @@ public sealed partial class WorldView3DControl
                 ["rustlePhase"] = referenceStats.ReferenceSpeedTreeRustlePhase,
                 ["animationSeconds"] = referenceStats.ReferenceSpeedTreeAnimationSeconds
             };
+        fields["fo4BendableSplineWindSupported"] =
+            referenceStats?.ReferenceFo4BendableSplineWindSupported;
+        fields["fo4BendableSplineWind"] =
+            referenceStats is not { ReferenceFo4BendableSplineWindSupported: true }
+                ? null
+                : new Dictionary<string, object?>
+                {
+                    ["animationsEnabled"] =
+                        referenceStats.ReferenceFo4BendableSplineAnimationsEnabled,
+                    ["draws"] = referenceStats.ReferenceFo4BendableSplineWindDraws,
+                    ["instances"] = referenceStats.ReferenceFo4BendableSplineWindInstances,
+                    ["normalizedSpeed"] =
+                        referenceStats.ReferenceFo4BendableSplineNormalizedSpeed,
+                    ["speedSource"] = _windStrength is null
+                        ? "weather"
+                        : "manual-override",
+                    ["normalizedTurbulence"] =
+                        referenceStats.ReferenceFo4BendableSplineNormalizedTurbulence,
+                    ["direction"] = new[]
+                    {
+                        referenceStats.ReferenceFo4BendableSplineDirectionX,
+                        referenceStats.ReferenceFo4BendableSplineDirectionY
+                    },
+                    ["directionRadians"] =
+                        referenceStats.ReferenceFo4BendableSplineDirectionRadians,
+                    ["directionRangeDegrees"] = splineWeatherWind.DirectionRangeDegrees,
+                    ["directionSelection"] = splineWeatherWind.DirectionSelection.ToString(),
+                    ["animationSeconds"] =
+                        referenceStats.ReferenceFo4BendableSplineAnimationSeconds,
+                    ["packedTimer"] = referenceStats.ReferenceFo4BendableSplinePackedTimer,
+                    ["flexibilityMinimum"] =
+                        referenceStats.ReferenceFo4BendableSplineFlexibilityMinimum,
+                    ["flexibilityMaximum"] =
+                        referenceStats.ReferenceFo4BendableSplineFlexibilityMaximum,
+                    ["windVectorAtMinimumFlexibility"] = new[]
+                    {
+                        referenceStats.ReferenceFo4BendableSplineDirectionRadians,
+                        referenceStats.ReferenceFo4BendableSplineFlexibilityMinimum,
+                        referenceStats.ReferenceFo4BendableSplinePackedTimer,
+                        referenceStats.ReferenceFo4BendableSplinePackedTimer
+                    },
+                    ["windVectorAtMaximumFlexibility"] = new[]
+                    {
+                        referenceStats.ReferenceFo4BendableSplineDirectionRadians,
+                        referenceStats.ReferenceFo4BendableSplineFlexibilityMaximum,
+                        referenceStats.ReferenceFo4BendableSplinePackedTimer,
+                        referenceStats.ReferenceFo4BendableSplinePackedTimer
+                    },
+                    ["windVectorEx"] = new[]
+                    {
+                        referenceStats.ReferenceFo4BendableSplineMinimumSpeedWorldUnits,
+                        referenceStats.ReferenceFo4BendableSplineMaximumSpeedWorldUnits,
+                        referenceStats.ReferenceFo4BendableSplineFrequency,
+                        0f
+                    },
+                    ["unavailableReason"] =
+                        referenceStats.ReferenceFo4BendableSplineWindDraws == 0
+                            ? "no generated wind-spline color draw was submitted"
+                            : null
+                };
         fields["tallGrassWindSupported"] =
             referenceStats?.ReferenceTallGrassWindSupported;
         if (referenceStats is not { ReferenceTallGrassWindSupported: true })

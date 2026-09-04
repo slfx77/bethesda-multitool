@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using Microsoft.UI.Xaml.Media;
 
@@ -390,13 +391,13 @@ public sealed partial class WorldView3DControl
         catch (Exception ex)
         {
             // A recording failure before EndFrame has not changed GPU resource states. Discard the
-            // one-shot WATER001 CPU state and close (without submitting) the open command list so the
+            // one-shot water refraction-snapshot CPU state and close (without submitting) the open command list so the
             // next CompositionTarget tick can BeginFrame on the same slot. The scoped water recovery
             // below normally submits a cleaned partial frame; this is the final safety net for failures
             // elsewhere in the frame or while recording that cleanup.
             try
             {
-                _water?.SetFnvWater001Snapshot(null, 0, 0);
+                _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
                 _surface12?.DiscardWaterOpaqueSnapshotPreparation();
                 _commandRecorder12?.AbortFrame();
             }
@@ -535,9 +536,10 @@ public sealed partial class WorldView3DControl
             game,
             hdrActive,
             isInterior: _selectedInterior is not null);
-        var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
+        var sceneSkyTransform = GpuTonemapSettings.ResolveSceneSkyColorTransform(
             tonemap, game, hdrActive, isInterior: _selectedInterior is not null);
-        resolved = AtmosphereState.ApplySkyColorScale(resolved, sceneSkyScale);
+        resolved = AtmosphereState.ApplySkyColorTransform(
+            resolved, sceneSkyTransform.Scale, sceneSkyTransform.Bias);
         // Sun-shadow sampling constants: the rendered cascades' light matrices (with this frame's
         // render origin folded in) + packed params. Disabled (zero) until the cascades have
         // content, when the caller opts out (ortho export / top-down), or when the toggle / env
@@ -556,6 +558,7 @@ public sealed partial class WorldView3DControl
         var fogEnabled = enableFog && _showFog;
         _references?.SetFnvActiveAdtBaseState(
             lightingOn, projectedSunShadowActive, fogEnabled);
+        _references?.SetExternalEmittanceState(gameHour, _currentClimateTiming);
         _lastBoundShadowParams = shadow.Params0;
         // Interiors have no sky, so the sky-gradient REFLECTION stand-in must not run there: indoor
         // water was mirroring a flat grey "sky" instead of its authored DNAM ReflectionColor, which
@@ -1147,33 +1150,27 @@ public sealed partial class WorldView3DControl
         }
 
         var weatherTransition = ResolveSelectedWeatherTransition();
-        var currentWind = (weatherTransition.CurrentWeather?.Data?.WindSpeed ?? 0) / 255f;
-        var outgoingWind = (weatherTransition.OutgoingWeather?.Data?.WindSpeed ?? 0) / 255f;
-        float weatherWind;
-        if (_selectedInterior is not null)
-        {
-            weatherWind = 0f;
-        }
-        else if (weatherTransition.OutgoingWeather is null)
-        {
-            weatherWind = currentWind;
-        }
-        else
-        {
-            weatherWind = outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
-        }
-
-        var effectiveWind = _windStrength ?? weatherWind;
+        var splineWeatherWind = Fo4BendableSplineWind.ResolveWeather(
+            weatherTransition.CurrentWeather?.Data,
+            weatherTransition.OutgoingWeather?.Data,
+            weatherTransition.CurrentWeatherWeight,
+            _selectedInterior is not null,
+            WindDirection);
+        var effectiveWind = _windStrength ?? splineWeatherWind.NormalizedSpeed;
         // In auto mode, keep the (disabled) wind slider showing the weather-driven value. We're on the
         // UI thread (CompositionTarget.Rendering); the panel never raises events for display updates.
         if (_windStrength is null)
         {
-            LightingPanel.SetWindSpeedDisplay(weatherWind);
+            LightingPanel.SetWindSpeedDisplay(splineWeatherWind.NormalizedSpeed);
         }
 
         _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
             _data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown));
-        _references?.SetWind(WindDirection, effectiveWind, _windClockSeconds);
+        _references?.SetWind(
+            splineWeatherWind.Direction,
+            effectiveWind,
+            _windClockSeconds,
+            splineWeatherWind.NormalizedTurbulence);
 
         // Sun shadows: arm the reference renderer's shadow-draw capture BEFORE its render pass so
         // this frame's instanced draws are recorded for the frame-end shadow replay. The CB bound
@@ -1229,7 +1226,7 @@ public sealed partial class WorldView3DControl
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
         // Ortho modes: force fog OFF (distance-from-a-1,000,000-unit-eye fog would max out everywhere)
         // and feed the ortho eye as the shading camera position so the specular view vector is parallel.
-        var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
+        var sceneSkyTransform = GpuTonemapSettings.ResolveSceneSkyColorTransform(
             tonemap,
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
             HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
@@ -1255,7 +1252,7 @@ public sealed partial class WorldView3DControl
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.SkyStart);
             RenderSky(viewProjSky, Vector3.Zero,
                 projectionActive ? ProjectionCameraBasis() : null,
-                skyColorScale: sceneSkyScale);
+                skyColorTransform: sceneSkyTransform);
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.SkyEnd);
         }
 
@@ -1316,8 +1313,8 @@ public sealed partial class WorldView3DControl
                 // line — grazing/near-horizon water especially — sampled an opaque-black clear
                 // and read as a dark fringe. The horizon tint degrades to the old 2-row
                 // stand-in's value instead, which is what those rays reflected before the RT.
-                var reflectionClear = ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor
-                                      * sceneSkyScale;
+                var reflectionClear = sceneSkyTransform.Apply(
+                    ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor);
                 reflectionTarget.Bind(cmd, new Vortice.Mathematics.Color4(
                     reflectionClear.X, reflectionClear.Y, reflectionClear.Z, 1f));
                 // Mirror about the camera's horizontal plane. The sky is drawn camera-relative
@@ -1325,7 +1322,7 @@ public sealed partial class WorldView3DControl
                 // reflection — no plane height enters, and the dome's CullMode.None makes the
                 // reversed winding a non-issue.
                 RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
-                    skyColorScale: sceneSkyScale,
+                    skyColorTransform: sceneSkyTransform,
                     // The cloud scroll integrates once per Render call. This is the frame's SECOND
                     // sky draw, so it must not advance it again — that would drift the clouds at 2x
                     // and put the reflected clouds somewhere the sky's clouds are not.
@@ -1480,8 +1477,8 @@ public sealed partial class WorldView3DControl
                     * viewProjScene;
 
                 sceneMirrorTarget.RestoreWaterOpaqueSnapshot(cmd);
-                var mirrorClear = ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor
-                                  * sceneSkyScale;
+                var mirrorClear = sceneSkyTransform.Apply(
+                    ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor);
                 sceneMirrorTarget.Bind(cmd, new Vortice.Mathematics.Color4(
                     mirrorClear.X, mirrorClear.Y, mirrorClear.Z, 1f));
                 // Mirror b3: the shading camera reflects too (specular/fog track the mirrored
@@ -1506,7 +1503,7 @@ public sealed partial class WorldView3DControl
                 // Z flip is the same reflection as the water plane's — directions are unaffected
                 // by the translation difference. Cloud scroll must not advance twice per frame.
                 RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
-                    skyColorScale: sceneSkyScale, advanceCloudScroll: false);
+                    skyColorTransform: sceneSkyTransform, advanceCloudScroll: false);
                 if (_showTerrain)
                 {
                     _terrain?.RenderMirror(mirrorViewProjScene, cylinder);
@@ -1558,7 +1555,7 @@ public sealed partial class WorldView3DControl
         // pass, preserving exact hardware depth for ordinary alpha decals/foliage and blend modes.
         var referencesUseDepth = !projectionActive && _showReferences && _references is not null
                                  && _depthSrv is not null && depthRes is not null;
-        var fnvWater001SnapshotPrepared = false;
+        var waterOpaqueSceneSnapshotPrepared = false;
         var waterTransparencyPartitioned = false;
         var waterDepthSampled = false;
         var sceneDepthSampled = waterUsesDepth || referencesUseDepth;
@@ -1594,21 +1591,21 @@ public sealed partial class WorldView3DControl
                     referencesUseDepth && streamDepthReady ? streamDepthIndex : NoDepthSrv,
                     _camera.NearPlane, _camera.FarPlane, 1);
 
-                var fnvWater001Preflight = _water.GetFnvWater001Preflight(
+                var waterOpaqueSceneSnapshotRequested = _water.TryRequestWaterOpaqueSceneSnapshot(
                     cylinder, isPerspectiveProjection: true);
-                if (fnvWater001Preflight.Candidate &&
+                if (waterOpaqueSceneSnapshotRequested &&
                     TryEnsureWaterOpaqueSnapshotSrv() &&
                     surface.TryPrepareWaterOpaqueSnapshot(cmd))
                 {
-                    fnvWater001SnapshotPrepared = true;
-                    _water.SetFnvWater001Snapshot(
+                    waterOpaqueSceneSnapshotPrepared = true;
+                    _water.SetWaterOpaqueSceneSnapshot(
                         _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
                         surface.Width,
                         surface.Height);
                 }
                 else
                 {
-                    _water.SetFnvWater001Snapshot(null, 0, 0);
+                    _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
                 }
 
                 // The stream is the water reservation's consumer, but it must NOT be released
@@ -1675,11 +1672,11 @@ public sealed partial class WorldView3DControl
                 _water.FinishTransparencyStream();
                 _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.BlendedEnd);
 
-                _water.SetFnvWater001Snapshot(null, 0, 0);
-                if (fnvWater001SnapshotPrepared)
+                _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                if (waterOpaqueSceneSnapshotPrepared)
                 {
                     surface.RestoreWaterOpaqueSnapshot(cmd);
-                    fnvWater001SnapshotPrepared = false;
+                    waterOpaqueSceneSnapshotPrepared = false;
                 }
 
                 if (opaqueDepthSnapshotPrepared)
@@ -1695,8 +1692,8 @@ public sealed partial class WorldView3DControl
                     // Forget queued batches (a later frame must not drain them against a dead
                     // command list) and free the deferred tail reservation within the frame.
                     _water?.AbandonTransparencyStream();
-                    _water?.SetFnvWater001Snapshot(null, 0, 0);
-                    if (fnvWater001SnapshotPrepared)
+                    _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                    if (waterOpaqueSceneSnapshotPrepared)
                     {
                         surface.RestoreWaterOpaqueSnapshot(cmd);
                     }
@@ -1763,15 +1760,15 @@ public sealed partial class WorldView3DControl
                         waterTransparencyPartitioned = true;
                     }
 
-                    var fnvWater001Preflight = _water.GetFnvWater001Preflight(
+                    var waterOpaqueSceneSnapshotRequested = _water.TryRequestWaterOpaqueSceneSnapshot(
                         cylinder,
                         isPerspectiveProjection: !projectionActive);
-                    if (fnvWater001Preflight.Candidate &&
+                    if (waterOpaqueSceneSnapshotRequested &&
                         TryEnsureWaterOpaqueSnapshotSrv() &&
                         surface.TryPrepareWaterOpaqueSnapshot(cmd))
                     {
-                        fnvWater001SnapshotPrepared = true;
-                        _water.SetFnvWater001Snapshot(
+                        waterOpaqueSceneSnapshotPrepared = true;
+                        _water.SetWaterOpaqueSceneSnapshot(
                             _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
                             surface.Width,
                             surface.Height);
@@ -1780,12 +1777,12 @@ public sealed partial class WorldView3DControl
                     {
                         // Keep the positive preflight armed when allocation/capture failed: Render repeats
                         // the check and records SnapshotUnavailable as the local WATER003 fallback reason.
-                        _water.SetFnvWater001Snapshot(null, 0, 0);
+                        _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
                     }
                 }
                 else
                 {
-                    _water?.SetFnvWater001Snapshot(null, 0, 0);
+                    _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
                 }
 
                 _references?.SetSceneDepth(
@@ -1827,19 +1824,19 @@ public sealed partial class WorldView3DControl
 
                 // Render consumes the descriptor up front; clear it again defensively and return the
                 // borrowed/copy snapshot to its ordinary ResolveDest/CopyDest baseline before blends.
-                _water?.SetFnvWater001Snapshot(null, 0, 0);
-                if (fnvWater001SnapshotPrepared)
+                _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                if (waterOpaqueSceneSnapshotPrepared)
                 {
                     surface.RestoreWaterOpaqueSnapshot(cmd);
-                    fnvWater001SnapshotPrepared = false;
+                    waterOpaqueSceneSnapshotPrepared = false;
                 }
             }
             catch
             {
                 try
                 {
-                    _water?.SetFnvWater001Snapshot(null, 0, 0);
-                    if (fnvWater001SnapshotPrepared)
+                    _water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);
+                    if (waterOpaqueSceneSnapshotPrepared)
                     {
                         surface.RestoreWaterOpaqueSnapshot(cmd);
                     }

@@ -25,10 +25,6 @@ internal readonly record struct BethesdaSceneViewerCameraFrame(
 /// </summary>
 internal sealed class BethesdaSceneViewerCamera
 {
-    private const float DefaultAzimuthDegrees = 315f;
-    private const float DefaultElevationDegrees = 30f;
-    private const float RawSkyElevationDegrees = -30f;
-    private const float OrbitDegreesPerPixel = 0.35f;
     private const float ZoomExponentPerWheelNotch = 0.16f;
     private const float FramingMargin = 1.2f;
     private const float MinimumElevationDegrees = -89f;
@@ -39,24 +35,35 @@ internal sealed class BethesdaSceneViewerCamera
     private BethesdaViewerBounds? _projectedFramingBounds;
     private bool _automaticProjectedFraming;
     private float _lastProjectedFramingAspect = float.NaN;
+    private BethesdaViewerScenePurpose _scenePurpose;
 
     internal Vector3 Target { get; private set; }
 
     internal float Distance { get; private set; } = 300f;
 
-    internal float AzimuthDegrees { get; private set; } = DefaultAzimuthDegrees;
+    internal float AzimuthDegrees { get; private set; }
 
-    internal float ElevationDegrees { get; private set; } = DefaultElevationDegrees;
+    internal float ElevationDegrees { get; private set; }
 
     internal float FieldOfViewRadians { get; set; } = MathF.PI / 3f;
 
-    /// <summary>Frames finite scene bounds and resets the authored three-quarter presentation view.</summary>
+    internal BethesdaSceneViewerCamera()
+    {
+        var initialOrbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
+            BethesdaViewerScenePurpose.Unspecified,
+            dedicatedRawSky: false);
+        AzimuthDegrees = initialOrbit.AzimuthDegrees;
+        ElevationDegrees = initialOrbit.ElevationDegrees;
+    }
+
+    /// <summary>Frames finite scene bounds and resets the scene-appropriate presentation view.</summary>
     internal void Frame(
         BethesdaViewerBounds? bounds,
         BethesdaGame game,
         BethesdaViewerScenePurpose purpose = BethesdaViewerScenePurpose.Unspecified,
         bool dedicatedRawSky = false)
     {
+        _scenePurpose = purpose;
         _humanScale = GameProfiles.HumanScaleFactor(game);
         if (!(_humanScale > 0f) || !float.IsFinite(_humanScale))
         {
@@ -85,14 +92,14 @@ internal sealed class BethesdaSceneViewerCamera
             BethesdaViewerPerspectiveFramingPolicy.ShouldUseProjectedBoundsFit(purpose);
         _lastProjectedFramingAspect = float.NaN;
 
-        AzimuthDegrees = DefaultAzimuthDegrees;
-        // The orbit camera's elevation describes the eye position; Forward is its negation. The
-        // ordinary +30-degree three-quarter view therefore looks down. A camera-centred raw sky
-        // needs the inverse preset so its vertical FOV spans the authored horizon/upper hemisphere
-        // instead of the dome's uniform lower closure. Mixed and assembled scenes stay ordinary.
-        ElevationDegrees = dedicatedRawSky
-            ? RawSkyElevationDegrees
-            : DefaultElevationDegrees;
+        // Actors use their established renderer front (90-degree azimuth, horizon-level eye), while
+        // arbitrary raw assets retain the useful three-quarter default. A camera-centred raw sky
+        // keeps its inverse elevation so the FOV spans the authored horizon/upper hemisphere.
+        var initialOrbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
+            purpose,
+            dedicatedRawSky);
+        AzimuthDegrees = initialOrbit.AzimuthDegrees;
+        ElevationDegrees = initialOrbit.ElevationDegrees;
         var halfFov = Math.Clamp(FieldOfViewRadians * 0.5f, 0.05f, 1.5f);
         Distance = MathF.Max(
             (_sceneRadius / MathF.Sin(halfFov)) * FramingMargin,
@@ -101,11 +108,14 @@ internal sealed class BethesdaSceneViewerCamera
 
     internal void Orbit(Vector2 pixelDelta)
     {
-        if (!float.IsFinite(pixelDelta.X) || !float.IsFinite(pixelDelta.Y)) return;
+        var orbitDelta = BethesdaViewerPresentationPolicy.OrbitDegreesForPointerDelta(
+            pixelDelta,
+            _scenePurpose);
+        if (orbitDelta == Vector2.Zero) return;
 
-        AzimuthDegrees = NormalizeDegrees(AzimuthDegrees - pixelDelta.X * OrbitDegreesPerPixel);
+        AzimuthDegrees = NormalizeDegrees(AzimuthDegrees + orbitDelta.X);
         ElevationDegrees = Math.Clamp(
-            ElevationDegrees + pixelDelta.Y * OrbitDegreesPerPixel,
+            ElevationDegrees + orbitDelta.Y,
             MinimumElevationDegrees,
             MaximumElevationDegrees);
         _automaticProjectedFraming = false;

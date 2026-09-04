@@ -556,7 +556,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         data.RenderCache.BendableSplineIndex = data.BendableSplinesByFormId;
         data.RenderCache.TextureSetIndex = data.TextureSetsByFormId;
         data.RenderCache.LightIndex = data.LightsByFormId;
-        data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceColorsByFormId;
+        data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceSourcesByFormId;
         data.RenderCache.XespDisabledRefs = data.XespDisabledRefs;
         // Same for MODS alternate textures — the placement bake is cached per cell, so the index must
         // be present before whichever control (2D or 3D) bakes first, or the shared cache would keep a

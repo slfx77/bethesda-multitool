@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.WorldData;
@@ -511,7 +512,7 @@ public sealed class WorldRenderInfrastructureTests
     }
 
     [Fact]
-    public void WorldRenderCache_PlacementBake_ResolvesExternalEmittanceAsVariantState()
+    public void WorldRenderCache_PlacementBake_PreservesExternalEmittanceAsDrawState()
     {
         const uint emittanceFormId = 0x500;
         var placement = RenderablePlacement(0x241, 0f, 0f) with { EmittanceFormId = emittanceFormId };
@@ -525,14 +526,18 @@ public sealed class WorldRenderInfrastructureTests
         var color = new Vector3(1f, 0.25f, 0.125f);
         var cache = new WorldRenderCache
         {
-            ExternalEmittanceIndex = new Dictionary<uint, Vector3> { [emittanceFormId] = color }
+            ExternalEmittanceIndex = new Dictionary<uint, ExternalEmittanceSource>
+            {
+                [emittanceFormId] = ExternalEmittanceSource.Constant(color)
+            }
         };
         var candidates = new List<RenderableReference>();
 
         cache.QueryPlacementCandidates(cell, 0f, 0f, 512f, null, 0f, candidates);
 
         var reference = Assert.Single(candidates);
-        Assert.Equal(color, reference.AlternateTextures?.ExternalEmittanceColor);
+        Assert.Null(reference.AlternateTextures);
+        Assert.Equal(emittanceFormId, reference.ExternalEmittanceFormId);
     }
 
     private static PlacedReference RenderablePlacement(

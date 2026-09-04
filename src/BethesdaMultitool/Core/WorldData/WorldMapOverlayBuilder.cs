@@ -96,6 +96,7 @@ internal static class WorldMapOverlayBuilder
         var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(semantic, game);
         var gameSettingsByEditorId = BuildGameSettingIndex(semantic.GameSettings);
         var textureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets);
+        var weathersByFormId = BuildWeatherIndex(weatherRecords);
 
         return new WorldViewData
         {
@@ -145,7 +146,7 @@ internal static class WorldMapOverlayBuilder
             BaseColorRemapsByFormId = semantic.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(semantic.Water),
             Curves3DByFormId = BuildCurve3DIndex(semantic.Curves3D),
-            WeathersByFormId = BuildWeatherIndex(weatherRecords),
+            WeathersByFormId = weathersByFormId,
             WeatherSettingsByFormId = BuildWeatherSettingsIndex(semantic.WeatherSettings),
             VolumetricLightingByFormId = BuildVolumetricLightingIndex(semantic.VolumetricLightingSettings),
             Fallout76VolumetricLightingByFormId = BuildFallout76VolumetricLightingIndex(
@@ -162,8 +163,8 @@ internal static class WorldMapOverlayBuilder
             ImageSpaceModifiersByFormId = BuildImageSpaceModifierIndex(semantic.ImageSpaceModifiers),
             LightingTemplatesByFormId = BuildLightingTemplateIndex(semantic.LightingTemplates),
             LightsByFormId = BuildLightIndex(semantic.Lights),
-            ExternalEmittanceColorsByFormId = ExternalEmittanceResolver.BuildIndex(
-                semantic.Regions, semantic.Lights),
+            ExternalEmittanceSourcesByFormId = ExternalEmittanceResolver.BuildIndex(
+                semantic.Regions, semantic.Lights, weathersByFormId),
             AllWeathers = BuildAllWeathers(weatherRecords)
         };
     }
@@ -303,6 +304,7 @@ internal static class WorldMapOverlayBuilder
         var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(suppRecords, game);
         var gameSettingsByEditorId = BuildGameSettingIndex(suppRecords.GameSettings);
         var textureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets);
+        var weathersByFormId = BuildWeatherIndex(suppRecords.Weather);
 
         return new WorldViewData
         {
@@ -352,7 +354,7 @@ internal static class WorldMapOverlayBuilder
             BaseColorRemapsByFormId = suppRecords.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             Curves3DByFormId = BuildCurve3DIndex(suppRecords.Curves3D),
-            WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
+            WeathersByFormId = weathersByFormId,
             WeatherSettingsByFormId = BuildWeatherSettingsIndex(suppRecords.WeatherSettings),
             VolumetricLightingByFormId = BuildVolumetricLightingIndex(suppRecords.VolumetricLightingSettings),
             Fallout76VolumetricLightingByFormId = BuildFallout76VolumetricLightingIndex(
@@ -369,8 +371,8 @@ internal static class WorldMapOverlayBuilder
             ImageSpaceModifiersByFormId = BuildImageSpaceModifierIndex(suppRecords.ImageSpaceModifiers),
             LightingTemplatesByFormId = BuildLightingTemplateIndex(suppRecords.LightingTemplates),
             LightsByFormId = BuildLightIndex(suppRecords.Lights),
-            ExternalEmittanceColorsByFormId = ExternalEmittanceResolver.BuildIndex(
-                suppRecords.Regions, suppRecords.Lights),
+            ExternalEmittanceSourcesByFormId = ExternalEmittanceResolver.BuildIndex(
+                suppRecords.Regions, suppRecords.Lights, weathersByFormId),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
     }

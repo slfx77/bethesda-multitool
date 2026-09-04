@@ -722,6 +722,10 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             _worldView.Profiler_SetGameHour(_options.CaptureHour);
             _worldView.Profiler_SetGameDay(_options.CaptureDay);
+            if (_options.CaptureNoFog)
+            {
+                _worldView.Profiler_SetFogEnabled(false);
+            }
 
             // Apply the ENTIRE capture framing — position, yaw, pitch and FOV — before the phase-2 settle.
             // These used to be split: position here, orientation moments before the offscreen render. That
@@ -1074,6 +1078,8 @@ internal sealed partial class MainWindow : Window, IDisposable
             captureFields["weather"] = _worldView.Profiler_ActiveWeatherEditorId;
             captureFields["gameHour"] = _options.CaptureHour;
             captureFields["gameDay"] = _options.CaptureDay;
+            captureFields["requestedFogEnabled"] = !_options.CaptureNoFog;
+            captureFields["effectiveFogEnabled"] = _worldView.Profiler_PostProcessState.FogEnabled;
             foreach (var (key, value) in BuildCaptureScopeFields(
                          "image",
                          census,

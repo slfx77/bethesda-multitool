@@ -306,6 +306,25 @@ internal sealed class WorldRenderStats
     internal int ReferenceTallGrassWaveMultiplierDistinctCount { get; set; }
     internal float ReferenceTallGrassTemporalPhaseRadiansMinimum { get; set; }
     internal float ReferenceTallGrassTemporalPhaseRadiansMaximum { get; set; }
+
+    // Fallout 4 generated BNDS wind diagnostics. Draw/instance counts describe live color
+    // submissions; the remaining fields are the effective recovered constant producer.
+    internal bool ReferenceFo4BendableSplineWindSupported { get; set; }
+    internal bool ReferenceFo4BendableSplineAnimationsEnabled { get; set; }
+    internal float ReferenceFo4BendableSplineNormalizedSpeed { get; set; }
+    internal float ReferenceFo4BendableSplineNormalizedTurbulence { get; set; }
+    internal float ReferenceFo4BendableSplineDirectionX { get; set; }
+    internal float ReferenceFo4BendableSplineDirectionY { get; set; }
+    internal float ReferenceFo4BendableSplineDirectionRadians { get; set; }
+    internal float ReferenceFo4BendableSplineAnimationSeconds { get; set; }
+    internal float ReferenceFo4BendableSplinePackedTimer { get; set; }
+    internal float ReferenceFo4BendableSplineMinimumSpeedWorldUnits { get; set; }
+    internal float ReferenceFo4BendableSplineMaximumSpeedWorldUnits { get; set; }
+    internal float ReferenceFo4BendableSplineFrequency { get; set; }
+    internal int ReferenceFo4BendableSplineWindDraws { get; set; }
+    internal int ReferenceFo4BendableSplineWindInstances { get; set; }
+    internal float ReferenceFo4BendableSplineFlexibilityMinimum { get; set; }
+    internal float ReferenceFo4BendableSplineFlexibilityMaximum { get; set; }
     internal double ReferenceStateSetupMilliseconds { get; set; }
     internal double ReferenceCullMilliseconds { get; set; } // per-REFR cylinder cull + placement-list walk
     internal double ReferenceBatchBuildMilliseconds { get; set; }
@@ -529,6 +548,22 @@ internal sealed class WorldRenderStats
         ReferenceTallGrassWaveMultiplierDistinctCount = 0;
         ReferenceTallGrassTemporalPhaseRadiansMinimum = 0f;
         ReferenceTallGrassTemporalPhaseRadiansMaximum = 0f;
+        ReferenceFo4BendableSplineWindSupported = false;
+        ReferenceFo4BendableSplineAnimationsEnabled = false;
+        ReferenceFo4BendableSplineNormalizedSpeed = 0f;
+        ReferenceFo4BendableSplineNormalizedTurbulence = 0f;
+        ReferenceFo4BendableSplineDirectionX = 0f;
+        ReferenceFo4BendableSplineDirectionY = 0f;
+        ReferenceFo4BendableSplineDirectionRadians = 0f;
+        ReferenceFo4BendableSplineAnimationSeconds = 0f;
+        ReferenceFo4BendableSplinePackedTimer = 0f;
+        ReferenceFo4BendableSplineMinimumSpeedWorldUnits = 0f;
+        ReferenceFo4BendableSplineMaximumSpeedWorldUnits = 0f;
+        ReferenceFo4BendableSplineFrequency = 0f;
+        ReferenceFo4BendableSplineWindDraws = 0;
+        ReferenceFo4BendableSplineWindInstances = 0;
+        ReferenceFo4BendableSplineFlexibilityMinimum = 0f;
+        ReferenceFo4BendableSplineFlexibilityMaximum = 0f;
         ReferenceStateSetupMilliseconds = 0;
         ReferenceCullMilliseconds = 0;
         ReferenceBatchBuildMilliseconds = 0;
@@ -743,6 +778,22 @@ internal sealed class WorldRenderStats
             ReferenceTallGrassWaveMultiplierDistinctCount = ReferenceTallGrassWaveMultiplierDistinctCount,
             ReferenceTallGrassTemporalPhaseRadiansMinimum = ReferenceTallGrassTemporalPhaseRadiansMinimum,
             ReferenceTallGrassTemporalPhaseRadiansMaximum = ReferenceTallGrassTemporalPhaseRadiansMaximum,
+            ReferenceFo4BendableSplineWindSupported = ReferenceFo4BendableSplineWindSupported,
+            ReferenceFo4BendableSplineAnimationsEnabled = ReferenceFo4BendableSplineAnimationsEnabled,
+            ReferenceFo4BendableSplineNormalizedSpeed = ReferenceFo4BendableSplineNormalizedSpeed,
+            ReferenceFo4BendableSplineNormalizedTurbulence = ReferenceFo4BendableSplineNormalizedTurbulence,
+            ReferenceFo4BendableSplineDirectionX = ReferenceFo4BendableSplineDirectionX,
+            ReferenceFo4BendableSplineDirectionY = ReferenceFo4BendableSplineDirectionY,
+            ReferenceFo4BendableSplineDirectionRadians = ReferenceFo4BendableSplineDirectionRadians,
+            ReferenceFo4BendableSplineAnimationSeconds = ReferenceFo4BendableSplineAnimationSeconds,
+            ReferenceFo4BendableSplinePackedTimer = ReferenceFo4BendableSplinePackedTimer,
+            ReferenceFo4BendableSplineMinimumSpeedWorldUnits = ReferenceFo4BendableSplineMinimumSpeedWorldUnits,
+            ReferenceFo4BendableSplineMaximumSpeedWorldUnits = ReferenceFo4BendableSplineMaximumSpeedWorldUnits,
+            ReferenceFo4BendableSplineFrequency = ReferenceFo4BendableSplineFrequency,
+            ReferenceFo4BendableSplineWindDraws = ReferenceFo4BendableSplineWindDraws,
+            ReferenceFo4BendableSplineWindInstances = ReferenceFo4BendableSplineWindInstances,
+            ReferenceFo4BendableSplineFlexibilityMinimum = ReferenceFo4BendableSplineFlexibilityMinimum,
+            ReferenceFo4BendableSplineFlexibilityMaximum = ReferenceFo4BendableSplineFlexibilityMaximum,
             ReferenceStateSetupMilliseconds = ReferenceStateSetupMilliseconds,
             ReferenceCullMilliseconds = ReferenceCullMilliseconds,
             ReferenceBatchBuildMilliseconds = ReferenceBatchBuildMilliseconds,

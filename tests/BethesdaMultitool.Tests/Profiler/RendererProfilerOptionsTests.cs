@@ -11,6 +11,7 @@ public sealed class RendererProfilerOptionsTests
         "--capture-topdown",
         "--capture-topdown-terrain-color",
         "--capture-frame",
+        "--capture-no-fog",
         "--capture-local-radius-cells",
         "--profile-end-capture",
         "--trim-working-set-before-settle",
@@ -72,6 +73,7 @@ public sealed class RendererProfilerOptionsTests
             Assert.Null(options.ScenarioName);
             Assert.Null(options.ScenarioOutputDirectory);
             Assert.False(options.TrimWorkingSetBeforeSettle);
+            Assert.False(options.CaptureNoFog);
             Assert.Null(options.ProfileSettleTimeoutSeconds);
             Assert.Null(options.ProfileEndCapturePath);
             Assert.Null(options.CaptureLocalRadiusCells);
@@ -442,6 +444,7 @@ public sealed class RendererProfilerOptionsTests
             {
                 "--input", input,
                 "--capture-frame", capture,
+                "--capture-no-fog",
                 "--capture-local-radius-cells", "1.25",
                 "--trim-working-set-before-settle",
                 "--capture-worldspace-name", "WastelandNV",
@@ -470,6 +473,47 @@ public sealed class RendererProfilerOptionsTests
             Assert.Equal(90, options.CaptureSettleTimeoutSeconds);
             Assert.Equal(1.25f, options.CaptureLocalRadiusCells);
             Assert.True(options.TrimWorkingSetBeforeSettle);
+            Assert.True(options.CaptureNoFog);
+        });
+    }
+
+    [Fact]
+    public void TryParse_RejectsFogDiagnosticWithoutPerspectiveCapture()
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                ["--input", input, "--capture-no-fog"],
+                out _,
+                out var error));
+
+            Assert.Contains("requires", error, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("--capture-frame", error, StringComparison.Ordinal);
+        });
+    }
+
+    [Theory]
+    [InlineData("--capture-topdown", "topdown.png")]
+    [InlineData("--duration-seconds", "30")]
+    [InlineData("--capture-motion-frames", "2")]
+    [InlineData("--camera-motion", "orbit")]
+    public void TryParse_RejectsFogDiagnosticWithCompetingLifecycleOrMotion(
+        string option,
+        string value)
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--capture-frame", "frame.png",
+                    "--capture-no-fog",
+                    option, value
+                ],
+                out _,
+                out var error));
+
+            Assert.Contains("standalone static one-shot", error, StringComparison.OrdinalIgnoreCase);
         });
     }
 

@@ -217,29 +217,40 @@ public sealed partial class WorldView3DControl
             : LegacySurfaceFrameSource.None;
 
         // Retail Oblivion ships NO water00-31.dds. Its WATERHMAP000..006 path continuously evolves
-        // a 128² FFT surface from the active WATR's wind/amplitude/frequency fields. Sample that
-        // recovered model into the viewer's ini-sized 32-frame/12-FPS plumbing; disk frames (mod
-        // replacers) still win when present. Morrowind (Diffuse role) ships frames and never gets here.
+        // a 128² or 256² FFT surface from the active WATR's wind/amplitude/frequency fields;
+        // bUseWaterHiRes selects the grid without changing the wave-number step. Sample that
+        // recovered model into the viewer's 32-frame/12-FPS plumbing; disk frames (mod replacers)
+        // still win when present. Morrowind (Diffuse role) ships frames and never gets here.
         if (frames.Count == 0 &&
             _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Oblivion &&
             frameRole == LegacySurfaceFrameRole.GlobalNormal)
         {
             frameSource = LegacySurfaceFrameSource.OblivionFftSobel;
+            var useHighResolution = Environment.GetEnvironmentVariable(
+                BethesdaMultitool.Core.EnvironmentVariables.Viewer.OblivionWaterHighResolution) != "0";
+            var textureSize = BethesdaMultitool.Core.Formats.Nif.Rendering.Water
+                .OblivionWaterSurfaceSynthesizer.GetTextureSize(useHighResolution);
             var synthesized = BethesdaMultitool.Core.Formats.Nif.Rendering.Water
-                .OblivionWaterSurfaceSynthesizer.GenerateFrames(appearance?.Surface);
+                .OblivionWaterSurfaceSynthesizer.GenerateFrames(
+                    appearance?.Surface,
+                    useHighResolution);
             var settingsKey = BethesdaMultitool.Core.Formats.Nif.Rendering.Water
-                .OblivionWaterSurfaceSynthesizer.GetSettingsKey(appearance?.Surface);
+                .OblivionWaterSurfaceSynthesizer.GetSettingsKey(
+                    appearance?.Surface,
+                    useHighResolution);
             for (var i = 0; i < synthesized.Length; i++)
             {
                 frames.Add(_textureResolver12.GetOrCreateSyntheticBindlessIndex(
-                    $"synthetic:oblivion-water-surface:{settingsKey}:{i:D2}",
-                    BethesdaMultitool.Core.Formats.Nif.Rendering.Water
-                        .OblivionWaterSurfaceSynthesizer.TextureSize,
-                    BethesdaMultitool.Core.Formats.Nif.Rendering.Water
-                        .OblivionWaterSurfaceSynthesizer.TextureSize,
+                    $"synthetic:oblivion-water-surface:rgba8-nomips:{settingsKey}:{i:D2}",
+                    textureSize,
+                    textureSize,
                     synthesized[i],
                     generateMips: false));
             }
+            Log.Info(
+                "[Water] Oblivion WATERHMAP bUseWaterHiRes={0}; grid={1}x{1}, output=R8G8B8A8_UNorm, levels=1.",
+                useHighResolution ? 1 : 0,
+                textureSize);
         }
 
         return frames.Count > 0
