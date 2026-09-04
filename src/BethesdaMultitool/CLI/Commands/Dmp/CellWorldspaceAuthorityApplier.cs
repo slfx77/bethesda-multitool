@@ -1188,9 +1188,16 @@ internal static class CellWorldspaceAuthorityApplier
             GridY = gridY,
             WorldspaceFormId = worldspaceFormId,
             WorldspaceAssignmentSource = SourceAuthorityOffsetCluster,
-            EditorId = $"[Virtual {gridX},{gridY}]",
+            // USER RULING 2026-09-03: "We should aim to rescue all refs. If that requires a real
+            // cell, then that's what we should do." These tiles used to be IsVirtual, which the
+            // planner deletes as a parse-time bucket — so this pass rescued refs into a cell that
+            // then took them down with it, while the WEAKER-evidenced bounds-inference pass
+            // survived by building a real cell. Both now build the same thing: a real exterior
+            // cell identified by grid + worldspace with no EditorId, the CK convention (a
+            // "[Virtual x,y]" name would have been emitted into the plugin).
+            EditorId = null,
             PlacedObjects = [],
-            IsVirtual = true,
+            IsVirtual = false,
             IsBigEndian = isBigEndian
         };
 

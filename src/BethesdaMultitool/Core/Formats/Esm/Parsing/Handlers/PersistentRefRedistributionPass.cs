@@ -171,6 +171,27 @@ internal static class PersistentRefRedistributionPass
                         continue;
                     }
 
+                    // USER RULING 2026-09-03 was "rescue all refs; if that requires a real cell,
+                    // that's what we should do" — and this tile is where the great majority of
+                    // dropped children die (Round 9: 2,593 of 2,602 are
+                    // PersistentRedistributedSynthetic). It is deliberately STILL virtual, because
+                    // flipping it was measured on xex44 and made things worse, not better:
+                    //
+                    //     emitted 99,891 -> 96,739   placed refs 81,594 -> 78,379 (-3,215)
+                    //     overrides 79,659 -> 76,490 (-3,169)
+                    //
+                    // The loss is in OVERRIDES, which names the mechanism: this pass runs at parse
+                    // time and knows nothing about the master, so a tile it synthesizes at grid
+                    // (gx, gy) collides with the master's own cell there. Emitting the synthetic
+                    // cell displaces the master-cell override, taking every child that override
+                    // was carrying — more refs than the flip rescues. The bounds-inference pass
+                    // gets away with real cells because it only fires where no captured cell
+                    // claims the grid.
+                    //
+                    // Rescuing these properly needs the master grid index
+                    // (PluginConversionPipeline._masterExteriorCellByGrid) consulted BEFORE a tile
+                    // is synthesized, so a ref lands in the master's cell instead of a duplicate.
+                    // That is a planner-side change, not a flag flip.
                     var wsName = context.GetEditorId(wsId.Value) ?? $"0x{wsId.Value:X8}";
                     var synthetic = new CellRecord
                     {

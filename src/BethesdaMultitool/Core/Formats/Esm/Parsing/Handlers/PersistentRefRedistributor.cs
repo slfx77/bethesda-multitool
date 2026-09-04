@@ -179,9 +179,10 @@ internal static class PersistentRefRedistributor
                 }
                 else if (MathF.Abs(first.X) > 1f || MathF.Abs(first.Y) > 1f)
                 {
-                    // Synthesize a virtual exterior tile so the ref lands on the actual map
-                    // grid that contains its world position, instead of being dumped into
-                    // the persistent cell at (0,0).
+                    // Synthesize an exterior tile so the ref lands on the actual map grid that
+                    // contains its world position, instead of being dumped into the persistent
+                    // cell at (0,0).
+                    //
                     var wsName = context.GetEditorId(wsId) ?? $"0x{wsId:X8}";
                     var synthetic = new CellRecord
                     {
@@ -591,7 +592,15 @@ internal static class PersistentRefRedistributor
             }
             else
             {
-                // Interior orphans with no parent cell — create a single catch-all
+                // Interior orphans with no parent cell — create a single catch-all.
+                //
+                // Deliberately still IsVirtual under the 2026-09-03 rescue-all ruling, unlike the
+                // exterior tiles above. Those name a specific grid the ref's own coordinates
+                // identify; this one names nothing. It is one bucket collecting every interior
+                // orphan in the dump, so emitting it would invent an interior cell that never
+                // existed and fill it with objects from unrelated rooms — worse than the drop,
+                // and unfixable by the player. Rescuing these needs interior parentage evidence,
+                // not a flag flip.
                 cell = new CellRecord
                 {
                     FormId = 0xFE000001,

@@ -474,11 +474,19 @@ public class CellWorldspaceAuthorityTests
         Assert.Equal(1, result.ReferenceCellsCreated);
         Assert.DoesNotContain(records.Cells, c => c.IsUnresolvedBucket);
 
-        var virtualCell = Assert.Single(records.Cells, c => c.IsVirtual);
-        Assert.Equal(0x10u, virtualCell.WorldspaceFormId);
-        Assert.Equal(-2, virtualCell.GridX);
-        Assert.Equal(-1, virtualCell.GridY);
-        Assert.All(virtualCell.PlacedObjects,
+        // USER RULING 2026-09-03 ("rescue all refs; if that requires a real cell, that's what we
+        // should do"): the rescue tile is a REAL cell now. As IsVirtual it was deleted by the
+        // planner as a parse-time bucket, so this pass rescued refs into a cell that then took
+        // them down with it — while the weaker-evidenced bounds-inference pass survived by
+        // building real cells. No EditorId, per the CK convention for an unnamed exterior cell.
+        var rescueCell = Assert.Single(
+            records.Cells, c => c.WorldspaceAssignmentSource == "AuthorityOffsetCluster");
+        Assert.False(rescueCell.IsVirtual);
+        Assert.Null(rescueCell.EditorId);
+        Assert.Equal(0x10u, rescueCell.WorldspaceFormId);
+        Assert.Equal(-2, rescueCell.GridX);
+        Assert.Equal(-1, rescueCell.GridY);
+        Assert.All(rescueCell.PlacedObjects,
             placed => Assert.Equal("AuthorityOffsetCluster", placed.AssignmentSource));
     }
 

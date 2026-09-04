@@ -188,7 +188,11 @@ public class CellLinkageWorldspaceInferenceTests
 
         var virtualCell = Assert.Single(virtualCells);
         Assert.False(virtualCell.IsUnresolvedBucket);
-        Assert.True(virtualCell.IsVirtual);
+        // USER RULING 2026-09-03: rescue tiles are REAL cells — a virtual one is deleted by the
+        // planner, taking the ref this pass exists to save. No EditorId (CK convention); the old
+        // "[Virtual x,y <ws>]" label would have been emitted into the plugin.
+        Assert.False(virtualCell.IsVirtual);
+        Assert.Null(virtualCell.EditorId);
         Assert.Equal(0x10u, virtualCell.WorldspaceFormId);
         Assert.Equal(-2, virtualCell.GridX);
         Assert.Equal(-1, virtualCell.GridY);
