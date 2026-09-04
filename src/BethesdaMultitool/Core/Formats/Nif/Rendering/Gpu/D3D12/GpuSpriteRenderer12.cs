@@ -39,6 +39,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
     private readonly GpuDevice12 _gpu;
     private readonly InputElementDescription[] _inputElements;
+    private readonly byte[] _classicSkinPsBytecode;
     private readonly byte[] _psBytecode;
     private readonly Dictionary<PsoKey, ID3D12PipelineState> _psoCache = new();
     private readonly ID3D12Fence _renderFence;
@@ -61,6 +62,11 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         _gpu = gpu;
         _vsBytecode = CompileEmbeddedShader("skin.vert.hlsl", "main", "vs_5_1");
         _psBytecode = CompileEmbeddedShader("skin.frag.hlsl", "main", "ps_5_1");
+        _classicSkinPsBytecode = CompileEmbeddedShader(
+            "skin.frag.hlsl",
+            "main",
+            "ps_5_1",
+            new ShaderMacro("CLASSIC_SKIN2000", "1"));
         _inputElements = GpuMeshBufferFactory12.InputElements;
 
         _rootSignature = CreateRootSignature(gpu.Device);
@@ -450,7 +456,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 alphaState.RenderMode,
                 alphaState.SrcBlendMode,
                 alphaState.DstBlendMode,
-                sub.IsDoubleSided);
+                sub.IsDoubleSided,
+                sub.IsFaceGen);
             var pso = GetOrCreatePso(psoKey);
             cmd.SetPipelineState(pso);
 
@@ -794,7 +801,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         {
             RootSignature = _rootSignature,
             VertexShader = _vsBytecode,
-            PixelShader = _psBytecode,
+            PixelShader = key.ClassicSkin ? _classicSkinPsBytecode : _psBytecode,
             BlendState = blend,
             RasterizerState = rasterizer,
             DepthStencilState = depth,
@@ -942,9 +949,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
     ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
     /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
+    private static byte[] CompileEmbeddedShader(
+        string name,
+        string entryPoint,
+        string profile,
+        params ShaderMacro[] macros)
     {
-        return GpuShaderCompiler12.Compile(name, entryPoint, profile);
+        return GpuShaderCompiler12.Compile(name, entryPoint, profile, macros);
     }
 
     // ---- Per-render structures ----------------------------------------------------------
@@ -980,7 +991,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         NifAlphaRenderMode Mode,
         byte SrcBlend,
         byte DstBlend,
-        bool DoubleSided);
+        bool DoubleSided,
+        bool ClassicSkin);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct GpuUniforms

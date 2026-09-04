@@ -36,12 +36,12 @@ internal static class NifSpriteRenderer
     internal static bool DrawWireframeOverlay { get; set; }
 
     /// <summary>
-    ///     Normal map bump strength (0 = flat, 1 = full).  The game's multi-light
-    ///     environment naturally softens bump detail; our single key light exaggerates
-    ///     it.  Default 0.35 compensates for the missing fill lights and reduces
-    ///     FaceGen morph artifacts on head meshes (neck seams, ear splotches).
+    ///     Normal map bump strength (0 = flat, 1 = full) for the general preview-material path.
+    ///     The initializer is the shared retail default; the setter remains available for diagnostic
+    ///     command-line overrides. Classic FaceGen always decodes the retail SKIN2000 normal at full
+    ///     strength.
     /// </summary>
-    internal static float BumpStrength { get; set; } = 0.35f;
+    internal static float BumpStrength { get; set; } = NifNormalMapStrengthPolicy.GenericDefault;
 
     /// <summary>
     ///     Rasterizes the model to a transparent RGBA sprite, returning <c>null</c> when it has no geometry.
@@ -295,9 +295,8 @@ internal static class NifSpriteRenderer
                     nz /= len;
                 }
 
-                tri.FlatShade = tri.HasTintColor
-                    ? ComputeTintedShade(nx, ny, nz)
-                    : ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+                tri.FlatShade = ComputeMaterialShade(
+                    nx, ny, nz, tri.IsFaceGen, tri.HasTintColor, tri.IsDoubleSided);
             }
 
             // Rotate tangents and bitangents
@@ -480,9 +479,6 @@ internal static class NifSpriteRenderer
                     TintG = submesh.TintColor?.G ?? 1f,
                     TintB = submesh.TintColor?.B ?? 1f,
                     IsFaceGen = submesh.IsFaceGen,
-                    SubsurfaceR = submesh.SubsurfaceColor.R,
-                    SubsurfaceG = submesh.SubsurfaceColor.G,
-                    SubsurfaceB = submesh.SubsurfaceColor.B,
                     ClampTextureU = submesh.ClampTextureU,
                     ClampTextureV = submesh.ClampTextureV,
                     IsStarfieldVertexLerp = submesh.StarfieldMaterialColor.IsVertexLerp
@@ -621,9 +617,8 @@ internal static class NifSpriteRenderer
                         nz /= len;
                     }
 
-                    tri.FlatShade = tri.HasTintColor
-                        ? ComputeTintedShade(nx, ny, nz)
-                        : ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+                    tri.FlatShade = ComputeMaterialShade(
+                        nx, ny, nz, tri.IsFaceGen, tri.HasTintColor, tri.IsDoubleSided);
                 }
 
                 list.Add(tri);
@@ -634,14 +629,9 @@ internal static class NifSpriteRenderer
     }
 
     /// <summary>
-    ///     Compute shading from a world-space normal using the SKIN2000.pso formula
-    ///     (from D3D9 bytecode disassembly of Bethesda's face/skin pixel shader).
-    ///     <para>
-    ///         SKIN2000 lighting:
-    ///         fresnel = dot(H, -L) * (1 - NdotH)^2
-    ///         directional = min(PSLightColor * NdotL + PSLightColor * fresnel * 0.5, 1.0)
-    ///         shade = directional + AmbientColor
-    ///     </para>
+    ///     Existing soft preview lighting for non-FaceGen materials. This intentionally retains
+    ///     the historic hemisphere/wrap approximation; classic skin uses
+    ///     <see cref="ComputeClassicSkinShade" /> instead.
     /// </summary>
     internal static float ComputeShade(float nx, float ny, float nz, bool twoSidedLighting = false)
     {
@@ -674,6 +664,44 @@ internal static class NifSpriteRenderer
                                     RenderLightingConstants.LightIntensity * fresnel * 0.5f, 1f);
 
         return Math.Clamp(directional + ambient, 0f, 1f);
+    }
+
+    /// <summary>
+    ///     Oblivion SKIN2000 lighting for the deterministic orthographic camera. Geometry has
+    ///     already been rotated into view space, so the exact view vector for this projection is
+    ///     +Z. Unlike <see cref="ComputeShade" />, this has no wrap or half-vector term.
+    /// </summary>
+    internal static float ComputeClassicSkinShade(float nx, float ny, float nz)
+    {
+        var normalDotLight = nx * LightDirX + ny * LightDirY + nz * LightDirZ;
+        var normalDotView = nz;
+        return ClassicSkin2000Lighting.Compute(
+            normalDotLight,
+            normalDotView,
+            RenderLightingConstants.LightIntensity,
+            RenderLightingConstants.ClassicSkinAmbient);
+    }
+
+    /// <summary>Selects the deterministic light equation from decoded material semantics.</summary>
+    internal static float ComputeMaterialShade(
+        float nx,
+        float ny,
+        float nz,
+        bool isFaceGen,
+        bool hasTintColor,
+        bool twoSidedLighting)
+    {
+        if (isFaceGen)
+        {
+            return ComputeClassicSkinShade(nx, ny, nz);
+        }
+
+        if (hasTintColor)
+        {
+            return ComputeTintedShade(nx, ny, nz);
+        }
+
+        return ComputeShade(nx, ny, nz, twoSidedLighting);
     }
 
     /// <summary>

@@ -1,6 +1,5 @@
-// SM 5.0 pixel shader — port of skin.frag.glsl.
-// SKIN2000.pso replica — Bethesda's face/skin pixel shader.
-// Hemisphere ambient + diffuse + Fresnel rim light + bump mapping.
+// SM 5.0 pixel shader — deterministic sprite/material renderer. CLASSIC_SKIN2000 is the dedicated
+// Oblivion FaceGen permutation; the unqualified permutation retains the established preview paths.
 
 cbuffer Uniforms : register(b0)
 {
@@ -95,6 +94,23 @@ float computeShade(float3 n, bool twoSidedLighting)
     return saturate(directional + ambient);
 }
 
+float computeClassicSkin2000Shade(float3 n)
+{
+    // The deterministic renderer has no CELL/WTHR constants. Retail SKIN2000 receives one
+    // AmbientColor, so use the midpoint of the existing studio fill rather than a normal-dependent
+    // hemisphere. The orthographic view vector is +Z after skin.vert rotates the TBN into view space.
+    float ambient = (uAmbient.x + uAmbient.y) * 0.5;
+    float NdotL = max(dot(n, uLightDir.xyz), 0.0);
+    float NdotV = max(dot(n, float3(0.0, 0.0, 1.0)), 0.0);
+    float oneMinusNdotV = 1.0 - NdotV;
+    float rim = 0.5 * uAmbient.z *
+        oneMinusNdotV * oneMinusNdotV * oneMinusNdotV;
+
+    // SKIN2000.pso: max(AmbientColor + PSLightColor*NdotL + retail cubic rim, 0).
+    // Do not saturate the lighting aggregate; the UNORM target performs the final output clamp.
+    return max(ambient + uAmbient.z * NdotL + rim, 0.0);
+}
+
 float computeTintedShade(float3 n)
 {
     float3 lightDir = uLightDir.xyz;
@@ -119,10 +135,11 @@ PSOutput main(PSInput input)
     PSOutput o;
     uint flags = (uint)uFlags.x;
     float3 normal = normalize(input.vWorldNormal);
+    bool flipTangentBasis = (flags & IS_DOUBLE_SIDED) != 0u && !input.IsFrontFace;
 
     // Handle double-sided: flip normal for back faces and bias depth to prevent Z-fighting.
     // input.Position.z carries gl_FragCoord.z equivalent (NDC depth after viewport).
-    if ((flags & IS_DOUBLE_SIDED) != 0u && !input.IsFrontFace)
+    if (flipTangentBasis)
     {
         normal = -normal;
         o.depth = input.Position.z + 0.0001;
@@ -138,11 +155,16 @@ PSOutput main(PSInput input)
         float3 mapN = tNormalMap.Sample(sNormalMap, input.vTexCoord).rgb * 2.0 - 1.0;
         // Source DDS data and the NIF TBN are both DirectX-convention. Keep green authored here;
         // NpcGlbNormalMapPacker performs the required flip only for glTF/OpenGL export.
-        float bumpStr = uAmbient.w;
-        mapN.xy *= bumpStr;
+#ifndef CLASSIC_SKIN2000
+        mapN.xy *= uAmbient.w;
+#endif
 
         float3 T = normalize(input.vTangent);
         float3 B = normalize(input.vBitangent);
+        if (flipTangentBasis)
+        {
+            B = -B;
+        }
         float3 N = normal;
         float3x3 TBN = float3x3(T, B, N);
         // float3x3 from row-vectors: row 0 = T, row 1 = B, row 2 = N. We want
@@ -153,6 +175,11 @@ PSOutput main(PSInput input)
 
     // Compute shade
     float shade;
+#if CLASSIC_SKIN2000
+    // IsFaceGen owns this PSO permutation, so generic emissive/tint/eye material flags cannot
+    // override the retail skin equation if malformed source data happens to combine identities.
+    shade = computeClassicSkin2000Shade(normal);
+#else
     if ((flags & IS_EMISSIVE) != 0u)
     {
         shade = 1.0;
@@ -175,6 +202,7 @@ PSOutput main(PSInput input)
     {
         shade = 0.6; // Flat shade fallback
     }
+#endif
 
     // Sample texture
     float4 texColor = float4(0.78, 0.78, 0.78, 1.0); // Default grey
@@ -222,6 +250,14 @@ PSOutput main(PSInput input)
         discard; // Skip fully transparent + DXT fringe on blended meshes
     }
 
+#if CLASSIC_SKIN2000
+    // Retail SKIN2000's only optional colour multiplier is the mesh vertex colour selected by
+    // Toggles.x. Face/Hair tint and generic effect tint belong to other shader families.
+    if ((flags & HAS_VCOL) != 0u)
+    {
+        texColor.rgb *= input.vVertexColor.rgb;
+    }
+#else
     // CE2 vertex Lerp consumes vertex alpha only as an affine RGB weight. It neither changes
     // opacity/coverage nor falls through to the ordinary multiplicative vertex-colour branch.
     if ((flags & IS_STARFIELD_VERTEX_LERP) != 0u)
@@ -236,11 +272,14 @@ PSOutput main(PSInput input)
     {
         texColor.rgb *= input.vVertexColor.rgb;
     }
+#endif
 
     // Classic BSEffect / BGEM: BaseColor.rgb × BaseColorScale is an authored source-color
     // multiplier and may exceed one. Apply it after the material colour operation, matching the
     // reference/world shader. Ordinary multiply-only routes are algebraically unchanged.
+#ifndef CLASSIC_SKIN2000
     texColor.rgb *= uEffectTint.rgb;
+#endif
 
     // Match CPU export alpha semantics:
     // - opaque + cutout materials write solid alpha after any discard

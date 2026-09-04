@@ -149,8 +149,9 @@ internal static class ShaderPermutations
     /// <summary>
     ///     Water. The game is a per-FILE axis (<c>WaterProfile.PixelShaderFile</c>); each per-game
     ///     file that reads scene depth is compiled twice — plain, and with WATER_HARDWARE_OCCLUSION
-    ///     for the read-only-DSV path. FNV's retail WATER001 program is its own file
-    ///     (<c>water_fnv001.frag.hlsl</c>), and the depth-free flat plane is a single compile.
+    ///     for the read-only-DSV path. FNV's retail WATER001 program is its own file; Skyrim's
+    ///     opaque-snapshot refraction route is a one-way macro permutation of the shared recovered
+    ///     color core. The depth-free flat plane is a single compile.
     /// </summary>
     internal static IReadOnlyList<ShaderPermutation> Water { get; } = BuildWater();
 
@@ -178,12 +179,19 @@ internal static class ShaderPermutations
         new("bloom.frag.hlsl", "mainSkyrimDownsample16", "ps_5_1", None, "Skyrim scalar luminance reduction"),
         new("bloom.frag.hlsl", "main", "ps_5_1", None, "bloom bright-pass"),
         new("bloom.frag.hlsl", "mainBlur", "ps_5_1", None, "bloom separable blur"),
+        new("bloom.frag.hlsl", "mainTes4BrightPass", "ps_5_1", None, "TES4 separate HDR bright-pass"),
+        new("bloom.frag.hlsl", "mainTes4Blur", "ps_5_1", None, "TES4 cumulative HDR blur axis"),
         new("cellgrid.vert.hlsl", "main", "vs_5_1", None, "navmesh / selection / cell-grid overlays"),
         new("cellgrid.frag.hlsl", "main", "ps_5_1", None, "navmesh / selection / cell-grid overlays"),
         new("collision_line.vert.hlsl", "main", "vs_5_1", None, "collision cage + export framing"),
         new("collision_line.frag.hlsl", "main", "ps_5_1", None, "collision cage + export framing"),
         new("skin.vert.hlsl", "main", "vs_5_1", None, "CLI sprite/skin renderer"),
         new("skin.frag.hlsl", "main", "ps_5_1", None, "CLI sprite/skin renderer"),
+        new("skin.frag.hlsl", "main", "ps_5_1",
+            [new ShaderMacro("CLASSIC_SKIN2000", "1")],
+            "CLI sprite renderer: Oblivion SKIN2000 FaceGen specialization"),
+        new("reference_classic_skin.frag.hlsl", "main", "ps_5_1", None,
+            "native Actors viewer: Oblivion SKIN2000 FaceGen specialization"),
         // Not referenced by any renderer today. Kept compiling deliberately: they are the last
         // remaining pre-bindless terrain/dev shaders, and a permutation entry is the only thing that
         // stops them silently rotting into non-compiling source.
@@ -341,7 +349,7 @@ internal static class ShaderPermutations
         // asymmetric before.
         (string File, string Purpose)[] variants =
         [
-            ("water_fnv.frag.hlsl", "FNV/FO3/Skyrim classic WATER000"),
+            ("water_fnv.frag.hlsl", "FNV/FO3 classic WATER000"),
             ("water_oblivion.frag.hlsl", "Oblivion WATER000: N.V body, single sun glint"),
             ("water_fo4.frag.hlsl", "FO4/FO76 BSWaterShader stand-in"),
             ("water_morrowind.frag.hlsl", "Morrowind fixed-function animated plane"),
@@ -389,6 +397,18 @@ internal static class ShaderPermutations
             "water_fnv001.frag.hlsl", "main", "ps_5_1",
             [new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")],
             "FNV WATER001 opaque-snapshot refraction (its own retail program)"));
+
+        // Skyrim's recovered full-exterior BSWaterShader samples refraction in RGB and writes alpha
+        // one. It is usable only with the host's scene-depth + opaque-snapshot pair, so (like
+        // WATER001) it has no depth-free permutation. The macro enables the Skyrim output ABI
+        // without duplicating the shared body/Fresnel/specular core.
+        list.Add(new ShaderPermutation(
+            "water_fnv.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("SKYRIM_OPAQUE_REFRACTION", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
+            ],
+            "Skyrim BSWaterShader opaque-scene snapshot refraction"));
 
         // FO4/FO76 "modern" water: opt-in TECHNIQUE macro on the FO4 file, compiled lazily by
         // ModernWaterResources12.

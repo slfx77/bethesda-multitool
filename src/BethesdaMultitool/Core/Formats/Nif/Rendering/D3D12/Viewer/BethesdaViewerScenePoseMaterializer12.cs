@@ -86,7 +86,8 @@ internal static class BethesdaViewerScenePoseMaterializer12
                 ApplyNativeTint(
                     vertices,
                     part.NativeSemantics.TintColor,
-                    submesh.StarfieldMaterialColor.IsVertexLerp);
+                    submesh.StarfieldMaterialColor.IsVertexLerp ||
+                    part.NativeSemantics.IsFaceGen);
                 verticesByPart[partIndex] = vertices;
                 supported[partIndex] = true;
                 if (submesh.ParticleRuntime is not null)
@@ -101,7 +102,6 @@ internal static class BethesdaViewerScenePoseMaterializer12
         }
 
         var eyeEnvmapPartCount = 0;
-        var faceGenSubsurfacePartCount = 0;
         var nonDedicatedSkyPartCount = 0;
         for (var partIndex = 0; partIndex < scene.MeshParts.Count; partIndex++)
         {
@@ -115,10 +115,6 @@ internal static class BethesdaViewerScenePoseMaterializer12
             {
                 eyeEnvmapPartCount++;
             }
-            if (native.IsFaceGen || native.SubsurfaceColor != default)
-            {
-                faceGenSubsurfacePartCount++;
-            }
             if (native.SkyType is not null &&
                 !BethesdaViewerNativeSkyPolicy.IsDedicatedRawNifLayer(
                     scene.Purpose,
@@ -131,11 +127,6 @@ internal static class BethesdaViewerScenePoseMaterializer12
         {
             warnings.Add(
                 $"{eyeEnvmapPartCount} eye-environment part(s) retain authored textures and material state, but the shared reference shader has no dedicated eye-reflection lane; eye env-map scale is approximate.");
-        }
-        if (faceGenSubsurfacePartCount > 0)
-        {
-            warnings.Add(
-                $"{faceGenSubsurfacePartCount} FaceGen/subsurface part(s) use the shared lit-material shader; dedicated skin light transmission is not yet represented.");
         }
         if (nonDedicatedSkyPartCount > 0)
         {

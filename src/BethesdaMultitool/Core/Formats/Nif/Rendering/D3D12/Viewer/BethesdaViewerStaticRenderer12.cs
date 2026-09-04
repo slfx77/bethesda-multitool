@@ -25,6 +25,8 @@ internal sealed class BethesdaViewerStaticRenderer12
     private readonly GpuDescriptorHeapAllocator12 _descriptorHeap;
     private readonly int _alphaToCoverageFallbackCount;
     private readonly string? _alphaToCoverageFallbackReason;
+    private readonly int _classicSkinSpecializationEligibleCount;
+    private readonly int _classicSkinSpecializationUsedCount;
     private readonly DepthOrderedDraw[] _depthOrdered;
     private readonly int _falloutSpecializationEligibleCount;
     private readonly int _falloutSpecializationUsedCount;
@@ -94,6 +96,8 @@ internal sealed class BethesdaViewerStaticRenderer12
         var transparent = new List<ViewerDraw>();
         var falloutEligible = 0;
         var falloutUsed = 0;
+        var classicSkinEligible = 0;
+        var classicSkinUsed = 0;
         var starfieldEligible = 0;
         var starfieldUsed = 0;
         foreach (var draw in routedDraws)
@@ -113,6 +117,10 @@ internal sealed class BethesdaViewerStaticRenderer12
                     _pipelines);
                 switch (specialization.Family)
                 {
+                    case OpaqueSpecializationFamily.ClassicSkin:
+                        classicSkinEligible++;
+                        if (specialization.Pipeline is not null) classicSkinUsed++;
+                        break;
                     case OpaqueSpecializationFamily.FalloutModernStandard:
                         falloutEligible++;
                         if (specialization.Pipeline is not null) falloutUsed++;
@@ -170,6 +178,8 @@ internal sealed class BethesdaViewerStaticRenderer12
         _transparentRenderOrderRanges = renderOrderRanges.ToArray();
         _transparentSortKeys = new float[_transparent.Length];
         _transparentSortOrder = new int[_transparent.Length];
+        _classicSkinSpecializationEligibleCount = classicSkinEligible;
+        _classicSkinSpecializationUsedCount = classicSkinUsed;
         _falloutSpecializationEligibleCount = falloutEligible;
         _falloutSpecializationUsedCount = falloutUsed;
         _starfieldSpecializationEligibleCount = starfieldEligible;
@@ -189,13 +199,23 @@ internal sealed class BethesdaViewerStaticRenderer12
     internal string? AlphaToCoverageFallbackReason => _alphaToCoverageFallbackReason;
 
     /// <summary>
-    ///     One-time scene census for the narrow direct FO76/Starfield opaque families. Eligibility
-    ///     is material-authored and independent of texture residency; a used count below eligible
-    ///     therefore means activation was disabled or the complete PSO family failed to compile.
+    ///     One-time scene census for the narrow direct classic-skin/FO76/Starfield opaque families.
+    ///     Eligibility is material-authored and independent of texture residency; a used count below
+    ///     eligible therefore means activation was disabled or the complete PSO family failed to compile.
     /// </summary>
     internal string? DescribeOpaqueSpecialization()
     {
-        var messages = new List<string>(2);
+        var messages = new List<string>(3);
+        if (_classicSkinSpecializationEligibleCount > 0)
+        {
+            messages.Add(DescribeSpecializationFamily(
+                "classic-skin SKIN2000",
+                _classicSkinSpecializationEligibleCount,
+                _classicSkinSpecializationUsedCount,
+                _pipelines.DirectClassicSkinRequested,
+                _pipelines.DirectClassicSkinAvailable,
+                "the Oblivion game profile"));
+        }
         if (_falloutSpecializationEligibleCount > 0)
         {
             messages.Add(DescribeSpecializationFamily(
@@ -575,6 +595,18 @@ internal sealed class BethesdaViewerStaticRenderer12
             return default;
         }
 
+        // The retail Oblivion SKIN2000 program is selected by the decoded FaceGen semantic, not
+        // by inferred texture names or legacy subsurface metadata. Its generic vertex ABI remains
+        // compatible with the direct viewer path, while its pixel program supplies the exact
+        // unwrapped diffuse and cubic view-rim specialization.
+        if (game == Core.Games.BethesdaGame.Oblivion && draw.NativeSemantics.IsFaceGen)
+        {
+            pipelines.TryGetDirectClassicSkinPso(submesh.DoubleSided, out var classicSkinPipeline);
+            return new OpaqueSpecializationRoute(
+                OpaqueSpecializationFamily.ClassicSkin,
+                classicSkinPipeline);
+        }
+
         var facts = new ModernStandardOpaqueShaderFacts(
             Game: game,
             HeatmapEnabled: false,
@@ -846,6 +878,7 @@ internal sealed class BethesdaViewerStaticRenderer12
     private enum OpaqueSpecializationFamily
     {
         None,
+        ClassicSkin,
         FalloutModernStandard,
         StarfieldDiffuseLit,
     }

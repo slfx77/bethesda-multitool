@@ -89,7 +89,6 @@ internal struct TriangleData
     public bool HasTintColor;
     public float TintR, TintG, TintB;
 
-    // FaceGen subsurface scattering: warm backlight from _sk face tint texture
+    // FaceGen selects the source-proven Oblivion SKIN2000 normal/direct/cubic-rim equation.
     public bool IsFaceGen;
-    public float SubsurfaceR, SubsurfaceG, SubsurfaceB;
 }

@@ -3,8 +3,9 @@ using System.Numerics;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
-///     Shared rendering constants: SKIN2000.pso-accurate lighting parameters
-///     from D3D9 bytecode disassembly. Used by both CPU and GPU renderers.
+///     Shared deterministic-rendering lighting parameters. The classic FaceGen path consumes the
+///     source-proven SKIN2000 equation while the remaining material families retain their existing
+///     preview lighting.
 /// </summary>
 internal static class RenderLightingConstants
 {
@@ -19,6 +20,11 @@ internal static class RenderLightingConstants
     // PSLightColor intensity — the game sets this per-light from the cell/weather system.
     // We use a single white key light; this scales the directional contribution.
     public const float LightIntensity = 0.65f;
+
+    // Retail SKIN2000 receives one AmbientColor uniform, not a normal-dependent hemisphere. The
+    // deterministic renderer has no CELL/WTHR state, so use the midpoint of its established studio
+    // fill as the one stable ambient value.
+    public const float ClassicSkinAmbient = (SkyAmbient + GroundAmbient) * 0.5f;
 
     // Light direction: mostly top-down with slight angle for depth cues
     public static readonly Vector3 LightDir = Vector3.Normalize(new Vector3(0.3f, 0.2f, 1.0f));

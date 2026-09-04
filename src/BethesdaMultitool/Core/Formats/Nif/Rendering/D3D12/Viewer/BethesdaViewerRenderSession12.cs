@@ -555,6 +555,19 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                 hasGeometry = _staticRenderer.DrawableCount > 0;
                 alphaToCoverageFallbackCount = _staticRenderer.AlphaToCoverageFallbackCount;
                 alphaToCoverageFallbackReason = _staticRenderer.AlphaToCoverageFallbackReason;
+                if (_staticRenderer.DescribeOpaqueSpecialization() is { } specializationCensus)
+                {
+                    // The Ready text is transient UI state. Persist the same route census so a
+                    // successful native Actors/Mesh capture can prove that eligible draws selected
+                    // the direct shader, rather than proving only that its PSO was available.
+                    Log.Info(
+                        "BethesdaSceneViewer: opaque-specialization census game={0} " +
+                        "classicSkinRequested={1} classicSkinDirectAvailable={2} detail={3}",
+                        posed.Source.Game,
+                        _pipelines.DirectClassicSkinRequested,
+                        _pipelines.DirectClassicSkinAvailable,
+                        specializationCensus);
+                }
             }
 
             if (hasWater)

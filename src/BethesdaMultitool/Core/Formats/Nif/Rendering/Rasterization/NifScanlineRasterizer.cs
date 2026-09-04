@@ -126,7 +126,7 @@ internal static class NifScanlineRasterizer
                 var normalAlpha = 255f;
                 float nx = 0, ny = 0, nz = 1;
 
-                if (tri.IsEmissive)
+                if (tri.IsEmissive && !tri.IsFaceGen)
                 {
                     shade = 1.0f;
                 }
@@ -163,10 +163,13 @@ internal static class NifScanlineRasterizer
 
                         normalAlpha = mna;
 
-                        var mapNx = (mnr / 127.5f - 1f) * NifSpriteRenderer.BumpStrength;
+                        // Retail SKIN2000 decodes normalize(2 * (NormalMap - 0.5)) with no global
+                        // bump attenuation. Other preview materials retain the configurable scale.
+                        var normalStrength = tri.IsFaceGen ? 1f : NifSpriteRenderer.BumpStrength;
+                        var mapNx = (mnr / 127.5f - 1f) * normalStrength;
                         // Bethesda DDS normals and the retained NIF TBN share DirectX convention.
                         // Recovered FNV SLS1009 consumes green directly; only glTF export flips it.
-                        var mapNy = (mng / 127.5f - 1f) * NifSpriteRenderer.BumpStrength;
+                        var mapNy = (mng / 127.5f - 1f) * normalStrength;
                         var mapNz = mnb / 127.5f - 1f;
 
                         float tx, ty, tz, bx, by, bz;
@@ -192,6 +195,15 @@ internal static class NifScanlineRasterizer
                                 bx /= bLen;
                                 by /= bLen;
                                 bz /= bLen;
+                            }
+
+                            // N is reversed for a double-sided back face. Preserve the tangent
+                            // frame's handedness by reversing B as cross(-N, T) requires.
+                            if (isBackFacing)
+                            {
+                                bx = -bx;
+                                by = -by;
+                                bz = -bz;
                             }
                         }
                         else
@@ -234,11 +246,10 @@ internal static class NifScanlineRasterizer
                         }
                     }
 
-                    shade = tri.HasTintColor
-                        ? NifSpriteRenderer.ComputeTintedShade(nx, ny, nz)
-                        : NifSpriteRenderer.ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+                    shade = NifSpriteRenderer.ComputeMaterialShade(
+                        nx, ny, nz, tri.IsFaceGen, tri.HasTintColor, tri.IsDoubleSided);
 
-                    if (tri.IsEyeEnvmap)
+                    if (!tri.IsFaceGen && tri.IsEyeEnvmap)
                     {
                         var specNdotH = MathF.Max(0f,
                             nx * RenderLightingConstants.HalfVec.X +
@@ -246,7 +257,9 @@ internal static class NifScanlineRasterizer
                             nz * RenderLightingConstants.HalfVec.Z);
                         shade = MathF.Min(shade + MathF.Pow(specNdotH, 4f) * tri.EnvMapScale * 0.25f, 1f);
                     }
-                    else if (tri.Glossiness > 2f && (tri.SpecR > 0f || tri.SpecG > 0f || tri.SpecB > 0f))
+                    else if (!tri.IsFaceGen &&
+                             tri.Glossiness > 2f &&
+                             (tri.SpecR > 0f || tri.SpecG > 0f || tri.SpecB > 0f))
                     {
                         var specNdotH = MathF.Max(0f,
                             nx * RenderLightingConstants.HalfVec.X +
@@ -276,7 +289,7 @@ internal static class NifScanlineRasterizer
                         shade, isBackFacing);
                 }
 
-                emissiveMask[idx] = tri.IsEmissive;
+                emissiveMask[idx] = tri.IsEmissive && !tri.IsFaceGen;
             }
         }
     }
@@ -368,7 +381,23 @@ internal static class NifScanlineRasterizer
         }
 
         float fr, fg, fb;
-        if (tri.IsStarfieldVertexLerp)
+        if (tri.IsFaceGen)
+        {
+            fr = r * shade;
+            fg = g * shade;
+            fb = b * shade;
+
+            if (tri.HasVertexColors)
+            {
+                var vcr = (tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2) / 255f;
+                var vcg = (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f;
+                var vcb = (tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2) / 255f;
+                fr *= vcr;
+                fg *= vcg;
+                fb *= vcb;
+            }
+        }
+        else if (tri.IsStarfieldVertexLerp)
         {
             var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
             var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
@@ -409,14 +438,15 @@ internal static class NifScanlineRasterizer
             }
         }
 
-        if (tri.HasEffectTint)
+        if (!tri.IsFaceGen && tri.HasEffectTint)
         {
             fr *= tri.EffectTintR;
             fg *= tri.EffectTintG;
             fb *= tri.EffectTintB;
         }
 
-        if (tri.EmissiveR > 0f || tri.EmissiveG > 0f || tri.EmissiveB > 0f)
+        if (!tri.IsFaceGen &&
+            (tri.EmissiveR > 0f || tri.EmissiveG > 0f || tri.EmissiveB > 0f))
         {
             fr += tri.EmissiveR * 255f;
             fg += tri.EmissiveG * 255f;
@@ -519,7 +549,24 @@ internal static class NifScanlineRasterizer
         }
 
         float fr, fg, fb;
-        if (tri.IsStarfieldVertexLerp)
+        if (tri.IsFaceGen)
+        {
+            const float defaultGrey = 199f;
+            fr = defaultGrey * shade;
+            fg = defaultGrey * shade;
+            fb = defaultGrey * shade;
+
+            if (tri.HasVertexColors)
+            {
+                var vcr = (tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2) / 255f;
+                var vcg = (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f;
+                var vcb = (tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2) / 255f;
+                fr *= vcr;
+                fg *= vcg;
+                fb *= vcb;
+            }
+        }
+        else if (tri.IsStarfieldVertexLerp)
         {
             var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
             var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
@@ -561,7 +608,7 @@ internal static class NifScanlineRasterizer
             fb = brightness;
         }
 
-        if (tri.HasEffectTint)
+        if (!tri.IsFaceGen && tri.HasEffectTint)
         {
             fr *= tri.EffectTintR;
             fg *= tri.EffectTintG;

@@ -73,6 +73,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private ID3D12PipelineState? _directStarfieldDiffuseLitDoublePso;
     private ID3D12PipelineState? _directStarfieldDiffuseLitBackCutoutPso;
     private ID3D12PipelineState? _directStarfieldDiffuseLitDoubleCutoutPso;
+    private ID3D12PipelineState? _directClassicSkinBackPso;
+    private ID3D12PipelineState? _directClassicSkinDoublePso;
 
     // A throwing COM/shader call in this constructor prevents the session from ever receiving the
     // factory instance, so its ordinary Dispose path cannot run. Every PSO created while this bag is
@@ -111,6 +113,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         StarfieldDiffuseLitRequested = shaderActivation.StarfieldDiffuseLitRequested;
         DirectModernStandardOpaqueRequested = FalloutModernStandardRequested;
         DirectStarfieldDiffuseLitRequested = StarfieldDiffuseLitRequested;
+        DirectClassicSkinRequested = game == BethesdaGame.Oblivion;
 
         var blendedVsBytecode = CompileEmbeddedShader("reference.vert.hlsl", "main", "vs_5_1");
         var instancedVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1");
@@ -168,11 +171,18 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             TryCreateDirectStarfieldDiffuseLitPipelines();
             CompletePsoGroup("starfield-specializations", game, specializationPsoGroup);
         }
+        if (DirectClassicSkinRequested)
+        {
+            var specializationPsoGroup = BeginPsoGroup("classic-skin-specialization", game);
+            TryCreateDirectClassicSkinPipelines();
+            CompletePsoGroup("classic-skin-specialization", game, specializationPsoGroup);
+        }
 
         BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
             "ReferencePipelineFactory12: opaque shader profile game={0} override={1} " +
             "falloutRequested={2} falloutAvailable={3} falloutDirectAvailable={4} " +
-            "starfieldRequested={5} starfieldAvailable={6} starfieldDirectAvailable={7}.",
+            "starfieldRequested={5} starfieldAvailable={6} starfieldDirectAvailable={7} " +
+            "classicSkinRequested={8} classicSkinDirectAvailable={9}.",
             game,
             shaderOverride ?? "<unset>",
             FalloutModernStandardRequested,
@@ -180,7 +190,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             DirectModernStandardOpaqueAvailable,
             StarfieldDiffuseLitRequested,
             StarfieldDiffuseLitOpaqueAvailable,
-            DirectStarfieldDiffuseLitOpaqueAvailable);
+            DirectStarfieldDiffuseLitOpaqueAvailable,
+            DirectClassicSkinRequested,
+            DirectClassicSkinAvailable);
 
         // Grass cutouts and native-viewer hair/brow/lash: alpha-to-coverage variants (engine
         // mechanism — BSRenderState::SetAlphaToCoverageEnable) so MSAA converts authored alpha
@@ -452,6 +464,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// <summary>Whether the native direct-viewer Starfield specialization was requested.</summary>
     public bool DirectStarfieldDiffuseLitRequested { get; }
 
+    /// <summary>Whether this game owns Oblivion's native direct-viewer SKIN2000 specialization.</summary>
+    public bool DirectClassicSkinRequested { get; }
+
     /// <summary>True only when the A/B was requested and all three specialized PSOs were created.</summary>
     public bool ModernStandardOpaqueAvailable =>
         _modernStandardBackPso is not null &&
@@ -541,6 +556,25 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             (true, false) => _directStarfieldDiffuseLitBackCutoutPso,
             (true, true) => _directStarfieldDiffuseLitDoubleCutoutPso
         };
+        return pso is not null;
+    }
+
+    /// <summary>True only when both culling forms of the native Oblivion SKIN2000 PSO exist.</summary>
+    public bool DirectClassicSkinAvailable =>
+        _directClassicSkinBackPso is not null &&
+        _directClassicSkinDoublePso is not null;
+
+    /// <summary>
+    ///     Resolves an <c>IsFaceGen</c>-approved native-viewer classic-skin PSO. Failure is explicit
+    ///     so the caller can retain the generic material shader without a partial family.
+    /// </summary>
+    public bool TryGetDirectClassicSkinPso(
+        bool doubleSided,
+        out ID3D12PipelineState? pso)
+    {
+        pso = doubleSided
+            ? _directClassicSkinDoublePso
+            : _directClassicSkinBackPso;
         return pso is not null;
     }
 
@@ -835,6 +869,44 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         finally
         {
             RecordPsoCreation("graphics", psoStarted, succeeded);
+        }
+    }
+
+    private void TryCreateDirectClassicSkinPipelines()
+    {
+        ID3D12PipelineState? back = null;
+        ID3D12PipelineState? doubleSided = null;
+        try
+        {
+            // Keep reference.vert's full per-draw output signature. The dedicated pixel program
+            // consumes the same ABI and replaces only the source-proven FaceGen material equation.
+            var vertexShader = CompileEmbeddedShader(
+                "reference.vert.hlsl", "main", "vs_5_1");
+            var pixelShader = CompileEmbeddedShader(
+                "reference_classic_skin.frag.hlsl", "main", "ps_5_1");
+
+            back = CreatePipelineState(
+                vertexShader, pixelShader, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleSided = CreatePipelineState(
+                vertexShader, pixelShader, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+
+            _directClassicSkinBackPso = back;
+            _directClassicSkinDoublePso = doubleSided;
+            back = null;
+            doubleSided = null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "ReferencePipelineFactory12: direct classic-skin SKIN2000 specialization disabled: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            DisposeAbandonedConstructionPipeline(ref doubleSided);
+            DisposeAbandonedConstructionPipeline(ref back);
         }
     }
 
@@ -1259,6 +1331,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             mirror.Dispose();
         }
         _ownedMirrorPsos.Clear();
+        _directClassicSkinDoublePso?.Dispose();
+        _directClassicSkinBackPso?.Dispose();
         _directStarfieldDiffuseLitDoubleCutoutPso?.Dispose();
         _directStarfieldDiffuseLitBackCutoutPso?.Dispose();
         _directStarfieldDiffuseLitDoublePso?.Dispose();
