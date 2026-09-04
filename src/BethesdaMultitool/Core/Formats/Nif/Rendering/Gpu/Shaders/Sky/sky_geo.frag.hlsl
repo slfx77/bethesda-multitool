@@ -15,7 +15,10 @@ cbuffer SkyGeo : register(b0)
     float4 uCamPosScale;
     float4 uTintParam;     // rgb = layer tint, a = layer fade/opacity
     float4 uScrollMode;    // xy = cloud UV scroll, z = mode, w = authored atmosphere blend weights
-    uint4  uTexIndex;      // x = bindless diffuse index; y = 1 -> FO3/FNV 3-row fallback horizon ramp
+    uint   uTexIndex;      // bindless diffuse index
+    uint   uFallbackRamp;  // 1 -> FO3/FNV 3-row fallback horizon ramp
+    float  uSkyColorBias;  // Skyrim HNAM[7], added by BSSky shader programs
+    float  uStarColorScale;// Skyrim shipped Stars technique 3 = 1.5; other games = 1
     float4 uSkyUpper;      // recovered SKY BlendColor[2]
     float4 uSkyLower;      // recovered SKY BlendColor[1]
     float4 uSkyHorizon;    // recovered SKY BlendColor[0]
@@ -46,11 +49,13 @@ float4 main(PSInput input) : SV_Target
             float3 weighted = (input.vColor.r * uSkyHorizon.rgb)
                             + (input.vColor.g * uSkyLower.rgb)
                             + (input.vColor.b * uSkyUpper.rgb);
-            return float4(lerp(uSkyHorizon.rgb, weighted, input.vColor.a), 1.0);
+            float3 atmosphere = lerp(uSkyHorizon.rgb, weighted, input.vColor.a)
+                              + uSkyColorBias.xxx;
+            return float4(atmosphere, 1.0);
         }
 
         // Missing-asset fallback only.
-        // FO3/FNV (uTexIndex.y == 1): 3-row elevation ramp over the SAME rows Atmosphere::Update
+        // FO3/FNV (uFallbackRamp == 1): 3-row elevation ramp over the SAME rows Atmosphere::Update
         // feeds SkyShader::pBlendColor — row0 = SkyColor[8] NAM0 Horizon, row1 = SkyColor[7]
         // SkyLower, row2 = SkyColor[0] SkyUpper, stored UNCONDITIONALLY (no sun-elevation gate on
         // row 0): tools/GhidraProject/atmosphere_decompiled.txt, asm 0x8246884C-0x82468924. The dome
@@ -59,24 +64,24 @@ float4 main(PSInput input) : SV_Target
         // — the reported sharp fog/skybox horizon seam. Only the row MAPPING is decompile-grounded;
         // the ~12° Horizon->SkyLower band width approximates the authored dome's row0/row1
         // vertex-weight transition (this procedural fallback mesh carries no authored weights).
-        if (uTexIndex.y == 1)
+        if (uFallbackRamp == 1)
         {
             const float kLowerBandZ = 0.2079; // sin(12°), inside the 10-15° horizon band
             float z = saturate(dir.z);
             float3 band = lerp(uSkyHorizon.rgb, uSkyLower.rgb, saturate(z / kLowerBandZ));
             float3 ramp = lerp(band, uSkyUpper.rgb, saturate((z - kLowerBandZ) / (1.0 - kLowerBandZ)));
-            return float4(ramp, 1.0);
+            return float4(ramp + uSkyColorBias.xxx, 1.0);
         }
 
         // Every other game: shaped horizon -> authored sky upper by elevation. Kept BIT-IDENTICAL to
         // the pre-ramp math — the 3-row mapping above is grounded in FNV's decompile only.
         float3 sky = lerp(uTintParam.rgb, uSkyUpper.rgb, saturate(dir.z));
-        return float4(sky, 1.0);
+        return float4(sky + uSkyColorBias.xxx, 1.0);
     }
 
     // Stars / clouds: the NIF's OWN authored UVs (no projection => no tiling stretch, no horizon seam).
     float2 uv = input.vUv + uScrollMode.xy;
-    float4 tex = textures[NonUniformResourceIndex(uTexIndex.x)].Sample(sSky, uv);
+    float4 tex = textures[NonUniformResourceIndex(uTexIndex)].Sample(sSky, uv);
 
     // Retail SKY*.vso treats vertex RGB as weights for three BlendColor rows. Stars/clouds select one
     // row, but that row is not consistently R across games/shapes: Oblivion's first Clouds.nif cap uses
@@ -91,7 +96,10 @@ float4 main(PSInput input) : SV_Target
     if (mode == 1)
     {
         // Stars: additive (PSO SrcAlpha/One). Texture + vertex + night-fade alpha gate the add.
-        return float4(tex.rgb * uTintParam.rgb * vertexWeight, tex.a * uTintParam.a * input.vColor.a);
+        // Oldrim Stars technique 3: mad(..., bias), then multiply the complete RGB by c1.x=1.5.
+        float3 stars = ((tex.rgb * uTintParam.rgb * vertexWeight) + uSkyColorBias.xxx)
+                     * uStarColorScale;
+        return float4(stars, tex.a * uTintParam.a * input.vColor.a);
     }
 
     // Clouds: alpha (PSO SrcAlpha/InvSrcAlpha), tinted by daylight, opacity-scaled, vertex-alpha faded.
@@ -100,6 +108,6 @@ float4 main(PSInput input) : SV_Target
     // meshes carry a blue-ish vertex tint that reads as a strong red cast, and the PNAM color is the
     // authoritative cloud color. Alpha = texture α × cloudOpacity × the mesh's baked vertex-alpha horizon
     // fade (cloudcloudy ~2 at the rim → 255 overhead), so clouds dense overhead, clean toward the horizon.
-    return float4(tex.rgb * uTintParam.rgb * vertexWeight,
+    return float4((tex.rgb * uTintParam.rgb * vertexWeight) + uSkyColorBias.xxx,
                   saturate(tex.a * uTintParam.a * input.vColor.a));
 }

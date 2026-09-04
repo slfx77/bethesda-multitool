@@ -9,7 +9,7 @@
 //     curve must run in display-linear and re-encode — running ACES directly on gamma values
 //     lifted midtones and desaturated ("washed out"). Stand-in for Skyrim/FO4/FO76 until their
 //     imagespace stage is ported.
-//   2 EngineFo3Fnv — the FO3/FNV engine HDR stage, decompile-grounded from the shipped ISHDR*
+//   2 EngineFo3Fnv — the classic FO3/FNV/TES4 engine HDR stage, decompile-grounded from shipped ISHDR*
 //     SM3 shaders + ImageSpaceEffectHDR (docs/research/fnv_engine_hdr_imagespace.md):
 //       L = sum(adaptedAvgSceneColor.rgb)   (avg pass below; steady-state = fully adapted eye)
 //       denom = max(L, TargetLUM)                     // eye-adapt exposure, never brightens
@@ -44,7 +44,7 @@ cbuffer TonemapParams : register(b0)
     float4 uParams2; // xyz = Tint color, w = TintAmount
     float4 uParams3; // x = UpperLUMClamp, y = AdaptFactor(current weight), z = bloom, w = retained cinematic flags (classic shader does not consume)
     float4 uParams4; // modern: x/y exposure min/max, z middle gray, w Tonemap-E; Skyrim: x fast factor, yz source texel
-    float4 uParams5; // modern: x white, y eye strength, z receive-bloom threshold, w family (0 Skyrim/1 FO4)
+    float4 uParams5; // modern: x white, y eye strength, z receive-bloom threshold, w family (0 Skyrim/1 FO4); classic: -1 TES4
 };
 
 // ACES filmic tonemap (Krzysztof Narkowicz's fitted approximation of the ACES RRT+ODT).
@@ -168,14 +168,21 @@ float4 main(PSInput input) : SV_Target
     // EngineFo3Fnv — ISHDRBLENDINSHADER[CIN] on gamma-space values.
     float3 adapted = uAvgLum.Sample(uSampler, float2(0.5, 0.5)).rgb;
     float4 bloomSample = uBloom.Sample(uSampler, input.vUv);
-    // The active recovered path carries the adapted sum through the FP16 bloom alpha exactly like
-    // BPBLUR. Bloom-off is a viewer diagnostic and falls back to the adapted RGB texture directly.
-    float lum = uParams3.z > 0.5
+    // FO3/FNV carry the adapted sum through BPBLUR alpha. TES4's separate HDR005 bright pass and
+    // HDR000/1/2 blur programs write alpha=1, while HDR004 samples adapted RGB independently.
+    bool tes4SeparateBloom = uParams5.w < -0.5;
+    float lum = uParams3.z > 0.5 && !tes4SeparateBloom
         ? bloomSample.a
         : adapted.r + adapted.g + adapted.b;
     float denom = max(lum, uParams0.w);
     float3 bloom = uParams3.z * bloomSample.rgb;
-    float3 c = (hdr.rgb * (uParams0.w / denom) + bloom * (0.5 / denom)) * uParams0.x;
+    float3 bloomTerm = bloom * (0.5 / denom);
+    if (tes4SeparateBloom)
+    {
+        // TES4 HDR004 applies a component-wise max after scaling the bloom sample.
+        bloomTerm = max(bloomTerm, 0.0);
+    }
+    float3 c = (hdr.rgb * (uParams0.w / denom) + bloomTerm) * uParams0.x;
 
     return float4(saturate(ApplyClassicCinematic(c)), hdr.a);
 }

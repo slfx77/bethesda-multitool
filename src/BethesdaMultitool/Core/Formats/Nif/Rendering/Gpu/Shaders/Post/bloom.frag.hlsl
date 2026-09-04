@@ -1,8 +1,9 @@
 // Recovered D3D9-era bloom topology. FNV and installed Oldrim 1.9.32 independently prove the same
-// two-pass blur topology and all seven IEEE-754 kernel rows; Skyrim Special Edition is unverified:
+// fused two-pass blur topology and all seven IEEE-754 kernel rows; Skyrim Special Edition is unverified:
 //   HDR scene -> recursive DownSample16 chain to 1x1 for ADAPT; retain the first /4 level for a
 //   vertical BrightPassBlur draw -> horizontal plain-blur draw -> composite.
-// BlurPasses is stored by the data formats but is not a repeated-pass counter in this shader chain.
+// TES4 instead runs a separate BrightPass once, then cumulatively ping-pongs two plain blur axes
+// abs(iNumBlurpasses) times. BlurPasses remains retained-only for the later fused shader chain.
 // Bright-pass is applied per BPBLUR tap before its weight:
 //   max(src - BrightClamp, 0) * BrightScale.
 //
@@ -178,11 +179,19 @@ float4 main(PSInput input) : SV_Target
     return float4(sum, adapted.r + adapted.g + adapted.b);
 }
 
-float4 mainBlur(PSInput input) : SV_Target
+// TES4 HDR005: bright extraction is its own draw before the cumulative blur loop. Shipped programs
+// write one to alpha; the final HDR004 composite reads adapted RGB through a separate sampler.
+float4 mainTes4BrightPass(PSInput input) : SV_Target
+{
+    float3 source = uSource.SampleLevel(uSampler, input.vUv, 0).rgb;
+    return float4(max(source - uBloom0.x, 0.0) * uBloom0.y, 1.0);
+}
+
+float3 ClassicBlurRgb(PSInput input, out float lastAlpha)
 {
     int radius = clamp((int)uBloom0.z, 1, 7);
     float3 sum = 0.0;
-    float lastAlpha = 0.0;
+    lastAlpha = 0.0;
 
     [loop]
     for (int tapIndex = -7; tapIndex <= 7; tapIndex++)
@@ -197,7 +206,23 @@ float4 mainBlur(PSInput input) : SV_Target
         }
     }
 
+    return sum;
+}
+
+float4 mainBlur(PSInput input) : SV_Target
+{
+    float lastAlpha;
+    float3 sum = ClassicBlurRgb(input, lastAlpha);
+
     // ISBLUR3..15 filters RGB only. Its output alpha is the final (+radius) sample's alpha; the
     // preceding BPBLUR made that alpha spatially constant, so the adapted RGB sum is preserved.
     return float4(sum, lastAlpha);
+}
+
+float4 mainTes4Blur(PSInput input) : SV_Target
+{
+    float ignoredAlpha;
+    float3 sum = ClassicBlurRgb(input, ignoredAlpha);
+    // TES4 HDR000/1/2 write one to alpha on every axis draw.
+    return float4(sum, 1.0);
 }

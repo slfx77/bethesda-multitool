@@ -31,8 +31,8 @@ public sealed class FnvFallbackSkyHorizonSourceContractTests
     {
         var shader = SourceContract.ReadShaderSource(ShaderFile);
 
-        // The gate travels in the CB's uTexIndex.y lane and selects the 3-row ramp.
-        Assert.Contains("if (uTexIndex.y == 1)", shader, StringComparison.Ordinal);
+        // The gate travels in the CB's dedicated scalar lane and selects the 3-row ramp.
+        Assert.Contains("if (uFallbackRamp == 1)", shader, StringComparison.Ordinal);
 
         // Row 0 (NAM0 Horizon) at dir.z == 0, blending to row 1 (SkyLower) across the low band,
         // then to row 2 (SkyUpper) at zenith — the same rows Atmosphere::Update feeds pBlendColor.
@@ -51,22 +51,22 @@ public sealed class FnvFallbackSkyHorizonSourceContractTests
     }
 
     [Fact]
-    public void FallbackDome_OtherGames_KeepTheTwoRowMathBitIdentical()
+    public void FallbackDome_OtherGames_KeepTheTwoRowInterpolationAndReceiveNeutralBias()
     {
         var shader = SourceContract.ReadShaderSource(ShaderFile);
 
-        // The pre-ramp expression, verbatim. Any drift here silently changes MW/TES4/Skyrim/FO4
-        // fallback skies, whose BlendColor row mapping has no decompile grounding.
+        // The pre-ramp interpolation remains verbatim. The trailing bias is zero for every game
+        // except Skyrim, whose BSSky shader consumer is now recovered.
         Assert.Contains(
             "float3 sky = lerp(uTintParam.rgb, uSkyUpper.rgb, saturate(dir.z));",
             shader, StringComparison.Ordinal);
-        Assert.Contains("return float4(sky, 1.0);", shader, StringComparison.Ordinal);
+        Assert.Contains("return float4(sky + uSkyColorBias.xxx, 1.0);", shader, StringComparison.Ordinal);
 
         // The 2-row math must be the unconditional tail of the mode-0 fallback: the gated 3-row
         // block comes first and RETURNS, so every game that is not flagged falls through to it.
         SourceContract.AssertOrder(shader,
-            "if (uTexIndex.y == 1)",
-            "return float4(ramp, 1.0);",
+            "if (uFallbackRamp == 1)",
+            "return float4(ramp + uSkyColorBias.xxx, 1.0);",
             "float3 sky = lerp(uTintParam.rgb, uSkyUpper.rgb, saturate(dir.z));");
     }
 
@@ -75,14 +75,14 @@ public sealed class FnvFallbackSkyHorizonSourceContractTests
     {
         var renderer = ReadRendererSource();
 
-        // Explicit per-game check (no family enum), feeding the CB's uTexIndex.y lane.
+        // Explicit per-game check (no family enum), feeding the CB's dedicated flag lane.
         Assert.Contains(
             "var fnvFallbackHorizonRamp = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;",
             renderer, StringComparison.Ordinal);
         Assert.Contains(
             "FallbackRampFlag = fnvFallbackHorizonRamp ? 1u : 0u,",
             renderer, StringComparison.Ordinal);
-        // The flag rides the formerly padded uint4.y lane, so the CB layout (176 bytes) is unchanged.
+        // The flag rides the formerly padded packed-register lane, so the CB layout stays 176 bytes.
         Assert.Contains(
             "public uint FallbackRampFlag; // uint4.y",
             renderer, StringComparison.Ordinal);

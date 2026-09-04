@@ -52,7 +52,7 @@ public sealed class ClassicHdrPassPlanTests
     [InlineData(1f)]
     [InlineData(2f)]
     [InlineData(999f)]
-    public void AuthoredBlurPasses_DoesNotRepeatBrightPassBlur(float authoredBlurPasses)
+    public void LaterFusedGraph_DoesNotRepeatBrightPassBlur(float authoredBlurPasses)
     {
         var plan = ClassicHdrPassPlan.Create(768, 480, true, authoredBlurPasses);
 
@@ -67,6 +67,56 @@ public sealed class ClassicHdrPassPlanTests
     }
 
     [Fact]
+    public void Tes4TwoPassSetting_ProducesSeparateBrightPassAndTwoCumulativeAxisPairs()
+    {
+        var plan = ClassicHdrPassPlan.CreateTes4(768, 480, true, 2f);
+
+        Assert.Equal(ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative, plan.BloomTopology);
+        Assert.Equal(2, plan.BlurPairCount);
+        Assert.Equal(1, plan.BrightPassDrawCount);
+        Assert.Equal(0, plan.BrightPassBlurDrawCount);
+        Assert.Equal(4, plan.BlurDrawCount);
+        Assert.Equal(
+            [
+                ClassicHdrPassKind.Downsample16,
+                ClassicHdrPassKind.Downsample16,
+                ClassicHdrPassKind.Downsample16,
+                ClassicHdrPassKind.Downsample16,
+                ClassicHdrPassKind.Downsample16,
+                ClassicHdrPassKind.Adapt,
+                ClassicHdrPassKind.BrightPass,
+                ClassicHdrPassKind.BlurVertical,
+                ClassicHdrPassKind.BlurHorizontal,
+                ClassicHdrPassKind.BlurVertical,
+                ClassicHdrPassKind.BlurHorizontal,
+                ClassicHdrPassKind.Composite
+            ],
+            Enumerable.Range(0, plan.TotalDrawCount).Select(plan.GetPassKind));
+    }
+
+    [Theory]
+    [InlineData(-2.9f, 2)]
+    [InlineData(-1f, 1)]
+    [InlineData(0f, 0)]
+    [InlineData(1.9f, 1)]
+    [InlineData(2f, 2)]
+    [InlineData(999f, ClassicHdrPassPlan.MaxBloomPairCount)]
+    public void Tes4BlurPassCount_TruncatesTakesAbsoluteValueAndBoundsCorruptInput(
+        float activeBlurPasses,
+        int expected)
+    {
+        Assert.Equal(expected, ClassicHdrPassPlan.ResolveTes4BlurPairCount(activeBlurPasses));
+    }
+
+    [Fact]
+    public void Tes4BlurPassCount_NonFiniteInputRecordsNoUnboundedLoop()
+    {
+        Assert.Equal(0, ClassicHdrPassPlan.ResolveTes4BlurPairCount(float.NaN));
+        Assert.Equal(0, ClassicHdrPassPlan.ResolveTes4BlurPairCount(float.PositiveInfinity));
+        Assert.Equal(0, ClassicHdrPassPlan.ResolveTes4BlurPairCount(float.NegativeInfinity));
+    }
+
+    [Fact]
     public void BloomOff_RetainsReductionAndAdaptButOmitsOnlyBloomDraw()
     {
         var enabled = ClassicHdrPassPlan.Create(768, 480, true, 2f);
@@ -75,6 +125,19 @@ public sealed class ClassicHdrPassPlanTests
         Assert.Equal(enabled.DownsampleDrawCount, disabled.DownsampleDrawCount);
         Assert.Equal(1, ClassicHdrPassPlan.AdaptDrawCount);
         Assert.Equal(0, disabled.BrightPassBlurDrawCount);
+        Assert.Equal(0, disabled.BlurDrawCount);
+        Assert.Equal(ClassicHdrPassKind.Composite, disabled.GetPassKind(disabled.TotalDrawCount - 1));
+    }
+
+    [Fact]
+    public void Tes4BloomOff_OmitsSeparateBrightPassAndEveryBlurPair()
+    {
+        var enabled = ClassicHdrPassPlan.CreateTes4(768, 480, true, 2f);
+        var disabled = ClassicHdrPassPlan.CreateTes4(768, 480, false, 2f);
+
+        Assert.Equal(enabled.DownsampleDrawCount, disabled.DownsampleDrawCount);
+        Assert.Equal(5, enabled.TotalDrawCount - disabled.TotalDrawCount);
+        Assert.Equal(0, disabled.BrightPassDrawCount);
         Assert.Equal(0, disabled.BlurDrawCount);
         Assert.Equal(ClassicHdrPassKind.Composite, disabled.GetPassKind(disabled.TotalDrawCount - 1));
     }

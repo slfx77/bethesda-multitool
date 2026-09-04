@@ -17,9 +17,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     a clamped LDR input without adaptation or bloom.
 ///     <para>
 ///         In engine mode the pass also records the recovered bloom chain
-///         (<c>bloom.frag.hlsl</c>): recursive DownSample16 reduction, vertical BrightPassBlur plus
-///         horizontal plain blur at the retained quarter-resolution level, then
-///         <c>bloom·(0.5/denom)</c> composite.
+///         (<c>bloom.frag.hlsl</c>): recursive DownSample16 reduction, then the family-specific
+///         quarter-resolution graph. FO3/FNV and Oldrim use fused BrightPassBlur plus one plain
+///         axis; TES4 uses a separate bright pass plus cumulative two-axis blur pairs.
 ///     </para>
 ///     <para>
 ///         Owns its own root signature (SRV table t0–t2 + 24 root constants b0 + a linear-clamp static
@@ -34,7 +34,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParticipant12
 {
     // SRV ring depth: one call = fixed 3-descriptor groups (t0/t1/t2) for ADAPT, every possible
-    // recursive DownSample16 level, both bloom rows, and the main composite. Groups are cycled so a
+    // recursive DownSample16 level, all bloom ping-pong sources, and the main composite. Groups are cycled so a
     // view is never overwritten while the previous frame's tonemap draw still reads it.
     // framesInFlight (2) × a couple of scene targets is comfortably under 8 ring slots.
     private const int SrvRingSlots = 8;
@@ -43,7 +43,8 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     private const int DownsampleGroupStart = 1;
     private const int BrightPassBlurGroup = DownsampleGroupStart + ClassicHdrPassPlan.MaxReductionLevels;
     private const int BlurGroup = BrightPassBlurGroup + 1;
-    private const int CompositeGroup = BlurGroup + 1;
+    private const int ReverseBlurGroup = BlurGroup + 1;
+    private const int CompositeGroup = ReverseBlurGroup + 1;
     private const int GroupsPerCall = CompositeGroup + 1;
     private const int ReductionRtvStart = 2;
     private const int BrightPassBlurRtvSlot = ReductionRtvStart + ClassicHdrPassPlan.MaxReductionLevels;
@@ -68,6 +69,8 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     private readonly ID3D12PipelineState _downsamplePso;
     private readonly ID3D12PipelineState _skyrimDownsamplePso;
     private readonly ID3D12PipelineState _skyrimLuminancePso;
+    private readonly ID3D12PipelineState _tes4BlurPso;
+    private readonly ID3D12PipelineState _tes4BrightPassPso;
 
     private readonly GpuDevice12 _gpu;
 
@@ -267,6 +270,20 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         blurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
         _blurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(blurPsoDesc));
 
+        var tes4BrightPassPs = CompileEmbeddedShader(
+            "bloom.frag.hlsl", "mainTes4BrightPass", "ps_5_1");
+        var tes4BrightPassPsoDesc = psoDesc;
+        tes4BrightPassPsoDesc.PixelShader = tes4BrightPassPs;
+        tes4BrightPassPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+        _tes4BrightPassPso = TrackConstructionResource(
+            device.CreateGraphicsPipelineState(tes4BrightPassPsoDesc));
+
+        var tes4BlurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainTes4Blur", "ps_5_1");
+        var tes4BlurPsoDesc = psoDesc;
+        tes4BlurPsoDesc.PixelShader = tes4BlurPs;
+        tes4BlurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+        _tes4BlurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(tes4BlurPsoDesc));
+
         // RTV heap: slots 0–1 = adapted-average ping-pong; then every possible reduction level;
         // final two slots = vertical BrightPassBlur intermediate + horizontal plain-blur output.
         _avgRtvHeap = TrackConstructionResource(
@@ -340,6 +357,8 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         _avgTextures[1].Dispose();
         DisposeActiveClassicTargets();
         DisposeAlternateClassicTargets();
+        _tes4BlurPso.Dispose();
+        _tes4BrightPassPso.Dispose();
         _blurPso.Dispose();
         _bloomPso.Dispose();
         _skyrimDownsamplePso.Dispose();
@@ -387,8 +406,8 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         var cmd = recorder.CommandList;
 
         // Cycle a fixed group layout per call. ADAPT reads the final reduction + previous history;
-        // DS16 groups form the recursive /4 chain; BPBLUR reads level 0 + the fresh adapted average;
-        // BLUR reads the BPBLUR intermediate; the composite reads HDR + adapted average + bloom.
+        // DS16 groups form the recursive /4 chain. The bloom groups read level zero and both
+        // ping-pong targets; the composite reads HDR + adapted average + the family's final bloom.
         var slot = _srvCursor;
         _srvCursor = (_srvCursor + 1) % SrvRingSlots;
         var callBase = (nuint)(slot * GroupsPerCall * SrvsPerCall * _srvDescriptorSize);
@@ -453,12 +472,31 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
 
         var bloomActive = executionPlan.BloomActive;
         var skyrimRetailMode = engineMode && settings.Mode == GpuTonemapMode.EngineSkyrim;
+        var tes4HdrBloom = engineMode
+                           && settings.Mode == GpuTonemapMode.EngineFo3Fnv
+                           && settings.ClassicBloomTopology ==
+                           ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative;
         var historyWasPrimed = _adaptPrimed;
-        var classicPlan = engineMode
-            ? skyrimRetailMode
-                ? ClassicHdrPassPlan.CreateSkyrim(width, height, historyWasPrimed, bloomActive)
-                : ClassicHdrPassPlan.Create(width, height, bloomActive, settings.BlurPasses)
-            : default;
+        ClassicHdrPassPlan classicPlan;
+        if (!engineMode)
+        {
+            classicPlan = default;
+        }
+        else if (skyrimRetailMode)
+        {
+            classicPlan = ClassicHdrPassPlan.CreateSkyrim(
+                width, height, historyWasPrimed, bloomActive);
+        }
+        else if (tes4HdrBloom)
+        {
+            classicPlan = ClassicHdrPassPlan.CreateTes4(
+                width, height, bloomActive, settings.BlurPasses);
+        }
+        else
+        {
+            classicPlan = ClassicHdrPassPlan.Create(
+                width, height, bloomActive, settings.BlurPasses);
+        }
         if (engineMode)
         {
             // Allocate the complete no-history chain once. Later Skyrim frames omit the final 1x1
@@ -521,6 +559,14 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBlur);
             cpuBlur.Ptr += _srvDescriptorSize;
             _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBlur);
+
+            var cpuReverseBlur = heapCpu;
+            cpuReverseBlur.Ptr += GroupOffset(ReverseBlurGroup);
+            _gpu.Device.CreateShaderResourceView(_bloomTexture!, avgSrvDesc, cpuReverseBlur);
+            cpuReverseBlur.Ptr += _srvDescriptorSize;
+            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuReverseBlur);
+            cpuReverseBlur.Ptr += _srvDescriptorSize;
+            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuReverseBlur);
         }
 
         // Main group: t2 = BPBLUR output, or the avg texture as a benign always-valid filler
@@ -531,7 +577,11 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         cpuB.Ptr += _srvDescriptorSize;
         _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuB);
         cpuB.Ptr += _srvDescriptorSize;
-        var finalBloom = bloomActive ? _bloomTexture! : _avgTextures[writeIdx];
+        var finalBloom = _avgTextures[writeIdx];
+        if (bloomActive)
+        {
+            finalBloom = tes4HdrBloom ? _brightPassBlurTexture! : _bloomTexture!;
+        }
         _gpu.Device.CreateShaderResourceView(finalBloom, avgSrvDesc, cpuB);
 
         // First engine-mode frame has no valid history. Use >1 as an explicit no-history sentinel so
@@ -540,10 +590,11 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         var adaptFactor = _adaptPrimed ? settings.AdaptFactor : 2f;
         var adaptFactorFast = _adaptPrimed ? settings.AdaptFactorFast : 2f;
 
-        var modernFamily = settings.ModernFamily ==
-                           ImageSpaceModernFamily.Fallout4
-            ? 1f
-            : 0f;
+        var modernFamily = settings.ModernFamily == ImageSpaceModernFamily.Fallout4 ? 1f : 0f;
+        if (tes4HdrBloom)
+        {
+            modernFamily = -1f;
+        }
         var p = stackalloc float[24]
         {
             settings.Exposure, enabled ? 1f : 0f, (float)settings.Mode, settings.TargetLum,
@@ -567,7 +618,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
 
         // Engine reduction: classic continues to 1x1; Skyrim uses its RGB/luminance/scalar stages and
-        // on primed frames leaves the last 16 taps for ADAPT. BlurPasses never changes draw count.
+        // on primed frames leaves the last 16 taps for ADAPT. Only TES4 consumes BlurPasses as a loop count.
         if (engineMode)
         {
             var downsampleConstants = stackalloc float[16];
@@ -630,9 +681,9 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
                 _avgTextures[writeIdx], ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
         }
 
-        // Recovered bloom topology: ImageSpaceEffectHDR invokes one selected ImageSpaceEffectBlur.
-        // That effect records vertical BPBLUR into an intermediate, then horizontal BLUR into its
-        // output. Authored BlurPasses remains retained data and does not repeat this two-draw pair.
+        // Recovered family-specific bloom topology. FO3/FNV/Oldrim fuse bright extraction into the
+        // first vertical blur and record one horizontal blur. TES4 records HDR005 once, then
+        // cumulatively ping-pongs HDR000/1/2 on both axes abs(iNumBlurpasses) times.
         if (bloomActive)
         {
             // ImageSpaceEffectHDR truncates BlurRadius before selecting BPBLUR3..15, then clamps the
@@ -643,43 +694,85 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             b[0] = settings.BrightClamp;
             b[1] = settings.BrightScale;
             b[2] = kernelRadius;
-            // ImageSpaceEffectBlur::UpdateParams uploads (0, 1/height) to the bright-pass shader.
-            b[4] = 0f;
-            b[5] = 1f / _bloomHeight;
             cmd.RSSetViewport(new Viewport(0, 0, _bloomWidth, _bloomHeight, 0f, 1f));
             cmd.RSSetScissorRect(_bloomWidth, _bloomHeight);
-            cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
-            var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            brightPassRtv.Ptr +=
-                (nuint)((_classicRtvBank * RtvBankSize + BrightPassBlurRtvSlot) * _avgRtvDescriptorSize);
-            var brightPassGpu = heapGpu;
-            brightPassGpu.Ptr += GroupOffset(BrightPassBlurGroup);
-            cmd.SetGraphicsRootDescriptorTable(0, brightPassGpu);
-            cmd.ResourceBarrierTransition(
-                _brightPassBlurTexture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
-            cmd.OMSetRenderTargets(brightPassRtv);
-            cmd.SetPipelineState(_bloomPso);
-            cmd.DrawInstanced(3, 1, 0, 0);
-            cmd.ResourceBarrierTransition(
-                _brightPassBlurTexture!, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
 
-            // The effect's second shader receives (1/width, 0), uses the same exact weight row, and
-            // does not repeat the bright-pass threshold/scale operation.
-            b[4] = 1f / _bloomWidth;
-            b[5] = 0f;
-            cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
-            var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            blurRtv.Ptr += (nuint)((_classicRtvBank * RtvBankSize + BlurRtvSlot) * _avgRtvDescriptorSize);
-            var blurGpu = heapGpu;
-            blurGpu.Ptr += GroupOffset(BlurGroup);
-            cmd.SetGraphicsRootDescriptorTable(0, blurGpu);
-            cmd.ResourceBarrierTransition(
-                _bloomTexture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
-            cmd.OMSetRenderTargets(blurRtv);
-            cmd.SetPipelineState(_blurPso);
-            cmd.DrawInstanced(3, 1, 0, 0);
-            cmd.ResourceBarrierTransition(
-                _bloomTexture!, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+            void RecordBloomDraw(
+                int sourceGroup,
+                ID3D12Resource target,
+                int targetRtvSlot,
+                ID3D12PipelineState pipelineState)
+            {
+                var targetRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+                targetRtv.Ptr += (nuint)((_classicRtvBank * RtvBankSize + targetRtvSlot) *
+                                         _avgRtvDescriptorSize);
+                var sourceGpu = heapGpu;
+                sourceGpu.Ptr += GroupOffset(sourceGroup);
+                cmd.SetGraphicsRootDescriptorTable(0, sourceGpu);
+                cmd.ResourceBarrierTransition(
+                    target, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
+                cmd.OMSetRenderTargets(targetRtv);
+                cmd.SetPipelineState(pipelineState);
+                cmd.DrawInstanced(3, 1, 0, 0);
+                cmd.ResourceBarrierTransition(
+                    target, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+            }
+
+            if (tes4HdrBloom)
+            {
+                // HDR005 is a one-sample bright filter; no blur axis participates in this draw.
+                b[4] = 0f;
+                b[5] = 0f;
+                cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
+                RecordBloomDraw(
+                    BrightPassBlurGroup,
+                    _brightPassBlurTexture!,
+                    BrightPassBlurRtvSlot,
+                    _tes4BrightPassPso);
+
+                for (var blurPair = 0; blurPair < classicPlan.BlurPairCount; blurPair++)
+                {
+                    b[4] = 0f;
+                    b[5] = 1f / _bloomHeight;
+                    cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
+                    RecordBloomDraw(
+                        BlurGroup,
+                        _bloomTexture!,
+                        BlurRtvSlot,
+                        _tes4BlurPso);
+
+                    b[4] = 1f / _bloomWidth;
+                    b[5] = 0f;
+                    cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
+                    RecordBloomDraw(
+                        ReverseBlurGroup,
+                        _brightPassBlurTexture!,
+                        BrightPassBlurRtvSlot,
+                        _tes4BlurPso);
+                }
+            }
+            else
+            {
+                // ImageSpaceEffectBlur::UpdateParams uploads (0, 1/height) to BPBLUR first.
+                b[4] = 0f;
+                b[5] = 1f / _bloomHeight;
+                cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
+                RecordBloomDraw(
+                    BrightPassBlurGroup,
+                    _brightPassBlurTexture!,
+                    BrightPassBlurRtvSlot,
+                    _bloomPso);
+
+                // The second shader receives (1/width, 0) and does not repeat bright extraction.
+                b[4] = 1f / _bloomWidth;
+                b[5] = 0f;
+                cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
+                RecordBloomDraw(
+                    BlurGroup,
+                    _bloomTexture!,
+                    BlurRtvSlot,
+                    _blurPso);
+            }
 
             cmd.SetGraphicsRoot32BitConstants(1, 24, p, 0);
         }

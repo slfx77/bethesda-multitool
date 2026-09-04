@@ -115,18 +115,20 @@ public static class AtmosphereState
     private static readonly Vector3 TwilightFog = new(0.74f, 0.54f, 0.50f);
 
     /// <summary>
-    ///     Applies one resolved scene multiplier to every color consumed by the procedural or authored
+    ///     Applies one resolved scene transform to every color consumed by the procedural or authored
     ///     atmosphere geometry. Keeping this projection centralized prevents the shared b3 reflection
-    ///     colors and the sky renderer's private b0 colors from drifting apart.
+    ///     colors and the sky renderer's private b0 colors from drifting apart. The bias is deliberately
+    ///     not clamped: Skyrim's shipped BSSky programs perform the raw HNAM[7] add before imagespace.
     /// </summary>
-    internal static Resolved ApplySkyColorScale(Resolved value, float multiplier)
+    internal static Resolved ApplySkyColorTransform(Resolved value, float scale, float bias)
     {
+        var additive = new Vector3(bias);
         return value with
         {
-            SkyTopColor = value.SkyTopColor * multiplier,
-            SkyLowerColor = value.SkyLowerColor * multiplier,
-            AuthoredHorizonColor = value.AuthoredHorizonColor * multiplier,
-            SkyHorizonColor = value.SkyHorizonColor * multiplier
+            SkyTopColor = (value.SkyTopColor * scale) + additive,
+            SkyLowerColor = (value.SkyLowerColor * scale) + additive,
+            AuthoredHorizonColor = (value.AuthoredHorizonColor * scale) + additive,
+            SkyHorizonColor = (value.SkyHorizonColor * scale) + additive
         };
     }
 
@@ -1223,6 +1225,23 @@ public static class AtmosphereState
     private static Vector3 ToVec(WeatherRgba c)
     {
         return new Vector3(c.R / 255f, c.G / 255f, c.B / 255f);
+    }
+
+    /// <summary>
+    ///     Samples one WTHR NAM0 RGB row at the requested game hour using the same climate-window blend
+    ///     as <c>Sky::FillColorBlend</c>. External-emittance REGN sources use this for category 9
+    ///     (<see cref="WeatherColorType.EffectLighting" />), while atmosphere callers use the same private
+    ///     interpolation path through <c>BandOr</c>.
+    /// </summary>
+    public static Vector3 SampleWeatherColor(
+        WeatherColor color,
+        float gameHour,
+        ClimateTiming? timing,
+        BethesdaGame game = BethesdaGame.Unknown)
+    {
+        var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
+        var (weatherSrB, weatherSsE) = ExtendWeatherColorWindow(game, srB, ssE);
+        return SampleBand(color, WrapHour(gameHour), weatherSrB, srE, ssB, weatherSsE);
     }
 
     /// <summary>

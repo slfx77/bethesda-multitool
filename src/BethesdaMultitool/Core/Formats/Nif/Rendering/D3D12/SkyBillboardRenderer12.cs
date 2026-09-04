@@ -15,15 +15,16 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///     v3 textured-sky billboards — the sun (disc + glare) and moon, drawn as camera-facing textured
 ///     quads at their sky directions. Mirrors the engine, which draws each celestial object as a
 ///     4-vertex billboard quad with a NiBillboard controller (decompiled Sun::Initialize /
-///     Moon::Initialize). Drawn right AFTER the <see cref="SkyGeometryRenderer12" /> sky dome and BEFORE
-///     terrain, depth test/write OFF (DSV stays bound) — so depth-written geometry overwrites it and
-///     mountains correctly hide the sun.
+///     Moon::Initialize). FO3/FNV stage the alpha-blended sun base between stars and clouds, then draw
+///     the additive glare after clouds; other games retain the established unified billboard route.
+///     Every billboard remains before terrain, depth test/write OFF (DSV stays bound), so depth-written
+///     geometry overwrites it and mountains correctly hide the sun.
 ///     <para>
-///         Two PSOs differing only in blend: the sun disc/glare are ADDITIVE (they glow over the sky);
-///         the moon is ALPHA (a lit disc over the night sky). Each draw is a 4-vertex triangle-strip
-///         quad expanded from <c>SV_VertexID</c> (no vertex buffer), with its own b0 CB carrying the
-///         world direction, camera basis, texture index, tint and fade. Samples the shared bindless
-///         <c>textures[]</c> table (slot 4, space1) the terrain/reference shaders use.
+///         Two PSOs differ only in blend: source-alpha/inverse-source-alpha for the FO3/FNV sun base
+///         and moons, and source-alpha/one for glare (plus the legacy unified sun route). Each draw is
+///         a 4-vertex triangle-strip quad expanded from <c>SV_VertexID</c> (no vertex buffer), with its
+///         own b0 CB carrying the world direction, camera basis, texture index, tint and fade. Samples
+///         the shared bindless <c>textures[]</c> table (slot 4, space1) used by terrain/references.
 ///     </para>
 /// </summary>
 internal sealed class SkyBillboardRenderer12 : IDisposable
@@ -162,13 +163,16 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
         float sunGlareFade, Vector3 sunGlareColor,
         float sunDiscHalfSize, float sunGlareHalfSize, uint sunDiscTex, uint sunGlareTex,
         Vector3 moonDir, float moonFade, Vector3 moonColor, uint moonTex, float moonHalfSize,
-        Vector3 moon2Dir, float moon2Fade, Vector3 moon2Color, uint moon2Tex, float moon2HalfSize)
+        Vector3 moon2Dir, float moon2Fade, Vector3 moon2Color, uint moon2Tex, float moon2HalfSize,
+        SkyBillboardPass12 pass = SkyBillboardPass12.All)
     {
         if (_disposed) return;
 
-        // Sun (day): glare halo first (so the disc reads on top), then the disc. Both additive.
-        // glowExp = 1 → the disc/glare are drawn exactly as authored (no halo suppression).
-        if (MathF.Max(sunFade, sunGlareFade) > 0.001f && sunDir.Z > -0.05f)
+        // Preserve the established unified route for games without a recovered stage oracle: glare
+        // first, then additive disc. FO3/FNV never enter this branch; their host submits SunBase and
+        // SunGlareAndMoons around the cloud pass below.
+        if (pass == SkyBillboardPass12.All &&
+            MathF.Max(sunFade, sunGlareFade) > 0.001f && sunDir.Z > -0.05f)
         {
             if (sunGlareFade > 0.001f && sunGlareTex != NoTexture)
             {
@@ -183,16 +187,35 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
             }
         }
 
+        // Fallout 3/New Vegas submit the opaque-looking base texture through the ordinary
+        // source-alpha pass BEFORE clouds. It is not additive: making the base additive turns its
+        // already-bright carrier texture into the oversized white bloom seen in the parity gate.
+        if (pass == SkyBillboardPass12.SunBase &&
+            sunFade > 0.001f && sunDir.Z > -0.05f && sunDiscTex != NoTexture)
+        {
+            Draw(_psoAlpha, viewProj, camPos, camRight, camUp, sunDir,
+                sunDiscHalfSize, sunFade, sunDiscTex, sunColor, 1f, glowExp: 1f);
+        }
+
+        // The separate glare pass is source-alpha additive and follows clouds in the FO3/FNV sky order.
+        if (pass == SkyBillboardPass12.SunGlareAndMoons &&
+            sunGlareFade > 0.001f && sunDir.Z > -0.05f && sunGlareTex != NoTexture)
+        {
+            Draw(_psoAdditive, viewProj, camPos, camRight, camUp, sunDir,
+                sunGlareHalfSize, sunGlareFade, sunGlareTex, sunGlareColor, 1f, glowExp: 1f);
+        }
+
         // Moon(s) (night): alpha-blended lit discs. The primary moon plus an optional second moon
         // (Secunda for the two-moon TES games), each sized by the caller's per-game SkyMoonProfile.
         // MoonGlowExponent suppresses the texture's over-opaque glow halo (keeps the disc).
-        if (moonFade > 0.001f && moonDir.Z > -0.05f && moonTex != NoTexture)
+        var renderMoons = pass is SkyBillboardPass12.All or SkyBillboardPass12.SunGlareAndMoons;
+        if (renderMoons && moonFade > 0.001f && moonDir.Z > -0.05f && moonTex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moonDir,
                 moonHalfSize, moonFade, moonTex, moonColor, 1f, glowExp: MoonGlowExponent);
         }
 
-        if (moon2Fade > 0.001f && moon2Dir.Z > -0.05f && moon2Tex != NoTexture)
+        if (renderMoons && moon2Fade > 0.001f && moon2Dir.Z > -0.05f && moon2Tex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moon2Dir,
                 moon2HalfSize, moon2Fade, moon2Tex, moon2Color, 1f, glowExp: MoonGlowExponent);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
@@ -86,6 +87,19 @@ internal enum GpuTonemapGuiMode
 
     /// <summary>The launcher's "HDR": each family's engine HDR operator.</summary>
     Hdr = 2
+}
+
+/// <summary>
+///     Scene-side color operation applied to the sky shader family before imagespace composition.
+///     The two lanes are explicit because Creation games do not agree on the meaning of the field
+///     historically labelled <c>SkyScale</c>: Skyrim's recovered BSSky shader adds HNAM[7], while
+///     the still-partial FO4-family route retains its existing multiplicative interpretation.
+/// </summary>
+internal readonly record struct SceneSkyColorTransform(float Scale, float Bias)
+{
+    internal static SceneSkyColorTransform Identity { get; } = new(1f, 0f);
+
+    internal Vector3 Apply(Vector3 color) => (color * Scale) + new Vector3(Bias);
 }
 
 /// <summary>
@@ -234,14 +248,21 @@ internal readonly record struct GpuTonemapSettings
     public bool BloomEnabled { get; init; }
 
     /// <summary>
+    ///     Recovered classic bloom graph for this preset. TES4 owns a separate bright-pass and
+    ///     cumulative blur loop; FO3/FNV and Oldrim retain their fused BrightPassBlur graph.
+    /// </summary>
+    public ClassicHdrBloomTopology ClassicBloomTopology { get; init; }
+
+    /// <summary>
     ///     IMGS HDR: blur-row radius in bloom texels. The recovered FNV and Oldrim paths truncate the
     ///     authored float, then clamp to 1..7 to select the 3..15-tap shader family.
     /// </summary>
     public float BlurRadius { get; init; }
 
     /// <summary>
-    ///     Authored IMGS/HNAM blur-pass scalar, retained losslessly. The recovered runtime topology has
-    ///     one DS16 and one BPBLUR draw; this value is not used as a repeated-pass count.
+    ///     Authored IMGS/HNAM blur-pass scalar. TES4 truncates it to an integer, takes the absolute
+    ///     value, and repeats its two-axis blur pair that many times. The later fused graph retains the
+    ///     value as data but does not use it as a repeated-pass count.
     /// </summary>
     public float BlurPasses { get; init; }
 
@@ -368,6 +389,7 @@ internal readonly record struct GpuTonemapSettings
         TintB = 1f,
         TintAmount = 0f,
         BloomEnabled = true,
+        ClassicBloomTopology = ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative,
         BlurRadius = 4f, // fBlurRadius
         BlurPasses = 2f, // iNumBlurpasses
         BrightScale = 1.5f, // fBrightScale
@@ -582,25 +604,31 @@ internal readonly record struct GpuTonemapSettings
     }
 
     /// <summary>
-    ///     Resolves the Creation-era non-imagespace sky multiplier separately from the display operator.
-    ///     A diagnostic GammaAces Skyrim scene is gamma-encoded, so a physical linear multiplier must
-    ///     be gamma-encoded before it is applied to the sky colors. CreationModern and EngineSkyrim
-    ///     retain the authored raw value because their imagespace equations own that scene route.
+    ///     Resolves the Creation-era scene-side sky operation separately from the display operator.
+    ///     Map-matched TESV 1.1.21 <c>BSSkyShader::SetupGeometry</c> sends HNAM[7] to
+    ///     <c>PParams.y</c>; shipped Oldrim 1.9.32 Atmosphere, Clouds, SkyTexture, and Stars programs
+    ///     add that scalar to authored sky RGB.
+    ///     It is therefore a raw additive bias, despite the record field's historical "Sky Scale"
+    ///     label. The FO4-family consumer is not yet recovered and retains the prior multiplier.
     /// </summary>
-    internal static float ResolveSceneSkyScale(
+    internal static SceneSkyColorTransform ResolveSceneSkyColorTransform(
         GpuTonemapSettings settings, BethesdaGame game, bool hdrActive, bool isInterior)
     {
-        if (!hdrActive || settings.ModernFamily is null) return 1f;
-        if (game == BethesdaGame.Skyrim
-            && settings.Mode is not GpuTonemapMode.CreationModern
-                and not GpuTonemapMode.EngineSkyrim)
+        if (!hdrActive || settings.ModernFamily is null)
         {
-            return EncodePhysicalScaleForGammaScene(settings.SkyScale);
+            return SceneSkyColorTransform.Identity;
+        }
+
+        // The BSSky shader is upstream of the selected display operator, so diagnostic operator A/Bs
+        // must not change this scene semantic. Do not clamp: the retail shader performs a plain add.
+        if (game == BethesdaGame.Skyrim)
+        {
+            return new SceneSkyColorTransform(1f, settings.SkyScale);
         }
 
         return settings.Mode is GpuTonemapMode.CreationModern or GpuTonemapMode.EngineSkyrim
-            ? settings.SkyScale
-            : 1f;
+            ? new SceneSkyColorTransform(settings.SkyScale, 0f)
+            : SceneSkyColorTransform.Identity;
     }
 
     /// <summary>
@@ -633,7 +661,9 @@ internal readonly record struct GpuTonemapSettings
             EyeAdaptStrength = 1f,
             SunlightScale = 1f,
             GrassScale = 1f,
-            SkyScale = 1f,
+            // Skyrim's recovered HNAM[7] consumer is additive, so its no-IMGS identity is zero.
+            // FO4-family semantics remain multiplicative until that consumer is recovered.
+            SkyScale = family == ImageSpaceModernFamily.Skyrim ? 0f : 1f,
             // Oldrim's two-pass blur route is recovered; FO4/FO76 bloom remains unverified.
             BloomEnabled = family == ImageSpaceModernFamily.Skyrim
         };
@@ -819,7 +849,9 @@ internal readonly record struct GpuTonemapSettings
         };
     }
 
-    /// <summary>Env overrides: mode swap for A/Bs, bloom kill-switch, + the existing exposure knob.</summary>
+    /// <summary>
+    ///     Env overrides: mode swap, bloom kill-switch, TES4 blur-pair discriminator, and exposure.
+    /// </summary>
     public static GpuTonemapSettings ApplyOverrides(GpuTonemapSettings settings)
     {
         if (ParseTonemapModeOverride(
@@ -843,6 +875,19 @@ internal readonly record struct GpuTonemapSettings
         if (settings.Mode == GpuTonemapMode.CreationModern)
         {
             settings = settings with { BloomEnabled = false };
+        }
+
+        // Diagnostic-only pure pass-count discriminator for the recovered TES4 topology. It cannot
+        // affect FO3/FNV/Skyrim presets because those retain the fused graph identity.
+        var tes4Passes = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TES4_BLOOM_PASSES");
+        if (settings.ClassicBloomTopology ==
+            ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative
+            && tes4Passes is not null
+            && float.TryParse(tes4Passes, NumberStyles.Float,
+                CultureInfo.InvariantCulture, out var passCount)
+            && float.IsFinite(passCount))
+        {
+            settings = settings with { BlurPasses = passCount };
         }
 
         var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_EXPOSURE");

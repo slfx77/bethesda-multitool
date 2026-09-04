@@ -9,7 +9,10 @@ cbuffer SkyGeo : register(b0)
     float4 uCamPosScale;   // xyz = camera world pos, w = sky-dome radius (same for every layer)
     float4 uTintParam;     // rgb = layer tint, a = layer fade/opacity
     float4 uScrollMode;    // xy = cloud UV scroll, z = mode, w = authored atmosphere blend weights
-    uint4  uTexIndex;      // x = bindless diffuse index (0xFFFFFFFF = none)
+    uint   uTexIndex;      // bindless diffuse index (0xFFFFFFFF = none)
+    uint   uFallbackRamp;  // pixel-shader-only route flag
+    float  uSkyColorBias;  // pixel-shader-only Skyrim HNAM[7] additive scalar
+    float  uStarColorScale;// pixel-shader-only Skyrim Stars multiplier
     float4 uSkyUpper;      // recovered SKY BlendColor[2]
     float4 uSkyLower;      // recovered SKY BlendColor[1]
     float4 uSkyHorizon;    // recovered SKY BlendColor[0]

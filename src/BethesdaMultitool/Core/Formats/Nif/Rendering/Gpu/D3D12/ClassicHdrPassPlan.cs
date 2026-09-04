@@ -5,9 +5,21 @@ internal enum ClassicHdrPassKind
 {
     Downsample16,
     Adapt,
+    BrightPass,
     BrightPassBlurVertical,
+    BlurVertical,
     BlurHorizontal,
     Composite
+}
+
+/// <summary>Which recovered classic bloom graph consumes the retained first reduction.</summary>
+internal enum ClassicHdrBloomTopology
+{
+    /// <summary>FO3/FNV and Oldrim: fused vertical bright-pass blur, then one horizontal blur.</summary>
+    FusedBrightPassBlur = 0,
+
+    /// <summary>TES4: separate bright pass, then N cumulative vertical/horizontal ping-pong pairs.</summary>
+    Tes4SeparateBrightPassCumulative = 1
 }
 
 /// <summary>One source-to-target step in the recursive four-to-one reduction chain.</summary>
@@ -26,8 +38,9 @@ internal enum HdrReductionDimensionRule
 /// <summary>
 ///     Allocation-free description of the recovered classic HDR pass order. DownSample16 is repeated
 ///     until both dimensions reach one; the first result is also the bloom source. The bloom effect
-///     contains one vertical BrightPassBlur draw followed by one horizontal plain-blur draw. The
-///     authored BlurPasses value is deliberately accepted but does not alter this topology.
+///     graph is engine-family-specific: FO3/FNV and Oldrim contain one vertical BrightPassBlur draw
+///     followed by one horizontal plain-blur draw, while TES4 runs a separate bright pass followed
+///     by the configured number of cumulative two-axis ping-pong blur pairs.
 /// </summary>
 internal readonly record struct ClassicHdrPassPlan
 {
@@ -35,13 +48,19 @@ internal readonly record struct ClassicHdrPassPlan
     // so malformed or synthetic dimensions fail explicitly instead of overrunning descriptor arrays.
     public const int MaxReductionLevels = 8;
 
+    // Retail accepts an integer Setting and loops its absolute value. Bound corrupt/synthetic input
+    // before it becomes an unbounded command-list recording loop; shipped/default TES4 uses two.
+    internal const int MaxBloomPairCount = 64;
+
     private ClassicHdrPassPlan(
         int sourceWidth,
         int sourceHeight,
         int downsampleDrawCount,
         bool bloomEnabled,
         HdrReductionDimensionRule dimensionRule,
-        bool finalReductionInAdapt)
+        bool finalReductionInAdapt,
+        ClassicHdrBloomTopology bloomTopology,
+        int blurPairCount)
     {
         SourceWidth = sourceWidth;
         SourceHeight = sourceHeight;
@@ -49,6 +68,8 @@ internal readonly record struct ClassicHdrPassPlan
         BloomEnabled = bloomEnabled;
         DimensionRule = dimensionRule;
         FinalReductionInAdapt = finalReductionInAdapt;
+        BloomTopology = bloomTopology;
+        BlurPairCount = blurPairCount;
     }
 
     public int SourceWidth { get; }
@@ -57,13 +78,32 @@ internal readonly record struct ClassicHdrPassPlan
     public bool BloomEnabled { get; }
     public HdrReductionDimensionRule DimensionRule { get; }
     public bool FinalReductionInAdapt { get; }
+    public ClassicHdrBloomTopology BloomTopology { get; }
+    public int BlurPairCount { get; }
     public static int AdaptDrawCount => 1;
-    public int BrightPassBlurDrawCount => BloomEnabled ? 1 : 0;
-    public int BlurDrawCount => BloomEnabled ? 1 : 0;
+    public int BrightPassDrawCount =>
+        BloomEnabled && BloomTopology == ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative ? 1 : 0;
+    public int BrightPassBlurDrawCount =>
+        BloomEnabled && BloomTopology == ClassicHdrBloomTopology.FusedBrightPassBlur ? 1 : 0;
+    public int BlurDrawCount
+    {
+        get
+        {
+            if (!BloomEnabled)
+            {
+                return 0;
+            }
+
+            return BloomTopology == ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative
+                ? BlurPairCount * 2
+                : 1;
+        }
+    }
     public static int CompositeDrawCount => 1;
 
     public int TotalDrawCount =>
-        DownsampleDrawCount + AdaptDrawCount + BrightPassBlurDrawCount + BlurDrawCount + CompositeDrawCount;
+        DownsampleDrawCount + AdaptDrawCount + BrightPassDrawCount + BrightPassBlurDrawCount +
+        BlurDrawCount + CompositeDrawCount;
 
     public static ClassicHdrPassPlan Create(
         int width,
@@ -72,6 +112,51 @@ internal readonly record struct ClassicHdrPassPlan
         float authoredBlurPasses)
     {
         _ = authoredBlurPasses;
+        return CreateFloorQuarter(
+            width,
+            height,
+            bloomEnabled,
+            ClassicHdrBloomTopology.FusedBrightPassBlur,
+            blurPairCount: 1);
+    }
+
+    /// <summary>
+    ///     TES4's recovered HDR graph: one separate bright pass followed by the absolute, truncated
+    ///     active blur count of cumulative two-axis pairs. The shipped active count is two.
+    /// </summary>
+    public static ClassicHdrPassPlan CreateTes4(
+        int width,
+        int height,
+        bool bloomEnabled,
+        float activeBlurPasses)
+    {
+        return CreateFloorQuarter(
+            width,
+            height,
+            bloomEnabled,
+            ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative,
+            ResolveTes4BlurPairCount(activeBlurPasses));
+    }
+
+    internal static int ResolveTes4BlurPairCount(float activeBlurPasses)
+    {
+        if (!float.IsFinite(activeBlurPasses))
+        {
+            return 0;
+        }
+
+        var truncated = Math.Truncate((double)activeBlurPasses);
+        var magnitude = Math.Abs(truncated);
+        return (int)Math.Min(magnitude, MaxBloomPairCount);
+    }
+
+    private static ClassicHdrPassPlan CreateFloorQuarter(
+        int width,
+        int height,
+        bool bloomEnabled,
+        ClassicHdrBloomTopology bloomTopology,
+        int blurPairCount)
+    {
         width = Math.Max(width, 1);
         height = Math.Max(height, 1);
 
@@ -97,7 +182,9 @@ internal readonly record struct ClassicHdrPassPlan
             levels,
             bloomEnabled,
             HdrReductionDimensionRule.FloorQuarter,
-            false);
+            false,
+            bloomTopology,
+            blurPairCount);
     }
 
     /// <summary>
@@ -144,7 +231,9 @@ internal readonly record struct ClassicHdrPassPlan
             levels,
             bloomEnabled,
             HdrReductionDimensionRule.CeilingQuarter,
-            historyAvailable);
+            historyAvailable,
+            ClassicHdrBloomTopology.FusedBrightPassBlur,
+            blurPairCount: 1);
     }
 
     public ClassicHdrReductionLevel GetReductionLevel(int index)
@@ -205,11 +294,19 @@ internal readonly record struct ClassicHdrPassPlan
 
         if (BloomEnabled && index-- == 0)
         {
-            return ClassicHdrPassKind.BrightPassBlurVertical;
+            return BloomTopology == ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative
+                ? ClassicHdrPassKind.BrightPass
+                : ClassicHdrPassKind.BrightPassBlurVertical;
         }
 
-        if (BloomEnabled && index == 0)
+        if (BloomEnabled && index < BlurDrawCount)
         {
+            if (BloomTopology == ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative
+                && index % 2 == 0)
+            {
+                return ClassicHdrPassKind.BlurVertical;
+            }
+
             return ClassicHdrPassKind.BlurHorizontal;
         }
 

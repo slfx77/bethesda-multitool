@@ -282,7 +282,9 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         float gameHour, AtmosphereState.ClimateTiming? cloudTiming, BethesdaGame game,
         float? animationTimeSeconds = null,
         bool advanceCloudScroll = true,
-        float? radiusOverride = null)
+        float? radiusOverride = null,
+        float skyColorBias = 0f,
+        SkyGeometryPass12 pass = SkyGeometryPass12.All)
     {
         if (_disposed) return;
 
@@ -338,8 +340,11 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         // FO3/FNV take sky_geo.frag.hlsl's 3-row Horizon->SkyLower->SkyUpper fallback ramp — the row
         // mapping is grounded in FNV's Atmosphere::Update pBlendColor stores (atmosphere_decompiled.txt,
         // asm 0x8246884C-0x82468924). Every other game keeps the 2-row fallback bit-identical, so the
-        // gate travels per draw in the CB's uTexIndex.y lane (same pattern as the uScrollMode.w branch).
+        // gate travels per draw in the packed CB's dedicated scalar lane.
         var fnvFallbackHorizonRamp = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
+        // Installed Oldrim shaders001.fxp Stars technique 3 multiplies the complete
+        // (texture*vertex + HNAM[7]) result by 1.5. Keep every other game's established route neutral.
+        var starColorScale = game == BethesdaGame.Skyrim ? 1.5f : 1f;
 
         // The dome radius is a HUMAN-SCALE distance (12,000 classic units ≈ 171 m), sized to sit
         // between the near and far planes. Starfield's unit is a metre and its far plane is
@@ -353,16 +358,23 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
 
         // The procedural dome is strictly a missing-asset fallback. An authored Atmosphere.nif owns the
         // background whenever one was decoded, including its non-linear vertex blend bands.
-        if (!_layers.Any(static layer => layer.Mode == 0))
+        if (pass != SkyGeometryPass12.Clouds && !_layers.Any(static layer => layer.Mode == 0))
         {
             DrawMesh(cmd, frameIndex, viewProj, camPos, _fallbackVerts, _fallbackIndices,
                 mode: 0, scale: radius, fallbackHorizon, 1f, Vector2.Zero, NoTexture,
-                skyUpper, skyLower, skyHorizon, authoredAtmosphere: false, fnvFallbackHorizonRamp);
+                skyUpper, skyLower, skyHorizon, authoredAtmosphere: false, fnvFallbackHorizonRamp,
+                skyColorBias, starColorScale);
         }
 
         // Real atmosphere + stars + clouds geometry.
         foreach (var layer in _layers)
         {
+            if ((pass == SkyGeometryPass12.AtmosphereAndStars && layer.Mode == 2) ||
+                (pass == SkyGeometryPass12.Clouds && layer.Mode != 2))
+            {
+                continue;
+            }
+
             if ((layer.Mode == 1 && starFade <= 0.001f)
                 || (layer.Mode == 2 && (cloudOpacity <= 0.001f || layer.CloudWeatherWeight <= 0.001f)) ||
                 (layer.Mode != 0 && layer.TexIndex == NoTexture))
@@ -447,7 +459,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             }
             DrawMesh(cmd, frameIndex, viewProj, camPos, layer.Vertices, layer.Indices,
                 layer.Mode, radius, tint, param, scroll, layer.TexIndex,
-                skyUpper, skyLower, skyHorizon, layer.HasAuthoredBlendWeights, fnvFallbackHorizonRamp);
+                skyUpper, skyLower, skyHorizon, layer.HasAuthoredBlendWeights, fnvFallbackHorizonRamp,
+                skyColorBias, starColorScale);
         }
     }
 
@@ -457,7 +470,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         ID3D12GraphicsCommandList cmd, int frameIndex, Matrix4x4 viewProj, Vector3 camPos,
         SkyVertex[] verts, ushort[] indices, int mode, float scale, Vector3 tint, float param,
         Vector2 scroll, uint texIndex, Vector3 skyUpper, Vector3 skyLower, Vector3 skyHorizon,
-        bool authoredAtmosphere, bool fnvFallbackHorizonRamp)
+        bool authoredAtmosphere, bool fnvFallbackHorizonRamp, float skyColorBias, float starColorScale)
     {
         var vbByteCount = (uint)verts.Length * VertexStride;
         if (!_ringBuffer.TryAllocate(frameIndex, vbByteCount, out var vbAlloc, alignment: 4)) return;
@@ -484,6 +497,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             ScrollMode = new Vector4(scroll, mode, authoredAtmosphere ? 1f : 0f),
             TexIndex = texIndex,
             FallbackRampFlag = fnvFallbackHorizonRamp ? 1u : 0u,
+            SkyColorBias = skyColorBias,
+            StarColorScale = starColorScale,
             SkyUpper = new Vector4(skyUpper, 1f),
             SkyLower = new Vector4(skyLower, 1f),
             SkyHorizon = new Vector4(skyHorizon, 1f),
@@ -620,8 +635,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         public Vector4 ScrollMode;   // xy scroll, z mode, w unused
         public uint TexIndex;         // uint4.x
         public uint FallbackRampFlag; // uint4.y — 1 = FO3/FNV 3-row fallback horizon ramp
-        public uint Pad1;
-        public uint Pad2;
+        public float SkyColorBias;    // third scalar in the packed register; Skyrim HNAM[7] bias
+        public float StarColorScale;  // fourth scalar; Skyrim's shipped Stars technique uses 1.5
         public Vector4 SkyUpper;     // recovered SKY BlendColor[2]
         public Vector4 SkyLower;     // recovered SKY BlendColor[1]
         public Vector4 SkyHorizon;   // recovered SKY BlendColor[0]

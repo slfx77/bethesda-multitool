@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
@@ -15,7 +16,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 ///     only this cut, and FALLOUT_VIEWER_BLOOM=0|off kills it for A/Bs.
 ///     <para>
 ///         In <see cref="ProcessEnvironmentGroup" /> because the override tests set the real
-///         process-wide <c>FALLOUT_VIEWER_TONEMAP</c> / <c>_BLOOM</c> / <c>_MODERN_IMAGESPACE</c>
+///         process-wide <c>FALLOUT_VIEWER_TONEMAP</c> / <c>_BLOOM</c> /
+///         <c>_TES4_BLOOM_PASSES</c> / <c>_MODERN_IMAGESPACE</c>
 ///         variables. Restoring them in a <c>finally</c> only protects the next test — every
 ///         other case in this class calls <c>ApplyOverrides</c>/<c>ForGame</c>, which read those
 ///         same variables, so without serialization a parallel run observes another test's
@@ -329,6 +331,9 @@ public sealed class GpuTonemapSettingsTests
         Assert.Equal(0.7f, s.EyeAdaptSpeed); // fEyeAdaptSpeed
         Assert.Equal(4f, s.BlurRadius); // fBlurRadius (FNV widened to 8)
         Assert.Equal(2f, s.BlurPasses); // iNumBlurpasses
+        Assert.Equal(
+            ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative,
+            s.ClassicBloomTopology);
         Assert.Equal(1f, s.EmissiveMult); // fEmissiveHDRMult
         Assert.Equal(1.2f, s.TargetLum); // fTargetLUM
         Assert.Equal(1f, s.UpperLumClamp); // fUpperLUMClamp
@@ -467,8 +472,13 @@ public sealed class GpuTonemapSettingsTests
     }
 
     [Fact]
-    public void ResolveSceneScales_SkyrimEncodePhysicalValuesForGammaScene()
+    public void ResolveSceneTransforms_SkyrimUsesRecoveredAdditiveSkyBiasAcrossDisplayOperators()
     {
+        Assert.Equal(0f,
+            GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim).SkyScale);
+        Assert.Equal(1f,
+            GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4).SkyScale);
+
         var gamma = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
         {
             Mode = GpuTonemapMode.GammaAces,
@@ -476,29 +486,46 @@ public sealed class GpuTonemapSettingsTests
             SkyScale = 0.235f
         };
         var expectedSun = MathF.Pow(2.7f, 1f / 2.2f);
-        var expectedSky = MathF.Pow(0.235f, 1f / 2.2f);
 
         Assert.Equal(expectedSun, GpuTonemapSettings.ResolveSceneSunlightScale(
             gamma, BethesdaGame.Skyrim, true, false), 6);
-        Assert.Equal(expectedSky, GpuTonemapSettings.ResolveSceneSkyScale(
-            gamma, BethesdaGame.Skyrim, true, false), 6);
+        Assert.Equal(new SceneSkyColorTransform(1f, 0.235f),
+            GpuTonemapSettings.ResolveSceneSkyColorTransform(
+                gamma, BethesdaGame.Skyrim, true, false));
 
         var legacyClamp = gamma with { Mode = GpuTonemapMode.LegacyClamp };
         Assert.Equal(expectedSun, GpuTonemapSettings.ResolveSceneSunlightScale(
             legacyClamp, BethesdaGame.Skyrim, true, false), 6);
-        Assert.Equal(expectedSky, GpuTonemapSettings.ResolveSceneSkyScale(
-            legacyClamp, BethesdaGame.Skyrim, true, false), 6);
+        Assert.Equal(new SceneSkyColorTransform(1f, 0.235f),
+            GpuTonemapSettings.ResolveSceneSkyColorTransform(
+                legacyClamp, BethesdaGame.Skyrim, true, false));
 
         var modern = gamma with { Mode = GpuTonemapMode.CreationModern };
         Assert.Equal(2.7f, GpuTonemapSettings.ResolveSceneSunlightScale(
             modern, BethesdaGame.Skyrim, true, false));
-        Assert.Equal(0.235f, GpuTonemapSettings.ResolveSceneSkyScale(
-            modern, BethesdaGame.Skyrim, true, false));
+        Assert.Equal(new SceneSkyColorTransform(1f, 0.235f),
+            GpuTonemapSettings.ResolveSceneSkyColorTransform(
+                modern, BethesdaGame.Skyrim, true, false));
 
         Assert.Equal(1f, GpuTonemapSettings.ResolveSceneSunlightScale(
             gamma, BethesdaGame.Skyrim, false, false));
-        Assert.Equal(1f, GpuTonemapSettings.ResolveSceneSkyScale(
-            gamma, BethesdaGame.Skyrim, false, false));
+        Assert.Equal(SceneSkyColorTransform.Identity,
+            GpuTonemapSettings.ResolveSceneSkyColorTransform(
+                gamma, BethesdaGame.Skyrim, false, false));
+
+        var authored = new Vector3(0.1f, 0.2f, 0.3f);
+        var transformed = AtmosphereState.ApplySkyColorTransform(
+            AtmosphereState.Resolve(12f) with
+            {
+                SkyTopColor = authored,
+                SkyLowerColor = authored,
+                AuthoredHorizonColor = authored,
+                SkyHorizonColor = authored
+            },
+            1f,
+            0.235f);
+        Assert.Equal(new Vector3(0.335f, 0.435f, 0.535f), transformed.SkyTopColor);
+        Assert.NotEqual(authored * 0.235f, transformed.SkyTopColor);
     }
 
     [Fact]
@@ -602,6 +629,27 @@ public sealed class GpuTonemapSettingsTests
         finally
         {
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_BLOOM", previous);
+        }
+    }
+
+    [Fact]
+    public void ApplyOverrides_Tes4PairOverrideCannotAlterTheSharedFnvGraph()
+    {
+        var previous = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TES4_BLOOM_PASSES");
+        try
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TES4_BLOOM_PASSES", "1");
+
+            var tes4 = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.EngineTes4Defaults);
+            var fnv = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.EngineExteriorDefaults);
+
+            Assert.Equal(1f, tes4.BlurPasses);
+            Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.BlurPasses, fnv.BlurPasses);
+            Assert.Equal(ClassicHdrBloomTopology.FusedBrightPassBlur, fnv.ClassicBloomTopology);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TES4_BLOOM_PASSES", previous);
         }
     }
 

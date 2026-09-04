@@ -23,21 +23,23 @@ public sealed class AtmosphereStateTests
     private static readonly AtmosphereState.ClimateTiming CleanTiming = new(5f, 7f, 17f, 19f);
 
     [Fact]
-    public void ApplySkyColorScale_ScalesAllFourSkyColorsOnly()
+    public void ApplySkyColorTransform_AppliesScaleAndUnclampedBiasToAllFourSkyColorsOnly()
     {
         var original = AtmosphereState.Resolve(12f);
         const float scale = 0.375f;
+        const float bias = 0.235f;
 
-        var scaled = AtmosphereState.ApplySkyColorScale(original, scale);
+        var transformed = AtmosphereState.ApplySkyColorTransform(original, scale, bias);
+        var additive = new Vector3(bias);
 
-        Assert.Equal(original.SkyTopColor * scale, scaled.SkyTopColor);
-        Assert.Equal(original.SkyLowerColor * scale, scaled.SkyLowerColor);
-        Assert.Equal(original.AuthoredHorizonColor * scale, scaled.AuthoredHorizonColor);
-        Assert.Equal(original.SkyHorizonColor * scale, scaled.SkyHorizonColor);
-        Assert.Equal(original.SunColor, scaled.SunColor);
-        Assert.Equal(original.AmbientColor, scaled.AmbientColor);
-        Assert.Equal(original.FogColor, scaled.FogColor);
-        Assert.Equal(original.DirectionalAmbient, scaled.DirectionalAmbient);
+        Assert.Equal((original.SkyTopColor * scale) + additive, transformed.SkyTopColor);
+        Assert.Equal((original.SkyLowerColor * scale) + additive, transformed.SkyLowerColor);
+        Assert.Equal((original.AuthoredHorizonColor * scale) + additive, transformed.AuthoredHorizonColor);
+        Assert.Equal((original.SkyHorizonColor * scale) + additive, transformed.SkyHorizonColor);
+        Assert.Equal(original.SunColor, transformed.SunColor);
+        Assert.Equal(original.AmbientColor, transformed.AmbientColor);
+        Assert.Equal(original.FogColor, transformed.FogColor);
+        Assert.Equal(original.DirectionalAmbient, transformed.DirectionalAmbient);
     }
 
     [Fact]
