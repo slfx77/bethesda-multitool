@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.CommandLine;
+using System.Globalization;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Text;
@@ -9,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Recovery;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Dmp;
@@ -16,9 +18,17 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 /// <summary>
 ///     Probes uncovered minidump gap regions for recoverable compressed/container data:
 ///     BSA archive headers whose folder/file tables can be VA-stitched and walked in-memory,
-///     and RFC-1950 zlib streams that trial-inflate to asset-shaped content. This is a
-///     measurement command (audit item M3) — it decides whether a recovery pass is worth
-///     building; it does not extract anything.
+///     RFC-1950 zlib streams, and Xbox 360 XMemCompress/LZX streams that trial-inflate to
+///     asset-shaped content. This is a measurement command (audit item M3) — it decides whether a
+///     recovery pass is worth building; it does not extract anything.
+///     <para>
+///         The LZX branch was added 2026-09-03 after the user pointed out that DDXConv already
+///         carries our own managed XMemCompress decoder. It matters because the zlib branch had
+///         returned "unsupported compression method" corpus-wide: the console does not compress
+///         with zlib, so that result measured the decoder rather than the dump, and the whole
+///         "is there compressed data we are blind to?" question was still open. Both branches run,
+///         so the comparison stays visible in one artefact.
+///     </para>
 /// </summary>
 public static class DmpRecoveryProbeCommand
 {
@@ -26,6 +36,12 @@ public static class DmpRecoveryProbeCommand
     private const int BsaMagicScanWindow = 4096;
     private const int ZlibScanChunkSize = 4 * 1024 * 1024;
     private const int SniffPrefixSize = 512;
+
+    /// <summary>Bytes of a gap handed to the LZX probe in one pass.</summary>
+    private const int LzxScanChunkSize = 4 * 1024 * 1024;
+
+    /// <summary>Gaps below this cannot hold a stream worth reporting; skipping them is most of the run time.</summary>
+    private const int MinLzxGapSize = 4096;
 
     public static Command Create()
     {
@@ -148,6 +164,9 @@ public static class DmpRecoveryProbeCommand
                     $"zlib: [green]{probe.ZlibCandidatesFound:N0}[/] candidate(s), " +
                     $"{probe.ZlibAttempted:N0} attempted, {cleanZlib:N0} clean, " +
                     $"{probe.TotalInflatedBytes / 1024.0 / 1024.0:F1} MB inflated");
+                AnsiConsole.MarkupLine(
+                    $"  LZX: [green]{probe.LzxRows.Count:N0}[/] identifiable stream(s), " +
+                    $"{probe.LzxInflatedBytes / 1024.0 / 1024.0:F1} MB inflated");
             }
             catch (Exception ex)
             {
@@ -163,12 +182,16 @@ public static class DmpRecoveryProbeCommand
             Directory.CreateDirectory(csvDir);
             var bsaPath = Path.Combine(csvDir, "recovery_probe_bsa.csv");
             var zlibPath = Path.Combine(csvDir, "recovery_probe_zlib.csv");
+            var lzxPath = Path.Combine(csvDir, "recovery_probe_lzx.csv");
             await File.WriteAllTextAsync(
                 bsaPath, WriteBsaCsv(results.SelectMany(r => r.BsaRows).ToList()), cancellationToken);
             await File.WriteAllTextAsync(
                 zlibPath, WriteZlibCsv(results.SelectMany(r => r.ZlibRows).ToList()), cancellationToken);
+            await File.WriteAllTextAsync(
+                lzxPath, WriteLzxCsv(results.SelectMany(r => r.LzxRows).ToList()), cancellationToken);
             AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(bsaPath)}");
             AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(zlibPath)}");
+            AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(lzxPath)}");
         }
 
         AnsiConsole.MarkupLine(
@@ -221,9 +244,96 @@ public static class DmpRecoveryProbeCommand
 
             ProbeGapForBsa(dumpName, minidump, accessor, coverage.FileSize, gap, gapEnd, options, result);
             ScanGapForZlib(dumpName, minidump, accessor, coverage.FileSize, gap, gapEnd, options, result);
+            ScanGapForLzx(dumpName, accessor, gap, gapEnd, options, result);
         }
 
         return result;
+    }
+
+    // ===== LZX / XMemCompress branch =====
+
+    /// <summary>
+    ///     Runs <see cref="LzxGapProbe" /> over one gap. Unlike the zlib branch there is no cheap
+    ///     header magic to pre-filter on — XMemCompress framing is a bare big-endian length — so
+    ///     the probe's own content gate does the discriminating and this method only feeds it
+    ///     bytes and records what came back.
+    /// </summary>
+    private static void ScanGapForLzx(
+        string dumpName,
+        IMemoryAccessor accessor,
+        CoverageGap gap,
+        long gapEnd,
+        RecoveryProbeOptions options,
+        RecoveryProbeDumpResult result)
+    {
+        if (options.MaxLzxHits > 0 && result.LzxRows.Count >= options.MaxLzxHits)
+        {
+            return;
+        }
+
+        var gapSize = gapEnd - gap.FileOffset;
+        if (gapSize < MinLzxGapSize)
+        {
+            return;
+        }
+
+        var length = (int)Math.Min(gapSize, LzxScanChunkSize);
+        var buffer = new byte[length];
+        var read = accessor.ReadArray(gap.FileOffset, buffer, 0, length);
+        if (read <= 0)
+        {
+            return;
+        }
+
+        var remaining = options.MaxLzxHits > 0
+            ? options.MaxLzxHits - result.LzxRows.Count
+            : 0;
+        var hits = LzxGapProbe.Probe(
+            buffer.AsSpan(0, read),
+            gap.FileOffset,
+            options.LzxStride,
+            remaining);
+
+        foreach (var hit in hits)
+        {
+            result.LzxRows.Add(new LzxProbeRow
+            {
+                Dump = dumpName,
+                GapOffset = gap.FileOffset,
+                GapSize = gapSize,
+                CandidateOffset = hit.Offset,
+                CompressedBytes = hit.CompressedBytes,
+                InflatedBytes = hit.InflatedBytes,
+                ContentSniff = hit.ContentSniff,
+                LeadingHex = hit.LeadingHex
+            });
+        }
+
+        result.LzxInflatedBytes += hits.Sum(static hit => (long)hit.InflatedBytes);
+    }
+
+    private static string WriteLzxCsv(List<LzxProbeRow> rows)
+    {
+        var builder = new StringBuilder(
+            "dump,gap_offset,gap_size,candidate_offset,compressed_bytes,inflated_bytes,ratio,"
+            + "content_sniff,leading_hex\n");
+        foreach (var row in rows)
+        {
+            var ratio = row.CompressedBytes == 0
+                ? 0
+                : (double)row.InflatedBytes / row.CompressedBytes;
+            builder.Append(row.Dump).Append(',')
+                .Append(FormatHex(row.GapOffset)).Append(',')
+                .Append(row.GapSize).Append(',')
+                .Append(FormatHex(row.CandidateOffset)).Append(',')
+                .Append(row.CompressedBytes).Append(',')
+                .Append(row.InflatedBytes).Append(',')
+                .Append(ratio.ToString("F2", CultureInfo.InvariantCulture)).Append(',')
+                .Append(row.ContentSniff).Append(',')
+                .Append(row.LeadingHex).Append('\n');
+        }
+
+        return builder.ToString();
     }
 
     // ===== BSA branch =====
@@ -916,6 +1026,15 @@ public static class DmpRecoveryProbeCommand
         public long PerStreamInflateCap { get; init; } = 8L * 1024 * 1024;
         public int MaxBsaProbes { get; init; } = 64;
         public long MaxBsaTableBytes { get; init; } = 128L * 1024 * 1024;
+
+        /// <summary>Hits to report per dump before the LZX branch stops; 0 for no limit.</summary>
+        public int MaxLzxHits { get; init; } = 200;
+
+        /// <summary>
+        ///     Offset step for LZX attempts. 4 matches the dump's pointer alignment; raise it when
+        ///     sweeping a whole file, since every offset costs a trial decode.
+        /// </summary>
+        public int LzxStride { get; init; } = 4;
     }
 
     /// <summary>Per-dump probe results across both branches.</summary>
@@ -925,10 +1044,12 @@ public static class DmpRecoveryProbeCommand
         public string? Error { get; init; }
         public List<BsaProbeRow> BsaRows { get; } = [];
         public List<ZlibProbeRow> ZlibRows { get; } = [];
+        public List<LzxProbeRow> LzxRows { get; } = [];
         public int BsaMagicHits { get; set; }
         public int ZlibCandidatesFound { get; set; }
         public int ZlibAttempted { get; set; }
         public long TotalInflatedBytes { get; set; }
+        public long LzxInflatedBytes { get; set; }
 
         public static RecoveryProbeDumpResult Failed(string dump, string error)
         {
@@ -963,6 +1084,19 @@ public static class DmpRecoveryProbeCommand
     }
 
     /// <summary>One attempted zlib candidate inside a coverage gap.</summary>
+    /// <summary>One inflatable XMemCompress stream found in a gap.</summary>
+    internal sealed record LzxProbeRow
+    {
+        public required string Dump { get; init; }
+        public long GapOffset { get; init; }
+        public long GapSize { get; init; }
+        public long CandidateOffset { get; init; }
+        public int CompressedBytes { get; init; }
+        public int InflatedBytes { get; init; }
+        public string ContentSniff { get; init; } = "";
+        public string LeadingHex { get; init; } = "";
+    }
+
     internal sealed record ZlibProbeRow
     {
         public required string Dump { get; init; }
