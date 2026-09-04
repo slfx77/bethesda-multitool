@@ -31,6 +31,30 @@ internal static class NpcTextureHelpers
         return $"body_egt\\{npcFormId:X8}{BuildRenderVariantSuffix(renderVariantLabel)}_{partLabel}.dds";
     }
 
+    internal static string BuildNpcEarEgtTextureKey(NpcAppearance npc)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        return BuildNpcBodyEgtTextureKey(npc.NpcFormId, "ears", npc.RenderVariantLabel);
+    }
+
+    /// <summary>
+    ///     Returns every resolver key that NPC composition may populate with an actor-specific
+    ///     FaceGen/EGT texture. Keep capture and eviction callers on this single list so adding a
+    ///     generated body part cannot silently extend the resolver-cache lifetime.
+    /// </summary>
+    internal static string[] BuildNpcGeneratedTextureKeys(NpcAppearance npc)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        return
+        [
+            BuildNpcFaceEgtTextureKey(npc),
+            BuildNpcEarEgtTextureKey(npc),
+            BuildNpcBodyEgtTextureKey(npc.NpcFormId, "upperbody", npc.RenderVariantLabel),
+            BuildNpcBodyEgtTextureKey(npc.NpcFormId, "lefthand", npc.RenderVariantLabel),
+            BuildNpcBodyEgtTextureKey(npc.NpcFormId, "righthand", npc.RenderVariantLabel)
+        ];
+    }
+
     private static string BuildRenderVariantSuffix(string? renderVariantLabel)
     {
         if (string.IsNullOrWhiteSpace(renderVariantLabel))

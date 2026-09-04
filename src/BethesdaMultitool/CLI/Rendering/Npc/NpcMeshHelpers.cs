@@ -260,6 +260,7 @@ internal static class NpcMeshHelpers
                 IsEmissive = sub.IsEmissive,
                 UseVertexColors = sub.UseVertexColors,
                 UseVertexAlphaForOpacity = sub.UseVertexAlphaForOpacity,
+                IsTreeAnimation = sub.IsTreeAnimation,
                 IsDoubleSided = sub.IsDoubleSided,
                 HasAlphaBlend = sub.HasAlphaBlend,
                 HasAlphaTest = sub.HasAlphaTest,

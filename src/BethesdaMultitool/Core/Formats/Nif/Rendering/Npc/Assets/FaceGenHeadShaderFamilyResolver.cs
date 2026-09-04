@@ -14,6 +14,32 @@ internal static class FaceGenHeadShaderFamilyResolver
     private static readonly (float R, float G, float B) DefaultSubsurfaceColor =
         (24f / 255f, 8f / 255f, 8f / 255f);
 
+    /// <summary>
+    ///     Applies the texture family used by Oblivion's SKIN2000 permutation without changing
+    ///     the already-precomposed BaseMap/Map0/Map1 albedo. The original family diffuse remains
+    ///     the authoritative source for the sibling normal map even when the effective diffuse is
+    ///     a generated texture key.
+    /// </summary>
+    internal static void ApplyClassicSkin2000Material(
+        IEnumerable<RenderableSubmesh> submeshes,
+        NifTextureResolver textureResolver,
+        string? familySourceDiffusePath,
+        string? effectiveDiffusePath)
+    {
+        ArgumentNullException.ThrowIfNull(submeshes);
+        ArgumentNullException.ThrowIfNull(textureResolver);
+
+        foreach (var submesh in submeshes)
+        {
+            _ = OblivionNpcFacePartMaterialResolver.Apply(
+                submesh,
+                textureResolver,
+                familySourceDiffusePath,
+                effectiveDiffusePath);
+            submesh.IsFaceGen = true;
+        }
+    }
+
     internal static string ApplyToSubmeshes(
         IEnumerable<RenderableSubmesh> submeshes,
         NifTextureResolver textureResolver,
@@ -95,6 +121,17 @@ internal static class FaceGenHeadShaderFamilyResolver
         }
 
         return DecodedTexture.FromBaseLevel(outputPixels, width, height);
+    }
+
+    /// <summary>
+    ///     Applies Oblivion's retail fallback <c>FaceGenMap1</c>. The shader multiplies the
+    ///     BaseMap/Map0 aggregate by four times this texture; keeping that operation beside the
+    ///     source-proven fallback payload prevents production composition from silently omitting
+    ///     the final SKIN2000 albedo term.
+    /// </summary>
+    internal static DecodedTexture ApplyDefaultDetailModulation(DecodedTexture diffuseTexture)
+    {
+        return ApplyDetailModulation(diffuseTexture, DefaultFaceGenMap1Texture);
     }
 
     private static FaceGenHeadShaderFamilyResult ResolveSubmeshFamily(

@@ -100,6 +100,26 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     }
 
     [Fact]
+    public void Tes4LowerBodyPart_IsSuppressedWhenClothingOwnsTheLowerBodySlot()
+    {
+        var appearance = new NpcAppearance
+        {
+            NpcFormId = 0x000222A8,
+            LowerBodyNifPath = @"meshes\characters\_male\lowerbody.nif",
+            LowerBodyTexturePath = @"textures\characters\imperial\male\lowerbody.dds"
+        };
+
+        var parts = NpcCompositionPlanner.BuildBodyParts(
+            appearance,
+            new NpcCompositionOptions(),
+            coveredSlots: 0x08,
+            effectiveBodyTex: null,
+            effectiveHandTex: null);
+
+        Assert.Empty(parts);
+    }
+
+    [Fact]
     [Trait("Category", BucketBTestGuard.Category)]
     public void CreatePlan_FullBodyNpc_UsesHatHairFilter_AndSuppressesOverlappingBodyEquipment()
     {
@@ -355,6 +375,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
             BaseHeadTriPath = source.BaseHeadTriPath,
             HeadDiffuseOverride = source.HeadDiffuseOverride,
             FaceGenNifPath = source.FaceGenNifPath,
+            AuthoredFaceGenMap0Path = source.AuthoredFaceGenMap0Path,
             FaceGenSymmetricCoeffs = source.FaceGenSymmetricCoeffs,
             FaceGenAsymmetricCoeffs = source.FaceGenAsymmetricCoeffs,
             FaceGenTextureCoeffs = source.FaceGenTextureCoeffs,

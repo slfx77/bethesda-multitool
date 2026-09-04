@@ -53,4 +53,80 @@ public sealed class ArmorRecordScannerTests
         Assert.Equal(0x04u, scanEntry!.BipedFlags);
         Assert.Equal(0x00054321u, scanEntry.BipedModelListFormId);
     }
+
+    [Fact]
+    public void Process_OblivionArmor_ReadsBaseRatingAndRecordKind()
+    {
+        byte[] bmdt = [0x04, 0x00, 0x00, 0x00];
+        byte[] data = [0x65, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
+            0x0018AE4C,
+            "ARMO",
+            false,
+            ("EDID", EsmTestRecordBuilder.NullTermString("ImperialPalaceCuirass")),
+            ("BMDT", bmdt),
+            ("MODL", EsmTestRecordBuilder.NullTermString(@"Armor\ImperialWatch\M\Cuirass.NIF")),
+            ("DATA", data));
+
+        var scanEntry = ArmorRecordScanner.Process(
+            recordBytes,
+            false,
+            record,
+            BethesdaGame.Oblivion);
+
+        Assert.NotNull(scanEntry);
+        Assert.False(scanEntry!.IsClothing);
+        Assert.Equal((ushort)1125, scanEntry.BaseArmorRating);
+    }
+
+    [Fact]
+    public void Process_OblivionClothing_PreservesKindWithoutTreatingDataAsArmorRating()
+    {
+        byte[] bmdt = [0x04, 0x00, 0x00, 0x00];
+        byte[] data = [0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
+            0x000229AD,
+            "CLOT",
+            false,
+            ("EDID", EsmTestRecordBuilder.NullTermString("MiddleShirt01")),
+            ("BMDT", bmdt),
+            ("MODL", EsmTestRecordBuilder.NullTermString(@"Clothes\MiddleClass\01\M\Shirt.NIF")),
+            ("DATA", data));
+
+        var scanEntry = ArmorRecordScanner.Process(
+            recordBytes,
+            false,
+            record,
+            BethesdaGame.Oblivion);
+
+        Assert.NotNull(scanEntry);
+        Assert.True(scanEntry!.IsClothing);
+        Assert.Equal((ushort)0, scanEntry.BaseArmorRating);
+    }
+
+    [Fact]
+    public void Process_OblivionBigEndianArmor_ReadsBaseRating()
+    {
+        byte[] bmdt = [0x00, 0x04, 0x00, 0x00];
+        byte[] data = [0x04, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
+            0x0018AE4C,
+            "ARMO",
+            true,
+            ("BMDT", bmdt),
+            ("MODL", EsmTestRecordBuilder.NullTermString(@"Armor\ImperialWatch\M\Cuirass.NIF")),
+            ("DATA", data));
+
+        var scanEntry = ArmorRecordScanner.Process(
+            recordBytes,
+            true,
+            record,
+            BethesdaGame.Oblivion);
+
+        Assert.NotNull(scanEntry);
+        Assert.Equal(0x04u, scanEntry!.BipedFlags);
+        Assert.Equal((ushort)1125, scanEntry.BaseArmorRating);
+    }
 }

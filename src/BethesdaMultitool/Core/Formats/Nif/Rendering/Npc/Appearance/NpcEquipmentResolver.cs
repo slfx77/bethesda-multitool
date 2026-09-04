@@ -27,38 +27,31 @@ internal sealed class NpcEquipmentResolver
         _game = game;
     }
 
-    internal List<EquippedItem>? Resolve(List<InventoryItem>? inventoryItems, bool isFemale)
+    internal List<EquippedItem>? Resolve(
+        List<InventoryItem>? inventoryItems,
+        bool isFemale,
+        ResolutionMode mode = ResolutionMode.StaticDefault)
     {
         if (inventoryItems is not { Count: > 0 })
         {
             return null;
         }
 
-        var slotToArmor = new Dictionary<uint, ResolvedArmorChoice>();
-
-        foreach (var inventoryItem in inventoryItems)
+        var armorChoices = ResolveRenderableArmorChoices(inventoryItems, isFemale);
+        var useOblivionDefaultWornSelection =
+            _game == BethesdaGame.Oblivion && mode == ResolutionMode.StaticDefault;
+        if (useOblivionDefaultWornSelection)
         {
-            if (inventoryItem.Count <= 0)
-            {
-                continue;
-            }
+            armorChoices = SelectBestOblivionArmorChoices(armorChoices);
+        }
 
-            var armor = ResolveArmor(inventoryItem.ItemFormId);
-            if (armor == null)
-            {
-                continue;
-            }
-
-            if (!HasRenderableVisual(armor, isFemale))
-            {
-                continue;
-            }
-
-            var choice = new ResolvedArmorChoice(inventoryItem.ItemFormId, armor);
+        var slotToArmor = new Dictionary<uint, ResolvedArmorChoice>();
+        foreach (var choice in armorChoices)
+        {
             for (var bit = 0; bit < 20; bit++)
             {
                 var slot = 1u << bit;
-                if ((armor.BipedFlags & slot) != 0)
+                if ((choice.Armor.BipedFlags & slot) != 0)
                 {
                     slotToArmor.TryAdd(slot, choice);
                 }
@@ -73,8 +66,12 @@ internal sealed class NpcEquipmentResolver
         var seenMeshes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var equippedItems = new List<EquippedItem>();
         var emittedArmorFormIds = new HashSet<uint>();
+        IEnumerable<ResolvedArmorChoice> choicesToEmit =
+            useOblivionDefaultWornSelection || mode == ResolutionMode.AuthoritativeWorn
+            ? armorChoices
+            : slotToArmor.Values;
 
-        foreach (var (_, armorChoice) in slotToArmor)
+        foreach (var armorChoice in choicesToEmit)
         {
             if (!emittedArmorFormIds.Add(armorChoice.FormId))
             {
@@ -90,6 +87,76 @@ internal sealed class NpcEquipmentResolver
         }
 
         return equippedItems.Count > 0 ? equippedItems : null;
+    }
+
+    private List<ResolvedArmorChoice> ResolveRenderableArmorChoices(
+        List<InventoryItem> inventoryItems,
+        bool isFemale)
+    {
+        var choices = new List<ResolvedArmorChoice>();
+
+        for (var inventoryIndex = 0; inventoryIndex < inventoryItems.Count; inventoryIndex++)
+        {
+            var inventoryItem = inventoryItems[inventoryIndex];
+            if (inventoryItem.Count <= 0)
+            {
+                continue;
+            }
+
+            var armor = ResolveArmor(inventoryItem.ItemFormId);
+            if (armor == null || armor.BipedFlags == 0 || !HasRenderableVisual(armor, isFemale))
+            {
+                continue;
+            }
+
+            choices.Add(new ResolvedArmorChoice(
+                inventoryItem.ItemFormId,
+                armor,
+                inventoryIndex));
+        }
+
+        return choices;
+    }
+
+    private static List<ResolvedArmorChoice> SelectBestOblivionArmorChoices(
+        List<ResolvedArmorChoice> candidates)
+    {
+        var ranked = new List<ResolvedArmorChoice>(candidates);
+        ranked.Sort(static (left, right) =>
+        {
+            var comparison = left.Armor.IsClothing.CompareTo(right.Armor.IsClothing);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            if (!left.Armor.IsClothing)
+            {
+                comparison = right.Armor.BaseArmorRating.CompareTo(left.Armor.BaseArmorRating);
+                if (comparison != 0)
+                {
+                    return comparison;
+                }
+            }
+
+            return left.InventoryIndex.CompareTo(right.InventoryIndex);
+        });
+
+        uint claimedBipedFlags = 0;
+        var selected = new List<ResolvedArmorChoice>();
+        foreach (var candidate in ranked)
+        {
+            if ((candidate.Armor.BipedFlags & claimedBipedFlags) != 0)
+            {
+                continue;
+            }
+
+            selected.Add(candidate);
+            claimedBipedFlags |= candidate.Armor.BipedFlags;
+        }
+
+        selected.Sort(static (left, right) => left.InventoryIndex.CompareTo(right.InventoryIndex));
+        return selected;
     }
 
     private ArmoScanEntry? ResolveArmor(uint formId, int depth = 0)
@@ -301,5 +368,14 @@ internal sealed class NpcEquipmentResolver
         uint? ActorRefFormId,
         IReadOnlyList<uint>? WornArmorFormIds);
 
-    private readonly record struct ResolvedArmorChoice(uint FormId, ArmoScanEntry Armor);
+    internal enum ResolutionMode
+    {
+        StaticDefault,
+        AuthoritativeWorn
+    }
+
+    private readonly record struct ResolvedArmorChoice(
+        uint FormId,
+        ArmoScanEntry Armor,
+        int InventoryIndex);
 }

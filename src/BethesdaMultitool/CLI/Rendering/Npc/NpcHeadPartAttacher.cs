@@ -3,7 +3,9 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
 
@@ -23,6 +25,7 @@ internal static class NpcHeadPartAttacher
         MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
+        string? effectiveEarTexturePath,
         Matrix4x4? bonelessAttachmentTransform)
     {
         foreach (var partPath in new[]
@@ -103,10 +106,25 @@ internal static class NpcHeadPartAttacher
 
             foreach (var sub in partModel.Submeshes)
             {
-                if (string.Equals(partPath, npc.EarNifPath, StringComparison.OrdinalIgnoreCase) &&
-                    npc.EarTexturePath != null)
+                if (sub.Normals != null)
                 {
-                    sub.DiffuseTexturePath = npc.EarTexturePath;
+                    FaceGenMeshMorpher.WeldSeamNormals(sub.Positions, sub.Normals);
+                }
+
+                if (string.Equals(partPath, npc.EarNifPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (npc.Game == BethesdaGame.Oblivion)
+                    {
+                        _ = OblivionNpcFacePartMaterialResolver.Apply(
+                            sub,
+                            textureResolver,
+                            npc.EarTexturePath,
+                            effectiveEarTexturePath);
+                    }
+                    else if (npc.EarTexturePath != null)
+                    {
+                        sub.DiffuseTexturePath = npc.EarTexturePath;
+                    }
                 }
 
                 sub.RenderOrder = 0;
@@ -126,9 +144,6 @@ internal static class NpcHeadPartAttacher
         Matrix4x4? bonelessAttachmentTransform)
     {
         var hairNifPath = npc.HairNifPath!;
-        var hairBaseName = Path.GetFileNameWithoutExtension(hairNifPath);
-        var hairDir = Path.GetDirectoryName(hairNifPath) ?? "";
-
         var hairRaw = NpcMeshHelpers.LoadNifRawFromBsa(
             hairNifPath,
             meshArchives);
@@ -149,8 +164,10 @@ internal static class NpcHeadPartAttacher
         if (usedBaseRaceMesh &&
             (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
         {
-            var egmSuffix = hairFilterOverride == "Hat" ? "hat.egm" : "nohat.egm";
-            var hairEgmPath = Path.Combine(hairDir, hairBaseName + egmSuffix);
+            var hairEgmPath = FaceGenHairEgmPathResolver.Build(
+                npc.Game,
+                hairNifPath,
+                hairFilterOverride == "Hat");
             NpcMeshHelpers.LoadAndApplyEgm(hairEgmPath, hairModel,
                 npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
                 meshArchives, egmCache,
@@ -178,14 +195,18 @@ internal static class NpcHeadPartAttacher
                 availableBones);
         }
 
-        // Merge hair submeshes into head model
         var hairTint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
+        NpcHairSubmeshPolicy.Apply(
+            hairModel,
+            npc.Game,
+            hairTint,
+            textureResolver,
+            npc.HairTexturePath);
+
+        // Merge every extractor-selected hair shape into the head model. The shared policy above
+        // deliberately treats double-sidedness only as render state.
         foreach (var sub in hairModel.Submeshes)
         {
-            sub.TintColor = hairTint;
-            if (npc.HairTexturePath != null)
-                sub.DiffuseTexturePath = npc.HairTexturePath;
-
             sub.RenderOrder = 1;
             model.Submeshes.Add(sub);
             model.ExpandBounds(sub.Positions);

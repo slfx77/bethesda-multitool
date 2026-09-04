@@ -3,8 +3,10 @@ using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assembly;
 
@@ -33,35 +35,37 @@ internal static class NpcExportHeadAssembler
                 preSkinMorphDeltas: headPlan.HeadPreSkinMorphDeltas);
             if (extracted != null)
             {
+                var classicSkin2000 = npc.Game == BethesdaGame.Oblivion;
+                var familySourceDiffusePath = npc.HeadDiffuseOverride == null
+                    ? null
+                    : "textures\\" + npc.HeadDiffuseOverride;
+
+                NpcBaseHeadGeometryPolicy.PrepareForMaterial(
+                    extracted.MeshParts.Select(static part => part.Submesh),
+                    headPlan.HeadPreSkinMorphDeltas != null,
+                    deferTangentRebuildToMaterialResolver: classicSkin2000);
+
                 foreach (var part in extracted.MeshParts)
                 {
-                    if (headPlan.EffectiveHeadTexturePath != null)
+                    if (classicSkin2000)
+                    {
+                        // Rebuild the material's tangent frame after every operation that can change
+                        // positions or normals. Otherwise RecalculateNormals clears TBN and silently
+                        // disables the normal map in the native decoder.
+                        FaceGenHeadShaderFamilyResolver.ApplyClassicSkin2000Material(
+                            [part.Submesh],
+                            textureResolver,
+                            familySourceDiffusePath,
+                            headPlan.EffectiveHeadTexturePath);
+                    }
+                    else if (headPlan.EffectiveHeadTexturePath != null)
                     {
                         part.Submesh.DiffuseTexturePath = headPlan.EffectiveHeadTexturePath;
                     }
 
-                    // FaceGen morph + seam-normal weld must run BEFORE the scene-add call
-                    // — NpcExportSceneBuilder.AddSkinnedPart / AddExtractedRigidPart both
-                    // deep-clone the submesh (CloneSubmesh) and any later mutation of
-                    // part.Submesh is lost. The previous post-loop RecalculateNormals call
-                    // was operating on the orphaned original and never reached the GLB.
-                    if (headPlan.HeadPreSkinMorphDeltas != null)
-                    {
-                        FaceGenMeshMorpher.RecalculateNormals(part.Submesh);
-                    }
-                    else if (part.Submesh.Normals != null)
-                    {
-                        // Always weld co-located seam normals (eye sockets, mouth interior,
-                        // neck rim), even on the non-morphed code path. The glTF PBR pipeline
-                        // amplifies per-vertex TBN inconsistency at unwelded seams into visible
-                        // splotches / triangular holes that the rasterizer's per-pixel shader
-                        // smooths over. WeldSeamNormals is hemisphere-split so opposing-normal
-                        // seam partners (mouth interior vs face exterior) stay in distinct weld
-                        // groups instead of canceling to a zero direction.
-                        FaceGenMeshMorpher.WeldSeamNormals(
-                            part.Submesh.Positions,
-                            part.Submesh.Normals);
-                    }
+                    // Map0/EGT is optional texture content; it does not select the material family.
+                    // In particular, the no-EGT control must still enter SKIN2000 in the Actors tab.
+                    part.Submesh.IsFaceGen = classicSkin2000;
 
                     if (part.Skin != null && nodeIndicesByBoneName != null)
                     {
@@ -92,6 +96,7 @@ internal static class NpcExportHeadAssembler
             textureResolver,
             compositionCaches.EgmFiles,
             usedBaseRaceMesh,
+            headPlan.EffectiveEarTexturePath,
             headPlan.AttachmentBoneTransforms,
             headPlan.BonelessAttachmentTransform);
         if (plan.Options.IncludeHair)
@@ -236,8 +241,28 @@ internal static class NpcExportHeadAssembler
             hairFilter = "Hat";
         }
 
+        var effectiveEarTexturePath = npc.EarTexturePath;
+        if (npc.Game == BethesdaGame.Oblivion &&
+            !settings.NoEgt &&
+            npc.EarNifPath != null &&
+            npc.EarTexturePath != null &&
+            npc.FaceGenTextureCoeffs != null)
+        {
+            effectiveEarTexturePath = NpcMeshHelpers.ApplyBodyEgtMorph(
+                                      Path.ChangeExtension(npc.EarNifPath, ".egt"),
+                                      npc.EarTexturePath,
+                                      npc.FaceGenTextureCoeffs,
+                                      npc.NpcFormId,
+                                      "ears",
+                                      npc.RenderVariantLabel,
+                                      meshArchives,
+                                      textureResolver,
+                                      egtCache)
+                                  ?? effectiveEarTexturePath;
+        }
+
         AddRaceFaceParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
-            attachmentBoneTransforms, bonelessAttachmentTransform);
+            effectiveEarTexturePath, attachmentBoneTransforms, bonelessAttachmentTransform);
         if (!settings.NoHair)
         {
             AddHair(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
@@ -306,17 +331,18 @@ internal static class NpcExportHeadAssembler
         if (usedBaseRaceMesh &&
             (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
         {
-            var hairBaseName = Path.GetFileNameWithoutExtension(npc.HairNifPath);
-            var hairDir = Path.GetDirectoryName(npc.HairNifPath) ?? string.Empty;
-            var egmSuffix = hairFilter == "Hat" ? "hat.egm" : "nohat.egm";
-            var hairEgmPath = Path.Combine(hairDir, hairBaseName + egmSuffix);
+            var hairEgmPath = FaceGenHairEgmPathResolver.Build(
+                npc.Game,
+                npc.HairNifPath,
+                hairFilter == "Hat");
             NpcMeshHelpers.LoadAndApplyEgm(
                 hairEgmPath,
                 hairModel,
                 npc.FaceGenSymmetricCoeffs,
                 npc.FaceGenAsymmetricCoeffs,
                 meshArchives,
-                egmCache);
+                egmCache,
+                recalculateNormals: false);
         }
 
         if (attachmentBoneTransforms != null &&
@@ -331,31 +357,13 @@ internal static class NpcExportHeadAssembler
                 npc.HairNifPath);
         }
 
-        // Some hair NIFs contain both actual hair strands and scalp/skin geometry.
-        // Hair strands have NiStencilProperty (IsDoubleSided=true); scalp shapes are
-        // single-sided and overlap the FaceGen head mesh, causing z-fighting dark bands.
-        // Only filter when the NIF has a mix — if all shapes are single-sided, keep them all.
-        if (hairModel.Submeshes.Any(s => s.IsDoubleSided))
-        {
-            hairModel.Submeshes.RemoveAll(s => !s.IsDoubleSided);
-        }
-
         var tint = NpcTextureHelpers.UnpackHairColor(npc.HairColor);
-        foreach (var submesh in hairModel.Submeshes)
-        {
-            submesh.TintColor = tint;
-            if (npc.HairTexturePath != null)
-            {
-                submesh.DiffuseTexturePath = npc.HairTexturePath;
-            }
-
-            // Hair NIFs intentionally have unshared per-face vertices and authored
-            // flat normals. The engine renders them as-is. Do not smooth hair normals
-            // (RecalculateNormals + WeldSeamNormals): averaging normals across hair
-            // cards facing very different directions produces sideways-pointing
-            // normals at silhouette edges that read as dark patches in glTF PBR
-            // viewers. Trust the authored NIF normals.
-        }
+        NpcHairSubmeshPolicy.Apply(
+            hairModel,
+            npc.Game,
+            tint,
+            textureResolver,
+            npc.HairTexturePath);
 
         NpcExportSceneBuilder.AddRigidModel(scene, npc.HairNifPath, hairModel);
     }
@@ -367,6 +375,7 @@ internal static class NpcExportHeadAssembler
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         bool usedBaseRaceMesh,
+        string? effectiveEarTexturePath,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
         Matrix4x4? bonelessAttachmentTransform)
     {
@@ -405,7 +414,8 @@ internal static class NpcExportHeadAssembler
                     npc.FaceGenSymmetricCoeffs,
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
-                    egmCache);
+                    egmCache,
+                    recalculateNormals: false);
             }
 
             // Push mouth/teeth inward when FaceGen morphs are active to reduce clipping.
@@ -440,16 +450,26 @@ internal static class NpcExportHeadAssembler
                     NpcRenderHelpers.HeadAttachmentRootPolicy.CompensateRotatedRoot);
             }
 
-            if (string.Equals(facePartPath, npc.EarNifPath, StringComparison.OrdinalIgnoreCase) &&
-                npc.EarTexturePath != null)
+            WeldSubmeshSeams(partModel);
+            if (string.Equals(facePartPath, npc.EarNifPath, StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var submesh in partModel.Submeshes)
                 {
-                    submesh.DiffuseTexturePath = npc.EarTexturePath;
+                    if (npc.Game == BethesdaGame.Oblivion)
+                    {
+                        _ = OblivionNpcFacePartMaterialResolver.Apply(
+                            submesh,
+                            textureResolver,
+                            npc.EarTexturePath,
+                            effectiveEarTexturePath);
+                    }
+                    else if (npc.EarTexturePath != null)
+                    {
+                        submesh.DiffuseTexturePath = npc.EarTexturePath;
+                    }
                 }
             }
 
-            WeldSubmeshSeams(partModel);
             NpcExportSceneBuilder.AddRigidModel(scene, facePartPath, partModel);
         }
     }

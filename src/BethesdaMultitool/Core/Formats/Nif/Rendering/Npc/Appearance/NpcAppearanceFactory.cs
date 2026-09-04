@@ -197,6 +197,10 @@ internal sealed class NpcAppearanceFactory
             FaceGenNifPath = NpcAppearancePathDeriver.BuildFaceGenNifPath(
                 pluginName,
                 formId),
+            AuthoredFaceGenMap0Path = NpcAppearancePathDeriver.BuildAuthoredFaceGenMap0Path(
+                _index.Game,
+                pluginName,
+                formId),
             HairNifPath = NpcAppearancePathDeriver.AsMeshPath(hair?.ModelPath),
             HairTexturePath = NpcAppearancePathDeriver.AsTexturePath(hair?.TexturePath),
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),
@@ -379,14 +383,26 @@ internal sealed class NpcAppearanceFactory
             npcTextureCoefficients,
             raceTextureCoefficients);
         // Runtime worn armor (from the dump's BipedAnim slots) replaces the base
-        // record's inventory for equipment when present; the weapon path below
-        // keeps using the base inventory regardless.
-        var equipmentSource = runtimeEquipmentSelection is { WornArmorFormIds.Count: > 0 }
-            ? runtimeEquipmentSelection.Value.WornArmorFormIds!
+        // record's inventory when the target and worn-state read are authoritative.
+        // A known-empty list means the actor is naked; null means worn state was unavailable.
+        // The weapon path below keeps using the base inventory regardless.
+        List<InventoryItem>? authoritativeEquipmentSource = null;
+        if (runtimeEquipmentSelection is
+            { HasRuntimeTarget: true, WornArmorFormIds: { } wornArmorFormIds })
+        {
+            authoritativeEquipmentSource = wornArmorFormIds
                 .Select(id => new InventoryItem(id, 1))
-                .ToList()
-            : inventoryItems;
-        var equippedItems = _equipmentResolver.Resolve(equipmentSource, isFemale);
+                .ToList();
+        }
+
+        var equipmentSource = authoritativeEquipmentSource ?? inventoryItems;
+        var equipmentResolutionMode = authoritativeEquipmentSource != null
+            ? NpcEquipmentResolver.ResolutionMode.AuthoritativeWorn
+            : NpcEquipmentResolver.ResolutionMode.StaticDefault;
+        var equippedItems = _equipmentResolver.Resolve(
+            equipmentSource,
+            isFemale,
+            equipmentResolutionMode);
         var weaponVisual = _weaponResolver.Resolve(
             weaponResolutionNpc,
             inventoryItems,
@@ -419,6 +435,12 @@ internal sealed class NpcAppearanceFactory
             FaceGenNifPath = NpcAppearancePathDeriver.BuildFaceGenNifPath(
                 pluginName,
                 npcRecord.FormId),
+            AuthoredFaceGenMap0Path = npcRecord.FormId != PlayerBaseFormId && esmNpc != null
+                ? NpcAppearancePathDeriver.BuildAuthoredFaceGenMap0Path(
+                    _index.Game,
+                    pluginName,
+                    npcRecord.FormId)
+                : null,
             HairNifPath = NpcAppearancePathDeriver.AsMeshPath(hair?.ModelPath),
             HairTexturePath = NpcAppearancePathDeriver.AsTexturePath(hair?.TexturePath),
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),

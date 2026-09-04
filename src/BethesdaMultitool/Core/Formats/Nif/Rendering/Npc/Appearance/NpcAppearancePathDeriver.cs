@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 /// <summary>
@@ -19,6 +21,32 @@ internal static class NpcAppearancePathDeriver
     internal static string BuildFaceGenNifPath(string pluginName, uint formId)
     {
         return $"meshes\\characters\\facegendata\\facegeom\\{pluginName}\\{formId:X8}.nif";
+    }
+
+    /// <summary>
+    ///     Builds the authored TES4 FaceGenMap0 path. Oblivion stores the editor-baked, 128-centered
+    ///     per-NPC color delta under <c>textures\faces\&lt;plugin&gt;\&lt;formid&gt;_0.dds</c>.
+    /// </summary>
+    internal static string? BuildAuthoredFaceGenMap0Path(
+        BethesdaGame game,
+        string? pluginName,
+        uint formId)
+    {
+        if (game != BethesdaGame.Oblivion || string.IsNullOrWhiteSpace(pluginName))
+        {
+            return null;
+        }
+
+        var normalizedPluginName = pluginName.Trim().Replace('/', '\\').TrimEnd('\\');
+        var separatorIndex = normalizedPluginName.LastIndexOf('\\');
+        if (separatorIndex >= 0)
+        {
+            normalizedPluginName = normalizedPluginName[(separatorIndex + 1)..];
+        }
+
+        return normalizedPluginName.Length == 0
+            ? null
+            : $"textures\\faces\\{normalizedPluginName}\\{formId:X8}_0.dds";
     }
 
     internal static string? DeriveHeadTriPath(string? headNifPath)

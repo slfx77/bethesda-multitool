@@ -3,8 +3,10 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Resources;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
@@ -128,19 +130,39 @@ internal static class NpcHeadBuilder
         }
 
         var headMeshEndIndex = model.Submeshes.Count;
-        if (headPlan.EffectiveHeadTexturePath != null)
+        var classicSkin2000 = npc.Game == BethesdaGame.Oblivion;
+        if (usedBaseRaceMesh)
         {
-            for (var index = 0; index < headMeshEndIndex; index++)
-            {
-                model.Submeshes[index].DiffuseTexturePath = headPlan.EffectiveHeadTexturePath;
-                if (!headPlan.EffectiveHeadTextureUsesEgtMorph)
-                {
-                    continue;
-                }
+            NpcBaseHeadGeometryPolicy.PrepareForMaterial(
+                model.Submeshes.Take(headMeshEndIndex),
+                headPlan.HeadPreSkinMorphDeltas != null,
+                deferTangentRebuildToMaterialResolver: classicSkin2000);
+        }
 
-                model.Submeshes[index].IsFaceGen = true;
-                model.Submeshes[index].SubsurfaceColor = (24f / 255f, 8f / 255f, 8f / 255f);
+        if (classicSkin2000)
+        {
+            var familySourceDiffusePath = npc.HeadDiffuseOverride == null
+                ? null
+                : "textures\\" + npc.HeadDiffuseOverride;
+            FaceGenHeadShaderFamilyResolver.ApplyClassicSkin2000Material(
+                model.Submeshes.Take(headMeshEndIndex),
+                textureResolver,
+                familySourceDiffusePath,
+                headPlan.EffectiveHeadTexturePath);
+        }
+
+        for (var index = 0; index < headMeshEndIndex; index++)
+        {
+            var submesh = model.Submeshes[index];
+            if (!classicSkin2000 && headPlan.EffectiveHeadTexturePath != null)
+            {
+                submesh.DiffuseTexturePath = headPlan.EffectiveHeadTexturePath;
             }
+
+            // The retail shader family is a property of Oblivion head geometry, not of whether a
+            // diagnostic run enabled Map0/EGT. Keeping this true for --no-egt makes the texture A/B
+            // change only the requested texture source instead of silently changing light models.
+            submesh.IsFaceGen = classicSkin2000;
         }
 
         Log.Debug("Head bounds: ({0:F2}, {1:F2}, {2:F2}) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ({3:F2}, {4:F2}, {5:F2})",
@@ -154,6 +176,7 @@ internal static class NpcHeadBuilder
             meshArchives,
             textureResolver,
             compositionCaches.EgmFiles,
+            headPlan.EffectiveEarTexturePath,
             headPlan.BonelessAttachmentTransform);
 
         if (headPlan.HairNifPath != null)
@@ -230,7 +253,8 @@ internal static class NpcHeadBuilder
             FaceGenNifPath = plan.Head.FaceGenNifPath,
             HeadPreSkinMorphDeltas = plan.Head.HeadPreSkinMorphDeltas,
             EffectiveHeadTexturePath = plan.Head.EffectiveHeadTexturePath,
-            EffectiveHeadTextureUsesEgtMorph = plan.Head.EffectiveHeadTextureUsesEgtMorph,
+            EffectiveHeadTextureSource = plan.Head.EffectiveHeadTextureSource,
+            EffectiveEarTexturePath = plan.Head.EffectiveEarTexturePath,
             HairFilter = hairFilterOverride ?? plan.Head.HairFilter,
             AttachmentBoneTransforms = skeletonBones ?? idlePoseBones ?? plan.Head.AttachmentBoneTransforms,
             BonelessAttachmentTransform = headEquipmentTransformOverride ?? plan.Head.BonelessAttachmentTransform,

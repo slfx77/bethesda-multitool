@@ -9,6 +9,36 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
 public sealed class FaceGenHeadShaderFamilyResolverTests
 {
     [Fact]
+    public void ApplyClassicSkin2000Material_PreservesPrecomposedAlbedoAndResolvesFamilyNormal()
+    {
+        const string familyDiffusePath = @"textures\characters\male\headhuman.dds";
+        const string effectiveDiffusePath = @"facegen_egt\00000001.dds";
+        var normalPath = FaceGenHeadShaderFamilyResolver.BuildSiblingPath(familyDiffusePath, "_n")!;
+
+        using var resolver = new NifTextureResolver();
+        resolver.InjectTexture(effectiveDiffusePath, TestTextures.Single(97, 112, 117, 255));
+        resolver.InjectTexture(normalPath, TestTextures.Single(127, 127, 255, 255));
+
+        var submesh = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 2],
+            DiffuseTexturePath = familyDiffusePath
+        };
+
+        FaceGenHeadShaderFamilyResolver.ApplyClassicSkin2000Material(
+            [submesh],
+            resolver,
+            familyDiffusePath,
+            effectiveDiffusePath);
+
+        Assert.Equal(effectiveDiffusePath, submesh.DiffuseTexturePath);
+        Assert.Equal(normalPath, submesh.NormalMapTexturePath);
+        Assert.True(submesh.IsFaceGen);
+        Assert.Equal<byte>([97, 112, 117, 255], resolver.GetTexture(effectiveDiffusePath)!.Pixels);
+    }
+
+    [Fact]
     public void ApplyToSubmeshes_DerivesHeadFamilyTexturesAndInjectsComposedDiffuse()
     {
         const string diffusePath = @"textures\characters\male\headhuman.dds";

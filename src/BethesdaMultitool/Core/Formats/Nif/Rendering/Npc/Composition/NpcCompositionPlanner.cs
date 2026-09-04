@@ -235,35 +235,84 @@ internal static class NpcCompositionPlanner
             }
         }
 
-        var effectiveHeadTexturePath = npc.HeadDiffuseOverride != null
+        var baseHeadTexturePath = npc.HeadDiffuseOverride != null
             ? "textures\\" + npc.HeadDiffuseOverride
             : null;
-        var effectiveHeadTextureUsesEgtMorph = false;
-        if (options.ApplyEgt &&
-            npc.BaseHeadNifPath != null &&
-            npc.FaceGenTextureCoeffs != null &&
-            effectiveHeadTexturePath != null)
+        var effectiveHeadTexturePath = baseHeadTexturePath;
+        if (options.ApplyEgt)
         {
             FaceGenTextureMorpher.DebugLabel = NpcTextureHelpers.BuildNpcRenderName(npc);
             FaceGenTextureMorpher.ExportDebugAppearanceCoefficients(npc);
-            var egtPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egt");
+        }
+
+        string? generatedEgtPath = null;
+        EgtParser? LoadGeneratedEgt()
+        {
+            if (npc.BaseHeadNifPath == null)
+            {
+                return null;
+            }
+
+            generatedEgtPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egt");
+            var egtPath = generatedEgtPath;
             if (!caches.EgtFiles.TryGetValue(egtPath, out var egt))
             {
                 egt = NpcMeshHelpers.LoadEgtFromBsa(egtPath, meshArchives);
                 caches.EgtFiles[egtPath] = egt;
             }
 
-            var baseTexture = egt == null ? null : textureResolver.GetTexture(effectiveHeadTexturePath);
-            if (egt != null && baseTexture != null)
+            return egt;
+        }
+
+        var headTexture = NpcHeadTextureComposer.Resolve(
+            npc,
+            textureResolver,
+            effectiveHeadTexturePath,
+            options.ApplyEgt,
+            LoadGeneratedEgt);
+        effectiveHeadTexturePath = headTexture.EffectiveTexturePath;
+        var sourcePath = headTexture.Source switch
+        {
+            NpcHeadTextureSource.AuthoredMap0 => npc.AuthoredFaceGenMap0Path,
+            NpcHeadTextureSource.GeneratedEgt => generatedEgtPath,
+            _ => baseHeadTexturePath
+        };
+        Log.Info(
+            "NPC head texture selected formId=0x{0:X8} source={1} sourcePath={2} effectivePath={3} " +
+            "map1Source={4} map1EffectivePath={5}",
+            npc.NpcFormId,
+            headTexture.Source,
+            sourcePath ?? "(none)",
+            effectiveHeadTexturePath ?? "(none)",
+            headTexture.FaceGenMap1Source,
+            headTexture.FaceGenMap1EffectivePath ?? "(none)");
+
+        var effectiveEarTexturePath = npc.EarTexturePath;
+        if (npc.Game == BethesdaGame.Oblivion &&
+            options.ApplyEgt &&
+            npc.EarNifPath != null &&
+            npc.EarTexturePath != null &&
+            npc.FaceGenTextureCoeffs != null)
+        {
+            var earEgtPath = Path.ChangeExtension(npc.EarNifPath, ".egt");
+            var generatedEarTexturePath = NpcMeshHelpers.ApplyBodyEgtMorph(
+                earEgtPath,
+                npc.EarTexturePath,
+                npc.FaceGenTextureCoeffs,
+                npc.NpcFormId,
+                "ears",
+                npc.RenderVariantLabel,
+                meshArchives,
+                textureResolver,
+                caches.EgtFiles);
+            if (generatedEarTexturePath != null)
             {
-                var morphed = FaceGenTextureMorpher.Apply(baseTexture, egt, npc.FaceGenTextureCoeffs);
-                if (morphed != null)
-                {
-                    var morphedKey = NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc);
-                    textureResolver.InjectTexture(morphedKey, morphed);
-                    effectiveHeadTexturePath = morphedKey;
-                    effectiveHeadTextureUsesEgtMorph = true;
-                }
+                effectiveEarTexturePath = generatedEarTexturePath;
+                Log.Info(
+                    "NPC ear texture selected formId=0x{0:X8} source=GeneratedEgt sourcePath={1} effectivePath={2}",
+                    npc.NpcFormId,
+                    earEgtPath,
+                    effectiveEarTexturePath);
             }
         }
 
@@ -294,7 +343,8 @@ internal static class NpcCompositionPlanner
             FaceGenNifPath = npc.FaceGenNifPath,
             HeadPreSkinMorphDeltas = headPreSkinMorphDeltas,
             EffectiveHeadTexturePath = effectiveHeadTexturePath,
-            EffectiveHeadTextureUsesEgtMorph = effectiveHeadTextureUsesEgtMorph,
+            EffectiveHeadTextureSource = headTexture.Source,
+            EffectiveEarTexturePath = effectiveEarTexturePath,
             HairFilter = options.IncludeEquipment && NpcTextureHelpers.HasHatEquipment(npc.EquippedItems)
                 ? "Hat"
                 : null,
@@ -618,11 +668,13 @@ internal static class NpcCompositionPlanner
                         resolvedAttachmentNodeName)
                     : null;
                 attachmentNodeName = resolvedAttachmentNodeName;
-                attachmentSourceLabel = weaponVisual.AttachmentPoseKfPath is { } posePath
-                    ? $" (game-native attachment KF '{posePath}')"
-                    : usePowerArmorHolster
-                        ? " (power armor holster KF)"
-                        : " (holster KF)";
+                attachmentSourceLabel = usePowerArmorHolster
+                    ? " (power armor holster KF)"
+                    : " (holster KF)";
+                if (weaponVisual.AttachmentPoseKfPath is { } posePath)
+                {
+                    attachmentSourceLabel = $" (game-native attachment KF '{posePath}')";
+                }
                 if (!mainAttachmentTransform.HasValue)
                 {
                     return new NpcWeaponCompositionPlan

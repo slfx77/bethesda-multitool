@@ -21,6 +21,12 @@ internal sealed class NpcAppearance
     public string? HeadDiffuseOverride { get; init; }
     public string? FaceGenNifPath { get; init; }
 
+    /// <summary>
+    ///     Authored, 128-centered FaceGenMap0 delta for a stock NPC. Oblivion stores this separately
+    ///     from the race's base head diffuse; it must be composited rather than used as a diffuse.
+    /// </summary>
+    public string? AuthoredFaceGenMap0Path { get; init; }
+
     // EGM morph coefficients (merged NPC + race base)
     public float[]? FaceGenSymmetricCoeffs { get; init; }
     public float[]? FaceGenAsymmetricCoeffs { get; init; }
@@ -98,6 +104,7 @@ internal sealed class NpcAppearance
             BaseHeadTriPath = BaseHeadTriPath,
             HeadDiffuseOverride = HeadDiffuseOverride,
             FaceGenNifPath = FaceGenNifPath,
+            AuthoredFaceGenMap0Path = AuthoredFaceGenMap0Path,
             FaceGenSymmetricCoeffs = FaceGenSymmetricCoeffs,
             FaceGenAsymmetricCoeffs = FaceGenAsymmetricCoeffs,
             FaceGenTextureCoeffs = textureCoeffs,

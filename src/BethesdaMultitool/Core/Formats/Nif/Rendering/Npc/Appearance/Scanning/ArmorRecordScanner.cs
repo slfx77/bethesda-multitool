@@ -6,9 +6,11 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
-/// <summary>Parses an armor (ARMO) record into a scan entry of its add-on references and biped slots.</summary>
+/// <summary>Parses an armor or clothing record into a scan entry of its model references and biped slots.</summary>
 internal static class ArmorRecordScanner
 {
+    private const int OblivionArmorDataSize = 14;
+
     internal static ArmoScanEntry? Process(
         byte[] esmData,
         bool bigEndian,
@@ -30,7 +32,9 @@ internal static class ArmorRecordScanner
         string? femaleBipedModel = null;
         uint bipedFlags = 0;
         byte generalFlags = 0;
+        ushort baseArmorRating = 0;
         uint? bipedModelListFormId = null;
+        var isClothing = record.Signature == "CLOT";
 
         foreach (var subrecord in subrecords)
         {
@@ -72,6 +76,13 @@ internal static class ArmorRecordScanner
                         0,
                         bigEndian);
                     break;
+                case "DATA" when game == BethesdaGame.Oblivion && !isClothing &&
+                                      subrecord.Data.Length >= OblivionArmorDataSize:
+                    baseArmorRating = BinaryUtils.ReadUInt16(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
+                    break;
             }
         }
 
@@ -84,6 +95,8 @@ internal static class ArmorRecordScanner
         return new ArmoScanEntry
         {
             EditorId = editorId,
+            IsClothing = isClothing,
+            BaseArmorRating = baseArmorRating,
             BipedFlags = bipedFlags,
             GeneralFlags = generalFlags,
             MaleBipedModelPath = maleBipedModel,
