@@ -61,6 +61,9 @@ internal static class ClassicGameAnalyzer
             case BethesdaGame.Battlespire:
                 BattlespireRecordSource.Populate(dataRoot, records, cancellationToken);
                 break;
+            case BethesdaGame.Redguard:
+                RedguardRecordSource.Populate(dataRoot, records, cancellationToken);
+                break;
             default:
                 // No synthesizer for this game yet — the empty collection is the honest answer.
                 break;
