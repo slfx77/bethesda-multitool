@@ -200,6 +200,17 @@ internal static class PdbStructLayouts
     }
 
     /// <summary>
+    ///     Every non-record struct layout, keyed by class name.
+    ///     <para>
+    ///         Until 2026-09-04 the only way in was <see cref="TryGetAuxStruct" />, so a caller had to
+    ///         already know a name to ask about — which meant the 449 entries were never swept for
+    ///         what they contain. That is how 60 string-bearing classes stayed invisible to ownership
+    ///         analysis while a hand-written table guessed at a subset of the same offsets.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyDictionary<string, PdbAuxStructLayout> AuxStructs => LazyAuxStructs.Value;
+
+    /// <summary>
     ///     Returns the offset of the embedded <c>TESForm</c> subobject from the complete-object base.
     ///     PDB field offsets are complete-object-relative, while runtime form maps store <c>TESForm*</c>.
     /// </summary>

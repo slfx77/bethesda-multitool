@@ -9,8 +9,21 @@ namespace BethesdaMultitool.Core.RuntimeBuffer;
 internal static class OwnershipFieldIndexBuilder
 {
     /// <summary>
-    ///     Build all three PDB-based field indices in a single pass over PdbStructLayouts.Layouts.
+    ///     Build all three PDB-based field indices in a single pass over the layout database.
     ///     Returns: (bsStringTFieldIndex, classNameFieldIndex, charPointerFieldIndex).
+    ///     <para>
+    ///         The class-name indices are built from BOTH sources the database carries: the 116
+    ///         FormType record layouts and the 449 auxiliary struct layouts. Until 2026-09-04 only
+    ///         the former were walked, so every Gamebryo, Havok and engine class the PDB fully
+    ///         describes was invisible here — and a hand-written table
+    ///         (<see cref="BuildNiObjectFieldIndex" />) guessed at a subset of those same offsets,
+    ///         sometimes wrongly.
+    ///     </para>
+    ///     <para>
+    ///         The <c>bsStringTFieldIndex</c> is deliberately left exactly as it was: it is keyed by
+    ///         FormType and consumed by the TESForm reverse lookup, whose BSStringT length validation
+    ///         only makes sense for genuine BSStringT members.
+    ///     </para>
     /// </summary>
     internal static (
         Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)> BsStringT,
@@ -19,65 +32,205 @@ internal static class OwnershipFieldIndexBuilder
         ) BuildFieldIndices()
     {
         var bsIndex = new Dictionary<(byte, int), (string, string)>();
-        var classIndex = new Dictionary<string, (byte, List<(int, string)>)>();
-        var charIndex = new Dictionary<string, (byte, List<(int, string)>)>();
+        var classIndex = new Dictionary<string, (byte, List<(int, string)>)>(StringComparer.Ordinal);
+        var charIndex = new Dictionary<string, (byte, List<(int, string)>)>(StringComparer.Ordinal);
 
         foreach (var (formType, layout) in PdbStructLayouts.Layouts)
         {
-            // BSStringT fields -> bsIndex and classIndex
-            var bsFields = PdbStructLayouts.GetBSStringTFields(formType);
-            List<(int, string)>? classFieldList = null;
-
-            foreach (var field in bsFields)
+            foreach (var field in PdbStructLayouts.GetBSStringTFields(formType))
             {
-                if (field.Name is "cFormEditorID")
+                if (field.Name is CFormEditorId)
                 {
                     continue;
                 }
 
-                var fieldLabel = field.Owner != null ? $"{field.Owner}.{field.Name}" : field.Name;
-                bsIndex.TryAdd((formType, field.Offset), (layout.RecordCode, fieldLabel));
-
-                classFieldList ??= [];
-                classFieldList.Add((field.Offset, fieldLabel));
+                bsIndex.TryAdd((formType, field.Offset), (layout.RecordCode, Label(field)));
             }
 
-            if (classFieldList is { Count: > 0 })
-            {
-                classIndex[layout.ClassName] = (formType, classFieldList);
-            }
+            AddClass(classIndex, layout.ClassName, formType, CollectInlineStrings(layout.Fields));
+            AddClass(charIndex, layout.ClassName, formType, CollectCharPointers(layout.Fields));
+        }
 
-            // char* pointer fields -> charIndex
-            List<(int, string)>? charFieldList = null;
-
-            foreach (var f in layout.Fields)
-            {
-                if (f.Kind is not "pointer" || f.TypeDetail is not "char")
-                {
-                    continue;
-                }
-
-                var label = f.Owner != null ? $"{f.Owner}.{f.Name}" : f.Name;
-                charFieldList ??= [];
-                charFieldList.Add((f.Offset, label));
-            }
-
-            if (charFieldList is { Count: > 0 })
-            {
-                charIndex[layout.ClassName] = (formType, charFieldList);
-            }
+        foreach (var (className, aux) in PdbStructLayouts.AuxStructs)
+        {
+            // FormType 0 means "not a record class"; the vtable resolver already treats that as
+            // "report the class name rather than a record code".
+            AddClass(classIndex, className, 0, CollectInlineStrings(aux.Fields));
+            AddClass(charIndex, className, 0, CollectCharPointers(aux.Fields));
         }
 
         return (bsIndex, classIndex, charIndex);
     }
 
     /// <summary>
-    ///     Build hardcoded class name to string field offsets index for types not in PDB layouts.
-    ///     Covers Gamebryo NiObject types and TES embedded component classes.
+    ///     The EditorID field is excluded from the offset indices on purpose: it has its own
+    ///     dedicated resolution path, and letting it match here would shadow that.
+    /// </summary>
+    private const string CFormEditorId = "cFormEditorID";
+
+    private static string Label(PdbFieldLayout field)
+    {
+        return field.Owner != null ? $"{field.Owner}.{field.Name}" : field.Name;
+    }
+
+    /// <summary>
+    ///     Whether a field's first word is a pointer to string bytes. Covers both wrappers the engine
+    ///     uses: <c>BSStringT&lt;char&gt;</c> (pointer + length) and <c>NiFixedString</c>, which is a
+    ///     4-byte struct whose sole member is a <c>char*</c> at +0 — so the word at the field's own
+    ///     offset is the string pointer either way.
+    ///     <para>
+    ///         <c>NiFixedString</c> is the whole Gamebryo naming family (<c>NiObjectNET.m_kName</c>
+    ///         and friends). It was invisible to every index here, which is why those classes had to
+    ///         be hand-listed.
+    ///     </para>
+    /// </summary>
+    private static bool IsInlineStringField(PdbFieldLayout field)
+    {
+        if (field.TypeDetail is null)
+        {
+            return false;
+        }
+
+        return field.TypeDetail == "NiFixedString"
+               || (field.Kind == "struct"
+                   && field.TypeDetail.Contains("BSStringT", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    ///     A <c>BSSimpleList&lt;char const *&gt;</c> member: its first word is the head element, so
+    ///     the word at the member's own offset is the FIRST filename in the list.
+    ///     <para>
+    ///         Worth indexing — a creature's animation and model paths are stored exactly this way —
+    ///         but only the first element is reachable without walking the list, so the label says
+    ///         <c>[0]</c> rather than implying a plain field. A hand-written table used to assert
+    ///         these two offsets for <c>TESCreature</c> with labels that claimed they were scalar
+    ///         paths; taking them from the database instead covers every such class and tells the
+    ///         truth about what was read.
+    ///     </para>
+    /// </summary>
+    private static bool IsCharListHeadField(PdbFieldLayout field)
+    {
+        return field is { Kind: "struct", TypeDetail: not null }
+               && field.TypeDetail.StartsWith("BSSimpleList<char", StringComparison.Ordinal);
+    }
+
+    private static bool IsCharPointerField(PdbFieldLayout field)
+    {
+        return field is { Kind: "pointer", TypeDetail: "char" };
+    }
+
+    /// <summary>
+    ///     String offsets declared by a class, plus those reachable one level into an embedded struct
+    ///     member that has its own layout — a weapon's model path lives at
+    ///     <c>TESModel.cModel</c> inside the embedded <c>TESModel</c>, not at a top-level offset, so
+    ///     without this composition step those offsets simply do not exist in any index.
+    ///     <para>
+    ///         One level only. Deeper nesting would need cycle protection for a handful more offsets,
+    ///         and the measured payoff is concentrated at depth one.
+    ///     </para>
+    /// </summary>
+    private static List<(int Offset, string Label)> CollectInlineStrings(
+        IReadOnlyList<PdbFieldLayout> fields)
+    {
+        var result = new List<(int, string)>();
+        var seen = new HashSet<int>();
+
+        foreach (var field in fields)
+        {
+            if (field.Name is CFormEditorId)
+            {
+                continue;
+            }
+
+            if (IsInlineStringField(field))
+            {
+                if (seen.Add(field.Offset))
+                {
+                    result.Add((field.Offset, Label(field)));
+                }
+
+                continue;
+            }
+
+            if (IsCharListHeadField(field))
+            {
+                if (seen.Add(field.Offset))
+                {
+                    result.Add((field.Offset, $"{Label(field)}[0]"));
+                }
+
+                continue;
+            }
+
+            if (field.Kind != "struct" || field.TypeDetail is null ||
+                !PdbStructLayouts.TryGetAuxStruct(field.TypeDetail, out var inner))
+            {
+                continue;
+            }
+
+            foreach (var innerField in inner.Fields)
+            {
+                if (!IsInlineStringField(innerField) || innerField.Name is CFormEditorId)
+                {
+                    continue;
+                }
+
+                var offset = field.Offset + innerField.Offset;
+                if (seen.Add(offset))
+                {
+                    result.Add((offset, $"{Label(field)}.{innerField.Name}"));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static List<(int Offset, string Label)> CollectCharPointers(
+        IReadOnlyList<PdbFieldLayout> fields)
+    {
+        var result = new List<(int, string)>();
+        var seen = new HashSet<int>();
+
+        foreach (var field in fields)
+        {
+            if (IsCharPointerField(field) && seen.Add(field.Offset))
+            {
+                result.Add((field.Offset, Label(field)));
+            }
+        }
+
+        return result;
+    }
+
+    private static void AddClass(
+        Dictionary<string, (byte FormType, List<(int Offset, string Label)> Fields)> index,
+        string className,
+        byte formType,
+        List<(int Offset, string Label)> fields)
+    {
+        if (fields.Count > 0)
+        {
+            index.TryAdd(className, (formType, fields));
+        }
+    }
+
+    /// <summary>
+    ///     Hand-written class-to-string-offset index, consulted AFTER the PDB-derived indices.
+    ///     <para>
+    ///         ⚠⚠ Do NOT prune these by diffing against <c>pdb_layouts.json</c>. The PDBs postdate
+    ///         every dump in the corpus: they fit the newest builds and drift on older ones, which
+    ///         sit nearer Fallout 3's layout. An offset that looks past the end of a struct there can
+    ///         be correct for the dump in hand, and these offsets are empirical.
+    ///     </para>
+    ///     <para>
+    ///         Layering is what makes both sources safe: the PDB index matches first where it can,
+    ///         and this table only fires where it cannot.
+    ///     </para>
     /// </summary>
     internal static Dictionary<string, List<(int Offset, string Label)>> BuildNiObjectFieldIndex()
     {
-        var index = new Dictionary<string, List<(int, string)>>();
+        var index = new Dictionary<string, List<(int, string)>>(StringComparer.Ordinal);
 
         // --- Gamebryo NiObjectNET types: m_kName (NiFixedString) at +8 ---
         var nameField = (Offset: 8, Label: "NiObjectNET.m_kName");
@@ -122,11 +275,10 @@ internal static class OwnershipFieldIndexBuilder
         // BGSTextureModel: another texture model component
         index["BGSTextureModel"] = [(4, "BGSTextureModel.model")];
 
-        // QueuedModel: engine model loading queue entry, path at +40
+        // QueuedModel: engine model loading queue entry, path at +40.
         index["QueuedModel"] = [(40, "QueuedModel.modelPath")];
 
-        // BSShaderTextureSet: inherits NiObject (vtable+4=refcount), then 6+ texture slots.
-        // Each slot is a NiFixedString (char*).
+        // BSShaderTextureSet: NiObject base (vtable + refcount), then NiFixedString texture slots.
         index["BSShaderTextureSet"] =
         [
             (8, "BSShaderTextureSet.diffuse"),
@@ -140,11 +292,11 @@ internal static class OwnershipFieldIndexBuilder
             (56, "BSShaderTextureSet.slot12")
         ];
 
-        // SettingT<GameSettingCollection>: RTTI demangles to this template form.
-        // pKey (setting name char*) at +8.
+        // SettingT<GameSettingCollection>: RTTI demangles to this template form, which can never
+        // join a PDB class name.
         index["?$SettingT@VGameSettingCollection"] = [(8, "SettingT.pKey")];
 
-        // --- TESForm-derived classes with string fields not in PDB BSStringT index ---
+        // --- Offsets the newer PDB contradicts, kept because they are empirical and still resolve.
 
         // BGSBodyPart: body part definition with mesh/bone paths
         index["BGSBodyPart"] =
