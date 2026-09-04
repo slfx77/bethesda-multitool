@@ -1,7 +1,6 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Ui;
 using Xunit;
-using AppController = BethesdaMultitool.NpcBrowserController;
 
 namespace BethesdaMultitool.Tests.Core.Ui;
 
