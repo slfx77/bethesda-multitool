@@ -1,7 +1,9 @@
 using System.CommandLine;
 using System.Globalization;
+using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
@@ -60,6 +62,12 @@ public static class RttiCommand
                 "Include memory regions outside the 0x40000000-0x50000000 heap window in the census — " +
                 "slower, instance counts include code references"
         };
+        var censusForwardOpt = new Option<bool>("--census-forward")
+        {
+            Description =
+                "Walk the module's own RTTI tables instead of guessing vtables from heap words — " +
+                "finds every class the build has, including ones with no live instance"
+        };
         var censusAllOpt = new Option<bool>("--census-all")
         {
             Description = "Run census across all DMP files in a directory and aggregate results"
@@ -80,6 +88,7 @@ public static class RttiCommand
         command.Options.Add(scanOpt);
         command.Options.Add(strideOpt);
         command.Options.Add(censusOpt);
+        command.Options.Add(censusForwardOpt);
         command.Options.Add(allRegionsOpt);
         command.Options.Add(censusAllOpt);
         command.Options.Add(dirOpt);
@@ -104,6 +113,12 @@ public static class RttiCommand
                 return;
             }
 
+            if (parseResult.GetValue(censusForwardOpt))
+            {
+                ExecuteCensusForward(input);
+                return;
+            }
+
             var addresses = parseResult.GetValue(addressesArg) ?? [];
             var scan = parseResult.GetValue(scanOpt);
             var stride = parseResult.GetValue(strideOpt);
@@ -112,6 +127,81 @@ public static class RttiCommand
         });
 
         return command;
+    }
+
+    /// <summary>
+    ///     Walk the module's RTTI tables directly. Unlike <c>--census</c>, which infers vtables from
+    ///     heap words and therefore cannot see a class with no live instance, this enumerates what
+    ///     the build actually contains.
+    /// </summary>
+    private static void ExecuteCensusForward(string input)
+    {
+        if (!File.Exists(input))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {input}");
+            return;
+        }
+
+        var info = MinidumpParser.Parse(input);
+        if (!info.IsValid)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] Invalid minidump file");
+            return;
+        }
+
+        var fileSize = new FileInfo(input).Length;
+        using var mmf = MemoryMappedFile.CreateFromFile(
+            input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+
+        var index = DumpRttiIndex.Build(info, new MmfMemoryAccessor(accessor), fileSize);
+        if (index == null)
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]No RTTI tables recovered.[/] The dump names no game module, or none of its "
+                + "image was captured.");
+            return;
+        }
+
+        var capturedPct = index.ModuleBytesDeclared > 0
+            ? index.ModuleBytesCaptured * 100.0 / index.ModuleBytesDeclared
+            : 0;
+
+        var lines = new List<string>
+        {
+            $"  Module image:      {index.ModuleBytesCaptured,12:N0} of {index.ModuleBytesDeclared:N0} bytes captured ({capturedPct:F1}%)",
+            "",
+            $"  Type descriptors:  {index.TypeDescriptorCount,12:N0}  ({index.TypeDescriptorsWithNoColCount:N0} with no object locator)",
+            $"  Object locators:   {index.CompleteObjectLocatorCount,12:N0}",
+            $"  Vtables:           {index.VtableCount,12:N0}  ({index.PrimaryVtableCount:N0} primary, {index.VtableCount - index.PrimaryVtableCount:N0} secondary/MI)",
+            $"  Classes:           {index.Classes.Count,12:N0}  ({index.Classes.Count(c => c.IsTesFormDerived):N0} TESForm-derived)",
+            "",
+            $"  Vtable band:       0x{index.MinVtableVa:X8}-0x{index.MaxVtableVa:X8}  ({index.MaxVtableVa - index.MinVtableVa:N0} bytes)"
+        };
+
+        AnsiConsole.Write(new Panel(string.Join("\n", lines))
+            .Header("[bold]RTTI Forward Census[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Cyan1));
+
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn("Class");
+        table.AddColumn("Bases");
+        table.AddColumn("TESForm");
+
+        foreach (var entry in index.Classes
+                     .OrderByDescending(c => c.BaseClasses.Count)
+                     .ThenBy(c => c.ClassName, StringComparer.Ordinal)
+                     .Take(40))
+        {
+            table.AddRow(
+                Markup.Escape(entry.ClassName),
+                Markup.Escape(string.Join(", ", entry.BaseClasses.Take(4))),
+                entry.IsTesFormDerived ? "[green]yes[/]" : "[grey]no[/]");
+        }
+
+        AnsiConsole.MarkupLine("  [dim]deepest 40 hierarchies (of {0:N0} classes)[/]", index.Classes.Count);
+        AnsiConsole.Write(table);
     }
 
     private static void Execute(

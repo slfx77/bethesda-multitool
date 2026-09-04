@@ -306,6 +306,30 @@ internal static class CsvSupplementalWriter
     }
 
     /// <summary>Builds a set of named CSVs describing which runtime structures own each detected runtime string.</summary>
+    /// <summary>
+    ///     Rows written per unreferenced/unknown-owner CSV. Since the 2026-09-03 change that feeds
+    ///     ALL strings through ownership analysis (not just shape-classified ones), these two sets
+    ///     run to hundreds of thousands of rows on a real dump — 550k <c>Other</c> strings on
+    ///     xex44 alone. The counts in the summary report stay exact; only the row dumps are capped,
+    ///     and each capped file says so on its last line.
+    /// </summary>
+    private const int MaxUnattributedCsvRows = 20_000;
+
+    /// <summary>
+    ///     Say so in the file when rows were dropped, so a reader never mistakes a capped dump for
+    ///     the whole set — the summary report carries the exact totals.
+    /// </summary>
+    private static void AppendTruncationNote(StringBuilder sb, int totalRows)
+    {
+        if (totalRows > MaxUnattributedCsvRows)
+        {
+            sb.AppendLine(
+                Fmt.CsvEscape(
+                    $"-- truncated: showing {MaxUnattributedCsvRows:N0} of {totalRows:N0} rows; "
+                    + "see the ownership summary report for exact totals --"));
+        }
+    }
+
     public static Dictionary<string, string> GenerateStringOwnershipCsvs(RuntimeStringOwnershipAnalysis analysis)
     {
         var files = new Dictionary<string, string>();
@@ -316,10 +340,14 @@ internal static class CsvSupplementalWriter
             sb.AppendLine(
                 "Text,Category,Length,StringFileOffset,StringVA,InboundPointerCount,FirstReferrerFileOffset,FirstReferrerVA,FirstReferrerContext");
 
+            // Most-referenced first: an unnamed string that many pointers reach is the best lead
+            // for naming a whole class of text, and it is what survives the row cap.
             foreach (var hit in analysis.ReferencedOwnerUnknownHits
-                         .OrderBy(h => h.Category.ToString(), StringComparer.Ordinal)
+                         .OrderByDescending(h => h.InboundPointerCount)
+                         .ThenBy(h => h.Category.ToString(), StringComparer.Ordinal)
                          .ThenBy(h => h.Text, StringComparer.Ordinal)
-                         .ThenBy(h => h.FileOffset))
+                         .ThenBy(h => h.FileOffset)
+                         .Take(MaxUnattributedCsvRows))
             {
                 sb.AppendLine(string.Join(",",
                     Fmt.CsvEscape(hit.Text),
@@ -333,6 +361,7 @@ internal static class CsvSupplementalWriter
                     Fmt.CsvEscape(hit.OwnerResolution?.ReferrerContext)));
             }
 
+            AppendTruncationNote(sb, analysis.ReferencedOwnerUnknownHits.Count);
             files["string_unknown_owners.csv"] = sb.ToString();
         }
 
@@ -344,7 +373,8 @@ internal static class CsvSupplementalWriter
             foreach (var hit in analysis.UnreferencedHits
                          .OrderBy(h => h.Category.ToString(), StringComparer.Ordinal)
                          .ThenBy(h => h.Text, StringComparer.Ordinal)
-                         .ThenBy(h => h.FileOffset))
+                         .ThenBy(h => h.FileOffset)
+                         .Take(MaxUnattributedCsvRows))
             {
                 sb.AppendLine(string.Join(",",
                     Fmt.CsvEscape(hit.Text),
@@ -354,14 +384,21 @@ internal static class CsvSupplementalWriter
                     FormatOffset(hit.VirtualAddress)));
             }
 
+            AppendTruncationNote(sb, analysis.UnreferencedHits.Count);
+
             files["string_unreferenced.csv"] = sb.ToString();
         }
 
-        // Per-category owned string CSVs with owner resolution
+        // Per-category owned string CSVs with owner resolution.
+        //
+        // Other is included: it is the largest category by far (550k of 621k unique strings on
+        // xex44), so excluding it meant every owner we managed to name for unclassified text —
+        // 22,078 of them as of 2026-09-03 — was counted in the summary and then dropped on the
+        // floor, unreadable by anyone wanting to check the claims.
         foreach (var category in new[]
                  {
                      StringCategory.DialogueLine, StringCategory.FilePath, StringCategory.EditorId,
-                     StringCategory.GameSetting
+                     StringCategory.GameSetting, StringCategory.Other
                  })
         {
             var categoryHits = analysis.OwnedHits
@@ -377,9 +414,12 @@ internal static class CsvSupplementalWriter
 
             var sb = new StringBuilder();
             sb.AppendLine(
-                "Text,Length,OwnerKind,OwnerName,OwnerFormID,OwnerRecordType,OwnerField,ClaimSource,InboundPointerCount,StringFileOffset,StringVA");
+                "Text,Length,OwnerKind,OwnerName,OwnerFormID,OwnerRecordType,OwnerField,ClaimSource,Confidence,InboundPointerCount,StringFileOffset,StringVA");
 
-            foreach (var hit in categoryHits)
+            // Capped like the unattributed dumps. These used to be uncapped, which was tolerable
+            // while the four classified categories were the only ones written; adding Other would
+            // otherwise turn a few-MB export into a hundred-MB one.
+            foreach (var hit in categoryHits.Take(MaxUnattributedCsvRows))
             {
                 var r = hit.OwnerResolution;
                 sb.AppendLine(string.Join(",",
@@ -391,10 +431,13 @@ internal static class CsvSupplementalWriter
                     Fmt.CsvEscape(r?.OwnerRecordType),
                     Fmt.CsvEscape(r?.OwnerFieldOrSubrecord),
                     r?.ClaimSource?.ToString() ?? "",
+                    r?.Confidence?.ToString() ?? "",
                     hit.InboundPointerCount.ToString(),
                     FormatOffset(hit.FileOffset),
                     FormatOffset(hit.VirtualAddress)));
             }
+
+            AppendTruncationNote(sb, categoryHits.Count);
 
             var fileName = category switch
             {
@@ -402,6 +445,7 @@ internal static class CsvSupplementalWriter
                 StringCategory.FilePath => "string_owned_filepaths.csv",
                 StringCategory.EditorId => "string_owned_editorids.csv",
                 StringCategory.GameSetting => "string_owned_gamesettings.csv",
+                StringCategory.Other => "string_owned_other.csv",
                 _ => $"string_owned_{category}.csv"
             };
 

@@ -134,13 +134,126 @@ internal static class GeckMiscWriter
                 $"  {category,-16} total {total,8:N0} | owned {owned,8:N0} | unknown {referencedUnknown,8:N0} | unreferenced {unreferenced,8:N0}");
         }
 
+        if (analysis.ClaimSourceCounts.Count > 0)
+        {
+            var owned = analysis.OwnedHits.Count;
+            sb.AppendLine();
+            sb.AppendLine("Owned, By Evidence Tier:");
+
+            foreach (var tier in analysis.ClaimSourceCounts
+                         .GroupBy(kv => OwnershipConfidenceMap.For(kv.Key))
+                         .OrderBy(g => g.Key))
+            {
+                var tierTotal = tier.Sum(kv => kv.Value);
+                var share = owned > 0 ? $"  ({tierTotal * 100.0 / owned,5:F1}% of owned)" : "";
+                sb.AppendLine($"  {tier.Key,-16} {tierTotal,9:N0}{share}");
+
+                foreach (var entry in tier.OrderByDescending(kv => kv.Value))
+                {
+                    sb.AppendLine($"    {entry.Key,-34} {entry.Value,9:N0}");
+                }
+            }
+        }
+
+        AppendObjectCensus(sb, analysis.ObjectCensus);
+
         sb.AppendLine();
         sb.AppendLine("Notes:");
         sb.AppendLine(
             "  Owned strings require direct typed evidence from runtime EditorID tables or manager/global walkers.");
+        sb.AppendLine(
+            "  Evidence tiers rank the claim, not the string: FieldNamed followed a pointer to a"
+            + " known owner AND named the field; ExactTextMatch means the text equals a recovered"
+            + " inventory entry; OwnerNamed resolved the owner but only a raw offset; Positional"
+            + " inferred an owner from proximity alone and is the weakest claim made here.");
         sb.AppendLine("  ReferencedOwnerUnknown strings have live inbound pointers, but no conservative owner match.");
         sb.AppendLine("  Unreferenced strings have no 4-byte-aligned inbound pointer to the exact string start.");
+        sb.AppendLine(
+            "  The 'Other' row is text no shape heuristic recognised. It is analysed anyway (since"
+            + " 2026-09-03) because it is the bulk of the dump's text, and whether it ties back to"
+            + " game data is a measurement, not something the classifier should decide by omission."
+            + " An 'Other' string with inbound pointers is live data we have not named.");
         return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Report the dump's runtime objects and how much of the unowned string population they
+    ///     could account for. Measurement only: no string is claimed by anything here.
+    /// </summary>
+    private static void AppendObjectCensus(StringBuilder sb, RuntimeObjectCensus? census)
+    {
+        if (census is null)
+        {
+            return;
+        }
+
+        string OfUnknown(int n)
+        {
+            return census.UnknownHitsExamined > 0
+                ? $" ({n * 100.0 / census.UnknownHitsExamined,5:F1}% of unowned)"
+                : "";
+        }
+
+        var capturedPct = census.ModuleBytesDeclared > 0
+            ? census.ModuleBytesCaptured * 100.0 / census.ModuleBytesDeclared
+            : 0;
+
+        sb.AppendLine();
+        sb.AppendLine("Runtime Object Census:");
+        sb.AppendLine(
+            $"  Module image captured:      {census.ModuleBytesCaptured,12:N0} of {census.ModuleBytesDeclared:N0} bytes ({capturedPct:F1}%)");
+        sb.AppendLine($"  Type descriptors:           {census.TypeDescriptorCount,12:N0}"
+                      + $"  ({census.TypeDescriptorsWithNoColCount:N0} with no object locator)");
+        sb.AppendLine($"  Vtables:                    {census.VtableCount,12:N0}"
+                      + $"  ({census.SecondaryVtableCount:N0} secondary/MI)");
+        sb.AppendLine($"  Classes defined by build:   {census.ClassCount,12:N0}");
+        sb.AppendLine($"  Classes with an instance:   {census.LiveClassCount,12:N0}");
+        sb.AppendLine($"  Objects located:            {census.ObjectCount,12:N0}"
+                      + $"  (from {census.RawVtableWordHits:N0} vtable words)");
+        sb.AppendLine($"  …with a declared size:      {census.ObjectsWithDeclaredSize,12:N0}");
+        sb.AppendLine($"  …bases claimed by >1 class: {census.AmbiguousBaseCount,12:N0}");
+        sb.AppendLine();
+        sb.AppendLine($"  Unowned strings examined:   {census.UnknownHitsExamined,12:N0}");
+        sb.AppendLine($"  …a referrer inside an object:{census.UnknownHitsWithReferrerInObject,11:N0}"
+                      + OfUnknown(census.UnknownHitsWithReferrerInObject));
+        sb.AppendLine($"  …that object's size exact:  {census.UnknownHitsWithDeclaredSizeContainer,12:N0}"
+                      + OfUnknown(census.UnknownHitsWithDeclaredSizeContainer));
+        sb.AppendLine($"  …referrers only in module:  {census.ModuleOnlyReferrerHits,12:N0}"
+                      + OfUnknown(census.ModuleOnlyReferrerHits));
+        sb.AppendLine($"  …referrers mixed:           {census.MixedReferrerHits,12:N0}");
+        sb.AppendLine($"  …referrers only in heap:    {census.HeapOnlyReferrerHits,12:N0}");
+
+        if (census.ContainingClassCounts.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("  Classes holding unowned strings (top 40):");
+            foreach (var entry in census.ContainingClassCounts.OrderByDescending(kv => kv.Value).Take(40))
+            {
+                sb.AppendLine($"    {entry.Key,-48} {entry.Value,9:N0}");
+            }
+        }
+
+        if (census.ObjectsByVaBand.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("  Object bases by address band:");
+            foreach (var entry in census.ObjectsByVaBand.OrderByDescending(kv => kv.Value).Take(20))
+            {
+                sb.AppendLine($"    {entry.Key,-10} {entry.Value,9:N0}");
+            }
+        }
+
+        if (census.BaseAlignmentHistogram.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("  Object base alignment (mod 16) — reported as a diagnostic; alignment is");
+            sb.AppendLine("  deliberately NOT used as a filter, since multiple-inheritance secondary");
+            sb.AppendLine("  vtables legitimately place a complete object at any multiple of 4:");
+            foreach (var entry in census.BaseAlignmentHistogram.OrderBy(kv => kv.Key))
+            {
+                sb.AppendLine($"    +{entry.Key,-9} {entry.Value,9:N0}");
+            }
+        }
     }
 
     internal static void AppendGlobalsSection(StringBuilder sb, List<GlobalRecord> globals)

@@ -206,6 +206,12 @@ public static class BuffersCommand
             console.WriteLine();
         }
 
+        if (exploration.StringOwnership != null)
+        {
+            RenderStringOwnershipToConsole(console, exploration.StringOwnership);
+            console.WriteLine();
+        }
+
         if (exploration.DiscoveredBuffers.Count > 0)
         {
             RenderDiscoveredBuffersToConsole(console, exploration, verbose);
@@ -254,6 +260,172 @@ public static class BuffersCommand
             .Border(BoxBorder.Rounded)
             .BorderColor(Color.Green);
         console.Write(panel);
+    }
+
+    /// <summary>
+    ///     Print how much of the dump's text can actually be tied to something. The analysis has
+    ///     always run inside <c>dmp buffers</c>; only the string-pool counts were ever shown, so
+    ///     the question "does this text tie back to game data?" had no answer at the command line
+    ///     even though the data was computed. Owned = a runtime owner claims it; referenced = live
+    ///     inbound pointers but no owner match; unreferenced = nothing points at the string start.
+    /// </summary>
+    private static void RenderStringOwnershipToConsole(
+        IAnsiConsole console, RuntimeStringOwnershipAnalysis analysis)
+    {
+        var total = analysis.AllHits.Count;
+        if (total == 0)
+        {
+            return;
+        }
+
+        string Pct(int n)
+        {
+            return $"{n * 100.0 / total,5:F1}%";
+        }
+
+        var lines = new List<string>
+        {
+            $"  Analyzed:          {total,10:N0} string(s)",
+            "",
+            $"  [green]Owned:           {analysis.OwnedHits.Count,10:N0}[/]  {Pct(analysis.OwnedHits.Count)}  (a runtime owner claims it)",
+            $"  [yellow]Referenced:      {analysis.ReferencedOwnerUnknownHits.Count,10:N0}[/]  {Pct(analysis.ReferencedOwnerUnknownHits.Count)}  (live inbound pointer, owner unknown)",
+            $"  [grey]Unreferenced:    {analysis.UnreferencedHits.Count,10:N0}[/]  {Pct(analysis.UnreferencedHits.Count)}  (nothing points at it)"
+        };
+
+        var table = new Table().Border(TableBorder.None).HideHeaders();
+        table.AddColumn("Category");
+        table.AddColumn("Total");
+        table.AddColumn("Owned");
+        table.AddColumn("Referenced");
+        table.AddColumn("Unreferenced");
+        foreach (var category in analysis.CategoryCounts.Keys.OrderBy(c => c.ToString(), StringComparer.Ordinal))
+        {
+            table.AddRow(
+                $"  {category}",
+                $"{analysis.CategoryCounts.GetValueOrDefault(category),8:N0}",
+                $"[green]{analysis.OwnedHits.Count(h => h.Category == category),8:N0}[/]",
+                $"[yellow]{analysis.ReferencedOwnerUnknownHits.Count(h => h.Category == category),8:N0}[/]",
+                $"[grey]{analysis.UnreferencedHits.Count(h => h.Category == category),8:N0}[/]");
+        }
+
+        console.Write(new Panel(string.Join("\n", lines))
+            .Header("[bold]String Ownership[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Magenta1));
+        console.MarkupLine("  [dim]by category: total | owned | referenced | unreferenced[/]");
+        console.Write(table);
+
+        RenderClaimSourcesToConsole(console, analysis);
+    }
+
+    /// <summary>
+    ///     Break the owned total down by which strategy claimed each string, grouped by evidence
+    ///     tier. <c>ClaimSourceCounts</c> was populated in two places and rendered nowhere, so a
+    ///     single "Owned" number silently mixed an exact subrecord read with a positional guess —
+    ///     and there was no way to attribute a change in that number to the strategy that caused it.
+    /// </summary>
+    private static void RenderClaimSourcesToConsole(
+        IAnsiConsole console, RuntimeStringOwnershipAnalysis analysis)
+    {
+        if (analysis.ClaimSourceCounts.Count == 0)
+        {
+            return;
+        }
+
+        var owned = analysis.OwnedHits.Count;
+
+        string Share(int n)
+        {
+            return owned > 0 ? $"{n * 100.0 / owned,5:F1}%" : "";
+        }
+
+        var table = new Table().Border(TableBorder.None).HideHeaders();
+        table.AddColumn("Source");
+        table.AddColumn("Count");
+        table.AddColumn("Share");
+
+        foreach (var tier in analysis.ClaimSourceCounts
+                     .GroupBy(kv => OwnershipConfidenceMap.For(kv.Key))
+                     .OrderBy(g => g.Key))
+        {
+            var tierTotal = tier.Sum(kv => kv.Value);
+            table.AddRow(
+                $"  [bold]{tier.Key}[/]",
+                $"[bold]{tierTotal,9:N0}[/]",
+                $"[bold]{Share(tierTotal)}[/]");
+
+            foreach (var entry in tier.OrderByDescending(kv => kv.Value))
+            {
+                table.AddRow($"    [dim]{entry.Key}[/]", $"{entry.Value,9:N0}", Share(entry.Value));
+            }
+        }
+
+        console.MarkupLine("  [dim]owned by evidence tier: strategy | count | share of owned[/]");
+        console.Write(table);
+
+        RenderObjectCensusToConsole(console, analysis);
+    }
+
+    /// <summary>
+    ///     Report what runtime objects the dump contains and how many of the still-unowned strings
+    ///     they could account for. This is a measurement, not a claim — no string's status changes
+    ///     because of it. It exists so the decision to build (or not build) a general object-based
+    ///     ownership strategy is made from a number rather than an argument.
+    /// </summary>
+    private static void RenderObjectCensusToConsole(
+        IAnsiConsole console, RuntimeStringOwnershipAnalysis analysis)
+    {
+        if (analysis.ObjectCensus is not { } census)
+        {
+            return;
+        }
+
+        var capturedPct = census.ModuleBytesDeclared > 0
+            ? census.ModuleBytesCaptured * 100.0 / census.ModuleBytesDeclared
+            : 0;
+
+        string OfUnknown(int n)
+        {
+            return census.UnknownHitsExamined > 0
+                ? $"{n * 100.0 / census.UnknownHitsExamined,5:F1}%"
+                : "";
+        }
+
+        var lines = new List<string>
+        {
+            $"  Module image:      {census.ModuleBytesCaptured,12:N0} of {census.ModuleBytesDeclared:N0} bytes ({capturedPct:F1}%)",
+            $"  Classes in build:  {census.ClassCount,12:N0}  ({census.LiveClassCount:N0} with a located instance)",
+            $"  Vtables:           {census.VtableCount,12:N0}  ({census.SecondaryVtableCount:N0} secondary/MI)  band 0x{census.MinVtableVa:X8}-0x{census.MaxVtableVa:X8}",
+            $"  Objects located:   {census.ObjectCount,12:N0}  ({census.ObjectsWithDeclaredSize:N0} with a declared size, {census.AmbiguousBaseCount:N0} multi-class bases)",
+            "",
+            $"  Unowned examined:  {census.UnknownHitsExamined,12:N0}",
+            $"  [green]…referrer in an object: {census.UnknownHitsWithReferrerInObject,7:N0}[/]  {OfUnknown(census.UnknownHitsWithReferrerInObject)}  [dim]<- the gate[/]",
+            $"  [green]…of those, exact size:  {census.UnknownHitsWithDeclaredSizeContainer,7:N0}[/]  {OfUnknown(census.UnknownHitsWithDeclaredSizeContainer)}",
+            "",
+            $"  [yellow]Module-only referrers: {census.ModuleOnlyReferrerHits,8:N0}[/]  {OfUnknown(census.ModuleOnlyReferrerHits)}  (globals; skipped by every strategy today)",
+            $"  [dim]Mixed referrers:       {census.MixedReferrerHits,8:N0}   Heap-only: {census.HeapOnlyReferrerHits:N0}[/]"
+        };
+
+        console.Write(new Panel(string.Join("\n", lines))
+            .Header("[bold]Runtime Object Census[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Aqua));
+
+        if (census.ContainingClassCounts.Count == 0)
+        {
+            return;
+        }
+
+        var classes = new Table().Border(TableBorder.None).HideHeaders();
+        classes.AddColumn("Class");
+        classes.AddColumn("Strings held");
+        foreach (var entry in census.ContainingClassCounts.OrderByDescending(kv => kv.Value).Take(25))
+        {
+            classes.AddRow($"  {Markup.Escape(entry.Key)}", $"{entry.Value,9:N0}");
+        }
+
+        console.MarkupLine("  [dim]classes holding the unowned strings (top 25)[/]");
+        console.Write(classes);
     }
 
     private static void RenderStringPoolsToConsole(IAnsiConsole console, StringPoolSummary sp, bool verbose)
