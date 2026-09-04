@@ -46,8 +46,8 @@ public sealed class BgsmEmissionRenderPathSourceContractTests
 
         Assert.True(SourceContract.CountOccurrences(
             renderer,
-            "EffectFalloff: ResolveEffectFalloffConstants(sub)") >= 1);
-        Assert.Contains("EffectFalloff = ResolveEffectFalloffConstants(draw.Submesh)", renderer,
+            "EffectFalloff: ResolveEffectFalloffConstants(") >= 1);
+        Assert.Contains("EffectFalloff = ResolveEffectFalloffConstants(", renderer,
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             renderer,

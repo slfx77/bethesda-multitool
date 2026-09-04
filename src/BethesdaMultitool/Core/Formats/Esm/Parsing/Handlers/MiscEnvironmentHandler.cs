@@ -1178,7 +1178,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "FNAM" when sub.DataLength >= 4:
                     fogDistances = ReadFogDistances(subData, record.IsBigEndian);
                     break;
-                // DATA: 15-byte struct (wind speed, sun glare, precip timing, flags, lightning color).
+                // DATA: shared 15-byte prefix; FO4's 20-byte form adds direction/range/turbulence.
                 case "DATA" when sub.DataLength >= 15:
                     weatherData = ReadWeatherData(subData, Context.Game);
                     break;
@@ -1722,7 +1722,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return fog;
     }
 
-    private static WeatherData ReadWeatherData(ReadOnlySpan<byte> d, BethesdaGame game)
+    internal static WeatherData ReadWeatherData(ReadOnlySpan<byte> d, BethesdaGame game)
     {
         // 15-byte layout per the DATA/WTHR converter schema: WindSpeed(0), pad(1,2), TransDelta(3),
         // SunGlare(4), SunDamage(5), PrecipBeginFadeIn(6), PrecipEndFadeOut(7), ThunderBeginFadeIn(8),
@@ -1741,7 +1741,12 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ThunderLightningEndFadeOut = d[9],
             ThunderLightningFrequency = d[10],
             Flags = d[11],
-            LightningColor = new WeatherRgba(d[12], d[13], d[14], 255)
+            LightningColor = new WeatherRgba(d[12], d[13], d[14], 255),
+            // The exact 17..19 tail is established only for Fallout 4. Keep other games nullable
+            // rather than extending that result to similarly sized records without an oracle.
+            WindDirection = game == BethesdaGame.Fallout4 && d.Length >= 20 ? d[17] : null,
+            WindDirectionRange = game == BethesdaGame.Fallout4 && d.Length >= 20 ? d[18] : null,
+            WindTurbulence = game == BethesdaGame.Fallout4 && d.Length >= 20 ? d[19] : null
         };
     }
 

@@ -75,8 +75,12 @@ internal static class ReferenceSubmeshDecoder12
         var localBounds = NifLocalBoundsResolver.Resolve(submesh);
 
         return new DecodedSubmesh12(
-            // TallGrass and CE2 vertex-Lerp consume authored alpha as shader data, never coverage.
-            GpuMeshUploader.BuildVertices(submesh, preserveAuthoredVertexAlpha: isTallGrass),
+            // TallGrass, TREE_ANIM, and CE2 vertex-Lerp consume authored alpha as shader data,
+            // never generic surface coverage. Their shader routes explicitly keep it out of the
+            // pixel alpha test.
+            GpuMeshUploader.BuildVertices(
+                submesh,
+                preserveAuthoredVertexAlpha: isTallGrass || submesh.IsTreeAnimation),
             submesh.Triangles,
             diffusePath,
             hasBump ? normalPath : null,
@@ -169,6 +173,9 @@ internal static class ReferenceSubmeshDecoder12
             StarfieldMaterialColor: submesh.StarfieldMaterialColor,
             StarfieldMaterialAlpha: submesh.StarfieldMaterialAlpha,
             BgsmGlowMapTexturePath: submesh.BgsmGlowMapTexturePath,
-            BgsmEmissionColor: submesh.BgsmEmissionColor);
+            BgsmEmissionColor: submesh.BgsmEmissionColor,
+            UsesExternalEmittance: submesh.UsesExternalEmittance,
+            ExternalEmittanceInfluence: submesh.ExternalEmittanceInfluence,
+            IsTreeAnimation: submesh.IsTreeAnimation);
     }
 }

@@ -184,6 +184,15 @@ internal sealed class RenderableSubmesh
     public (float R, float G, float B) EffectTint { get; set; } = (1f, 1f, 1f);
 
     /// <summary>
+    ///     True when the source shader carries External_Emittance. The placed REFR's XEMI source is
+    ///     resolved at draw time so weather-backed colors can follow the clock without re-decoding.
+    /// </summary>
+    public bool UsesExternalEmittance { get; set; }
+
+    /// <summary>BSEffect LightingInfluence blend weight; classic properties use one.</summary>
+    public float ExternalEmittanceInfluence { get; set; } = 1f;
+
+    /// <summary>
     ///     Effect view-angle falloff (BGEM): opacity ramps StartOpacity→StopOpacity as |N·V| crosses
     ///     StartAngle→StopAngle (both stored as cosines). Null when the material has no falloff —
     ///     the term that fades effect planes at grazing angles; without it crossed-plane mist blobs
@@ -214,6 +223,14 @@ internal sealed class RenderableSubmesh
     ///     FO3/FNV <c>TallGrassShaderProperty</c> uses this channel as wind amplitude, not coverage.
     /// </summary>
     public bool UseVertexAlphaForOpacity { get; set; } = true;
+
+    /// <summary>
+    ///     True when the source lighting shader declares SLSF2_Tree_Anim, or when formats without
+    ///     readable shader flags place the shape below <c>BSLeafAnimNode</c>/<c>BSTreeNode</c>.
+    ///     Its raw vertex alpha is TREE_ANIM wind data; diffuse alpha times material alpha alone
+    ///     controls pixel coverage. This is distinct from procedural SpeedTree geometry.
+    /// </summary>
+    public bool IsTreeAnimation { get; set; }
 
     /// <summary>True if NiStencilProperty DrawMode is DRAW_BOTH (3), meaning both sides should be rendered.</summary>
     public bool IsDoubleSided { get; set; }
@@ -287,18 +304,16 @@ internal sealed class RenderableSubmesh
     public (float R, float G, float B)? TintColor { get; set; }
 
     /// <summary>
-    ///     True if this submesh uses the FaceGen skin shader (shader type 14, flag bit 10).
-    ///     When set, the renderer applies a subsurface scattering approximation using
-    ///     <see cref="SubsurfaceColor" /> to simulate light transmission through skin.
+    ///     True if this submesh uses the classic FaceGen skin shader. Deterministic head rendering
+    ///     and the native Oblivion Actors viewer use this explicit identity to select the retail
+    ///     SKIN2000 normal/direct/cubic-rim lighting specialization.
     /// </summary>
     public bool IsFaceGen { get; set; }
 
     /// <summary>
-    ///     Subsurface scattering color for FaceGen skin shader (normalized 0-1 RGB).
-    ///     Derived from the BSShaderTextureSet slot 2 face tint texture (_sk).
-    ///     The engine multiplies this by a scatter intensity to add warm red backlighting
-    ///     that counteracts green casts from EGT texture morphs.
-    ///     Only used when <see cref="IsFaceGen" /> is true. Default = (0, 0, 0) = no scatter.
+    ///     Legacy sampled color retained from the sibling <c>_sk</c> texture for descriptor
+    ///     provenance. Retail Oblivion SKIN2000 has no subsurface sampler or transmission term, so
+    ///     the classic-skin specialization deliberately does not consume this value.
     /// </summary>
     public (float R, float G, float B) SubsurfaceColor { get; set; }
 

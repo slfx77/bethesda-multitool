@@ -3,15 +3,35 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 /// <summary>Decides whether and how a submesh's vertex colors should be applied during rendering.</summary>
 internal static class NifVertexColorPolicy
 {
+    private const uint TreeAnimationShaderFlag2 = 1u << 29;
+
+    /// <summary>
+    ///     Identifies Bethesda's TREE_ANIM shader family. Skyrim-family BSLighting properties
+    ///     declare it through SLSF2_Tree_Anim; graph ancestry is the fallback for streams whose
+    ///     shader-flags layout is not exposed by the current parser.
+    /// </summary>
+    internal static bool IsTreeAnimation(
+        NifShaderTextureMetadata? shaderMetadata,
+        bool hasTreeAnimationAncestry = false)
+    {
+        return hasTreeAnimationAncestry ||
+               shaderMetadata is
+               {
+                   PropertyType: "BSLightingShaderProperty",
+                   ShaderFlags2: { } flags2
+               } && (flags2 & TreeAnimationShaderFlag2) != 0;
+    }
+
     /// <summary>
     ///     Resolves whether a shader family treats vertex alpha as opacity. The FNV retail grass
     ///     shaders use it only as a squared wind-displacement weight: GRASS2000.vso multiplies the
     ///     wind offset by <c>vColor.a^2</c>, while GRASS2000.pso compares <c>DiffuseMap.a</c>
-    ///     directly with <c>AlphaTestRef</c>. Skyrim-family lighting shaders instead declare the
-    ///     choice through SLSF1_Vertex_Alpha (flags1 bit 3). When that explicit bit is readable it
-    ///     remains authoritative, including for Skyrim/FO4 tree nodes. FO76-era lighting metadata
-    ///     does not expose the legacy flags through this parser, so tree ancestry supplies the wind
-    ///     semantic only for that otherwise-ambiguous case.
+    ///     directly with <c>AlphaTestRef</c>. Skyrim's retail TREE_ANIM vertex shader likewise uses
+    ///     vertex alpha as its wind displacement weight, while the paired pixel shader tests only
+    ///     diffuse alpha times material alpha. TREE_ANIM identity therefore takes precedence
+    ///     over SLSF1_Vertex_Alpha: that bit is set on the shipped Snow01-05 foliage even though its
+    ///     low vertex-alpha values are animation data, not coverage. Outside those explicit shader
+    ///     families, a readable SLSF1_Vertex_Alpha flag remains authoritative.
     /// </summary>
     internal static bool UsesAlphaForOpacity(
         NifShaderTextureMetadata? shaderMetadata,
@@ -22,13 +42,18 @@ internal static class NifVertexColorPolicy
             return false;
         }
 
+        if (IsTreeAnimation(shaderMetadata, isTreeAnimationShape))
+        {
+            return false;
+        }
+
         if (shaderMetadata is
             { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } flags1 })
         {
             return (flags1 & 0x8u) != 0;
         }
 
-        return !isTreeAnimationShape;
+        return true;
     }
 
     internal static bool HasVertexColorData(RenderableSubmesh submesh)

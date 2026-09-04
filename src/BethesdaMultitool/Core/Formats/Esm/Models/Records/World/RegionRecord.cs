@@ -13,7 +13,12 @@ public record RegionRecord
     /// <summary>Owning worldspace FormID (WNAM subrecord / pWorldSpace at +48).</summary>
     public uint WorldspaceFormId { get; init; }
 
-    /// <summary>EmittanceColor RGB (NiColor at +60 — first 3 floats × 255).</summary>
+    /// <summary>
+    ///     Plugin records: persisted RCLR editor/map color. Runtime-only records: the mutable
+    ///     TESRegion EmittanceColor at +36, populated from current WTHR Effect Lighting rather
+    ///     than RCLR. The shared storage preserves existing overlay compatibility; render consumers
+    ///     must branch on <see cref="IsRuntimeOnly" />.
+    /// </summary>
     public byte EmittanceColorR { get; init; }
 
     public byte EmittanceColorG { get; init; }

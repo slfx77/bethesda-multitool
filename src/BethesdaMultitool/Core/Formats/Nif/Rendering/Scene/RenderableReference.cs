@@ -49,7 +49,10 @@ internal readonly record struct RenderableReference(
     // reference batch/cache path under ModelPath's synthetic CacheKey.
     BendableSplineRenderMesh? BendableSplineMesh = null,
     // Retained for opt-in render-path audits. The normal draw path keys on MeshId and never reads it.
-    uint BaseFormId = 0)
+    uint BaseFormId = 0,
+    // REFR XEMI target. This remains placement state rather than becoming a mesh-cache variant:
+    // REGN-backed emittance follows the weather's time-of-day Effect Lighting band at draw time.
+    uint? ExternalEmittanceFormId = null)
 {
     /// <summary>
     ///     Cull-sphere radius (world units) used for a reference whose base record has NO OBND, until its
@@ -300,7 +303,8 @@ internal readonly record struct RenderableReference(
             IsLodDuplicateBaseEditorId(placement.BaseEditorId),
             category,
             alternateTextures,
-            BaseFormId: placement.BaseFormId);
+            BaseFormId: placement.BaseFormId,
+            ExternalEmittanceFormId: placement.EmittanceFormId);
     }
 
     /// <summary>

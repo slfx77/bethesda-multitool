@@ -22,6 +22,9 @@ public sealed class SkyrimWindowGlowRenderingTests
     private const string AssetPath =
         @"meshes\architecture\whiterun\wrbuildings\wrlodwindowglow01.nif";
 
+    private const string DustBeamAssetPath =
+        @"meshes\effects\ambient\fxambbeamxbdustbig02.nif";
+
     public SkyrimWindowGlowRenderingTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
@@ -46,6 +49,8 @@ public sealed class SkyrimWindowGlowRenderingTests
         Assert.Equal(0xAC000000u, glow.ShaderMetadata?.ShaderFlags);
         Assert.Equal(0x40000029u, glow.ShaderMetadata?.ShaderFlags2);
         Assert.Equal(1f, glow.ShaderMetadata?.EffectLightingInfluence);
+        Assert.True(glow.UsesExternalEmittance);
+        Assert.Equal(1f, glow.ExternalEmittanceInfluence);
         Assert.Equal(2f, glow.EffectTint.R, 3);
         Assert.Equal(2f, glow.EffectTint.G, 3);
         Assert.Equal(2f, glow.EffectTint.B, 3);
@@ -66,5 +71,34 @@ public sealed class SkyrimWindowGlowRenderingTests
         Assert.Equal(1.5f, tintedGlow.EffectTint.R, 3);
         Assert.Equal(1f, tintedGlow.EffectTint.G, 3);
         Assert.Equal(0.5f, tintedGlow.EffectTint.B, 3);
+    }
+
+    [Fact]
+    public void FxAmbBeamXbDustBig02_PreservesNeutralBaseTintForDrawTimeXemi()
+    {
+        var archivePath = Environment.GetEnvironmentVariable("SKYRIM_MESHES_BSA") ?? ArchivePath;
+        Assert.SkipWhen(!File.Exists(archivePath),
+            "Skyrim LE Meshes BSA not installed (set SKYRIM_MESHES_BSA to run this probe)");
+
+        using var archive = ArchiveReader.Open(archivePath);
+        var data = archive.ReadFile(DustBeamAssetPath);
+        Assert.NotNull(data);
+
+        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data!));
+        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(data!, nif));
+        var beam = Assert.Single(model.Submeshes);
+
+        Assert.Equal("BSEffectShaderProperty", beam.ShaderMetadata?.PropertyType);
+        Assert.True(beam.UsesExternalEmittance);
+        Assert.Equal(1f, beam.ExternalEmittanceInfluence);
+        Assert.Equal(2f, beam.EffectTint.R, 3);
+        Assert.Equal(2f, beam.EffectTint.G, 3);
+        Assert.Equal(2f, beam.EffectTint.B, 3);
+        Assert.EndsWith("effects\\CloudTileLight.dds", beam.DiffuseTexturePath,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.True(beam.IsEmissive);
+        Assert.True(beam.HasAlphaBlend);
+        Assert.Equal((byte)6, beam.SrcBlendMode);
+        Assert.Equal((byte)0, beam.DstBlendMode);
     }
 }

@@ -329,7 +329,12 @@ public enum WeatherColorType
     Stars = 6,
     SkyLower = 7,
     Horizon = 8,
-    Unused9 = 9,
+    /// <summary>Skyrim+ effect-lighting color consumed by externally-emissive shader properties.</summary>
+    EffectLighting = 9,
+
+    // TES3/FO3-family profiles may leave category 9 unused. Retain the source-facing alias so their
+    // synthetic palette builders can state that fact without changing the shared numeric layout.
+    Unused9 = EffectLighting,
 
     /// <summary>Skyrim+ NAM0 far-fog color; Sky::GetFogColorFar resolves category 12.</summary>
     FogFar = 12,
@@ -379,7 +384,10 @@ public sealed record WeatherHdr
     public float TreeDimmer { get; init; }
 }
 
-/// <summary>WTHR DATA block (15 bytes) — see the converter's DATA/WTHR schema for the byte layout.</summary>
+/// <summary>
+///     WTHR DATA's shared 15-byte prefix plus nullable Fallout 4 wind-tail fields. Null keeps the
+///     legacy layout distinguishable from an authored zero byte.
+/// </summary>
 public sealed record WeatherData
 {
     public byte WindSpeed { get; init; }
@@ -400,4 +408,13 @@ public sealed record WeatherData
     public byte ThunderLightningFrequency { get; init; }
     public byte Flags { get; init; }
     public WeatherRgba LightningColor { get; init; }
+
+    /// <summary>Fallout 4 DATA byte 17: wind-direction center over a full 360-degree turn.</summary>
+    public byte? WindDirection { get; init; }
+
+    /// <summary>Fallout 4 DATA byte 18: full wind-direction range over 180 degrees.</summary>
+    public byte? WindDirectionRange { get; init; }
+
+    /// <summary>Fallout 4 DATA byte 19: normalized wind turbulence.</summary>
+    public byte? WindTurbulence { get; init; }
 }

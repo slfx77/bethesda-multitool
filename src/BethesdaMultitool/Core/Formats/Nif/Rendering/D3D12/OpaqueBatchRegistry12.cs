@@ -283,7 +283,8 @@ internal sealed class OpaqueBatchRegistry12
         bool usesGrassDistanceEnvelope,
         bool usesTallGrassWind,
         float grassWaveMultiplier,
-        bool usesModernStandardShader)
+        bool usesModernStandardShader,
+        uint externalEmittanceFormId)
     {
         if (_beginInProgress)
         {
@@ -301,12 +302,12 @@ internal sealed class OpaqueBatchRegistry12
             : 0f;
         var key = new OpaqueBatchKey(
             submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier, pso,
-            usesModernStandardShader);
+            usesModernStandardShader, externalEmittanceFormId);
         if (!_batches.TryGetValue(key, out var batch))
         {
             batch = new OpaqueBatchState(
                 submesh, pso, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier,
-                usesModernStandardShader);
+                usesModernStandardShader, externalEmittanceFormId);
             _batches.Add(key, batch);
         }
 
@@ -393,7 +394,8 @@ internal sealed class OpaqueBatchRegistry12
         bool UsesTallGrassWind,
         float GrassWaveMultiplier,
         ID3D12PipelineState Pso,
-        bool UsesModernStandardShader);
+        bool UsesModernStandardShader,
+        uint ExternalEmittanceFormId);
 }
 
 internal sealed class OpaqueBatchState(
@@ -402,7 +404,8 @@ internal sealed class OpaqueBatchState(
     bool usesGrassDistanceEnvelope,
     bool usesTallGrassWind,
     float grassWaveMultiplier,
-    bool usesModernStandardShader)
+    bool usesModernStandardShader,
+    uint externalEmittanceFormId)
 {
     public CachedSubmesh12 Submesh { get; } = submesh;
     public ID3D12PipelineState Pso { get; } = pso;
@@ -421,6 +424,9 @@ internal sealed class OpaqueBatchState(
     /// <summary>True only when this batch's PSO was selected by the fail-closed modern-standard
     /// material classifier. Immutable with the PSO/batch key.</summary>
     public bool UsesModernStandardShader { get; } = usesModernStandardShader;
+
+    /// <summary>REFR XEMI source shared by this material batch; zero means no resolved link.</summary>
+    public uint ExternalEmittanceFormId { get; } = externalEmittanceFormId;
 
     /// <summary>Per-instance world matrices for this batch (the only per-instance GPU data;
     /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>

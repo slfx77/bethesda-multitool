@@ -320,6 +320,8 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         Assert.Contains("sub.ClassicEnvMask is not null ||", route, StringComparison.Ordinal);
         Assert.Contains("sub.ClassicEnvMapUsesWindowReflection ||", route, StringComparison.Ordinal);
         Assert.Contains("sub.ClassicEnvMapIsSphereMap", route, StringComparison.Ordinal);
+        Assert.Contains("(!sub.UsesExternalEmittance || externalEmittanceFormId == 0)", route,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Resident", route, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Ready", route, StringComparison.OrdinalIgnoreCase);
 
@@ -336,11 +338,17 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         // Both the normal build and shadow-only materialization must carry the immutable routing bit
         // into their batch. Residency may change later, but the authored classification must not.
         Assert.Equal(2, SourceContract.CountOccurrences(
-            renderer, "ResolveOpaquePipeline(sub, r.IsGrass, out var usesModernStandardShader);"));
+            renderer,
+            "sub, r.IsGrass, externalEmittanceFormId, out var usesModernStandardShader);"));
         Assert.Equal(2, SourceContract.CountOccurrences(
             renderer, "state.Target.OpaqueBatches.GetOrCreate("));
         Assert.Equal(2, SourceContract.CountOccurrences(
-            renderer, "\n                usesModernStandardShader);"));
+            renderer, "usesModernStandardShader, externalEmittanceFormId);"));
+        Assert.Contains("ResolveEffectTint(sub, batchState.ExternalEmittanceFormId)", renderer,
+            StringComparison.Ordinal);
+        Assert.Contains("ResolveEffectTint(draw.Submesh, draw.ExternalEmittanceFormId)", renderer,
+            StringComparison.Ordinal);
+        Assert.Contains("return source.TryResolve(", renderer, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -361,10 +369,12 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             "private void DrawOpaqueBatches(",
             "private void DrawBlended(");
 
-        Assert.Contains("bool UsesModernStandardShader);", registry, StringComparison.Ordinal);
+        Assert.Contains("bool UsesModernStandardShader,", registry, StringComparison.Ordinal);
+        Assert.Contains("uint ExternalEmittanceFormId);", registry, StringComparison.Ordinal);
         Assert.Contains("public bool UsesModernStandardShader { get; } = usesModernStandardShader;",
             registry, StringComparison.Ordinal);
-        Assert.Contains("usesModernStandardShader);", getOrCreate, StringComparison.Ordinal);
+        Assert.Contains("usesModernStandardShader, externalEmittanceFormId);", getOrCreate,
+            StringComparison.Ordinal);
         Assert.Contains("if (!batch.UsesModernStandardShader || batch.Instances.Count == 0)", order,
             StringComparison.Ordinal);
         Assert.Contains("ModernStandardBatchCount++;", order, StringComparison.Ordinal);

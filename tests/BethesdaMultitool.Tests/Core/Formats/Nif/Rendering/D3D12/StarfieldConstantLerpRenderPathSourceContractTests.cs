@@ -60,7 +60,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             decoder, "StarfieldMaterialColor: sub.StarfieldMaterialColor") >= 2);
         SourceContract.AssertOrder(
             disk,
-            "internal const int DecoderVersion = 90;",
+            "internal const int DecoderVersion = 94;",
             "writer.Write(submesh.ClassicEnvironmentMapIsSphereMap);",
             "WriteStarfieldMaterialColor(writer, submesh.StarfieldMaterialColor);",
             "WriteStarfieldMaterialAlpha(writer, submesh.StarfieldMaterialAlpha);");
@@ -95,7 +95,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("StarfieldVertexLerpTextureState = -3f", cached,
             StringComparison.Ordinal);
-        Assert.Contains("EffectFalloff: ResolveEffectFalloffConstants(sub)", renderer,
+        Assert.Contains("EffectFalloff: ResolveEffectFalloffConstants(", renderer,
             StringComparison.Ordinal);
         Assert.Contains("return submesh.StarfieldMaterialColor.LinearTint;", renderer,
             StringComparison.Ordinal);

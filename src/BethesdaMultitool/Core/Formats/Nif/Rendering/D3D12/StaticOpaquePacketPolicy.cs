@@ -37,6 +37,7 @@ internal enum StaticOpaquePacketFallbackReason
     KeyMismatch,
     ShadowTailAllocationFailed,
     BuildFailed,
+    ExternalEmittance,
 }
 
 /// <summary>
@@ -58,6 +59,7 @@ internal readonly record struct StaticOpaquePacketFacts(
     bool HasSkin,
     bool HasLiveParticles,
     bool HasUvScroll,
+    bool HasExternalEmittance,
     bool DiagnosticsEnabled,
     bool HeatmapEnabled,
     bool TexturesTerminal,
@@ -86,6 +88,14 @@ internal static class StaticOpaquePacketPolicy
         if (!facts.IsOrdinaryLane)
         {
             return StaticOpaquePacketFallbackReason.NonOrdinaryLane;
+        }
+
+        // Dynamic external-emittance constants are the actionable reason this batch cannot be
+        // packetized. Check them before shader specialization, which deliberately rejects the same
+        // batch and would otherwise mask this telemetry as NonModernStandardShader.
+        if (facts.HasExternalEmittance)
+        {
+            return StaticOpaquePacketFallbackReason.ExternalEmittance;
         }
 
         if (!facts.UsesModernStandardShader)

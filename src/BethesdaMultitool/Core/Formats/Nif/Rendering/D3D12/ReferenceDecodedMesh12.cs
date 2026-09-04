@@ -173,4 +173,15 @@ internal sealed record DecodedSubmesh12(
     // Non-persisted provenance for freshly decoded/native-viewer payloads. Historical persistent
     // versions used default(Vector3) to mean "effect tint field absent"; current scenes need to
     // distinguish that from an authored/generated exact black tint.
-    bool EffectTintSpecified = false);
+    bool EffectTintSpecified = false,
+    // External-emittance is placement state. Persist only the shader eligibility/weight so the
+    // world renderer can sample REFR XEMI at draw time without color-keyed mesh variants.
+    bool UsesExternalEmittance = false,
+    float ExternalEmittanceInfluence = 1f,
+    // SLSF2_Tree_Anim or BSLeafAnimNode/BSTreeNode ancestry. VertexColor.w remains raw wind data;
+    // TextureState bit 17 makes diffuse alpha times material alpha the sole coverage input.
+    bool IsTreeAnimation = false,
+    // Non-persisted generated BNDS identity. VertexColor.w is the quantized displacement weight;
+    // flexibility is the exact DNAM value supplied to the recovered shader equation.
+    bool IsBendableSplineWind = false,
+    float BendableSplineWindFlexibility = 0f);

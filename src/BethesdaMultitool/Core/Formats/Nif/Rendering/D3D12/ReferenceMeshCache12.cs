@@ -59,10 +59,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
     // Positions-only collision data is ~12 B/vertex (vs the 72 B GPU vertex), so a generous budget
     // holds the walkable footprint of a worldspace many times over. Render-thread LRU.
     private const long CollisionMeshCacheByteBudget = 128L * 1024L * 1024L;
-    // Tangent-space normal-map perturbation scale (reference.frag.hlsl: mapN.xy *= vRenderState.z).
-    // The FNV SLS pixel shader applies the sampled tangent-space normal at full strength, so this is
-    // 1.0 (engine-faithful).
-    private const float ReferenceBumpStrength = 1.0f;
 
     // Size-aware ceiling on render-thread mesh-upload work per frame. The integer upload budget
     // (passed by the renderer) caps *how many* meshes upload; this caps the *bytes*, checked before
@@ -763,7 +759,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             // Retail's no-TNAM path binds DefaultTexture_SplineMap, a generated opaque 0x808080
             // pixel. The ordinary untextured-material lane creates the identical pinned 1x1
             // synthetic texture while explicit TNAM paths leave this null and bind their DDS.
-            MaterialDiffuse: generated.SolidDiffuseColor);
+            MaterialDiffuse: generated.SolidDiffuseColor,
+            IsBendableSplineWind: generated.UsesWindShader,
+            BendableSplineWindFlexibility: generated.WindFlexibility);
 
         // Retail also builds two capsule collision spans. Until that narrow collision shape is
         // reconstructed, AbsentOrUnsupported deliberately admits the existing solid visual-soup
@@ -2143,6 +2141,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     DoubleSided = sub.DoubleSided,
                     IsEmissive = sub.IsEmissive,
                     IsTallGrass = sub.IsTallGrass,
+                    IsTreeAnimation = sub.IsTreeAnimation,
+                    IsBendableSplineWind = sub.IsBendableSplineWind,
+                    BendableSplineWindFlexibility = sub.BendableSplineWindFlexibility,
                     IsLighting30 = sub.IsLighting30,
                     ClassicBasicShaderMode = sub.ClassicBasicShaderMode,
                     Lighting30Emission = new Vector4(
@@ -2178,6 +2179,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     EffectTint = sub.EffectTintSpecified
                         ? sub.EffectTint
                         : sub.EffectTint == default ? Vector3.One : sub.EffectTint,
+                    UsesExternalEmittance = sub.UsesExternalEmittance,
+                    ExternalEmittanceInfluence = sub.ExternalEmittanceInfluence,
                     EffectFalloffParams = sub.EffectFalloffParams,
                     HasEffectFalloff = sub.HasEffectFalloff,
                     SoftParticle = softParticle,
@@ -2404,7 +2407,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         new(
             sub.DoubleSided ? 1f : 0f,
             hasBump ? 1f : 0f,
-            ReferenceBumpStrength,
+            NifNormalMapStrengthPolicy.GenericDefault,
             sub.IsEmissive ? 1f : 0f);
 
     // GPU specular term (1A): xyz = specular tint, w = Phong exponent (glossiness). w == 0 is the

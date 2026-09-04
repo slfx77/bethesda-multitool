@@ -4,7 +4,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
 /// <summary>
 ///     Encodes a <see cref="RegionRecord" /> (REGN) as PC-format subrecord bytes.
-///     fopdoc canonical order: EDID, ICON?, RCLR(4B emittance RGBA), WNAM(4B worldspace FormID),
+///     fopdoc canonical order: EDID, ICON?, RCLR(4B editor/map RGBA), WNAM(4B worldspace FormID),
 ///     [RPLI?+RPLD?]*(boundary polygons), [RDAT + per-type data]*(region data tuples).
 ///     RDAT blocks + their typed payloads (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT) are captured
 ///     verbatim. Boundary RPLI/RPLD pairs are retained as typed <see cref="RegionArea" />
@@ -28,7 +28,8 @@ public sealed class RegnEncoder : IRecordEncoder
 
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", regn.EditorId ?? string.Empty));
 
-        // RCLR: 4 bytes RGBA emittance color. Model has R/G/B; A defaults to 255.
+        // RCLR: 4-byte editor/map color. Runtime TESRegion external emittance is a distinct,
+        // weather-derived NiColor and is never serialized here. Model has R/G/B; A defaults to 255.
         var rclr = new byte[4];
         rclr[0] = regn.EmittanceColorR;
         rclr[1] = regn.EmittanceColorG;

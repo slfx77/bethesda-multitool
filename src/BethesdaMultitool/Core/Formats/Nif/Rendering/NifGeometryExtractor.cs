@@ -412,7 +412,8 @@ internal static class NifGeometryExtractor
             // advisory, not gating. (Skyrim+ BSLightingShaderProperty overrides this below — its
             // SLSF flags ARE authoritative.)
             var useVertexColors = true;
-            // BSLeafAnimNode/BSTreeNode descendants use vertex alpha as wind-deformation data.
+            // TREE_ANIM shapes use vertex alpha as wind-deformation data. Graph ancestry supplies
+            // the initial fallback; readable SLSF2_Tree_Anim is folded in after metadata parsing.
             // Keep the raw byte stream, but do not feed that channel into surface coverage.
             var useVertexAlpha = !isTreeAnimationShape;
             string? specularMapPath = null;
@@ -462,6 +463,9 @@ internal static class NifGeometryExtractor
                 shaderMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, propRefs);
                 if (shaderMetadata is not null)
                 {
+                    isTreeAnimationShape = NifVertexColorPolicy.IsTreeAnimation(
+                        shaderMetadata,
+                        isTreeAnimationShape);
                     staticUvOffset = shaderMetadata.UvOffset;
                     staticUvScale = shaderMetadata.UvScale;
                     softParticleFalloffDepth = shaderMetadata.SoftEffectFalloffDepth ?? 0f;
@@ -1006,6 +1010,7 @@ internal static class NifGeometryExtractor
                 submesh.UseVertexAlphaForOpacity = nif.Blocks[shapeIndex].TypeName == "BSGeometry"
                     ? false
                     : useVertexAlpha;
+                submesh.IsTreeAnimation = isTreeAnimationShape;
                 submesh.ClampTextureU = clampTextureU;
                 submesh.ClampTextureV = clampTextureV;
                 var isLighting30 = NifLighting30EmissionPolicy.IsStandardLighting30(nif, shaderMetadata);
@@ -1067,6 +1072,11 @@ internal static class NifGeometryExtractor
                     "BSShaderNoLightingProperty" or "BSEffectShaderProperty",
                     ShaderFlags: { } eeFlags
                 } && (eeFlags & 0x20000000u) != 0;
+                submesh.UsesExternalEmittance = externalEmittance;
+                submesh.ExternalEmittanceInfluence = externalEmittance &&
+                                                     shaderMetadata!.PropertyType == "BSEffectShaderProperty"
+                    ? shaderMetadata.EffectLightingInfluence ?? 1f
+                    : 1f;
 
                 var materialEmission = isLighting30 && propRefs is not null
                     ? NifBlockParsers.ReadMaterialEmissionSource(data, nif, propRefs)
@@ -1094,10 +1104,8 @@ internal static class NifGeometryExtractor
 
                 if (!isLighting30 && externalEmittance && externalEmittanceColor is { } resolvedEmittance)
                 {
-                    var influence = shaderMetadata!.PropertyType == "BSEffectShaderProperty"
-                        ? shaderMetadata.EffectLightingInfluence ?? 1f
-                        : 1f;
-                    var modulation = ExternalEmittanceResolver.Modulation(resolvedEmittance, influence);
+                    var modulation = ExternalEmittanceResolver.Modulation(
+                        resolvedEmittance, submesh.ExternalEmittanceInfluence);
                     submesh.EffectTint = (
                         submesh.EffectTint.R * modulation.X,
                         submesh.EffectTint.G * modulation.Y,

@@ -189,7 +189,7 @@ internal static class NifExportExtractor
         Dictionary<int, int> shapeDataMap,
         Dictionary<int, List<int>> shapePropertyMap,
         Dictionary<int, int> shapeSkinInstanceMap,
-        IReadOnlySet<int> treeAnimationShapes,
+        HashSet<int> treeAnimationShapes,
         Dictionary<int, Matrix4x4> worldTransforms,
         float[]? preSkinMorphDeltas)
     {
@@ -414,6 +414,7 @@ internal static class NifExportExtractor
             IsEmissive = properties.IsEmissive,
             UseVertexColors = properties.UseVertexColors,
             UseVertexAlphaForOpacity = properties.UseVertexAlphaForOpacity,
+            IsTreeAnimation = properties.IsTreeAnimation,
             IsDoubleSided = properties.IsDoubleSided,
             HasAlphaBlend = properties.HasAlphaBlend,
             HasAlphaTest = properties.HasAlphaTest,
@@ -443,6 +444,9 @@ internal static class NifExportExtractor
         }
 
         var shaderMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, propRefs);
+        var isTreeAnimation = NifVertexColorPolicy.IsTreeAnimation(
+            shaderMetadata,
+            isTreeAnimationShape);
         NifBlockParsers.ReadAlphaProperty(
             data,
             nif,
@@ -484,7 +488,8 @@ internal static class NifExportExtractor
             UseVertexColors = useVertexColors,
             UseVertexAlphaForOpacity = NifVertexColorPolicy.UsesAlphaForOpacity(
                 shaderMetadata,
-                isTreeAnimationShape),
+                isTreeAnimation),
+            IsTreeAnimation = isTreeAnimation,
             IsDoubleSided = NifDoubleSidedPolicy.Resolve(
                 NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
                 shaderMetadata),
@@ -568,7 +573,8 @@ internal static class NifExportExtractor
 
         internal static readonly ShapeProperties TreeAnimationDefault = new()
         {
-            UseVertexAlphaForOpacity = false
+            UseVertexAlphaForOpacity = false,
+            IsTreeAnimation = true
         };
 
         public NifShaderTextureMetadata? ShaderMetadata { get; init; }
@@ -582,6 +588,8 @@ internal static class NifExportExtractor
         public bool UseVertexColors { get; init; }
 
         public bool UseVertexAlphaForOpacity { get; init; } = true;
+
+        public bool IsTreeAnimation { get; init; }
 
         public bool IsDoubleSided { get; init; }
 

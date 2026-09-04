@@ -68,6 +68,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.True(loaded.IsLeafBillboard);
         Assert.True(loaded.IsDecal);
         Assert.Equal(new Vector3(0.478f, 0.478f, 0.478f), loaded.EffectTint);
+        Assert.True(loaded.UsesExternalEmittance);
+        Assert.Equal(0.625f, loaded.ExternalEmittanceInfluence);
         Assert.Equal(new Vector4(0.98481f, 0.17365f, 1f, 0f), loaded.EffectFalloffParams);
         Assert.True(loaded.HasEffectFalloff);
         Assert.Equal(321f, loaded.SoftParticleFalloffDepth);
@@ -93,6 +95,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(new Vector4(26f / 255f, 51f / 255f, 77f / 255f, 43f / 255f),
             loaded.Vertices[0].VertexColor);
         Assert.True(loaded.IsTallGrass);
+        Assert.True(loaded.IsTreeAnimation);
         Assert.Equal("textures\\effects\\chrome_e.dds", loaded.ClassicEnvironmentMapTexturePath);
         Assert.Equal("textures\\foo_m.dds", loaded.ClassicEnvironmentMaskTexturePath);
         Assert.Equal(1.25f, loaded.ClassicEnvironmentMapScale);
@@ -126,13 +129,16 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // Starfield Water-route geometry onto the existing water sentinel. v88 retains vertex-Lerp
         // RGBA and its mode. v89 bakes Starfield material UV transforms and reducible UVOffset loops
         // into the existing UV/scroll payload. v90 persists a compatible embedded TES3 reverse
-        // controller clock instead of flattening it to ClipLoops. This assertion pins every bump.
+        // controller clock instead of flattening it to ClipLoops. v91 drops Skyrim's bogus slot-1
+        // NOR sentinel; v92 persists draw-time external-emittance eligibility/weight. v93 reparses
+        // classic Skyrim's per-partition skin footers. v94 carries TREE_ANIM ancestry and retains
+        // raw vertex alpha as wind data. This assertion pins every bump.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
         Assert.Equal(default(StarfieldMaterialColorRenderState), loaded.StarfieldMaterialColor);
         Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
-        Assert.Equal(90, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(94, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -539,6 +545,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [InlineData(85)] // v86 appends regular BGSM lit-emission state.
     [InlineData(86)] // v87 classifies Starfield ShaderRoute::Water onto the water sentinel.
     [InlineData(87)] // v88 retains Starfield vertex-Lerp RGBA + render mode.
+    [InlineData(93)] // v94 persists TREE_ANIM alpha provenance and raw wind weights.
     public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
     {
         using var tempDir = new TempDirectory();
@@ -774,7 +781,10 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 SourceBlockIndex: 41,
                 BillboardMode: NifBillboardMode.AlwaysFaceCenter,
                 EngineZWriteOff: true,
-                DepthTestOff: true)
+                DepthTestOff: true,
+                UsesExternalEmittance: true,
+                ExternalEmittanceInfluence: 0.625f,
+                IsTreeAnimation: true)
         ]);
     }
 

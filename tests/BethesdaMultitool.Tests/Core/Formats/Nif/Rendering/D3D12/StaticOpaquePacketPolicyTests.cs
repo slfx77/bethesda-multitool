@@ -37,6 +37,7 @@ public sealed class StaticOpaquePacketPolicyTests
     [InlineData(DeniedFact.EnvironmentPending, 17)]
     [InlineData(DeniedFact.MirrorReplayUnsupported, 18)]
     [InlineData(DeniedFact.RefilterInputsMissing, 19)]
+    [InlineData(DeniedFact.ExternalEmittance, 25)]
     public void Changing_any_single_safety_fact_fails_closed(
         DeniedFact deniedFact,
         int expected)
@@ -62,6 +63,19 @@ public sealed class StaticOpaquePacketPolicyTests
         };
 
         Assert.Equal((StaticOpaquePacketFallbackReason)expected, StaticOpaquePacketPolicy.Resolve(facts));
+    }
+
+    [Fact]
+    public void External_emittance_reason_is_not_masked_by_dynamic_shader_fallback()
+    {
+        var facts = EligibleFacts() with
+        {
+            UsesModernStandardShader = false,
+            HasExternalEmittance = true
+        };
+
+        Assert.Equal(StaticOpaquePacketFallbackReason.ExternalEmittance,
+            StaticOpaquePacketPolicy.Resolve(facts));
     }
 
     [Theory]
@@ -138,6 +152,7 @@ public sealed class StaticOpaquePacketPolicyTests
         HasSkin: false,
         HasLiveParticles: false,
         HasUvScroll: false,
+        HasExternalEmittance: false,
         DiagnosticsEnabled: false,
         HeatmapEnabled: false,
         TexturesTerminal: true,
@@ -161,6 +176,7 @@ public sealed class StaticOpaquePacketPolicyTests
         DeniedFact.Skin => EligibleFacts() with { HasSkin = true },
         DeniedFact.LiveParticles => EligibleFacts() with { HasLiveParticles = true },
         DeniedFact.UvScroll => EligibleFacts() with { HasUvScroll = true },
+        DeniedFact.ExternalEmittance => EligibleFacts() with { HasExternalEmittance = true },
         DeniedFact.Diagnostics => EligibleFacts() with { DiagnosticsEnabled = true },
         DeniedFact.Heatmap => EligibleFacts() with { HeatmapEnabled = true },
         DeniedFact.TexturesPending => EligibleFacts() with { TexturesTerminal = false },
@@ -249,6 +265,7 @@ public sealed class StaticOpaquePacketPolicyTests
         EnvironmentPending,
         MirrorReplayUnsupported,
         RefilterInputsMissing,
+        ExternalEmittance,
     }
 
     public enum KeyDifference

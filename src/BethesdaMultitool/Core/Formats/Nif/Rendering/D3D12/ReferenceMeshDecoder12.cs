@@ -576,7 +576,10 @@ internal sealed class ReferenceMeshDecoder12
                 StarfieldMaterialColor: sub.StarfieldMaterialColor,
                 StarfieldMaterialAlpha: sub.StarfieldMaterialAlpha,
                 BgsmGlowMapTexturePath: sub.BgsmGlowMapTexturePath,
-                BgsmEmissionColor: sub.BgsmEmissionColor));
+                BgsmEmissionColor: sub.BgsmEmissionColor,
+                UsesExternalEmittance: sub.UsesExternalEmittance,
+                ExternalEmittanceInfluence: sub.ExternalEmittanceInfluence,
+                IsTreeAnimation: sub.IsTreeAnimation));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -659,7 +662,10 @@ internal sealed class ReferenceMeshDecoder12
                 StarfieldMaterialColor: sub.StarfieldMaterialColor,
                 StarfieldMaterialAlpha: sub.StarfieldMaterialAlpha,
                 BgsmGlowMapTexturePath: sub.BgsmGlowMapTexturePath,
-                BgsmEmissionColor: sub.BgsmEmissionColor));
+                BgsmEmissionColor: sub.BgsmEmissionColor,
+                UsesExternalEmittance: sub.UsesExternalEmittance,
+                ExternalEmittanceInfluence: sub.ExternalEmittanceInfluence,
+                IsTreeAnimation: sub.IsTreeAnimation));
         }
 
         return new DecodedNifMesh12(

@@ -365,9 +365,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             : 0.4f;
     }
     // SpeedTree leaf wind uniform: (rockAmount, rockPhase, rustleAmount, rustlePhase) — see SetWind.
-    // Default all-zero so non-viewer paths (captures, exports, headless) render trees static.
+    // Direction/turbulence are retained separately for FO4 generated bendable splines. Defaults
+    // preserve a finite rest pose for renderer hosts that never supply weather.
     private Vector4 _wind;
     private float _windStrength;
+    private Vector2 _windDirection = Vector2.UnitX;
+    private float _windTurbulence;
     private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _windRig = new();
     private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _captureWindRig = new();
     private bool _captureWindActive;
@@ -1020,6 +1023,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private bool _fnvActiveAdtLightingEnabled;
     private bool _fnvProjectedSunShadowActive;
     private bool _fnvActiveAdtFogEnabled;
+    private float _externalEmittanceGameHour = 12f;
+    private AtmosphereState.ClimateTiming? _externalEmittanceClimateTiming;
 
     /// <summary>
     ///     Sets the number of point lights uploaded to t9 for the current scene pass. Active retail
@@ -1064,6 +1069,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _fnvActiveAdtLightingEnabled = lightingEnabled;
         _fnvProjectedSunShadowActive = projectedSunShadowActive;
         _fnvActiveAdtFogEnabled = fogEnabled;
+    }
+
+    /// <summary>
+    ///     Supplies the clock used by weather-backed REGN XEMI sources. This only changes draw
+    ///     constants; geometry, placement lists, and decoded mesh identities remain reusable.
+    /// </summary>
+    public void SetExternalEmittanceState(
+        float gameHour,
+        AtmosphereState.ClimateTiming? climateTiming)
+    {
+        _externalEmittanceGameHour = float.IsFinite(gameHour) ? gameHour : 12f;
+        _externalEmittanceClimateTiming = climateTiming;
     }
 
     /// <summary>
@@ -1503,11 +1520,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     wind timers, ported in <see cref="Core.Formats.SpeedTree.SpeedTreeWindRig" />). The
     ///     shader-facing uWind packs (rockAmount, rockPhase, rustleAmount, rustlePhase) — both
     ///     engine <c>RockParams.z</c>/<c>RustleParams.z</c> scalars are constructor-1.0, so they
-    ///     need no uniform. <paramref name="direction" /> is unused by both recovered models
-    ///     (TallGrass uses fixed world +Y), but remains for signature stability and future consumers;
+    ///     need no uniform. <paramref name="direction" /> is unused by those two recovered models
+    ///     (TallGrass uses fixed world +Y), but drives the distinct FO4 bendable-spline equation;
     ///     <paramref name="strength" /> = the weather wind-speed byte / 255 (0 is SpeedTree rest;
     ///     TallGrass still applies its recovered minimum magnitude);
-    ///     <paramref name="timeSeconds" /> the animation clock. Call each frame before
+    ///     <paramref name="timeSeconds" /> the animation clock; <paramref name="turbulence" /> is
+    ///     the FO4 WTHR DATA byte 19 fraction. Call each frame before
     ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?, Vector3?)" />.
     ///     <para>
     ///         LIVE-LOOP ONLY. Unlike the leaf billboard basis, this is not per-frame state a later frame
@@ -1519,11 +1537,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///         <see cref="SetWindForCapture" /> for anything that is not the live per-frame loop.
     ///     </para>
     /// </summary>
-    public void SetWind(Vector2 direction, float strength, float timeSeconds)
+    public void SetWind(
+        Vector2 direction,
+        float strength,
+        float timeSeconds,
+        float turbulence = 0f)
     {
-        _ = direction;
         _captureWindActive = false;
+        _windDirection = Fo4BendableSplineWind.NormalizeDirection(direction);
         _windStrength = float.IsFinite(strength) ? Math.Clamp(strength, 0f, 1f) : 0f;
+        _windTurbulence = float.IsFinite(turbulence) ? Math.Clamp(turbulence, 0f, 1f) : 0f;
         _animationClockSeconds = float.IsFinite(timeSeconds) ? timeSeconds : 0f;
         _windRig.Tick(_windStrength, (float)_animationClockSeconds);
         _wind = new Vector4(_windRig.RockAmount, _windRig.RockPhase, _windRig.RustleAmount, _windRig.RustlePhase);
@@ -1539,10 +1562,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///         perturb the live rig's integrated phase.
     ///     </para>
     /// </summary>
-    public void SetWindForCapture(Vector2 direction, float strength, float timeSeconds)
+    public void SetWindForCapture(
+        Vector2 direction,
+        float strength,
+        float timeSeconds,
+        float turbulence = 0f)
     {
-        _ = direction;
+        _windDirection = Fo4BendableSplineWind.NormalizeDirection(direction);
         _windStrength = float.IsFinite(strength) ? Math.Clamp(strength, 0f, 1f) : 0f;
+        _windTurbulence = float.IsFinite(turbulence) ? Math.Clamp(turbulence, 0f, 1f) : 0f;
         _animationClockSeconds = float.IsFinite(timeSeconds) ? timeSeconds : 0f;
         _captureWindRig.ResetAndReplayConstantWind(_windStrength, (float)_animationClockSeconds);
         _captureWindActive = true;
@@ -2075,6 +2103,28 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceSpeedTreeAnimationSeconds = (float)_animationClockSeconds;
         LastStats.ReferenceSpeedTreeRuntimeLodEnabled = SpeedTreeRuntimeLod.Enabled;
         LastStats.ReferenceTallGrassWindSupported = _tallGrassWindSupported;
+        var splineWindConstants = Fo4BendableSplineWind.BuildConstants(
+            _windDirection,
+            _windStrength,
+            _windTurbulence,
+            flexibility: 0f,
+            _animationClockSeconds,
+            AnimationsEnabled);
+        LastStats.ReferenceFo4BendableSplineWindSupported =
+            _renderCache?.Game == Core.Games.BethesdaGame.Fallout4;
+        LastStats.ReferenceFo4BendableSplineAnimationsEnabled = AnimationsEnabled;
+        LastStats.ReferenceFo4BendableSplineNormalizedSpeed = _windStrength;
+        LastStats.ReferenceFo4BendableSplineNormalizedTurbulence = _windTurbulence;
+        LastStats.ReferenceFo4BendableSplineDirectionX = _windDirection.X;
+        LastStats.ReferenceFo4BendableSplineDirectionY = _windDirection.Y;
+        LastStats.ReferenceFo4BendableSplineDirectionRadians = splineWindConstants.WindVector.X;
+        LastStats.ReferenceFo4BendableSplineAnimationSeconds = (float)_animationClockSeconds;
+        LastStats.ReferenceFo4BendableSplinePackedTimer = splineWindConstants.WindVector.W;
+        LastStats.ReferenceFo4BendableSplineMinimumSpeedWorldUnits =
+            splineWindConstants.WindVectorEx.X;
+        LastStats.ReferenceFo4BendableSplineMaximumSpeedWorldUnits =
+            splineWindConstants.WindVectorEx.Y;
+        LastStats.ReferenceFo4BendableSplineFrequency = splineWindConstants.WindVectorEx.Z;
         LastStats.ReferencePlacedLightCount = _placedLightCount;
         LastStats.ReferencePlacedLightTileBuildMilliseconds = _placedLightTileBuildMilliseconds;
         LastStats.ReferencePlacedLightTileCount = _placedLightTileCount;
@@ -3402,6 +3452,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         foreach (var sub in mesh.Submeshes)
         {
+            var externalEmittanceFormId = sub.UsesExternalEmittance
+                ? r.ExternalEmittanceFormId ?? 0u
+                : 0u;
             if (alphaDebug)
             {
                 var opaquePass = sub.DoubleSided ? "OPAQUE/DoublePso" : "OPAQUE/BackPso";
@@ -3469,7 +3522,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     ResolveWorldBoundsMinZ(
                         r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
                     r.MeshId,
-                    new Vector2(worldCenter.X, worldCenter.Y));
+                    new Vector2(worldCenter.X, worldCenter.Y),
+                    externalEmittanceFormId);
                 if (sub.DepthWritingBlend && !sub.IsBillboard && !state.StreamActive)
                 {
                     state.Target.DepthWritingBlendDraws.Add(blendedDraw);
@@ -3484,7 +3538,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 continue;
             }
 
-            var pso = ResolveOpaquePipeline(sub, r.IsGrass, out var usesModernStandardShader);
+            var pso = ResolveOpaquePipeline(
+                sub, r.IsGrass, externalEmittanceFormId, out var usesModernStandardShader);
             if (instancedGrass)
             {
                 pso = _pipelines.GetBlendDepthWritePipeline(
@@ -3508,7 +3563,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
             var batch = state.Target.OpaqueBatches.GetOrCreate(
                 sub, pso, usesGrassDistanceEnvelope, usesTallGrassWind, r.GrassWaveMultiplier,
-                usesModernStandardShader);
+                usesModernStandardShader, externalEmittanceFormId);
             if (state.OpaqueFrontToBackView.Valid &&
                 !state.Target.OpaqueBatches.ObserveFrontToBackDepth(
                     batch,
@@ -3654,7 +3709,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 continue;
             }
 
-            var pso = ResolveOpaquePipeline(sub, r.IsGrass, out var usesModernStandardShader);
+            var externalEmittanceFormId = sub.UsesExternalEmittance
+                ? r.ExternalEmittanceFormId ?? 0u
+                : 0u;
+            var pso = ResolveOpaquePipeline(
+                sub, r.IsGrass, externalEmittanceFormId, out var usesModernStandardShader);
             if (r.IsGrass && sub.AlphaTest)
             {
                 pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
@@ -3666,7 +3725,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
             var batch = state.Target.OpaqueBatches.GetOrCreate(
                 sub, pso, usesGrassDistanceEnvelope, usesTallGrassWind, r.GrassWaveMultiplier,
-                usesModernStandardShader);
+                usesModernStandardShader, externalEmittanceFormId);
             batch.ShadowOnlyInstances.Add(relWorldMatrix);
             if (sub.PhysicsLiteSway is not null)
             {
@@ -3680,6 +3739,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private ID3D12PipelineState ResolveOpaquePipeline(
         CachedSubmesh12 sub,
         bool isScatteredGrass,
+        uint externalEmittanceFormId,
         out bool usesModernStandardShader)
     {
         var facts = new ModernStandardOpaqueShaderFacts(
@@ -3692,7 +3752,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             IsLighting30: sub.IsLighting30,
             HasLighting30GlowMap: sub.Lighting30GlowMap is not null,
             HasEffectFalloff: sub.HasEffectFalloff,
-            IsEffectTintNeutral: sub.EffectTint == Vector3.One,
+            IsEffectTintNeutral: sub.EffectTint == Vector3.One &&
+                                 (!sub.UsesExternalEmittance || externalEmittanceFormId == 0),
             HasSoftParticle: sub.SoftParticle.Enabled,
             IsBillboard: sub.IsBillboard,
             IsLeafBillboard: sub.IsLeafBillboard,
@@ -4533,6 +4594,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         var sub = batchState.Submesh;
         textureState = ResolveTextureState(sub);
+        var splineWind = sub.IsBendableSplineWind
+            ? Fo4BendableSplineWind.BuildConstants(
+                _windDirection,
+                _windStrength,
+                _windTurbulence,
+                sub.BendableSplineWindFlexibility,
+                _animationClockSeconds,
+                AnimationsEnabled)
+            : default;
         // Video-settings "Shadows on grass" OFF for SCATTERED grass: the submesh has no grass
         // marker (scatter identity lives on the reference/batch), so the no-sun-shadow bit is
         // ORed here, where the batch's grass route is known. The per-game grass shaders honor
@@ -4560,26 +4630,64 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             Specular: sub.Specular,
             CameraRight: _leafBillboardRight,
             CameraUp: _leafBillboardUp,
-            Wind: sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard
-                ? Vector4.Zero
-                : new Vector4(
-                    _wind.X,
-                    _wind.Y * sub.SpeedTreeWindSpeeds.X,
-            _wind.Z,
-            _wind.W * sub.SpeedTreeWindSpeeds.Y),
-            EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
-            EffectFalloff: ResolveEffectFalloffConstants(sub),
+            Wind: sub.IsBendableSplineWind
+                ? splineWind.WindVector
+                : sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard
+                    ? Vector4.Zero
+                    : new Vector4(
+                        _wind.X,
+                        _wind.Y * sub.SpeedTreeWindSpeeds.X,
+                        _wind.Z,
+                        _wind.W * sub.SpeedTreeWindSpeeds.Y),
+            EffectTint: new Vector4(
+                ResolveEffectTint(sub, batchState.ExternalEmittanceFormId),
+                sub.HasEffectFalloff ? 1f : 0f),
+            EffectFalloff: ResolveEffectFalloffConstants(
+                sub, batchState.ExternalEmittanceFormId),
             EnvMap: ResolveEnvMapState(sub),
             SoftParticle: Vector4.Zero,
-            TallGrassWind: BuildTallGrassWindConstants(
-                batchState.UsesTallGrassWind,
-                batchState.GrassWaveMultiplier),
+            TallGrassWind: sub.IsBendableSplineWind
+                ? splineWind.WindVectorEx
+                : BuildTallGrassWindConstants(
+                    batchState.UsesTallGrassWind,
+                    batchState.GrassWaveMultiplier),
             SpecularLodBounds: new Vector4(sub.LocalBoundsCenter, sub.LocalBoundsRadius),
             SpecularLodParams: _classicSpecularLodProfile.ShaderParameters(
                 specularEligible: sub.Specular.W > 0f));
     }
 
-    private static Vector4 ResolveEffectFalloffConstants(CachedSubmesh12 submesh)
+    private Vector3 ResolveEffectTint(CachedSubmesh12 submesh, uint externalEmittanceFormId)
+    {
+        if (submesh.IsLighting30 || !submesh.UsesExternalEmittance ||
+            !TryResolveExternalEmittanceColor(externalEmittanceFormId, out var externalColor))
+        {
+            return submesh.EffectTint;
+        }
+
+        return submesh.EffectTint * ExternalEmittanceResolver.Modulation(
+            externalColor, submesh.ExternalEmittanceInfluence);
+    }
+
+    private bool TryResolveExternalEmittanceColor(uint formId, out Vector3 color)
+    {
+        var renderCache = _renderCache;
+        if (formId != 0 && renderCache is not null &&
+            renderCache.ExternalEmittanceIndex?.TryGetValue(formId, out var source) == true)
+        {
+            return source.TryResolve(
+                _externalEmittanceGameHour,
+                _externalEmittanceClimateTiming,
+                renderCache.Game,
+                out color);
+        }
+
+        color = Vector3.One;
+        return false;
+    }
+
+    private Vector4 ResolveEffectFalloffConstants(
+        CachedSubmesh12 submesh,
+        uint externalEmittanceFormId)
     {
         if (submesh.StarfieldMaterialColor.IsConstantLerp)
         {
@@ -4605,9 +4713,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 submesh.BgsmGlowMap is { } glowMap ? glowMap.BindlessIndex + 1f : 0f);
         }
 
-        return submesh.HasEffectFalloff
-            ? submesh.EffectFalloffParams
-            : submesh.Lighting30Emission;
+        if (submesh.HasEffectFalloff)
+        {
+            return submesh.EffectFalloffParams;
+        }
+
+        var lighting30Emission = submesh.Lighting30Emission;
+        if (submesh.IsLighting30 && submesh.UsesExternalEmittance &&
+            TryResolveExternalEmittanceColor(externalEmittanceFormId, out var externalColor))
+        {
+            lighting30Emission = new Vector4(externalColor, lighting30Emission.W);
+        }
+
+        return lighting30Emission;
     }
 
     private OpaqueSubmissionPacket12? ResolveOpaqueSubmissionPacket(
@@ -4719,6 +4837,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 HasSkin: sub.Skin is not null || sub.AnimatedVertexBufferView is not null,
                 HasLiveParticles: sub.LiveParticles is not null || sub.ParticleCenters is not null,
                 HasUvScroll: sub.UvScrollVelocity != Vector2.Zero,
+                HasExternalEmittance:
+                    sub.UsesExternalEmittance && batch.ExternalEmittanceFormId != 0,
                 DiagnosticsEnabled: GeometryArenaDiagnostics.Enabled,
                 HeatmapEnabled: _frameHeatmapActive,
                 TexturesTerminal: sub.TexturesReady,
@@ -5440,6 +5560,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     }
                 }
 
+                if (packetDrawCount > 0)
+                {
+                    ObserveFo4BendableSplineWindDraw(packetSub, packetDrawCount);
+                }
+
                 continue;
             }
 
@@ -5782,6 +5907,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         indirectWriteCount++;
                         pendingIndirectCount++;
                         ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
+                        ObserveFo4BendableSplineWindDraw(sub, drawCount);
                     }
                 }
                 else
@@ -5794,6 +5920,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
                         LastStats.ReferenceOpaqueDirectDraws++;
                         ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
+                        ObserveFo4BendableSplineWindDraw(sub, drawCount);
                         if (batchState.UsesTallGrassWind)
                         {
                             LastStats.ReferenceTallGrassInstancedDraws++;
@@ -5919,6 +6046,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // TallGrass changes only in the VS, just like physics-lite changes only its
                     // instance matrix. Its recovered minimum amplitude remains nonzero even at
                     // weather strength zero, so the cached sun map must always advance while enabled.
+                    ShadowDrawsIncludeAnimatedMeshes = true;
+                }
+                if (AnimationsEnabled && sub.IsBendableSplineWind)
+                {
+                    // Spline motion executes in the shared main/shadow VS with this draw's CB.
+                    // Refresh a cached sun map while such a caster is present so both phases agree.
                     ShadowDrawsIncludeAnimatedMeshes = true;
                 }
             }
@@ -6476,8 +6609,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // baked particle cloud) so the blended-path VS can re-face the quads to the camera.
             CameraRight = _leafBillboardRight,
             CameraUp = _leafBillboardUp,
-            EffectTint = new Vector4(draw.Submesh.EffectTint, draw.Submesh.HasEffectFalloff ? 1f : 0f),
-            EffectFalloff = ResolveEffectFalloffConstants(draw.Submesh),
+            EffectTint = new Vector4(
+                ResolveEffectTint(draw.Submesh, draw.ExternalEmittanceFormId),
+                draw.Submesh.HasEffectFalloff ? 1f : 0f),
+            EffectFalloff = ResolveEffectFalloffConstants(
+                draw.Submesh, draw.ExternalEmittanceFormId),
             EnvMap = ResolveEnvMapState(draw.Submesh),
             UvScroll = new Vector4(
                 WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
@@ -6740,6 +6876,34 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         _tallGrassWaveMultipliers.Add(multiplier);
         LastStats.ReferenceTallGrassWaveMultiplierDistinctCount = _tallGrassWaveMultipliers.Count;
+    }
+
+    private void ObserveFo4BendableSplineWindDraw(CachedSubmesh12 submesh, int instanceCount)
+    {
+        if (!submesh.IsBendableSplineWind || instanceCount <= 0)
+        {
+            return;
+        }
+
+        if (LastStats.ReferenceFo4BendableSplineWindDraws == 0)
+        {
+            LastStats.ReferenceFo4BendableSplineFlexibilityMinimum =
+                submesh.BendableSplineWindFlexibility;
+            LastStats.ReferenceFo4BendableSplineFlexibilityMaximum =
+                submesh.BendableSplineWindFlexibility;
+        }
+        else
+        {
+            LastStats.ReferenceFo4BendableSplineFlexibilityMinimum = Math.Min(
+                LastStats.ReferenceFo4BendableSplineFlexibilityMinimum,
+                submesh.BendableSplineWindFlexibility);
+            LastStats.ReferenceFo4BendableSplineFlexibilityMaximum = Math.Max(
+                LastStats.ReferenceFo4BendableSplineFlexibilityMaximum,
+                submesh.BendableSplineWindFlexibility);
+        }
+
+        LastStats.ReferenceFo4BendableSplineWindDraws++;
+        LastStats.ReferenceFo4BendableSplineWindInstances += instanceCount;
     }
 
     /// <summary>
@@ -7408,6 +7572,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         float WorldBoundsMaxZ,
         float WorldBoundsMinZ,
         uint MeshId,
-        Vector2 WorldBoundsCenterXY);
+        Vector2 WorldBoundsCenterXY,
+        uint ExternalEmittanceFormId);
 }
 #endif

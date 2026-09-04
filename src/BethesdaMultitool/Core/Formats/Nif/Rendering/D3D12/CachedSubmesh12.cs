@@ -19,6 +19,8 @@ internal sealed class CachedSubmesh12
     internal const float StarfieldVertexLerpTextureState = -3f;
     internal const uint StarfieldOpacityTextureFlag = 1u << 15;
     internal const uint BgsmEmissionTextureFlag = 1u << 16;
+    internal const uint TreeAnimationTextureFlag = 1u << 17;
+    internal const uint BendableSplineWindTextureFlag = 1u << 18;
 
     private Vector4 _textureState;
     private bool _textureStateCached;
@@ -280,7 +282,9 @@ internal sealed class CachedSubmesh12
                 // bit 6 = classic FO3/FNV environment pass, bit 7 = TexIndices.z is its custom mask,
                 // bit 9 = classic bit-21/SLS2058 window-reflection direction (bit 8 is parallax),
                 // bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map,
-                // bit 15 = Starfield layer-0 opacity, bit 16 = regular-lighting BGSM emission
+                // bit 15 = Starfield layer-0 opacity, bit 16 = regular-lighting BGSM emission,
+                // bit 17 = TREE_ANIM identity, bit 18 = FO4 bendable-spline wind identity
+                // (vertex alpha is wind data for both)
                 // (bits 10-13 are runtime-only, ORed in by ResolveTextureState). All values are
                 // exactly representable in a float; shaders decode with integer bit tests.
                 (SpecularMap is not null ? 1f : 0f) +
@@ -297,7 +301,9 @@ internal sealed class CachedSubmesh12
                     ? 16384f
                     : 0f) +
                 (StarfieldOpacity is not null ? (float)StarfieldOpacityTextureFlag : 0f) +
-                (HasBgsmEmission ? (float)BgsmEmissionTextureFlag : 0f),
+                (HasBgsmEmission ? (float)BgsmEmissionTextureFlag : 0f) +
+                (IsTreeAnimation ? (float)TreeAnimationTextureFlag : 0f) +
+                (IsBendableSplineWind ? (float)BendableSplineWindTextureFlag : 0f),
                 textureStateW); // .w >= 0 = palette row; -2/-3 = Starfield constant/vertex Lerp
             if (TexturesReady)
             {
@@ -352,6 +358,20 @@ internal sealed class CachedSubmesh12
     ///     these cached vertices; the reference VS restores outgoing coverage alpha to one.
     /// </summary>
     public bool IsTallGrass { get; init; }
+
+    /// <summary>
+    ///     SLSF2_Tree_Anim or BSLeafAnimNode/BSTreeNode route. VertexColor.w remains authored wind
+    ///     weight; TextureState bit 17 excludes it from main- and shadow-pass pixel coverage.
+    /// </summary>
+    public bool IsTreeAnimation { get; init; }
+
+    /// <summary>
+    ///     Generated FO4 BNDS wind route. VertexColor.w is displacement weight, and the DNAM
+    ///     flexibility value is packed into the existing per-batch wind constant union.
+    /// </summary>
+    public bool IsBendableSplineWind { get; init; }
+
+    public float BendableSplineWindFlexibility { get; init; }
 
     /// <summary>True for the classic scene-lit Lighting30 material path (never full-bright).</summary>
     public bool IsLighting30 { get; init; }
@@ -464,6 +484,12 @@ internal sealed class CachedSubmesh12
     /// <summary>BGEM effect tint (base color × scale) multiplied into the source texture RGB;
     /// (1,1,1) for non-effect materials so the shader term is a no-op.</summary>
     public Vector3 EffectTint { get; init; } = Vector3.One;
+
+    /// <summary>Source shader has External_Emittance and consumes the owning REFR's XEMI target.</summary>
+    public bool UsesExternalEmittance { get; init; }
+
+    /// <summary>BSEffect LightingInfluence blend weight; classic external-emittance paths use one.</summary>
+    public float ExternalEmittanceInfluence { get; init; } = 1f;
 
     /// <summary>BGEM |N·V| opacity falloff (startAngle, stopAngle, startOpacity, stopOpacity);
     /// only consumed when <see cref="HasEffectFalloff" />.</summary>
