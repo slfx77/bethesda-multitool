@@ -51,9 +51,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // Dedicated append-only Starfield WATR tail. Keeping it after every established register means
     // the new approximation cannot move a recovered classic/FO4/FNV constant-buffer offset.
     private const uint StarfieldWaterUniformByteSize = StarfieldWaterFrameUniforms.RegisterCount * 16;
+    // TES4 WATER007's DisplacementMap index + BlendRadius.xy + route flag. This is appended after
+    // Starfield so all established constants stay byte-for-byte fixed.
+    private const uint OblivionDisplacementUniformByteSize = 16;
     private const uint WaterFrameUniformsByteSize =
         UniformsByteSize + FnvWater001UniformByteSize + WaterReflectionUniformByteSize +
-        StarfieldWaterUniformByteSize;
+        StarfieldWaterUniformByteSize + OblivionDisplacementUniformByteSize;
     private const uint FnvNoiseDimension = 256;
 
     // Full chain for the 256² noise-NORMAL tile (256..1 = 9 levels). The authored NNAM the retail
@@ -101,6 +104,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly ID3D12PipelineState _pso;
     private readonly ID3D12PipelineState _psoDepthSample;
     private readonly ID3D12PipelineState _psoFnvWater001DepthSample;
+    // Skyrim's full-exterior BSWaterShader samples a separate scene-color/refraction snapshot and
+    // writes alpha one. This PSO therefore disables framebuffer blending; it is selected only when
+    // both the snapshot and scene-depth SRVs passed the one-shot host preflight.
+    private readonly ID3D12PipelineState _psoSkyrimOpaqueSnapshotDepthSample;
     private readonly ID3D12PipelineState _psoOblivion;
     private readonly ID3D12PipelineState _psoOblivionDepthSample;
     private readonly ID3D12PipelineState _psoFo4;
@@ -202,6 +209,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly List<FnvWaterCellDrawBatch> _fnvWaterCellDrawBatches = new();
     private readonly HashSet<uint> _fnvVisibleWaterTypeScratch = new();
     private uint _oblivionDetailBindlessIndex = NoNormalMap;
+    private uint _oblivionDisplacementBindlessIndex = NoNormalMap;
+    private float _oblivionDisplacementRadius = OblivionWaterDisplacementComposition.ProbeBlendRadius;
+    private float _oblivionDisplacementBlendAmount;
+    private string? _oblivionDisplacementTelemetryPath;
     private string[] _telemetryMapPaths = [];
     private string[] _telemetryMapRoles = [];
     private bool[] _telemetryMapResolved = [];
@@ -214,7 +225,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private bool _fnvWater001HasWaterTypeContext;
     private FnvWater001Preflight _fnvWater001PendingPreflight =
         FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
-    private FnvWater001SnapshotDescriptor _fnvWater001Snapshot;
+    private bool _skyrimOpaqueSceneSnapshotRequested;
+    private WaterOpaqueSceneSnapshotDescriptor _waterOpaqueSceneSnapshot;
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private global::BethesdaMultitool.Core.WorldData.WorldSpatialIndex? _spatialIndex;
 
@@ -236,7 +248,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private WaterConstructionTransaction? _constructionTransaction = new();
     private bool _disposed;
 
-    private readonly record struct FnvWater001SnapshotDescriptor(uint BindlessIndex, uint Width, uint Height)
+    private readonly record struct WaterOpaqueSceneSnapshotDescriptor(uint BindlessIndex, uint Width, uint Height)
     {
         internal bool IsValid => BindlessIndex != NoNormalMap && Width > 0 && Height > 0;
     }
@@ -476,6 +488,27 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             RenderTargetWriteMask = D12.ColorWriteEnable.All,
         };
 
+        // Skyrim's recovered BSWaterShader output is opaque: transmission comes from the
+        // RefractionSampler RGB value, not destination blending, and oC0.a is always one. Keep a
+        // separate blend state so the snapshot shader overwrites the scene target exactly once;
+        // forcing alpha=1 through the SrcAlpha/InvSrcAlpha PSO would discard the sampled scene lane.
+        var skyrimOpaqueSnapshotBlend = new D12.BlendDescription
+        {
+            AlphaToCoverageEnable = false,
+            IndependentBlendEnable = false,
+        };
+        skyrimOpaqueSnapshotBlend.RenderTarget[0] = new D12.RenderTargetBlendDescription
+        {
+            BlendEnable = false,
+            SourceBlend = D12.Blend.One,
+            DestinationBlend = D12.Blend.Zero,
+            BlendOperation = D12.BlendOperation.Add,
+            SourceBlendAlpha = D12.Blend.One,
+            DestinationBlendAlpha = D12.Blend.Zero,
+            BlendOperationAlpha = D12.BlendOperation.Add,
+            RenderTargetWriteMask = D12.ColorWriteEnable.All,
+        };
+
         // FO76 per-channel transmission uses the pixel shader's SV_Target1.rgb as the destination
         // factor: final.rgb = Target0.rgb + scene.rgb * Target1.rgb. D3D12 dual-source blending is
         // defined for a single bound render target, which is exactly this pass's SceneColor layout.
@@ -513,6 +546,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             "water_flat.frag.hlsl", "main", "ps_5_1");
         var psFnvWater001Bytecode = CompileEmbeddedShader(
             "water_fnv001.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        var psSkyrimOpaqueSnapshotBytecode = CompileEmbeddedShader(
+            "water_fnv.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("SKYRIM_OPAQUE_REFRACTION", "1"),
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
 
         var psoDesc = new GraphicsPipelineStateDescription
@@ -584,6 +621,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         psoDesc.PixelShader = psFnvWater001Bytecode;
         _psoFnvWater001DepthSample = TrackConstructionResource(
             gpu.Device.CreateGraphicsPipelineState(psoDesc));
+        var skyrimOpaqueSnapshotPsoDesc = psoDesc;
+        skyrimOpaqueSnapshotPsoDesc.PixelShader = psSkyrimOpaqueSnapshotBytecode;
+        skyrimOpaqueSnapshotPsoDesc.BlendState = skyrimOpaqueSnapshotBlend;
+        _psoSkyrimOpaqueSnapshotDepthSample = TrackConstructionResource(
+            gpu.Device.CreateGraphicsPipelineState(skyrimOpaqueSnapshotPsoDesc));
         psoDesc.PixelShader = psOblivionDepthSampleBytecode;
         _psoOblivionDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
         psoDesc.PixelShader = psFo4DepthSampleBytecode;
@@ -928,7 +970,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _fnvWater001HasWaterTypeContext = true;
         _fnvWater001PendingPreflight =
             FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
-        _fnvWater001Snapshot = default;
+        _waterOpaqueSceneSnapshot = default;
     }
 
     public void SetSceneDepth(uint depthBindlessIndex, float near, float far, int sampleCount = 1)
@@ -961,7 +1003,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
     /// <summary>
     ///     Read-only resource preflight for the host. A positive result arms exactly one subsequent
-    ///     <see cref="SetFnvWater001Snapshot" /> call; the renderer repeats the check and consumes the
+    ///     <see cref="SetWaterOpaqueSceneSnapshot" /> call; the renderer repeats the check and consumes the
     ///     descriptor on the next Render. Pass the same cylinder and perspective state as that draw.
     /// </summary>
     public FnvWater001Preflight GetFnvWater001Preflight(
@@ -979,9 +1021,41 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             snapshot: default);
         if (!_fnvWater001PendingPreflight.Candidate)
         {
-            _fnvWater001Snapshot = default;
+            _waterOpaqueSceneSnapshot = default;
         }
         return _fnvWater001PendingPreflight;
+    }
+
+    /// <summary>
+    ///     Arms the one-shot scene-color snapshot route when the next draw can consume it. FNV keeps
+    ///     every existing WATER001 material/plane eligibility check. Skyrim requests the same GPU
+    ///     resource for any visible surface only on the full perspective scene-depth path: its
+    ///     recovered BSWaterShader samples refraction in RGB and emits opaque alpha there. Other
+    ///     games never allocate or copy this resource.
+    /// </summary>
+    public bool TryRequestWaterOpaqueSceneSnapshot(
+        VisibilityCylinder cylinder,
+        bool isPerspectiveProjection)
+    {
+        _skyrimOpaqueSceneSnapshotRequested = false;
+        var fnvWater001Preflight = GetFnvWater001Preflight(cylinder, isPerspectiveProjection);
+        if (fnvWater001Preflight.Candidate)
+        {
+            return true;
+        }
+
+        if (_waterProfile.ShaderVariant != WaterShaderVariant.SkyrimWater ||
+            !isPerspectiveProjection || _depthBindlessIndex == NoNormalMap)
+        {
+            return false;
+        }
+
+        // GetFnvWater001Preflight already refreshed the visible cell scratch for this cylinder.
+        // Include placed-NIF water as well: Skyrim uses the same refraction target for both kinds of
+        // surface and does not need WATER001's single-horizontal-plane restriction.
+        _skyrimOpaqueSceneSnapshotRequested =
+            _visibleWaterScratch.Count + GatherVisibleNifPlanes(cylinder) > 0;
+        return _skyrimOpaqueSceneSnapshotRequested;
     }
 
     /// <summary>
@@ -1014,19 +1088,21 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     ///     Supplies a one-shot bindless SRV for a separate, single-sample SceneColor-format snapshot
     ///     captured after opaque terrain/references. The host must never pass the active scene RTV:
     ///     prepare/copy/resolve and transition the snapshot to PixelShaderResource first, then restore
-    ///     it after water. Null clears the pending descriptor without drawing WATER001.
+    ///     it after water. Null clears the pending descriptor. FNV may bind it only after a positive
+    ///     WATER001 preflight; Skyrim may bind it only after
+    ///     <see cref="TryRequestWaterOpaqueSceneSnapshot" /> armed its recovered refraction route.
     /// </summary>
-    public void SetFnvWater001Snapshot(uint? bindlessIndex, uint width, uint height)
+    public void SetWaterOpaqueSceneSnapshot(uint? bindlessIndex, uint width, uint height)
     {
         if (bindlessIndex is null)
         {
-            _fnvWater001Snapshot = default;
+            _waterOpaqueSceneSnapshot = default;
             return;
         }
-        if (!_fnvWater001PendingPreflight.Candidate)
+        if (!_fnvWater001PendingPreflight.Candidate && !_skyrimOpaqueSceneSnapshotRequested)
         {
             throw new InvalidOperationException(
-                "A WATER001 opaque snapshot may only be supplied after a positive preflight.");
+                "A water opaque-scene snapshot may only be supplied after a positive preflight.");
         }
         if (bindlessIndex == NoNormalMap)
             throw new ArgumentOutOfRangeException(nameof(bindlessIndex), "The null descriptor sentinel is not a snapshot SRV.");
@@ -1035,7 +1111,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         if (height == 0)
             throw new ArgumentOutOfRangeException(nameof(height), height, "Snapshot height must be positive.");
 
-        _fnvWater001Snapshot = new FnvWater001SnapshotDescriptor(bindlessIndex.Value, width, height);
+        _waterOpaqueSceneSnapshot = new WaterOpaqueSceneSnapshotDescriptor(
+            bindlessIndex.Value, width, height);
     }
 
     /// <summary>
@@ -1081,20 +1158,25 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
     /// <summary>Selects the per-game <see cref="WaterProfile" /> (shader variant + tuning) for the loaded
     /// game. Call before <see cref="Render(Matrix4x4, VisibilityCylinder, Vector3)" /> on each
-    /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical); a game with no
+    /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical), while Skyrim
+    /// selects its opaque-snapshot output variant over the shared color core. A game with no
     /// reverse-engineered water shader resolves to the flat tinted plane (binary-RE-only policy).</summary>
     public void SetGame(BethesdaGame game)
     {
         _game = game;
         _waterProfile = WaterProfile.ForGame(game);
         _starfieldApproximation = null;
+        _oblivionDisplacementBindlessIndex = NoNormalMap;
+        _oblivionDisplacementRadius = OblivionWaterDisplacementComposition.ProbeBlendRadius;
+        _oblivionDisplacementBlendAmount = 0f;
+        _oblivionDisplacementTelemetryPath = null;
         _fnvWaterMaterials.Clear();
         _fnvWaterCellDrawBatches.Clear();
         ClearFnvWater001TransientState(clearWaterTypeContext: true);
         // FO3 and FNV share the recovered ISNOISESCROLLANDBLEND -> ISNOISENORMALMAP chain.
         // Skyrim's evolved shader samples its three authored normals independently and must not be
-        // routed through this classic single-NNAM prepass merely because its RT-free body math shares
-        // the FNV profile.
+        // routed through this classic single-NNAM prepass merely because its body math shares the
+        // FNV implementation.
         _useFnvNoisePrepass = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
     }
 
@@ -1115,11 +1197,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     /// <summary>
-    ///     Video-settings "Water ripples" toggle (retail <c>bUseWaterDisplacements:Water</c>; the
-    ///     viewer maps it to the animated surface normal FIELD per the 2026-08-18 user ruling).
-    ///     False substitutes the flat-normal placeholder for every ripple source — the surface
-    ///     becomes a calm sheet with N=(0,0,1) — while the scroll/detail/lava clocks keep running.
-    ///     Read per frame; changing it needs no rebuild.
+    ///     Video-settings "Water ripples" toggle. For TES4 it is the recovered
+    ///     <c>bUseWaterDisplacements:Water</c> gate and disables only the player-local wading normal;
+    ///     the global WATERHMAP animation remains live. Other supported games retain the established
+    ///     flat-normal substitution. Read per frame; changing it needs no rebuild.
     /// </summary>
     public bool RipplesEnabled { get; set; } = true;
 
@@ -1132,9 +1213,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     public uint FlatNormalBindlessIndex { get; set; } = NoNormalMap;
 
     /// <summary>
-    ///     The frame's ripple-source index after the video toggle: the resolved animated/NNAM
-    ///     index while ripples are on, else the flat normal. Shared by the generic per-frame path
-    ///     and the FNV per-material path so both obey the toggle identically.
+    ///     The frame's non-TES4 ripple-source index after the video toggle: the resolved
+    ///     animated/NNAM index while ripples are on, else the flat normal. Shared by the generic
+    ///     per-frame path and the FNV per-material path.
     /// </summary>
     private uint ApplyRippleToggle(uint noiseIndex) =>
         RipplesEnabled || FlatNormalBindlessIndex == NoNormalMap ? noiseIndex : FlatNormalBindlessIndex;
@@ -1149,6 +1230,51 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _oblivionDetailBindlessIndex = detailBindlessIndex ?? NoNormalMap;
         RefreshWaterMapTelemetry();
     }
+
+    /// <summary>
+    ///     Supplies WATER007's local DisplacementMap normal and BlendRadius.xy. Retail creates and
+    ///     simulates this texture only when bUseWaterDisplacements is enabled; until that simulation
+    ///     is recovered, the host may bind only an explicitly-labelled deterministic probe.
+    /// </summary>
+    public void SetOblivionDisplacementTexture(
+        uint? displacementBindlessIndex,
+        float blendRadius,
+        float blendAmount,
+        string? telemetryPath = null)
+    {
+        if (displacementBindlessIndex == NoNormalMap)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(displacementBindlessIndex),
+                "Use null, not the shader sentinel, to clear the displacement source.");
+        }
+        if (!float.IsFinite(blendRadius) || blendRadius is < 0f or > 1f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(blendRadius), blendRadius, "TES4 BlendRadius.x must be finite and in [0,1].");
+        }
+        if (!float.IsFinite(blendAmount) || blendAmount is < 0f or > 1f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(blendAmount), blendAmount, "TES4 BlendRadius.y must be finite and in [0,1].");
+        }
+
+        _oblivionDisplacementBindlessIndex = displacementBindlessIndex ?? NoNormalMap;
+        _oblivionDisplacementRadius = blendRadius;
+        _oblivionDisplacementBlendAmount = blendAmount;
+        _oblivionDisplacementTelemetryPath = displacementBindlessIndex is not null &&
+                                             !string.IsNullOrWhiteSpace(telemetryPath)
+            ? telemetryPath
+            : null;
+        RefreshWaterMapTelemetry();
+    }
+
+    private bool OblivionDisplacementEnabled =>
+        _game == BethesdaGame.Oblivion &&
+        RipplesEnabled &&
+        _oblivionDisplacementBindlessIndex != NoNormalMap &&
+        _oblivionDisplacementRadius > 0f &&
+        _oblivionDisplacementBlendAmount > 0f;
 
     private void RefreshWaterMapTelemetry()
     {
@@ -1189,6 +1315,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             paths.Add(detail);
             roles.Add("oblivion-detail");
             resolved.Add(_oblivionDetailBindlessIndex != NoNormalMap);
+        }
+
+        if (_game == BethesdaGame.Oblivion &&
+            _oblivionDisplacementTelemetryPath is { Length: > 0 } displacementPath)
+        {
+            paths.Add(displacementPath);
+            roles.Add("oblivion-displacement-normal-diagnostic");
+            resolved.Add(_oblivionDisplacementBindlessIndex != NoNormalMap);
         }
 
         _telemetryMapPaths = paths.ToArray();
@@ -1588,8 +1722,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     ///     Deterministic entry point (scene capture + the static top-down/export overlays). Uses one
     ///     authored clock for legacy frame selection, noise scrolling, and shader time instead of
     ///     renderer construction time. <paramref name="isPerspectiveProjection" /> defaults to true for
-    ///     the capture path; the ortho overlay/export callers pass false so the FNV WATER001 contract
-    ///     evaluations (this flag's only consumers) see the true projection mode if a preflight is
+    ///     the capture path; the ortho overlay/export callers pass false so the FNV WATER001 and
+    ///     Skyrim opaque-refraction snapshot gates see the true projection mode if a preflight is
     ///     ever armed on those paths.
     /// </summary>
     internal int RenderAtTime(
@@ -1631,10 +1765,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         // Consume it up front so every early return fails closed and no later frame can sample a
         // resource that the host has transitioned back to CopyDest/ResolveDest.
         var fnvWater001ArmedPreflight = _fnvWater001PendingPreflight;
-        var fnvWater001Snapshot = _fnvWater001Snapshot;
+        var skyrimOpaqueSceneSnapshotRequested = _skyrimOpaqueSceneSnapshotRequested;
+        var opaqueSceneSnapshot = _waterOpaqueSceneSnapshot;
         _fnvWater001PendingPreflight =
             FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
-        _fnvWater001Snapshot = default;
+        _skyrimOpaqueSceneSnapshotRequested = false;
+        _waterOpaqueSceneSnapshot = default;
         LastFnvWater001Decision = fnvWater001ArmedPreflight.Candidate
             ? FnvWater001Preflight.Fallback(FnvWater001FallbackReason.NoVisibleCellWater)
             : fnvWater001ArmedPreflight;
@@ -1694,9 +1830,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 cylinder.Position.Z,
                 isPerspectiveProjection,
                 requireSnapshot: true,
-                snapshot: fnvWater001Snapshot);
+                snapshot: opaqueSceneSnapshot);
         }
         var useFnvWater001 = LastFnvWater001Decision.Candidate;
+        var useSkyrimOpaqueSceneSnapshot =
+            skyrimOpaqueSceneSnapshotRequested &&
+            _waterProfile.ShaderVariant == WaterShaderVariant.SkyrimWater &&
+            _depthBindlessIndex != NoNormalMap && opaqueSceneSnapshot.IsValid;
         LastStats.VisibleCandidates = visibleSurfaces;
         LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
         if (visibleSurfaces == 0)
@@ -1936,8 +2076,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 _streamNifVisible = nifVisible;
                 _streamArgs = new FnvBatchDrawArgs(
                     cmd, frameIndex, viewProj, cylinder.Position, renderOrigin, elapsedSeconds,
-                    fnvWater001Snapshot.BindlessIndex, fnvWater001Snapshot.Width,
-                    fnvWater001Snapshot.Height, _depthBindlessIndex != NoNormalMap);
+                    opaqueSceneSnapshot.BindlessIndex, opaqueSceneSnapshot.Width,
+                    opaqueSceneSnapshot.Height, _depthBindlessIndex != NoNormalMap);
 
                 // Track the highest surface actually queued while the entries are built: the
                 // reference renderer's wholly-above-all-water classification orders blended draws
@@ -2017,7 +2157,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 nifPacketCount,
                 instanceCount,
                 useFnvWater001,
-                fnvWater001Snapshot,
+                opaqueSceneSnapshot,
                 started,
                 segmentStarted);
         }
@@ -2256,11 +2396,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                             W = surface.NormalMagnitude,
                         },
                 },
-                FnvWater001SnapshotIndex = useFnvWater001
-                    ? fnvWater001Snapshot.BindlessIndex
+                FnvWater001SnapshotIndex = useFnvWater001 || useSkyrimOpaqueSceneSnapshot
+                    ? opaqueSceneSnapshot.BindlessIndex
                     : NoNormalMap,
-                FnvWater001SnapshotWidth = useFnvWater001 ? fnvWater001Snapshot.Width : 0,
-                FnvWater001SnapshotHeight = useFnvWater001 ? fnvWater001Snapshot.Height : 0,
+                FnvWater001SnapshotWidth = useFnvWater001 || useSkyrimOpaqueSceneSnapshot
+                    ? opaqueSceneSnapshot.Width
+                    : 0,
+                FnvWater001SnapshotHeight = useFnvWater001 || useSkyrimOpaqueSceneSnapshot
+                    ? opaqueSceneSnapshot.Height
+                    : 0,
                 FnvWater001PlaneHeight = useFnvWater001 ? LastFnvWater001Decision.PlaneHeight : 0f,
                 FnvWater001Surface = new Vector4(
                     surface.UnderwaterFogNear,
@@ -2324,6 +2468,21 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             LastStats.WaterTelemetryUnavailableReason =
                 "selective-content-mask-approximated-by-main-depth";
         }
+        else if (useSkyrimOpaqueSceneSnapshot)
+        {
+            var depthRoute = _depthSampleCount > 1
+                ? $"msaa{_depthSampleCount}x"
+                : "1x";
+            LastStats.WaterPipeline = "skyrim-bswater-opaque-scene-snapshot";
+            LastStats.WaterTechnique =
+                $"SkyrimBsWaterShader-opaque-scene-snapshot-refraction-main-scene-approx-scene-depth-{depthRoute}";
+            const string approximationReason =
+                "retail refraction target approximated by undistorted opaque main-scene snapshot";
+            LastStats.WaterTelemetryUnavailableReason =
+                LastStats.WaterTelemetryUnavailableReason is { Length: > 0 } existingReason
+                    ? $"{existingReason}; {approximationReason}"
+                    : approximationReason;
+        }
         else
         {
             LastStats.WaterTechnique = DescribeTechnique(
@@ -2339,10 +2498,23 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             {
                 LastStats.WaterTelemetryUnavailableReason = LastFnvWater001Decision.ReasonCode;
             }
+            else if (_waterProfile.ShaderVariant == WaterShaderVariant.SkyrimWater)
+            {
+                const string snapshotReason =
+                    "opaque-scene snapshot or perspective scene depth unavailable; using RT-free fallback";
+                LastStats.WaterTelemetryUnavailableReason =
+                    LastStats.WaterTelemetryUnavailableReason is { Length: > 0 } existingReason
+                        ? $"{existingReason}; {snapshotReason}"
+                        : snapshotReason;
+            }
         }
         if (useFnvWater001)
         {
             cmd.SetPipelineState(_psoFnvWater001DepthSample);
+        }
+        else if (useSkyrimOpaqueSceneSnapshot)
+        {
+            cmd.SetPipelineState(_psoSkyrimOpaqueSnapshotDepthSample);
         }
         else if (useModernPipeline)
         {
@@ -2361,6 +2533,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 WaterShaderVariant.MorrowindWater => depthSample ? _psoMorrowindDepthSample : _psoMorrowind,
                 WaterShaderVariant.StarfieldWaterApprox =>
                     depthSample ? _psoStarfieldDepthSample : _psoStarfield,
+                // Snapshot failure is local: keep Skyrim on the established shared color core for
+                // this frame instead of sampling an invalid descriptor through its opaque PSO.
+                WaterShaderVariant.SkyrimWater => depthSample ? _psoDepthSample : _pso,
                 // No depthSample twin: the flat plane never samples the depth SRV, and its occlusion
                 // is the same hardware GreaterEqual test in both host depth states.
                 WaterShaderVariant.FlatTinted => _psoFlat,
@@ -2906,7 +3081,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         int nifPacketCount,
         int instanceCount,
         bool useFnvWater001,
-        in FnvWater001SnapshotDescriptor snapshot,
+        in WaterOpaqueSceneSnapshotDescriptor snapshot,
         long frameStarted,
         long uploadStarted)
     {
@@ -3045,6 +3220,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 ? "FnvWater003RtFree"
                 : $"{game}-ClassicRtFreeWaterStandIn";
         }
+        else if (shaderVariant == WaterShaderVariant.SkyrimWater)
+        {
+            // This is the local fallback name only. The successful opaque-snapshot route writes its
+            // explicit BSWaterShader technique before reaching DescribeTechnique.
+            shaderName = "Skyrim-ClassicRtFreeWaterStandIn";
+        }
         else if (shaderVariant == WaterShaderVariant.StarfieldWaterApprox)
         {
             shaderName = StarfieldWaterApproximation.TelemetryName;
@@ -3096,6 +3277,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _pso.Dispose();
         _psoDepthSample.Dispose();
         _psoFnvWater001DepthSample.Dispose();
+        _psoSkyrimOpaqueSnapshotDepthSample.Dispose();
         _psoOblivion.Dispose();
         _psoOblivionDepthSample.Dispose();
         _psoFo4.Dispose();
@@ -3287,7 +3469,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         float cameraHeight,
         bool isPerspectiveProjection,
         bool requireSnapshot,
-        in FnvWater001SnapshotDescriptor snapshot)
+        in WaterOpaqueSceneSnapshotDescriptor snapshot)
     {
         // WATER001 is a per-material shader draw.  Mixed visible WATRs are therefore valid once
         // generated CELL packets are split into per-WATR batches; every distinct binding must pass
@@ -3364,7 +3546,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     {
         _fnvWater001PendingPreflight =
             FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
-        _fnvWater001Snapshot = default;
+        _skyrimOpaqueSceneSnapshotRequested = false;
+        _waterOpaqueSceneSnapshot = default;
         if (!clearWaterTypeContext) return;
         _fnvWater001SelectedWaterFormId = null;
         _fnvWater001WorldspaceDefaultWaterFormId = null;
@@ -3910,8 +4093,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         // constants, then the LightSilt/ChannelOpacity union + normal magnitude. The final register
         // is also consumed by direct FO76 optics. Appended for legacy layout stability.
         public ModernWaterFrameUniforms Modern;
-        // Bounded FNV WATER001 tail. The uint/float quartet is one raw register matching
+        // Shared opaque-scene snapshot tail. The uint/float quartet is one raw register matching
         // uFnvWater001Snapshot: (snapshot SRV, width, height, asuint(horizontal plane height)).
+        // Skyrim consumes x/y/z; the generated-cell plane in w remains FNV WATER001-only.
         public uint FnvWater001SnapshotIndex;
         public uint FnvWater001SnapshotWidth;
         public uint FnvWater001SnapshotHeight;

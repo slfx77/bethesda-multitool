@@ -16,7 +16,10 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
     {
         Assert.Equal(32, OblivionWaterSurfaceSynthesizer.FrameCount);
         Assert.Equal(12, OblivionWaterSurfaceSynthesizer.FramesPerSecond);
-        Assert.Equal(128, OblivionWaterSurfaceSynthesizer.TextureSize);
+        Assert.Equal(128, OblivionWaterSurfaceSynthesizer.LowResolutionTextureSize);
+        Assert.Equal(256, OblivionWaterSurfaceSynthesizer.HighResolutionTextureSize);
+        Assert.Equal(256, OblivionWaterSurfaceSynthesizer.TextureSize);
+        Assert.True(OblivionWaterSurfaceSynthesizer.DefaultUseHighResolution);
         Assert.Equal(5f, OblivionWaterSurfaceSynthesizer.DefaultWindVelocity);
         Assert.Equal(90f, OblivionWaterSurfaceSynthesizer.DefaultWindDirectionDegrees);
         Assert.Equal(0.5f, OblivionWaterSurfaceSynthesizer.DefaultWaveAmplitude);
@@ -43,7 +46,7 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
         var changedSpectrum = defaultWater with { WaveAmplitude = 0.16f };
 
         Assert.Equal(
-            "40A00000-42C80000-3E19999A-3F333333",
+            "n256-40A00000-42C80000-3E19999A-3F333333",
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater));
         Assert.Equal(
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater),
@@ -51,6 +54,12 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
         Assert.NotEqual(
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater),
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(changedSpectrum));
+        Assert.NotEqual(
+            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater, useHighResolution: true),
+            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater, useHighResolution: false));
+        Assert.Equal(
+            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater with { WaveAmplitude = 0f }),
+            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater with { WaveAmplitude = -0f }));
         var retailFrames = OblivionWaterSurfaceSynthesizer.GenerateFrames(defaultWater);
         Assert.Same(retailFrames,
             OblivionWaterSurfaceSynthesizer.GenerateFrames(unrelatedOpticalChange));
@@ -72,15 +81,21 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3D",
             "WorldView3DControl.SceneCapture.cs");
 
-        Assert.Contains(
-            ".OblivionWaterSurfaceSynthesizer.GenerateFrames(appearance?.Surface)",
+        Assert.Contains(".OblivionWaterSurfaceSynthesizer.GenerateFrames(",
+            host, StringComparison.Ordinal);
+        Assert.Contains("appearance?.Surface,", host, StringComparison.Ordinal);
+        Assert.Contains("useHighResolution);", host, StringComparison.Ordinal);
+        Assert.Contains(".OblivionWaterSurfaceSynthesizer.GetSettingsKey(",
             host, StringComparison.Ordinal);
         Assert.Contains(
-            ".OblivionWaterSurfaceSynthesizer.GetSettingsKey(appearance?.Surface)",
+            "$\"synthetic:oblivion-water-surface:rgba8-nomips:{settingsKey}:{i:D2}\"",
             host, StringComparison.Ordinal);
-        Assert.Contains(
-            "$\"synthetic:oblivion-water-surface:{settingsKey}:{i:D2}\"",
+        Assert.Contains("GetOrCreateSyntheticBindlessIndex(",
             host, StringComparison.Ordinal);
+        Assert.Contains("generateMips: false", host, StringComparison.Ordinal);
+        Assert.Contains("OblivionWaterHighResolution", host, StringComparison.Ordinal);
+        Assert.Contains("grid={1}x{1}, output=R8G8B8A8_UNorm, levels=1", host,
+            StringComparison.Ordinal);
         Assert.Contains(
             "frameSource = LegacySurfaceFrameSource.OblivionFftSobel;",
             host, StringComparison.Ordinal);
@@ -177,6 +192,20 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
         Assert.Equal(1.6f, OblivionWaterSurfaceSynthesizer.AxialNormalWeight);
     }
 
+    [Fact]
+    public void HighResolutionFrameGenerationUsesTheStaSafeNonPumpingJoin()
+    {
+        var source = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Water",
+            "OblivionWaterSurfaceSynthesizer.cs");
+
+        Assert.Contains(
+            "NonPumpingParallel.For(0, FrameCount, frame => frames[frame] = GenerateFrame(frame, seed));",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("\n        Parallel.For(0, FrameCount", source, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(0.01f, 0.01f)]
     [InlineData(-0.01f, 0.99f)]
@@ -191,9 +220,39 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
     }
 
     [Fact]
-    public void GenerateFrames_ProducesThirtyTwoRgbaFramesOfIniSize()
+    public void HighResolutionSpectrum_UsesRecoveredSuppressedAndCopiedCorners()
+    {
+        Assert.True(OblivionWaterSurfaceSynthesizer.IsHighResolutionSuppressedSeedCoordinate(0, 0));
+        Assert.True(OblivionWaterSurfaceSynthesizer.IsHighResolutionSuppressedSeedCoordinate(31, 31));
+        Assert.False(OblivionWaterSurfaceSynthesizer.IsHighResolutionSuppressedSeedCoordinate(32, 31));
+        Assert.False(OblivionWaterSurfaceSynthesizer.IsHighResolutionSuppressedSeedCoordinate(31, 32));
+
+        Assert.Equal((0, 33),
+            OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(0, 225)!.Value);
+        Assert.Equal((33, 0),
+            OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(225, 0)!.Value);
+        Assert.Equal((63, 63),
+            OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(255, 255)!.Value);
+        Assert.Equal((64, 64),
+            OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(256, 256)!.Value);
+        Assert.Null(OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(31, 224));
+        Assert.Null(OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(32, 225));
+        Assert.Null(OblivionWaterSurfaceSynthesizer.GetHighResolutionSpectrumCopySource(225, 32));
+        Assert.Equal(1, OblivionWaterSurfaceSynthesizer.ReverseBits(128, 8));
+        Assert.Equal(1, OblivionWaterSurfaceSynthesizer.ReverseBits(64, 7));
+        Assert.Equal((256, 256),
+            OblivionWaterSurfaceSynthesizer.GetOppositeSeedCoordinate(0, 0, 256));
+        Assert.Equal((1, 1),
+            OblivionWaterSurfaceSynthesizer.GetOppositeSeedCoordinate(255, 255, 256));
+    }
+
+    [Fact]
+    public void GenerateFrames_ProducesThirtyTwoHighResolutionRetailRgba8Frames()
     {
         var frames = OblivionWaterSurfaceSynthesizer.GenerateFrames();
+        var lowResolutionFrames = OblivionWaterSurfaceSynthesizer.GenerateFrames(
+            surface: null,
+            useHighResolution: false);
 
         Assert.Equal(OblivionWaterSurfaceSynthesizer.FrameCount, frames.Length);
         Assert.All(frames, frame => Assert.Equal(
@@ -203,9 +262,24 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
         {
             for (var pixel = 3; pixel < frame.Length; pixel += 4)
             {
-                Assert.Equal(255, frame[pixel]);
+                Assert.Equal(byte.MaxValue, frame[pixel]);
             }
         });
+        Assert.Equal(OblivionWaterSurfaceSynthesizer.FrameCount, lowResolutionFrames.Length);
+        Assert.All(lowResolutionFrames, frame => Assert.Equal(
+            OblivionWaterSurfaceSynthesizer.LowResolutionTextureSize *
+            OblivionWaterSurfaceSynthesizer.LowResolutionTextureSize * 4,
+            frame.Length));
+        Assert.NotSame(frames, lowResolutionFrames);
+    }
+
+    [Theory]
+    [InlineData(-1f, 0)]
+    [InlineData(0f, 128)]
+    [InlineData(1f, 255)]
+    public void NormalEncoding_UsesRetailEightBitTrueColorTarget(float component, int expected)
+    {
+        Assert.Equal(expected, (int)OblivionWaterSurfaceSynthesizer.EncodeUnorm8(component));
     }
 
     [Fact]

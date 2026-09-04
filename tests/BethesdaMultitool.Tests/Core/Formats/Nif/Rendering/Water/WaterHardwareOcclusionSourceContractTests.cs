@@ -81,7 +81,7 @@ public sealed class WaterHardwareOcclusionSourceContractTests
         // Every depth-sample pixel shader is a WATER_HARDWARE_OCCLUSION compile: the shared four,
         // FO76's distinct dual-source optics path, FNV WATER001, and the modern (FO4
         // architectural) clone of the depth-sample template.
-        Assert.Equal(8, CountOccurrences(renderer,
+        Assert.Equal(9, CountOccurrences(renderer,
             "new ShaderMacro(\"WATER_HARDWARE_OCCLUSION\", \"1\")"));
         SourceContract.AssertOrder(
             renderer,

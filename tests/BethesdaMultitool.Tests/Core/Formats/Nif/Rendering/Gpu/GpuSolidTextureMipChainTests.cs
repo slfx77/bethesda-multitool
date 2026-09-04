@@ -4,10 +4,9 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 
 /// <summary>
-///     Pins the CPU box-filter mip chain the synthesized water-surface frames upload with (the
-///     2026-08-08 Oblivion water review flagged the previous mipless upload): full chain down to
-///     1×1, correct per-level dimensions, exact averages on uniform blocks, and level 0 sharing the
-///     source array. Pure CPU math — no GPU device involved.
+///     Pins the CPU box-filter mip chain available to synthesized textures: full chain down to 1×1,
+///     correct per-level dimensions, exact averages on uniform blocks, and level 0 sharing the source
+///     array. Pure CPU math — no GPU device involved.
 /// </summary>
 public sealed class GpuSolidTextureMipChainTests
 {

@@ -322,6 +322,24 @@ internal sealed class GpuRootSignature12 : IDisposable
                 0f,
                 0f,
                 ShaderVisibility.Pixel),
+            // s8: Oblivion WATER007 NormalMap / DetailMap sampler. The retail D3D9 water-stage
+            // constructor selects NiTexturingProperty FILTER_BILERP for all five water samplers;
+            // FUN_00771640(1) resolves to MIN=LINEAR, MAG=LINEAR, MIP=NONE, while the normal and
+            // detail stages resolve to WRAP/WRAP. Keeping this separate from s0 is important at a
+            // grazing camera: 16x anisotropic sampling averages away the fine WATERHMAP wavelets.
+            new StaticSamplerDescription(
+                8,
+                Filter.MinMagLinearMipPoint,
+                TextureAddressMode.Wrap,
+                TextureAddressMode.Wrap,
+                TextureAddressMode.Wrap,
+                0f,
+                1,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                0f,
+                ShaderVisibility.Pixel),
             // s4-s6: material-addressing permutations selected from BGSM/BGEM TileU/TileV.
             // They otherwise match the anisotropic wrap sampler so changing an address bit cannot
             // silently change filtering quality.

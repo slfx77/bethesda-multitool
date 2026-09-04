@@ -29,14 +29,18 @@ public class WaterProfileTests
     }
 
     [Fact]
-    public void Skyrim_SharesTheRtFreeWater000Shader_ReConfirmed()
+    public void Skyrim_UsesItsOpaqueSnapshotOutputVariantOverTheSharedColorCore()
     {
-        // Skyrim's BSWaterShader reduces to the same RT-free math (see
-        // skyrim_water_pixel_shader_decompiled.txt), so it shares the FNV file on evidence rather
-        // than as a fallback — per-game fidelity is the WATR DNAM parse, not a different shader.
+        // Skyrim's BSWaterShader shares the recovered FNV-family body/Fresnel/specular core, but
+        // retail samples refraction in RGB and writes opaque alpha. Its profile therefore selects a
+        // dedicated macro permutation/PSO rather than claiming the destination-blended RT-free output.
         var profile = WaterProfile.ForGame(BethesdaGame.Skyrim);
-        Assert.Same(WaterProfile.Fnv, profile);
-        Assert.Equal(WaterShaderVariant.FnvWater000, profile.ShaderVariant);
+        Assert.Same(WaterProfile.Skyrim, profile);
+        Assert.Equal(WaterShaderVariant.SkyrimWater, profile.ShaderVariant);
+        Assert.Equal("water_fnv.frag.hlsl", profile.PixelShaderFile);
+        Assert.Equal(WaterProfile.Fnv.DefaultShallow, profile.DefaultShallow);
+        Assert.Equal(WaterProfile.Fnv.DefaultDeep, profile.DefaultDeep);
+        Assert.Equal(WaterProfile.Fnv.DefaultReflection, profile.DefaultReflection);
     }
 
     [Fact]
@@ -91,7 +95,7 @@ public class WaterProfileTests
             var profile = WaterProfile.ForGame(game);
             Assert.Contains(profile, (WaterProfile[])
             [
-                WaterProfile.Fnv, WaterProfile.Oblivion, WaterProfile.Fallout4,
+                WaterProfile.Fnv, WaterProfile.Skyrim, WaterProfile.Oblivion, WaterProfile.Fallout4,
                 WaterProfile.Fallout76, WaterProfile.Morrowind, WaterProfile.Starfield,
                 WaterProfile.Flat
             ]);

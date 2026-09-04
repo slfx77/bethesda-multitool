@@ -112,7 +112,7 @@ float4 main(PSInput input) : SV_Target
     float3 pert;
     // Oblivion's NormalMap path is separate from FNV's precomposited-noise path. WATER000 unpacks
     // the current global water00..31 animation frame directly, attenuates XY by
-    // (1-horizontalDistance*0.000122)^2, then normalizes; it does NOT multiply the normal by the
+    // (1-horizontalDistance/8192)^2, then normalizes; it does NOT multiply the normal by the
     // water-column factor or add FNV's (0,0,1) bias. WATR TNAM is the separate DetailMap below.
     if (noiseIndex == 0xFFFFFFFFu)
     {
@@ -121,7 +121,8 @@ float4 main(PSInput input) : SV_Target
     else
     {
         float2 legacyUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t;
-        pert = gWaterTextures[NonUniformResourceIndex(noiseIndex)].Sample(gWaterSampler, legacyUv).xyz * 2.0 - 1.0;
+        pert = gWaterTextures[NonUniformResourceIndex(noiseIndex)]
+            .Sample(gOblivionWaterSampler, legacyUv).xyz * 2.0 - 1.0;
     }
     // Ripple distance attenuation, ported exactly from WATER000.pso (oblivion_water_pkg019.asm,
     // regenerated 2026-08-08 with the fixed decoder):
@@ -138,9 +139,40 @@ float4 main(PSInput input) : SV_Target
     // instructions across the WATER family printed unsaturated). The shipped bytecode saturates
     // in hardware: saturate() here IS the recovered instruction, verified by raw-token decode
     // (dst token 0x80180002, DSTMOD bit 20 set) and by two independent disassemblers agreeing.
-    float oblivionLinearDistanceAtten = saturate(1.0 - distXY * 0.000122);
+    float oblivionLinearDistanceAtten = saturate(1.0 - distXY * 0.0001220703125);
     float oblivionDistanceAtten = oblivionLinearDistanceAtten * oblivionLinearDistanceAtten;
     pert.xy *= oblivionDistanceAtten;
+
+    // WATER007's local wading normal (pkg013 lines 612-633). The engine samples DisplacementMap s4
+    // at t6, decodes both normal sources with 2*x-1, applies the .1 radial floor, lerps the already
+    // distance-faded global normal toward the displacement normal, then normalizes ONCE. The host
+    // routes this only for TES4 with bUseWaterDisplacements/Ripples enabled and a valid source.
+    uint displacementIndex = uOblivionDisplacement.x;
+    float displacementRadius = asfloat(uOblivionDisplacement.y);
+    float displacementAmount = asfloat(uOblivionDisplacement.z);
+    if (uOblivionDisplacement.w != 0u &&
+        displacementIndex != 0xFFFFFFFFu &&
+        displacementRadius > 0.0 &&
+        displacementAmount > 0.0)
+    {
+        // Retail t6 is the local 0..1 UV of a player-centred 1024-unit quad. World XY is affine on
+        // that horizontal mesh, so the camera-as-player proxy can reconstruct the same coordinate
+        // without widening every water vertex/instance ABI: centre=.5, edges at +/-512.
+        float2 displacementUv =
+            (input.vWorldPos.xy - uCamPosTime.xy) * (1.0 / 1024.0) + float2(0.5, 0.5);
+        float displacementDistance = length(displacementUv - float2(0.5, 0.5));
+        float displacementRamp = saturate(max(
+            0.1,
+            2.0 * displacementDistance / displacementRadius));
+        float displacementWeight = (1.0 - displacementRamp) * displacementAmount;
+        if (displacementWeight > 0.0)
+        {
+            float3 displacementNormal =
+                gWaterTextures[NonUniformResourceIndex(displacementIndex)]
+                    .Sample(gOblivionWaterSampler, displacementUv).xyz * 2.0 - 1.0;
+            pert = lerp(pert, displacementNormal, displacementWeight);
+        }
+    }
     float3 N = normalize(pert);
 
     float ndotv = saturate(dot(N, V));
@@ -210,7 +242,7 @@ float4 main(PSInput input) : SV_Target
 
     // WATER000.pso asm 116-121/166: WATR TNAM is the separate DetailMap (s2), sampled at the
     // scrolling normal UV plus N.xy*0.1. Its exact blend factor is the UNSQUARED distance term
-    // (1-horizontalDistance*0.000122) times VarAmounts.w = DATA.TextureBlend/100. The normal itself
+    // (1-horizontalDistance/8192) times VarAmounts.w = DATA.TextureBlend/100. The normal itself
     // uses the squared distance term above; conflating those two attenuations changes mid-distance
     // detail substantially. A missing/empty TNAM skips this term, matching retail DefaultWater.
     if (uNormalIndices.y != 0xFFFFFFFFu && uLegacySurface1.z != 0.0)
@@ -232,7 +264,7 @@ float4 main(PSInput input) : SV_Target
         // still-open recovery item for this file's world-derived UV stand-in.
         float2 detailUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t + N.xy * 0.1;
         float3 detail = gWaterTextures[NonUniformResourceIndex(uNormalIndices.y)]
-            .Sample(gWaterSampler, detailUv).rgb;
+            .Sample(gOblivionWaterSampler, detailUv).rgb;
         color = lerp(color, detail, oblivionLinearDistanceAtten * uLegacySurface1.z);
     }
 

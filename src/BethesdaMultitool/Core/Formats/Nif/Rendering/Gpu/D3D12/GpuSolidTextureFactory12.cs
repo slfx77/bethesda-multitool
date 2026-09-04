@@ -157,8 +157,8 @@ internal sealed unsafe class GpuSolidTextureFactory12
 
     /// <summary>
     ///     Full RGBA8 mip chain by 2×2 box filter down to 1×1 (level 0 = the source, shared not
-    ///     copied). Plain per-channel average: adequate for the synthesized water normal frames
-    ///     because the consuming shaders renormalize the decoded vector per pixel.
+    ///     copied). Plain per-channel average: adequate for synthesized normal frames because the
+    ///     consuming shaders renormalize the decoded vector per pixel.
     /// </summary>
     internal static List<byte[]> BuildMipChain(int width, int height, byte[] rgba)
     {

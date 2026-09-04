@@ -1,12 +1,15 @@
-// v3 water fragment shader (FNV/FO3, the Skyrim path, and the binary-RE-only default fallback)
+// v3 water fragment shader (FNV/FO3 plus Skyrim's shared color core)
 // — a faithful port of FNV's PC water pixel shader (WATER000.pso), disassembled from
 // Data/Shaders/shaderpackage019.sdp with fxc /dumpbin. Full analysis + raw disassembly:
 // tools/GhidraProject/water_pc_pixel_shader_decompiled.txt.
 //
 // Per-game divergences live in sibling files selected by WaterProfile.PixelShaderFile
 // (water_oblivion / water_fo4 / water_morrowind .frag.hlsl); water_fnv001.frag.hlsl is FNV's
-// separately compiled WATER001 opaque-snapshot refraction program. Preprocessor macros encode
-// TECHNIQUE axes only (WATER_HARDWARE_OCCLUSION here).
+// separately compiled WATER001 opaque-snapshot refraction program. Skyrim compiles this shared body
+// with SKYRIM_OPAQUE_REFRACTION enabled: that technique samples the host's separate scene-color
+// snapshot in RGB and writes alpha one through a non-blended PSO, matching the recovered
+// BSWaterShader output ABI. Preprocessor macros encode TECHNIQUE axes only
+// (WATER_HARDWARE_OCCLUSION and SKYRIM_OPAQUE_REFRACTION here).
 //
 // The engine shader composites: reflection RT, refraction RT, a 2-channel depth-map water-column
 // factor, a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog.
@@ -304,5 +307,37 @@ float4 main(PSInput input) : SV_Target
     {
         return float4(ApplyFog(lerp(body, refl, fresneled) + spec, input.vWorldPos), 1.0);
     }
+#if defined(SKYRIM_OPAQUE_REFRACTION)
+    // Skyrim BSWaterShader's full exterior permutation does not expose see-through water through
+    // framebuffer alpha. It samples RefractionSampler in RGB, composites the water over that sample,
+    // then writes oC0.a = 1. The viewer supplies a resolved/copied main-scene snapshot in the same
+    // bindless slot used by FNV WATER001; the active scene RTV is never sampled.
+    uint snapshotIndex = uFnvWater001Snapshot.x;
+    float2 snapshotDimensions = float2(uFnvWater001Snapshot.yz);
+    if (snapshotIndex == 0xFFFFFFFFu || any(snapshotDimensions < 1.0))
+    {
+        // Host-side preflight prevents this branch in normal operation. Fail visibly but safely as
+        // an opaque RT-free result instead of reading an invalid descriptor or relying on blending
+        // that this dedicated PSO intentionally disables.
+        return float4(ApplyFog(lerp(body, refl, fresneled) + spec, input.vWorldPos), 1.0);
+    }
+
+    // The recovered retail program distorts this coordinate with VarAmounts.w, but the current
+    // Skyrim WATR parser does not retain that runtime input/mapping. Sample the matching screen
+    // pixel instead of inventing a distortion scale from unrelated defaults. Telemetry names this
+    // bounded main-scene approximation so the missing displacement remains explicit.
+    float2 refractionUv = input.Position.xy / snapshotDimensions;
+
+    float3 refraction = gWaterTextures[NonUniformResourceIndex(snapshotIndex)]
+        .SampleLevel(gWaterClampSampler, saturate(refractionUv), 0).rgb;
+
+    // Keep the established recovered body/fresnel coefficients exactly, but resolve their former
+    // destination-blend equation against the sampled refraction in-shader. This is algebraically the
+    // same surface contribution at an undistorted tap, while the dedicated PSO can now overwrite RGB
+    // and the shader can emit retail's opaque alpha instead of leaking fractional coverage.
+    float3 foggedSurface = ApplyFog(premultiplied / max(alpha, 1e-4), input.vWorldPos);
+    return float4(lerp(refraction, foggedSurface, alpha), 1.0);
+#else
     return float4(ApplyFog(premultiplied / max(alpha, 1e-4), input.vWorldPos), alpha);
+#endif
 }

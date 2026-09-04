@@ -9,11 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 ///     The shader path the water renderer compiles + selects for a game. FNV's <c>WATER000.pso</c> and
 ///     Skyrim's <c>BSWaterShader</c> (disassembled from <c>Skyrim - Shaders.bsa</c> →
 ///     <c>shaders001.fxp</c>; see <c>tools/GhidraProject/skyrim_water_pixel_shader_decompiled.txt</c>)
-///     share the recovered RT-free color core — Shallow→Deep body, Schlick fresnel, and dual sun/sky
-///     specular — so the current FO3/FNV/Skyrim implementation shares <see cref="FnvWater000" />.
-///     This is not a claim of full shader/input identity: Skyrim keeps three independent authored normal
-///     inputs and Creation-era constants, while FNV uses its dedicated noise prepass and legacy output
-///     contract. Oblivion's <c>WATER000.pso</c> genuinely diverges
+///     share the recovered color core — Shallow→Deep body, Schlick fresnel, and dual sun/sky
+///     specular. Skyrim now has a distinct <see cref="SkyrimWater" /> output route because retail
+///     samples its refraction target in RGB and writes opaque alpha, while FO3/FNV keep the
+///     destination-blended RT-free <see cref="FnvWater000" /> fallback. Skyrim keeps three independent
+///     authored normal inputs and Creation-era constants, while FNV uses its dedicated noise prepass.
+///     Oblivion's <c>WATER000.pso</c> genuinely diverges
 ///     (<c>tools/GhidraProject/oblivion_water_pixel_shader_decompiled.txt</c>): the body blends
 ///     Deep→Shallow by view angle (N·V) rather than the depth column, and the specular is a single sun
 ///     glint — hence its own variant.
@@ -25,6 +26,17 @@ public enum WaterShaderVariant
     ///     game-specific normal/prepass/input contracts remain outside this variant selector.
     /// </summary>
     FnvWater000,
+
+    /// <summary>
+    ///     Skyrim's <c>BSWaterShader</c> color core with its recovered refraction/output contract:
+    ///     the shader samples a separate scene-color snapshot for transmission and writes alpha one
+    ///     through a non-blended PSO. If the host cannot provide the snapshot/depth pair, the renderer
+    ///     falls back locally to the shared RT-free color core rather than sampling the active RTV.
+    ///     Retail <c>TESV.map</c> corroborates the ABI at <c>BSWaterShader::SetupTechnique</c>
+    ///     (0x00e6ba00) and <c>SetupGeometry</c> (0x00e6bdc0), and names the Refraction, Depth, and
+    ///     Reflection samplers plus the Shallow/Deep/Fresnel/Depth controls.
+    /// </summary>
+    SkyrimWater,
 
     /// <summary>
     ///     Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
@@ -111,8 +123,9 @@ public enum LegacySurfaceFrameRole
 public sealed record WaterProfile
 {
     /// <summary>
-    ///     The canonical FNV profile, shared by FO3 (identical <c>shaderpackage019.sdp</c> water set) and
-    ///     the bounded Skyrim path (RE-confirmed same RT-free core). It is no longer the catch-all for
+    ///     The canonical FNV profile, shared by FO3 (identical <c>shaderpackage019.sdp</c> water set).
+    ///     Skyrim inherits these scalar/color defaults through its distinct profile below. This is no
+    ///     longer the catch-all for
     ///     un-recovered games — those take <see cref="Flat" />. Values are the exact constants previously
     ///     hardcoded in <c>WaterRenderer12</c>, so FNV/FO3 render byte-identically.
     /// </summary>
@@ -187,6 +200,18 @@ public sealed record WaterProfile
     };
 
     /// <summary>
+    ///     Skyrim shares FNV's recovered body/Fresnel/specular constants, but not its framebuffer
+    ///     output contract. Retail <c>BSWaterShader</c> samples the refraction target in RGB and emits
+    ///     opaque alpha, so this profile selects the dedicated snapshot permutation/PSO. This agrees
+    ///     with the RefractionSampler/DepthSampler/ReflectionSampler ABI named by retail
+    ///     <c>TESV.map</c>, rather than inferring a destination-blend contract from viewer behavior.
+    /// </summary>
+    public static readonly WaterProfile Skyrim = Fnv with
+    {
+        ShaderVariant = WaterShaderVariant.SkyrimWater
+    };
+
+    /// <summary>
     ///     The stand-in for every game whose water shader has NOT been recovered — a flat transparent
     ///     plane, tinted by the WATR DNAM color when the ESM resolves one and by
     ///     <see cref="DefaultShallow" /> otherwise (see <see cref="WaterShaderVariant.FlatTinted" />).
@@ -227,10 +252,14 @@ public sealed record WaterProfile
 
     /// <summary>
     ///     The per-game water pixel-shader FILE for <see cref="ShaderVariant" /> (the
-    ///     <see cref="GrassShaderProfile" /> pattern: game identity is a file, technique axes stay
-    ///     preprocessor macros — <c>WATER_HARDWARE_OCCLUSION</c>, <c>FO4_WATER_ARCHITECTURAL</c>).
+    ///     <see cref="GrassShaderProfile" /> pattern: game identity is normally a file, technique
+    ///     axes stay preprocessor macros — <c>WATER_HARDWARE_OCCLUSION</c>,
+    ///     <c>FO4_WATER_ARCHITECTURAL</c>, <c>SKYRIM_OPAQUE_REFRACTION</c>).
     ///     FNV's separately compiled WATER001 program (<c>water_fnv001.frag.hlsl</c>) is not selected
     ///     here: it is a draw-time route inside the FNV variant, not a per-game profile decision.
+    ///     Skyrim deliberately returns the FNV-family file because the two programs share the
+    ///     recovered color core; its distinct variant compiles that file with
+    ///     <c>SKYRIM_OPAQUE_REFRACTION</c> and selects a non-blended PSO.
     /// </summary>
     public string PixelShaderFile => ShaderVariant switch
     {
@@ -297,9 +326,9 @@ public sealed record WaterProfile
     public Vector3 DefaultReflection { get; init; }
 
     /// <summary>
-    ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set and
-    ///     Skyrim's RT-free water is the same shader (RE-confirmed — see
-    ///     <see cref="WaterShaderVariant" />), so those three resolve to <see cref="Fnv" />; Oblivion,
+    ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set.
+    ///     Skyrim shares that shader's color core but resolves to <see cref="Skyrim" /> for its
+    ///     distinct refraction-target/opaque-output route. Oblivion,
     ///     FO4 and FO76 resolve to their own recovered variants. Starfield resolves to its explicitly
     ///     labelled source-backed approximation; <see cref="BethesdaGame.Unknown" /> and any game
     ///     added later still resolve to <see cref="Flat" />. The binary-RE-only policy forbids passing
@@ -315,7 +344,8 @@ public sealed record WaterProfile
             BethesdaGame.Fallout4 => Fallout4,
             BethesdaGame.Fallout76 => Fallout76,
             BethesdaGame.Starfield => Starfield,
-            BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas or BethesdaGame.Skyrim => Fnv,
+            BethesdaGame.Skyrim => Skyrim,
+            BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => Fnv,
             _ => Flat
         };
     }

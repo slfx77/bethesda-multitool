@@ -54,7 +54,7 @@ public sealed class OblivionWaterFogSourceContractTests
         var shader = SourceContract.ReadShaderSource("water_oblivion.frag.hlsl");
 
         Assert.Contains(
-            "float oblivionLinearDistanceAtten = saturate(1.0 - distXY * 0.000122);",
+            "float oblivionLinearDistanceAtten = saturate(1.0 - distXY * 0.0001220703125);",
             shader, StringComparison.Ordinal);
         // The SQUARED term drives the normal; the UNSQUARED one drives the detail blend. Keeping both
         // derived from the saturated linear value is what fixes the negative-weight extrapolation.

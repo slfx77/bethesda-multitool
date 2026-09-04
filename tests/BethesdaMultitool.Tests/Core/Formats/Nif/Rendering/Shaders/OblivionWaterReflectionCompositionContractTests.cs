@@ -68,31 +68,84 @@ public sealed class OblivionWaterReflectionCompositionContractTests
     }
 
     [Fact]
-    public void OblivionFftSobelFramesUploadAsOneLevelRuntimeTargets()
+    public void NormalAndDetailMapsUseRecoveredBilinearWrapSampler()
+    {
+        // Oblivion.exe FUN_007DC1A0 applies FUN_00771640(1) to all five WATER samplers. The
+        // D3D9 dispatch chain resolves mode 1 to LINEAR min/mag with MIP=NONE, and the WATER
+        // NormalMap/DetailMap stages to WRAP/WRAP. The shared s0 sampler is AF16 and visibly
+        // suppresses the generated WATERHMAP detail at grazing angles, so TES4 needs its own s8.
+        var shader = SourceContract.ReadShaderSource("water_oblivion.frag.hlsl");
+        var common = SourceContract.ReadShaderSource("water_common.hlsli");
+        var rootSignature = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "GpuRootSignature12.cs");
+
+        Assert.Contains(
+            "SamplerState gOblivionWaterSampler : register(s8);",
+            common, StringComparison.Ordinal);
+        Assert.Contains(
+            ".Sample(gOblivionWaterSampler, legacyUv).xyz",
+            shader, StringComparison.Ordinal);
+        Assert.Contains(
+            ".Sample(gOblivionWaterSampler, detailUv).rgb",
+            shader, StringComparison.Ordinal);
+        var samplerStart = rootSignature.IndexOf(
+            "// s8: Oblivion WATER007 NormalMap / DetailMap sampler.",
+            StringComparison.Ordinal);
+        Assert.True(samplerStart >= 0, "Oblivion sampler block is missing.");
+        var samplerEnd = rootSignature.IndexOf("// s4-s6:", samplerStart, StringComparison.Ordinal);
+        Assert.True(samplerEnd > samplerStart, "Oblivion sampler block has no closing sentinel.");
+        var sampler = rootSignature[samplerStart..samplerEnd];
+        SourceContract.AssertOrder(sampler,
+            "// s8: Oblivion WATER007 NormalMap / DetailMap sampler.",
+            "8,",
+            "Filter.MinMagLinearMipPoint,",
+            "TextureAddressMode.Wrap,",
+            "TextureAddressMode.Wrap,",
+            "TextureAddressMode.Wrap,",
+            "ShaderVisibility.Pixel),");
+        // D3D12 has no D3DTEXF_NONE sampler member. MaxLOD=0 pins the top level and makes
+        // MinMagLinearMipPoint the exact no-mip equivalent, including for authored TNAM detail.
+        Assert.Contains(
+            "StaticBorderColor.OpaqueBlack,\n                0f,\n                0f,\n                ShaderVisibility.Pixel)",
+            sampler.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OblivionFftSobelFramesUploadAsOneLevelTrueColorRuntimeTargets()
     {
         // Oblivion.exe 1.2.0.416 NiDX9RenderedTextureData::CreateSurf (0x00761730) calls
         // IDirect3DDevice9::CreateTexture through vtable slot 0x5C with Levels=1 (push 1 at
-        // 0x007617DF). The synthesized CPU frames stand in for that dynamic one-level target;
-        // box-filtered lower mips would erase frequencies before WATER007's implicit sample.
+        // 0x007617DF). FUN_0049D7B0 allocates TESWaterSystem+0x10 at the active FFT resolution with
+        // default TRUE_COLOR_32 format prefs, then always binds +0x10 to WATER000/007. Selector
+        // case 8's A16B16G16R16 target is +0x0C, the transition-only filtered height map. Thus the
+        // synthesized ordinary normal is one-level RGBA8, not the temporary 64-bit target.
         var host = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3D",
             "WorldView3DControl.Cells.cs");
-        var resolver = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-            "TerrainTextureResolver12.cs");
         var cache = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuTextureCache12.cs");
+        var factory = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "GpuSolidTextureFactory12.cs");
 
         SourceContract.AssertOrder(host,
             "frames.Add(_textureResolver12.GetOrCreateSyntheticBindlessIndex(",
-            "synthesized[i],",
+            "synthetic:oblivion-water-surface:rgba8-nomips:",
             "generateMips: false));");
-        Assert.Contains(
-            "bool generateMips = true)", resolver, StringComparison.Ordinal);
-        Assert.Contains(
-            "_textureCache.GetOrCreateSynthetic(key, width, height, rgba, generateMips)",
-            resolver, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetOrCreateSyntheticRgba16UnormBindlessIndex(", host,
+            StringComparison.Ordinal);
+        Assert.Contains("_solidTextureFactory.CreateFromRgba(width, height, rgba, generateMips)",
+            cache, StringComparison.Ordinal);
+        SourceContract.AssertOrder(factory,
+            "internal GpuTextureCache12.Entry CreateFromRgba(",
+            "var mips = generateMips ? BuildMipChain(width, height, rgba) : [rgba];",
+            "Format.R8G8B8A8_UNorm, (uint)width, (uint)height,",
+            "GpuTexturePayloadFormat.Rgba8,");
+
+        // The generic path may still generate mips for other synthesized textures; the Oblivion
+        // caller must make its one-level choice explicit rather than changing the shared default.
         Assert.Contains(
             "bool generateMips = true)", cache, StringComparison.Ordinal);
         Assert.Contains(

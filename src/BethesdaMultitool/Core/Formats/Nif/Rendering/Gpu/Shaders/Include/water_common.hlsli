@@ -1,5 +1,5 @@
-// Shared plumbing for the per-game water pixel shaders (water_fnv / water_oblivion / water_fo4 /
-// water_morrowind / water_fnv001 .frag.hlsl): the full-superset Uniforms cbuffer (b0) — every
+// Shared plumbing for the per-game water pixel shaders (water_fnv / water_oblivion /
+// water_fo4 / water_morrowind / water_fnv001 .frag.hlsl): the full-superset Uniforms cbuffer (b0) — every
 // variant binds the same CPU-side layout, so member order and registers are append-only and
 // shared verbatim — plus the bindless texture/sampler declarations, the PSInput contract, the
 // static sun fallback, and the noise/depth helpers each variant taps.
@@ -41,8 +41,9 @@ cbuffer Uniforms : register(b0)
     float4 uModernParams;   // glossScaleA/B, neutral outputAlpha, neutral alphaTestThreshold
     float4 uModernLightSilt;// FO4 architecture: retained LightSilt rgb;
                             // FO76_WATER_OPTICS: exact float3 ChannelOpacity. w = normal magnitude.
-    // Bounded FNV WATER001 tail. Appended after the established 416-byte prefix so every existing
-    // WATER003/Oblivion/FO4/Morrowind constant retains its exact register.
+    // Shared opaque-scene/refraction snapshot tail. Appended after the established 416-byte prefix
+    // so every existing WATER003/Oblivion/FO4/Morrowind constant retains its exact register. FNV
+    // WATER001 uses w for its generated-cell plane; Skyrim needs only x/y/z.
     uint4 uFnvWater001Snapshot; // x = opaque SceneColor Texture2D index, y/z = dimensions,
                                 // w = asuint(horizontal generated-cell plane height)
     float4 uFnvWater001Surface; // UnderwaterFogNear/Far, AboveWaterFogAmount, DistortionAmount
@@ -72,6 +73,10 @@ cbuffer Uniforms : register(b0)
     float4 uStarfieldAbsorption;         // authored RGB absorption ranges
     float4 uStarfieldConcentrations;     // phytoplankton, sediment, yellow matter, oceanness
     float4 uStarfieldUnderwaterColor;    // authored RGBA, for future underwater-volume rendering
+    // Append-only TES4 WATER007 displacement-normal consumer. Retail binds this source as s4 and
+    // BlendRadius.xy as c12. x = bindless source (0xFFFFFFFF = none), y/z = asuint(radius/amount),
+    // w = host route enabled. The WATERDISPLACE simulation that produces the source remains open.
+    uint4 uOblivionDisplacement;
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
@@ -120,9 +125,13 @@ Texture2D gWaterTextures[] : register(t0, space1);
 // `WaterDepthArrayBoundTests` pins the two together so they cannot drift again.
 Texture2DMS<float> gWaterDepthTexturesMsaa[49152] : register(t0, space3);
 SamplerState gWaterSampler : register(s0);
-// WATER001's opaque-scene snapshot and FO4's generated LUT/cubemap paths both use the root
-// signature's clamp sampler. Keep it outside the FO4 guard so the FNV permutation can bind it.
+// The FNV WATER001 / Skyrim refraction snapshots and FO4's generated LUT/cubemap paths all use the
+// root signature's clamp sampler. Keep it outside the FO4 guard so classic permutations can bind it.
 SamplerState gWaterClampSampler : register(s2);
+// Oblivion.exe FUN_007DC1A0 applies FILTER_BILERP to all WATER samplers. Its D3D9 state path
+// (FUN_00771640(1) -> FUN_00773100 -> FUN_0077B610) resolves the NormalMap and DetailMap to
+// linear min/mag, no mip filtering, and wrap addressing. The generated NormalMap has one level.
+SamplerState gOblivionWaterSampler : register(s8);
 
 // Planar sky reflection, replacing the 2-row gradient stand-in when a target is bound.
 //

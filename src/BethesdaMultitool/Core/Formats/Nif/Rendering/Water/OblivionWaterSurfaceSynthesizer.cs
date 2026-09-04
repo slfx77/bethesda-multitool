@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Orchestration;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
@@ -10,10 +11,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 /// </summary>
 /// <remarks>
 ///     Retail does not ship <c>textures\water\water00-31.dds</c>. The recovered PC executable
-///     builds a 128² Phillips/Tessendorf spectrum in <c>FUN_007E0840</c>/<c>FUN_007DF640</c>,
-///     evolves it and runs a seven-stage two-dimensional FFT with WATERHMAP000..004, then converts
-///     the absolute height field to an encoded normal with WATERHMAP005. This implementation keeps
-///     those recovered spatial equations and the shader's exact normal kernel.
+///     builds a Phillips/Tessendorf spectrum in <c>FUN_007E0840</c>/<c>FUN_007DF640</c>, evolves it
+///     and runs a two-dimensional FFT with WATERHMAP000..004, then converts the absolute height
+///     field to an encoded normal with WATERHMAP005. <c>bUseWaterHiRes</c> selects either a 128² /
+///     seven-stage or 256² / eight-stage grid without changing the recovered 2*pi/128 wave-number
+///     step. The high-resolution seed also retains the executable's 32-wide edge/corner copy rules.
 ///     <para>
 ///         Retail evolves the height map continuously. The viewer currently accepts a legacy
 ///         32-frame sequence at 12 FPS, so each recovered deep-water dispersion rate is rounded to
@@ -26,10 +28,20 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 /// </remarks>
 internal static class OblivionWaterSurfaceSynthesizer
 {
-    // Oblivion_default.ini [Water].
+    // Oblivion_default.ini [Water]. The application targets the installed retail profile recorded
+    // in RendererInfo.txt ("Water high res : yes"); callers can select low resolution for a
+    // controlled bUseWaterHiRes=0 comparison.
     public const int FrameCount = 32;
     public const int FramesPerSecond = 12;
-    public const int TextureSize = 128;
+    public const int LowResolutionTextureSize = 128;
+    public const int HighResolutionTextureSize = 256;
+    public const int TextureSize = HighResolutionTextureSize;
+    public const bool DefaultUseHighResolution = true;
+
+    // FUN_007E0840's high-resolution branch copies only three 32-wide corner regions. Positive-edge
+    // coordinates 225..256 map to 33..64 through coordinate + 64 - N; the rest are generated.
+    internal const int HighResolutionEdgeWidth = 32;
+    internal const int HighResolutionCopyOffset = 64;
 
     // Oblivion.exe FUN_007E0ED0 defaults and FUN_007DF640/FUN_007E0840 constants.
     internal const float DefaultWindVelocity = 5f;
@@ -49,13 +61,14 @@ internal static class OblivionWaterSurfaceSynthesizer
         DefaultWindVelocity,
         DefaultWindDirectionDegrees,
         DefaultWaveAmplitude,
-        DefaultWaveFrequency);
+        DefaultWaveFrequency,
+        HighResolutionTextureSize);
 
     private static readonly ConcurrentDictionary<SurfaceSettings, Lazy<byte[][]>> FramesBySettings = new();
 
     /// <summary>
     ///     Returns the immutable, process-cached default-water sequence. Consumers upload the bytes
-    ///     but do not mutate them, so retaining one 2 MiB sequence avoids rebuilding 32 FFTs on each
+    ///     but do not mutate them, so retaining one 8 MiB sequence avoids rebuilding 32 FFTs on each
     ///     worldspace load.
     /// </summary>
     public static byte[][] GenerateFrames() => GenerateFrames(DefaultSettings);
@@ -66,16 +79,26 @@ internal static class OblivionWaterSurfaceSynthesizer
     ///     constructor defaults apply only when no water material is available.
     /// </summary>
     public static byte[][] GenerateFrames(WaterSurfaceParams? surface) =>
-        GenerateFrames(ResolveSettings(surface));
+        GenerateFrames(surface, DefaultUseHighResolution);
 
-    internal static string GetSettingsKey(WaterSurfaceParams? surface)
+    internal static byte[][] GenerateFrames(WaterSurfaceParams? surface, bool useHighResolution) =>
+        GenerateFrames(ResolveSettings(surface, useHighResolution));
+
+    internal static string GetSettingsKey(WaterSurfaceParams? surface) =>
+        GetSettingsKey(surface, DefaultUseHighResolution);
+
+    internal static string GetSettingsKey(WaterSurfaceParams? surface, bool useHighResolution)
     {
-        var settings = ResolveSettings(surface);
-        return $"{BitConverter.SingleToUInt32Bits(settings.WindVelocity):X8}-" +
+        var settings = ResolveSettings(surface, useHighResolution);
+        return $"n{settings.GridResolution}-" +
+               $"{BitConverter.SingleToUInt32Bits(settings.WindVelocity):X8}-" +
                $"{BitConverter.SingleToUInt32Bits(settings.WindDirectionDegrees):X8}-" +
                $"{BitConverter.SingleToUInt32Bits(settings.WaveAmplitude):X8}-" +
                $"{BitConverter.SingleToUInt32Bits(settings.WaveFrequency):X8}";
     }
+
+    internal static int GetTextureSize(bool useHighResolution) =>
+        useHighResolution ? HighResolutionTextureSize : LowResolutionTextureSize;
 
     internal static byte[] GenerateFrame(int frame)
     {
@@ -86,7 +109,7 @@ internal static class OblivionWaterSurfaceSynthesizer
     internal static byte[] GenerateFrame(int frame, WaterSurfaceParams? surface)
     {
         var wrappedFrame = (frame % FrameCount + FrameCount) % FrameCount;
-        return GenerateFrames(ResolveSettings(surface))[wrappedFrame];
+        return GenerateFrames(ResolveSettings(surface, DefaultUseHighResolution))[wrappedFrame];
     }
 
     /// <summary>
@@ -173,28 +196,34 @@ internal static class OblivionWaterSurfaceSynthesizer
     {
         var seed = BuildSpectrumSeed(settings);
         var frames = new byte[FrameCount][];
-        for (var frame = 0; frame < FrameCount; frame++)
-        {
-            frames[frame] = GenerateFrame(frame, seed);
-        }
+        // Every evolved frame reads the same immutable spectrum seed. Build them concurrently so
+        // the source-backed 256² profile does not turn a first worldspace selection into a long
+        // single-core UI stall. This path is reached from the STA UI thread, so its join must not
+        // use Parallel.For's COM-pumping wait (see NonPumpingParallel); all work is joined before
+        // the immutable cached array is published.
+        NonPumpingParallel.For(0, FrameCount, frame => frames[frame] = GenerateFrame(frame, seed));
 
         return frames;
     }
 
     private static SpectrumSeed BuildSpectrumSeed(SurfaceSettings settings)
     {
-        var sampleCount = TextureSize * TextureSize;
+        var textureSize = settings.GridResolution;
+        // FUN_007E15C0 allocates (N+1) rows of (N+1) scalars. FUN_007E06B0 uploads only N² output
+        // texels, but reads the inclusive endpoints for h0(-k) when an output row/column is zero.
+        var seedStride = textureSize + 1;
+        var sampleCount = seedStride * seedStride;
         var amplitudes = new float[sampleCount];
         var loopCycles = new byte[sampleCount];
         var loopDurationSeconds = FrameCount / (float)FramesPerSecond;
 
-        for (var y = 0; y < TextureSize; y++)
+        for (var y = 0; y <= textureSize; y++)
         {
-            var latticeY = y - TextureSize / 2;
-            for (var x = 0; x < TextureSize; x++)
+            var latticeY = y - textureSize / 2;
+            for (var x = 0; x <= textureSize; x++)
             {
-                var latticeX = x - TextureSize / 2;
-                var index = y * TextureSize + x;
+                var latticeX = x - textureSize / 2;
+                var index = y * seedStride + x;
                 if (latticeX != 0 || latticeY != 0)
                 {
                     // FUN_007E0840 writes omega for every non-zero k, including the directional
@@ -212,49 +241,143 @@ internal static class OblivionWaterSurfaceSynthesizer
                     }
                 }
 
-                var spectrum = EvaluatePhillipsSpectrum(
+                amplitudes[index] = ResolveSpectrumSeedAmplitude(
+                    settings,
+                    amplitudes,
+                    seedStride,
+                    x,
+                    y,
                     latticeX,
-                    latticeY,
-                    settings.WindVelocity,
-                    settings.WindDirectionDegrees,
-                    settings.WaveAmplitude);
-                if (spectrum <= 0f)
-                {
-                    continue;
-                }
-
-                // FUN_007E0840 multiplies FUN_007DF580's distributed sample by sqrt(P(k)) and by
-                // the cosine of a second random phase. Reconstruct the executable's lookup-table
-                // distribution continuously; only its process-global rand() position is unknowable.
-                var randomState = MixCoordinates(x, y);
-                var distributedSample = NextSpectrumSample(ref randomState);
-                var phase = MathF.Tau * NextUnit(ref randomState);
-                amplitudes[index] = distributedSample * MathF.Sqrt(spectrum) * MathF.Cos(phase);
+                    latticeY);
             }
         }
 
-        return new SpectrumSeed(amplitudes, loopCycles);
+        return new SpectrumSeed(textureSize, seedStride, amplitudes, loopCycles);
+    }
+
+    private static float ResolveSpectrumSeedAmplitude(
+        SurfaceSettings settings,
+        float[] precedingAmplitudes,
+        int seedStride,
+        int x,
+        int y,
+        int latticeX,
+        int latticeY)
+    {
+        // bUseWaterHiRes leaves the negative/negative 32x32 corner at the memset zero and does not
+        // generate three positive-edge corner regions. Retail copies those scalar h0 seeds from
+        // coordinates +64-N after writing the destination coordinate's own omega. The source
+        // rows/columns are always earlier in row-major order, so this direct lookup follows
+        // FUN_007E0840's exact data dependency.
+        if (settings.GridResolution == HighResolutionTextureSize)
+        {
+            if (IsHighResolutionSuppressedSeedCoordinate(x, y))
+            {
+                return 0f;
+            }
+
+            if (GetHighResolutionSpectrumCopySource(x, y) is { } source)
+            {
+                return precedingAmplitudes[source.Y * seedStride + source.X];
+            }
+        }
+
+        var spectrum = EvaluatePhillipsSpectrum(
+            latticeX,
+            latticeY,
+            settings.WindVelocity,
+            settings.WindDirectionDegrees,
+            settings.WaveAmplitude);
+        if (spectrum <= 0f)
+        {
+            return 0f;
+        }
+
+        // FUN_007E0840 multiplies FUN_007DF580's distributed sample by sqrt(P(k)) and by the cosine
+        // of a second random phase. Reconstruct the executable's lookup-table distribution
+        // continuously; only its process-global rand() position is unknowable.
+        var randomState = MixCoordinates(x, y);
+        var distributedSample = NextSpectrumSample(ref randomState);
+        var phase = MathF.Tau * NextUnit(ref randomState);
+        return distributedSample * MathF.Sqrt(spectrum) * MathF.Cos(phase);
+    }
+
+    /// <summary>
+    ///     Retail's high-resolution branch skips the top-left 32x32 seed corner after clearing the
+    ///     allocation. This is the direct <c>row &lt; 32 &amp;&amp; column &lt; 32</c> jump at 0x007E097D.
+    /// </summary>
+    internal static bool IsHighResolutionSuppressedSeedCoordinate(int x, int y)
+    {
+        ValidateHighResolutionCoordinate(x, y);
+        return x < HighResolutionEdgeWidth && y < HighResolutionEdgeWidth;
+    }
+
+    /// <summary>
+    ///     Returns the source coordinate used by the exact <c>bUseWaterHiRes</c> edge/corner copy,
+    ///     or null when retail evaluates a new Phillips/random seed at this coordinate.
+    /// </summary>
+    internal static (int X, int Y)? GetHighResolutionSpectrumCopySource(int x, int y)
+    {
+        ValidateHighResolutionCoordinate(x, y);
+
+        const int threshold = HighResolutionTextureSize - HighResolutionEdgeWidth;
+        var xOnPositiveEdge = x > threshold;
+        var yOnPositiveEdge = y > threshold;
+
+        if (yOnPositiveEdge && x < HighResolutionEdgeWidth)
+        {
+            return (x, y + HighResolutionCopyOffset - HighResolutionTextureSize);
+        }
+
+        if (y < HighResolutionEdgeWidth && xOnPositiveEdge)
+        {
+            return (x + HighResolutionCopyOffset - HighResolutionTextureSize, y);
+        }
+
+        return xOnPositiveEdge && yOnPositiveEdge
+            ? (x + HighResolutionCopyOffset - HighResolutionTextureSize,
+                y + HighResolutionCopyOffset - HighResolutionTextureSize)
+            : null;
+    }
+
+    private static void ValidateHighResolutionCoordinate(int x, int y)
+    {
+        if ((uint)x > (uint)HighResolutionTextureSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(x), x,
+                $"Coordinate must be on the inclusive 0..{HighResolutionTextureSize} seed lattice.");
+        }
+
+        if ((uint)y > (uint)HighResolutionTextureSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(y), y,
+                $"Coordinate must be on the inclusive 0..{HighResolutionTextureSize} seed lattice.");
+        }
     }
 
     private static byte[] GenerateFrame(int frame, SpectrumSeed seed)
     {
-        var real = new float[TextureSize * TextureSize];
+        var textureSize = seed.GridResolution;
+        var seedStride = seed.SeedStride;
+        var real = new float[textureSize * textureSize];
         var imaginary = new float[real.Length];
         var frameFraction = frame / (float)FrameCount;
 
-        for (var y = 0; y < TextureSize; y++)
+        for (var y = 0; y < textureSize; y++)
         {
-            var oppositeY = (TextureSize - y) % TextureSize;
-            for (var x = 0; x < TextureSize; x++)
+            for (var x = 0; x < textureSize; x++)
             {
-                var oppositeX = (TextureSize - x) % TextureSize;
-                var index = y * TextureSize + x;
-                var oppositeIndex = oppositeY * TextureSize + oppositeX;
-                var phase = MathF.Tau * seed.LoopCycles[index] * frameFraction;
+                var index = y * textureSize + x;
+                var seedIndex = y * seedStride + x;
+                var opposite = GetOppositeSeedCoordinate(x, y, textureSize);
+                var oppositeSeedIndex = opposite.Y * seedStride + opposite.X;
+                var phase = MathF.Tau * seed.LoopCycles[seedIndex] * frameFraction;
                 var cosine = MathF.Cos(phase);
                 var sine = MathF.Sin(phase);
-                var h0 = seed.Amplitudes[index];
-                var h0Opposite = seed.Amplitudes[oppositeIndex];
+                var h0 = seed.Amplitudes[seedIndex];
+                var h0Opposite = seed.Amplitudes[oppositeSeedIndex];
 
                 // WATERHMAP000 evolves h0(-k) * exp(+iwt) + conjugate(h0(k)) * exp(-iwt).
                 // FUN_007E06B0 duplicates each scalar seed into real and imaginary channels, which
@@ -264,31 +387,48 @@ internal static class OblivionWaterSurfaceSynthesizer
             }
         }
 
-        InverseFft2D(real, imaginary);
-        return EncodeNormalMap(real);
+        InverseFft2D(real, imaginary, textureSize);
+        return EncodeNormalMap(real, textureSize);
     }
 
-    private static void InverseFft2D(float[] real, float[] imaginary)
+    /// <summary>
+    ///     Exact inclusive-endpoint lookup used by FUN_007E06B0 for h0(-k). It is deliberately
+    ///     <c>N-coordinate</c>, not modulo N: output coordinate zero reads seed endpoint N.
+    /// </summary>
+    internal static (int X, int Y) GetOppositeSeedCoordinate(int x, int y, int textureSize)
     {
-        for (var y = 0; y < TextureSize; y++)
+        if ((uint)x >= (uint)textureSize) throw new ArgumentOutOfRangeException(nameof(x));
+        if ((uint)y >= (uint)textureSize) throw new ArgumentOutOfRangeException(nameof(y));
+        return (textureSize - x, textureSize - y);
+    }
+
+    private static void InverseFft2D(float[] real, float[] imaginary, int textureSize)
+    {
+        for (var y = 0; y < textureSize; y++)
         {
-            InverseFft1D(real, imaginary, y * TextureSize, 1);
+            InverseFft1D(real, imaginary, y * textureSize, 1, textureSize);
         }
 
-        for (var x = 0; x < TextureSize; x++)
+        for (var x = 0; x < textureSize; x++)
         {
-            InverseFft1D(real, imaginary, x, TextureSize);
+            InverseFft1D(real, imaginary, x, textureSize, textureSize);
         }
 
         // WATERHMAP001/002 butterfly passes contain additions and twiddle multiplies but no 1/N
         // factor; do not normalize the inverse transform here.
     }
 
-    private static void InverseFft1D(float[] real, float[] imaginary, int offset, int stride)
+    private static void InverseFft1D(
+        float[] real,
+        float[] imaginary,
+        int offset,
+        int stride,
+        int textureSize)
     {
-        for (var i = 1; i < TextureSize; i++)
+        var bitCount = textureSize == HighResolutionTextureSize ? 8 : 7;
+        for (var i = 1; i < textureSize; i++)
         {
-            var reversed = ReverseSevenBits(i);
+            var reversed = ReverseBits(i, bitCount);
             if (i >= reversed)
             {
                 continue;
@@ -300,13 +440,13 @@ internal static class OblivionWaterSurfaceSynthesizer
             (imaginary[left], imaginary[right]) = (imaginary[right], imaginary[left]);
         }
 
-        for (var length = 2; length <= TextureSize; length <<= 1)
+        for (var length = 2; length <= textureSize; length <<= 1)
         {
             var angleStep = MathF.Tau / length;
             var stepReal = MathF.Cos(angleStep);
             var stepImaginary = MathF.Sin(angleStep);
             var halfLength = length >> 1;
-            for (var block = 0; block < TextureSize; block += length)
+            for (var block = 0; block < textureSize; block += length)
             {
                 var twiddleReal = 1f;
                 var twiddleImaginary = 0f;
@@ -331,41 +471,47 @@ internal static class OblivionWaterSurfaceSynthesizer
         }
     }
 
-    private static byte[] EncodeNormalMap(float[] heights)
+    private static byte[] EncodeNormalMap(float[] heights, int textureSize)
     {
-        var pixels = new byte[TextureSize * TextureSize * 4];
-        for (var y = 0; y < TextureSize; y++)
+        // FUN_0049D7B0 always binds TESWaterSystem+0x10 for ordinary above-water rendering. That
+        // target is allocated at the active FFT size with NiTexture::FormatPrefs TRUE_COLOR_32 and
+        // one level. Selector case 8's A16B16G16R16 target is instead +0x0C, the temporary filtered
+        // height map used only while a water-type blend is active.
+        const int bytesPerPixel = 4;
+        var pixels = new byte[textureSize * textureSize * bytesPerPixel];
+        for (var y = 0; y < textureSize; y++)
         {
-            var north = (y + TextureSize - 1) % TextureSize;
-            var south = (y + 1) % TextureSize;
-            for (var x = 0; x < TextureSize; x++)
+            var north = (y + textureSize - 1) % textureSize;
+            var south = (y + 1) % textureSize;
+            for (var x = 0; x < textureSize; x++)
             {
-                var west = (x + TextureSize - 1) % TextureSize;
-                var east = (x + 1) % TextureSize;
+                var west = (x + textureSize - 1) % textureSize;
+                var east = (x + 1) % textureSize;
                 var normal = ComputeNormal(
-                    heights[north * TextureSize + west],
-                    heights[north * TextureSize + x],
-                    heights[north * TextureSize + east],
-                    heights[y * TextureSize + west],
-                    heights[y * TextureSize + east],
-                    heights[south * TextureSize + west],
-                    heights[south * TextureSize + x],
-                    heights[south * TextureSize + east]);
-                var pixel = (y * TextureSize + x) * 4;
-                pixels[pixel] = EncodeUnorm(normal.X);
-                pixels[pixel + 1] = EncodeUnorm(normal.Y);
-                pixels[pixel + 2] = EncodeUnorm(normal.Z);
-                pixels[pixel + 3] = 255;
+                    heights[north * textureSize + west],
+                    heights[north * textureSize + x],
+                    heights[north * textureSize + east],
+                    heights[y * textureSize + west],
+                    heights[y * textureSize + east],
+                    heights[south * textureSize + west],
+                    heights[south * textureSize + x],
+                    heights[south * textureSize + east]);
+                var pixel = (y * textureSize + x) * bytesPerPixel;
+                pixels[pixel] = EncodeUnorm8(normal.X);
+                pixels[pixel + 1] = EncodeUnorm8(normal.Y);
+                pixels[pixel + 2] = EncodeUnorm8(normal.Z);
+                pixels[pixel + 3] = byte.MaxValue;
             }
         }
 
         return pixels;
     }
 
-    private static int ReverseSevenBits(int value)
+    internal static int ReverseBits(int value, int bitCount)
     {
+        if (bitCount is < 1 or > 30) throw new ArgumentOutOfRangeException(nameof(bitCount));
         var reversed = 0;
-        for (var bit = 0; bit < 7; bit++)
+        for (var bit = 0; bit < bitCount; bit++)
         {
             reversed = (reversed << 1) | (value & 1);
             value >>= 1;
@@ -410,18 +556,22 @@ internal static class OblivionWaterSurfaceSynthesizer
     internal static float TransformSpectrumSample(float standardNormal) =>
         standardNormal < 0f ? 1f + standardNormal : standardNormal;
 
-    private static SurfaceSettings ResolveSettings(WaterSurfaceParams? surface)
+    private static SurfaceSettings ResolveSettings(
+        WaterSurfaceParams? surface,
+        bool useHighResolution)
     {
+        var textureSize = GetTextureSize(useHighResolution);
         if (surface is null)
         {
-            return DefaultSettings;
+            return DefaultSettings with { GridResolution = textureSize };
         }
 
         return new SurfaceSettings(
             NormalizeNonNegative(surface.WindVelocity, DefaultWindVelocity),
             float.IsFinite(surface.WindDirection) ? surface.WindDirection : DefaultWindDirectionDegrees,
             NormalizeNonNegative(surface.WaveAmplitude, DefaultWaveAmplitude),
-            NormalizeNonNegative(surface.WaveFrequency, DefaultWaveFrequency));
+            NormalizeNonNegative(surface.WaveFrequency, DefaultWaveFrequency),
+            textureSize);
     }
 
     private static float NormalizeNonNegative(float value, float fallback)
@@ -431,19 +581,28 @@ internal static class OblivionWaterSurfaceSynthesizer
             return fallback;
         }
 
-        return value == 0f ? 0f : value; // canonicalize -0 for the cache key
+        // A negative-zero WATR field is numerically valid but would otherwise create a second
+        // bitwise cache identity. Inspect the representation directly: exact float equality is
+        // deliberately avoided here because the analyzer correctly rejects it for general values.
+        return BitConverter.SingleToUInt32Bits(value) == 0x80000000u ? 0f : value;
     }
 
     private readonly record struct SurfaceSettings(
         float WindVelocity,
         float WindDirectionDegrees,
         float WaveAmplitude,
-        float WaveFrequency);
+        float WaveFrequency,
+        int GridResolution);
 
-    private sealed record SpectrumSeed(float[] Amplitudes, byte[] LoopCycles);
+    private sealed record SpectrumSeed(
+        int GridResolution,
+        int SeedStride,
+        float[] Amplitudes,
+        byte[] LoopCycles);
 
-    private static byte EncodeUnorm(float component)
-    {
-        return (byte)Math.Clamp((int)MathF.Round((component * 0.5f + 0.5f) * 255f), 0, 255);
-    }
+    internal static byte EncodeUnorm8(float component) =>
+        (byte)Math.Clamp(
+            (int)MathF.Round((component * 0.5f + 0.5f) * byte.MaxValue),
+            byte.MinValue,
+            byte.MaxValue);
 }

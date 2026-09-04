@@ -104,20 +104,20 @@ public sealed class RecoveredWaterShaderReferenceTests
     [Fact]
     public void OblivionDetailBlendUsesLinearDistanceTermNotSquaredNormalAttenuation()
     {
-        // WATER000.pso: r2.w = 1-distance*0.000122; normal.xy uses r2.w^2, while the DetailMap
+        // WATER000.pso: r2.w = 1-distance/8192; normal.xy uses r2.w^2, while the DetailMap
         // blend uses r2.w*VarAmounts.w. Evaluate the two independently so production cannot
         // accidentally reuse the squared normal attenuation for TNAM detail.
         const float horizontalDistance = 4096f;
         const float textureBlend = 0.5f;
-        var linearAttenuation = 1f - horizontalDistance * 0.000122f;
+        var linearAttenuation = 1f - horizontalDistance * 0.0001220703125f;
         var detailWeight = linearAttenuation * textureBlend;
         var wrongSquaredWeight = linearAttenuation * linearAttenuation * textureBlend;
         var baseColor = new Vector3(0.2f, 0.3f, 0.4f);
         var detailColor = new Vector3(0.8f, 0.7f, 0.6f);
 
-        Assert.Equal(0.250144f, detailWeight, 6);
-        Assert.Equal(0.12514403f, wrongSquaredWeight, 6);
-        VectorAssert.Equal(new Vector3(0.3500864f, 0.4000576f, 0.4500288f),
+        Assert.Equal(0.25f, detailWeight, 6);
+        Assert.Equal(0.125f, wrongSquaredWeight, 6);
+        VectorAssert.Equal(new Vector3(0.35f, 0.4f, 0.45f),
             Vector3.Lerp(baseColor, detailColor, detailWeight));
     }
 

@@ -56,11 +56,14 @@ public sealed class FnvWater001SourceContractTests
     }
 
     [Fact]
-    public void SnapshotSetterRequiresPositivePreflightAndRenderConsumesDescriptorBeforeEarlyReturns()
+    public void SharedSnapshotSetterKeepsFnvPreflightGateAndRenderConsumesDescriptorBeforeEarlyReturns()
     {
         var source = ReadRenderer();
-        var setter = Extract(source, "public void SetFnvWater001Snapshot(", "public void SetModernCubeMap(");
-        Assert.Contains("if (!_fnvWater001PendingPreflight.Candidate)", setter, StringComparison.Ordinal);
+        var setter = Extract(source, "public void SetWaterOpaqueSceneSnapshot(", "public void SetWaterReflection(");
+        Assert.Contains(
+            "if (!_fnvWater001PendingPreflight.Candidate && !_skyrimOpaqueSceneSnapshotRequested)",
+            setter,
+            StringComparison.Ordinal);
         Assert.Contains("bindlessIndex == NoNormalMap", setter, StringComparison.Ordinal);
         Assert.Contains("width == 0", setter, StringComparison.Ordinal);
         Assert.Contains("height == 0", setter, StringComparison.Ordinal);
@@ -73,8 +76,8 @@ public sealed class FnvWater001SourceContractTests
         Assert.True(renderStart >= 0 && emptyReturn > renderStart);
         var prefix = source[renderStart..emptyReturn];
         SourceContract.AssertOrder(prefix,
-            "var fnvWater001Snapshot = _fnvWater001Snapshot;",
-            "_fnvWater001Snapshot = default;");
+            "var opaqueSceneSnapshot = _waterOpaqueSceneSnapshot;",
+            "_waterOpaqueSceneSnapshot = default;");
     }
 
     [Fact]
@@ -245,7 +248,7 @@ public sealed class FnvWater001SourceContractTests
             "_water.HasVisibleWaterToPartition(cylinder)",
             "_references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);",
             "waterTransparencyPartitioned = true;",
-            "_water.GetFnvWater001Preflight(",
+            "_water.TryRequestWaterOpaqueSceneSnapshot(",
             "surface.TryPrepareWaterOpaqueSnapshot(cmd)",
             "_water?.Render(",
             "_references?.RenderBlendedDeferredAtOrAboveWater(_water, _camera.Position.Z);");
@@ -279,7 +282,7 @@ public sealed class FnvWater001SourceContractTests
             "_water!.HasVisibleWaterToPartition(cylinder)",
             "_references!.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);",
             "captureWaterTransparencyPartitioned = true;",
-            "_water!.GetFnvWater001Preflight(",
+            "_water!.TryRequestWaterOpaqueSceneSnapshot(",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
             "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
             "_references!.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);");
@@ -333,7 +336,7 @@ public sealed class FnvWater001SourceContractTests
             "if (streamTransparency)",
             "surface.TryPrepareOpaqueDepthSnapshot(cmd)",
             "_water!.SetSceneDepth(",
-            "_water.GetFnvWater001Preflight(",
+            "_water.TryRequestWaterOpaqueSceneSnapshot(",
             "_water.DeferStreamTailReservationRelease(WaterPassRingReservationBytes);",
             // Submerged translucent geometry draws BEFORE the stream opens. Water is queued per
             // CELL, so its sort key is a 4096-unit quad's centroid and a decal in the near half of
@@ -597,7 +600,7 @@ public sealed class FnvWater001SourceContractTests
             capture,
             "RenderSky(viewProjSky, Vector3.Zero",
             "_captureWaterReflectionBound = !captureSceneMirrorPlanned &&",
-            "TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale,",
+            "TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyTransform,",
             "_water?.SetWaterReflection(",
             "(uint)target.Width,");
         // The reported field is DERIVED from the bound flag, and the unbound arm must resolve to the

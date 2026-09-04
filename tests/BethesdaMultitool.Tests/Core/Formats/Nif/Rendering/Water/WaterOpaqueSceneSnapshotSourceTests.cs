@@ -186,17 +186,17 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
 
         SourceContract.AssertOrder(
             waterPass,
-            "_water.GetFnvWater001Preflight(",
+            "_water.TryRequestWaterOpaqueSceneSnapshot(",
             "TryEnsureWaterOpaqueSnapshotSrv()",
             "surface.TryPrepareWaterOpaqueSnapshot(cmd)",
-            "_water.SetFnvWater001Snapshot(",
+            "_water.SetWaterOpaqueSceneSnapshot(",
             "cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView)",
             "_water?.Render(",
             "isPerspectiveProjection: !projectionActive",
             "surface.RestoreWaterOpaqueSnapshot(cmd);");
         Assert.Contains("isPerspectiveProjection: !projectionActive", waterPass,
             StringComparison.Ordinal);
-        Assert.Contains("_water.SetFnvWater001Snapshot(null, 0, 0);", waterPass,
+        Assert.Contains("_water.SetWaterOpaqueSceneSnapshot(null, 0, 0);", waterPass,
             StringComparison.Ordinal);
     }
 
@@ -216,7 +216,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             // must view the post-opaque copy — decided per capture from the capture's own gate.
             "TryEnsureCaptureDepthSrv(target, requireSnapshotCopy: captureStreamTransparency)",
             "_water?.SetSceneDepth(",
-            "_water!.GetFnvWater001Preflight(",
+            "_water!.TryRequestWaterOpaqueSceneSnapshot(",
             "TryEnsureCaptureWaterOpaqueSnapshotSrv(target)");
 
         var pass = capture[loopStart..capture.IndexOf(
@@ -225,9 +225,9 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             StringComparison.Ordinal)];
         SourceContract.AssertOrder(
             pass,
-            "_water!.GetFnvWater001Preflight(",
+            "_water!.TryRequestWaterOpaqueSceneSnapshot(",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
-            "_water.SetFnvWater001Snapshot(",
+            "_water.SetWaterOpaqueSceneSnapshot(",
             "target.BindColorReadOnlyDepth(cmd)",
             "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
             "target.RestoreWaterOpaqueSnapshot(cmd);");
@@ -333,7 +333,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         var frame = ReadAppSource("WorldView3DControl.Frame.cs");
         var waterPass = Extract(
             frame,
-            "var fnvWater001SnapshotPrepared = false;",
+            "var waterOpaqueSceneSnapshotPrepared = false;",
             "_gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);");
         SourceContract.AssertOrder(
             waterPass,
@@ -353,7 +353,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "// Tolerate TRANSIENT failures");
         SourceContract.AssertOrder(
             renderFailure,
-            "_water?.SetFnvWater001Snapshot(null, 0, 0);",
+            "_water?.SetWaterOpaqueSceneSnapshot(null, 0, 0);",
             "_surface12?.DiscardWaterOpaqueSnapshotPreparation();",
             "_commandRecorder12?.AbortFrame();");
 
@@ -381,7 +381,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "Profiler_LastCaptureScenarioSnapshot =");
         SourceContract.AssertOrder(
             loop,
-            "var captureFnvWater001SnapshotPrepared = false;",
+            "var captureWaterOpaqueSceneSnapshotPrepared = false;",
             "var captureDepthSampled = false;",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
             "captureDepthSampled = true;",
