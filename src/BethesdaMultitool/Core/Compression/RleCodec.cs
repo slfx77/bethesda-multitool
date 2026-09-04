@@ -17,13 +17,6 @@ namespace BethesdaMultitool.Core.Compression;
 /// </summary>
 internal static class RleCodec
 {
-    /// <summary>Decode an RLE stream into a buffer of the known decompressed size.</summary>
-    /// <param name="input">The compressed packet stream.</param>
-    /// <param name="decompressedLength">Exact number of bytes the stream decodes to.</param>
-    /// <returns>The decoded bytes.</returns>
-    /// <exception cref="InvalidDataException">
-    ///     Thrown when the stream is truncated or a packet would overrun the declared output size.
-    /// </exception>
     /// <summary>
     ///     The 16-bit-word variant, used by Arena <c>.RMD</c> wilderness chunks. Packets are led by
     ///     a SIGNED little-endian word: a positive <c>n</c> means <c>n</c> literal words follow, a
@@ -36,6 +29,12 @@ internal static class RleCodec
     ///         reads shipped files.
     ///     </para>
     /// </summary>
+    /// <param name="input">The compressed packet stream.</param>
+    /// <param name="wordCount">Exact number of 16-bit words the stream decodes to.</param>
+    /// <returns>The decoded words as little-endian bytes.</returns>
+    /// <exception cref="InvalidDataException">
+    ///     Thrown when the stream is truncated or a packet would overrun the declared word count.
+    /// </exception>
     public static byte[] DecompressWords(ReadOnlySpan<byte> input, int wordCount)
     {
         if (wordCount < 0)

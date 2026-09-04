@@ -597,7 +597,12 @@ internal sealed class ArenaInfFile
             index++;
         }
 
-        return index == start ? null : (int)(negative ? -value : value);
+        if (index == start)
+        {
+            return null;
+        }
+
+        return (int)(negative ? -value : value);
     }
 
     private enum ArenaInfSection

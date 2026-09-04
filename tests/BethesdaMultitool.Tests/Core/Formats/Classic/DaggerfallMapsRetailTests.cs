@@ -116,7 +116,7 @@ public sealed class DaggerfallMapsRetailTests
         var arena2 = RequireArena2();
         var installRoot = Path.GetDirectoryName(arena2)!;
 
-        var result = await ClassicGameAnalyzer.LoadAsync(installRoot);
+        var result = await ClassicGameAnalyzer.LoadAsync(installRoot, TestContext.Current.CancellationToken);
 
         Assert.Equal(BethesdaGame.Daggerfall, result.Records.Game);
         Assert.Equal(15_251, result.Records.GenericRecords.Count(r => r.RecordType == DaggerfallRecordSource.LocationRecordType));

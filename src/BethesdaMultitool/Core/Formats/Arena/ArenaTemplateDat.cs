@@ -177,7 +177,7 @@ internal sealed class ArenaTemplateDat
     ///     Collapses runs of whitespace to a single space, trims, then splits on '&amp;'. The text
     ///     following the final '&amp;' is authoring slack and is dropped, as in the reference.
     /// </summary>
-    private static IReadOnlyList<string> SplitValues(string raw)
+    private static List<string> SplitValues(string raw)
     {
         var collapsed = new StringBuilder(raw.Length);
         var previousWasSpace = false;

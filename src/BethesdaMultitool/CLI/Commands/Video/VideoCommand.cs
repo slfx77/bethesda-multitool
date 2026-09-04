@@ -1,5 +1,8 @@
 using System.CommandLine;
+using System.Globalization;
+using BethesdaMultitool.Core.Formats.Audio;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Xngine.Flic;
 using Spectre.Console;
@@ -7,9 +10,10 @@ using Spectre.Console;
 namespace BethesdaMultitool.CLI.Commands.Video;
 
 /// <summary>
-///     <c>video</c> command group — decodes the classic games' animation containers. Autodesk
-///     FLIC (<c>.FLC</c> / <c>.CEL</c>) today, covering the XnGine-era cutscenes; Daggerfall
-///     <c>.VID</c> and the Fallout <c>.MVE</c> identification path join per game vertical.
+///     <c>video</c> command group — decodes the classic games' animation containers: Autodesk FLIC
+///     (<c>.FLC</c> / <c>.CEL</c>) for the Arena-era cutscenes and Daggerfall's <c>.VID</c> movies,
+///     whose interleaved audio exports beside the frames. The Fallout <c>.MVE</c> identification
+///     path joins with that vertical.
 /// </summary>
 public static class VideoCommand
 {
@@ -24,7 +28,7 @@ public static class VideoCommand
     private static Command CreateInfoCommand()
     {
         var command = new Command("info", "Show an animation's geometry, frame count and duration");
-        var inputArg = new Argument<string>("input") { Description = "A .FLC or .CEL file" };
+        var inputArg = new Argument<string>("input") { Description = "A .FLC, .CEL or .VID file" };
         var entryOption = new Option<string?>("--entry", "-e")
         {
             Description = "Virtual path of the animation inside an archive input"
@@ -40,7 +44,7 @@ public static class VideoCommand
     private static Command CreateExportCommand()
     {
         var command = new Command("export", "Render an animation's frames to PNG");
-        var inputArg = new Argument<string>("input") { Description = "A .FLC or .CEL file" };
+        var inputArg = new Argument<string>("input") { Description = "A .FLC, .CEL or .VID file" };
         var entryOption = new Option<string?>("--entry", "-e")
         {
             Description = "Virtual path of the animation inside an archive input"
@@ -106,6 +110,12 @@ public static class VideoCommand
     private static void RunInfo(string input, string? entryName)
     {
         var (bytes, name) = Load(input, entryName);
+        if (DaggerfallVidFile.IsVid(bytes))
+        {
+            ShowVid(DaggerfallVidFile.Parse(bytes, name));
+            return;
+        }
+
         var flic = FlicFile.Parse(bytes, name);
 
         AnsiConsole.MarkupLine("[bold cyan]{0}[/]", Markup.Escape(flic.Name));
@@ -134,10 +144,65 @@ public static class VideoCommand
         AnsiConsole.Write(table);
     }
 
+    private static void ShowVid(DaggerfallVidFile vid)
+    {
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/]", Markup.Escape(vid.Name));
+
+        var table = new Table { Border = TableBorder.Rounded };
+        table.AddColumn("Property");
+        table.AddColumn("Value");
+        table.AddRow("Size", $"{vid.Width}x{vid.Height}");
+        table.AddRow("Frames", $"{vid.FrameCount} (header declares {vid.DeclaredFrameCount})");
+        table.AddRow("Header delay", vid.GlobalDelay.ToString(CultureInfo.InvariantCulture));
+        table.AddRow("Audio", $"{vid.Audio.Length:N0} samples, {vid.AudioSeconds:F2} s at {DaggerfallVidFile.SampleRate} Hz");
+        table.AddRow("Frame rate", $"{(vid.AudioSeconds > 0 ? vid.FrameCount / vid.AudioSeconds : 0):F1} fps (from the audio track)");
+        table.AddRow("Ends cleanly", vid.EndOfFileSeen ? "yes" : "no");
+        table.AddRow("Blocks", string.Join(", ", vid.BlockCounts.OrderBy(kvp => kvp.Key).Select(kvp => $"{kvp.Key}={kvp.Value}")));
+        AnsiConsole.Write(table);
+    }
+
+    private static void ExportVid(DaggerfallVidFile vid, string outputDir, int every)
+    {
+        Directory.CreateDirectory(outputDir);
+        var baseName = Path.GetFileNameWithoutExtension(vid.Name);
+        var written = 0;
+        foreach (var frame in vid.EnumerateFrames())
+        {
+            if (frame.Index % every != 0)
+            {
+                continue;
+            }
+
+            var texture = frame.Bitmap.ToDecodedTexture(frame.Palette);
+            PngWriter.SaveRgba(texture.Pixels, texture.Width, texture.Height,
+                Path.Combine(outputDir, $"{baseName}_f{frame.Index:D4}.png"));
+            written++;
+        }
+
+        var wrote = new List<string>();
+        if (vid.Audio.Length > 0)
+        {
+            var audioPath = Path.Combine(outputDir, baseName + ".wav");
+            File.WriteAllBytes(audioPath, WavWriter.BuildPcm(vid.Audio.Span, DaggerfallVidFile.SampleRate, 8, 1));
+            wrote.Add(Markup.Escape(Path.GetFileName(audioPath)));
+        }
+
+        AnsiConsole.MarkupLine(
+            "[green]Wrote {0} of {1} frame(s)[/] to {2}  [grey]{3}x{4}, {5:F2}s audio[/]{6}",
+            written, vid.FrameCount, Markup.Escape(outputDir), vid.Width, vid.Height, vid.AudioSeconds,
+            wrote.Count > 0 ? $" [grey]+ {string.Join(", ", wrote)}[/]" : string.Empty);
+    }
+
     private static void RunExport(string input, string? entryName, string outputDir, int every)
     {
         every = Math.Max(1, every);
         var (bytes, name) = Load(input, entryName);
+        if (DaggerfallVidFile.IsVid(bytes))
+        {
+            ExportVid(DaggerfallVidFile.Parse(bytes, name), outputDir, every);
+            return;
+        }
+
         var flic = FlicFile.Parse(bytes, name);
 
         Directory.CreateDirectory(outputDir);

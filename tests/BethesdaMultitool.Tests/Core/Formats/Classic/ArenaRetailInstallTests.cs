@@ -136,7 +136,7 @@ public sealed class ArenaRetailInstallTests
         Assert.True(differing > 0, "Loose .INF files were byte-identical to the archived ones.");
 
         // And the enumerator must hand back the loose copy, not the archived one.
-        var resolved = ArenaRecordSource.EnumerateInfFiles(root)
+        var resolved = ArenaRecordSource.EnumerateInfFiles(root, TestContext.Current.CancellationToken)
             .ToDictionary(x => x.Name, x => x.PlainBytes, StringComparer.OrdinalIgnoreCase);
         foreach (var loosePath in loose)
         {
@@ -231,7 +231,7 @@ public sealed class ArenaRetailInstallTests
         var looseMaps = Directory.EnumerateFiles(root, "*.MIF").ToList();
         Assert.SkipWhen(looseMaps.Count == 0, "This install has no loose .MIF files.");
 
-        var infNames = ArenaRecordSource.EnumerateInfFiles(root)
+        var infNames = ArenaRecordSource.EnumerateInfFiles(root, TestContext.Current.CancellationToken)
             .Select(x => x.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

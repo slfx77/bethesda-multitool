@@ -14,7 +14,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
 /// </summary>
 public class DaggerfallCifRciFileTests
 {
-    private const int ImgHeaderLength = 12;
     private const int AnimationHeaderLength = 76;
 
     private static void WriteI16(List<byte> to, int value)

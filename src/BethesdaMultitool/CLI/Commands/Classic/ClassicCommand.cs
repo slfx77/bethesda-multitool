@@ -4,7 +4,10 @@ using BethesdaMultitool.CLI.Rendering.Map;
 using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Classic;
+using BethesdaMultitool.Core.Formats.Battlespire;
 using BethesdaMultitool.Core.Formats.Daggerfall;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
+using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using BethesdaMultitool.Core.Games;
 using Spectre.Console;
 
@@ -23,8 +26,792 @@ public static class ClassicCommand
         var command = new Command("classic", "Read classic (pre-Morrowind) game data");
         command.Subcommands.Add(CreateTextCommand());
         command.Subcommands.Add(CreateMapCommand());
+        command.Subcommands.Add(CreateMeshCommand());
+        command.Subcommands.Add(CreateBlockCommand());
+        command.Subcommands.Add(CreateLevelCommand());
         command.Subcommands.Add(CreateExeCommand());
         return command;
+    }
+
+    private static Command CreateLevelCommand()
+    {
+        var command = new Command("level", "Inspect or assemble classic level files (Battlespire BS6.BSA)");
+        command.Subcommands.Add(CreateLevelInfoCommand());
+        command.Subcommands.Add(CreateLevelExportCommand());
+        return command;
+    }
+
+    private static Command CreateLevelInfoCommand()
+    {
+        var command = new Command("info", "Summarize the level archive, or one level with --entry");
+        var inputArg = new Argument<string>("input") { Description = "BS6.BSA, a .BS6 file, or a Battlespire install/GAMEDATA directory" };
+        var entryOption = new Option<string?>("--entry", "-e") { Description = "Level name inside the archive (e.g. L8.BS6)" };
+        command.Arguments.Add(inputArg);
+        command.Options.Add(entryOption);
+        command.SetAction((parseResult, _) => Guarded(() => RunLevelInfo(
+            parseResult.GetValue(inputArg)!,
+            parseResult.GetValue(entryOption))));
+        return command;
+    }
+
+    private static Command CreateLevelExportCommand()
+    {
+        var command = new Command("export", "Assemble one level's placed meshes into a single GLB");
+        var inputArg = new Argument<string>("input") { Description = "BS6.BSA, a .BS6 file, or a Battlespire install/GAMEDATA directory" };
+        var entryOption = new Option<string?>("--entry", "-e") { Description = "Level name inside the archive (e.g. L8.BS6)" };
+        var outputOption = new Option<string>("--output", "-o")
+        {
+            Description = "Output directory for the GLB",
+            DefaultValueFactory = _ => "TestOutput/classic-levels"
+        };
+        command.Arguments.Add(inputArg);
+        command.Options.Add(entryOption);
+        command.Options.Add(outputOption);
+        command.SetAction((parseResult, _) => Guarded(() => RunLevelExport(
+            parseResult.GetValue(inputArg)!,
+            parseResult.GetValue(entryOption),
+            parseResult.GetValue(outputOption)!)));
+        return command;
+    }
+
+    private static void RunLevelExport(string input, string? entryName, string outputDir)
+    {
+        var path = ResolveLevelPath(input);
+        Bs6File level;
+        string meshDirectory;
+        if (Bs6File.IsBs6FileName(Path.GetFileName(path)))
+        {
+            level = Bs6File.Parse(File.ReadAllBytes(path), Path.GetFileName(path));
+            meshDirectory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        }
+        else
+        {
+            if (entryName is null)
+            {
+                throw new InvalidOperationException($"{Path.GetFileName(path)} holds many levels — pass --entry <name>.");
+            }
+
+            using var archive = ArchiveReader.Open(path);
+            var entry = archive.ListFiles().FirstOrDefault(e => e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidOperationException($"No level named '{entryName}' in {Path.GetFileName(path)}.");
+            level = Bs6File.Parse(archive.ReadFile(entry.FullPath)!, entry.Name);
+            meshDirectory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        }
+
+        using var meshes = BattlespireMeshLibrary.Open(meshDirectory);
+        var assembly = Bs6SceneAssembler.Assemble(level, meshes.Resolve);
+        if (assembly.Instances.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{level.Name} resolved none of its {assembly.Placed} placements against {meshDirectory}.");
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(level.Name).ToUpperInvariant();
+        var outputPath = Path.Combine(outputDir, stem + ".glb");
+        XnGineMeshGlbExporter.WriteScene(stem, assembly.Instances, outputPath);
+
+        PrintLevel(level);
+        AnsiConsole.MarkupLine("[green]Wrote[/] {0} [grey]({1} of {2} placements assembled from {3} archived + {4} loose meshes)[/]",
+            Markup.Escape(outputPath), assembly.Resolved, assembly.Placed, meshes.ArchivedCount, meshes.LooseCount);
+        if (assembly.MissingNames.Count > 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]{0} mesh name(s) unresolved:[/] {1}",
+                assembly.MissingNames.Count,
+                Markup.Escape(string.Join(", ", assembly.MissingNames.Take(12))));
+        }
+
+        AnsiConsole.MarkupLine(
+            "[grey]Untextured: Battlespire's textures live in BSI.BSA, whose 15-bit palette tables are not decoded yet.[/]");
+    }
+
+    private static string ResolveLevelPath(string input)
+    {
+        if (File.Exists(input))
+        {
+            return input;
+        }
+
+        if (!Directory.Exists(input))
+        {
+            throw new FileNotFoundException($"Input not found: {input}", input);
+        }
+
+        foreach (var candidate in new[] { Path.Combine(input, "BS6.BSA"), Path.Combine(input, "GAMEDATA", "BS6.BSA") })
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new FileNotFoundException($"No BS6.BSA under '{input}' (or its GAMEDATA).", input);
+    }
+
+    private static void RunLevelInfo(string input, string? entryName)
+    {
+        var path = ResolveLevelPath(input);
+        if (Bs6File.IsBs6FileName(Path.GetFileName(path)))
+        {
+            PrintLevel(Bs6File.Parse(File.ReadAllBytes(path), Path.GetFileName(path)));
+            return;
+        }
+
+        using var archive = ArchiveReader.Open(path);
+        var entries = archive.ListFiles();
+        if (entryName is not null)
+        {
+            var entry = entries.FirstOrDefault(e => e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidOperationException($"No level named '{entryName}' in {Path.GetFileName(path)}.");
+            PrintLevel(Bs6File.Parse(archive.ReadFile(entry.FullPath)!, entry.Name));
+            return;
+        }
+
+        var levels = 0;
+        var meshNames = 0;
+        var objects = 0;
+        var lights = 0;
+        var flats = 0;
+        var failures = new List<string>();
+        foreach (var entry in entries)
+        {
+            var bytes = archive.ReadFile(entry.FullPath);
+            if (bytes is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                var level = Bs6File.Parse(bytes, entry.Name);
+                levels++;
+                meshNames += level.MeshNames.Count;
+                objects += level.Objects.Count;
+                lights += level.Lights.Count;
+                flats += level.Flats.Count;
+            }
+            catch (InvalidDataException e)
+            {
+                failures.Add($"{entry.Name}: {e.Message}");
+            }
+        }
+
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/] — [grey]{1} entries, {2} levels[/]",
+            Markup.Escape(Path.GetFileName(path)), entries.Count, levels);
+        AnsiConsole.MarkupLine("[grey]{0:N0} mesh-list names, {1:N0} placed meshes, {2:N0} lights, {3:N0} flats.[/]",
+            meshNames, objects, lights, flats);
+        foreach (var failure in failures)
+        {
+            AnsiConsole.MarkupLine("[red]unparsed[/] {0}", Markup.Escape(failure));
+        }
+    }
+
+    private static void PrintLevel(Bs6File level)
+    {
+        AnsiConsole.MarkupLine("[bold]{0}[/]", Markup.Escape(level.Name));
+        AnsiConsole.MarkupLine("  {0} meshes listed, {1} placed; {2} lights, {3} flats; {4} views, {5} snap grids",
+            level.MeshNames.Count, level.Objects.Count, level.Lights.Count, level.Flats.Count, level.ViewCount, level.SnapCount);
+
+        if (level.BoundingBox is { } box)
+        {
+            AnsiConsole.MarkupLine("  bounds ({0}, {1}, {2}) to ({3}, {4}, {5}); radius {6}; centre ({7}, {8}, {9})",
+                box.Min.X, box.Min.Y, box.Min.Z, box.Max.X, box.Max.Y, box.Max.Z,
+                level.Radius, level.Center.X, level.Center.Y, level.Center.Z);
+        }
+
+        AnsiConsole.MarkupLine("  water {0}, bits 0x{1:X}{2}",
+            level.Water, level.Bits,
+            level.TextureDirectory is null ? string.Empty : $", authored in {Markup.Escape(level.TextureDirectory)}");
+
+        var placed = level.Objects
+            .Where(o => o.MeshIndex >= 0 && o.MeshIndex < level.MeshNames.Count)
+            .GroupBy(o => level.MeshNames[o.MeshIndex])
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Take(12)
+            .Select(g => $"{g.Key} x{g.Count()}");
+        AnsiConsole.MarkupLine("  most placed: {0}", Markup.Escape(string.Join(", ", placed)));
+
+        var dangling = level.Objects.Count(o => o.MeshIndex < 0 || o.MeshIndex >= level.MeshNames.Count);
+        if (dangling > 0)
+        {
+            AnsiConsole.MarkupLine("  [yellow]{0} placement(s) index past the mesh list[/]", dangling);
+        }
+    }
+
+    private static Command CreateBlockCommand()
+    {
+        var command = new Command("block", "Inspect or render classic world blocks (Daggerfall BLOCKS.BSA RMB/RDB)");
+        command.Subcommands.Add(CreateBlockInfoCommand());
+        command.Subcommands.Add(CreateBlockExportCommand());
+        return command;
+    }
+
+    private static Command CreateBlockInfoCommand()
+    {
+        var command = new Command("info", "Summarize the block archive, or one block with --entry");
+        var inputArg = new Argument<string>("input") { Description = "BLOCKS.BSA, or a Daggerfall install/data directory" };
+        var entryOption = new Option<string?>("--entry", "-e") { Description = "Block name (e.g. WALLAA03.RMB, N0000071.RDB)" };
+        command.Arguments.Add(inputArg);
+        command.Options.Add(entryOption);
+        command.SetAction((parseResult, _) => Guarded(() => RunBlockInfo(
+            parseResult.GetValue(inputArg)!,
+            parseResult.GetValue(entryOption))));
+        return command;
+    }
+
+    private static Command CreateBlockExportCommand()
+    {
+        var command = new Command("export", "Render one block's diagnostic images to PNG (RMB: automap + ground grid; RDB: object plan)");
+        var inputArg = new Argument<string>("input") { Description = "BLOCKS.BSA, or a Daggerfall install/data directory" };
+        var entryOption = new Option<string>("--entry", "-e") { Description = "Block name", Required = true };
+        var outputOption = new Option<string>("--output", "-o")
+        {
+            Description = "Output directory",
+            DefaultValueFactory = _ => "TestOutput/classic-blocks"
+        };
+        var scaleOption = new Option<int>("--scale")
+        {
+            Description = "Pixels per automap cell (default 8); ground tiles draw 4x this, dungeon plans are 64x this pixels square",
+            DefaultValueFactory = _ => 8
+        };
+        command.Arguments.Add(inputArg);
+        command.Options.Add(entryOption);
+        command.Options.Add(outputOption);
+        command.Options.Add(scaleOption);
+        command.SetAction((parseResult, _) => Guarded(() => RunBlockExport(
+            parseResult.GetValue(inputArg)!,
+            parseResult.GetValue(entryOption)!,
+            parseResult.GetValue(outputOption)!,
+            parseResult.GetValue(scaleOption))));
+        return command;
+    }
+
+    private static string ResolveBlocksPath(string input)
+    {
+        if (File.Exists(input))
+        {
+            return input;
+        }
+
+        if (!Directory.Exists(input))
+        {
+            throw new FileNotFoundException($"Input not found: {input}", input);
+        }
+
+        foreach (var candidate in new[]
+                 {
+                     Path.Combine(input, DaggerfallBlocksFile.FileName),
+                     Path.Combine(input, "ARENA2", DaggerfallBlocksFile.FileName)
+                 })
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new FileNotFoundException($"No {DaggerfallBlocksFile.FileName} under '{input}' (or its ARENA2).", input);
+    }
+
+    private static void RunBlockInfo(string input, string? entryName)
+    {
+        var path = ResolveBlocksPath(input);
+        var blocks = DaggerfallBlocksFile.Open(path);
+
+        if (entryName is not null)
+        {
+            var index = blocks.IndexOf(entryName);
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"No block named '{entryName}'.");
+            }
+
+            PrintBlock(blocks, index);
+            return;
+        }
+
+        var byType = new Dictionary<DaggerfallBlockType, int>();
+        var rmbModels = 0;
+        var rmbSubBlocks = 0;
+        var rdbObjects = 0;
+        var failures = new List<string>();
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            var type = blocks.TypeAt(i);
+            byType[type] = byType.GetValueOrDefault(type) + 1;
+            try
+            {
+                switch (type)
+                {
+                    case DaggerfallBlockType.Rmb:
+                        var rmb = blocks.ParseRmb(i);
+                        rmbModels += rmb.AllModels.Count();
+                        rmbSubBlocks += rmb.SubRecords.Count;
+                        break;
+                    case DaggerfallBlockType.Rdb:
+                        rdbObjects += blocks.ParseRdb(i).AllObjects.Count();
+                        break;
+                    default:
+                        break;
+                }
+            }
+            catch (InvalidDataException e)
+            {
+                failures.Add($"{blocks.Name(i)}: {e.Message}");
+            }
+        }
+
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/] — [grey]{1} records[/]", Markup.Escape(Path.GetFileName(path)), blocks.Count);
+        var table = new Table().Border(TableBorder.Rounded).AddColumn("Kind").AddColumn("Records", c => c.RightAligned());
+        foreach (var (type, count) in byType.OrderBy(kvp => kvp.Key))
+        {
+            table.AddRow(type.ToString().ToUpperInvariant(), count.ToString("N0", CultureInfo.InvariantCulture));
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine("[grey]RMB: {0:N0} sub-blocks, {1:N0} placed models. RDB: {2:N0} objects.[/]", rmbSubBlocks, rmbModels, rdbObjects);
+        foreach (var failure in failures)
+        {
+            AnsiConsole.MarkupLine("[red]unparsed[/] {0}", Markup.Escape(failure));
+        }
+    }
+
+    private static void PrintBlock(DaggerfallBlocksFile blocks, int index)
+    {
+        var name = blocks.Name(index);
+        var type = blocks.TypeAt(index);
+        AnsiConsole.MarkupLine("[bold]{0}[/] [grey](record #{1}, {2}, {3:N0} bytes)[/]",
+            Markup.Escape(name), index, type.ToString().ToUpperInvariant(), blocks.RecordBytes(index).Length);
+
+        switch (type)
+        {
+            case DaggerfallBlockType.Rmb:
+                PrintRmb(blocks.ParseRmb(index));
+                break;
+            case DaggerfallBlockType.Rdb:
+                PrintRdb(blocks.ParseRdb(index));
+                break;
+            default:
+                break;
+        }
+    }
+
+    private static void PrintRmb(DaggerfallRmbBlock block)
+    {
+        AnsiConsole.MarkupLine("  header name [yellow]{0}[/], {1} sub-blocks, {2} loose models, {3} loose flats",
+            Markup.Escape(block.HeaderName), block.SubRecords.Count, block.Misc3dObjects.Count, block.MiscFlats.Count);
+        for (var i = 0; i < block.SubRecords.Count; i++)
+        {
+            var sub = block.SubRecords[i];
+            var building = block.Buildings[i];
+            AnsiConsole.MarkupLine("  [grey]#{0}[/] {1} q{2} at ({3}, {4}) rot {5:F1}° — ext {6} models/{7} flats/{8} doors, int {9} models/{10} flats/{11} people/{12} doors",
+                i, building.BuildingType, building.Quality, sub.XPos, sub.ZPos, sub.YRotation / DaggerfallRmbBlock.RotationDivisor,
+                sub.Exterior.Models.Count, sub.Exterior.Flats.Count, sub.Exterior.Doors.Count,
+                sub.Interior.Models.Count, sub.Interior.Flats.Count, sub.Interior.People.Count, sub.Interior.Doors.Count);
+        }
+
+        var modelIds = block.AllModels.Select(m => m.ModelId).Distinct().Order().ToList();
+        AnsiConsole.MarkupLine("  model ids ({0}): {1}", modelIds.Count,
+            Markup.Escape(string.Join(", ", modelIds.Take(24).Select(id => id.ToString(CultureInfo.InvariantCulture))) + (modelIds.Count > 24 ? ", …" : string.Empty)));
+        var textures = block.GroundTiles.Select(t => t.TextureRecord).Distinct().Order().ToList();
+        AnsiConsole.MarkupLine("  ground texture records: {0}; scenery on {1} tiles",
+            Markup.Escape(string.Join(", ", textures.Select(t => t.ToString(CultureInfo.InvariantCulture)))),
+            block.GroundScenery.Count(s => s.HasScenery));
+    }
+
+    private static void PrintRdb(DaggerfallRdbBlock block)
+    {
+        var objects = block.AllObjects.ToList();
+        AnsiConsole.MarkupLine("  {0} dungeon block, {1}x{2} object lists ({3} used), DAGR tag '{4}'",
+            block.Type, block.Width, block.Height, block.ObjectRoots.Count(r => r.Objects.Count > 0), Markup.Escape(block.ObjectHeader.Dagr));
+        AnsiConsole.MarkupLine("  {0} objects: {1} models, {2} flats, {3} lights; {4} actions",
+            objects.Count,
+            objects.Count(o => o.Type == DaggerfallRdbResourceType.Model),
+            objects.Count(o => o.Type == DaggerfallRdbResourceType.Flat),
+            objects.Count(o => o.Type == DaggerfallRdbResourceType.Light),
+            objects.Count(o => o.Model?.Action is not null));
+
+        var modelIds = objects.Select(o => o.Model)
+            .OfType<DaggerfallRdbModelResource>()
+            .Select(m => block.ModelReferences[m.ModelIndex])
+            .Where(r => r.ModelIdNumber is not null)
+            .Select(r => $"{r.ModelId}{(r.Description.Length > 0 ? "/" + r.Description : string.Empty)}")
+            .Distinct()
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        AnsiConsole.MarkupLine("  model references ({0}): {1}", modelIds.Count,
+            Markup.Escape(string.Join(", ", modelIds.Take(24)) + (modelIds.Count > 24 ? ", …" : string.Empty)));
+    }
+
+    private static void RunBlockExport(string input, string entryName, string outputDir, int scale)
+    {
+        var path = ResolveBlocksPath(input);
+        var blocks = DaggerfallBlocksFile.Open(path);
+        var index = blocks.IndexOf(entryName);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"No block named '{entryName}'.");
+        }
+
+        Directory.CreateDirectory(outputDir);
+        var stem = Path.GetFileNameWithoutExtension(blocks.Name(index)).ToUpperInvariant();
+        var written = new List<string>();
+        switch (blocks.TypeAt(index))
+        {
+            case DaggerfallBlockType.Rmb:
+                var rmb = blocks.ParseRmb(index);
+                var automap = DaggerfallBlockRenderer.RenderAutoMap(rmb, scale);
+                var automapPath = Path.Combine(outputDir, stem + "_automap.png");
+                PngWriter.SaveRgba(automap.Pixels, automap.Width, automap.Height, automapPath);
+                written.Add(automapPath);
+                var ground = DaggerfallBlockRenderer.RenderGround(rmb, scale * 4);
+                var groundPath = Path.Combine(outputDir, stem + "_ground.png");
+                PngWriter.SaveRgba(ground.Pixels, ground.Width, ground.Height, groundPath);
+                written.Add(groundPath);
+                PrintRmb(rmb);
+                break;
+            case DaggerfallBlockType.Rdb:
+                var rdb = blocks.ParseRdb(index);
+                var plan = DaggerfallBlockRenderer.RenderDungeonPlan(rdb, scale * 64);
+                var planPath = Path.Combine(outputDir, stem + "_plan.png");
+                PngWriter.SaveRgba(plan.Pixels, plan.Width, plan.Height, planPath);
+                written.Add(planPath);
+                PrintRdb(rdb);
+                break;
+            default:
+                throw new NotSupportedException($"{blocks.Name(index)} is a {blocks.TypeAt(index)} record; only RMB and RDB blocks render.");
+        }
+
+        foreach (var file in written)
+        {
+            AnsiConsole.MarkupLine("[green]Wrote[/] {0}", Markup.Escape(file));
+        }
+    }
+
+    private static Command CreateMeshCommand()
+    {
+        var command = new Command("mesh", "Inspect or export classic 3D meshes (Daggerfall ARCH3D.BSA, Battlespire 3D.BSA/3D.BS6/.3D)");
+        command.Subcommands.Add(CreateMeshInfoCommand());
+        command.Subcommands.Add(CreateMeshExportCommand());
+        return command;
+    }
+
+    private static Command CreateMeshInfoCommand()
+    {
+        var command = new Command("info", "Summarize a mesh archive, or one mesh with --entry");
+        var inputArg = new Argument<string>("input")
+        {
+            Description = "ARCH3D.BSA / 3D.BSA / 3D.BS6 / a .3D file, or a game install or data directory"
+        };
+        var entryOption = new Option<string?>("--entry", "-e")
+        {
+            Description = "One mesh to describe: a Daggerfall object id, or a Battlespire entry name"
+        };
+        command.Arguments.Add(inputArg);
+        command.Options.Add(entryOption);
+        command.SetAction((parseResult, _) => Guarded(() => RunMeshInfo(
+            parseResult.GetValue(inputArg)!,
+            parseResult.GetValue(entryOption))));
+        return command;
+    }
+
+    private static Command CreateMeshExportCommand()
+    {
+        var command = new Command("export", "Export one mesh to GLB (textured when TEXTURE.nnn + ART_PAL.COL sit beside the archive)");
+        var inputArg = new Argument<string>("input")
+        {
+            Description = "ARCH3D.BSA / 3D.BSA / 3D.BS6 / a .3D file, or a game install or data directory"
+        };
+        var entryOption = new Option<string?>("--entry", "-e")
+        {
+            Description = "The mesh to export: a Daggerfall object id, or a Battlespire entry name (omit for a loose .3D file)"
+        };
+        var outputOption = new Option<string>("--output", "-o")
+        {
+            Description = "Output directory for the GLB",
+            DefaultValueFactory = _ => "TestOutput/classic-meshes"
+        };
+        command.Arguments.Add(inputArg);
+        command.Options.Add(entryOption);
+        command.Options.Add(outputOption);
+        command.SetAction((parseResult, _) => Guarded(() => RunMeshExport(
+            parseResult.GetValue(inputArg)!,
+            parseResult.GetValue(entryOption),
+            parseResult.GetValue(outputOption)!)));
+        return command;
+    }
+
+    /// <summary>Battlespire's mesh archives, in the order a directory input is searched.</summary>
+    private static readonly string[] BattlespireMeshArchives = ["3D.BSA", "3D.BS6"];
+
+    /// <summary>
+    ///     Resolves a mesh input to a file: a loose <c>.3D</c>, a mesh archive, or a directory
+    ///     holding one (an install root, ARENA2, or GAMEDATA).
+    /// </summary>
+    private static string ResolveMeshPath(string input)
+    {
+        if (File.Exists(input))
+        {
+            return input;
+        }
+
+        if (!Directory.Exists(input))
+        {
+            throw new FileNotFoundException($"Input not found: {input}", input);
+        }
+
+        var candidates = new List<string>
+        {
+            Path.Combine(input, DaggerfallArch3DFile.FileName),
+            Path.Combine(input, "ARENA2", DaggerfallArch3DFile.FileName)
+        };
+        foreach (var archive in BattlespireMeshArchives)
+        {
+            candidates.Add(Path.Combine(input, archive));
+            candidates.Add(Path.Combine(input, "GAMEDATA", archive));
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new FileNotFoundException(
+            $"No mesh archive under '{input}': looked for {DaggerfallArch3DFile.FileName} and {string.Join("/", BattlespireMeshArchives)} (also under ARENA2 and GAMEDATA).",
+            input);
+    }
+
+    /// <summary>True when a resolved path is Battlespire's, whose meshes use the 10-byte plane header.</summary>
+    private static bool IsBattlespireMeshPath(string path)
+    {
+        var name = Path.GetFileName(path);
+        return name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase)
+               || BattlespireMeshArchives.Contains(name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void RunMeshInfo(string input, string? entry)
+    {
+        var path = ResolveMeshPath(input);
+        if (IsBattlespireMeshPath(path))
+        {
+            RunBattlespireMeshInfo(path, entry);
+            return;
+        }
+
+        uint? objectId = null;
+        if (entry is not null)
+        {
+            objectId = uint.TryParse(entry, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : throw new InvalidOperationException($"'{entry}' is not an object id; {DaggerfallArch3DFile.FileName} records are numbered.");
+        }
+
+        var archive = DaggerfallArch3DFile.Open(path);
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/] — [grey]{1} records, {2} distinct ids[/]",
+            Markup.Escape(Path.GetFileName(path)), archive.Count, archive.DistinctIdCount);
+
+        if (objectId is { } id)
+        {
+            var index = archive.IndexOf(id);
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"No mesh with object id {id}.");
+            }
+
+            PrintMesh(archive.Parse(index), index);
+            return;
+        }
+
+        var versions = new Dictionary<string, int>(StringComparer.Ordinal);
+        var failures = new List<string>();
+        var planes = 0;
+        for (var i = 0; i < archive.Count; i++)
+        {
+            if (!archive.TryParse(i, out var mesh, out var error))
+            {
+                failures.Add($"#{i} id {archive.RecordId(i)}: {error}");
+                continue;
+            }
+
+            versions[mesh.VersionTag] = versions.GetValueOrDefault(mesh.VersionTag) + 1;
+            planes += mesh.Planes.Count;
+        }
+
+        var table = new Table().Border(TableBorder.Rounded).AddColumn("Version").AddColumn("Records", c => c.RightAligned());
+        foreach (var (tag, count) in versions.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
+        {
+            table.AddRow(Markup.Escape(tag), count.ToString("N0", CultureInfo.InvariantCulture));
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine("[grey]{0:N0} planes across the archive; first id {1}, last id {2}.[/]",
+            planes, archive.RecordId(0), archive.RecordId(archive.Count - 1));
+        foreach (var failure in failures)
+        {
+            AnsiConsole.MarkupLine("[red]unparsed[/] {0}", Markup.Escape(failure));
+        }
+    }
+
+    private static void PrintMesh(XnGineMesh mesh, int index)
+    {
+        var decomposed = XnGineMeshDecomposer.Decompose(mesh);
+        var size = mesh.Size;
+        AnsiConsole.MarkupLine("[bold]Mesh {0}[/] [grey](record #{1}, {2})[/]", mesh.ObjectId, index, Markup.Escape(mesh.VersionTag));
+        AnsiConsole.MarkupLine("  points {0}, planes {1}, triangles {2}, object-data entries {3}",
+            mesh.Points.Count, mesh.Planes.Count, decomposed.TriangleCount, mesh.ObjectDataCount);
+        AnsiConsole.MarkupLine("  radius {0:F2}, size {1:F2} x {2:F2} x {3:F2} units",
+            mesh.RadiusUnits, size.X, size.Y, size.Z);
+        AnsiConsole.MarkupLine("  textures: {0}", Markup.Escape(string.Join(", ",
+            mesh.UniqueTextures.Select(t => string.Create(CultureInfo.InvariantCulture, $"TEXTURE.{t.Archive:D3}#{t.Record}")))));
+
+        var polygonSizes = mesh.Planes.GroupBy(p => p.Points.Count).OrderBy(g => g.Key)
+            .Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Key}-gon x{g.Count()}"));
+        AnsiConsole.MarkupLine("  polygons: {0}", Markup.Escape(string.Join(", ", polygonSizes)));
+    }
+
+    /// <summary>Describes one Battlespire mesh, or censuses its archive.</summary>
+    private static void RunBattlespireMeshInfo(string path, string? entry)
+    {
+        var name = Path.GetFileName(path);
+        if (name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase))
+        {
+            PrintBattlespireMesh(name, BattlespireMeshArchive.ParseLoose(File.ReadAllBytes(path), name));
+            return;
+        }
+
+        using var archive = BattlespireMeshArchive.Open(path);
+        if (entry is not null)
+        {
+            var index = archive.IndexOf(entry);
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"No mesh named '{entry}' in {name}.");
+            }
+
+            PrintBattlespireMesh(archive.EntryName(index), archive.Parse(index));
+            return;
+        }
+
+        var planes = 0;
+        var points = 0;
+        var failures = new List<string>();
+        for (var i = 0; i < archive.Count; i++)
+        {
+            if (!archive.TryParse(i, out var mesh, out var error))
+            {
+                failures.Add($"{archive.EntryName(i)}: {error}");
+                continue;
+            }
+
+            planes += mesh.Planes.Count;
+            points += mesh.Points.Count;
+        }
+
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/] — [grey]{1:N0} meshes, {2:N0} points, {3:N0} planes[/]",
+            Markup.Escape(name), archive.Count, points, planes);
+        foreach (var failure in failures)
+        {
+            AnsiConsole.MarkupLine("[red]unparsed[/] {0}", Markup.Escape(failure));
+        }
+    }
+
+    private static void PrintBattlespireMesh(string name, XnGineMesh mesh)
+    {
+        var decomposed = XnGineMeshDecomposer.Decompose(mesh);
+        var size = mesh.Size;
+        AnsiConsole.MarkupLine("[bold]{0}[/] [grey]({1}, Battlespire layout)[/]", Markup.Escape(name), Markup.Escape(mesh.VersionTag));
+        AnsiConsole.MarkupLine("  points {0}, planes {1}, triangles {2}, textures {3}",
+            mesh.Points.Count, mesh.Planes.Count, decomposed.TriangleCount, mesh.UniqueTextures.Count);
+        AnsiConsole.MarkupLine("  radius {0:F2}, size {1:F2} x {2:F2} x {3:F2} units", mesh.RadiusUnits, size.X, size.Y, size.Z);
+
+        var polygonSizes = mesh.Planes.GroupBy(p => p.Points.Count).OrderBy(g => g.Key)
+            .Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Key}-gon x{g.Count()}"));
+        AnsiConsole.MarkupLine("  polygons: {0}", Markup.Escape(string.Join(", ", polygonSizes)));
+    }
+
+    /// <summary>Exports one Battlespire mesh to GLB. Its textures live in BSI.BSA, which is not decoded yet.</summary>
+    private static void RunBattlespireMeshExport(string path, string? entry, string outputDir)
+    {
+        var name = Path.GetFileName(path);
+        XnGineMesh mesh;
+        string stem;
+        if (name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase))
+        {
+            mesh = BattlespireMeshArchive.ParseLoose(File.ReadAllBytes(path), name);
+            stem = Path.GetFileNameWithoutExtension(name);
+        }
+        else
+        {
+            if (entry is null)
+            {
+                throw new InvalidOperationException($"{name} holds many meshes — pass --entry <name>.");
+            }
+
+            using var archive = BattlespireMeshArchive.Open(path);
+            var index = archive.IndexOf(entry);
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"No mesh named '{entry}' in {name}.");
+            }
+
+            mesh = archive.Parse(index);
+            stem = Path.GetFileNameWithoutExtension(archive.EntryName(index));
+        }
+
+        var decomposed = XnGineMeshDecomposer.Decompose(mesh);
+        var outputPath = Path.Combine(outputDir, stem.ToUpperInvariant() + ".glb");
+        XnGineMeshGlbExporter.Write(decomposed, outputPath);
+
+        PrintBattlespireMesh(name, mesh);
+        AnsiConsole.MarkupLine("[green]Wrote[/] {0} [grey](untextured: Battlespire's textures live in BSI.BSA, which is not decoded yet)[/]",
+            Markup.Escape(outputPath));
+    }
+
+    private static void RunMeshExport(string input, string? entry, string outputDir)
+    {
+        var path = ResolveMeshPath(input);
+        if (IsBattlespireMeshPath(path))
+        {
+            RunBattlespireMeshExport(path, entry, outputDir);
+            return;
+        }
+
+        if (entry is null || !uint.TryParse(entry, NumberStyles.None, CultureInfo.InvariantCulture, out var objectId))
+        {
+            throw new InvalidOperationException($"Pass --entry <object id>; {DaggerfallArch3DFile.FileName} records are numbered.");
+        }
+
+        var archive = DaggerfallArch3DFile.Open(path);
+        var index = archive.IndexOf(objectId);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"No mesh with object id {objectId}.");
+        }
+
+        var mesh = archive.Parse(index);
+        var decomposed = XnGineMeshDecomposer.Decompose(mesh);
+        var dataRoot = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        var textures = new DaggerfallMeshTextureSource(dataRoot);
+        var textured = 0;
+        var outputPath = Path.Combine(outputDir, objectId.ToString(CultureInfo.InvariantCulture) + ".glb");
+
+        XnGineMeshGlbExporter.Write(decomposed, outputPath, (textureArchive, record) =>
+        {
+            var png = textures.Resolve(textureArchive, record);
+            if (png is not null)
+            {
+                textured++;
+            }
+
+            return png;
+        });
+
+        PrintMesh(mesh, index);
+        AnsiConsole.MarkupLine("[green]Wrote[/] {0} [grey]({1} of {2} materials textured)[/]",
+            Markup.Escape(outputPath), textured, decomposed.SubMeshes.Count);
     }
 
     private static Command CreateExeCommand()
@@ -369,7 +1156,7 @@ public static class ClassicCommand
             "Daggerfall: TEXT.RSC strings + BOOKS)");
         var inputArg = new Argument<string>("input")
         {
-            Description = "Install/data directory, or a single TEMPLATE.DAT, .INF, TEXT.RSC or BOKnnnnn.TXT file"
+            Description = "Install/data directory, or a single TEMPLATE.DAT, .INF, TEXT.RSC, BOKnnnnn.TXT or .QRC file"
         };
         var filterOption = new Option<string?>("--filter", "-f")
         {
@@ -377,7 +1164,7 @@ public static class ClassicCommand
         };
         var sourceOption = new Option<string>("--source", "-s")
         {
-            Description = "Which sources to read: template, inf (Arena), text, books (Daggerfall), or all",
+            Description = "Which sources to read: template, inf (Arena), text, books, quests (Daggerfall), or all",
             DefaultValueFactory = _ => "all"
         };
         var limitOption = new Option<int>("--limit", "-l")
@@ -412,7 +1199,7 @@ public static class ClassicCommand
         return command;
     }
 
-    private static readonly string[] TextSources = ["all", "template", "inf", "text", "books"];
+    private static readonly string[] TextSources = ["all", "template", "inf", "text", "books", "quests"];
 
     private static void Run(string input, string source, string? filter, int limit)
     {
@@ -446,7 +1233,7 @@ public static class ClassicCommand
                 break;
             case BethesdaGame.Daggerfall:
                 RunDaggerfall(Path.Combine(root, profile.ClassicLooseRoot), source is "all" or "text",
-                    source is "all" or "books", filter, limit, ref printed);
+                    source is "all" or "books", source is "all" or "quests", filter, limit, ref printed);
                 break;
             default:
                 throw new NotSupportedException(
@@ -499,6 +1286,10 @@ public static class ClassicCommand
         {
             PrintBook(DaggerfallBookFile.Parse(bytes, name), filter, limit, ref printed);
         }
+        else if (name.EndsWith(".QRC", StringComparison.OrdinalIgnoreCase))
+        {
+            PrintQuest(DaggerfallQuestFile.Create(Path.GetFileNameWithoutExtension(name), bytes, null), filter, ref printed);
+        }
         else
         {
             PrintTemplate(ArenaTemplateDat.Parse(bytes), filter, limit, ref printed);
@@ -531,8 +1322,21 @@ public static class ClassicCommand
         }
     }
 
-    private static void RunDaggerfall(string dataRoot, bool wantText, bool wantBooks, string? filter, int limit, ref int printed)
+    private static void RunDaggerfall(string dataRoot, bool wantText, bool wantBooks, bool wantQuests, string? filter, int limit, ref int printed)
     {
+        if (wantQuests)
+        {
+            foreach (var name in DaggerfallQuestFile.EnumerateNames(dataRoot))
+            {
+                if (limit > 0 && printed >= limit)
+                {
+                    break;
+                }
+
+                PrintQuest(DaggerfallQuestFile.Load(dataRoot, name), filter, ref printed);
+            }
+        }
+
         if (wantText)
         {
             var textPath = Path.Combine(dataRoot, DaggerfallTextFile.FileName);
@@ -563,6 +1367,30 @@ public static class ClassicCommand
                 PrintBook(DaggerfallBookFile.Parse(File.ReadAllBytes(path), Path.GetFileName(path)), filter, limit, ref printed);
             }
         }
+    }
+
+    private static void PrintQuest(DaggerfallQuestFile quest, string? filter, ref int printed)
+    {
+        var messages = (quest.Text?.Records ?? [])
+            .Where(r => filter is null || r.Subrecords.Any(s => Matches(s, filter)) || Matches(quest.Name, filter))
+            .ToList();
+        if (messages.Count == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.MarkupLine("[bold]{0}[/] [grey]{1} message(s), {2:N0}-byte QBN[/]",
+            Markup.Escape(quest.Name), quest.Text?.Records.Count ?? 0, quest.Compiled.Length);
+        foreach (var record in messages)
+        {
+            AnsiConsole.MarkupLine("  [yellow]#{0}[/]", record.Id);
+            foreach (var line in record.Text.Split('\n'))
+            {
+                AnsiConsole.MarkupLine("    {0}", Markup.Escape(line));
+            }
+        }
+
+        printed++;
     }
 
     private static void PrintTextRecords(DaggerfallTextFile text, string? filter, int limit, ref int printed)

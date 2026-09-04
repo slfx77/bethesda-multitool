@@ -19,11 +19,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Arena;
 public class ArenaCfaDecoderTests
 {
     /// <summary>RLE-encodes as literal packets: a control byte of n-1 (bit 7 clear), then n bytes.</summary>
-    private static IEnumerable<byte> RleLiterals(IReadOnlyList<byte> data)
+    private static IEnumerable<byte> RleLiterals(byte[] data)
     {
-        for (var offset = 0; offset < data.Count; offset += 128)
+        for (var offset = 0; offset < data.Length; offset += 128)
         {
-            var run = Math.Min(128, data.Count - offset);
+            var run = Math.Min(128, data.Length - offset);
             yield return (byte)(run - 1);
             for (var i = 0; i < run; i++)
             {
@@ -40,11 +40,11 @@ public class ArenaCfaDecoderTests
         int widthUncompressed,
         int height,
         int bitsPerPixel,
-        IReadOnlyList<byte> packedRows,
+        byte[] packedRows,
         int frameCount = 1,
         byte[]? lookup = null)
     {
-        var widthCompressed = packedRows.Count / (height * frameCount);
+        var widthCompressed = packedRows.Length / (height * frameCount);
         lookup ??= [.. Enumerable.Range(0, 1 << bitsPerPixel).Select(i => (byte)i)];
 
         var headerSize = 76 + lookup.Length;

@@ -12,8 +12,8 @@ internal sealed class IndexedBitmap
 {
     public IndexedBitmap(int width, int height, byte[] indices, int xOffset = 0, int yOffset = 0)
     {
-        if (width < 0) throw new ArgumentOutOfRangeException(nameof(width));
-        if (height < 0) throw new ArgumentOutOfRangeException(nameof(height));
+        ArgumentOutOfRangeException.ThrowIfNegative(width);
+        ArgumentOutOfRangeException.ThrowIfNegative(height);
         ArgumentNullException.ThrowIfNull(indices);
         if (indices.Length != width * height)
         {

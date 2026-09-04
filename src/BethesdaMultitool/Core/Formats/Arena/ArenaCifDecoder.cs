@@ -120,7 +120,7 @@ internal static class ArenaCifDecoder
     }
 
     /// <summary>Decode a headerless tile .CIF: frameCount raw width*height chunks, offsets 0.</summary>
-    private static IReadOnlyList<IndexedBitmap> DecodeHeaderless(
+    private static IndexedBitmap[] DecodeHeaderless(
         ReadOnlySpan<byte> file, string name, int frameCount, int width, int height)
     {
         var frameLength = width * height;

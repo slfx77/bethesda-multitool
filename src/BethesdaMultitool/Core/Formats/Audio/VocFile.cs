@@ -22,7 +22,7 @@ namespace BethesdaMultitool.Core.Formats.Audio;
 internal sealed class VocFile
 {
     /// <summary>The 20-byte signature, including its terminating EOF character.</summary>
-    private static ReadOnlySpan<byte> Signature => "Creative Voice File"u8;
+    private static ReadOnlySpan<byte> Signature => "Creative Voice File\u001A"u8;
 
     /// <summary>
     ///     The DOS end-of-file byte that closes the signature. It is what let <c>TYPE file.voc</c>
