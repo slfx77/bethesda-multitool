@@ -95,9 +95,36 @@ public static class AssetTreeBuilder
         return parent;
     }
 
-    /// <summary>Extension → kind. Unknown or missing extensions fall to <see cref="AssetNodeKind.Raw" />.</summary>
+    /// <summary>
+    ///     Name → kind. Unknown or missing extensions fall to <see cref="AssetNodeKind.Raw" />.
+    ///     <para>
+    ///         Extension alone does not settle the classic catalogue, so two name rules come first.
+    ///         Daggerfall's textures are <c>TEXTURE.000</c>… — a NUMERIC extension, which no
+    ///         extension table can match and which would otherwise leave every one of the ~1,500
+    ///         texture files unclassified. Its sky sets are <c>SKY00.DAT</c>… while other
+    ///         <c>.DAT</c> files are anything at all, so only the SKY prefix is claimed.
+    ///     </para>
+    /// </summary>
     private static AssetNodeKind ClassifyExtension(string fileName)
     {
+        if (IsDaggerfallTextureRecord(fileName))
+        {
+            return AssetNodeKind.Texture;
+        }
+
+        if (fileName.StartsWith("SKY", StringComparison.OrdinalIgnoreCase)
+            && fileName.EndsWith(".DAT", StringComparison.OrdinalIgnoreCase))
+        {
+            return AssetNodeKind.Sprite;
+        }
+
+        // Battlespire's 3D.BS6 is an XnGine BSA of meshes despite the extension every other .BS6
+        // uses for a level, so the name decides rather than the extension.
+        if (fileName.Equals("3D.BS6", StringComparison.OrdinalIgnoreCase))
+        {
+            return AssetNodeKind.Archive;
+        }
+
         var dot = fileName.LastIndexOf('.');
         if (dot < 0 || dot == fileName.Length - 1)
         {
@@ -107,14 +134,43 @@ public static class AssetTreeBuilder
         return fileName[(dot + 1)..].ToLowerInvariant() switch
         {
             "dds" or "ddx" or "png" or "tga" => AssetNodeKind.Texture,
-            "nif" or "glb" or "gltf" => AssetNodeKind.Model,
-            "wav" or "mp3" or "ogg" or "xma" or "voc" or "acm" => AssetNodeKind.Audio,
-            "bik" or "mve" or "flc" or "vid" or "smk" => AssetNodeKind.Video,
-            "frm" or "cif" or "cfa" or "dfa" or "zar" or "til" or "spr" or "rci" => AssetNodeKind.Sprite,
+            // .3D is the XnGine mesh shared by Daggerfall, Battlespire and Redguard; .3DC is
+            // Redguard's variant.
+            "nif" or "glb" or "gltf" or "3d" or "3dc" => AssetNodeKind.Model,
+            // .SND is a numbered XnGine BSA of samples (DAGGER.SND, SPIRE.SND); HMI/XMI/MID are
+            // sequenced music.
+            "wav" or "mp3" or "ogg" or "xma" or "voc" or "acm" or "snd" or "hmi" or "xmi" or "mid"
+                => AssetNodeKind.Audio,
+            "bik" or "mve" or "flc" or "vid" or "smk" or "cel" => AssetNodeKind.Video,
+            // IMG/MNU/SET are Arena's image families; BSI is Battlespire's; GXA is Redguard's.
+            "frm" or "cif" or "cfa" or "dfa" or "zar" or "til" or "spr" or "rci"
+                or "img" or "mnu" or "set" or "bsi" or "gxa" => AssetNodeKind.Sprite,
+            // MIF/RMD are Arena's voxel maps; WLD is Daggerfall's WOODS heightmap; PAK its
+            // CLIMATE/POLITIC overlays; BS6 a Battlespire level.
+            "mif" or "rmd" or "wld" or "pak" or "bs6" => AssetNodeKind.Map,
             "esm" or "esp" => AssetNodeKind.Plugin,
             "fos" or "fxs" => AssetNodeKind.Save,
-            "txt" or "msg" or "ini" or "cfg" or "xml" or "json" or "lst" or "gam" => AssetNodeKind.Text,
+            // RSC is TEXT.RSC; INF an Arena level definition; QRC/QBN the two quest halves.
+            "txt" or "msg" or "ini" or "cfg" or "xml" or "json" or "lst" or "gam"
+                or "rsc" or "inf" or "qrc" or "qbn" => AssetNodeKind.Text,
+            "bsa" or "ba2" or "bos" or "pck" or "dat2" => AssetNodeKind.Archive,
             _ => AssetNodeKind.Raw
         };
+    }
+
+    /// <summary>
+    ///     True for a Daggerfall texture record — <c>TEXTURE.000</c> through <c>TEXTURE.999</c>,
+    ///     whose "extension" is a number rather than a name.
+    /// </summary>
+    private static bool IsDaggerfallTextureRecord(string fileName)
+    {
+        const string prefix = "TEXTURE.";
+        if (!fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var suffix = fileName[prefix.Length..];
+        return suffix.Length > 0 && suffix.All(char.IsAsciiDigit);
     }
 }
