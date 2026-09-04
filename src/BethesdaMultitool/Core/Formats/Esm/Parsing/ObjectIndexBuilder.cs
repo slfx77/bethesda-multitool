@@ -63,7 +63,11 @@ internal static class ObjectIndexBuilder
         // above records, repeated.
         AddToIndexes(trees, t => t.FormId, t => t.Bounds, t => t.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(weapons, w => w.FormId, w => w.Bounds, w => w.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
+        // ARMO's dropped/world mesh is MOD2/MOD4; MODL is a worn biped mesh in legacy games and an
+        // ARMA FormID in modern games. Rendering the latter as text caused bogus one-to-four byte
+        // NIF paths, while rendering the former puts a skinned body-part mesh into the world.
+        AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.WorldModelPath ?? a.ModelPath, boundsIndex,
+            modelIndex);
         AddToIndexes(ammo, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(consumables, c => c.FormId, c => c.Bounds, c => c.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(miscItems, m => m.FormId, m => m.Bounds, m => m.ModelPath, boundsIndex, modelIndex);

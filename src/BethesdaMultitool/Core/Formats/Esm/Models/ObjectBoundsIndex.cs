@@ -29,7 +29,7 @@ internal static class ObjectBoundsIndex
         AddModels(records.StaticCollections, s => s.FormId, s => s.ModelPath, models);
         AddModels(records.PlaceableWaters, p => p.FormId, p => p.ModelPath, models);
         AddModels(records.Weapons, w => w.FormId, w => w.ModelPath, models);
-        AddModels(records.Armor, a => a.FormId, a => a.ModelPath, models);
+        AddModels(records.Armor, a => a.FormId, a => a.WorldModelPath ?? a.ModelPath, models);
         AddModels(records.Ammo, a => a.FormId, a => a.ModelPath, models);
         AddModels(records.Consumables, c => c.FormId, c => c.ModelPath, models);
         AddModels(records.MiscItems, m => m.FormId, m => m.ModelPath, models);

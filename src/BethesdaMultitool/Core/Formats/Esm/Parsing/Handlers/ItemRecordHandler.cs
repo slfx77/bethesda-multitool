@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -126,6 +127,14 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         };
     }
 
+    private static bool IsModernArmorAddonReference(BethesdaGame game, ReadOnlySpan<byte> data)
+    {
+        // A real NIF path cannot fit in four bytes. Restrict the overload to formats whose generated
+        // schemas define ARMO.MODL as an ARMA reference, keeping legacy TES4/Fallout MODL strings intact.
+        return data.Length == sizeof(uint) &&
+               game is BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76;
+    }
+
     private static KeyRecord MergeKeyRuntimeData(KeyRecord existing, KeyRecord runtime)
     {
         return existing with
@@ -181,6 +190,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        string? maleWorldModelPath = null;
+        string? femaleWorldModelPath = null;
         string? iconPath = null;
         string? messageIconPath = null;
         byte[]? textureHashData = null;
@@ -206,8 +217,20 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                 case "FULL":
                     fullName = Context.ReadFullName(subData);
                     break;
-                case "MODL":
+                // Skyrim/FO4/FO76 overload ARMO MODL as a four-byte ARMA FormID. Treating that
+                // little-endian ID as a C string created paths such as "J.\x01", which the world
+                // renderer then attempted to open as NIFs. Legacy ARMO records use MODL for the
+                // worn/biped model; retain that field without confusing an armature reference for it.
+                case "MODL" when !IsModernArmorAddonReference(Context.Game, subData):
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                // Across the TES4+ ARMO layouts, MOD2/MOD4 are the male/female dropped-world
+                // models. A placed ARMO must use one of these instead of its skinned biped mesh.
+                case "MOD2":
+                    maleWorldModelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MOD4":
+                    femaleWorldModelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "ICON":
                     iconPath = EsmStringUtils.ReadNullTermString(subData);
@@ -266,6 +289,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            WorldModelPath = maleWorldModelPath ?? femaleWorldModelPath,
             IconPath = iconPath,
             MessageIconPath = messageIconPath,
             TextureHashData = textureHashData,

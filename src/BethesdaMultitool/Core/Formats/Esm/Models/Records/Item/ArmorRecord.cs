@@ -67,8 +67,18 @@ public record ArmorRecord
         _ => $"Unknown ({(int)EquipmentType})"
     };
 
-    /// <summary>Model file path (MODL subrecord).</summary>
+    /// <summary>
+    ///     Worn/biped model file path from the legacy <c>MODL</c> subrecord. In Skyrim and the
+    ///     Fallout 4-family formats, a four-byte ARMO <c>MODL</c> is an ARMA FormID instead and is
+    ///     deliberately not stored here.
+    /// </summary>
     public string? ModelPath { get; init; }
+
+    /// <summary>
+    ///     Preferred dropped/world model file path (<c>MOD2</c>, falling back to <c>MOD4</c>).
+    ///     World rendering must prefer this over the worn/biped <see cref="ModelPath" />.
+    /// </summary>
+    public string? WorldModelPath { get; init; }
 
     /// <summary>Object bounds (OBND subrecord).</summary>
     public ObjectBounds? Bounds { get; init; }
