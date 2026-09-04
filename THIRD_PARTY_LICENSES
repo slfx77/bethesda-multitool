@@ -164,6 +164,81 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
+NeversoftMultitool - 2D level view seam
+================================================================================
+
+Source: https://github.com/slfx77/NeversoftMultitool
+License: MIT
+
+The 2D-level seam behind the Asset Browser's map pane is ported from that project:
+  Core/Rendering/Level2D/Level2DRender.cs <- Core/Rendering/Level2d/Level2dRender.cs
+                                             (ILevel2dSource, Level2dRender, Level2dLayer;
+                                              names carry a capital D here to satisfy this
+                                              repo's naming rule, and the layer set is
+                                              retargeted to the classic voxel/heightmap grids)
+
+MIT License
+
+Copyright (c) 2021-2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+JimmyPCTool / AweMultitool - shared GUI helpers
+================================================================================
+
+Source: https://github.com/slfx77/JimmyPCTool
+License: MIT
+
+Two general-purpose helpers behind the Asset Browser are ported from that project's
+Core layer, which is UI-framework-independent:
+  Core/Concurrency/LatestOnlyJob.cs   <- Core/Concurrency/LatestOnlyJob.cs (verbatim; the
+                                         "only the newest selection may paint" guard)
+  Core/AssetBrowse/ThumbnailScaler.cs <- Core/Formats/Canvas/CanvasThumbnailer.cs (the
+                                         whole-number upscale and alpha-weighted box
+                                         downscale rules; reshaped to take raw RGBA so one
+                                         scaler serves every decoder here)
+Their test cases are ported alongside, from the matching files under tests/.
+
+MIT License
+
+Copyright (c) 2026 slfx77
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
 daggerfall-unity (DaggerfallConnect) - Daggerfall format decoders
 ================================================================================
 
@@ -182,6 +257,19 @@ DaggerfallConnect API layer (Assets/Scripts/API/):
                                DFLocation.cs (location/dungeon/building enums)
   DaggerfallTextFile.cs     <- TextFile.cs (TEXT.RSC index + token grammar)
   DaggerfallBookFile.cs     <- BookFile.cs (BOOKS/BOKnnnnn.TXT header)
+  DaggerfallSoundFile.cs    <- SndFile.cs (DAGGER.SND sample format: 11,025 Hz 8-bit mono PCM)
+  DaggerfallVidFile.cs      <- VidFile.cs (VID header, block types, palette scaling, frame RLE)
+  DaggerfallRmbBlock.cs     <- BlocksFile.cs (RMB readers), DFBlock.cs (RMB structures)
+  DaggerfallRdbBlock.cs     <- BlocksFile.cs (RDB readers), DFBlock.cs (RDB structures)
+The Battlespire per-entry BSA compression (Core/Compression/LzssCodec.DecompressBattlespire)
+and the 10-byte plane header its .3D meshes use follow ariscop/battlespire-tools
+(https://github.com/ariscop/battlespire-tools), released into the public domain under the
+Unlicense; its bsatool and 3dtool are the working references for those two details.
+
+and under Core/Formats/Xngine/Mesh/ (the mesh format shared by the XnGine games):
+  XnGineMesh.cs             <- Arch3dFile.cs (header, plane list, point/normal readers, UVunpack)
+  XnGineMeshDecomposer.cs   <- Arch3dFile.cs (DecomposeMesh/WritePlane/GetCornerPoints) and
+                               Utility/FaceUVTool.cs (ComputeFaceUVCoordinates)
 Further Daggerfall decoders port from the same layer as they land; each ported file names
 its upstream source in a header comment.
 

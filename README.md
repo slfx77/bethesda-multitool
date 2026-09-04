@@ -393,6 +393,12 @@ header comment on every ported file and the license text in
 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Everything else is used strictly as
 written documentation — no code from those projects is present here.
 
+The Asset Browser also borrows two UI-framework-independent helpers from this project's
+sister app [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) (MIT):
+its latest-only job guard and its gallery thumbnail scaler. The map pane's 2D-level
+seam comes from the other sister app,
+[NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) (MIT).
+
 **Ported (permissive):**
 
 - [OpenTESArena](https://github.com/afritz1/OpenTESArena) - Arena compression codecs and image decoders (MIT)

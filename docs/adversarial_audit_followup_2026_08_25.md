@@ -2083,3 +2083,540 @@ one redundant shift-probe grouping.
 
 **Validation.** Full both-TFM build green for every non-test assembly (main, WinUI App with the 2D mirror, both profilers with the settle rule); the shared tree's test project needed three of the concurrent session's mid-edit files sidelined to compile, then the fast suite ran 10,857 tests: 10,574 green, 273 skipped, 10 failed — all ten the concurrent session's rendering/water/Starfield source-contract pins (down from 43 in the previous pass as they progress), none touching terrain, cells, LAND, probes, the water reader, the LSCR schema, capture options or either settings panel. Every touched class (`LscrLocationSchemaTests`, `RuntimeWaterReaderRelatedWatersTests`, `RuntimeParityMatrixTests`, `XamlAccessibilityRatchetTests`, both settings-panel source-contract classes, `RendererProfilerOptionsTests`, `EsmLandEnricherMasterTerrainTests`, `RecordCollectionCellMergeTests`) passed. Conversions: xex21 and xex44 both byte-identical to their baselines with the probe decoupled and the gate live on xex21.
 
+
+---
+
+## Round 10 — the five follow-ups from the recovery-confidence review (2026-09-03)
+
+The user read the domain-by-domain confidence assessment and came back with five items. Two were
+rulings, one was a correction to my framing, and two were questions whose answers contradict what
+that assessment had implied. All five are settled below.
+
+### 1. Compiled scripts keep their bytecode; source is emitted, decompiled if not captured
+
+**USER RULING:** "compiled scripts should be preserved (converted to PC format), while their
+source text should be emitted if present, or as the decompilation if not."
+
+`CapturedScriptEmissionContract` previously had four paths that shipped SCDA with no SCTX: no
+captured text at all, text with no same-dump provenance, text that failed the statement comparer,
+and text whose declaration block disagreed with SLSD/SCVR. All four now fall back to
+`BuildDecompiledSource`, which renders the accepted SCDA as GECK-shaped source.
+
+The part that needed real work is the declaration block. FNV bytecode carries **no** declaration
+opcodes — VarShort/VarLong/VarFloat (0x12/0x13/0x14) never appear in a shipped SCDA, measured
+against the retail PC master this round — so the scn-plus-locals block has to be synthesized from
+the record's own SLSD/SCVR table. That is also what makes the result safe: it is generated from the
+exact table shipping beside it, so it satisfies the declaration audit by construction, and
+`EvaluateStandalone` therefore skips re-auditing synthesized text (re-running it would only
+re-derive its own inputs, and on a table too incomplete to declare would discard the very text the
+ruling exists to guarantee).
+
+Two details worth recording:
+
+- **ref vs float is not in SLSD.** The type bit is 0 for *both*; retail confirms it (`rBox01`,
+  `ActivatorREF` and `fRange` are all type 0). Ref-ness comes from bytecode evidence instead — only
+  a reference local can appear in member position (`name.Something`) in the decompiled statements —
+  and a type-0 local with no such use is declared `float`. Both are non-integer storage, so either
+  declaration satisfies the SLSD check; the banner tells a reader to trust SCDA if they disagree.
+- **EDID wins over the decompiled name.** A script's identity is its EDID, and an SCTX whose scn
+  line names something else is exactly what disqualifies a captured text. The synthesis therefore
+  overrides the decompiler's ScriptName line with the record's resolved EDID.
+
+`ScriptSourceTextOrigin.DecompiledFromBytecode` keeps the substitution visible: provenance reports
+label it `decompiled-from-bytecode`; `SourceTextCorrespondenceStatus` still reports **Rejected** for
+a capture that was replaced (the status describes the capture, not whether text shipped); and
+`InlineScriptReferenceValidator` no longer reports "SCTX omitted" for a record that now has SCTX.
+
+**Measured on xex44 (same dump, same master, before/after):**
+
+| | before | after |
+|---|---|---|
+| script blocks carrying SCDA | 886 | 886 |
+| ...of those with **no** SCTX | **224** | **0** |
+| SCTX subrecords | 697 | 921 |
+| records emitted | 99,891 | 99,891 |
+| output bytes | 14,150,622 | 14,285,552 |
+
+Validation and the full semantic check pass unchanged. The 224 scripts that shipped as opaque
+bytecode now ship readable.
+
+### 2. "We should likely have specialized readers for this?" — no; they already exist
+
+This was the useful correction. The confidence assessment listed CAMS/IDLM/MSET/IPDS/EFSH/CHIP/
+CSNO/DOBJ/INGR as an emission gap and implied missing readers. Checking rather than assuming:
+
+- The **loader already recovers every one of them** from the dump. `stats` on the raw xex44 dump:
+  CAMS 229, IDLM 185, MSET 79, IPDS 48, EFSH 32, CHIP 5, CSNO 5, DOBJ 1, INGR 1.
+- Every one has an **encoder** (`CamsEncoder`, `IdlmEncoder`, ... all present), a
+  **`NewTopLevelRecordEncoderDispatcher` row**, a **`DmpRecordSource` catalog row**, and a
+  **`PluginConversionPipeline` yield**. Eight of the nine also have a planned encoder; INGR does
+  not, and is the single "No planned encoder" warning in the log.
+- The stale `artifacts/dmp-audit/census2026-08-25/mapping_coverage.csv` reports `has_encoder=NO` for
+  these. That column is wrong now — LSCR/ASPC/MSTT/RGDL/TACT/ANIO all emit today.
+
+The real cause is one line. Forty-plus types are registered through `PlannedEncoders.Simple<T>`,
+whose `DelegatingPlannedEncoder` reads:
+
+    RecordDisposition.New      => encodeNew(model),
+    RecordDisposition.Override => _emptyEncoded,   // an empty record
+
+Confirmed by walking the output: **every** emitted generic record is in the plugin's own 0x01
+range — ASPC 58 new / 0 override, MSTT 96/0, LSCR 3/0, TACT 3/0, RGDL 2/0, ANIO 8/0. Only 14 types
+emit real overrides at all (ALCH, AMMO, ARMO, BOOK, CELL, GLOB, GMST, NPC_, PGRE, QUST, SCPT, WEAP,
+WRLD, NAVI). So the nine "missing" types emit nothing because **every instance the dump holds pairs
+with a master record**, and a master-paired record of a `Simple<T>` type produces an empty override
+that is then dropped.
+
+**70 record types are registered this way.** For all of them a DMP-captured delta against an
+existing master record is discarded by design. That is a far larger finding than the nine types, and
+it is an emission-policy question rather than a defect — recorded for a ruling, not changed.
+
+### 3. LZX — DDXConv already carries our decoder, and the probe now uses it
+
+`src/DDXConv/DDXConv/Compression/LzxDecompressor.cs` is a 976-line pure-managed XMemCompress
+decoder, mechanically translated from a C reference verified byte-for-byte against XnaNative.dll on
+3,870 DDX files, and DDXConv is already a `ProjectReference` of the main assembly. The user was
+right; nothing needed porting.
+
+This matters because `dmp recovery-probe`'s compression branch tried **zlib**, and every candidate
+failed with "unsupported compression method". That result measured the wrong decoder, not the dump,
+so "is there compressed data in memory we are blind to?" was never actually answered.
+
+New `Core/Recovery/LzxGapProbe.cs` runs the real decoder over gap bytes, and `dmp recovery-probe`
+gained an LZX branch writing `recovery_probe_lzx.csv` beside the other two.
+
+The design point that cost the most thought: **acceptance has to be content-based.** An
+XMemCompress chunk header is a bare 2-byte big-endian length, so nearly every offset is a
+syntactically valid header — and the decoder cheerfully inflates pseudo-random bytes into kilobytes
+of pseudo-random output. Neither framing nor output size discriminates. The gate is therefore
+whether the inflated payload is *identifiable* (container magic or text), pinned by a test that
+feeds the probe pure noise, plus a companion test that runs with the gate off to document why the
+gate exists. Stated limitation: a stream whose first chunk was paged out, or one holding a payload
+with no magic and no text, is invisible — a miss is not proof of absence.
+
+Two defects in the probe surfaced by running it rather than trusting it, both fixed:
+
+- **Cost.** Inflating every coincidental decode to the 8 MB cap made a whole-dump sweep
+  unfinishable (killed after ~20 min without a first CSV row). Screening now decodes into a 64 KB
+  budget — the sniff only reads 512 bytes — and only survivors are re-decoded at full size.
+- **The sniff was too loose.** A 90%-printable average over 512 bytes classed as "text" two
+  payloads that began `00 00 00 00 00 00 …` and `61 04 24 00 …`. A recovered file starts with its
+  own content, so the lead bytes must read as text too. Those three real payloads are now the
+  test's `[InlineData]` cases.
+
+**Measured on xex44 (231 MB, ~189 MB of it uncovered gap): one hit.** Offset `0x009C73EC`,
+15,625 bytes consumed producing 11,321 — a "compression ratio" of 0.72, i.e. output *smaller* than
+input, which is impossible for genuine compressed data. Its payload begins `,9=amb_vault_11_`: the
+decoder walking an already-plaintext sound-name table and echoing it. Zero container magics, zero
+streams with a real ratio. zlib, as before, scored 0 of 50.
+
+**Conclusion — the lead is closed, now for the right reason.** The confidence assessment called
+LZX "the one genuinely unopened door" in the asset domain. Opened with the correct decoder, there
+is no meaningful body of XMemCompress-compressed data in this dump's uncovered gaps. That is what
+should be expected in hindsight: the console decompresses assets at load, so compressed bytes live
+on disc in the BSA and their streaming buffers are transient. Carried caveat: one dump, gaps only,
+first 4 MB of each gap, identifiable payloads only.
+
+### 4. Dialogue — the placeholder already ships, and the prune rule would fire once
+
+The user's rule: dialogue with no player line **and** no response text is not worth emitting; with
+no response text there is already the `(NOT FOUND IN CRASH DUMP)` placeholder.
+
+Both halves check out, and the numbers correct something the confidence assessment got wrong. That
+assessment counted raw NAM1 occurrences and concluded "essentially every INFO carries its response
+text". Counting *content* instead:
+
+| | xex44 | xex21 |
+|---|---|---|
+| INFO / DIAL records | 1,464 / 1,203 | 2,184 / 2,134 |
+| responses with real text | **612** | **722** |
+| responses that are the placeholder | **831** | **1,486** |
+| TRDT with no NAM1 at all | 0 | 0 |
+| topics carrying a player line (DIAL FULL) | 1,202 of 1,203 | 2,132 of 2,134 |
+| INFOs with no real text **and** no topic player line | **1** | **1** |
+
+So the proposed prune rule would drop exactly one record per dump — emission is already as tight as
+that rule would make it. `DialogueTextBackfill.PlaceholderText` is emitted by the encoder and
+respected by `DialogGrupBuilder` and `DialogueInfoOverlayWriter`, so the placeholder half is done.
+
+The actual gap is the **831 placeholder responses**: INFOs that kept their TRDT (response slot,
+emotion, sound) and their topic's player line, but whose spoken text was not resident. There is no
+runtime fallback — the parity matrix records INFO response text as `esmOnly`, meaning it lives only
+in ESM pages, never in a runtime struct. The built recovery route is `--dialogue-audio-csv`
+(Bethesda Audio Transcriber exports, one row per voice file, keyed to a response index), which
+requires `--pack-assets`. Running the transcriber over the captured dialogue audio is what turns
+those 831 into real lines.
+
+### 5. The owed ruling (W2), stated concretely
+
+Two heuristic passes rescue placed refs whose parent CELL was never captured, and they disagree
+about survival:
+
+- `ReattachUnresolvedByBoundsInference` synthesizes **real** exterior cells (`IsVirtual = false`)
+  and its own doc block explains why: "the planner removes virtual cells as parse-time buckets,
+  which would silently kill the temporary refs this pass exists to save."
+- The offset-cluster passes (`CellWorldspaceAuthorityApplier` ~line 1189 and
+  `OffsetClusterOrphanResolver:82`) synthesize cells with `IsVirtual = true`, so the planner deletes
+  the tile and the refs it rescued die with it.
+
+The inconsistency is that the *weaker*-evidenced pass survives while the stronger one self-defeats.
+The decision is one flag: should offset-cluster tiles be created as real cells like the
+bounds-inference tiles? Stakes are smaller than the old headline suggested — Round 9's
+reclassification showed 2,593 of 2,602 dropped children were `PersistentRedistributedSynthetic`
+copies rather than unique content, and the current xex44 run reports 86 allocated refs across 18
+cells unemitted. Nothing here changes without that ruling, because it changes what gets emitted.
+
+---
+
+## Round 11 — rescue-all ruling, and whether the dump's text ties back (2026-09-03)
+
+### The W2 ruling, applied and then measured
+
+**USER RULING:** "We should aim to rescue all refs. If that requires a real cell, then that's what
+we should do."
+
+Applied to every pass that fabricates a tile for an orphaned ref. The result splits cleanly:
+
+**Kept — offset-cluster tiles are now real cells.** `CellWorldspaceAuthorityApplier`'s
+offset-cluster tile and `OffsetClusterOrphanResolver` both built `IsVirtual` cells, which the
+planner deletes as parse-time buckets, so each pass rescued refs into a cell that then took them
+down with it — while the *weaker*-evidenced bounds-inference pass survived by building real cells.
+Both now build the same thing: a real exterior cell keyed by grid + worldspace with no EditorId
+(CK convention — the old `[Virtual x,y <ws>]` label would otherwise have been emitted into the
+plugin). `OffsetClusterOrphanResolver` additionally gained the master-grid check it never needed
+while its tiles were doomed: if a real cell already owns that grid, the ref is adopted into it
+rather than a second cell appearing at the same coordinates, which is not a legal worldspace.
+Measured on xex44: **no change** (99,891 records, 81,594 placed refs, 86 refs across 18 cells
+unemitted) — this pass does not fire on that dump. It is now correct and consistent rather than
+self-defeating, which is what the ruling asked for.
+
+**Reverted — the redistributor tile cannot simply become real.** `PersistentRefRedistributionPass`
+is where the great majority of dropped children actually die (Round 9: 2,593 of 2,602 are
+`PersistentRedistributedSynthetic`), so it looked like the big win. Flipping it made things
+measurably **worse**:
+
+| xex44 | virtual (before) | real (flipped) |
+|---|---|---|
+| records emitted | 99,891 | 96,739 |
+| placed refs | 81,594 | **78,379** (−3,215) |
+| **overrides** | 79,659 | **76,490** (−3,169) |
+| skipped | 6,143 | 8,686 |
+| refs unemitted (WARN) | 86 across 18 cells | 69 across 12 cells |
+
+The loss lands in **overrides**, which names the mechanism: this pass runs at parse time and knows
+nothing about the master, so a tile it synthesizes at grid (gx, gy) collides with the master's own
+cell there. Emitting the synthetic cell displaces the master-cell override and takes every child
+that override was carrying — more refs lost than the flip rescues. Isolating the two changes
+confirmed this pass alone accounts for the whole regression.
+
+Rescuing these properly needs the master grid index
+(`PluginConversionPipeline._masterExteriorCellByGrid`) consulted *before* a tile is synthesized, so
+the ref lands in the master's own cell instead of a duplicate. That is a planner-side change, not a
+flag flip, and the code now says so where the flag is set. The `[Unassigned Interior]` catch-all is
+deliberately left virtual on different grounds: it names no specific cell, so emitting it would
+invent an interior that never existed and fill it with objects from unrelated rooms.
+
+### "Can the abundant text be tied back?" — we had never asked
+
+The user's question: are we following pointers correctly, in both directions, and is the seemingly
+abundant text really untieable?
+
+**The pointer machinery is sound and genuinely bidirectional.** `RuntimeBufferPointerAnalyzer`
+combines a *forward* pass (`BuildDirectOwnerClaims` — typed runtime structs and manager/global
+walkers naming their own string fields) with a *reverse* pass (`ScanInboundPointers` — one sweep
+over every memory region, testing each 4-byte-aligned word against the set of string VAs). A string
+is Owned only with a typed claim; Referenced when something points at it but no owner matches;
+Unreferenced when nothing points at its start.
+
+**But it only ever ran on strings a shape heuristic had already recognised.**
+`RunStringOwnershipAnalysis` filtered on `IsMeaningfulCategory`, i.e. anything but
+`StringCategory.Other` — and the classifier is deliberately conservative in ways that matter:
+a dialogue line needs 25+ characters *with spaces* (so "Yeah." and "I'm listening." are `Other`),
+an EditorID needs 6+ characters starting uppercase. On xex44 that left **880,167 of 1,030,933
+strings — 85% — never examined at all**. "Unattributed" was therefore substantially a statement
+about our classifier, not about the dump.
+
+The filter also bought nothing: the reverse scan is one pass over the dump testing a hash set, so
+its cost tracks dump size, not hit count. Including everything means a bigger hash set.
+
+**Measured on xex44 with every string analysed** (`dmp buffers` now prints this; it was computed
+before and simply never shown):
+
+| | total | owned | referenced, owner unknown | unreferenced |
+|---|---|---|---|---|
+| EditorId | 106,848 | **98,355** (92%) | 2,108 | 6,385 |
+| GameSetting | 634 | **603** (95%) | 14 | 17 |
+| DialogueLine | 11,533 | **8,735** (76%) | 465 | 2,333 |
+| FilePath | 31,751 | **23,845** (75%) | 2,696 | 5,210 |
+| **Other** | **880,167** | **15,863** | **133,784** | 730,520 |
+| **all** | 1,030,933 | 147,401 (14.3%) | 139,067 (13.5%) | 744,465 (72.2%) |
+
+Two conclusions, and they point opposite ways:
+
+1. **Where we do follow pointers, it works.** 92% of EditorIDs, 95% of game settings, 76% of
+   dialogue lines and 75% of file paths resolve to a typed runtime owner. That is the direct
+   evidence the user asked for that forward and reverse resolution are behaving.
+2. **The answer to "can the rest be tied back" is no longer "we assume not".** Of the 880,167
+   strings previously excluded, **15,863 turn out to be *owned*** — already attributable, discarded
+   purely because their shape did not match a heuristic — and a further **133,784 have live inbound
+   pointers**. Roughly **150,000 strings, 17% of the excluded set, are demonstrably live data we
+   were not asking about.**
+
+The 730,520 unreferenced `Other` strings remain the honest floor, with one caveat worth stating:
+"unreferenced" means no 4-byte-aligned pointer to the string's *exact start*, so text reached by an
+interior pointer, an index into a pool, or a packed handle is indistinguishable from noise by this
+test. It is a lower bound on liveness, not proof of garbage.
+
+Also visible in the same run and worth its own follow-up: of **31,751 file paths the dump names,
+only 31 matched a carved file.** The dump tells us the names of thousands of assets whose bytes we
+did not recover.
+
+The CSV dumps of the unknown/unreferenced sets are capped at 20,000 rows (the counts in the summary
+report stay exact, and a capped file says so on its last line); the unknown-owner CSV is now ordered
+most-referenced-first, so the strings most worth naming survive the cap.
+
+### Round 11b — digging further into ownership (2026-09-03)
+
+The user asked whether more owners could be assigned to the strings that have live inbound pointers
+but no owner (129k–134k after Round 11). Two more strategies, each measured on xex44.
+
+**Asset paths are closed as a question.** USER: the 31,751 named paths against 31 carved files is
+"a known limitation of this being a memory dump and not a full build — hence the need to backfill
+with other prototype and final data." No action; the donor pipeline already covers it.
+
+#### 1. The exact-text matchers were gated on the same classifier
+
+`SecondPassOwnershipResolver` already runs EditorID / GameSetting / DialogueLine text matching over
+unresolved hits, and each is an **exact dictionary lookup** against an inventory we recovered. But
+each also began with `hit.Category != StringCategory.X → return null`, so the shape classifier
+gated evidence it has nothing to do with. A string that *equals* a known EditorID is that EditorID
+whether or not it looked like one — and since the classifier needs 25+ characters with spaces for
+dialogue and 6+ starting uppercase for an EditorID, exactly the short lines and lowercase IDs that
+fall to `Other` were denied the one test that would have named them.
+
+Unclassified text may now attempt these matches (`CanTryTextMatch`), subject to a 6-character
+minimum: very short text is where an exact match stops being identity and starts being coincidence
+("Yes" can equal a real dialogue line by accident). Classified hits are unaffected.
+
+`TryCFormEditorIdFallback` stays gated, deliberately: it is **positional** — it infers ownership
+from a string sitting at a plausible offset near a vtable, not from equalling anything known — and
+its own comment notes TESForms are densely packed. Opening that to arbitrary text would let any
+bytes near a form claim an owner on position alone.
+
+#### 2. New strategy: runtime-object containment
+
+Every existing strategy has to *recognise* something first — a BSStringT wrapper, a resolvable
+vtable, text equal to a known value — so all of them fail on the ordinary case of a string held in
+a field we have no layout for, which is most of what remains.
+
+Containment needs none of that. A runtime TESForm occupies
+`[TesFormPointer, TesFormPointer + StructSize)` — the start is a confirmed form, the size comes
+from the PDB — so a referrer address *inside* that span is by construction a pointer field of that
+form. `OwnershipContainmentResolver` builds a sorted span index over every runtime form with a
+known layout and binary-searches each referrer. The claim is the form's identity plus the raw field
+offset (`+0x4C`): weaker than a named field, strictly better than "owner unknown", and it is real
+evidence rather than proximity — the address is inside the object or it is not.
+
+Two deliberate conservatisms: overlapping spans are **dropped entirely** rather than arbitrated
+(an overlap means some struct size is wrong for this build, and containment's whole claim to
+strength is that it is unambiguous), and offset 0 is rejected because that is the vtable slot.
+It is ordered after the field-naming strategies and before the positional fallback.
+
+#### Measured, xex44
+
+| stage | owned | referenced, owner unknown | `Other` owned |
+|---|---|---|---|
+| before Round 11 (only classified text analysed) | — | — | not examined |
+| Round 11 (all text analysed) | 147,401 | 139,067 | 15,863 |
+| + text matchers opened | 152,094 | 134,374 | 20,556 |
+| + containment | **153,622** | **132,845** | **22,078** |
+
+So the `Other` bucket went from never being asked, to **22,078 named owners** — a 39% gain over
+the 15,863 that the first pass alone found. Category totals for classified text are unchanged, as
+they should be: nothing about those paths was altered.
+
+**Where the remaining headroom is, and why containment gained only ~1,500.** That small number is
+itself the finding: most referrers do *not* live inside a known TESForm. The pointers into the
+still-unowned 127,566 come from objects absent from the runtime form inventory — NetImmerse
+scene-graph nodes, UI/menu objects, list and container nodes, allocator blocks. Naming those means
+extending vtable/RTTI resolution beyond TESForm classes, which needs an RTTI class inventory rather
+than the PDB form layouts, and is a materially bigger job than either change here.
+
+The 730,519 unreferenced strings are unchanged and untouched by any of this, with the caveat from
+Round 11 still standing: "unreferenced" means no aligned pointer to the string's exact start, so
+text reached by an interior pointer, a pool index or a packed handle is indistinguishable from
+noise by this test.
+
+---
+
+## Round 12 (2026-09-04) — RTTI object inventory: build the instrument, measure the prize, stop
+
+Round 11b ended by naming the next lever: extend ownership resolution beyond TESForms, which needs
+an RTTI class inventory. **USER RULING 2026-09-04: stop at the measurement gate** — build the
+inventories, report the numbers, and let the claim resolver be a separate decision made from that
+data. Second ruling: **reports now, emission-ready shape** — ownership stays diagnostic, but the
+claim carries a confidence tier so a later ruling can promote strong claims without reworking the
+type. Nothing in this round changes what gets emitted, and no string's ownership status changes
+because of it.
+
+All numbers below are measured on `Sample/MemoryDump/Fallout_Release_Beta.xex44.dmp`
+(231,173,620 bytes) on 2026-09-04.
+
+### The gate: 10.4%
+
+| | count | of unowned |
+|---|---:|---:|
+| Unowned strings examined | 132,707 | |
+| **…with a referrer inside a located object** | **13,756** | **10.4%** |
+| …of those, inside an object of *declared* size | 1,407 | 1.1% |
+| Module-only referrers (globals) | 495 | 0.4% |
+| Mixed referrers / heap-only | 122 / 132,090 | |
+
+**Read it as: 8.6× better than TESForm containment (1.2%), and still a tenth of the target.** The
+honest qualifier is the second row — 12,349 of the 13,756 rest on an *inferred* ≤512-byte extent
+(distance to the next object base, capped), which is a bound rather than a fact. Only 1,407 sit in
+an object whose size the PDB actually declares.
+
+⚑ **This is the strongest argument for the deferred `pdb_class_sizes.json` work.** Today 179,152 of
+356,764 located objects (50.2%) have a declared size, because only 565 classes are in
+`pdb_layouts.json`. `CvdumpParser.Structures` already parses 14,778 sized types and serializes none
+of them; wiring that in is what would move the 1,407 rather than the 13,756.
+
+⛔ **The globals lead is CLOSED as a negative — do not build it.** Module-space referrer VAs are
+stored sign-extended, arrive negative, and are skipped by every strategy
+(`SecondPassOwnershipResolver` ~154, `OwnershipContainmentResolver` ~174, `OwnershipTextMatcher`
+~258). Real defect, and it costs **495 strings, 0.4%**. `PdbGlobalResolver` integration would have
+been a phase spent on noise.
+
+### What actually holds the unowned strings
+
+Top classes by strings held (of 132,707 unowned):
+
+```
+?$NiTObjectArray@V?$NiPointer@VNiAVObject  2,296    hkpRigidBody             470
+hkpFixedRigidMotion                        1,096    AnimSequenceSingle       373
+BSAnimGroupSequence                        1,050    ?$BSSimpleArray@UPathingDebugEvent 350
+?$NiTPrimitiveArray@PAUFaceGenUndo           823    bhkCollisionObject       326
+?$BSSimpleArray@PAUValue@Tile                768    BSTreeModel              320
+TESAnimGroup                                 740    ExtraScript              267
+```
+
+Scene-graph arrays, Havok bodies, animation sequences, UI tile arrays. They hold node and animation
+names — real asset data, but **not ESM record content**, which is consistent with the standing
+ruling that missing asset paths are a memory-dump limitation to be answered by donor backfill.
+Note how many are templates: naming their *fields* would need a real MSVC demangler, and cvdump's
+own `class name = …` comma truncation caps that regardless.
+
+### `DumpRttiIndex` — forward walk beats the heap census
+
+`Core/Minidump/DumpRttiIndex.cs` (+ `ModuleImage`, `MsvcNameDemangler`, `DumpRttiClass`,
+`DumpRttiVtable`), exposed as `dmp rtti --census-forward`. Walks the module's own tables:
+`.?AV`/`.?AU` name → TypeDescriptor → CompleteObjectLocator by back-reference → vtable by
+back-reference → ClassHierarchyDescriptor for the base chain.
+
+| | forward walk | `RttiReader.RunCensus` |
+|---|---:|---:|
+| classes | **1,795** (847 with a live instance) | 857 (`--all-regions`) / 452 (default window) |
+| vtables | **2,386** (1,856 primary, 530 secondary/MI) | — |
+| type descriptors | 2,030 (173 with no locator) | — |
+| bytes read | 21,430,272 (one contiguous run) | ~220 MB over 4,014 regions |
+
+Module image 21,430,272 of 24,156,160 bytes captured (88.7%); vtable band
+`0x82000A44-0x8217C7B8` (1,555,828 bytes). Standalone `--census-forward` on xex44: **18.8 s**
+including minidump parse. Full `dmp buffers`: **177.8 s**.
+
+- ⚑ The 1.55 MB vtable band is what makes the whole-dump object sweep affordable: fused into the
+  existing `ScanInboundPointers` pass, two comparisons reject nearly every word before any hash
+  probe, so the dump is still read once.
+- ⚑ **356,764 distinct object bases from 549,034 vtable words**, and only **9 bases claimed by more
+  than one class** — multiple-inheritance ambiguity is a non-issue in practice, so
+  `OwnershipContainmentResolver`'s "drop all overlaps" conservatism would cost almost nothing if
+  generalised.
+- ⚠ Class count is **1,795, not the 1,968** a design prototype reported: this counts classes reached
+  through a *vtable*, which is the only kind detectable in memory. 173 type descriptors have no
+  locator at all.
+- ⚠ **135 TESForm-derived vs the offline scanner's 427** (different build, different tool). Not
+  reconciled; treat neither as authoritative until someone does.
+- Nested names now demangle (`Tile::RefValueAction`); templates are deliberately left in their raw
+  form, exactly as `RttiReader.DemangleName` always produced, so nothing regresses.
+
+### Three claim-source defects — the report was lying about its own evidence
+
+`ClaimSourceCounts` was populated in two places and **rendered nowhere**, and three of its nine
+values were wrong:
+
+1. `SecondPassVtable` was emitted by BOTH the field-named RTTI hit and the positional cFormEditorID
+   guess — strongest and weakest vtable evidence sharing one counter. Split out
+   `SecondPassCFormEditorIdPosition`.
+2. `ClaimSource.SecondPassReverseRelaxed` was **assigned nowhere**: `SecondPassOwnershipResolver`
+   passed the strict value unconditionally, so the relaxed lookup (BSStringT length validation
+   skipped) reported itself as strict.
+3. `ClaimSource.RuntimeEditorId` was **assigned nowhere**: the claim omitted it and took the record
+   default, so **50,351 claims — the single largest bucket — were reported as `ManagerGlobal`.**
+
+New `OwnershipConfidence` tier (FieldNamed / ExactTextMatch / OwnerNamed / Positional), derived from
+the claim source rather than stored so the two can never disagree, rendered in both `dmp buffers`
+and `string_ownership_summary.txt`. This is the emission-ready shape from ruling 2. First reading of
+the existing owned population:
+
+```
+FieldNamed        91,251  59.4%   RuntimeEditorId 50,351 · RuntimeStructField 28,995
+                                  SecondPassVtable 10,172 · SecondPassReverse 1,733
+ExactTextMatch    59,101  38.5%   TextContentMatch 59,101
+OwnerNamed         2,993   1.9%   SecondPassContainment 1,528 · SecondPassReverseRelaxed 1,465
+Positional           277   0.2%   SecondPassCFormEditorIdPosition 277
+```
+
+Also: owned `Other` strings now reach CSV (`string_owned_other.csv`) — 22,080 of them were counted
+in the summary and then dropped on the floor — and the owned CSVs gained the row cap the
+unattributed ones already had, since `Other` would otherwise turn a few-MB export into a
+hundred-MB one.
+
+### D1 — a real region-crossing defect whose measured impact is below the noise floor
+
+`OwnershipVtableResolver` stepped back through **file-offset** space
+(`referrerFileOffset - backOffset`) while computing the object base in **VA** space
+(`referrerVa - backOffset`). Minidump regions are contiguous by file offset with arbitrary VAs, so
+any referrer within 512 bytes of a region start read the **previous region's** bytes and attributed
+that unrelated allocation's vtable — and its field label — to the string.
+`OwnershipTextMatcher.TryCFormEditorIdAtReferrer` had the identical flaw at `-16`.
+
+Both now read one VA-space window via `RuntimeMemoryContext.ReadBytesAtVaInto`, which fails closed
+at boundaries and replaces up to 129 four-byte reads with a single stitched read.
+`OwnershipRegionBoundaryTests.ReferrerAtRegionStart_DoesNotAdoptThePrecedingRegionsVtable` plants a
+resolvable `TESModel` chain in the preceding region and **fails on the pre-fix code**.
+
+⚠⚠ **But the A/B is inconclusive, and that is the honest result.** Same binary, same dump, only the
+scan reverted: `SecondPassVtable` **10,172 in both**, gate **13,756 in both**, Owned **153,622 in
+both**, FieldNamed 91,252 → 91,251. And the *Analyzed* count itself moved, 1,030,492 → 1,030,494 —
+so **string extraction has run-to-run variance of the same order as the difference being measured**.
+Conclusions: (a) D1 is a correctness/robustness fix, worth having and cheaper, but it is NOT worth
+thousands of false claims and must not be described as such; (b) **ownership counts carry a small
+run-to-run variance — treat single-digit deltas as noise, not signal.** The variance itself is a
+new, unexplained finding; cause not identified (the machine was under heavy load from concurrent
+sessions, so a racing MMF read is one candidate). Do not re-chase D1 for a bigger number.
+
+### Verification
+
+93 tests in `Core.RuntimeBuffer` + `Core.Minidump` pass (92 succeeded, 1 Bucket-B skipped). New:
+`OwnershipConfidenceMapTests` (every claim source maps to a tier; tier ordering pinned),
+`OwnershipRegionBoundaryTests`, `MsvcNameDemanglerTests`, `DumpRttiIndexTests`,
+`RuntimeObjectCensusTests`. One of those caught a real error in its own fixture — a truncation point
+that did not actually truncate the vtables — which is the behaviour the "a test must be able to
+fail" rule is for.
+
+⚠ **Build/test ran in an isolated copy at `C:\tmp\x360-rtti`, not the working tree.** A concurrent
+session had mid-edit breakage in `NpcHeadPartAttacher.cs`, `FaceGenHairEgmPathResolverTests.cs` and
+`ClassicGameRootMountTests.cs`, plus a WinUI build holding the obj/bin locks, so the working tree
+was unbuildable for the duration. The copy carries only this round's 26 files over an otherwise
+untouched tree; their files were never modified. **Absolute counts here are therefore not directly
+comparable to Round 11b's** (which was measured on the full working tree with ~210 modified files) —
+the A/B pairs above are internally consistent, cross-round absolute comparisons are not.
+
+### Still deferred (unchanged by this round)
+
+`pdb_class_sizes.json` + a `PdbAnalyzer classsizes` command; the claim resolver and its tiers; the
+ancestry-keyed field index (the base chains are now recovered, so "derives from `NiObjectNET` ⇒ `+8`
+is `m_kName`" is one step away); interval-containment field lookup to replace
+`OwnershipVtableResolver`'s exact-offset `FirstOrDefault`; retiring `TryVtableReverseLookup`;
+template demangling. Separately: the 70-type `Simple<T>` empty-override policy remains open.

@@ -71,10 +71,13 @@ archive compare <fileA> <fileB>     # Compare two BSA headers/folder hashes
 sprite render <file> -o <dir>              # Decode a loose image to PNG frames
 sprite render <archive> -e <entry> -o <d>  # ...or an entry inside an archive
 sprite info <file> [-e <entry>]            # Frame count/sizes/offsets without writing PNGs
-#   -g/--game auto|arena|daggerfall: Arena and Daggerfall SHARE .IMG/.CIF/.RCI with different
+#   -g/--game auto|arena|daggerfall|battlespire: Arena and Daggerfall SHARE .IMG/.CIF/.RCI with different
 #     codecs. auto sniffs the palette beside the source (ART_PAL.COL = Daggerfall, else Arena).
 #   Palette resolution: embedded > --palette <file> > the format's own routing (DF IMG names
 #     FMAP_PAL/NIGHTSKY/DANKBMAP/MAP.PAL for special screens) > PAL.COL > ART_PAL.COL beside the source.
+#   Battlespire .BSI: chunked images (BIG-endian chunk lengths) that carry their OWN palettes —
+#     rendered through the 256-colour CMAP, since HICL fills only the 128 even slots and retail art
+#     indexes the whole range. Multi-image files are labelled iNN_fMM.
 #   Today: Arena IMG/MNU/SET/CIF/DFA/CFA; Daggerfall TEXTURE.nnn, IMG (headered + 72 headerless
 #     by SIZE table), CIF (plain + weapon animations), RCI. Multi-record output is labelled rNN[_fMM].
 #   Raw 768-byte .PAL files are range-sniffed: all components <= 63 = 6-bit VGA (promote), else 8-bit.
@@ -82,21 +85,58 @@ sprite info <file> [-e <entry>]            # Frame count/sizes/offsets without w
 # Classic (pre-Morrowind) commands
 classic text <install-dir>                 # Dump authored text from a classic install
 classic text <TEMPLATE.DAT|file.INF>       # ...or from one file (also TEXT.RSC / BOKnnnnn.TXT)
-#   -s/--source template|inf|text|books|all, -f/--filter <substr>, -l/--limit N
+#   -s/--source template|inf|text|books|quests|all, -f/--filter <substr>, -l/--limit N
 #   Arena: TEMPLATE.DAT strings + .INF on-screen text, riddles and door keys.
 #   Daggerfall (pass DF\DAGGER or ARENA2): TEXT.RSC (1,408 records; 0xFF-separated variants
 #   printed as "#id N variant(s)") + BOOKS (91 books, page by page; DOS code page 437 text —
-#   BOK10000 is German with ü/ä/ö/ß).
-video info <file> [-e <entry>]             # FLIC geometry, frame count, fps, palette switches
-video export <file> -o <dir> [--every N]   # Render FLIC frames to PNG
+#   BOK10000 is German with ü/ä/ö/ß) + quests (.QRC message text; the .QBN half is undecoded).
+video info <file> [-e <entry>]             # Geometry, frame count, fps, palette switches/blocks
+video export <file> -o <dir> [--every N]   # Render frames to PNG (VID also writes its audio WAV)
 #   Arena .FLC/.CEL (Autodesk FLIC, magic 0xAF12). A FLIC stores header+1 frame blocks — the
 #   extra one loops back to frame 0 and is dropped, so decoded count == declared count.
+#   Daggerfall .VID: 17 movies, 320x200 (DAG2.VID is 256x200), 4,661 frames total. Frames paint
+#   onto ONE persistent canvas; a full frame's run carries a value byte, an incremental frame's
+#   run instead SKIPS pixels. Interleaved audio is 11,025 Hz 8-bit unsigned mono and exports as
+#   <name>.wav beside the PNGs.
 audio decode <file> -o <dir>               # Decode classic audio to WAV
 audio decode <archive> --all -o <dir>      #   ...or every supported file in an archive (-e for one)
 audio info <file> [-e <entry>]             # Sample rate, depth, duration, loop/text metadata
-#   Arena .VOC today (8-bit PCM; rate = 1000000/(256-timeConstant)). ACM/SND/XMI land per game.
+#   Arena .VOC (8-bit PCM; rate = 1000000/(256-timeConstant)). ACM/XMI land per game.
+#   Daggerfall DAGGER.SND: -e takes a SOUND ID, --all writes every record (459 records, one
+#   empty, id 220 used twice so those two files carry an index suffix). Headerless 11,025 Hz
+#   8-bit unsigned mono; `audio info` with no -e prints the archive census.
+#   Daggerfall MIDI.BSA: `audio info -e NAME.HMI` reads the HMI container (tag, track table).
+#   The HMI event stream is NOT converted to a MIDI file — no spec for its extensions here.
 classic exe <A.EXE> [-o <out>] [--info]    # Unpack the PKLITE-compressed Arena executable
 #   Retail A.EXE: 174,021 -> 304,624 bytes. Holds province/race names, item + city tables.
+classic mesh info <archive|.3D|dir> [-e X] # Mesh archive summary, or one mesh's
+                                           #   points/planes/triangles/textures/polygon census
+classic mesh export <archive|.3D|dir> -e X -o <dir>  # One mesh -> GLB (Y flipped to glTF Y-up;
+#   one primitive per texture). Daggerfall ARCH3D.BSA: -e is an OBJECT ID; textured when ARENA2's
+#   TEXTURE.nnn + ART_PAL.COL sit beside the archive. Retail: 10,251 records (10,109 v2.7 / 134
+#   v2.6 / 8 v2.5), 10 ids repeat.
+#   Battlespire 3D.BSA / 3D.BS6 / loose .3D: -e is an ENTRY NAME (omit for a loose file). Those
+#   meshes use a 10-BYTE plane header though they also say "v2.7" — the layout follows the game,
+#   not the tag. Untextured for now (Battlespire textures live in the undecoded BSI.BSA).
+classic block info <BLOCKS.BSA|dir> [-e NAME]   # Daggerfall block archive census, or one block:
+#   RMB = sub-blocks (building type/quality/position/rotation, exterior+interior object sets),
+#   RDB = object lists (models/flats/lights/actions) + model references.
+classic block export <BLOCKS.BSA|dir> -e NAME -o <dir> [--scale N]  # Diagnostic PNGs: RMB automap
+#   (64x64 building codes) + ground grid (16x16 tile records; scenery dots); RDB top-down plan.
+#   Retail: 920 RMB / 187 RDB / 187 RDI + "FOO" (a stray DOS dir listing). RDB width x height is
+#   the number of object LISTS, not spatial cells — every object sits inside one 2,048-unit block.
+classic level info <BS6.BSA|.BS6|dir> [-e NAME]  # Battlespire level census, or one level: its MESH
+#   LIST (LFIL) plus the placements that index it (OBJD.IDFI + POSI/ANGS), lights, flats, bounds and
+#   the authoring directory. Retail: 47 entries = 45 levels, 3,500 listed meshes, 7,428 placements
+#   (7,426 resolving), 1,499 lights, 2,272 flats; ADR.TXT and the entry "C" are not levels.
+classic level export <BS6.BSA|.BS6|dir> -e NAME -o <dir>  # Assemble one level into a single GLB,
+#   each listed mesh placed at its POSI/ANGS (meshes resolve through 3D.BSA, 3D.BS6, then loose .3D).
+#   POSI is in WORLD units (mesh native / 256), SECOND component vertical. ANGS is 2048-per-turn,
+#   components = X/Y/Z, UNNEGATED, applied Y then X then Z. Component 0 is the pitch that stands
+#   flat-authored geometry up (51% of flat-in-Y placements carry +/-90 deg, 72% of already-tall ones
+#   carry none); component 1 is the yaw (dominant on upright meshes 1,286 vs 657); component 2 the
+#   rare roll. Sign fixed by L8's 7volc ring: raw = 14/14 panels face inward, negated = 8/14.
+#   Untextured — BSI.BSA's 15-bit palette tables are undecoded.
 classic map info <file> [-e <entry>]       # Map dimensions, levels, .INF refs, locks/triggers
 classic map export <file> -o <dir>         # Render voxel layers to PNG (--scale px/voxel)
 #   Arena .MIF (LZHUF layers) and .RMD (word-RLE wilderness chunks); -e reads from GLOBAL.BSA.
@@ -111,7 +151,14 @@ classic map export <file> -o <dir>         # Render voxel layers to PNG (--scale
 #   ALOC (CITYDATA world-map locations) and APRV (provinces) — 1,186 records on a retail install.
 #   Daggerfall (pass DF\DAGGER, the dir holding ARENA2) synthesizes DREG (62 regions), DLOC
 #   (15,251 MAPS.BSA locations: type, map pixel, buildings, dungeon blocks), DTXT (1,408 TEXT.RSC
-#   strings with their variants) and DBOK (91 books with page text) — 16,812 records.
+#   strings with their variants), DBOK (91 books with page text), DMSH (10,251 ARCH3D meshes:
+#   version, points, planes, triangles, textures, size), DBLK (1,295 BLOCKS.BSA entries: RMB
+#   building/object census, RDB object-list census), DQST (234 quests: .QRC messages plus the
+#   .QBN size/header words), DSND (459 sounds), DMUS (131 HMI songs) and DVID (17 movies)
+#   — 29,199 records.
+#   Battlespire (pass the install root or GAMEDATA) synthesizes BMSH (2,640 meshes: 3D.BSA minus
+#   its 5 non-mesh strays, plus 245 loose .3D), BTXT (254 TXT.BSA entries) and BLVL (45 BS6 levels:
+#   mesh list/placement/light/flat counts, bounds, most-placed meshes) — 2,939 records.
 
 # Render commands (output: PNG sprites)
 render <path> -o <dir>                     # Render single NIF to PNG
