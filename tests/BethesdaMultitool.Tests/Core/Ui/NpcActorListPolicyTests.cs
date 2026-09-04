@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Ui;
 using Xunit;
+using AppController = BethesdaMultitool.NpcBrowserController;
 
 namespace BethesdaMultitool.Tests.Core.Ui;
 
@@ -52,5 +53,26 @@ public sealed class NpcActorListPolicyTests
         Assert.Equal(
             "1 creature",
             NpcActorListPolicy.BuildSelectionCountText([Daedroth], all, NpcActorKind.Creature));
+    }
+
+    [Fact]
+    public void CreatureSelectionSupportsNativePreviewActionsButNotNpcOnlyBatchOrSoftwareRender()
+    {
+        var controller = new AppController();
+        controller.LoadList([NamedNpc, Daedroth], namedOnly: false, searchText: null, showEditorId: false);
+        controller.SetActorKind(
+            NpcActorKind.Creature,
+            namedOnly: false,
+            searchText: null,
+            showEditorId: false);
+
+        var state = controller.Select(Daedroth);
+
+        Assert.True(state.CanExportGlb);
+        Assert.True(state.CanCaptureNative);
+        Assert.False(state.CanRenderPng);
+        Assert.False(state.CanToggleHumanoidOptions);
+        Assert.False(Daedroth.CanBatchSelect);
+        Assert.True(NamedNpc.CanBatchSelect);
     }
 }

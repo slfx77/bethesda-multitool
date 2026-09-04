@@ -41,6 +41,9 @@ internal sealed class NpcListItem : INotifyPropertyChanged
 
     public bool IsCreature { get; }
 
+    /// <summary>Creature batch export/render is not implemented by the current workflow.</summary>
+    public bool CanBatchSelect => !IsCreature;
+
     public string? CreatureTypeName { get; }
 
     public string? ModelPath { get; }

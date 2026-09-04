@@ -20,6 +20,7 @@ public sealed class NpcActorTabsSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("_npcBrowser.SetActorKind(", host, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Select actor\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanBatchSelect}\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -82,5 +83,48 @@ public sealed class NpcActorTabsSourceContractTests
         Assert.Contains("_npcBrowser.ActorKind != NpcActorKind.Npc", host, StringComparison.Ordinal);
         Assert.Contains("_npcBrowser.ActorKind == NpcActorKind.Npc", host, StringComparison.Ordinal);
         Assert.Contains("Batch operations are currently available for NPCs only", host, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SupersededActorSelectionStopsBeforeStartingAnotherComposition()
+    {
+        var host = SourceContract.ReadAppSource("SingleFileTab.NpcBrowser.cs");
+        var load = SourceContract.Extract(
+            host,
+            "private async Task LoadNpcIntoViewerAsync(",
+            "private async void NpcRenderOption_Changed(");
+
+        SourceContract.AssertOrder(
+            load,
+            "await CancelNpcViewerLoadAndDrainAsync();",
+            "if (!IsCurrentNpcSelection(npc)) return;",
+            "var options = BuildNpcRenderOptions();",
+            "BuildViewerSceneAsync(");
+    }
+
+    [Fact]
+    public void AsyncFileActionsRetainTheirActorAndRestoreCurrentUiPolicy()
+    {
+        var host = SourceContract.ReadAppSource("SingleFileTab.NpcBrowser.cs");
+        var render = SourceContract.Extract(
+            host,
+            "private async void NpcRenderPng_Click(",
+            "#endregion");
+
+        SourceContract.AssertOrder(
+            render,
+            "NpcListView.SelectedItem is not NpcListItem npc",
+            "!TryBeginNpcFileOperation()",
+            "npc.FormId",
+            "EndNpcFileOperation();");
+        Assert.DoesNotContain("_npcBrowser.SelectedFormId.Value", render, StringComparison.Ordinal);
+
+        var interaction = SourceContract.Extract(
+            host,
+            "private void RefreshNpcInteractionState()",
+            "private bool IsActorInCurrentFamily(");
+        Assert.Contains("!_npcFileOperationInProgress", interaction, StringComparison.Ordinal);
+        Assert.Contains("_npcSelectionState.CanCaptureNative", interaction, StringComparison.Ordinal);
+        Assert.Contains("_npcSelectionState.CanRenderPng", interaction, StringComparison.Ordinal);
     }
 }

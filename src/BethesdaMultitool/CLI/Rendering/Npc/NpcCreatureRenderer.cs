@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.Core.Games;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
@@ -54,6 +55,7 @@ internal static class NpcCreatureRenderer
                     SaveCreatureResult(
                         formId,
                         creature,
+                        resolver.Game,
                         result,
                         settings,
                         creatures.Count,
@@ -106,6 +108,7 @@ internal static class NpcCreatureRenderer
     internal static void SaveCreatureResult(
         uint formId,
         CreatureScanEntry creature,
+        BethesdaGame game,
         SpriteResult? result,
         NpcRenderSettings settings,
         int totalCount,
@@ -160,7 +163,7 @@ internal static class NpcCreatureRenderer
                 "[green]OK:[/] 0x{0:X8} {1} ({2}) -> {3} ({4}x{5})",
                 formId,
                 Markup.Escape(creature.FullName ?? "?"),
-                Markup.Escape(creature.CreatureTypeName),
+                Markup.Escape(creature.GetCreatureTypeName(game)),
                 fileName,
                 result.Width,
                 result.Height);

@@ -33,6 +33,7 @@ internal static class ArmorRecordScanner
         uint bipedFlags = 0;
         byte generalFlags = 0;
         ushort baseArmorRating = 0;
+        uint baseValue = 0;
         uint? bipedModelListFormId = null;
         var isClothing = record.Signature == "CLOT";
 
@@ -82,6 +83,17 @@ internal static class ArmorRecordScanner
                         subrecord.Data,
                         0,
                         bigEndian);
+                    baseValue = BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        2,
+                        bigEndian);
+                    break;
+                case "DATA" when game == BethesdaGame.Oblivion && isClothing &&
+                                      subrecord.Data.Length >= 8:
+                    baseValue = BinaryUtils.ReadUInt32(
+                        subrecord.Data,
+                        0,
+                        bigEndian);
                     break;
             }
         }
@@ -97,6 +109,7 @@ internal static class ArmorRecordScanner
             EditorId = editorId,
             IsClothing = isClothing,
             BaseArmorRating = baseArmorRating,
+            BaseValue = baseValue,
             BipedFlags = bipedFlags,
             GeneralFlags = generalFlags,
             MaleBipedModelPath = maleBipedModel,

@@ -845,7 +845,7 @@ internal static class GlbWriter
             var image = ImageBuilder.From(
                 new MemoryImage(NpcGlbTextureEncoder.EncodePng(normalTexture)),
                 BuildDerivedTextureName(normalTexturePath, "normal"));
-            material.WithNormal(image);
+            material.WithNormal(image, NifNormalMapStrengthPolicy.GenericDefault);
 
             if (!isStarfieldWater && !hasStaticStarfieldOrm)
             {

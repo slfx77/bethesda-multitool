@@ -62,7 +62,7 @@ internal sealed class NpcBrowserController
         return _filteredList.FirstOrDefault(n => n.FormId == formId);
     }
 
-    /// <summary>Selects an NPC (or clears the selection) and returns the resulting detail-panel state.</summary>
+    /// <summary>Selects an actor (or clears the selection) and returns the resulting detail-panel state.</summary>
     public NpcSelectionState Select(NpcListItem? npc)
     {
         if (npc == null)
@@ -75,6 +75,7 @@ internal sealed class NpcBrowserController
         return new NpcSelectionState(
             npc.DisplayName,
             NpcBrowserWorkflowService.BuildDetailText(npc),
+            true,
             true,
             !npc.IsCreature,
             !npc.IsCreature);
@@ -211,13 +212,14 @@ internal sealed record NpcListState(
     NpcListItem? RestoredSelection,
     string CountText);
 
-/// <summary>Detail-panel state for the selected NPC: name, detail text, and which export/render actions are enabled.</summary>
+/// <summary>Detail-panel state for the selected actor and the actions supported by its render path.</summary>
 internal sealed record NpcSelectionState(
     string Name,
     string DetailText,
     bool CanExportGlb,
+    bool CanCaptureNative,
     bool CanRenderPng,
     bool CanToggleHumanoidOptions)
 {
-    public static NpcSelectionState Empty { get; } = new("", "", false, false, false);
+    public static NpcSelectionState Empty { get; } = new("", "", false, false, false, false);
 }

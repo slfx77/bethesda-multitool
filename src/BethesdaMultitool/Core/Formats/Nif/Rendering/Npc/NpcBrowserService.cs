@@ -35,6 +35,10 @@ internal sealed class NpcBrowserService : IDisposable
     private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
     private readonly BethesdaGame _game;
     private readonly MeshArchiveSet _meshArchives;
+
+    // Composition caches contain ordinary dictionaries, and generated FaceGen/EGT keys are stable
+    // per actor. Keep each compose/capture/evict transaction exclusive so a concurrent preview,
+    // export, render, or batch item cannot evict another operation's in-flight payload.
     private readonly NpcBrowserOperationGate _operationGate = new();
     private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();
@@ -725,8 +729,8 @@ internal sealed class NpcBrowserService : IDisposable
             foreach (var npc in appearances)
             {
                 ct.ThrowIfCancellationRequested();
+                using (_operationGate.Enter())
                 {
-                    using var operation = _operationGate.Enter();
                     ct.ThrowIfCancellationRequested();
                     try
                     {
@@ -805,8 +809,8 @@ internal sealed class NpcBrowserService : IDisposable
             foreach (var npc in appearances)
             {
                 ct.ThrowIfCancellationRequested();
+                using (_operationGate.Enter())
                 {
-                    using var operation = _operationGate.Enter();
                     ct.ThrowIfCancellationRequested();
                     try
                     {

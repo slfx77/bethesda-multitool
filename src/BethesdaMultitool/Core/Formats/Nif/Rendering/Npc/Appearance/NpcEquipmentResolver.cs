@@ -121,42 +121,77 @@ internal sealed class NpcEquipmentResolver
     private static List<ResolvedArmorChoice> SelectBestOblivionArmorChoices(
         List<ResolvedArmorChoice> candidates)
     {
-        var ranked = new List<ResolvedArmorChoice>(candidates);
-        ranked.Sort(static (left, right) =>
-        {
-            var comparison = left.Armor.IsClothing.CompareTo(right.Armor.IsClothing);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            if (!left.Armor.IsClothing)
-            {
-                comparison = right.Armor.BaseArmorRating.CompareTo(left.Armor.BaseArmorRating);
-                if (comparison != 0)
-                {
-                    return comparison;
-                }
-            }
-
-            return left.InventoryIndex.CompareTo(right.InventoryIndex);
-        });
-
         uint claimedBipedFlags = 0;
         var selected = new List<ResolvedArmorChoice>();
-        foreach (var candidate in ranked)
+        // The classic engine initializes worn items in ascending biped-slot order.
+        // This is significant for an upper-body garment that also owns the lower
+        // slot: it must claim both before a separately authored pair of pants is
+        // considered. Selecting candidates globally reverses that outcome for
+        // Reynald Jemane because his pants precede his two-slot outfit in CNTO.
+        for (var bit = 0; bit < 20; bit++)
         {
-            if ((candidate.Armor.BipedFlags & claimedBipedFlags) != 0)
+            var slot = 1u << bit;
+            if ((claimedBipedFlags & slot) != 0)
             {
                 continue;
             }
 
-            selected.Add(candidate);
-            claimedBipedFlags |= candidate.Armor.BipedFlags;
+            ResolvedArmorChoice? best = null;
+            foreach (var candidate in candidates)
+            {
+                if ((candidate.Armor.BipedFlags & slot) == 0 ||
+                    (candidate.Armor.BipedFlags & claimedBipedFlags) != 0)
+                {
+                    continue;
+                }
+
+                if (!best.HasValue || CompareOblivionCandidates(candidate, best.Value) < 0)
+                {
+                    best = candidate;
+                }
+            }
+
+            if (!best.HasValue)
+            {
+                continue;
+            }
+
+            selected.Add(best.Value);
+            claimedBipedFlags |= best.Value.Armor.BipedFlags;
         }
 
         selected.Sort(static (left, right) => left.InventoryIndex.CompareTo(right.InventoryIndex));
         return selected;
+    }
+
+    private static int CompareOblivionCandidates(
+        ResolvedArmorChoice left,
+        ResolvedArmorChoice right)
+    {
+        var comparison = left.Armor.IsClothing.CompareTo(right.Armor.IsClothing);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        if (left.Armor.IsClothing)
+        {
+            comparison = right.Armor.BaseValue.CompareTo(left.Armor.BaseValue);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+        }
+        else
+        {
+            comparison = right.Armor.BaseArmorRating.CompareTo(left.Armor.BaseArmorRating);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+        }
+
+        return left.InventoryIndex.CompareTo(right.InventoryIndex);
     }
 
     private ArmoScanEntry? ResolveArmor(uint formId, int depth = 0)

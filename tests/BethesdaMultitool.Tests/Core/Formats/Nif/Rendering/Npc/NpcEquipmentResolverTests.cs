@@ -188,7 +188,7 @@ public sealed class NpcEquipmentResolverTests
     }
 
     [Fact]
-    public void Resolve_OblivionReynaldInventory_EmitsOneNonOverlappingItemPerBodySlot()
+    public void Resolve_OblivionReynaldInventory_PrefersUpperAndLowerOutfitOverOverlappingPants()
     {
         var resolver = CreateResolver(
             new Dictionary<uint, ArmoScanEntry>
@@ -196,20 +196,23 @@ public sealed class NpcEquipmentResolverTests
                 [0x0001C830] = new()
                 {
                     IsClothing = true,
+                    BaseValue = 2,
                     BipedFlags = 0x08,
-                    MaleBipedModelPath = @"Clothes\LowerClass\07\M\Pants.NIF"
+                    MaleBipedModelPath = @"Clothes\MiddleClass\02\M\Pants.NIF"
                 },
                 [0x0001C884] = new()
                 {
                     IsClothing = true,
-                    BipedFlags = 0x04,
-                    MaleBipedModelPath = @"Clothes\MiddleClass\04\M\Shirt.NIF"
+                    BaseValue = 2,
+                    BipedFlags = 0x0C,
+                    MaleBipedModelPath = @"Clothes\MiddleClass\03\M\Shirt.NIF"
                 },
                 [0x0001C883] = new()
                 {
                     IsClothing = true,
+                    BaseValue = 1,
                     BipedFlags = 0x20,
-                    MaleBipedModelPath = @"Clothes\MiddleClass\04\M\Shoes.NIF"
+                    MaleBipedModelPath = @"Clothes\MiddleClass\02\M\Shoes.NIF"
                 }
             },
             BethesdaGame.Oblivion);
@@ -223,19 +226,24 @@ public sealed class NpcEquipmentResolverTests
             false);
 
         Assert.NotNull(equippedItems);
-        Assert.Equal(3, equippedItems!.Count);
+        Assert.Equal(2, equippedItems!.Count);
         Assert.Equal(
-            @"meshes\clothes\lowerclass\07\m\pants.nif",
-            Assert.Single(equippedItems, item => (item.BipedFlags & 0x08) != 0).MeshPath,
-            ignoreCase: true);
-        Assert.Equal(
-            @"meshes\clothes\middleclass\04\m\shirt.nif",
+            @"meshes\clothes\middleclass\03\m\shirt.nif",
             Assert.Single(equippedItems, item => (item.BipedFlags & 0x04) != 0).MeshPath,
             ignoreCase: true);
         Assert.Equal(
-            @"meshes\clothes\middleclass\04\m\shoes.nif",
+            @"meshes\clothes\middleclass\03\m\shirt.nif",
+            Assert.Single(equippedItems, item => (item.BipedFlags & 0x08) != 0).MeshPath,
+            ignoreCase: true);
+        Assert.Equal(
+            @"meshes\clothes\middleclass\02\m\shoes.nif",
             Assert.Single(equippedItems, item => (item.BipedFlags & 0x20) != 0).MeshPath,
             ignoreCase: true);
+        Assert.DoesNotContain(
+            equippedItems,
+            static item => item.MeshPath.EndsWith(
+                @"middleclass\02\m\pants.nif",
+                StringComparison.OrdinalIgnoreCase));
 
         var appearance = new NpcAppearance
         {
@@ -253,6 +261,40 @@ public sealed class NpcEquipmentResolverTests
             effectiveHandTex: null);
 
         Assert.Empty(bodyParts);
+    }
+
+    [Fact]
+    public void Resolve_OblivionClothing_PrefersHigherValueWithinSlot()
+    {
+        var resolver = CreateResolver(
+            new Dictionary<uint, ArmoScanEntry>
+            {
+                [1] = new()
+                {
+                    IsClothing = true,
+                    BaseValue = 1,
+                    BipedFlags = 0x04,
+                    MaleBipedModelPath = @"clothes\low-value-shirt.nif"
+                },
+                [2] = new()
+                {
+                    IsClothing = true,
+                    BaseValue = 2,
+                    BipedFlags = 0x04,
+                    MaleBipedModelPath = @"clothes\high-value-shirt.nif"
+                }
+            },
+            BethesdaGame.Oblivion);
+
+        var equippedItem = Assert.Single(
+            resolver.Resolve(
+                [new InventoryItem(1, 1), new InventoryItem(2, 1)],
+                false)!);
+
+        Assert.Equal(
+            @"meshes\clothes\high-value-shirt.nif",
+            equippedItem.MeshPath,
+            ignoreCase: true);
     }
 
     [Fact]
@@ -277,9 +319,15 @@ public sealed class NpcEquipmentResolverTests
             equippedItems,
             static item => (item.BipedFlags & 0x08) != 0);
         Assert.Equal(
-            @"meshes\clothes\lowerclass\07\m\pants.nif",
+            @"meshes\clothes\middleclass\03\m\shirt.nif",
             lowerGarment.MeshPath,
             ignoreCase: true);
+        Assert.Equal(0x0Cu, lowerGarment.BipedFlags);
+        Assert.DoesNotContain(
+            equippedItems,
+            static item => item.MeshPath.EndsWith(
+                @"middleclass\02\m\pants.nif",
+                StringComparison.OrdinalIgnoreCase));
 
         var coveredSlots = equippedItems.Aggregate(
             0u,

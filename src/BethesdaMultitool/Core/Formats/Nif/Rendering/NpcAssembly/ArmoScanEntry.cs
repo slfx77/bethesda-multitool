@@ -8,6 +8,7 @@ internal sealed class ArmoScanEntry
     public string? EditorId { get; init; }
     public bool IsClothing { get; init; }
     public ushort BaseArmorRating { get; init; }
+    public uint BaseValue { get; init; }
     public uint BipedFlags { get; init; }
     public byte GeneralFlags { get; init; }
     public string? MaleBipedModelPath { get; init; }

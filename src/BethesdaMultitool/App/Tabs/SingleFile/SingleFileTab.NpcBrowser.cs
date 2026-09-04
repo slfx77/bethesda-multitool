@@ -36,6 +36,8 @@ public sealed partial class SingleFileTab
     private int _npcViewerNativeOutcomeGeneration;
     private bool _npcViewerDisposed;
     private CancellationTokenSource? _npcRenderOptionDebounce;
+    private NpcSelectionState _npcSelectionState = NpcSelectionState.Empty;
+    private bool _npcFileOperationInProgress;
     private bool _npcActorKindChangeInProgress;
     private bool _npcListRefreshInProgress;
     private bool _webViewInitialized;
@@ -445,6 +447,7 @@ public sealed partial class SingleFileTab
         // a Creatures header over stale NPC rows while the canceled load unwinds.
         ApplyNpcActorKind(requestedKind);
         await CancelNpcViewerLoadAndDrainAsync();
+        RefreshNpcInteractionState();
     }
 
     private void ApplyNpcActorKind(NpcActorKind actorKind)
@@ -455,12 +458,13 @@ public sealed partial class SingleFileTab
             NpcActorKindTabView.SelectedItem = actorKind == NpcActorKind.Creature
                 ? NpcCreatureListTab
                 : NpcNpcListTab;
-            UpdateNpcActorKindPresentation(actorKind);
-            ApplyNpcListState(_npcBrowser.SetActorKind(
+            var listState = _npcBrowser.SetActorKind(
                 actorKind,
                 NpcNamedOnlyCheckBox.IsChecked == true,
                 NpcSearchBox.Text,
-                NpcShowEditorIdCheckBox.IsChecked == true));
+                NpcShowEditorIdCheckBox.IsChecked == true);
+            UpdateNpcActorKindPresentation(actorKind);
+            ApplyNpcListState(listState);
         }
         finally
         {
@@ -483,7 +487,7 @@ public sealed partial class SingleFileTab
         NpcBatchHelpText.Text = actorKind == NpcActorKind.Creature
             ? "Batch operations are currently available for NPCs only"
             : "Uses display and render settings above";
-        SetNpcBatchButtonsEnabled(_npcBatchCts is null);
+        RefreshNpcInteractionState();
     }
 
     private void RefreshNpcList()
@@ -509,10 +513,7 @@ public sealed partial class SingleFileTab
         try
         {
             NpcListView.ItemsSource = state.Items;
-            if (state.RestoredSelection != null)
-            {
-                NpcListView.SelectedItem = state.RestoredSelection;
-            }
+            NpcListView.SelectedItem = state.RestoredSelection;
         }
         finally
         {
@@ -520,6 +521,7 @@ public sealed partial class SingleFileTab
         }
 
         NpcCountText.Text = state.CountText;
+        RefreshNpcInteractionState();
     }
 
     private void NpcSearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -546,7 +548,9 @@ public sealed partial class SingleFileTab
 
         CancelNpcRenderOptionDebounce();
 
-        if (NpcListView.SelectedItem is not NpcListItem npc || _npcBrowserService == null)
+        if (NpcListView.SelectedItem is not NpcListItem npc ||
+            _npcBrowserService == null ||
+            !IsActorInCurrentFamily(npc))
         {
             var emptyGeneration = unchecked(++_npcViewerLoadGeneration);
             await CancelNpcViewerLoadAndDrainAsync();
@@ -566,24 +570,108 @@ public sealed partial class SingleFileTab
 
         var load = LoadNpcIntoViewerAsync(npc);
         _npcViewerLoadTask = load;
-        await load;
+        RefreshNpcInteractionState();
+        try
+        {
+            await load;
+        }
+        finally
+        {
+            if (ReferenceEquals(_npcViewerLoadTask, load))
+            {
+                RefreshNpcInteractionState();
+            }
+        }
     }
 
     private void ApplyNpcSelectionState(NpcSelectionState state)
     {
+        _npcSelectionState = state;
         NpcDetailName.Text = state.Name;
         NpcDetailInfo.Text = state.DetailText;
-        NpcFullBodyCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
-        NpcArmorCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
-        NpcWeaponCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
-        NpcIdlePoseCheckBox.IsEnabled = state.CanToggleHumanoidOptions;
-        NpcPreviewPlayerLevelNumberBox.IsEnabled = state.CanToggleHumanoidOptions;
-        NpcExportGlbButton.IsEnabled = state.CanExportGlb;
-        NpcRenderPngButton.IsEnabled = state.CanRenderPng;
+        RefreshNpcInteractionState();
+    }
+
+    private void RefreshNpcInteractionState()
+    {
+        var interactionAvailable =
+            _npcBrowserService is not null &&
+            _npcBatchCts is null &&
+            !_npcFileOperationInProgress;
+        var actorFileActionsAvailable =
+            interactionAvailable &&
+            _npcRenderOptionDebounce is null &&
+            _npcViewerLoadTask is not { IsCompleted: false };
+        var npcBatchSelectionAvailable =
+            interactionAvailable &&
+            _npcBrowser.ActorKind == NpcActorKind.Npc &&
+            _npcBrowser.FilteredList.Count > 0;
+
+        NpcActorKindTabView.IsEnabled = interactionAvailable;
+        NpcSearchBox.IsEnabled = interactionAvailable;
+        NpcNamedOnlyCheckBox.IsEnabled = interactionAvailable;
+        NpcShowEditorIdCheckBox.IsEnabled = interactionAvailable;
+        NpcListView.IsEnabled = interactionAvailable;
+        NpcSelectAllButton.IsEnabled = npcBatchSelectionAvailable;
+        NpcDeselectAllButton.IsEnabled = npcBatchSelectionAvailable;
+
+        NpcFullBodyCheckBox.IsEnabled =
+            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+        NpcArmorCheckBox.IsEnabled =
+            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+        NpcWeaponCheckBox.IsEnabled =
+            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+        NpcIdlePoseCheckBox.IsEnabled =
+            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+        NpcPreviewPlayerLevelNumberBox.IsEnabled =
+            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+
+        var softwareRenderAvailable = actorFileActionsAvailable && _npcSelectionState.CanRenderPng;
+        NpcPerspectiveComboBox.IsEnabled = softwareRenderAvailable;
+        NpcElevationSlider.IsEnabled = softwareRenderAvailable;
+        NpcSizeNumberBox.IsEnabled = softwareRenderAvailable;
+        NpcExportGlbButton.IsEnabled = actorFileActionsAvailable && _npcSelectionState.CanExportGlb;
+        NpcRenderPngButton.IsEnabled = softwareRenderAvailable;
         NpcCaptureNativePngButton.IsEnabled =
-            state.CanRenderPng &&
+            actorFileActionsAvailable &&
+            _npcSelectionState.CanCaptureNative &&
             _npcViewerScene is not null &&
             NpcSceneViewer.RenderState == BethesdaSceneViewerRenderState.Ready;
+        SetNpcBatchButtonsEnabled(actorFileActionsAvailable);
+    }
+
+    private bool IsActorInCurrentFamily(NpcListItem npc)
+    {
+        return npc.IsCreature == (_npcBrowser.ActorKind == NpcActorKind.Creature);
+    }
+
+    private bool IsCurrentNpcSelection(NpcListItem npc)
+    {
+        return IsActorInCurrentFamily(npc) &&
+               NpcListView.SelectedItem is NpcListItem selected &&
+               selected.FormId == npc.FormId &&
+               selected.IsCreature == npc.IsCreature;
+    }
+
+    private bool TryBeginNpcFileOperation()
+    {
+        if (_npcFileOperationInProgress ||
+            _npcBatchCts is not null ||
+            _npcRenderOptionDebounce is not null ||
+            _npcViewerLoadTask is { IsCompleted: false })
+        {
+            return false;
+        }
+
+        _npcFileOperationInProgress = true;
+        RefreshNpcInteractionState();
+        return true;
+    }
+
+    private void EndNpcFileOperation()
+    {
+        _npcFileOperationInProgress = false;
+        RefreshNpcInteractionState();
     }
 
     #endregion
@@ -593,6 +681,10 @@ public sealed partial class SingleFileTab
     private async Task LoadNpcIntoViewerAsync(NpcListItem npc)
     {
         await CancelNpcViewerLoadAndDrainAsync();
+        // Selection can change while the preceding build observes cancellation. Do not spend a
+        // complete second composition on the superseded row before the latest request can start.
+        if (!IsCurrentNpcSelection(npc)) return;
+
         var service = _npcBrowserService;
         if (service == null) return;
 
@@ -754,7 +846,9 @@ public sealed partial class SingleFileTab
 
     private async Task ReloadNpcAfterRenderOptionChangeAsync()
     {
-        if (NpcListView.SelectedItem is not NpcListItem npc || _npcBrowserService == null)
+        if (NpcListView.SelectedItem is not NpcListItem npc ||
+            _npcBrowserService == null ||
+            !IsActorInCurrentFamily(npc))
         {
             return;
         }
@@ -764,6 +858,7 @@ public sealed partial class SingleFileTab
         var debounce = new CancellationTokenSource();
         _npcRenderOptionDebounce = debounce;
         var token = debounce.Token;
+        RefreshNpcInteractionState();
 
         try
         {
@@ -779,7 +874,18 @@ public sealed partial class SingleFileTab
             {
                 var load = LoadNpcIntoViewerAsync(selectedNpc);
                 _npcViewerLoadTask = load;
-                await load;
+                RefreshNpcInteractionState();
+                try
+                {
+                    await load;
+                }
+                finally
+                {
+                    if (ReferenceEquals(_npcViewerLoadTask, load))
+                    {
+                        RefreshNpcInteractionState();
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -794,6 +900,7 @@ public sealed partial class SingleFileTab
             }
 
             debounce.Dispose();
+            RefreshNpcInteractionState();
         }
     }
 
@@ -803,36 +910,31 @@ public sealed partial class SingleFileTab
 
     private async void NpcExportGlb_Click(object sender, RoutedEventArgs e)
     {
-        if (_npcBrowser.SelectedFormId == null || _npcBrowserService == null)
+        var service = _npcBrowserService;
+        if (NpcListView.SelectedItem is not NpcListItem npc ||
+            service == null ||
+            !IsActorInCurrentFamily(npc) ||
+            !TryBeginNpcFileOperation())
         {
             return;
         }
 
-        var picker = new FileSavePicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-        picker.FileTypeChoices.Add("GLB File", [".glb"]);
-        var npc = NpcListView.SelectedItem as NpcListItem;
-        if (npc == null)
-        {
-            return;
-        }
-
-        picker.SuggestedFileName = NpcBrowserController.BuildDefaultFileName(npc, ".glb");
-        InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
-
-        var file = await picker.PickSaveFileAsync();
-        if (file == null)
-        {
-            return;
-        }
-
-        NpcExportGlbButton.IsEnabled = false;
         try
         {
+            var options = BuildNpcRenderOptions();
+            var picker = new FileSavePicker();
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeChoices.Add("GLB File", [".glb"]);
+            picker.SuggestedFileName = NpcBrowserController.BuildDefaultFileName(npc, ".glb");
+            InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
+
+            var file = await picker.PickSaveFileAsync();
+            if (file == null) return;
+
             var glbBytes = await NpcBrowserWorkflowService.BuildGlbAsync(
-                _npcBrowserService,
+                service,
                 npc,
-                BuildNpcRenderOptions());
+                options);
 
             if (glbBytes != null)
             {
@@ -850,39 +952,39 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            NpcExportGlbButton.IsEnabled = true;
+            EndNpcFileOperation();
         }
     }
 
     private async void NpcRenderPng_Click(object sender, RoutedEventArgs e)
     {
-        if (_npcBrowser.SelectedFormId == null || _npcBrowserService == null)
+        var service = _npcBrowserService;
+        if (NpcListView.SelectedItem is not NpcListItem npc ||
+            npc.IsCreature ||
+            service == null ||
+            !IsActorInCurrentFamily(npc) ||
+            !TryBeginNpcFileOperation())
         {
             return;
         }
 
-        var picker = new FileSavePicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-        picker.FileTypeChoices.Add("PNG Image", [".png"]);
-        var npc = NpcListView.SelectedItem as NpcListItem;
-        picker.SuggestedFileName = NpcBrowserController.BuildDefaultFileName(npc, ".png");
-        InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
-
-        var file = await picker.PickSaveFileAsync();
-        if (file == null)
-        {
-            return;
-        }
-
-        NpcRenderPngButton.IsEnabled = false;
         try
         {
             var options = BuildNpcRenderOptions();
             var spriteSize = GetSelectedSpriteSize();
             var camera = BuildCameraConfig();
+            var picker = new FileSavePicker();
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeChoices.Add("PNG Image", [".png"]);
+            picker.SuggestedFileName = NpcBrowserController.BuildDefaultFileName(npc, ".png");
+            InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
+
+            var file = await picker.PickSaveFileAsync();
+            if (file == null) return;
+
             var viewCount = await NpcBrowserWorkflowService.RenderPngViewsAsync(
-                _npcBrowserService,
-                _npcBrowser.SelectedFormId.Value,
+                service,
+                npc.FormId,
                 file.Path,
                 options,
                 spriteSize,
@@ -896,7 +998,7 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            NpcRenderPngButton.IsEnabled = true;
+            EndNpcFileOperation();
         }
     }
 
@@ -970,12 +1072,21 @@ public sealed partial class SingleFileTab
         string operationName,
         Func<IProgress<(int Done, int Total, string Name)>, CancellationToken, Task> work)
     {
-        SetNpcBatchButtonsEnabled(false);
+        if (_npcBatchCts is not null ||
+            _npcFileOperationInProgress ||
+            _npcRenderOptionDebounce is not null ||
+            _npcViewerLoadTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        var batchCts = new CancellationTokenSource();
+        _npcBatchCts = batchCts;
+        RefreshNpcInteractionState();
         NpcBatchProgressBar.Visibility = Visibility.Visible;
         NpcBatchProgressBar.Value = 0;
         NpcBatchStatusText.Text = $"{operationName}...";
 
-        _npcBatchCts = new CancellationTokenSource();
         var progress = new Progress<(int Done, int Total, string Name)>(p =>
         {
             NpcBatchProgressBar.Maximum = p.Total;
@@ -989,7 +1100,7 @@ public sealed partial class SingleFileTab
 
         try
         {
-            await work(progress, _npcBatchCts.Token);
+            await work(progress, batchCts.Token);
             NpcBatchStatusText.Text = NpcBrowserController.FormatBatchCompleted(operationName);
         }
         catch (OperationCanceledException)
@@ -1003,9 +1114,13 @@ public sealed partial class SingleFileTab
         finally
         {
             NpcBatchProgressBar.Visibility = Visibility.Collapsed;
-            SetNpcBatchButtonsEnabled(true);
-            _npcBatchCts?.Dispose();
-            _npcBatchCts = null;
+            if (ReferenceEquals(_npcBatchCts, batchCts))
+            {
+                _npcBatchCts = null;
+            }
+
+            batchCts.Dispose();
+            RefreshNpcInteractionState();
         }
     }
 
@@ -1039,7 +1154,10 @@ public sealed partial class SingleFileTab
 
     private void SetAllNpcSelected(bool selected)
     {
-        if (_npcBrowser.FilteredList.Count == 0)
+        if (_npcBrowser.ActorKind != NpcActorKind.Npc ||
+            _npcBatchCts is not null ||
+            _npcFileOperationInProgress ||
+            _npcBrowser.FilteredList.Count == 0)
         {
             return;
         }
@@ -1204,41 +1322,43 @@ public sealed partial class SingleFileTab
 
     private async void NpcCaptureNativePng_Click(object sender, RoutedEventArgs e)
     {
+        var npc = NpcListView.SelectedItem as NpcListItem;
         if (_npcViewerScene is null ||
-            NpcSceneViewer.RenderState != BethesdaSceneViewerRenderState.Ready)
+            NpcSceneViewer.RenderState != BethesdaSceneViewerRenderState.Ready ||
+            npc is null ||
+            !IsActorInCurrentFamily(npc) ||
+            !TryBeginNpcFileOperation())
         {
             return;
         }
 
-        var npc = NpcListView.SelectedItem as NpcListItem;
-        var outputPath = EnvironmentVariables.Get(EnvironmentVariables.Viewer.NativeCaptureOutput);
-        if (string.IsNullOrWhiteSpace(outputPath))
-        {
-            var picker = new FileSavePicker();
-            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-            picker.FileTypeChoices.Add("PNG Image", [".png"]);
-            picker.SuggestedFileName = Path.ChangeExtension(
-                NpcBrowserController.BuildDefaultFileName(npc, ".png"),
-                ".native.png");
-            InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
-
-            var file = await picker.PickSaveFileAsync();
-            if (file == null) return;
-            outputPath = file.Path;
-        }
-        else
-        {
-            outputPath = Path.GetFullPath(outputPath);
-            var outputDirectory = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(outputDirectory))
-            {
-                Directory.CreateDirectory(outputDirectory);
-            }
-        }
-
-        NpcCaptureNativePngButton.IsEnabled = false;
         try
         {
+            var outputPath = EnvironmentVariables.Get(EnvironmentVariables.Viewer.NativeCaptureOutput);
+            if (string.IsNullOrWhiteSpace(outputPath))
+            {
+                var picker = new FileSavePicker();
+                picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+                picker.FileTypeChoices.Add("PNG Image", [".png"]);
+                picker.SuggestedFileName = Path.ChangeExtension(
+                    NpcBrowserController.BuildDefaultFileName(npc, ".png"),
+                    ".native.png");
+                InitializeWithWindow.Initialize(picker, NpcGetWindowHandle());
+
+                var file = await picker.PickSaveFileAsync();
+                if (file == null) return;
+                outputPath = file.Path;
+            }
+            else
+            {
+                outputPath = Path.GetFullPath(outputPath);
+                var outputDirectory = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(outputDirectory))
+                {
+                    Directory.CreateDirectory(outputDirectory);
+                }
+            }
+
             var pngBytes = await NpcSceneViewer.CapturePngAsync();
             await File.WriteAllBytesAsync(outputPath, pngBytes);
             StatusTextBlock.Text = $"Captured native viewport: {Path.GetFileName(outputPath)}";
@@ -1249,9 +1369,7 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            NpcCaptureNativePngButton.IsEnabled =
-                _npcViewerScene is not null &&
-                NpcSceneViewer.RenderState == BethesdaSceneViewerRenderState.Ready;
+            EndNpcFileOperation();
         }
     }
 
@@ -1298,8 +1416,7 @@ public sealed partial class SingleFileTab
         BethesdaSceneViewerRenderStateChangedEventArgs e)
     {
         CompleteNpcViewerNativeOutcome(e.State);
-        NpcCaptureNativePngButton.IsEnabled =
-            e.State == BethesdaSceneViewerRenderState.Ready && _npcViewerScene is not null;
+        RefreshNpcInteractionState();
 
         if (e.State == BethesdaSceneViewerRenderState.Faulted)
         {
@@ -1428,6 +1545,7 @@ public sealed partial class SingleFileTab
         }
 
         _npcBrowser.Reset();
+        ApplyNpcSelectionState(NpcSelectionState.Empty);
         ApplyNpcActorKind(NpcActorKind.Npc);
 
         if (_webViewInitialized)

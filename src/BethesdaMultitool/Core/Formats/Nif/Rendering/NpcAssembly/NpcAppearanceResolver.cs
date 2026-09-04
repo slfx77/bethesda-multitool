@@ -27,6 +27,9 @@ internal sealed class NpcAppearanceResolver
 
     public int RaceCount => _index.Races.Count;
 
+    /// <summary>The game family established while the appearance index was decoded.</summary>
+    internal BethesdaGame Game => _index.Game;
+
     /// <summary>Scans an ESM and builds a resolver over its NPC/creature/race/weapon records.</summary>
     public static NpcAppearanceResolver Build(byte[] esmData, bool bigEndian)
     {

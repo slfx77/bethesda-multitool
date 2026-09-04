@@ -110,7 +110,6 @@ internal static class NpcExportPipeline
                         NpcExportFileNaming.BuildFileName(npc));
                     GlbWriter.Write(scene, textureResolver, outputPath);
                     GltfValidatorRunner.ValidateOrThrow(outputPath);
-                    textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
                     exported++;
 
                     if (settings.NpcFilters != null || appearances.Count <= 20)
@@ -133,7 +132,10 @@ internal static class NpcExportPipeline
                 }
                 finally
                 {
-                    textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                    foreach (var textureKey in NpcTextureHelpers.BuildNpcGeneratedTextureKeys(npc))
+                    {
+                        textureResolver.EvictTexture(textureKey);
+                    }
                 }
             }
         }
@@ -171,7 +173,7 @@ internal static class NpcExportPipeline
                         "[green]OK:[/] 0x{0:X8} {1} [{2}] -> {3}",
                         formId,
                         creature.FullName ?? "?",
-                        creature.CreatureTypeName,
+                        creature.GetCreatureTypeName(resolver.Game),
                         Path.GetFileName(outputPath));
                 }
                 catch (Exception ex)
