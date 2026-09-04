@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Ui;
 
 namespace BethesdaMultitool;
 
@@ -13,6 +14,7 @@ internal sealed class NpcBrowserController
 
     public IReadOnlyList<NpcListItem> FilteredList => _filteredList;
     public IReadOnlyList<NpcListItem> FullList => _fullList;
+    public NpcActorKind ActorKind { get; private set; }
     public uint? SelectedFormId { get; private set; }
 
     /// <summary>Replaces the full NPC list and returns the filtered view for the current options.</summary>
@@ -27,7 +29,7 @@ internal sealed class NpcBrowserController
     public NpcListState Refresh(bool namedOnly, string? searchText, bool showEditorId)
     {
         NpcListItem.ShowEditorId = showEditorId;
-        _filteredList = NpcBrowserWorkflowService.FilterNpcList(_fullList, namedOnly, searchText?.Trim());
+        _filteredList = NpcActorListPolicy.Filter(_fullList, ActorKind, namedOnly, searchText?.Trim());
         var restored = SelectedFormId.HasValue
             ? _filteredList.FirstOrDefault(n => n.FormId == SelectedFormId.Value)
             : null;
@@ -35,7 +37,23 @@ internal sealed class NpcBrowserController
         return new NpcListState(
             _filteredList,
             restored,
-            NpcBrowserWorkflowService.BuildSelectionCountText(_filteredList, _fullList));
+            NpcActorListPolicy.BuildSelectionCountText(_filteredList, _fullList, ActorKind));
+    }
+
+    /// <summary>Switches between NPC and creature rows, clearing the incompatible prior selection.</summary>
+    public NpcListState SetActorKind(
+        NpcActorKind actorKind,
+        bool namedOnly,
+        string? searchText,
+        bool showEditorId)
+    {
+        if (ActorKind != actorKind)
+        {
+            ActorKind = actorKind;
+            SelectedFormId = null;
+        }
+
+        return Refresh(namedOnly, searchText, showEditorId);
     }
 
     /// <summary>Finds an NPC by FormID within the currently visible (filtered) list.</summary>
@@ -77,7 +95,7 @@ internal sealed class NpcBrowserController
     /// <summary>Builds the "N selected / M shown" count label for the list footer.</summary>
     public string BuildSelectionCountText()
     {
-        return NpcBrowserWorkflowService.BuildSelectionCountText(_filteredList, _fullList);
+        return NpcActorListPolicy.BuildSelectionCountText(_filteredList, _fullList, ActorKind);
     }
 
     /// <summary>Clears the loaded NPC lists and selection.</summary>
@@ -85,6 +103,7 @@ internal sealed class NpcBrowserController
     {
         _filteredList = [];
         _fullList = [];
+        ActorKind = NpcActorKind.Npc;
         SelectedFormId = null;
     }
 

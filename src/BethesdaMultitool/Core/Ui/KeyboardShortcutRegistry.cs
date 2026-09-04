@@ -38,6 +38,8 @@ public static class KeyboardShortcutRegistry
         new("HexViewer", "Arrow keys", "Move hex cursor"),
         new("HexViewer", "Page Up / Page Down", "Scroll by one screen"),
 
+        new("Asset Browser", "Ctrl+O", "Open a folder, archive, or game install"),
+
         new("Model Tools — Viewer", "Ctrl+O", "Open folder or archive"),
         new("Model Tools — Viewer", "Ctrl+E", "Export current NIF as GLB"),
         new("Model Tools — Viewer", "Ctrl+R", "Render current NIF as PNG"),

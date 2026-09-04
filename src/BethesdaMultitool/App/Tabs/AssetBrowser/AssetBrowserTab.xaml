@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="BethesdaMultitool.AssetBrowserTab"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+  xmlns:local="using:BethesdaMultitool">
+
+  <Grid Padding="16" VerticalAlignment="Stretch">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!--  Header  -->
+    <StackPanel Grid.Row="0" Margin="0,0,0,8"
+                Style="{StaticResource TabHeaderStackPanelStyle}">
+      <TextBlock
+        x:Uid="Header_AssetBrowser"
+        AutomationProperties.HeadingLevel="Level1"
+        Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock
+        x:Uid="Subtitle_AssetBrowser"
+        Style="{StaticResource TabSubtitleStyle}" />
+    </StackPanel>
+
+    <!--  Source bar: path + open menu  -->
+    <Grid Grid.Row="1" Margin="0,0,0,8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBox
+        x:Name="SourcePathTextBox"
+        Grid.Column="0"
+        AutomationProperties.Name="Asset source path"
+        AutomationProperties.HelpText="Folder, archive, or classic game install root"
+        FontSize="12"
+        IsReadOnly="True"
+        PlaceholderText="No source opened" />
+      <DropDownButton
+        x:Name="OpenSourceButton"
+        Grid.Column="1"
+        Margin="4,0,0,0"
+        AutomationProperties.Name="Open folder, archive, or game"
+        ToolTipService.ToolTip="Open a folder, an archive, or a classic game install (Ctrl+O)">
+        <DropDownButton.KeyboardAccelerators>
+          <KeyboardAccelerator Key="O" Modifiers="Control" />
+        </DropDownButton.KeyboardAccelerators>
+        <FontIcon Glyph="&#xE838;" FontSize="14" />
+        <DropDownButton.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedRight">
+            <MenuFlyoutItem Text="Open Folder..." Click="OpenFolder_Click">
+              <MenuFlyoutItem.Icon>
+                <FontIcon Glyph="&#xE8B7;" />
+              </MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Open Archive..." Click="OpenArchive_Click">
+              <MenuFlyoutItem.Icon>
+                <FontIcon Glyph="&#xE8E5;" />
+              </MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="Open Game Install..." Click="OpenGame_Click">
+              <MenuFlyoutItem.Icon>
+                <FontIcon Glyph="&#xE7FC;" />
+              </MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+          </MenuFlyout>
+        </DropDownButton.Flyout>
+      </DropDownButton>
+    </Grid>
+
+    <!--  Panes  -->
+    <controls:TabView
+      x:Name="PaneTabView"
+      Grid.Row="2"
+      AutomationProperties.Name="Asset browser panes"
+      CanDragTabs="False"
+      CanReorderTabs="False"
+      IsAddTabButtonVisible="False"
+      VerticalAlignment="Stretch">
+      <controls:TabView.TabItems>
+
+        <controls:TabViewItem x:Uid="Pane_DataExplorer" IsClosable="False">
+          <Grid>
+            <TextBlock
+              x:Name="DataExplorerPlaceholder"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Style="{StaticResource EmptyTabPlaceholderStyle}"
+              Text="Open a source to browse its records." />
+          </Grid>
+        </controls:TabViewItem>
+
+        <controls:TabViewItem x:Uid="Pane_MapViewer" IsClosable="False">
+          <Grid>
+            <TextBlock
+              x:Name="MapViewerPlaceholder"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Style="{StaticResource EmptyTabPlaceholderStyle}"
+              Text="Open a source to view its maps." />
+          </Grid>
+        </controls:TabViewItem>
+
+        <controls:TabViewItem x:Uid="Pane_AssetExplorer" IsClosable="False">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TreeView
+              x:Name="AssetTreeView"
+              Grid.Row="0"
+              AutomationProperties.Name="Asset tree"
+              SelectionMode="Single"
+              VerticalAlignment="Stretch" />
+
+            <TextBlock
+              x:Name="AssetTreeStatusText"
+              Grid.Row="1"
+              Margin="0,8,0,0"
+              Style="{StaticResource TabSubtitleStyle}"
+              Text="No source opened." />
+          </Grid>
+        </controls:TabViewItem>
+
+      </controls:TabView.TabItems>
+    </controls:TabView>
+  </Grid>
+</UserControl>

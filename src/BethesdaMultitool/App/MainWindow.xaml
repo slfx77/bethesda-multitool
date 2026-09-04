@@ -46,6 +46,15 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
+        <!--  Asset Browser  -->
+        <NavigationViewItem
+          x:Uid="Nav_AssetBrowser"
+          Tag="AssetBrowser">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE8B7;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
         <NavigationViewItemSeparator />
 
         <NavigationViewItemHeader x:Uid="NavHeader_Assets" />
@@ -155,6 +164,10 @@
               x:Name="SingleFileTabContent"
               VerticalAlignment="Stretch"
               Visibility="Visible" />
+            <tabs:AssetBrowserTab
+              x:Name="AssetBrowserTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
             <tabs:BatchModeTab
               x:Name="BatchModeTabContent"
               VerticalAlignment="Stretch"

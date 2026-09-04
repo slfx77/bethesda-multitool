@@ -65,11 +65,15 @@ public sealed class AssetNode : INotifyPropertyChanged
     ///     coerced to false, clearing the subtree. Only nodes whose value actually changed raise
     ///     <see cref="PropertyChanged" />.
     /// </summary>
+    // S4275 reads the setter as ignoring its field, but SetChecked is what writes _isChecked — here
+    // and on every descendant and ancestor, which is the whole point of a tristate tree node.
+#pragma warning disable S4275
     public bool? IsChecked
     {
         get => _isChecked;
         set => SetChecked(value ?? false);
     }
+#pragma warning restore S4275
 
     /// <summary>
     ///     Depth-first (in <see cref="Children" /> order) enumeration of the checked non-folder

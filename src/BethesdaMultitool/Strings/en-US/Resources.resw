@@ -64,6 +64,24 @@
   <data name="Nav_SingleFile.Content" xml:space="preserve">
     <value>Data Explorer</value>
   </data>
+  <data name="Nav_AssetBrowser.Content" xml:space="preserve">
+    <value>Asset Browser</value>
+  </data>
+  <data name="Header_AssetBrowser.Text" xml:space="preserve">
+    <value>Asset Browser</value>
+  </data>
+  <data name="Subtitle_AssetBrowser.Text" xml:space="preserve">
+    <value>Browse a folder, an archive, or a whole game install as one tree</value>
+  </data>
+  <data name="Pane_DataExplorer.Header" xml:space="preserve">
+    <value>Data Explorer</value>
+  </data>
+  <data name="Pane_MapViewer.Header" xml:space="preserve">
+    <value>Map Viewer</value>
+  </data>
+  <data name="Pane_AssetExplorer.Header" xml:space="preserve">
+    <value>Asset Explorer</value>
+  </data>
   <data name="Nav_BatchMode.Content" xml:space="preserve">
     <value>Batch Dump Analysis</value>
   </data>

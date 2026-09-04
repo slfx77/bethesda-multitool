@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.AssetBrowse;
@@ -57,6 +58,33 @@ public sealed class AssetBrowseSession : IDisposable
     {
         var fullPath = Path.GetFullPath(archivePath);
         return Create(GameFileSystem.OpenArchive(fullPath), fullPath);
+    }
+
+    /// <summary>
+    ///     Opens a whole classic game install as one tree: the loose files and every archive the
+    ///     game's profile declares, merged in the profile's override order. Identity comes from the
+    ///     install markers, which is what lets a game with no plugin file to sniff be recognised at
+    ///     all.
+    ///     <para>
+    ///         The directory must BE the install root, the same rule
+    ///         <c>ClassicGameAnalyzer</c> follows — for a Steam re-release that is the inner
+    ///         directory (<c>…\The Elder Scrolls Arena\ARENA</c>), not the wrapper. Returning null
+    ///         rather than descending keeps one detection rule across the app; a caller that wants
+    ///         to browse the wrapper anyway can still fall back to <see cref="OpenFolder" />.
+    ///     </para>
+    /// </summary>
+    /// <returns>The session, or null when the directory is not a classic install root.</returns>
+    public static AssetBrowseSession? TryOpenGameRoot(string directory)
+    {
+        ArgumentNullException.ThrowIfNull(directory);
+
+        var fullPath = Path.GetFullPath(directory);
+        if (ClassicGameLocator.DetectFromDirectory(fullPath) is not { } profile)
+        {
+            return null;
+        }
+
+        return Create(GameFileSystem.OpenGameRoot(profile, fullPath), fullPath);
     }
 
     private static AssetBrowseSession Create(IGameFileSystem fs, string sourcePath)

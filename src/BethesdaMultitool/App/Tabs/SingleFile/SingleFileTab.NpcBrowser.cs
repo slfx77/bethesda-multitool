@@ -36,6 +36,7 @@ public sealed partial class SingleFileTab
     private int _npcViewerNativeOutcomeGeneration;
     private bool _npcViewerDisposed;
     private CancellationTokenSource? _npcRenderOptionDebounce;
+    private bool _npcActorKindChangeInProgress;
     private bool _npcListRefreshInProgress;
     private bool _webViewInitialized;
     private Task? _webViewInitializationTask;
@@ -57,6 +58,8 @@ public sealed partial class SingleFileTab
         {
             await _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync);
         }
+
+        ApplyNpcActorKind(NpcActorKind.Npc);
 
         // Select the NPC in the list
         if (_npcBrowser.FilteredList.Count > 0)
@@ -102,6 +105,7 @@ public sealed partial class SingleFileTab
         }
 
         var resolvedActor = resolution.Actor!;
+        ApplyNpcActorKind(resolvedActor.IsCreature ? NpcActorKind.Creature : NpcActorKind.Npc);
         var visibleActor = _npcBrowser.FindVisible(resolvedActor.FormId);
         if (visibleActor is null)
         {
@@ -269,6 +273,7 @@ public sealed partial class SingleFileTab
             _npcBrowserService = service;
             var publishStarted = Stopwatch.GetTimestamp();
             ApplyNpcListState(listState);
+            UpdateNpcActorKindPresentation(_npcBrowser.ActorKind);
             _session.NpcBrowserPopulated = true;
             var publishElapsed = Stopwatch.GetElapsedTime(publishStarted);
             Logger.Instance.Info(
@@ -410,6 +415,76 @@ public sealed partial class SingleFileTab
     #endregion
 
     #region NPC List
+
+    private async void NpcActorKindTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_npcActorKindChangeInProgress ||
+            NpcSearchBox is null ||
+            NpcListView is null ||
+            NpcBatchHelpText is null ||
+            NpcBatchExportGlbButton is null ||
+            NpcBatchRenderPngButton is null)
+        {
+            return;
+        }
+
+        var requestedKind = GetSelectedNpcActorKind();
+        if (_npcBrowser.ActorKind == requestedKind)
+        {
+            UpdateNpcActorKindPresentation(requestedKind);
+            return;
+        }
+
+        CancelNpcRenderOptionDebounce();
+        unchecked { _npcViewerLoadGeneration++; }
+        _npcViewerScene = null;
+        NpcSceneViewer.ClearScene();
+        ApplyNpcSelectionState(NpcSelectionState.Empty);
+        // Publish the list that belongs to the already-visible tab before an old scene load is
+        // drained. A second tab click can then publish its own state immediately; it cannot leave
+        // a Creatures header over stale NPC rows while the canceled load unwinds.
+        ApplyNpcActorKind(requestedKind);
+        await CancelNpcViewerLoadAndDrainAsync();
+    }
+
+    private void ApplyNpcActorKind(NpcActorKind actorKind)
+    {
+        _npcActorKindChangeInProgress = true;
+        try
+        {
+            NpcActorKindTabView.SelectedItem = actorKind == NpcActorKind.Creature
+                ? NpcCreatureListTab
+                : NpcNpcListTab;
+            UpdateNpcActorKindPresentation(actorKind);
+            ApplyNpcListState(_npcBrowser.SetActorKind(
+                actorKind,
+                NpcNamedOnlyCheckBox.IsChecked == true,
+                NpcSearchBox.Text,
+                NpcShowEditorIdCheckBox.IsChecked == true));
+        }
+        finally
+        {
+            _npcActorKindChangeInProgress = false;
+        }
+    }
+
+    private NpcActorKind GetSelectedNpcActorKind()
+    {
+        return ReferenceEquals(NpcActorKindTabView.SelectedItem, NpcCreatureListTab)
+            ? NpcActorKind.Creature
+            : NpcActorKind.Npc;
+    }
+
+    private void UpdateNpcActorKindPresentation(NpcActorKind actorKind)
+    {
+        NpcSearchBox.PlaceholderText = actorKind == NpcActorKind.Creature
+            ? "Search creatures..."
+            : "Search NPCs...";
+        NpcBatchHelpText.Text = actorKind == NpcActorKind.Creature
+            ? "Batch operations are currently available for NPCs only"
+            : "Uses display and render settings above";
+        SetNpcBatchButtonsEnabled(_npcBatchCts is null);
+    }
 
     private void RefreshNpcList()
     {
@@ -831,8 +906,16 @@ public sealed partial class SingleFileTab
 
     private async void NpcBatchExportGlb_Click(object sender, RoutedEventArgs e)
     {
+        if (_npcBrowser.ActorKind != NpcActorKind.Npc)
+        {
+            NpcBatchStatusText.Text = "Batch operations are currently available for NPCs only.";
+            return;
+        }
+
         var outputDir = await PickOutputFolderAsync();
-        if (outputDir == null || _npcBrowserService == null)
+        if (outputDir == null ||
+            _npcBrowserService == null ||
+            _npcBrowser.ActorKind != NpcActorKind.Npc)
         {
             return;
         }
@@ -849,8 +932,16 @@ public sealed partial class SingleFileTab
 
     private async void NpcBatchRenderPng_Click(object sender, RoutedEventArgs e)
     {
+        if (_npcBrowser.ActorKind != NpcActorKind.Npc)
+        {
+            NpcBatchStatusText.Text = "Batch operations are currently available for NPCs only.";
+            return;
+        }
+
         var outputDir = await PickOutputFolderAsync();
-        if (outputDir == null || _npcBrowserService == null)
+        if (outputDir == null ||
+            _npcBrowserService == null ||
+            _npcBrowser.ActorKind != NpcActorKind.Npc)
         {
             return;
         }
@@ -920,8 +1011,11 @@ public sealed partial class SingleFileTab
 
     private void SetNpcBatchButtonsEnabled(bool enabled)
     {
-        NpcBatchExportGlbButton.IsEnabled = enabled;
-        NpcBatchRenderPngButton.IsEnabled = enabled;
+        var npcBatchAvailable = enabled &&
+                                _npcBrowserService is not null &&
+                                _npcBrowser.ActorKind == NpcActorKind.Npc;
+        NpcBatchExportGlbButton.IsEnabled = npcBatchAvailable;
+        NpcBatchRenderPngButton.IsEnabled = npcBatchAvailable;
     }
 
     #endregion
@@ -1334,6 +1428,7 @@ public sealed partial class SingleFileTab
         }
 
         _npcBrowser.Reset();
+        ApplyNpcActorKind(NpcActorKind.Npc);
 
         if (_webViewInitialized)
         {

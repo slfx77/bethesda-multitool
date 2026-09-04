@@ -35,6 +35,7 @@ internal sealed class NpcBrowserService : IDisposable
     private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
     private readonly BethesdaGame _game;
     private readonly MeshArchiveSet _meshArchives;
+    private readonly NpcBrowserOperationGate _operationGate = new();
     private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();
 
@@ -55,7 +56,7 @@ internal sealed class NpcBrowserService : IDisposable
         _textureResolver = textureResolver;
         _textureSourcePaths = (string[])textureSourcePaths.Clone();
         _pluginName = pluginName;
-        _game = GameProfiles.ResolveByNames([pluginName]) ?? BethesdaGame.Unknown;
+        _game = ResolveGame(resolver.Game, pluginName);
         _dmpAppearances = dmpAppearances;
     }
 
@@ -64,10 +65,25 @@ internal sealed class NpcBrowserService : IDisposable
     public int RaceCount => _resolver.RaceCount;
     public bool IsDmpMode => _dmpAppearances != null;
 
+    /// <summary>
+    ///     Prefers the game established from record structure over a master-file name. Filename
+    ///     inference remains a fallback for incomplete legacy scans and renamed plugins therefore
+    ///     retain the authoritative family decoded by the appearance index.
+    /// </summary>
+    internal static BethesdaGame ResolveGame(BethesdaGame indexedGame, string pluginName)
+    {
+        return indexedGame != BethesdaGame.Unknown
+            ? indexedGame
+            : GameProfiles.ResolveByNames([pluginName]) ?? BethesdaGame.Unknown;
+    }
+
     public void Dispose()
     {
-        _meshArchives.Dispose();
-        _textureResolver.Dispose();
+        _operationGate.DisposeResources(() =>
+        {
+            _meshArchives.Dispose();
+            _textureResolver.Dispose();
+        });
     }
 
     /// <summary>
@@ -111,8 +127,8 @@ internal sealed class NpcBrowserService : IDisposable
             esmPath,
             bsaPaths,
             progress,
-            cancellationToken,
-            "whole-file-rescan");
+            "whole-file-rescan",
+            cancellationToken);
     }
 
     /// <summary>
@@ -149,8 +165,8 @@ internal sealed class NpcBrowserService : IDisposable
             esmPath,
             bsaPaths,
             progress,
-            cancellationToken,
-            "analyzed-session-index");
+            "analyzed-session-index",
+            cancellationToken);
     }
 
     private static NpcBrowserService? TryCreateCore(
@@ -158,8 +174,8 @@ internal sealed class NpcBrowserService : IDisposable
         string esmPath,
         BsaDiscoveryResult bsaPaths,
         IProgress<NpcBrowserLoadProgress>? progress,
-        CancellationToken cancellationToken,
-        string recordSource)
+        string recordSource,
+        CancellationToken cancellationToken)
     {
         var totalTimer = Stopwatch.StartNew();
         Log.Info(
@@ -402,6 +418,8 @@ internal sealed class NpcBrowserService : IDisposable
     /// <summary>Returns the browsable list of NPCs (from ESM or DMP), optionally limited to named actors.</summary>
     public List<NpcListItem> GetNpcList(bool namedOnly = false)
     {
+        using var operation = _operationGate.Enter();
+
         if (_dmpAppearances != null)
         {
             return GetNpcListFromDmp(namedOnly);
@@ -429,7 +447,7 @@ internal sealed class NpcBrowserService : IDisposable
             }
 
             list.Add(new NpcListItem(formId, creature.EditorId, creature.FullName, creature.ResolveBodyModelPath(),
-                creature.CreatureTypeName));
+                creature.GetCreatureTypeName(_game)));
         }
 
         list.Sort((a, b) =>
@@ -451,6 +469,8 @@ internal sealed class NpcBrowserService : IDisposable
         bool bindPose = false,
         ushort? previewPlayerLevel = null)
     {
+        using var operation = _operationGate.Enter();
+
         var appearance = ResolveAppearance(npcFormId, previewPlayerLevel);
         if (appearance == null)
         {
@@ -468,32 +488,39 @@ internal sealed class NpcBrowserService : IDisposable
             BindPose = bindPose
         };
 
-        var plan = NpcCompositionPlanner.CreatePlan(
-            appearance,
-            _meshArchives,
-            _textureResolver,
-            _compositionCaches,
-            NpcCompositionOptions.From(settings));
-        var exportScene = NpcCompositionExportAdapter.BuildNpc(
-            plan,
-            _meshArchives,
-            _textureResolver,
-            _compositionCaches);
-
-        if (exportScene == null || exportScene.MeshParts.Count == 0)
+        try
         {
-            return null;
-        }
+            var plan = NpcCompositionPlanner.CreatePlan(
+                appearance,
+                _meshArchives,
+                _textureResolver,
+                _compositionCaches,
+                NpcCompositionOptions.From(settings));
+            var exportScene = NpcCompositionExportAdapter.BuildNpc(
+                plan,
+                _meshArchives,
+                _textureResolver,
+                _compositionCaches);
 
-        var viewerScene = BethesdaViewerSceneGlbAdapter.FromGlbScene(
-            exportScene,
-            BuildNpcSourceLabel(appearance),
-            BethesdaViewerScenePurpose.NpcAppearance,
-            game: _game,
-            textureSourcePaths: _textureSourcePaths);
-        CaptureReferencedGeneratedTextures(viewerScene, appearance);
-        NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(viewerScene);
-        return viewerScene;
+            if (exportScene == null || exportScene.MeshParts.Count == 0)
+            {
+                return null;
+            }
+
+            var viewerScene = BethesdaViewerSceneGlbAdapter.FromGlbScene(
+                exportScene,
+                BuildNpcSourceLabel(appearance),
+                BethesdaViewerScenePurpose.NpcAppearance,
+                game: _game,
+                textureSourcePaths: _textureSourcePaths);
+            CaptureReferencedGeneratedTextures(viewerScene, appearance);
+            NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(viewerScene);
+            return viewerScene;
+        }
+        finally
+        {
+            EvictNpcGeneratedTextures(appearance);
+        }
     }
 
     /// <summary>
@@ -503,6 +530,8 @@ internal sealed class NpcBrowserService : IDisposable
     /// </summary>
     public BethesdaViewerScene? BuildCreatureViewerScene(uint creatureFormId, bool bindPose = false)
     {
+        using var operation = _operationGate.Enter();
+
         var creatures = _resolver.GetAllCreatures();
         if (!creatures.TryGetValue(creatureFormId, out var creature))
         {
@@ -548,13 +577,25 @@ internal sealed class NpcBrowserService : IDisposable
     public byte[] ExportViewerSceneToGlb(BethesdaViewerScene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        foreach (var (texturePath, texture) in scene.GeneratedTextures)
-        {
-            _textureResolver.InjectTexture(texturePath, texture);
-        }
+        using var operation = _operationGate.Enter();
 
-        var exportScene = BethesdaViewerSceneGlbAdapter.ToGlbScene(scene);
-        return GlbWriter.WriteToBytes(exportScene, _textureResolver);
+        try
+        {
+            foreach (var (texturePath, texture) in scene.GeneratedTextures)
+            {
+                _textureResolver.InjectTexture(texturePath, texture);
+            }
+
+            var exportScene = BethesdaViewerSceneGlbAdapter.ToGlbScene(scene);
+            return GlbWriter.WriteToBytes(exportScene, _textureResolver);
+        }
+        finally
+        {
+            foreach (var texturePath in scene.GeneratedTextures.Keys)
+            {
+                _textureResolver.EvictTexture(texturePath);
+            }
+        }
     }
 
     /// <summary>Composes and exports an NPC to GLB bytes, or <c>null</c> if the NPC can't be resolved.</summary>
@@ -562,6 +603,8 @@ internal sealed class NpcBrowserService : IDisposable
         bool bindPose = false,
         ushort? previewPlayerLevel = null)
     {
+        using var operation = _operationGate.Enter();
+
         var scene = BuildViewerScene(
             npcFormId,
             headOnly,
@@ -575,6 +618,8 @@ internal sealed class NpcBrowserService : IDisposable
     /// <summary>Composes and exports a creature to GLB bytes, or <c>null</c> if the creature can't be resolved.</summary>
     public byte[]? BuildCreatureGlb(uint creatureFormId, bool bindPose = false)
     {
+        using var operation = _operationGate.Enter();
+
         var scene = BuildCreatureViewerScene(creatureFormId, bindPose);
         return scene == null ? null : ExportViewerSceneToGlb(scene);
     }
@@ -590,6 +635,8 @@ internal sealed class NpcBrowserService : IDisposable
         float elevation,
         ushort? previewPlayerLevel = null)
     {
+        using var operation = _operationGate.Enter();
+
         var appearance = ResolveAppearance(npcFormId, previewPlayerLevel);
         if (appearance == null)
         {
@@ -607,33 +654,40 @@ internal sealed class NpcBrowserService : IDisposable
             SpriteSize = spriteSize
         };
 
-        var plan = NpcCompositionPlanner.CreatePlan(
-            appearance,
-            _meshArchives,
-            _textureResolver,
-            _renderCaches.Composition,
-            NpcCompositionOptions.From(settings));
-        var model = NpcCompositionRenderAdapter.BuildNpc(
-            plan,
-            _meshArchives,
-            _textureResolver,
-            _renderCaches.Composition,
-            _renderCaches.RenderModels);
-
-        if (model == null)
+        try
         {
-            return null;
+            var plan = NpcCompositionPlanner.CreatePlan(
+                appearance,
+                _meshArchives,
+                _textureResolver,
+                _renderCaches.Composition,
+                NpcCompositionOptions.From(settings));
+            var model = NpcCompositionRenderAdapter.BuildNpc(
+                plan,
+                _meshArchives,
+                _textureResolver,
+                _renderCaches.Composition,
+                _renderCaches.RenderModels);
+
+            if (model == null)
+            {
+                return null;
+            }
+
+            var result = NifSpriteRenderer.Render(
+                model, _textureResolver, 1.0f, 32, spriteSize, azimuth, elevation, spriteSize);
+
+            if (result == null)
+            {
+                return null;
+            }
+
+            return PngWriter.EncodeRgba(result.Pixels, result.Width, result.Height);
         }
-
-        var result = NifSpriteRenderer.Render(
-            model, _textureResolver, 1.0f, 32, spriteSize, azimuth, elevation, spriteSize);
-
-        if (result == null)
+        finally
         {
-            return null;
+            EvictNpcGeneratedTextures(appearance);
         }
-
-        return PngWriter.EncodeRgba(result.Pixels, result.Width, result.Height);
     }
 
     /// <summary>Exports a batch of NPCs to GLB files, reporting progress and honoring cancellation.</summary>
@@ -646,7 +700,12 @@ internal sealed class NpcBrowserService : IDisposable
         CancellationToken ct,
         IReadOnlyList<uint>? selectedFormIds = null)
     {
-        var appearances = FilterBySelection(GetAllAppearances(), selectedFormIds);
+        List<NpcAppearance> appearances;
+        using (var operation = _operationGate.Enter())
+        {
+            appearances = FilterBySelection(GetAllAppearances(), selectedFormIds);
+        }
+
         var total = appearances.Count;
 
         var settings = new NpcExportSettings
@@ -666,32 +725,36 @@ internal sealed class NpcBrowserService : IDisposable
             foreach (var npc in appearances)
             {
                 ct.ThrowIfCancellationRequested();
-                try
                 {
-                    var plan = NpcCompositionPlanner.CreatePlan(
-                        npc,
-                        _meshArchives,
-                        _textureResolver,
-                        _compositionCaches,
-                        NpcCompositionOptions.From(settings));
-                    var scene = NpcCompositionExportAdapter.BuildNpc(
-                        plan,
-                        _meshArchives,
-                        _textureResolver,
-                        _compositionCaches);
-                    if (scene != null && scene.MeshParts.Count > 0)
+                    using var operation = _operationGate.Enter();
+                    ct.ThrowIfCancellationRequested();
+                    try
                     {
-                        var outputPath = Path.Combine(outputDir, NpcExportFileNaming.BuildFileName(npc));
-                        GlbWriter.Write(scene, _textureResolver, outputPath);
+                        var plan = NpcCompositionPlanner.CreatePlan(
+                            npc,
+                            _meshArchives,
+                            _textureResolver,
+                            _compositionCaches,
+                            NpcCompositionOptions.From(settings));
+                        var scene = NpcCompositionExportAdapter.BuildNpc(
+                            plan,
+                            _meshArchives,
+                            _textureResolver,
+                            _compositionCaches);
+                        if (scene != null && scene.MeshParts.Count > 0)
+                        {
+                            var outputPath = Path.Combine(outputDir, NpcExportFileNaming.BuildFileName(npc));
+                            GlbWriter.Write(scene, _textureResolver, outputPath);
+                        }
                     }
-                }
-                catch
-                {
-                    // Skip failures in batch mode
-                }
-                finally
-                {
-                    _textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                    catch
+                    {
+                        // Skip failures in batch mode
+                    }
+                    finally
+                    {
+                        EvictNpcGeneratedTextures(npc);
+                    }
                 }
 
                 done++;
@@ -712,7 +775,12 @@ internal sealed class NpcBrowserService : IDisposable
         CancellationToken ct,
         IReadOnlyList<uint>? selectedFormIds = null)
     {
-        var appearances = FilterBySelection(GetAllAppearances(), selectedFormIds);
+        List<NpcAppearance> appearances;
+        using (var operation = _operationGate.Enter())
+        {
+            appearances = FilterBySelection(GetAllAppearances(), selectedFormIds);
+        }
+
         var total = appearances.Count;
         var views = camera.ResolveViews(90f);
 
@@ -737,48 +805,52 @@ internal sealed class NpcBrowserService : IDisposable
             foreach (var npc in appearances)
             {
                 ct.ThrowIfCancellationRequested();
-                try
                 {
-                    foreach (var (suffix, azimuth, elevation) in views)
+                    using var operation = _operationGate.Enter();
+                    ct.ThrowIfCancellationRequested();
+                    try
                     {
-                        var plan = NpcCompositionPlanner.CreatePlan(
-                            npc,
-                            _meshArchives,
-                            _textureResolver,
-                            caches.Composition,
-                            NpcCompositionOptions.From(settings));
-                        var model = NpcCompositionRenderAdapter.BuildNpc(
-                            plan,
-                            _meshArchives,
-                            _textureResolver,
-                            caches.Composition,
-                            caches.RenderModels);
-
-                        if (model == null)
+                        foreach (var (suffix, azimuth, elevation) in views)
                         {
-                            continue;
-                        }
+                            var plan = NpcCompositionPlanner.CreatePlan(
+                                npc,
+                                _meshArchives,
+                                _textureResolver,
+                                caches.Composition,
+                                NpcCompositionOptions.From(settings));
+                            var model = NpcCompositionRenderAdapter.BuildNpc(
+                                plan,
+                                _meshArchives,
+                                _textureResolver,
+                                caches.Composition,
+                                caches.RenderModels);
 
-                        var result = NifSpriteRenderer.Render(
-                            model, _textureResolver, 1.0f, 32, spriteSize, azimuth, elevation, spriteSize);
-                        if (result == null)
-                        {
-                            continue;
-                        }
+                            if (model == null)
+                            {
+                                continue;
+                            }
 
-                        var name = NpcTextureHelpers.BuildNpcRenderName(npc);
-                        var fileName = $"{name}{suffix}.png";
-                        PngWriter.SaveRgba(result.Pixels, result.Width, result.Height,
-                            Path.Combine(outputDir, fileName));
+                            var result = NifSpriteRenderer.Render(
+                                model, _textureResolver, 1.0f, 32, spriteSize, azimuth, elevation, spriteSize);
+                            if (result == null)
+                            {
+                                continue;
+                            }
+
+                            var name = NpcTextureHelpers.BuildNpcRenderName(npc);
+                            var fileName = $"{name}{suffix}.png";
+                            PngWriter.SaveRgba(result.Pixels, result.Width, result.Height,
+                                Path.Combine(outputDir, fileName));
+                        }
                     }
-                }
-                catch
-                {
-                    // Skip failures in batch mode
-                }
-                finally
-                {
-                    _textureResolver.EvictTexture(NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc));
+                    catch
+                    {
+                        // Skip failures in batch mode
+                    }
+                    finally
+                    {
+                        EvictNpcGeneratedTextures(npc);
+                    }
                 }
 
                 done++;
@@ -809,24 +881,7 @@ internal sealed class NpcBrowserService : IDisposable
             .Select(static path => NifTexturePathUtility.Normalize(path!))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var generatedTextureKeys = new[]
-        {
-            NpcTextureHelpers.BuildNpcFaceEgtTextureKey(appearance),
-            NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-                appearance.NpcFormId,
-                "upperbody",
-                appearance.RenderVariantLabel),
-            NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-                appearance.NpcFormId,
-                "lefthand",
-                appearance.RenderVariantLabel),
-            NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
-                appearance.NpcFormId,
-                "righthand",
-                appearance.RenderVariantLabel)
-        };
-
-        foreach (var textureKey in generatedTextureKeys)
+        foreach (var textureKey in NpcTextureHelpers.BuildNpcGeneratedTextureKeys(appearance))
         {
             if (!referencedDiffusePaths.Contains(NifTexturePathUtility.Normalize(textureKey)))
             {
@@ -841,6 +896,14 @@ internal sealed class NpcBrowserService : IDisposable
         }
     }
 
+    private void EvictNpcGeneratedTextures(NpcAppearance appearance)
+    {
+        foreach (var textureKey in NpcTextureHelpers.BuildNpcGeneratedTextureKeys(appearance))
+        {
+            _textureResolver.EvictTexture(textureKey);
+        }
+    }
+
     private static string BuildNpcSourceLabel(NpcAppearance appearance)
     {
         var actorName = appearance.FullName ?? appearance.EditorId ?? $"0x{appearance.NpcFormId:X8}";
@@ -848,11 +911,14 @@ internal sealed class NpcBrowserService : IDisposable
             ? string.Empty
             : $" [{appearance.RenderVariantLabel}]";
         var leveledWeapon = appearance.WeaponVisual?.LeveledListTrace;
-        var weaponContext = leveledWeapon == null
-            ? string.Empty
-            : leveledWeapon.PreviewPlayerLevel.HasValue
+        var weaponContext = string.Empty;
+        if (leveledWeapon is not null)
+        {
+            weaponContext = leveledWeapon.PreviewPlayerLevel.HasValue
                 ? $" [weapon LVLI 0x{leveledWeapon.ListFormId:X8}, preview Lv{leveledWeapon.PreviewPlayerLevel}, tier {leveledWeapon.SelectedEntryLevel}]"
                 : $" [weapon LVLI 0x{leveledWeapon.ListFormId:X8} omitted: preview level required]";
+        }
+
         return $"{actorName}{variant} (NPC_ 0x{appearance.NpcFormId:X8}){weaponContext}";
     }
 

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
@@ -19,18 +20,10 @@ internal sealed record CreatureScanEntry(
     public byte? CombatSkill { get; init; }
     public byte? Strength { get; init; }
 
-    internal string CreatureTypeName => CreatureType switch
+    internal string GetCreatureTypeName(BethesdaGame game)
     {
-        0 => "Animal",
-        1 => "Mutated Animal",
-        2 => "Mutated Insect",
-        3 => "Abomination",
-        4 => "Super Mutant",
-        5 => "Feral Ghoul",
-        6 => "Robot",
-        7 => "Giant",
-        _ => $"Unknown ({CreatureType})"
-    };
+        return CreatureTypeNamePolicy.Resolve(game, CreatureType);
+    }
 
     /// <summary>
     ///     Finds the idle animation KF path from KFFZ, looking for "mtidle" pattern.

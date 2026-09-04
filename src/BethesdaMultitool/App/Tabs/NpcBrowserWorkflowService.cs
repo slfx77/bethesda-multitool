@@ -168,32 +168,6 @@ internal static class NpcBrowserWorkflowService
         return esmFiles.Length > 0 ? esmFiles[0] : null;
     }
 
-    internal static List<NpcListItem> FilterNpcList(
-        IEnumerable<NpcListItem> npcs,
-        bool namedOnly,
-        string? searchText)
-    {
-        return npcs
-            .Where(n =>
-            {
-                if (namedOnly && string.IsNullOrEmpty(n.FullName))
-                {
-                    return false;
-                }
-
-                if (!string.IsNullOrEmpty(searchText))
-                {
-                    return n.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase)
-                           || (n.EditorId?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true)
-                           || $"0x{n.FormId:X8}".Contains(searchText, StringComparison.OrdinalIgnoreCase);
-                }
-
-                return true;
-            })
-            .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
     internal static string BuildDetailText(NpcListItem npc)
     {
         if (npc.IsCreature)
@@ -335,19 +309,6 @@ internal static class NpcBrowserWorkflowService
         return selected.Count > 0 ? selected : null;
     }
 
-    internal static string BuildSelectionCountText(
-        IReadOnlyCollection<NpcListItem> filteredList,
-        IReadOnlyCollection<NpcListItem> fullList)
-    {
-        var selectedCount = filteredList.Count(n => n.IsSelected);
-        var filterNote = fullList.Count != filteredList.Count
-            ? $" (of {fullList.Count})"
-            : "";
-
-        return selectedCount > 0
-            ? $"{filteredList.Count} actors{filterNote} \u2014 {selectedCount} selected"
-            : $"{filteredList.Count} actors{filterNote}";
-    }
 }
 
 /// <summary>

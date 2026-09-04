@@ -106,10 +106,11 @@
 
             <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
 
-            <!--  Files Table + Filter  -->
+            <!--  Files Table + Filter + carve output  -->
             <Grid Grid.Column="2">
               <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
 
@@ -278,6 +279,40 @@
                   </Flyout>
                 </DropDownButton.Flyout>
               </DropDownButton>
+
+              <!--
+                Carve output directory. It lives here rather than in the window's shared
+                Input/Output section because it drives carving alone, so the sub-tab policy that
+                hides Raw View for an ESM or a save now hides this with it.
+              -->
+              <Grid Grid.Row="2" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Uid="Label_OutputDirectory"
+                           Grid.Column="0"
+                           Style="{StaticResource IoLabelStyle}" />
+                <TextBox x:Name="OutputPathTextBox"
+                         x:Uid="Input_OutputPath"
+                         Grid.Column="1"
+                         Style="{StaticResource IoTextBoxStyle}"
+                         AllowDrop="True"
+                         TextChanged="OutputPathTextBox_TextChanged" />
+                <Button x:Uid="Button_Browse"
+                        Grid.Column="2"
+                        Click="BrowseOutputButton_Click" />
+                <Button x:Name="ExtractButton"
+                        x:Uid="Button_Extract"
+                        Grid.Column="3"
+                        MinWidth="120"
+                        Margin="8,0,0,0"
+                        Click="ExtractButton_Click"
+                        IsEnabled="False"
+                        Style="{StaticResource AccentButtonStyle}" />
+              </Grid>
             </Grid>
           </Grid>
         </controls:TabViewItem>
@@ -810,11 +845,24 @@
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,4">
+                <controls:TabView x:Name="NpcActorKindTabView" Grid.Row="0"
+                                  Height="42" Margin="0,0,0,4"
+                                  IsAddTabButtonVisible="False" TabWidthMode="Equal"
+                                  CanDragTabs="False" CanReorderTabs="False"
+                                  SelectionChanged="NpcActorKindTabView_SelectionChanged"
+                                  AutomationProperties.Name="Actor type">
+                  <controls:TabViewItem x:Name="NpcNpcListTab"
+                                        Header="NPCs" IsClosable="False" IsSelected="True" />
+                  <controls:TabViewItem x:Name="NpcCreatureListTab"
+                                        Header="Creatures" IsClosable="False" />
+                </controls:TabView>
+
+                <Grid Grid.Row="1" Margin="0,0,0,4">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -822,7 +870,7 @@
 
                   <TextBox x:Name="NpcSearchBox" Grid.Column="0"
                            PlaceholderText="Search NPCs..."
-                           AutomationProperties.Name="Search NPCs"
+                           AutomationProperties.Name="Search actors"
                            TextChanged="NpcSearchBox_TextChanged" />
                   <Button x:Name="CollapseNpcListPanelButton" Grid.Column="1"
                           Margin="4,0,0,0"
@@ -832,7 +880,7 @@
                     <FontIcon Glyph="&#xE76B;" FontSize="12" />
                   </Button>
                 </Grid>
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
                   <CheckBox x:Name="NpcNamedOnlyCheckBox"
                             Content="Named only" IsChecked="True"
                             Checked="NpcNamedOnlyCheckBox_Changed"
@@ -844,8 +892,8 @@
                             Unchecked="NpcShowEditorIdCheckBox_Changed"
                             MinWidth="0" />
                 </StackPanel>
-                <ListView x:Name="NpcListView" Grid.Row="2"
-                          AutomationProperties.Name="NPC list"
+                <ListView x:Name="NpcListView" Grid.Row="3"
+                          AutomationProperties.Name="Actor list"
                           SelectionChanged="NpcListView_SelectionChanged">
                   <ListView.ItemTemplate>
                     <DataTemplate>
@@ -855,7 +903,7 @@
                           <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                  AutomationProperties.Name="Select NPC"
+                                  AutomationProperties.Name="Select actor"
                                   MinWidth="0" Padding="0" Margin="0,0,4,0"
                                   VerticalAlignment="Center"
                                   Click="NpcItemCheckBox_Click" />
@@ -865,7 +913,7 @@
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
-                <StackPanel Grid.Row="3" Spacing="4" Margin="0,4,0,0">
+                <StackPanel Grid.Row="4" Spacing="4" Margin="0,4,0,0">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <Button x:Name="NpcSelectAllButton" Content="Select All"
                             Click="NpcSelectAll_Click" FontSize="11" Padding="6,2"
@@ -1019,13 +1067,14 @@
                     <TextBlock Text="Batch" FontWeight="SemiBold" FontSize="13"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Margin="0,16,0,0" />
-                    <TextBlock Text="Uses display and render settings above"
+                    <TextBlock x:Name="NpcBatchHelpText"
+                               Text="Uses display and render settings above"
                                FontSize="11" FontStyle="Italic"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <Button x:Name="NpcBatchExportGlbButton" Content="Export selected as GLB..."
-                            Click="NpcBatchExportGlb_Click" />
+                            Click="NpcBatchExportGlb_Click" IsEnabled="False" />
                     <Button x:Name="NpcBatchRenderPngButton" Content="Export selected as PNG..."
-                            Click="NpcBatchRenderPng_Click" />
+                            Click="NpcBatchRenderPng_Click" IsEnabled="False" />
                     <ProgressBar x:Name="NpcBatchProgressBar" Visibility="Collapsed"
                                  Minimum="0" Maximum="100" />
                     <TextBlock x:Name="NpcBatchStatusText" FontSize="11" TextWrapping="Wrap"
@@ -1359,7 +1408,6 @@
         Style="{StaticResource IoSectionGridStyle}">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -1398,35 +1446,7 @@
           IsEnabled="False"
           Style="{StaticResource AccentButtonStyle}" />
 
-        <!--  Output Directory  -->
-        <TextBlock
-          x:Uid="Label_OutputDirectory"
-          Grid.Row="1"
-          Grid.Column="0"
-          Style="{StaticResource IoLabelStyle}" />
-        <TextBox
-          x:Name="OutputPathTextBox"
-          x:Uid="Input_OutputPath"
-          Grid.Row="1"
-          Grid.Column="1"
-          Style="{StaticResource IoTextBoxStyle}"
-          AllowDrop="True"
-          TextChanged="OutputPathTextBox_TextChanged" />
-        <Button
-          x:Uid="Button_Browse"
-          Grid.Row="1"
-          Grid.Column="2"
-          Click="BrowseOutputButton_Click" />
-        <Button
-          x:Name="ExtractButton"
-          x:Uid="Button_Extract"
-          Grid.Row="1"
-          Grid.Column="3"
-          MinWidth="120"
-          Margin="8,0,0,0"
-          Click="ExtractButton_Click"
-          IsEnabled="False"
-          Style="{StaticResource AccentButtonStyle}" />
+        <!--  The output directory row moved into the Raw View tab's carve column (G3).  -->
 
       </Grid>
     </Grid>

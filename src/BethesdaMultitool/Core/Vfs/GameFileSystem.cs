@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Vfs;
 
 /// <summary>
@@ -80,6 +82,60 @@ public static class GameFileSystem
         foreach (var pattern in filenamePatterns)
         {
             AddArchives(layers, dataDirectory, pattern, registry, true);
+        }
+
+        return new LayeredGameFileSystem(layers);
+    }
+
+    /// <summary>
+    ///     Mounts a classic (pre-plugin-era) game from its install root, in the precedence its
+    ///     <see cref="GameProfile" /> declares: the loose tree first — at
+    ///     <see cref="GameProfile.ClassicLooseRoot" /> under the root when the profile names one,
+    ///     otherwise the root itself — then one layer per file matching each entry of
+    ///     <see cref="GameProfile.ClassicArchiveGlobs" />, in glob order.
+    ///     <para>
+    ///         These games need their own factory rather than <see cref="OpenDataFolder" />, which
+    ///         only knows <c>*.bsa</c>/<c>*.ba2</c> in one directory. A classic glob may name a
+    ///         subdirectory (<c>ARENA2\*.BSA</c>), an exact file (<c>GAMEDATA\3D.BS6</c>), or an
+    ///         archive whose extension says otherwise — Daggerfall's <c>DAGGER.SND</c> and
+    ///         Battlespire's <c>3D.BS6</c> are both XnGine BSAs. Order is the profile's, not
+    ///         alphabetical, because for these games it IS the override rule (Fallout 2 resolves
+    ///         <c>f2_res</c> over <c>patch*</c> over <c>critter</c> over <c>master</c>).
+    ///     </para>
+    /// </summary>
+    /// <param name="profile">The game's profile; supplies the loose root and the archive globs.</param>
+    /// <param name="installRoot">The directory <c>ClassicGameLocator</c> identified.</param>
+    /// <param name="includeLooseFiles">Mount the loose tree as the highest-priority layer.</param>
+    /// <param name="registry">Optional shared archive-handle registry for the archive layers.</param>
+    public static LayeredGameFileSystem OpenGameRoot(
+        GameProfile profile, string installRoot, bool includeLooseFiles = true,
+        ArchiveHandleRegistry? registry = null)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(installRoot);
+
+        var layers = new List<IGameFileSystem>();
+        if (includeLooseFiles)
+        {
+            var looseRoot = profile.ClassicLooseRoot.Length > 0
+                ? Path.Combine(installRoot, profile.ClassicLooseRoot)
+                : installRoot;
+            layers.Add(new LooseFileSystem(looseRoot));
+        }
+
+        foreach (var glob in profile.ClassicArchiveGlobs)
+        {
+            var relativeDirectory = Path.GetDirectoryName(glob);
+            var pattern = Path.GetFileName(glob);
+            if (pattern.Length == 0)
+            {
+                continue;
+            }
+
+            var directory = string.IsNullOrEmpty(relativeDirectory)
+                ? installRoot
+                : Path.Combine(installRoot, relativeDirectory);
+            AddArchives(layers, directory, pattern, registry);
         }
 
         return new LayeredGameFileSystem(layers);

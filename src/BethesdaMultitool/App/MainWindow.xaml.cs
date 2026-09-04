@@ -276,6 +276,7 @@ public sealed partial class MainWindow : Window
 
             // Hide all content
             SingleFileTabContent.Visibility = Visibility.Collapsed;
+            AssetBrowserTabContent.Visibility = Visibility.Collapsed;
             BatchModeTabContent.Visibility = Visibility.Collapsed;
             NifConverterTabContent.Visibility = Visibility.Collapsed;
             DdxConverterTabContent.Visibility = Visibility.Collapsed;
@@ -295,6 +296,9 @@ public sealed partial class MainWindow : Window
             {
                 case "SingleFile":
                     SingleFileTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "AssetBrowser":
+                    AssetBrowserTabContent.Visibility = Visibility.Visible;
                     break;
                 case "BatchMode":
                     BatchModeTabContent.Visibility = Visibility.Visible;
