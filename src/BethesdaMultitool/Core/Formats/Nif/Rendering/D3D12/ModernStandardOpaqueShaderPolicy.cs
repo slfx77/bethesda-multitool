@@ -87,11 +87,12 @@ internal readonly record struct ModernStandardOpaqueShaderFacts(
 internal static class ModernStandardOpaqueShaderPolicy
 {
     private const byte GreaterAlphaTestFunction = 4;
-    // Bit 0 is the declared modern specular map. Every other authored shader-visible bit belongs
-    // to a route removed from the specialization; requiring the exact mask also makes future bits
-    // fail closed until they are deliberately audited.
+    // Bit 0 is the declared modern specular map. TREE_ANIM bit 17 changes only alpha provenance
+    // and is implemented by the same specialized pixel shader; every other authored shader-visible
+    // bit belongs to a removed route and fails closed until deliberately audited.
     private const uint ModernSpecularMapFeatureMask = 1u;
     private const uint StarfieldOpacityFeatureMask = 1u << 15;
+    private const uint TreeAnimationFeatureMask = 1u << 17;
 
     internal static ModernStandardOpaqueShaderVariant Resolve(
         in ModernStandardOpaqueShaderFacts facts)
@@ -134,7 +135,7 @@ internal static class ModernStandardOpaqueShaderPolicy
     {
         if ((facts.Game != BethesdaGame.Fallout4 && facts.Game != BethesdaGame.Fallout76) ||
             facts.HasDerivedStarfieldNormal ||
-            facts.TextureFeatureMask != ModernSpecularMapFeatureMask ||
+            (facts.TextureFeatureMask & ~TreeAnimationFeatureMask) != ModernSpecularMapFeatureMask ||
             !facts.HasBump ||
             !facts.HasSpecularMap ||
             !facts.ModernEnvironmentMapDeclared ||

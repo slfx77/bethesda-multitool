@@ -66,9 +66,9 @@ cbuffer InstanceDraw : register(b1)
     // as SkyBillboardRenderer12). Only read when uTextureState.y marks a leaf submesh.
     float4 uCameraRight;
     float4 uCameraUp;
-    // SpeedTree leaf rock/rustle (engine STLEAF model — tools/GhidraProject/speedtree_wind_design.md):
-    // x = rockAmount (RockParams.x), y = rockPhase (RockParams.y), z = rustleAmount, w = rustlePhase.
-    // The engine's RockParams.z/RustleParams.z scalars are constructor-1.0 and omitted. All-zero = static.
+    // Constant union. SpeedTree leaf rock/rustle normally consumes amount/phase pairs. FO4
+    // bendable-spline batches instead pack (direction radians, flexibility, previous timer,
+    // current timer); their mutually-exclusive TextureState bit selects that interpretation.
     float4 uWind;
     // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
     // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
@@ -83,8 +83,8 @@ cbuffer InstanceDraw : register(b1)
     // Opaque/instanced draws always upload x = 0. Declared for pixel-shader interface parity with
     // the blended per-draw path, which can bind an R32 scene-depth SRV after opaque rendering.
     float4 uSoftParticle;
-    // FNV GRASS2000 specialized route. Wind = fixed world +Y in xy, recovered setting-interpolated
-    // magnitude.z, wrapped time phase radians.w.
+    // Constant union. FNV GRASS2000 normally consumes direction/magnitude/time. FO4 spline batches
+    // instead pack (minimum speed, maximum speed, frequency, 0).
     float4 uTallGrassWind;
     // Classic FNV direct-sun specular LOD. Bounds are in baked mesh-root-local coordinates;
     // params = start fade, end fade, global LOD adjust, enabled.
@@ -111,6 +111,11 @@ struct VSInput
 bool IsTallGrassMaterial(float packedState)
 {
     return (((uint)round(packedState)) & 32u) != 0u;
+}
+
+bool IsBendableSplineWindMaterial(float packedState)
+{
+    return (((uint)round(packedState)) & 262144u) != 0u;
 }
 
 bool IsFnvActiveAdtBaseMaterial(float packedState)
@@ -148,6 +153,43 @@ float WrapTallGrassPhase(float phase)
     phase = fmod(phase + Pi, TwoPi);
     if (phase < 0.0) phase += TwoPi;
     return phase - Pi;
+}
+
+void ApplyBendableSplineWind(
+    inout float4 worldPosition,
+    float3 absolutePlacement,
+    float packedAlpha)
+{
+    const float Pi = 3.14159265358979323846;
+    float theta = uWind.x;
+    float flexibility = uWind.y;
+    float time = uWind.w;
+    float minimumSpeed = uTallGrassWind.x;
+    float maximumSpeed = uTallGrassWind.y;
+    float frequency = uTallGrassWind.z;
+    if (!all(isfinite(worldPosition)) ||
+        !all(isfinite(absolutePlacement)) ||
+        !all(isfinite(float4(theta, flexibility, time, packedAlpha))) ||
+        !all(isfinite(float3(minimumSpeed, maximumSpeed, frequency))) ||
+        abs(frequency) <= 1e-6)
+    {
+        return;
+    }
+
+    float placementPhase = 0.001 *
+        (absolutePlacement.x + absolutePlacement.y + absolutePlacement.z);
+    float spatial = placementPhase + Pi *
+        (placementPhase * sin((time * 5.0) * placementPhase) / (frequency * 10.0));
+    float phase = (1.0 + flexibility * packedAlpha) * spatial -
+        40.0 * frequency + 50.0 * frequency * time;
+    float speedRange = maximumSpeed - minimumSpeed;
+    float amplitude = packedAlpha *
+        (0.002 * speedRange * speedRange * sin(phase) + 0.25 * minimumSpeed);
+    if (isfinite(amplitude))
+    {
+        worldPosition.x += cos(theta) * amplitude;
+        worldPosition.y += sin(theta) * amplitude;
+    }
 }
 
 float ClassicSpecularLodFade(float4x4 world)
@@ -263,6 +305,8 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 #endif
     bool isTallGrass = IsTallGrassMaterial(uTextureState.z);
     float tallGrassWindWeight = isTallGrass ? saturate(input.aVertexColor.a) : 0.0;
+    bool isBendableSplineWind = IsBendableSplineWindMaterial(uTextureState.z);
+    float bendableSplineWindWeight = isBendableSplineWind ? input.aVertexColor.a : 0.0;
 
     // SpeedTree bark/frond payload. The SPT builder preserves the ordinary orthonormal TBN
     // directions while encoding the wind-matrix index and authored branch weight in their lengths:
@@ -410,6 +454,13 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     // rotate or tilt the weather direction per blade. The phase seed uses ABSOLUTE placement XY;
     // adding uCameraOrigin makes it invariant under the renderer's snapped-origin rebasing.
     float3 relativePlacement = mul(world, float4(0.0, 0.0, 0.0, 1.0)).xyz;
+    if (isBendableSplineWind)
+    {
+        // Retail seeds phase from the absolute REFR placement, but adds the displacement in world
+        // XY after the placement transform. Restore the snapped origin only for that phase seed.
+        float3 absolutePlacement = relativePlacement + uCameraOrigin.xyz;
+        ApplyBendableSplineWind(worldPos, absolutePlacement, bendableSplineWindWeight);
+    }
     if (isTallGrass && uTallGrassWind.z != 0.0)
     {
         float2 absolutePlacement = relativePlacement.xy + uCameraOrigin.xy;
@@ -424,10 +475,10 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     o.vTexCoord = input.aTexCoord + uUvScroll;
     o.vVertexColor = input.aVertexColor;
-    if (isTallGrass)
+    if (isTallGrass || isBendableSplineWind)
     {
-        // Raw authored alpha is wind data only. Coverage remains texture-only in both the main
-        // reference PS and the shadow cutout PS.
+        // Raw authored/generated alpha is wind data only. Coverage remains texture-only in both
+        // the main reference PS and the shadow cutout PS.
         o.vVertexColor.a = 1.0;
     }
     if (uTextureState.y > 0.5)

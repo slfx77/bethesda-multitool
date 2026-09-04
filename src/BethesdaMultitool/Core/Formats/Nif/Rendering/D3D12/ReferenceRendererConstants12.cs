@@ -84,7 +84,8 @@ internal static class ReferenceRendererConstants12
         // Identical across every batch in a frame; only read by leaf submeshes.
         Vector4 CameraRight = default,
         Vector4 CameraUp = default,
-        // SpeedTree wind (uWind = rock amount/phase, rustle amount/phase).
+        // Constant union: SpeedTree rock/rustle, or FO4 spline
+        // (direction radians, BNDS flexibility, previous timer, current timer).
         Vector4 Wind = default,
         // BGEM effect terms (uEffectTint / uEffectFalloff), the mutually-exclusive classic
         // Lighting30 emission tuple selected by TextureState bit 4, or Starfield constant-Lerp
@@ -97,8 +98,8 @@ internal static class ReferenceRendererConstants12
         Vector4 EnvMap = default,
         // Opaque path sentinel (x = 0).
         Vector4 SoftParticle = default,
-        // FNV GRASS2000: xy fixed world +Y, z recovered setting-interpolated magnitude,
-        // w wrapped time phase (radians).
+        // Constant union: FNV GRASS2000 wind, or FO4 spline
+        // (minimum speed, maximum speed, frequency, 0).
         Vector4 TallGrassWind = default,
         // Classic FNV direct-sun specular LOD. Bounds = transformed root-local center/radius;
         // params = start/end/LOD-adjust/enabled. Appending preserves every prior field offset while

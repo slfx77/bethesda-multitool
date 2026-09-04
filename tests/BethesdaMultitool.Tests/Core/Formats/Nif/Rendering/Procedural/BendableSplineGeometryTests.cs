@@ -158,6 +158,20 @@ public sealed class BendableSplineGeometryTests
         // Retail normalizes the bend-distance lane, then scales by slack*wind/thickness = 0.05.
         // R8_UNORM packing rounds that peak to 13/255.
         Assert.Equal(13f / 255f, colors.Max(color => color.W), 6);
+        Assert.True(mesh.UsesWindShader);
+        Assert.Equal(0.5f, mesh.WindFlexibility);
+        Assert.Equal(13f / 255f, mesh.MaximumPackedWindWeight, 6);
+        var staticMesh = BendableSplineGeometry.TryBuild(
+            13,
+            definition with { WindSensibility = 0f },
+            Placement(new Vector3(50f, 0f, 0f), thickness: 10f, slack: 0.25f),
+            textureSet);
+        Assert.NotNull(staticMesh);
+        Assert.Equal(
+            staticMesh.LocalBoundsRadius +
+            Fo4BendableSplineWind.MaximumDefaultDisplacement * mesh.MaximumPackedWindWeight,
+            mesh.LocalBoundsRadius,
+            4);
         // The retail loop projects every tube-surface vertex. A sagged ring is not perpendicular
         // to the endpoint chord, so its wind weights are intentionally not constant around V.
         var firstRingAlphas = colors
@@ -189,6 +203,7 @@ public sealed class BendableSplineGeometryTests
         Assert.Equal(0.5f, color.Y, 2);
         Assert.Equal(0.75f, color.Z, 2);
         Assert.Equal(BendableSplineGeometry.DefaultSplineMapColor, mesh.SolidDiffuseColor);
+        Assert.True(mesh.UsesWindShader);
     }
 
     [Theory]
@@ -204,6 +219,22 @@ public sealed class BendableSplineGeometryTests
             textureSet: null);
 
         Assert.Null(mesh);
+    }
+
+    [Fact]
+    public void TryBuild_NonWindSplineRetainsStaticBoundsAndNoWindMetadata()
+    {
+        var mesh = BendableSplineGeometry.TryBuild(
+            14,
+            Definition(slices: 4, tiles: 1f) with { WindFlexibility = 123f },
+            Placement(new Vector3(50f, 0f, 0f), thickness: 10f, slack: 0.25f),
+            textureSet: null);
+
+        Assert.NotNull(mesh);
+        Assert.False(mesh.UsesWindShader);
+        Assert.Equal(0f, mesh.WindFlexibility);
+        Assert.Equal(0f, mesh.MaximumPackedWindWeight);
+        Assert.All(mesh.Vertices, static vertex => Assert.Equal(1f, vertex.VertexColor.W));
     }
 
     [Fact]

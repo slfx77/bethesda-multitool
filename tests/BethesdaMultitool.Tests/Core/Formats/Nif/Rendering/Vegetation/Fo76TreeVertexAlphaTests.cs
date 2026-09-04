@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Tests.Helpers;
@@ -11,8 +12,9 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Vegetation;
 
 /// <summary>
-///     FO76 foliage stores wind weight in vertex alpha below BSLeafAnimNode/BSTreeNode. Mesh Viewer
-///     must retain vertex RGB while sourcing cutout coverage exclusively from diffuse alpha.
+///     Bethesda TREE_ANIM foliage stores wind weight in vertex alpha below
+///     BSLeafAnimNode/BSTreeNode. Mesh Viewer must retain raw RGBA for shader data while sourcing
+///     cutout coverage exclusively from diffuse alpha times material alpha.
 /// </summary>
 public sealed class Fo76TreeVertexAlphaTests
 {
@@ -60,9 +62,31 @@ public sealed class Fo76TreeVertexAlphaTests
             PropertyType = "BSLightingShaderProperty",
             ShaderFlags = 0x8u
         };
-        Assert.True(NifVertexColorPolicy.UsesAlphaForOpacity(
+        Assert.False(NifVertexColorPolicy.UsesAlphaForOpacity(
             readableLegacyMetadata,
             isTreeAnimationShape: true));
+        Assert.True(NifVertexColorPolicy.UsesAlphaForOpacity(
+            readableLegacyMetadata,
+            isTreeAnimationShape: false));
+
+        var explicitTreeAnimationMetadata = new NifShaderTextureMetadata
+        {
+            PropertyType = "BSLightingShaderProperty",
+            ShaderFlags = 0x8u,
+            ShaderFlags2 = 1u << 29
+        };
+        Assert.True(NifVertexColorPolicy.IsTreeAnimation(explicitTreeAnimationMetadata));
+        Assert.False(NifVertexColorPolicy.UsesAlphaForOpacity(explicitTreeAnimationMetadata));
+        Assert.False(NifVertexColorPolicy.IsTreeAnimation(readableLegacyMetadata));
+
+        var wrongPropertyMetadata = new NifShaderTextureMetadata
+        {
+            PropertyType = "BSEffectShaderProperty",
+            ShaderFlags = 0x8u,
+            ShaderFlags2 = 1u << 29
+        };
+        Assert.False(NifVertexColorPolicy.IsTreeAnimation(wrongPropertyMetadata));
+        Assert.True(NifVertexColorPolicy.UsesAlphaForOpacity(wrongPropertyMetadata));
 
         byte[] authoredColors = [32, 64, 96, 17];
         var submesh = new RenderableSubmesh
@@ -83,6 +107,95 @@ public sealed class Fo76TreeVertexAlphaTests
         Assert.Equal(64f / 255f, exported.Y, 6);
         Assert.Equal(96f / 255f, exported.Z, 6);
         Assert.Equal(1f, exported.W);
+    }
+
+    [Fact]
+    public void TreeAnimationDecode_RetainsRawWindAlphaBehindDistinctCoverageMarker()
+    {
+        var submesh = TriangleSubmesh();
+        submesh.IsTreeAnimation = true;
+
+        var decoded = ReferenceSubmeshDecoder12.Decode(
+            submesh,
+            new ReferenceSubmeshDecodeOptions12(
+                submesh.DiffuseTexturePath,
+                submesh.NormalMapTexturePath));
+
+        Assert.True(decoded.IsTreeAnimation);
+        Assert.Equal(0x00604020u, decoded.Vertices[0].VertexColorRgba);
+        Assert.Equal(0x40705030u, decoded.Vertices[1].VertexColorRgba);
+        Assert.Equal(0xC0806040u, decoded.Vertices[2].VertexColorRgba);
+        Assert.Equal(0f, decoded.Vertices[0].VertexColor.W);
+        Assert.Equal(64f / 255f, decoded.Vertices[1].VertexColor.W, 6);
+        Assert.Equal(192f / 255f, decoded.Vertices[2].VertexColor.W, 6);
+
+        var nonTreeCoverageDisabled = TriangleSubmesh();
+        var normalized = ReferenceSubmeshDecoder12.Decode(
+            nonTreeCoverageDisabled,
+            new ReferenceSubmeshDecodeOptions12(
+                nonTreeCoverageDisabled.DiffuseTexturePath,
+                nonTreeCoverageDisabled.NormalMapTexturePath));
+
+        Assert.False(normalized.IsTreeAnimation);
+        Assert.All(normalized.Vertices, static vertex =>
+            Assert.Equal(byte.MaxValue, (byte)(vertex.VertexColorRgba >> 24)));
+    }
+
+    [Fact]
+    public void TreeAnimationGpuCoverage_UsesDiffuseTimesMaterialAlphaInMainAndShadowPasses()
+    {
+        var decoder = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceSubmeshDecoder12.cs");
+        var cached = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "CachedSubmesh12.cs");
+        var fragment = SourceContract.ReadShaderSource("reference.frag.hlsl");
+        var shadow = SourceContract.ReadShaderSource("shadow.frag.hlsl");
+
+        Assert.Contains(
+            "preserveAuthoredVertexAlpha: isTallGrass || submesh.IsTreeAnimation",
+            decoder,
+            StringComparison.Ordinal);
+        Assert.Contains("IsTreeAnimation: submesh.IsTreeAnimation", decoder, StringComparison.Ordinal);
+        Assert.Contains("TreeAnimationTextureFlag = 1u << 17", cached, StringComparison.Ordinal);
+        Assert.Contains(
+            "(IsTreeAnimation ? (float)TreeAnimationTextureFlag : 0f)",
+            cached,
+            StringComparison.Ordinal);
+        Assert.Contains("bool IsTreeAnimationMaterial(float packedState)", fragment,
+            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            fragment,
+            "float4 main(ModernStandardPSInput input) : SV_Target",
+            "#if REFERENCE_MODERN_STANDARD_ALPHA_GREATER",
+            "float sampleAlpha = saturate(sample.a * (IsTreeAnimationMaterial(input.vTextureState.z)",
+            "? input.vAlphaState.z",
+            ": input.vVertexColor.a));",
+            "if (!(sampleAlpha > input.vAlphaState.x)) discard;",
+            "#endif");
+        SourceContract.AssertOrder(
+            fragment,
+            "bool treeAnimation = IsTreeAnimationMaterial(input.vTextureState.z);",
+            "float vertexCoverageAlpha = (treeAnimation || fnvActiveAdtBase || starfieldMaterialLerp)",
+            ": input.vVertexColor.a;",
+            "float sampleAlpha = HasStarfieldOpacityMap(input.vTextureState.z)",
+            ": saturate(sample.a * vertexCoverageAlpha);",
+            "float testAlpha = treeAnimation",
+            "? saturate(sampleAlpha * input.vAlphaState.z)",
+            "float outAlpha = fnvActiveAdtBase",
+            "? saturate(sampleAlpha * input.vAlphaState.z)");
+        Assert.Equal(
+            2,
+            SourceContract.CountOccurrences(
+                fragment,
+                "saturate(sampleAlpha * input.vAlphaState.z)"));
+        SourceContract.AssertOrder(
+            shadow,
+            "bool treeAnimation = (materialFlags & 131072u) != 0u;",
+            ": treeAnimation",
+            "? saturate(alpha * input.vAlphaState.z)",
+            ": saturate(alpha * input.vVertexColor.a);");
     }
 
     [Fact]
@@ -144,7 +257,8 @@ public sealed class Fo76TreeVertexAlphaTests
             "var useVertexAlpha = !isTreeAnimationShape",
             "NifVertexColorPolicy.UsesAlphaForOpacity(",
             "isTreeAnimationShape);",
-            "submesh.UseVertexAlphaForOpacity");
+            "submesh.UseVertexAlphaForOpacity",
+            "submesh.IsTreeAnimation = isTreeAnimationShape");
         Assert.Contains(
             "NifSceneGraphWalker.CollectTreeAnimationShapes(nif, nodeChildren)",
             exporter,
@@ -154,8 +268,10 @@ public sealed class Fo76TreeVertexAlphaTests
             "treeAnimationShapes.Contains(shapeIndex)",
             "bool isTreeAnimationShape)",
             "ShapeProperties.TreeAnimationDefault",
+            "NifVertexColorPolicy.IsTreeAnimation(",
             "NifVertexColorPolicy.UsesAlphaForOpacity(",
-            "isTreeAnimationShape)");
+            "isTreeAnimation)");
+        Assert.Contains("IsTreeAnimation = properties.IsTreeAnimation", exporter, StringComparison.Ordinal);
         SourceContract.AssertOrder(
             exporter,
             "TreeAnimationDefault = new()",

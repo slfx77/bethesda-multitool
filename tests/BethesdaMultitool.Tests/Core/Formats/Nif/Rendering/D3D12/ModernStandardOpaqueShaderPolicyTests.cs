@@ -226,6 +226,26 @@ public sealed class ModernStandardOpaqueShaderPolicyTests
             ModernStandardOpaqueShaderPolicy.Resolve(EligibleFacts()));
     }
 
+    [Fact]
+    public void TreeAnimationAlphaProvenance_RemainsEligibleForModernCutoutSpecialization()
+    {
+        var facts = EligibleFacts() with { TextureFeatureMask = 1u | (1u << 17) };
+
+        Assert.Equal(
+            ModernStandardOpaqueShaderVariant.SingleSidedGreaterCutout,
+            ModernStandardOpaqueShaderPolicy.Resolve(facts));
+    }
+
+    [Fact]
+    public void BendableSplineWindBit_FailsClosedFromModernStandardSpecialization()
+    {
+        var facts = EligibleFacts() with { TextureFeatureMask = 1u | (1u << 18) };
+
+        Assert.Equal(
+            ModernStandardOpaqueShaderVariant.None,
+            ModernStandardOpaqueShaderPolicy.Resolve(facts));
+    }
+
     private static ModernStandardOpaqueShaderFacts EligibleFacts() => new(
         Game: BethesdaGame.Fallout76,
         HeatmapEnabled: false,

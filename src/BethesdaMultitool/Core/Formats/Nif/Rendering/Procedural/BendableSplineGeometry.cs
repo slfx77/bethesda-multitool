@@ -22,7 +22,10 @@ internal sealed record BendableSplineRenderMesh(
     float LocalBoundsRadius,
     int SegmentCount,
     int SliceCount,
-    float TextureTileCount);
+    float TextureTileCount,
+    bool UsesWindShader,
+    float WindFlexibility,
+    float MaximumPackedWindWeight);
 
 /// <summary>
 ///     Reconstructs <c>BSProceduralGeometry::BendableSpline</c> from the FO4 retail executable.
@@ -175,6 +178,10 @@ internal static class BendableSplineGeometry
                 vertexRgb);
         }
 
+        var maximumPackedWindWeight = usesWindShader
+            ? FindMaximumPackedWindWeight(vertices)
+            : 0f;
+
         var index = 0;
         for (var segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
         {
@@ -198,6 +205,7 @@ internal static class BendableSplineGeometry
         }
 
         ComputeBounds(vertices, out var boundsCenter, out var boundsRadius);
+        boundsRadius += Fo4BendableSplineWind.BoundsExpansion(maximumPackedWindWeight);
         return new BendableSplineRenderMesh(
             BuildCacheKey(referenceFormId),
             vertices,
@@ -209,7 +217,10 @@ internal static class BendableSplineGeometry
             boundsRadius,
             segmentCount,
             sliceCount,
-            tileCount);
+            tileCount,
+            usesWindShader,
+            usesWindShader ? definition.WindFlexibility : 0f,
+            maximumPackedWindWeight);
     }
 
     internal static Vector3 ComputeControlPoint(Vector3 start, Vector3 end, float slack)
@@ -408,6 +419,18 @@ internal static class BendableSplineGeometry
         }
 
         radius = MathF.Sqrt(radiusSquared);
+    }
+
+    private static float FindMaximumPackedWindWeight(
+        IReadOnlyList<GpuMeshUploader.GpuVertex> vertices)
+    {
+        var maximum = 0f;
+        foreach (var vertex in vertices)
+        {
+            maximum = MathF.Max(maximum, vertex.VertexColor.W);
+        }
+
+        return maximum;
     }
 
     private static bool IsFinite(Vector3 value) =>

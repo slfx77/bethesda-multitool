@@ -163,7 +163,8 @@ internal static class NifSkinningDiagnostics
             data,
             partitionBlock.DataOffset,
             partitionBlock.Size,
-            nif.IsBigEndian)?.Partitions;
+            nif.IsBigEndian,
+            nif.BsVersion)?.Partitions;
     }
 
     private static bool IsNearlyIdentity(Matrix4x4 matrix)

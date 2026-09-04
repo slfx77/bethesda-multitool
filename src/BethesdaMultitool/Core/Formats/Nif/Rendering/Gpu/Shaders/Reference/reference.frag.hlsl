@@ -314,7 +314,9 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 // bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map sampled
 // from the view-space reflection vector via textures[], never the cubemaps[] alias
 // bit 15 = TexIndices.z is Starfield layer-0 slot-2 opacity (RED coverage, never tint alpha),
-// bit 16 = regular-lighting FO4/FO76 BGSM emission (EffectFalloff.xyz factor, .w glow slot + 1)
+// bit 16 = regular-lighting FO4/FO76 BGSM emission (EffectFalloff.xyz factor, .w glow slot + 1),
+// bit 17 = TREE_ANIM, bit 18 = FO4 bendable-spline wind
+// (vertex alpha is wind displacement data, never pixel coverage)
 // (bit 8 is classic parallax).
 uint MaterialTextureFlags(float packedState)
 {
@@ -349,6 +351,16 @@ bool HasStarfieldOpacityMap(float packedState)
 bool HasBgsmEmission(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 65536u) != 0u;
+}
+
+bool IsTreeAnimationMaterial(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 131072u) != 0u;
+}
+
+bool IsBendableSplineWindMaterial(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 262144u) != 0u;
 }
 
 bool HasClassicEnvironmentMask(float packedState)
@@ -484,15 +496,23 @@ float4 main(ModernStandardPSInput input) : SV_Target
     // Eligibility guarantees wrap addressing and no palette/parallax/effect route.
     float4 sample = textures[NonUniformResourceIndex(input.vTexIndices.x)]
         .Sample(sDiffuse, input.vTexCoord);
-    float sampleAlpha = saturate(sample.a * input.vVertexColor.a);
 #if REFERENCE_MODERN_STANDARD_ALPHA_GREATER
+    // Retail TREE_ANIM PS 0x01800801 does not declare COLOR0 alpha: output alpha is
+    // DiffuseSampler.a * material alpha. The raw vertex alpha remains available to the VS as its
+    // wind-displacement weight, but never thins the cutout silhouette.
+    float sampleAlpha = saturate(sample.a * ((IsTreeAnimationMaterial(input.vTextureState.z) ||
+                                              IsBendableSplineWindMaterial(input.vTextureState.z))
+        ? input.vAlphaState.z
+        : input.vVertexColor.a));
     // Byte-for-byte predicate used by PassAlphaTest for function 4 (GREATER).
     if (!(sampleAlpha > input.vAlphaState.x)) discard;
 #endif
 
     float3 normal = normalize(input.vWorldNormal);
+    bool flipTangentBasis = false;
 #if REFERENCE_MODERN_STANDARD_DOUBLE_SIDED
-    if (!input.IsFrontFace)
+    flipTangentBasis = !input.IsFrontFace;
+    if (flipTangentBasis)
     {
         normal = -normal;
     }
@@ -529,6 +549,10 @@ float4 main(ModernStandardPSInput input) : SV_Target
     {
         float3 T = input.vTangent * rsqrt(tLenSq);
         float3 B = input.vBitangent * rsqrt(bLenSq);
+        if (flipTangentBasis)
+        {
+            B = -B;
+        }
         float3x3 TBN = float3x3(T, B, normal);
         normal = normalize(mul(mapN, TBN));
     }
@@ -605,8 +629,10 @@ float4 main(StarfieldDiffuseLitPSInput input) : SV_Target
 #endif
 
     float3 normal = normalize(input.vWorldNormal);
+    bool flipTangentBasis = false;
 #if REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED
-    if (!input.IsFrontFace)
+    flipTangentBasis = !input.IsFrontFace;
+    if (flipTangentBasis)
     {
         normal = -normal;
     }
@@ -638,6 +664,10 @@ float4 main(StarfieldDiffuseLitPSInput input) : SV_Target
         {
             float3 T = input.vTangent * rsqrt(tLenSq);
             float3 B = input.vBitangent * rsqrt(bLenSq);
+            if (flipTangentBasis)
+            {
+                B = -B;
+            }
             float3x3 TBN = float3x3(T, B, normal);
             normal = normalize(mul(mapN, TBN));
         }
@@ -725,13 +755,20 @@ float4 main(PSInput input) : SV_Target
 
     bool fnvActiveAdtBase = UsesFnvActiveAdtBaseLighting(input.vTextureState.z);
     bool fnvActiveAdtBaseVertexColor = UsesFnvActiveAdtBaseVertexColor(input.vTextureState.z);
+    bool treeAnimation = IsTreeAnimationMaterial(input.vTextureState.z);
+    bool bendableSplineWind = IsBendableSplineWindMaterial(input.vTextureState.z);
     // The bounded active ADT route is opaque and Toggles.x consumes vertex RGB only. Its output
     // alpha is BaseMap.a * material alpha (the runtime gate requires material alpha == 1).
+    float vertexCoverageAlpha = (treeAnimation || fnvActiveAdtBase || starfieldMaterialLerp)
+        ? 1.0
+        : input.vVertexColor.a;
+    if (bendableSplineWind)
+    {
+        vertexCoverageAlpha = 1.0;
+    }
     float sampleAlpha = HasStarfieldOpacityMap(input.vTextureState.z)
         ? SampleMaterialTexture(input.vTexIndices.z, materialUv, input.vTextureState.z).r
-        : saturate(sample.a * ((fnvActiveAdtBase || starfieldMaterialLerp)
-            ? 1.0
-            : input.vVertexColor.a));
+        : saturate(sample.a * vertexCoverageAlpha);
 
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
     // discards transparent pixels rather than rendering them as opaque. Full NIF comparison
@@ -741,7 +778,11 @@ float4 main(PSInput input) : SV_Target
     // alpha. Its (binary) leaf mask must survive the test so only the transparent card background
     // discards, while the low vertex-color alpha stays a soft underwater fade applied to outAlpha —
     // testing the modulated alpha would push the whole leaf below the threshold and blank the plant.
-    float testAlpha = (input.vAlphaState.w > 0.5) ? sample.a : sampleAlpha;
+    float testAlpha = treeAnimation
+        ? saturate(sampleAlpha * input.vAlphaState.z)
+        : input.vAlphaState.w > 0.5
+            ? sample.a
+            : sampleAlpha;
 
     // Alpha-tested leaf cards (vTextureState.y == 2, SPT leaves): boost the tested alpha by the
     // sampled mip level (Castaño alpha-coverage compensation). Pre-averaged DDS mips shrink the
@@ -809,7 +850,8 @@ float4 main(PSInput input) : SV_Target
 #endif
 
     float3 normal = normalize(input.vWorldNormal);
-    if (input.vRenderState.x > 0.5 && !input.IsFrontFace)
+    bool flipTangentBasis = input.vRenderState.x > 0.5 && !input.IsFrontFace;
+    if (flipTangentBasis)
     {
         normal = -normal;
     }
@@ -882,6 +924,10 @@ float4 main(PSInput input) : SV_Target
         {
             float3 T = input.vTangent * rsqrt(tLenSq);
             float3 B = input.vBitangent * rsqrt(bLenSq);
+            if (flipTangentBasis)
+            {
+                B = -B;
+            }
             float3x3 TBN = float3x3(T, B, normal);
             normal = normalize(mul(mapN, TBN));
         }

@@ -9,6 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 /// </summary>
 internal static class NifShaderTexturePropertyReader
 {
+    // Skyrim ships this four-byte value in BSShaderTextureSet slot 1 on a small set of meshes
+    // (for example LE Potato01 and LE/SE grass). It is an engine placeholder, not an archive path;
+    // attempting to normalize it produced a literal "textures\\\bNOR" lookup and an avoidable
+    // asynchronous resolve failure. A null slot selects the renderer's flat-normal fallback.
+    private const string SkyrimDefaultNormalMapSentinel = "\bNOR";
+
     internal static NifShaderTextureMetadata? ReadShaderMetadata(
         byte[] data,
         NifInfo nif,
@@ -794,7 +800,13 @@ internal static class NifShaderTexturePropertyReader
         var slots = new List<string?>();
         for (var i = 0; i < numTextures; i++)
         {
-            slots.Add(NifBinaryCursor.ReadSizedString(data, ref pos, end, be));
+            var texturePath = NifBinaryCursor.ReadSizedString(data, ref pos, end, be);
+            slots.Add(i == 1 && string.Equals(
+                texturePath,
+                SkyrimDefaultNormalMapSentinel,
+                StringComparison.OrdinalIgnoreCase)
+                ? null
+                : texturePath);
             if (pos > end)
             {
                 return CreateFixedTextureSlots();

@@ -27,8 +27,10 @@ internal static class GpuMeshUploader
     {
         var vertexCount = sub.VertexCount;
         var vertices = new GpuVertex[vertexCount];
-        // Both consumers are shader data rather than coverage: classic TallGrass reads alpha as
-        // wind weight, while CE2 vertex Lerp reads it as mix(albedo, vertex.rgb, vertex.a).
+        // These consumers treat alpha as shader data rather than coverage: classic TallGrass and
+        // TREE_ANIM read it as wind weight, while CE2 vertex Lerp reads it as
+        // mix(albedo, vertex.rgb, vertex.a). TREE_ANIM is supplied through the explicit argument
+        // because its graph-ancestry identity lives above this format-only uploader.
         var preserveShaderVertexAlpha =
             preserveAuthoredVertexAlpha || sub.StarfieldMaterialColor.IsVertexLerp;
 

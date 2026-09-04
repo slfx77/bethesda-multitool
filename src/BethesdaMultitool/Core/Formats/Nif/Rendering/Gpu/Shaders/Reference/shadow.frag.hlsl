@@ -75,15 +75,21 @@ float SampleMaterialRed(uint slot, float2 uv, float packedState)
 
 void main(PSInput input)
 {
-    bool starfieldOpacity = (((uint)round(input.vTextureState.z)) & 32768u) != 0u;
+    uint materialFlags = (uint)round(input.vTextureState.z);
+    bool starfieldOpacity = (materialFlags & 32768u) != 0u;
+    bool treeAnimation = (materialFlags & 131072u) != 0u;
+    bool bendableSplineWind = (materialFlags & 262144u) != 0u;
     bool starfieldMaterialLerp = input.vTextureState.w == -2.0 || input.vTextureState.w == -3.0;
     float alpha = starfieldOpacity
         ? SampleMaterialRed(input.vTexIndices.z, input.vTexCoord, input.vTextureState.z)
         : SampleMaterialAlpha(input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
     float testAlpha = starfieldOpacity
         ? alpha
-        : (input.vAlphaState.w > 0.5 || starfieldMaterialLerp)
-            ? alpha
-            : saturate(alpha * input.vVertexColor.a);
+        // Retail TREE_ANIM coverage ignores vertex alpha (that channel is VS wind weight).
+        : treeAnimation || bendableSplineWind
+            ? saturate(alpha * input.vAlphaState.z)
+            : (input.vAlphaState.w > 0.5 || starfieldMaterialLerp)
+                ? alpha
+                : saturate(alpha * input.vVertexColor.a);
     if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
 }

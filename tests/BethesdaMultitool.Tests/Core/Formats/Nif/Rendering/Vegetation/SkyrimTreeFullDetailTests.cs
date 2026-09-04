@@ -1,8 +1,12 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Skinning;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Vegetation;
@@ -12,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Vegetation;
 ///     full internally-skinned subtree, and those shapes source topology from NiSkinPartition rather
 ///     than their zero-triangle NiTriShapeData blocks.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimTreeFullDetailTests
 {
     private const uint SkyrimNifVersion = 0x14020007;
@@ -32,6 +37,25 @@ public sealed class SkyrimTreeFullDetailTests
             bsVersion: SkyrimBsVersion);
 
         Assert.Equal(new ushort[] { 0, 1, 2, 3, 4, 5 }, triangles);
+    }
+
+    [Fact]
+    public void SkinPartitionInfluences_SkipClassicSkyrimFooterBetweenPartitions()
+    {
+        var data = BuildTwoPartitionTopology();
+
+        var parsed = Assert.IsType<NifSkinPartitionExpander.SkinPartitionData>(
+            NifSkinPartitionExpander.Parse(
+                data,
+                0,
+                data.Length,
+                false,
+                bsVersion: SkyrimBsVersion));
+
+        Assert.Equal(2u, parsed.NumPartitions);
+        Assert.Collection(parsed.Partitions,
+            first => Assert.Equal(new ushort[] { 0, 1, 2 }, first.VertexMap),
+            second => Assert.Equal(new ushort[] { 3, 4, 5 }, second.VertexMap));
     }
 
     [Fact]
@@ -105,6 +129,164 @@ public sealed class SkyrimTreeFullDetailTests
         Assert.Equal(ExpectedInactiveFallbackShapes, inactive.Order());
         Assert.DoesNotContain(3, inactive);
         Assert.DoesNotContain(4, inactive);
+    }
+
+    [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
+    public void RetailSnowTrees_HaveFiniteSaneSkinnedRestPoseBounds()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        var archivePath = Environment.GetEnvironmentVariable("SKYRIM_MESHES_BSA") ??
+                          RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
+        Assert.SkipWhen(!File.Exists(archivePath),
+            "Skyrim LE Meshes BSA not installed (set SKYRIM_MESHES_BSA to run this fixture)");
+
+        using var archive = ArchiveReader.Open(archivePath);
+        AssertRetailTree(archive, @"meshes\landscape\trees\treepineforestsnow02.nif", 15, 100f, -100f);
+        AssertRetailTree(archive, @"meshes\landscape\trees\treepineforestsnow03.nif", 13, -30f, -70f);
+        AssertRetailTree(archive, @"meshes\landscape\trees\treepineforestsnow04.nif", 12, 50f, -100f);
+    }
+
+    [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
+    public void RetailSnow02_WithoutTreeNodeAncestry_UsesSlsf2TreeAnimIdentity()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        var archivePath = Environment.GetEnvironmentVariable("SKYRIM_MESHES_BSA") ??
+                          RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
+        Assert.SkipWhen(!File.Exists(archivePath),
+            "Skyrim LE Meshes BSA not installed (set SKYRIM_MESHES_BSA to run this fixture)");
+
+        using var archive = ArchiveReader.Open(archivePath);
+        var data = Assert.IsType<byte[]>(archive.ReadFile(
+            @"meshes\landscape\trees\treepineforestsnow02.nif"));
+        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
+        foreach (var block in nif.Blocks.Where(static block =>
+                     NifSceneGraphWalker.TreeAnimationNodeTypes.Contains(block.TypeName)))
+        {
+            // Retain the identical NiNode-compatible bytes and remove only the ancestry identity.
+            // The extracted shape must therefore be classified by its retail SLSF2 bit alone.
+            block.TypeName = "NiNode";
+        }
+
+        var nodeChildren = new Dictionary<int, List<int>>();
+        var shapeDataMap = new Dictionary<int, int>();
+        NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap);
+        Assert.Empty(NifSceneGraphWalker.CollectTreeAnimationShapes(nif, nodeChildren));
+
+        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
+            data,
+            nif,
+            bindPoseOnly: false,
+            skipSkinning: false,
+            treatRootsAsIdentity: true,
+            collectBillboards: true,
+            dropBoneAttachedShapes: true));
+        var branch = Assert.Single(model.Submeshes, static submesh => submesh.SourceBlockIndex == 15);
+
+        Assert.Equal("BSLightingShaderProperty", branch.ShaderMetadata?.PropertyType);
+        Assert.True(branch.ShaderMetadata!.ShaderFlags2.HasValue);
+        Assert.NotEqual(0u, branch.ShaderMetadata.ShaderFlags2.GetValueOrDefault() & (1u << 29));
+        Assert.True(branch.IsTreeAnimation);
+        Assert.False(branch.UseVertexAlphaForOpacity);
+    }
+
+    private static void AssertRetailTree(
+        ArchiveReader archive,
+        string path,
+        int branchBlockIndex,
+        float branchMinimumZ,
+        float modelMinimumZ)
+    {
+        var data = Assert.IsType<byte[]>(archive.ReadFile(path));
+        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
+        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
+            data,
+            nif,
+            bindPoseOnly: false,
+            skipSkinning: false,
+            treatRootsAsIdentity: true,
+            collectBillboards: true,
+            dropBoneAttachedShapes: true));
+
+        Assert.NotEmpty(model.Submeshes);
+        var minimumZ = model.Submeshes.Min(MinimumZ);
+        Assert.True(minimumZ > modelMinimumZ,
+            $"{path} extends implausibly below its authored root: {minimumZ}");
+        var branch = Assert.Single(model.Submeshes, submesh => submesh.SourceBlockIndex == branchBlockIndex);
+        var branchZ = MinimumZ(branch);
+        Assert.True(branchZ > branchMinimumZ,
+            $"{path} block {branchBlockIndex} retained a partially skinned branch vertex: {branchZ}");
+        Assert.True(branch.IsTreeAnimation);
+        Assert.False(branch.UseVertexAlphaForOpacity);
+        Assert.True(branch.HasAlphaTest);
+        Assert.Equal((byte)112, branch.AlphaTestThreshold);
+        Assert.Equal((byte)4, branch.AlphaTestFunction);
+        var authoredColors = Assert.IsType<byte[]>(branch.VertexColors);
+        Assert.Equal(branch.VertexCount * 4, authoredColors.Length);
+        Assert.Contains(Enumerable.Range(0, branch.VertexCount),
+            vertexIndex => authoredColors[vertexIndex * 4 + 3] < byte.MaxValue);
+
+        var decodedBranch = ReferenceSubmeshDecoder12.Decode(
+            branch,
+            new ReferenceSubmeshDecodeOptions12(
+                branch.DiffuseTexturePath,
+                branch.NormalMapTexturePath,
+                Nif: nif));
+        Assert.True(decodedBranch.IsTreeAnimation);
+        for (var vertexIndex = 0; vertexIndex < branch.VertexCount; vertexIndex++)
+        {
+            Assert.Equal(
+                authoredColors[vertexIndex * 4 + 3] / 255f,
+                decodedBranch.Vertices[vertexIndex].VertexColor.W,
+                6);
+        }
+
+        foreach (var submesh in model.Submeshes)
+        {
+            Assert.Equal(0, submesh.Positions.Length % 3);
+            Assert.Equal(0, submesh.Triangles.Length % 3);
+            Assert.All(submesh.Positions, value => Assert.True(float.IsFinite(value)));
+            Assert.All(submesh.Triangles, index => Assert.True(index < submesh.VertexCount));
+            Assert.True(MaximumTriangleEdge(submesh) < 500f,
+                $"{path} block {submesh.SourceBlockIndex} contains a giant triangle edge");
+        }
+    }
+
+    private static float MinimumZ(RenderableSubmesh submesh)
+    {
+        var minimum = float.PositiveInfinity;
+        for (var offset = 2; offset < submesh.Positions.Length; offset += 3)
+        {
+            minimum = MathF.Min(minimum, submesh.Positions[offset]);
+        }
+
+        return minimum;
+    }
+
+    private static float MaximumTriangleEdge(RenderableSubmesh submesh)
+    {
+        var maximum = 0f;
+        for (var offset = 0; offset < submesh.Triangles.Length; offset += 3)
+        {
+            var a = Position(submesh, submesh.Triangles[offset]);
+            var b = Position(submesh, submesh.Triangles[offset + 1]);
+            var c = Position(submesh, submesh.Triangles[offset + 2]);
+            maximum = MathF.Max(maximum,
+                MathF.Max(Vector3.Distance(a, b),
+                    MathF.Max(Vector3.Distance(b, c), Vector3.Distance(c, a))));
+        }
+
+        return maximum;
+    }
+
+    private static Vector3 Position(RenderableSubmesh submesh, int index)
+    {
+        var offset = index * 3;
+        return new Vector3(
+            submesh.Positions[offset],
+            submesh.Positions[offset + 1],
+            submesh.Positions[offset + 2]);
     }
 
     private static byte[] BuildTwoPartitionTopology()

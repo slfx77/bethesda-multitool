@@ -111,8 +111,16 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // existing vertex/scroll payload. Warm v88 entries retain untransformed, static layer-zero UVs.
     // v90: compatible embedded TES3 reverse-controller clocks are persisted with the animation rig.
     // Warm v89 entries retain only ClipLoops and silently flatten CYCLE_REVERSE into a forward loop.
+    // v91: Skyrim's four-byte slot-1 "\bNOR" placeholder is decoded as no authored normal map.
+    // Warm v90 entries retain it as a bogus texture path and repeatedly enqueue a failed resolve.
+    // v92: external-emittance shader eligibility and LightingInfluence are persisted while the
+    // REFR XEMI color moves to draw-time placement state. Warm v91 entries lack those two fields.
+    // v93: classic Skyrim SkinPartition footers are consumed between partitions, correcting the
+    // baked rest pose for internally skinned trees. Warm v92 entries retain misaligned influences.
+    // v94: TREE_ANIM identity is persisted and its raw vertex alpha is retained as wind data while
+    // pixel coverage ignores it. Warm v93 entries contain policy-normalized or opacity-weighted alpha.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 90;
+    internal const int DecoderVersion = 94;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -718,6 +726,13 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         ValidateBgsmEmission(submesh.BgsmGlowMapTexturePath, submesh.BgsmEmissionColor);
         WriteNullableString(writer, submesh.BgsmGlowMapTexturePath, MaxStringBytes);
         WriteVector3(writer, submesh.BgsmEmissionColor);
+        if (!float.IsFinite(submesh.ExternalEmittanceInfluence))
+        {
+            throw new InvalidDataException("Decoded mesh cache has invalid external-emittance influence.");
+        }
+        writer.Write(submesh.UsesExternalEmittance);
+        writer.Write(submesh.ExternalEmittanceInfluence);
+        writer.Write(submesh.IsTreeAnimation);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -815,7 +830,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             ReadStarfieldMaterialColor(reader),
             ReadStarfieldMaterialAlpha(reader),
             ReadNullableString(reader, MaxStringBytes),
-            ReadVector3(reader));
+            ReadVector3(reader),
+            UsesExternalEmittance: reader.ReadBoolean(),
+            ExternalEmittanceInfluence: reader.ReadSingle(),
+            IsTreeAnimation: reader.ReadBoolean());
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -832,6 +850,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         }
 
         ValidateBgsmEmission(payload.BgsmGlowMapTexturePath, payload.BgsmEmissionColor);
+        if (!float.IsFinite(payload.ExternalEmittanceInfluence))
+        {
+            throw new InvalidDataException("Decoded mesh cache has invalid external-emittance influence.");
+        }
 
         return payload;
     }
@@ -1350,4 +1372,9 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     // Regular FO4/FO76 BGSM emissive term (v86+). The map is nullable because the material can
     // author a constant emissive color without a slot-2 texture.
     string? BgsmGlowMapTexturePath = null,
-    Vector3 BgsmEmissionColor = default);
+    Vector3 BgsmEmissionColor = default,
+    // v92+: source shader state only; REFR XEMI color remains draw-time placement state.
+    bool UsesExternalEmittance = false,
+    float ExternalEmittanceInfluence = 1f,
+    // v94+: vertex alpha is retained as TREE_ANIM wind data and excluded from pixel coverage.
+    bool IsTreeAnimation = false);

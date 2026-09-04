@@ -88,7 +88,8 @@ internal static class NifSkinInfluenceBuilder
             data,
             partitionBlock.DataOffset,
             partitionBlock.Size,
-            nif.IsBigEndian);
+            nif.IsBigEndian,
+            nif.BsVersion);
         if (partData == null || partData.Partitions.Count == 0)
         {
             return null;

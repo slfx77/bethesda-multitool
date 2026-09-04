@@ -229,7 +229,12 @@ internal sealed class NifDiscovery(NifConversionState state)
                 continue;
             }
 
-            var skinData = NifSkinPartitionExpander.Parse(data, block.DataOffset, block.Size, info.IsBigEndian);
+            var skinData = NifSkinPartitionExpander.Parse(
+                data,
+                block.DataOffset,
+                block.Size,
+                info.IsBigEndian,
+                info.BsVersion);
             if (skinData == null)
             {
                 continue;
@@ -332,8 +337,12 @@ internal sealed class NifDiscovery(NifConversionState state)
                 var skinPartBlock = info.Blocks.FirstOrDefault(b => b.Index == skinPartIdx);
                 if (skinPartBlock != null)
                 {
-                    var skinPartData = NifSkinPartitionExpander.Parse(data, skinPartBlock.DataOffset,
-                        skinPartBlock.Size, info.IsBigEndian);
+                    var skinPartData = NifSkinPartitionExpander.Parse(
+                        data,
+                        skinPartBlock.DataOffset,
+                        skinPartBlock.Size,
+                        info.IsBigEndian,
+                        info.BsVersion);
                     partitions = skinPartData?.Partitions;
                 }
 

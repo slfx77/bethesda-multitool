@@ -23,7 +23,12 @@ internal static class NifSkinPartitionExpander
     /// <summary>
     ///     Parses a NiSkinPartition block and returns structured data.
     /// </summary>
-    public static SkinPartitionData? Parse(byte[] data, int offset, int size, bool isBigEndian)
+    public static SkinPartitionData? Parse(
+        byte[] data,
+        int offset,
+        int size,
+        bool isBigEndian,
+        uint bsVersion = 0)
     {
         if (size < 4)
         {
@@ -61,6 +66,28 @@ internal static class NifSkinPartitionExpander
             }
 
             result.Partitions.Add(partition);
+
+            // Classic Skyrim's SkinPartition layout appends two one-byte fields after the
+            // bone-index section. They are part of every partition, not a block trailer. If they
+            // are left unread, the next partition header starts two bytes early and otherwise
+            // plausible counts produce a partial/wrong influence table. SSE (BS 100) replaces
+            // this footer with its larger Vertex Desc/Triangles Copy layout, so keep the gate on
+            // the same pre-SSE stream range used by NifSkinPartitionParser's topology path.
+            if (bsVersion is > 34 and < 100)
+            {
+                if (!reader.CanRead(2))
+                {
+                    return null;
+                }
+
+                _ = reader.ReadByte(); // LOD Level
+                _ = reader.ReadByte(); // Global VB
+            }
+        }
+
+        if (bsVersion is > 34 and < 100 && result.Partitions.Count != numPartitions)
+        {
+            return null;
         }
 
         return result;
