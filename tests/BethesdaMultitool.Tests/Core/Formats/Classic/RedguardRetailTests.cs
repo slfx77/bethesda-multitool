@@ -47,7 +47,8 @@ public sealed class RedguardRetailTests
         Assert.Equal(7, registry.Worlds.Count(w => w.TerrainPath is not null));
         Assert.Equal(7, registry.Worlds.Count(w => w.SkyPath is not null));
 
-        Assert.Equal(0, Assert.NotNull(registry.StartWorld).Index);
+        Assert.NotNull(registry.StartWorld);
+        Assert.Equal(0, registry.StartWorld!.Index);
     }
 
     [Fact]
@@ -65,7 +66,17 @@ public sealed class RedguardRetailTests
             .Select(path => path!)
             .ToList();
 
+        // The four typed accessors cover 29 maps + 29 palettes + 7 terrains + 7 skies.
+        Assert.Equal(72, declared.Count);
+
+        // The rest of the resolvable references are the 29 world_flash_filename .gxa entries, which
+        // have no typed accessor — 101 shipped references in total.
+        declared.AddRange(registry.Worlds
+            .Select(w => w.Values.TryGetValue("world_flash_filename", out var flash) ? flash : null)
+            .Where(path => path is not null)
+            .Select(path => path!));
         Assert.Equal(101, declared.Count);
+
         Assert.All(declared, path => Assert.True(
             File.Exists(Path.Combine(root, path.Replace('\\', Path.DirectorySeparatorChar))),
             $"declared asset '{path}' is not shipped"));

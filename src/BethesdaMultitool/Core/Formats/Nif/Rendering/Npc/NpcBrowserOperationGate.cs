@@ -42,16 +42,16 @@ internal sealed class NpcBrowserOperationGate
         disposeResources();
     }
 
-    private sealed class Lease(object sync) : IDisposable
+    private sealed class Lease(object syncRoot) : IDisposable
     {
-        private object? _sync = sync;
+        private object? _sync = syncRoot;
 
         public void Dispose()
         {
-            var sync = Interlocked.Exchange(ref _sync, null);
-            if (sync is not null)
+            var monitor = Interlocked.Exchange(ref _sync, null);
+            if (monitor is not null)
             {
-                Monitor.Exit(sync);
+                Monitor.Exit(monitor);
             }
         }
     }

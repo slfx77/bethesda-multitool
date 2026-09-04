@@ -306,7 +306,10 @@ public sealed class NpcEquipmentResolverTests
         Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
 
         var esm = File.ReadAllBytes(esmPath!);
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var index = NpcAppearanceIndexBuilder.Build(
+            esm,
+            bigEndian: false,
+            cancellationToken: TestContext.Current.CancellationToken);
         var npcRecord = Assert.Contains(0x000222A8u, index.Npcs);
         var appearance = new NpcAppearanceFactory(index).Build(
             0x000222A8,

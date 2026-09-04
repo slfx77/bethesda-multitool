@@ -84,7 +84,8 @@ public sealed class RedguardWorldIniTests
     {
         var ini = RedguardWorldIni.Parse(Sample);
 
-        Assert.Equal(1, Assert.NotNull(ini.StartWorld).Index);
+        Assert.NotNull(ini.StartWorld);
+        Assert.Equal(1, ini.StartWorld!.Index);
     }
 
     [Fact]

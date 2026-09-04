@@ -52,13 +52,18 @@ internal sealed class BattlespireMeshArchive : IDisposable
         return new BattlespireMeshArchive(Path.GetFileName(path), File.ReadAllBytes(path), archive.Entries);
     }
 
-    /// <summary>Parses a loose <c>.3D</c> file.</summary>
-    public static XnGineMesh ParseLoose(byte[] bytes, string name)
+    /// <summary>
+    ///     Parses a loose XnGine mesh file. The layout defaults to Battlespire's because this class
+    ///     is its archive reader, but the caller must pass Daggerfall's for a Redguard <c>.3D</c> or
+    ///     <c>.3DC</c> — those tile only with the 8-byte plane header despite carrying the same
+    ///     <c>v2.7</c> tag Battlespire's 10-byte records use.
+    /// </summary>
+    public static XnGineMesh ParseLoose(byte[] bytes, string name, XnGineMeshLayout layout = XnGineMeshLayout.Battlespire)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         ArgumentNullException.ThrowIfNull(name);
 
-        return XnGineMesh.Parse(bytes, 0, XnGineMeshLayout.Battlespire);
+        return XnGineMesh.Parse(bytes, 0, layout);
     }
 
     /// <summary>The entry name at an index.</summary>

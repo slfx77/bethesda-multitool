@@ -588,8 +588,29 @@ public static class ClassicCommand
     private static bool IsBattlespireMeshPath(string path)
     {
         var name = Path.GetFileName(path);
-        return name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase)
+        return IsLooseMeshName(name)
                || BattlespireMeshArchives.Contains(name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A loose XnGine mesh: Battlespire's <c>.3D</c> or Redguard's <c>.3D</c>/<c>.3DC</c>.</summary>
+    private static bool IsLooseMeshName(string name)
+    {
+        return name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase)
+               || name.EndsWith(".3DC", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Which plane-list layout a loose mesh uses. The extension cannot decide this — Battlespire
+    ///     and Redguard both ship <c>.3D</c> files that both label themselves <c>v2.7</c>, yet
+    ///     Battlespire's plane header is 10 bytes and Redguard's is 8, the same as Daggerfall's.
+    ///     Measured 2026-09-04: all 199 Redguard meshes (52 <c>.3D</c> v2.7, 120 <c>.3DC</c> v2.6, 27
+    ///     <c>.3DC</c> v2.7) tile with the 8-byte header and NONE tile with 10, 12, 14 or 16. So the
+    ///     owning install decides, resolved by walking up from the file.
+    /// </summary>
+    private static XnGineMeshLayout ResolveLooseMeshLayout(string path)
+    {
+        var game = ClassicGameLocator.DetectRootForFile(path)?.Profile.Game;
+        return game == BethesdaGame.Battlespire ? XnGineMeshLayout.Battlespire : XnGineMeshLayout.Daggerfall;
     }
 
     private static void RunMeshInfo(string input, string? entry)
@@ -676,9 +697,10 @@ public static class ClassicCommand
     private static void RunBattlespireMeshInfo(string path, string? entry)
     {
         var name = Path.GetFileName(path);
-        if (name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase))
+        if (IsLooseMeshName(name))
         {
-            PrintBattlespireMesh(name, BattlespireMeshArchive.ParseLoose(File.ReadAllBytes(path), name));
+            PrintBattlespireMesh(name, BattlespireMeshArchive.ParseLoose(
+                File.ReadAllBytes(path), name, ResolveLooseMeshLayout(path)));
             return;
         }
 
@@ -738,9 +760,10 @@ public static class ClassicCommand
         var name = Path.GetFileName(path);
         XnGineMesh mesh;
         string stem;
-        if (name.EndsWith(".3D", StringComparison.OrdinalIgnoreCase))
+        if (IsLooseMeshName(name))
         {
-            mesh = BattlespireMeshArchive.ParseLoose(File.ReadAllBytes(path), name);
+            mesh = BattlespireMeshArchive.ParseLoose(
+                File.ReadAllBytes(path), name, ResolveLooseMeshLayout(path));
             stem = Path.GetFileNameWithoutExtension(name);
         }
         else

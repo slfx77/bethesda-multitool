@@ -13,11 +13,15 @@ public sealed class NpcBrowserOperationGateTests
 
         using var outerOperation = gate.Enter();
         using var nestedOperation = gate.Enter();
+
+        Assert.NotNull(outerOperation);
+        Assert.NotNull(nestedOperation);
     }
 
     [Fact]
     public async Task Enter_SerializesConcurrentOperations()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var gate = new NpcBrowserOperationGate();
         using var firstEntered = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
@@ -28,33 +32,34 @@ public sealed class NpcBrowserOperationGateTests
         {
             using var operation = gate.Enter();
             firstEntered.Set();
-            Assert.True(releaseFirst.Wait(TimeSpan.FromSeconds(10)));
-        });
-        Assert.True(firstEntered.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(releaseFirst.Wait(TimeSpan.FromSeconds(10), cancellationToken));
+        }, cancellationToken);
+        Assert.True(firstEntered.Wait(TimeSpan.FromSeconds(10), cancellationToken));
 
         var second = Task.Run(() =>
         {
             secondStarted.Set();
             using var operation = gate.Enter();
             secondEntered.Set();
-        });
-        Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(10)));
+        }, cancellationToken);
+        Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(10), cancellationToken));
         try
         {
-            Assert.False(secondEntered.Wait(TimeSpan.FromMilliseconds(100)));
+            Assert.False(secondEntered.Wait(TimeSpan.FromMilliseconds(100), cancellationToken));
         }
         finally
         {
             releaseFirst.Set();
         }
 
-        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         Assert.True(secondEntered.IsSet);
     }
 
     [Fact]
     public async Task DisposeResources_WaitsForActiveOperationAndRejectsNewWork()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var gate = new NpcBrowserOperationGate();
         using var operationEntered = new ManualResetEventSlim();
         using var releaseOperation = new ManualResetEventSlim();
@@ -65,19 +70,19 @@ public sealed class NpcBrowserOperationGateTests
         {
             using var operation = gate.Enter();
             operationEntered.Set();
-            Assert.True(releaseOperation.Wait(TimeSpan.FromSeconds(10)));
-        });
-        Assert.True(operationEntered.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(releaseOperation.Wait(TimeSpan.FromSeconds(10), cancellationToken));
+        }, cancellationToken);
+        Assert.True(operationEntered.Wait(TimeSpan.FromSeconds(10), cancellationToken));
 
         var disposal = Task.Run(() =>
         {
             disposalStarted.Set();
             gate.DisposeResources(resourcesDisposed.Set);
-        });
-        Assert.True(disposalStarted.Wait(TimeSpan.FromSeconds(10)));
+        }, cancellationToken);
+        Assert.True(disposalStarted.Wait(TimeSpan.FromSeconds(10), cancellationToken));
         try
         {
-            Assert.False(resourcesDisposed.Wait(TimeSpan.FromMilliseconds(100)));
+            Assert.False(resourcesDisposed.Wait(TimeSpan.FromMilliseconds(100), cancellationToken));
             Assert.False(disposal.IsCompleted);
         }
         finally
@@ -85,7 +90,7 @@ public sealed class NpcBrowserOperationGateTests
             releaseOperation.Set();
         }
 
-        await Task.WhenAll(activeOperation, disposal).WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.WhenAll(activeOperation, disposal).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         Assert.True(resourcesDisposed.IsSet);
         Assert.Throws<ObjectDisposedException>(() =>
         {

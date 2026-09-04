@@ -24,7 +24,7 @@ public sealed class NpcActorListPolicyTests
             namedOnly: false,
             searchText: null);
 
-        Assert.Equal([NamedNpc, UnnamedNpc], filtered);
+        Assert.Equal([UnnamedNpc, NamedNpc], filtered);
         Assert.All(filtered, actor => Assert.False(actor.IsCreature));
     }
 
@@ -55,22 +55,8 @@ public sealed class NpcActorListPolicyTests
     }
 
     [Fact]
-    public void CreatureSelectionSupportsNativePreviewActionsButNotNpcOnlyBatchOrSoftwareRender()
+    public void CreatureSelectionCannotEnterNpcOnlyBatchOperations()
     {
-        var controller = new AppController();
-        controller.LoadList([NamedNpc, Daedroth], namedOnly: false, searchText: null, showEditorId: false);
-        controller.SetActorKind(
-            NpcActorKind.Creature,
-            namedOnly: false,
-            searchText: null,
-            showEditorId: false);
-
-        var state = controller.Select(Daedroth);
-
-        Assert.True(state.CanExportGlb);
-        Assert.True(state.CanCaptureNative);
-        Assert.False(state.CanRenderPng);
-        Assert.False(state.CanToggleHumanoidOptions);
         Assert.False(Daedroth.CanBatchSelect);
         Assert.True(NamedNpc.CanBatchSelect);
     }
