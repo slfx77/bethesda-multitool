@@ -30,6 +30,9 @@ internal static class Level2DViewPolicy
             ".MIF" or ".RMD" => true,
             // Daggerfall's CLIMATE/POLITIC overlays.
             ".PAK" => true,
+            // A Shadowkey zone grid. The 2D view is the ONLY view for its layout that does not
+            // depend on the unresolved tile-to-texture mapping, so it is worth offering by default.
+            ".ZMP" => true,
             _ => false
         };
     }

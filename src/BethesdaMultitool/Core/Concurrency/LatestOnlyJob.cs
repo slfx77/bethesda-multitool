@@ -1,6 +1,7 @@
-// Ported verbatim (namespace and doc-comment style aside) from JimmyPCTool / AweMultitool
-//   (https://github.com/slfx77/JimmyPCTool, MIT License) — src/AweMultitool/Core/Concurrency/LatestOnlyJob.cs.
-//   License texts are collected centrally in THIRD_PARTY_LICENSES.
+// Ported from JimmyPCTool / AweMultitool (https://github.com/slfx77/JimmyPCTool), MIT licence,
+// src/AweMultitool/Core/Concurrency/LatestOnlyJob.cs. Copied essentially verbatim — the ordering
+// this class encodes is subtle and was arrived at by fixing real races, so it is deliberately NOT
+// re-derived here. Only the namespace and doc wording differ.
 
 namespace BethesdaMultitool.Core.Concurrency;
 
@@ -9,14 +10,13 @@ namespace BethesdaMultitool.Core.Concurrency;
 ///     result is never applied.
 ///     <para>
 ///         The replacement is published <b>before</b> the previous operation is cancelled. Each
-///         invocation owns and disposes its own token source, so no newer invocation may dispose
+///         invocation owns and disposes its own token source, so no newer invocation can dispose
 ///         state an older invocation is still inspecting.
 ///     </para>
 ///     <para>
-///         This is the shape every "selection changed, go load the thing" handler needs: without it
-///         a slow earlier load can land after a fast later one and leave the pane showing the wrong
-///         item. Kept in <c>Core/</c> because it has no WinUI dependency and <c>App/**</c> is
-///         excluded from the <c>net10.0</c> target framework, so only here can it be tested.
+///         Use this wherever a selection change kicks off async work whose result writes to shared
+///         UI state — asset-tree selection, thumbnail decode, preview load. Without it a slow
+///         earlier decode can land after a faster later one and leave the wrong item on screen.
 ///     </para>
 /// </summary>
 internal sealed class LatestOnlyJob : IDisposable
@@ -26,9 +26,8 @@ internal sealed class LatestOnlyJob : IDisposable
     private bool _disposed;
 
     /// <summary>
-    ///     Runs <paramref name="work" /> off the calling thread, then invokes
-    ///     <paramref name="apply" /> on the captured context — but only if no newer job has started
-    ///     in the meantime.
+    ///     Runs <paramref name="work" /> off the calling thread, then invokes <paramref name="apply" />
+    ///     on the captured context — but only if no newer job has started in the meantime.
     /// </summary>
     public async Task RunAsync<T>(Func<CancellationToken, T> work, Action<T> apply)
     {
@@ -37,10 +36,6 @@ internal sealed class LatestOnlyJob : IDisposable
 
         CancellationTokenSource cts;
         CancellationToken token;
-
-        // S6966 (await CancelAsync) does not apply inside a lock: awaiting there is illegal, and the
-        // publish-then-cancel ordering below is only correct while both happen under one gate.
-#pragma warning disable S6966
         lock (_gate)
         {
             cts = new CancellationTokenSource();
@@ -56,7 +51,6 @@ internal sealed class LatestOnlyJob : IDisposable
                 cts.Cancel();
             }
         }
-#pragma warning restore S6966
 
         try
         {

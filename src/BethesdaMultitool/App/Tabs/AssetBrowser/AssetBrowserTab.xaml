@@ -85,12 +85,62 @@
 
         <controls:TabViewItem x:Uid="Pane_DataExplorer" IsClosable="False">
           <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="300" MinWidth="180" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
             <TextBlock
               x:Name="DataExplorerPlaceholder"
+              Grid.Row="0"
+              Grid.ColumnSpan="2"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Style="{StaticResource EmptyTabPlaceholderStyle}"
-              Text="Open a source to browse its records." />
+              Text="Open a classic game install to browse its synthesized records." />
+
+            <TreeView
+              x:Name="RecordTreeView"
+              Grid.Row="0"
+              Grid.Column="0"
+              AutomationProperties.Name="Record types"
+              SelectionMode="Single"
+              Visibility="Collapsed"
+              VerticalAlignment="Stretch" />
+
+            <ListView
+              x:Name="RecordFieldsList"
+              Grid.Row="0"
+              Grid.Column="1"
+              Margin="8,0,0,0"
+              AutomationProperties.Name="Record fields"
+              SelectionMode="None"
+              Visibility="Collapsed">
+              <ListView.ItemTemplate>
+                <DataTemplate x:DataType="local:RecordFieldRow">
+                  <Grid Padding="0,2">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="200" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" FontSize="12" Opacity="0.7" Text="{x:Bind Name}" />
+                    <TextBlock Grid.Column="1" FontSize="12" Text="{x:Bind Value}" TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock
+              x:Name="RecordStatusText"
+              Grid.Row="1"
+              Grid.ColumnSpan="2"
+              Margin="0,8,0,0"
+              Style="{StaticResource TabSubtitleStyle}"
+              Text="" />
           </Grid>
         </controls:TabViewItem>
 
@@ -101,30 +151,197 @@
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Style="{StaticResource EmptyTabPlaceholderStyle}"
-              Text="Open a source to view its maps." />
+              Text="Select a level (Arena .MIF/.RMD, Daggerfall WOODS.WLD or a .PAK overlay) to view it." />
+            <local:Level2dMapControl x:Name="Level2dMap" Visibility="Collapsed" />
           </Grid>
         </controls:TabViewItem>
 
         <controls:TabViewItem x:Uid="Pane_AssetExplorer" IsClosable="False">
           <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="300" MinWidth="180" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
               <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TreeView
               x:Name="AssetTreeView"
               Grid.Row="0"
+              Grid.Column="0"
               AutomationProperties.Name="Asset tree"
               SelectionMode="Single"
               VerticalAlignment="Stretch" />
 
             <TextBlock
               x:Name="AssetTreeStatusText"
-              Grid.Row="1"
+              Grid.Row="2"
+              Grid.Column="0"
               Margin="0,8,0,0"
               Style="{StaticResource TabSubtitleStyle}"
               Text="No source opened." />
+
+            <!--  Thumbnail gallery. Tiles decode lazily as they are realized; see AssetThumbnailLoader.  -->
+            <GridView
+              x:Name="AssetGalleryView"
+              Grid.Row="0"
+              Grid.Column="1"
+              Margin="8,0,0,0"
+              AutomationProperties.Name="Asset thumbnails"
+              ContainerContentChanging="AssetGalleryView_ContainerContentChanging"
+              IsItemClickEnabled="False"
+              SelectionMode="Single"
+              VerticalAlignment="Stretch">
+              <GridView.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <ItemsWrapGrid Orientation="Horizontal" ItemWidth="128" ItemHeight="152" />
+                </ItemsPanelTemplate>
+              </GridView.ItemsPanel>
+              <GridView.ItemContainerStyle>
+                <!--  Zero the container's own padding so ItemWrapGrid's cell size IS the tile size.  -->
+                <Style TargetType="GridViewItem">
+                  <Setter Property="Margin" Value="0" />
+                  <Setter Property="Padding" Value="0" />
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                  <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                </Style>
+              </GridView.ItemContainerStyle>
+              <GridView.ItemTemplate>
+                <DataTemplate x:DataType="local:AssetGalleryItem">
+                  <Grid
+                    Width="124"
+                    Height="148"
+                    Padding="4"
+                    AutomationProperties.Name="{x:Bind DisplayName}"
+                    ToolTipService.ToolTip="{x:Bind VirtualPath}">
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="*" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                      <FontIcon
+                        FontSize="24"
+                        Glyph="{x:Bind PlaceholderGlyph, Mode=OneWay}"
+                        Opacity="0.45"
+                        Visibility="{x:Bind PlaceholderVisibility, Mode=OneWay}" />
+                      <Image
+                        Width="{x:Bind ThumbnailWidth, Mode=OneWay}"
+                        Height="{x:Bind ThumbnailHeight, Mode=OneWay}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Source="{x:Bind Thumbnail, Mode=OneWay}"
+                        Stretch="None" />
+                    </Grid>
+
+                    <TextBlock
+                      Grid.Row="1"
+                      FontSize="11"
+                      MaxLines="1"
+                      Text="{x:Bind DisplayName}"
+                      TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                      Grid.Row="2"
+                      FontSize="10"
+                      Opacity="0.6"
+                      Text="{x:Bind Caption, Mode=OneWay}"
+                      TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </DataTemplate>
+              </GridView.ItemTemplate>
+            </GridView>
+
+            <!--  Sky backdrop. A classic sky is a flat scrolling image, not geometry, so it sits
+                  BEHIND the 3D surface rather than going through the native NIF sky pass.  -->
+            <Image
+              x:Name="SkyBackdropImage"
+              Grid.Row="0"
+              Grid.Column="1"
+              Margin="8,0,0,0"
+              Stretch="UniformToFill"
+              Visibility="Collapsed" />
+
+            <!--  Mesh preview. x:Load="False" keeps this SECOND GPU surface uncreated until a mesh
+                  is actually selected; creating it eagerly is the top resource risk in this tab.  -->
+            <local:BethesdaSceneViewerControl
+              x:Name="MeshSceneViewer"
+              x:Load="False"
+              Grid.Row="0"
+              Grid.Column="1"
+              Margin="8,0,0,0" />
+
+            <!--  Video surface. No GPU device of its own: frames are decoded here and written into
+                  one WriteableBitmap, so this is just an Image.  -->
+            <Image
+              x:Name="VideoPreviewImage"
+              Grid.Row="0"
+              Grid.Column="1"
+              Margin="8,0,0,0"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Stretch="Uniform"
+              Visibility="Collapsed" />
+
+            <!--  Media transport. Drives whichever of audio/video is currently selected.  -->
+            <Grid
+              x:Name="AudioTransportPanel"
+              Grid.Row="1"
+              Grid.Column="1"
+              Margin="8,8,0,0"
+              Visibility="Collapsed">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+
+              <Button
+                x:Name="AudioPlayPauseButton"
+                Grid.Column="0"
+                AutomationProperties.Name="Play or pause the selected sound"
+                ToolTipService.ToolTip="Play / pause"
+                Click="AudioPlayPause_Click">
+                <FontIcon x:Name="AudioPlayPauseIcon" Glyph="&#xE768;" FontSize="14" />
+              </Button>
+              <Button
+                x:Name="AudioStopButton"
+                Grid.Column="1"
+                Margin="4,0,0,0"
+                AutomationProperties.Name="Stop playback"
+                ToolTipService.ToolTip="Stop"
+                Click="AudioStop_Click">
+                <FontIcon Glyph="&#xE71A;" FontSize="14" />
+              </Button>
+              <Slider
+                x:Name="AudioPositionSlider"
+                Grid.Column="2"
+                Margin="8,0,8,0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Playback position"
+                Maximum="1000"
+                Minimum="0"
+                StepFrequency="1"
+                ValueChanged="AudioPosition_ValueChanged" />
+              <TextBlock
+                x:Name="AudioStatusText"
+                Grid.Column="3"
+                VerticalAlignment="Center"
+                Style="{StaticResource TabSubtitleStyle}"
+                Text="" />
+            </Grid>
+
+            <TextBlock
+              x:Name="AssetGalleryStatusText"
+              Grid.Row="2"
+              Grid.Column="1"
+              Margin="8,8,0,0"
+              Style="{StaticResource TabSubtitleStyle}"
+              Text="" />
           </Grid>
         </controls:TabViewItem>
 

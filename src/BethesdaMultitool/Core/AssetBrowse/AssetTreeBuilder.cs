@@ -112,6 +112,14 @@ public static class AssetTreeBuilder
             return AssetNodeKind.Texture;
         }
 
+        // Redguard's fxart sets are numbered the same way and are 3dfx textures.
+        if (fileName.StartsWith("TEXBSI.", StringComparison.OrdinalIgnoreCase)
+            && fileName["TEXBSI.".Length..] is { Length: > 0 } bsiSuffix
+            && bsiSuffix.All(char.IsAsciiDigit))
+        {
+            return AssetNodeKind.Texture;
+        }
+
         if (fileName.StartsWith("SKY", StringComparison.OrdinalIgnoreCase)
             && fileName.EndsWith(".DAT", StringComparison.OrdinalIgnoreCase))
         {
@@ -133,10 +141,12 @@ public static class AssetTreeBuilder
 
         return fileName[(dot + 1)..].ToLowerInvariant() switch
         {
-            "dds" or "ddx" or "png" or "tga" => AssetNodeKind.Texture,
+            // ZTX is Shadowkey's per-zone texture bank.
+            "dds" or "ddx" or "png" or "tga" or "ztx" => AssetNodeKind.Texture,
             // .3D is the XnGine mesh shared by Daggerfall, Battlespire and Redguard; .3DC is
             // Redguard's variant.
-            "nif" or "glb" or "gltf" or "3d" or "3dc" => AssetNodeKind.Model,
+            // HUGE is Shadowkey's models.huge.
+            "nif" or "glb" or "gltf" or "3d" or "3dc" or "huge" => AssetNodeKind.Model,
             // .SND is a numbered XnGine BSA of samples (DAGGER.SND, SPIRE.SND); HMI/XMI/MID are
             // sequenced music.
             "wav" or "mp3" or "ogg" or "xma" or "voc" or "acm" or "snd" or "hmi" or "xmi" or "mid"
@@ -144,16 +154,24 @@ public static class AssetTreeBuilder
             "bik" or "mve" or "flc" or "vid" or "smk" or "cel" => AssetNodeKind.Video,
             // IMG/MNU/SET are Arena's image families; BSI is Battlespire's; GXA is Redguard's.
             "frm" or "cif" or "cfa" or "dfa" or "zar" or "til" or "spr" or "rci"
-                or "img" or "mnu" or "set" or "bsi" or "gxa" => AssetNodeKind.Sprite,
+                or "img" or "mnu" or "set" or "bsi" or "gxa"
+                // CUS is Stormhold's sprite set; SPR also covers Shadowkey's global.spr.
+                or "cus" => AssetNodeKind.Sprite,
             // MIF/RMD are Arena's voxel maps; WLD is Daggerfall's WOODS heightmap; PAK its
             // CLIMATE/POLITIC overlays; BS6 a Battlespire level.
-            "mif" or "rmd" or "wld" or "pak" or "bs6" => AssetNodeKind.Map,
+            // JTM/CML are Oblivion mobile's tile maps and atlas; ZMP is Shadowkey's cell grid.
+            "mif" or "rmd" or "wld" or "pak" or "bs6" or "jtm" or "cml" or "zmp" => AssetNodeKind.Map,
             "esm" or "esp" => AssetNodeKind.Plugin,
             "fos" or "fxs" => AssetNodeKind.Save,
             // RSC is TEXT.RSC; INF an Arena level definition; QRC/QBN the two quest halves.
+            // RTX is Redguard's text+speech database; SCR Oblivion mobile's scripts;
+            // .s Shadowkey's Simkin scripts.
             "txt" or "msg" or "ini" or "cfg" or "xml" or "json" or "lst" or "gam"
-                or "rsc" or "inf" or "qrc" or "qbn" => AssetNodeKind.Text,
-            "bsa" or "ba2" or "bos" or "pck" or "dat2" => AssetNodeKind.Archive,
+                or "rsc" or "inf" or "qrc" or "qbn" or "rtx" or "scr" or "s" => AssetNodeKind.Text,
+            // ROB is Redguard's per-map mesh archive; CAB an InstallShield cabinet; JAR a J2ME
+            // MIDlet; LMP a Dawnstar lump.
+            "bsa" or "ba2" or "bos" or "pck" or "dat2" or "rob" or "cab" or "jar" or "lmp"
+                => AssetNodeKind.Archive,
             _ => AssetNodeKind.Raw
         };
     }
