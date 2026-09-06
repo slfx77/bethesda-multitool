@@ -243,7 +243,7 @@ internal sealed class GpuShaderBytecodePack12
     private static GpuShaderBytecodePack12 ReadCore(
         Stream input,
         byte[] expectedFingerprint,
-        IReadOnlySet<string> expectedKeys)
+        HashSet<string> expectedKeys)
     {
         if (input.CanSeek && input.Length - input.Position > MaxPackBytes)
         {

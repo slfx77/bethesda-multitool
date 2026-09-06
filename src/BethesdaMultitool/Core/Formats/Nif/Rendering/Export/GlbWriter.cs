@@ -601,11 +601,18 @@ internal static class GlbWriter
         // layers. Reuse only the shipped primary global normal already named by the source-backed
         // World Viewer approximation; portable GLB viewers receive it statically and the embedded
         // viewer scrolls it under an explicit approximation marker.
-        var normalTexturePath = authoredSkyPreview
-            ? null
-            : isStarfieldWater
-            ? StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath
-            : submesh.NormalMapTexturePath;
+        string? normalTexturePath;
+        if (authoredSkyPreview)
+        {
+            normalTexturePath = null;
+        }
+        else
+        {
+            normalTexturePath = isStarfieldWater
+                ? StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath
+                : submesh.NormalMapTexturePath;
+        }
+
         var packedNormal = NpcGlbNormalMapPacker.ResolvePacked(textureResolver, normalTexturePath);
         var normalTexture = packedNormal.Texture;
         var shaderMetadata = submesh.ShaderMetadata;
@@ -648,9 +655,16 @@ internal static class GlbWriter
         // A regular BGSM owns glow enablement as well as its texture and colour/scale. Even an
         // inactive or malformed external material must not resurrect a stale inline slot-2 map.
         var emissiveTexture = hasActiveBgsmEmission ? bgsmGlowTexture : inlineEmissiveTexture;
-        var emissiveTexturePath = hasActiveBgsmEmission
-            ? submesh.BgsmGlowMapTexturePath
-            : inlineEmissiveTexture != null ? shaderMetadata?.GlowMapPath : null;
+        string? emissiveTexturePath;
+        if (hasActiveBgsmEmission)
+        {
+            emissiveTexturePath = submesh.BgsmGlowMapTexturePath;
+        }
+        else
+        {
+            emissiveTexturePath = inlineEmissiveTexture != null ? shaderMetadata?.GlowMapPath : null;
+        }
+
         var emissiveFactor = hasActiveBgsmEmission ? bgsmEmissiveFactor : Vector3.One;
         var emissiveStrength = hasActiveBgsmEmission ? bgsmEmissiveStrength : 1f;
         var heightTexture = !isStarfieldWater &&
@@ -683,20 +697,38 @@ internal static class GlbWriter
         // or dimensions disagree, emit neutral CE2 constructor factors and no ORM image; never fall
         // through to the legacy NPC normal-alpha/environment/height heuristics, which interpret
         // unrelated Starfield channels as plausible-looking gloss/specular/AO.
-        var metallicFactor = authoredSkyPreview
-            ? 0f
-            : isStarfieldWater
-            ? 0f
-            : hasStaticStarfieldOrm
-            ? starfieldOrm.Applied ? starfieldOrm.MetallicFactor : 0f
-            : materialProfile.MetallicFactor;
-        var roughnessFactor = authoredSkyPreview
-            ? 1f
-            : isStarfieldWater
-            ? StarfieldWaterMaterialRoute.MeshViewerRoughness
-            : hasStaticStarfieldOrm
-            ? starfieldOrm.Applied ? starfieldOrm.RoughnessFactor : 0f
-            : materialProfile.RoughnessFactor;
+        float metallicFactor;
+        if (authoredSkyPreview || isStarfieldWater)
+        {
+            metallicFactor = 0f;
+        }
+        else if (hasStaticStarfieldOrm)
+        {
+            metallicFactor = starfieldOrm.Applied ? starfieldOrm.MetallicFactor : 0f;
+        }
+        else
+        {
+            metallicFactor = materialProfile.MetallicFactor;
+        }
+
+        float roughnessFactor;
+        if (authoredSkyPreview)
+        {
+            roughnessFactor = 1f;
+        }
+        else if (isStarfieldWater)
+        {
+            roughnessFactor = StarfieldWaterMaterialRoute.MeshViewerRoughness;
+        }
+        else if (hasStaticStarfieldOrm)
+        {
+            roughnessFactor = starfieldOrm.Applied ? starfieldOrm.RoughnessFactor : 0f;
+        }
+        else
+        {
+            roughnessFactor = materialProfile.RoughnessFactor;
+        }
+
         var (clampTextureU, clampTextureV) = isStarfieldWater ||
                                              hasStaticStarfieldOrm ||
                                              hasStaticStarfieldEffectAlpha

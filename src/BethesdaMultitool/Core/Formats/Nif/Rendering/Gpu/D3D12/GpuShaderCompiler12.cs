@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using Vortice.D3DCompiler;
@@ -50,7 +51,8 @@ internal static class GpuShaderCompiler12
     ///     in this one decision site if compiler behavior changes; the actual enum values are derived
     ///     from the same constants passed to <c>Compiler.Compile</c> below.
     /// </summary>
-    internal static string BytecodeCompilerContract { get; } = FormattableString.Invariant(
+    internal static string BytecodeCompilerContract { get; } = string.Create(
+        CultureInfo.InvariantCulture,
         $"Vortice.D3DCompiler={typeof(Compiler).Assembly.GetName().Version};Compiler.Compile/v1;ShaderFlags={(int)EnableUnboundedDescriptorTables};EffectFlags={(int)EffectFlags.None}");
 
     private static readonly Logger Log = Logger.Instance;

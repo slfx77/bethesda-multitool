@@ -359,7 +359,16 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             "_mirrorPsoMap = new Dictionary<ID3D12PipelineState, ID3D12PipelineState>");
         Assert.Contains("_pipelines = new ReferencePipelineFactory12(gpu, rootSignature, game);",
             renderer, StringComparison.Ordinal);
-        Assert.Contains("_deletionQueue12, _data.Game,", livePipeline, StringComparison.Ordinal);
+        var referenceInitialization = SourceContract.Extract(
+            livePipeline,
+            "private void TryInitReferencePipeline()",
+            "internal string? TryResolveFallbackMeshPath(");
+        SourceContract.AssertOrder(
+            referenceInitialization,
+            "var data = _data;",
+            "if (data is null) return;",
+            "_references = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12(",
+            "_deletionQueue12, data.Game,");
         Assert.Contains("gpu, recorder, ring, rootSig, heap, meshCache, deletion, game)", headless,
             StringComparison.Ordinal);
         Assert.Contains("ReferenceModernStandardShaderActive = _renderCache?.Game switch", renderer,

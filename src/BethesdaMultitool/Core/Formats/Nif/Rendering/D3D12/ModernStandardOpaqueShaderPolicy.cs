@@ -181,10 +181,10 @@ internal static class ModernStandardOpaqueShaderPolicy
             facts.HasBump != facts.HasDerivedStarfieldNormal ||
             facts.HasSpecularMap ||
             !float.IsFinite(facts.SpecularExponent) ||
-            facts.SpecularExponent != 0f ||
+            facts.SpecularExponent is not 0f ||
             facts.ModernEnvironmentMapDeclared ||
             !float.IsFinite(facts.ModernEnvironmentMapScale) ||
-            facts.ModernEnvironmentMapScale != 0f ||
+            facts.ModernEnvironmentMapScale is not 0f ||
             !facts.WrapTextureU ||
             !facts.WrapTextureV)
         {

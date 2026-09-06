@@ -442,14 +442,14 @@ internal sealed unsafe class OpaqueSubmissionPacket12 : IDisposable
     }
 
     private static RunMetadata[] BuildRuns(
-        IReadOnlyList<DrawInput> inputs,
+        DrawInput[] inputs,
         ulong indirectArgumentsByteOffset)
     {
-        var runs = new List<RunMetadata>(inputs.Count);
+        var runs = new List<RunMetadata>(inputs.Length);
         var firstDraw = 0;
-        for (var i = 1; i <= inputs.Count; i++)
+        for (var i = 1; i <= inputs.Length; i++)
         {
-            var endsRun = i == inputs.Count ||
+            var endsRun = i == inputs.Length ||
                           !ReferenceEquals(inputs[i - 1].Pso, inputs[i].Pso) ||
                           inputs[i].SubmissionIndex != inputs[i - 1].SubmissionIndex + 1;
             if (!endsRun)

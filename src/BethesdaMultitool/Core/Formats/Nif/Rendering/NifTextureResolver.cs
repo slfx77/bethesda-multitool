@@ -188,11 +188,16 @@ internal sealed class NifTextureResolver : IDisposable
             out var starfieldOpacityMaterialPath);
         if (starfieldNormal || starfieldOpacity || MaterialTexturePathResolver.IsStarfieldMaterialPath(path))
         {
-            var materialPath = starfieldNormal
-                ? starfieldMaterialPath
-                : starfieldOpacity
-                    ? starfieldOpacityMaterialPath
-                    : path;
+            string materialPath;
+            if (starfieldNormal)
+            {
+                materialPath = starfieldMaterialPath;
+            }
+            else
+            {
+                materialPath = starfieldOpacity ? starfieldOpacityMaterialPath : path;
+            }
+
             var slot = starfieldOpacity
                 ? MaterialTexturePathResolver.ResolveStarfieldOpacitySlot(materialPath, _sources)
                 : MaterialTexturePathResolver.ResolveStarfieldSlot(

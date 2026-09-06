@@ -126,7 +126,12 @@ internal sealed class GeometryArenaAllocator
         _blocks.Add(new List<FreeSpan> { new(0, newBlockSize) });
         _blockSizes.Add(newBlockSize);
         var blockIndex = _blocks.Count - 1;
-        TryAllocateInBlock(blockIndex, alignedSize, out var newOffset);
+        if (!TryAllocateInBlock(blockIndex, alignedSize, out var newOffset))
+        {
+            throw new InvalidOperationException(
+                "A freshly appended arena block could not satisfy the allocation it was sized for.");
+        }
+
         AllocatedBytes += alignedSize;
         return Issue(blockIndex, newOffset, size, alignedSize);
     }

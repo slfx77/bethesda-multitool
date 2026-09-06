@@ -54,7 +54,7 @@ internal sealed partial class StarfieldMaterialDatabase
     private void CaptureControllerClassDefinition(
         ReadOnlySpan<byte> body,
         string className,
-        IReadOnlyDictionary<uint, string> strings)
+        Dictionary<uint, string> strings)
     {
         if (className.Length == 0 || body.Length < 12)
         {

@@ -25,10 +25,7 @@ internal sealed class SynchronizedLazyDisposable<T> : IDisposable where T : clas
 
         lock (_gate)
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(nameof(SynchronizedLazyDisposable<T>));
-            }
+            ObjectDisposedException.ThrowIf(_disposed, typeof(SynchronizedLazyDisposable<T>));
 
             if (!_isValueCreated)
             {

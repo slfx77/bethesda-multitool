@@ -85,7 +85,7 @@ internal static class OpaqueFrontToBackPolicy
     /// </summary>
     internal static bool TryGetNearestViewDepth(
         in OpaqueFrontToBackBuildView view,
-        in Vector4 bounds,
+        Vector4 bounds,
         out double depth)
     {
         depth = double.PositiveInfinity;

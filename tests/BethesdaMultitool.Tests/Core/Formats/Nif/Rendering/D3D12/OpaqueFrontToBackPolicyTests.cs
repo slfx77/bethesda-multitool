@@ -21,7 +21,7 @@ public sealed class OpaqueFrontToBackPolicyTests
         Assert.True(view.Valid);
         Assert.Equal(Vector3.UnitZ, view.Forward);
         Assert.True(OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
-            in view, in bounds, out var depth));
+            in view, bounds, out var depth));
         Assert.Equal(17d, depth, 10);
     }
 
@@ -36,13 +36,13 @@ public sealed class OpaqueFrontToBackPolicyTests
         var far = new Vector4(200, 50, 20, 10);
 
         Assert.True(OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
-            in originView, in near, out var near0));
+            in originView, near, out var near0));
         Assert.True(OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
-            in originView, in far, out var far0));
+            in originView, far, out var far0));
         Assert.True(OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
-            in shiftedView, in near, out var near1));
+            in shiftedView, near, out var near1));
         Assert.True(OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
-            in shiftedView, in far, out var far1));
+            in shiftedView, far, out var far1));
 
         Assert.True(near0 < far0);
         Assert.True(near1 < far1);
@@ -83,7 +83,7 @@ public sealed class OpaqueFrontToBackPolicyTests
                  })
         {
             Assert.False(OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
-                in view, in malformed, out _));
+                in view, malformed, out _));
         }
     }
 

@@ -346,7 +346,7 @@ internal sealed class OpaqueBatchRegistry12
     ///     False means an ordinary batch lacked a valid key and the whole publication must preserve
     ///     the established stable order.
     /// </summary>
-    public bool ObserveFrontToBackDepth(
+    public static bool ObserveFrontToBackDepth(
         OpaqueBatchState batch,
         bool depthValid,
         double nearestViewDepth)

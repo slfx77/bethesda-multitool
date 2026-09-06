@@ -328,16 +328,7 @@ internal static class NifScanlineRasterizer
         var u = tri.U0 * w0 + tri.U1 * w1 + tri.U2 * w2;
         var v = tri.V0 * w0 + tri.V1 * w1 + tri.V2 * w2;
 
-        var (r, g, b, a) = NifSpriteRenderer.DisableTextures
-            ? ((byte)200, (byte)200, (byte)200, (byte)255)
-            : tex is not null
-                ? NifTextureSampler.SampleTexture(
-                    tex, u, v, duDx, dvDx, duDy, dvDy,
-                    tri.ClampTextureU, tri.ClampTextureV)
-                // Match skin.frag.hlsl's no-diffuse fallback. This still enters the UV path when an
-                // independently-authored normal or CE2 opacity map exists; the latter's red channel
-                // controls coverage without inventing a diffuse image.
-                : ((byte)199, (byte)199, (byte)199, (byte)255);
+        var (r, g, b, a) = SampleBaseColor();
 
         if (tri.StarfieldOpacityMap is { } opacityMap)
         {
@@ -380,24 +371,10 @@ internal static class NifScanlineRasterizer
             return;
         }
 
+        // FaceGen takes neither the Starfield vertex-Lerp nor the tint lane, so it shares the plain
+        // shade + vertex-colour path in the final else rather than repeating it.
         float fr, fg, fb;
-        if (tri.IsFaceGen)
-        {
-            fr = r * shade;
-            fg = g * shade;
-            fb = b * shade;
-
-            if (tri.HasVertexColors)
-            {
-                var vcr = (tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2) / 255f;
-                var vcg = (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f;
-                var vcb = (tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2) / 255f;
-                fr *= vcr;
-                fg *= vcg;
-                fb *= vcb;
-            }
-        }
-        else if (tri.IsStarfieldVertexLerp)
+        if (!tri.IsFaceGen && tri.IsStarfieldVertexLerp)
         {
             var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
             var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
@@ -412,7 +389,7 @@ internal static class NifScanlineRasterizer
             fg = Lerp(g, vcg, lerpWeight) * shade;
             fb = Lerp(b, vcb, lerpWeight) * shade;
         }
-        else if (tri.HasTintColor)
+        else if (!tri.IsFaceGen && tri.HasTintColor)
         {
             var tintShadeR = 2f * tri.TintR;
             var tintShadeG = 2f * tri.TintG;
@@ -510,6 +487,26 @@ internal static class NifScanlineRasterizer
                 ? (byte)Math.Clamp(srcA * 64f, 0f, 255f)
                 : (byte)Math.Clamp(srcA * 255f, 0f, 255f);
             pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], outAlpha);
+        }
+
+        (byte R, byte G, byte B, byte A) SampleBaseColor()
+        {
+            if (NifSpriteRenderer.DisableTextures)
+            {
+                return (200, 200, 200, 255);
+            }
+
+            if (tex is null)
+            {
+                // Match skin.frag.hlsl's no-diffuse fallback. This still enters the UV path when an
+                // independently-authored normal or CE2 opacity map exists; the latter's red channel
+                // controls coverage without inventing a diffuse image.
+                return (199, 199, 199, 255);
+            }
+
+            return NifTextureSampler.SampleTexture(
+                tex, u, v, duDx, dvDx, duDy, dvDy,
+                tri.ClampTextureU, tri.ClampTextureV);
         }
     }
 

@@ -107,7 +107,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     private int _classicRtvBank;
     // A failed constructor never reaches GpuSwapChainSurface12 ownership. Track each COM resource
     // until the whole immutable tonemap graph exists, then transfer it to the normal Dispose path.
-    private TonemapConstructionTransaction? _constructionTransaction = new();
+    private readonly TonemapConstructionTransaction? _constructionTransaction = new();
     private bool _disposed;
     // Null represents a non-adaptive composite. Keep the exact adaptive operator identity rather
     // than only a bool: Skyrim stores two scalar luminance lanes in the history texture, whereas

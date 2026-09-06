@@ -139,6 +139,36 @@ internal readonly record struct StarfieldMaterialColorPolicy(
     }
 
     /// <summary>
+    ///     Projects policy plus the already-selected colour stream onto persistent renderer state.
+    ///     Constant Lerp does not need a stream. Vertex Lerp is admitted only when extraction proved
+    ///     that one complete RGBA value exists for every vertex; a missing/truncated stream remains
+    ///     fail-closed instead of turning the white fallback vertex into a full tint.
+    /// </summary>
+    internal StarfieldMaterialColorRenderState ResolveRenderState(
+        byte[]? supportedVertexColors,
+        int vertexCount)
+    {
+        var constant = ResolveRenderState();
+        if (constant.IsConstantLerp)
+        {
+            return constant;
+        }
+
+        var requiredLength = (long)vertexCount * 4;
+        return IsResolved &&
+               UsesVertexColorAsTint &&
+               OverrideMode == StarfieldMaterialColorOverrideMode.Lerp &&
+               vertexCount > 0 &&
+               requiredLength <= int.MaxValue &&
+               supportedVertexColors is not null &&
+               supportedVertexColors.LongLength == requiredLength
+            ? new StarfieldMaterialColorRenderState(
+                StarfieldMaterialColorRenderMode.VertexLerp,
+                Vector4.Zero)
+            : default;
+    }
+
+    /// <summary>
     ///     Selects the colour stream that the current renderer can represent exactly through either
     ///     its multiplicative lane or its dedicated Starfield vertex-Lerp branch.
     ///     <para>
@@ -229,36 +259,6 @@ internal readonly record struct StarfieldMaterialColorPolicy(
         }
 
         return constantColors;
-    }
-
-    /// <summary>
-    ///     Projects policy plus the already-selected colour stream onto persistent renderer state.
-    ///     Constant Lerp does not need a stream. Vertex Lerp is admitted only when extraction proved
-    ///     that one complete RGBA value exists for every vertex; a missing/truncated stream remains
-    ///     fail-closed instead of turning the white fallback vertex into a full tint.
-    /// </summary>
-    internal StarfieldMaterialColorRenderState ResolveRenderState(
-        byte[]? supportedVertexColors,
-        int vertexCount)
-    {
-        var constant = ResolveRenderState();
-        if (constant.IsConstantLerp)
-        {
-            return constant;
-        }
-
-        var requiredLength = (long)vertexCount * 4;
-        return IsResolved &&
-               UsesVertexColorAsTint &&
-               OverrideMode == StarfieldMaterialColorOverrideMode.Lerp &&
-               vertexCount > 0 &&
-               requiredLength <= int.MaxValue &&
-               supportedVertexColors is not null &&
-               supportedVertexColors.LongLength == requiredLength
-            ? new StarfieldMaterialColorRenderState(
-                StarfieldMaterialColorRenderMode.VertexLerp,
-                Vector4.Zero)
-            : default;
     }
 
     private static bool IsRepresentable(float value)

@@ -78,6 +78,7 @@ internal enum StarfieldMaterialTextureAddressMode : byte
     Border
 }
 
+/// <summary>Which UV stream a decoded texture binding samples.</summary>
 /// <remarks>CE2's UV stream names are zero-based words: <c>One</c> is its default UV0 stream.</remarks>
 internal enum StarfieldMaterialUvChannel : byte
 {

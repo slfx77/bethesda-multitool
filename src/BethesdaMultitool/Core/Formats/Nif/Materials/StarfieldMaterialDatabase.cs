@@ -51,11 +51,12 @@ internal sealed partial class StarfieldMaterialDatabase
     private const int AmbientOcclusionSlot = 5;
 
     // CE2 derives every material object's runtime type from the file-backed root of its base chain.
-    // The exact roots and type numbers are the switch in libfo76utils/material.cpp.
+    // The exact roots and type numbers are the switch in libfo76utils/material.cpp. Type 2
+    // (blenders, root file CRC 0x8EBE84FF) has no root check here: nothing in this decoder reads a
+    // blender object, so it is documented rather than declared.
     private const uint LayeredRootDirectoryCrc = 0x1D95562F; // materials\layered\root
     private const uint MaterialExtension = 0x0074616D; // mat\0
     private const uint LayeredMaterialsRootFileCrc = 0x7EA3660C; // layeredmaterials (type 1)
-    private const uint BlendersRootFileCrc = 0x8EBE84FF; // blenders (type 2)
     private const uint LayersRootFileCrc = 0x574A4CF3; // layers (type 3)
     private const uint MaterialsRootFileCrc = 0x7D1E021B; // materials (type 4)
     private const uint TextureSetsRootFileCrc = 0x06F52154; // texturesets (type 5)
@@ -1228,12 +1229,10 @@ internal sealed partial class StarfieldMaterialDatabase
             var current = queue.Dequeue();
 
             // Never let a blender's mask stand in for an albedo — see ResolveSlot.
-            if (!_blenderObjects.Contains(current))
+            if (!_blenderObjects.Contains(current) &&
+                SlotFromTextureSet(current, slot) is { IsResolved: true } resolved)
             {
-                if (SlotFromTextureSet(current, slot) is { IsResolved: true } resolved)
-                {
-                    return resolved;
-                }
+                return resolved;
             }
 
             if (!_childrenByObject.TryGetValue(current, out var children))
@@ -1668,41 +1667,25 @@ internal sealed partial class StarfieldMaterialDatabase
         var pos = 4;
         if (!isDiff)
         {
-            if (!TryReadByte(body, ref pos, out _) || // UseFallOff
-                !TryReadByte(body, ref pos, out _) || // UseRGBFallOff
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
+            // Ignored fields are walked in runs by wire type (TrySkipBytes/TrySkipSingles); the
+            // named reads below are the only values this decoder keeps.
+            if (!TrySkipBytes(body, ref pos, 2) || // UseFallOff, UseRGBFallOff
+                !TrySkipSingles(body, ref pos, 4) ||
                 !TryReadByte(body, ref pos, out var vertexColor) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
+                !TrySkipBytes(body, ref pos, 1) ||
+                !TrySkipSingles(body, ref pos, 1) ||
+                !TrySkipBytes(body, ref pos, 2) ||
+                !TrySkipSingles(body, ref pos, 1) ||
+                !TrySkipBytes(body, ref pos, 4) ||
                 !TryReadByte(body, ref pos, out var isGlass) ||
                 !TryReadByte(body, ref pos, out var frosting) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
+                !TrySkipSingles(body, ref pos, 2) ||
                 !TryReadSingle(body, ref pos, out var materialAlpha) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
+                !TrySkipBytes(body, ref pos, 2) ||
                 !TryReadLengthPrefixedString(body, ref pos, out var blendMode) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadSingle(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _) ||
-                !TryReadByte(body, ref pos, out _))
+                !TrySkipBytes(body, ref pos, 1) ||
+                !TrySkipSingles(body, ref pos, 7) ||
+                !TrySkipBytes(body, ref pos, 3))
             {
                 _malformedEffectSettingsObjects.Add(owner);
                 return;
@@ -2335,10 +2318,15 @@ internal sealed partial class StarfieldMaterialDatabase
     {
         const string prefix = "MATERIAL_LAYER_";
         layer = 0;
-        return value.Length == prefix.Length + 1 &&
-               value.StartsWith(prefix, StringComparison.Ordinal) &&
-               value[^1] is >= '0' and <= '7' &&
-               (layer = value[^1] - '0') >= 0;
+        if (value.Length != prefix.Length + 1 ||
+            !value.StartsWith(prefix, StringComparison.Ordinal) ||
+            value[^1] is < '0' or > '7')
+        {
+            return false;
+        }
+
+        layer = value[^1] - '0';
+        return true;
     }
 
     private static bool TryReadFieldIndex(
@@ -2397,6 +2385,38 @@ internal sealed partial class StarfieldMaterialDatabase
         }
 
         value = body[pos++];
+        return true;
+    }
+
+    /// <summary>
+    ///     Walks <paramref name="count" /> ignored Bool/UInt8 fields. An OBJT body is a flat
+    ///     serialization with no field tags, so ignored fields must still be consumed by wire type
+    ///     to keep <paramref name="pos" /> aligned with the ones that are kept.
+    /// </summary>
+    private static bool TrySkipBytes(ReadOnlySpan<byte> body, ref int pos, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            if (!TryReadByte(body, ref pos, out _))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Walks <paramref name="count" /> ignored Float fields — see <see cref="TrySkipBytes" />.</summary>
+    private static bool TrySkipSingles(ReadOnlySpan<byte> body, ref int pos, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            if (!TryReadSingle(body, ref pos, out _))
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
