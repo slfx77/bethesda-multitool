@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Xunit;
 
@@ -77,6 +78,124 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
 
         evaluator.EvaluateNodeWorlds(20f, worlds);
         AssertClose(new Vector3(9f), worlds[0].Translation);
+    }
+
+    [Fact]
+    public void BsplineTrackSamplesCubicChannelsAndNormalizesDefaultRotation()
+    {
+        var transform = new NifBsplineTransformData(
+            0f,
+            1f,
+            null,
+            new Quaternion(0f, 0f, 0f, 2f),
+            null,
+            [Vector3.Zero, Vector3.Zero, Vector3.Zero, new Vector3(8f, 0f, 0f)],
+            null,
+            [1f, 1f, 1f, 5f]);
+        var clip = new BethesdaViewerAnimationClip(
+            "Cubic",
+            0f,
+            1f,
+            false,
+            [new BethesdaViewerNodeAnimationTrack(
+                0,
+                1f,
+                0f,
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BsplineTransform: transform)],
+            [],
+            []);
+        var evaluator = new BethesdaViewerAnimationPoseEvaluator(
+            [Matrix4x4.Identity],
+            [null],
+            clip);
+        var worlds = new Matrix4x4[1];
+
+        evaluator.EvaluateNodeWorlds(0.5f, worlds);
+
+        AssertClose(new Vector3(1f, 0f, 0f), worlds[0].Translation);
+        Assert.Equal(1.5f, worlds[0].M11, 5);
+        Assert.Equal(1.5f, worlds[0].M22, 5);
+        Assert.Equal(1.5f, worlds[0].M33, 5);
+    }
+
+    [Fact]
+    public void BsplineTrackWithMismatchedControlPointCountsIsRejected()
+    {
+        var malformed = new NifBsplineTransformData(
+            0f,
+            1f,
+            null,
+            null,
+            null,
+            Enumerable.Repeat(Vector3.Zero, 4).ToArray(),
+            Enumerable.Repeat(Quaternion.Identity, 5).ToArray(),
+            null);
+        var clip = new BethesdaViewerAnimationClip(
+            "Malformed",
+            0f,
+            1f,
+            false,
+            [new BethesdaViewerNodeAnimationTrack(
+                0,
+                1f,
+                0f,
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BsplineTransform: malformed)],
+            [],
+            []);
+
+        Assert.Throws<InvalidDataException>(() => new BethesdaViewerAnimationPoseEvaluator(
+            [Matrix4x4.Identity],
+            [null],
+            clip));
+    }
+
+    [Fact]
+    public void BsplineTrackWithOverflowingQuaternionLengthIsRejected()
+    {
+        var malformed = new NifBsplineTransformData(
+            0f,
+            1f,
+            null,
+            new Quaternion(1e29f, 1e29f, 1e29f, 1e29f),
+            1f,
+            null,
+            null,
+            null);
+        var clip = new BethesdaViewerAnimationClip(
+            "Malformed",
+            0f,
+            1f,
+            false,
+            [new BethesdaViewerNodeAnimationTrack(
+                0,
+                1f,
+                0f,
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BsplineTransform: malformed)],
+            [],
+            []);
+
+        Assert.Throws<InvalidDataException>(() => new BethesdaViewerAnimationPoseEvaluator(
+            [Matrix4x4.Identity],
+            [null],
+            clip));
     }
 
     [Fact]

@@ -48,6 +48,77 @@ public class NifAnimationEvaluationTests
         Assert.Equal(expected.W, half.W, 4);
     }
 
+    [Theory]
+    [InlineData(-1f, 0)]
+    [InlineData(0f, 0)]
+    [InlineData(0.5f, 0)]
+    [InlineData(0.999f, 0)]
+    [InlineData(1f, 1)]
+    [InlineData(1.5f, 1)]
+    [InlineData(1.999f, 1)]
+    [InlineData(2f, 2)]
+    [InlineData(3f, 2)]
+    public void ConstantChannels_HoldEarlierKeyUntilExactNextKey(float time, int expectedIndex)
+    {
+        // NiStepFloat/Pos/RotKey::Interpolate compares the segment fraction against 1.0f,
+        // not 0.5f: samples past the midpoint still use the earlier key.
+        var rotations = new[]
+        {
+            Quaternion.Identity,
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 3f)
+        };
+        var translations = new[] { Vector3.Zero, new Vector3(8f, -4f, 2f), new Vector3(-3f, 7f, 6f) };
+        var scales = new[] { 1f, 3f, 2f };
+        NifQuatKey[] rotationKeys = [new(0f, rotations[0]), new(1f, rotations[1]), new(2f, rotations[2])];
+        NifVec3Key[] translationKeys = [new(0f, translations[0]), new(1f, translations[1]), new(2f, translations[2])];
+        NifFloatKey[] scaleKeys = [new(0f, scales[0]), new(1f, scales[1]), new(2f, scales[2])];
+
+        Assert.Equal(Quaternion.Normalize(rotations[expectedIndex]),
+            NifTrackSampler.SampleRotation(rotationKeys, time, NifKeyInterpolation.Constant));
+        Assert.Equal(translations[expectedIndex],
+            NifTrackSampler.SampleTranslation(translationKeys, time, NifKeyInterpolation.Constant));
+        Assert.Equal(scales[expectedIndex],
+            NifTrackSampler.SampleScale(scaleKeys, time, NifKeyInterpolation.Constant));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void PoseEvaluator_UsesEachChannelsAuthoredConstantBasis(int constantChannel)
+    {
+        var endRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f);
+        var endTranslation = new Vector3(8f, -4f, 2f);
+        var animation = new NifMeshAnimation(
+            [new NifAnimBone("Bone", -1, Vector3.Zero, Quaternion.Identity, 1f)],
+            [new NifNodeTrack(
+                "Bone", 1f, 0f,
+                constantChannel == 0 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
+                [new NifQuatKey(0f, Quaternion.Identity), new NifQuatKey(1f, endRotation)],
+                constantChannel == 1 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
+                [new NifVec3Key(0f, Vector3.Zero), new NifVec3Key(1f, endTranslation)],
+                constantChannel == 2 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
+                [new NifFloatKey(0f, 1f), new NifFloatKey(1f, 3f)])],
+            [], 0f, 1f, false);
+        Span<Matrix4x4> worlds = stackalloc Matrix4x4[1];
+
+        NifAnimationPoseEvaluator.EvaluateBoneWorlds(animation, 0.75f, worlds);
+
+        var rotation = constantChannel == 0
+            ? Quaternion.Identity
+            : Quaternion.Normalize(Quaternion.Slerp(Quaternion.Identity, endRotation, 0.75f));
+        var expected = Matrix4x4.CreateFromQuaternion(rotation) *
+                       Matrix4x4.CreateScale(constantChannel == 2 ? 1f : 2.5f);
+        expected.Translation = constantChannel == 1 ? Vector3.Zero : endTranslation * 0.75f;
+        Assert.Equal(expected, worlds[0]);
+
+        NifAnimationPoseEvaluator.EvaluateBoneWorlds(animation, 1f, worlds);
+        expected = Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(endRotation)) * Matrix4x4.CreateScale(3f);
+        expected.Translation = endTranslation;
+        Assert.Equal(expected, worlds[0]);
+    }
+
     [Fact]
     public void MapTime_LoopWrapsIntoClipWindow()
     {

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 
@@ -17,7 +18,12 @@ internal enum BethesdaViewerKeyInterpolation : byte
 
 internal readonly record struct BethesdaViewerQuaternionKey(float Time, Quaternion Value);
 
-internal readonly record struct BethesdaViewerVector3Key(float Time, Vector3 Value);
+internal readonly record struct BethesdaViewerVector3Key(
+    float Time,
+    Vector3 Value,
+    Vector3 Forward = default,
+    Vector3 Backward = default,
+    bool HasQuadraticTangents = false);
 
 internal readonly record struct BethesdaViewerFloatKey(float Time, float Value);
 
@@ -39,7 +45,8 @@ internal sealed record BethesdaViewerNodeAnimationTrack(
     BethesdaViewerFloatKey[] ScaleKeys,
     BethesdaViewerFloatKey[]? EulerXKeys = null,
     BethesdaViewerFloatKey[]? EulerYKeys = null,
-    BethesdaViewerFloatKey[]? EulerZKeys = null)
+    BethesdaViewerFloatKey[]? EulerZKeys = null,
+    NifBsplineTransformData? BsplineTransform = null)
 {
     internal bool HasEulerRotation =>
         EulerXKeys is { Length: > 0 } ||
@@ -77,7 +84,8 @@ internal sealed record BethesdaViewerAnimationClip(
     BethesdaViewerTextKey[] TextKeys,
     // Gamebryo CYCLE_REVERSE is a repeating forward/backward traversal, not a forward loop.
     // Kept separate from Loops so the existing clamp/loop contract remains source-compatible.
-    bool PingPongs = false)
+    bool PingPongs = false,
+    BethesdaViewerGeometryMorphTrack[]? GeometryMorphTracks = null)
 {
     internal float Duration => EndTime - StartTime;
 }

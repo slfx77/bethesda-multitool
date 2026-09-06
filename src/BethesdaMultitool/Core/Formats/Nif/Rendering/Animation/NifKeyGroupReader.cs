@@ -15,7 +15,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 ///         <item>Key&lt;Vector3&gt;: Linear 16, Quadratic 40 (value + forward + backward), TBC 28.</item>
 ///         <item>Key&lt;float&gt;: Linear 8, Quadratic 16, TBC 20.</item>
 ///     </list>
-///     Tangent/TBC payloads are parsed-and-skipped — only <c>(time, value)</c> is retained; the
+///     Quadratic Vector3 tangents are retained. Scalar tangents and TBC payloads remain skipped; the
 ///     authored interpolation type is preserved as a label on the owning track.
 /// </summary>
 internal static class NifKeyGroupReader
@@ -165,7 +165,18 @@ internal static class NifKeyGroupReader
                 new Vector3(
                     BinaryUtils.ReadFloat(data, pos + 4, be),
                     BinaryUtils.ReadFloat(data, pos + 8, be),
-                    BinaryUtils.ReadFloat(data, pos + 12, be)));
+                    BinaryUtils.ReadFloat(data, pos + 12, be)),
+                interpolation == NifKeyInterpolation.Quadratic ? ReadVector(data, pos + 16, be) : default,
+                interpolation == NifKeyInterpolation.Quadratic ? ReadVector(data, pos + 28, be) : default,
+                interpolation == NifKeyInterpolation.Quadratic);
+            if (keys[i].HasQuadraticTangents &&
+                (!NifQuadraticVectorCurve.IsFiniteAuthored(keys[i].Value) ||
+                 !NifQuadraticVectorCurve.IsFiniteAuthored(keys[i].Forward) ||
+                 !NifQuadraticVectorCurve.IsFiniteAuthored(keys[i].Backward)))
+            {
+                keys = [];
+                return false;
+            }
             pos += stride;
         }
 
@@ -226,6 +237,11 @@ internal static class NifKeyGroupReader
 
         return true;
     }
+
+    private static Vector3 ReadVector(byte[] data, int pos, bool be) => new(
+        BinaryUtils.ReadFloat(data, pos, be),
+        BinaryUtils.ReadFloat(data, pos + 4, be),
+        BinaryUtils.ReadFloat(data, pos + 8, be));
 
     private static bool IsScalarInterpolation(uint rawType)
     {

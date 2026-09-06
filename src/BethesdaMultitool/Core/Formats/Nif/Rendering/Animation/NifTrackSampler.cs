@@ -5,11 +5,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 /// <summary>
 ///     Deterministic, allocation-free time-domain sampling of keyframe tracks.
 ///     <para>
-///         INTERPOLATION STAND-IN (labeled): rotations slerp and vectors/floats lerp between the
-///         bracketing keys regardless of the authored basis — TCB (tension/bias/continuity) and
-///         Bezier tangents are parsed-and-dropped upstream. For the low-key-count ambient loops
-///         this drives (banner sway ~10 keys over 1.3 s) the difference is sub-pixel; verify
-///         against OpenMW renders as a black-box oracle and revisit if a curve visibly disagrees.
+///         Quadratic Vector3 channels use retained authored Hermite tangents. Quaternion/scalar
+///         Quadratic and all TBC channels retain their labeled slerp/lerp approximations; keys
+///         constructed without tangent payloads also preserve that explicit legacy behavior.
+///         Constant keys hold the earlier value until the next key, matching the recovered
+///         NiStepFloatKey/NiStepPosKey/NiStepRotKey consumers rather than interpolating a transition.
 ///     </para>
 /// </summary>
 internal static class NifTrackSampler
@@ -41,10 +41,11 @@ internal static class NifTrackSampler
         return start + wrapped;
     }
 
-    internal static Quaternion SampleRotation(NifQuatKey[] keys, float time)
+    internal static Quaternion SampleRotation(
+        NifQuatKey[] keys, float time, NifKeyInterpolation interpolation = NifKeyInterpolation.Linear)
     {
         var (lo, hi, frac) = Bracket(keys.Length, i => keys[i].Time, time);
-        if (lo == hi)
+        if (lo == hi || interpolation == NifKeyInterpolation.Constant)
         {
             return Quaternion.Normalize(keys[lo].Value);
         }
@@ -52,16 +53,28 @@ internal static class NifTrackSampler
         return Quaternion.Normalize(Quaternion.Slerp(keys[lo].Value, keys[hi].Value, frac));
     }
 
-    internal static Vector3 SampleTranslation(NifVec3Key[] keys, float time)
+    internal static Vector3 SampleTranslation(
+        NifVec3Key[] keys, float time, NifKeyInterpolation interpolation = NifKeyInterpolation.Linear)
     {
         var (lo, hi, frac) = Bracket(keys.Length, i => keys[i].Time, time);
-        return lo == hi ? keys[lo].Value : Vector3.Lerp(keys[lo].Value, keys[hi].Value, frac);
+        if (lo == hi || interpolation == NifKeyInterpolation.Constant)
+        {
+            return keys[lo].Value;
+        }
+        return interpolation == NifKeyInterpolation.Quadratic &&
+               keys[lo].HasQuadraticTangents && keys[hi].HasQuadraticTangents
+            ? NifQuadraticVectorCurve.Sample(
+                keys[lo].Value, keys[hi].Value, keys[lo].Backward, keys[hi].Forward, frac)
+            : Vector3.Lerp(keys[lo].Value, keys[hi].Value, frac);
     }
 
-    internal static float SampleScale(NifFloatKey[] keys, float time)
+    internal static float SampleScale(
+        NifFloatKey[] keys, float time, NifKeyInterpolation interpolation = NifKeyInterpolation.Linear)
     {
         var (lo, hi, frac) = Bracket(keys.Length, i => keys[i].Time, time);
-        return lo == hi ? keys[lo].Value : float.Lerp(keys[lo].Value, keys[hi].Value, frac);
+        return lo == hi || interpolation == NifKeyInterpolation.Constant
+            ? keys[lo].Value
+            : float.Lerp(keys[lo].Value, keys[hi].Value, frac);
     }
 
     /// <summary>

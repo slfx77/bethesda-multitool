@@ -40,7 +40,8 @@ internal static class NifAnimationPoseEvaluator
                     animation.ClipLoops);
                 if (track.RotationKeys.Length > 0)
                 {
-                    rotation = NifTrackSampler.SampleRotation(track.RotationKeys, trackTime);
+                    rotation = NifTrackSampler.SampleRotation(
+                        track.RotationKeys, trackTime, track.RotationInterpolation);
                 }
                 else if (track.HasEulerRotation)
                 {
@@ -49,12 +50,13 @@ internal static class NifAnimationPoseEvaluator
 
                 if (track.TranslationKeys.Length > 0)
                 {
-                    translation = NifTrackSampler.SampleTranslation(track.TranslationKeys, trackTime);
+                    translation = NifTrackSampler.SampleTranslation(
+                        track.TranslationKeys, trackTime, track.TranslationInterpolation);
                 }
 
                 if (track.ScaleKeys.Length > 0)
                 {
-                    scale = NifTrackSampler.SampleScale(track.ScaleKeys, trackTime);
+                    scale = NifTrackSampler.SampleScale(track.ScaleKeys, trackTime, track.ScaleInterpolation);
                 }
             }
 

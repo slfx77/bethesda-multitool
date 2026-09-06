@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.Viewer;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Games;
@@ -205,6 +206,81 @@ public sealed class BethesdaViewerSceneDecoder12Tests
         Assert.Equal(stitchVertices, decoded.BoundaryStitchGroups[0].Vertices);
         Assert.Single(decoded.GeneratedTextures);
         Assert.Same(sceneTexture, decoded.GeneratedTextures[@"textures\facegen_egt\npc.dds"]);
+    }
+
+    [Fact]
+    public void DecodePreservesCubicAnimationPoseAndOwnsAllControlPointArrays()
+    {
+        // Four clamped cubic control points are a Bezier curve. At its midpoint these
+        // channels have weights 1/8, 3/8, 3/8, 1/8, not linear endpoint interpolation.
+        Vector3[] translations = [Vector3.Zero, new(8f, 0f, 0f), new(8f, 0f, 0f), Vector3.Zero];
+        Quaternion[] rotations = [Quaternion.Identity, new(0f, 0f, 1f, 0f), new(0f, 0f, 1f, 0f), Quaternion.Identity];
+        float[] scales = [1f, 3f, 3f, 1f];
+        var transform = new NifBsplineTransformData(
+            2f, 4f, new Vector3(4f, 5f, 6f), Quaternion.Identity, 1.5f,
+            translations, rotations, scales);
+        var scene = new BethesdaViewerScene("cubic-animation", BethesdaViewerScenePurpose.RawNif);
+        var clip = new BethesdaViewerAnimationClip(
+            "Cubic",
+            0f,
+            5f,
+            false,
+            [new BethesdaViewerNodeAnimationTrack(
+                BethesdaViewerScene.RootNodeIndex,
+                2f,
+                1f,
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BethesdaViewerKeyInterpolation.Constant,
+                [],
+                BsplineTransform: transform)],
+            [],
+            []);
+        scene.AnimationClips.Add(clip);
+
+        var decoded = BethesdaViewerSceneDecoder12.Decode(scene);
+
+        var snapshotClip = Assert.Single(decoded.AnimationClips);
+        var snapshotTrack = Assert.Single(snapshotClip.NodeTracks);
+        var snapshot = Assert.IsType<NifBsplineTransformData>(snapshotTrack.BsplineTransform);
+        Assert.NotSame(transform, snapshot);
+        Assert.NotSame(translations, snapshot.TranslationControlPoints);
+        Assert.NotSame(rotations, snapshot.RotationControlPoints);
+        Assert.NotSame(scales, snapshot.ScaleControlPoints);
+        Assert.Equal(transform.StartTime, snapshot.StartTime);
+        Assert.Equal(transform.StopTime, snapshot.StopTime);
+        Assert.Equal(transform.DefaultTranslation, snapshot.DefaultTranslation);
+        Assert.Equal(transform.DefaultRotation, snapshot.DefaultRotation);
+        Assert.Equal(transform.DefaultScale, snapshot.DefaultScale);
+        var restLocals = decoded.Nodes.Select(static node => node.LocalTransform).ToArray();
+        var parents = decoded.Nodes.Select(static node => node.ParentIndex).ToArray();
+        var sourceEvaluator = new BethesdaViewerAnimationPoseEvaluator(restLocals, parents, clip);
+        var snapshotEvaluator = new BethesdaViewerAnimationPoseEvaluator(restLocals, parents, snapshotClip);
+        var sourceWorlds = new Matrix4x4[decoded.Nodes.Count];
+        var snapshotWorlds = new Matrix4x4[decoded.Nodes.Count];
+
+        // The retained track clock maps 1 second to the spline midpoint at 3 seconds.
+        sourceEvaluator.EvaluateNodeWorlds(1f, sourceWorlds);
+        snapshotEvaluator.EvaluateNodeWorlds(1f, snapshotWorlds);
+
+        Assert.Equal(sourceWorlds, snapshotWorlds);
+        var expectedPose = snapshotWorlds[BethesdaViewerScene.RootNodeIndex];
+        Assert.True(Matrix4x4.Decompose(expectedPose, out var scale, out var rotation, out var translation));
+        Assert.Equal(new Vector3(6f, 0f, 0f), translation);
+        Assert.InRange(Vector3.Distance(new Vector3(2.5f), scale), 0f, 1e-5f);
+        var expectedRotation = Quaternion.Normalize(new Quaternion(0f, 0f, 0.75f, 0.25f));
+        Assert.InRange(MathF.Abs(Quaternion.Dot(expectedRotation, rotation)), 0.99999f, 1.00001f);
+
+        Array.Fill(translations, new Vector3(100f));
+        Array.Fill(rotations, Quaternion.Identity);
+        Array.Fill(scales, 10f);
+        sourceEvaluator.EvaluateNodeWorlds(1f, sourceWorlds);
+        snapshotEvaluator.EvaluateNodeWorlds(1f, snapshotWorlds);
+
+        Assert.NotEqual(expectedPose, sourceWorlds[BethesdaViewerScene.RootNodeIndex]);
+        Assert.Equal(expectedPose, snapshotWorlds[BethesdaViewerScene.RootNodeIndex]);
     }
 
     [Fact]

@@ -31,7 +31,8 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(source);
 
-        var sourceTrackCount = source.Tracks?.Length ?? 0;
+        var sourceBsplineTracks = source.BsplineTracks ?? [];
+        var sourceTrackCount = (source.Tracks?.Length ?? 0) + sourceBsplineTracks.Length;
         var unsupportedCount = source.UnsupportedTransformTrackCount;
         var missing = 0;
         var ambiguous = 0;
@@ -67,7 +68,9 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
             return Fail("The KF clip has an unknown cycle mode.", out report);
         }
 
-        var effectiveFrequency = source.Frequency == 0f ? 1f : source.Frequency;
+        var effectiveFrequency = MathF.Abs(source.Frequency) <= float.Epsilon
+            ? 1f
+            : source.Frequency;
         if (!float.IsFinite(effectiveFrequency) || effectiveFrequency <= 0f ||
             !float.IsFinite(source.StartTime) ||
             !TryNormalizeTime(
@@ -82,36 +85,42 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
 
         const float startTime = 0f;
 
-        var duplicateNames = source.Tracks
-            .Where(static track => track is not null && !string.IsNullOrWhiteSpace(track.NodeName))
-            .GroupBy(static track => track.NodeName, StringComparer.OrdinalIgnoreCase)
+        var sourceCandidates = new List<SourceCandidate>(sourceTrackCount);
+        sourceCandidates.AddRange(source.Tracks.Select(static track =>
+            new SourceCandidate(track?.NodeName, track, null)));
+        sourceCandidates.AddRange(sourceBsplineTracks.Select(static track =>
+            new SourceCandidate(track?.NodeName, null, track)));
+        var duplicateNames = sourceCandidates
+            .Where(static candidate => !string.IsNullOrWhiteSpace(candidate.NodeName))
+            .GroupBy(static candidate => candidate.NodeName, StringComparer.OrdinalIgnoreCase)
             .Where(static group => group.Count() > 1)
             .Select(static group => group.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var candidates = new List<BindingCandidate>(source.Tracks.Length);
-        foreach (var track in source.Tracks)
+        var candidates = new List<BindingCandidate>(sourceTrackCount);
+        foreach (var sourceCandidate in sourceCandidates)
         {
-            if (track is null || string.IsNullOrWhiteSpace(track.NodeName))
+            if (string.IsNullOrWhiteSpace(sourceCandidate.NodeName) ||
+                (sourceCandidate.KeyTrack is null) == (sourceCandidate.BsplineTrack is null))
             {
                 return Fail("The KF clip contains an unnamed or null transform track.", out report);
             }
 
             if (suppressAccumulatedRootMotion && IsAccumulatedRootTarget(
-                    track.NodeName,
+                    sourceCandidate.NodeName,
                     source.AccumRootName))
             {
                 suppressed++;
                 continue;
             }
 
-            if (duplicateNames.Contains(track.NodeName))
+            if (duplicateNames.Contains(sourceCandidate.NodeName))
             {
                 duplicateSource++;
                 continue;
             }
 
-            var resolution = ResolveUniqueNode(scene, track.NodeName);
+            var resolution = ResolveUniqueNode(scene, sourceCandidate.NodeName);
             if (resolution.MatchCount == 0)
             {
                 missing++;
@@ -124,7 +133,7 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
                 continue;
             }
 
-            candidates.Add(new BindingCandidate(resolution.NodeIndex, track));
+            candidates.Add(new BindingCandidate(resolution.NodeIndex, sourceCandidate));
         }
 
         var collidedNodes = candidates
@@ -143,15 +152,34 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
                 continue;
             }
 
-            if (!TryConvertTrack(
-                    candidate.Track,
+            BethesdaViewerNodeAnimationTrack? converted;
+            if (candidate.Source.KeyTrack is { } keyTrack)
+            {
+                converted = TryConvertTrack(
+                    keyTrack,
                     candidate.NodeIndex,
                     source.StartTime,
                     effectiveFrequency,
-                    out var converted))
+                    out var convertedKeyTrack)
+                    ? convertedKeyTrack
+                    : null;
+            }
+            else
+            {
+                converted = TryConvertBsplineTrack(
+                    candidate.Source.BsplineTrack!,
+                    candidate.NodeIndex,
+                    source.StartTime,
+                    effectiveFrequency,
+                    out var convertedBsplineTrack)
+                    ? convertedBsplineTrack
+                    : null;
+            }
+
+            if (converted is null)
             {
                 return Fail(
-                    $"KF target '{candidate.Track.NodeName}' contains malformed key data.",
+                    $"KF target '{candidate.Source.NodeName}' contains malformed key data.",
                     out report);
             }
 
@@ -265,6 +293,52 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
         return true;
     }
 
+    private static bool TryConvertBsplineTrack(
+        NifNameTargetedBsplineTransformTrack source,
+        int nodeIndex,
+        float sequenceStartTime,
+        float frequency,
+        out BethesdaViewerNodeAnimationTrack converted)
+    {
+        converted = null!;
+        if (source.Transform is null ||
+            !TryNormalizeTime(
+                source.Transform.StartTime,
+                sequenceStartTime,
+                frequency,
+                out var startTime) ||
+            !TryNormalizeTime(
+                source.Transform.StopTime,
+                sequenceStartTime,
+                frequency,
+                out var stopTime) ||
+            stopTime <= startTime)
+        {
+            return false;
+        }
+
+        var transform = source.Transform with
+        {
+            StartTime = startTime,
+            StopTime = stopTime,
+            TranslationControlPoints = source.Transform.TranslationControlPoints?.ToArray(),
+            RotationControlPoints = source.Transform.RotationControlPoints?.ToArray(),
+            ScaleControlPoints = source.Transform.ScaleControlPoints?.ToArray()
+        };
+        converted = new BethesdaViewerNodeAnimationTrack(
+            nodeIndex,
+            1f,
+            0f,
+            BethesdaViewerKeyInterpolation.Constant,
+            [],
+            BethesdaViewerKeyInterpolation.Constant,
+            [],
+            BethesdaViewerKeyInterpolation.Constant,
+            [],
+            BsplineTransform: transform);
+        return true;
+    }
+
     private static bool TryConvert(
         NifKeyInterpolation source,
         out BethesdaViewerKeyInterpolation converted)
@@ -329,7 +403,9 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
                 return false;
             }
 
-            converted[index] = new BethesdaViewerVector3Key(time, source[index].Value);
+            converted[index] = new BethesdaViewerVector3Key(
+                time, source[index].Value, source[index].Forward, source[index].Backward,
+                source[index].HasQuadraticTangents);
         }
 
         return true;
@@ -437,7 +513,12 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
                string.Equals(targetName, pelvisVariant, StringComparison.OrdinalIgnoreCase);
     }
 
-    private readonly record struct BindingCandidate(int NodeIndex, NifNodeTrack Track);
+    private readonly record struct SourceCandidate(
+        string? NodeName,
+        NifNodeTrack? KeyTrack,
+        NifNameTargetedBsplineTransformTrack? BsplineTrack);
+
+    private readonly record struct BindingCandidate(int NodeIndex, SourceCandidate Source);
 
     private readonly record struct NodeResolution(int NodeIndex, int MatchCount);
 }

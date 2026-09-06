@@ -3,9 +3,9 @@ using System.Numerics;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 /// <summary>
-///     NIF key interpolation basis, as authored (nif.xml KeyType). The runtime sampler substitutes
-///     slerp/lerp as labeled stand-ins for the Quadratic/Tbc bases — the authored type is preserved
-///     here so the approximation stays visible and revisitable.
+///     NIF key interpolation basis, as authored (nif.xml KeyType). Vector3 quadratic tangents are
+///     retained and sampled. Quaternion/scalar Quadratic
+///     and TBC channels retain their existing labeled approximations.
 /// </summary>
 internal enum NifKeyInterpolation : byte
 {
@@ -18,7 +18,12 @@ internal enum NifKeyInterpolation : byte
 
 internal readonly record struct NifQuatKey(float Time, Quaternion Value);
 
-internal readonly record struct NifVec3Key(float Time, Vector3 Value);
+internal readonly record struct NifVec3Key(
+    float Time,
+    Vector3 Value,
+    Vector3 Forward = default,
+    Vector3 Backward = default,
+    bool HasQuadraticTangents = false);
 
 internal readonly record struct NifFloatKey(float Time, float Value);
 
@@ -86,7 +91,10 @@ internal readonly record struct NifControllerCycle(
     float Phase,
     float StartTime,
     float StopTime,
-    NifCycleType Cycle);
+    NifCycleType Cycle,
+    // Bone/track slots driven by this clock. TES3 can mix clamp body controllers with an
+    // independent reverse lane in one NIF, so the clock must retain its exact target subset.
+    int[]? TrackIndices);
 
 /// <summary>
 ///     A mesh's complete animation description: the bone tree, per-bone keyframe tracks (parallel to

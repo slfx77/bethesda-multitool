@@ -149,6 +149,8 @@ internal static class NifControllerSequenceNameTrackReader
         }
 
         var tracks = new List<NifNodeTrack>(controlledBlockCount);
+        var bsplineTracks = new List<NifNameTargetedBsplineTransformTrack>(controlledBlockCount);
+        long decodedBsplineScalarCount = 0;
         var unsupportedTransformTrackCount = 0;
         for (var index = 0; index < controlledBlockCount; index++)
         {
@@ -166,6 +168,25 @@ internal static class NifControllerSequenceNameTrackReader
             }
 
             var interpolator = nif.Blocks[interpolatorRef];
+            if (interpolator.TypeName is
+                "NiBSplineTransformInterpolator" or
+                "NiBSplineCompTransformInterpolator")
+            {
+                if (!NifBsplineTransformReader.TryRead(
+                        data,
+                        nif,
+                        interpolator,
+                        nodeName,
+                        ref decodedBsplineScalarCount,
+                        out var bsplineTrack))
+                {
+                    return false;
+                }
+
+                bsplineTracks.Add(bsplineTrack);
+                continue;
+            }
+
             if (interpolator.TypeName != "NiTransformInterpolator")
             {
                 if (IsUnsupportedTransformInterpolator(interpolator.TypeName))
@@ -197,7 +218,8 @@ internal static class NifControllerSequenceNameTrackReader
             accumRoot,
             tracks.ToArray(),
             textKeys,
-            unsupportedTransformTrackCount);
+            unsupportedTransformTrackCount,
+            bsplineTracks.ToArray());
         return true;
     }
 

@@ -181,6 +181,65 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
     }
 
     [Fact]
+    public void TryCreateClip_BsplineTrackNormalizesClockBindsAndKeepsOwnedControlPoints()
+    {
+        var scene = SceneWithNode("Right arm", "Bip01 R UpperArm");
+        var translationControlPoints = new[]
+        {
+            Vector3.Zero,
+            Vector3.Zero,
+            Vector3.Zero,
+            new Vector3(8f, 0f, 0f)
+        };
+        var sourceTransform = new NifBsplineTransformData(
+            2f,
+            6f,
+            null,
+            new Quaternion(0f, 0f, 0f, 2f),
+            1f,
+            translationControlPoints,
+            null,
+            null);
+        var source = Clip(
+            frequency: 2f,
+            startTime: 2f,
+            stopTime: 6f,
+            tracks: [],
+            bsplineTracks:
+            [
+                new NifNameTargetedBsplineTransformTrack(
+                    "bip01 r upperarm",
+                    sourceTransform)
+            ]);
+
+        var clip = BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(
+            scene,
+            source,
+            false,
+            out var report);
+
+        Assert.NotNull(clip);
+        Assert.Equal(1, report.SourceTrackCount);
+        Assert.Equal(1, report.BoundTrackCount);
+        Assert.Equal(0, report.UnsupportedTransformTrackCount);
+        var bound = Assert.Single(clip.NodeTracks);
+        var boundTransform = Assert.IsType<NifBsplineTransformData>(bound.BsplineTransform);
+        Assert.Equal(0f, boundTransform.StartTime);
+        Assert.Equal(2f, boundTransform.StopTime);
+
+        translationControlPoints[3] = new Vector3(800f, 0f, 0f);
+        Assert.Equal(8f, boundTransform.TranslationControlPoints![3].X);
+
+        var evaluator = new BethesdaViewerAnimationPoseEvaluator(
+            [Matrix4x4.Identity, Matrix4x4.Identity],
+            [null, 0],
+            clip);
+        var worlds = new Matrix4x4[2];
+        evaluator.EvaluateNodeWorlds(1f, worlds);
+        Assert.Equal(1f, worlds[1].Translation.X, 5);
+    }
+
+    [Fact]
     public void TryCreateClip_UnknownCycleFailsClosed()
     {
         var scene = SceneWithNode("Head", "Bip01 Head");
@@ -217,7 +276,8 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
         NifNodeTrack[]? tracks = null,
         NifAnimTextKey[]? textKeys = null,
         string? accumRootName = null,
-        int unsupportedCount = 0)
+        int unsupportedCount = 0,
+        NifNameTargetedBsplineTransformTrack[]? bsplineTracks = null)
     {
         return new NifNameTargetedAnimationClip(
             "Idle",
@@ -228,7 +288,8 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
             accumRootName,
             tracks ?? [],
             textKeys ?? [],
-            unsupportedCount);
+            unsupportedCount,
+            bsplineTracks);
     }
 
     private static NifNodeTrack Track(string nodeName, params NifVec3Key[] translationKeys)

@@ -9,13 +9,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 public sealed class NifControllerSequenceNameTrackReaderTests
 {
     [Fact]
-    public void ReadAll_Bs34ReadsAllSequencesMergesBaseChannelsAndReportsBspline()
+    public void ReadAll_Bs34ReadsAllSequencesMergesBaseChannelsAndReadsCompactBspline()
     {
         var fixture = new Fixture(false, 34);
         fixture.Nif.Strings.AddRange(["Idle", "Bip01 Head", "Footstep", "Aim", "Weapon"]);
 
         var transformDataRef = fixture.AddBlock("NiTransformData", 56);
         var transformInterpolatorRef = fixture.AddBlock("NiTransformInterpolator", 36);
+        var bsplineDataRef = fixture.AddBlock("NiBSplineData", 40);
+        var bsplineBasisRef = fixture.AddBlock("NiBSplineBasisData", 4);
         var bsplineInterpolatorRef = fixture.AddBlock("NiBSplineCompTransformInterpolator", 84);
         var baseOnlyInterpolatorRef = fixture.AddBlock("NiTransformInterpolator", 36);
         var textKeysRef = fixture.AddBlock("NiTextKeyExtraData", 16);
@@ -32,6 +34,14 @@ public sealed class NifControllerSequenceNameTrackReaderTests
             -1,
             rotationWxyz: (1f, 0f, 0f, 0f),
             scale: 1.25f);
+        fixture.WriteCompactQuaternionBsplineData(bsplineDataRef);
+        fixture.WriteBsplineBasis(bsplineBasisRef, 4);
+        fixture.WriteCompactQuaternionBsplineInterpolator(
+            bsplineInterpolatorRef,
+            bsplineDataRef,
+            bsplineBasisRef,
+            0f,
+            4f);
         fixture.WriteTextKeyBlock(textKeysRef, 2f, 2);
         fixture.WriteSequence(
             idleSequenceRef,
@@ -62,7 +72,7 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         Assert.Equal(2f, idle.Frequency);
         Assert.Equal(NifCycleType.Loop, idle.Cycle);
         Assert.Equal("Weapon", idle.AccumRootName);
-        Assert.Equal(1, idle.UnsupportedTransformTrackCount);
+        Assert.Equal(0, idle.UnsupportedTransformTrackCount);
         var head = Assert.Single(idle.Tracks);
         Assert.Equal("Bip01 Head", head.NodeName);
         Assert.Equal(2, head.RotationKeys.Length);
@@ -71,6 +81,10 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         Assert.Equal(16.985f, translation.Value.X, 3);
         Assert.Equal(-12.076f, translation.Value.Y, 3);
         Assert.Equal(4.451f, translation.Value.Z, 3);
+        var bspline = Assert.Single(idle.BsplineTracks!);
+        Assert.Equal("Weapon", bspline.NodeName);
+        Assert.Equal(4, bspline.Transform.ControlPointCount);
+        Assert.Equal(1f, bspline.Transform.RotationControlPoints![0].W, 4);
         var marker = Assert.Single(idle.TextKeys);
         Assert.Equal(2f, marker.Time);
         Assert.Equal("Footstep", marker.Label);
@@ -837,6 +851,55 @@ public sealed class NifControllerSequenceNameTrackReaderTests
             WriteInt32(pos + 4, 0); // scale keys
         }
 
+        internal void WriteCompactQuaternionBsplineData(int blockRef)
+        {
+            var pos = Nif.Blocks[blockRef].DataOffset;
+            WriteUInt32(pos, 0);
+            WriteUInt32(pos + 4, 16);
+            pos += 8;
+            for (var controlPoint = 0; controlPoint < 4; controlPoint++)
+            {
+                WriteInt16(pos, short.MaxValue);
+                WriteInt16(pos + 2, 0);
+                WriteInt16(pos + 4, 0);
+                WriteInt16(pos + 6, 0);
+                pos += 8;
+            }
+        }
+
+        internal void WriteBsplineBasis(int blockRef, uint controlPointCount)
+        {
+            WriteUInt32(Nif.Blocks[blockRef].DataOffset, controlPointCount);
+        }
+
+        internal void WriteCompactQuaternionBsplineInterpolator(
+            int blockRef,
+            int dataRef,
+            int basisRef,
+            float startTime,
+            float stopTime)
+        {
+            var pos = Nif.Blocks[blockRef].DataOffset;
+            WriteSingle(pos, startTime);
+            WriteSingle(pos + 4, stopTime);
+            WriteInt32(pos + 8, dataRef);
+            WriteInt32(pos + 12, basisRef);
+            for (var scalar = 0; scalar < 8; scalar++)
+            {
+                WriteSingle(pos + 16 + scalar * sizeof(float), float.MaxValue);
+            }
+
+            WriteUInt32(pos + 48, NifBsplineTransformReader.AbsentChannelHandle);
+            WriteUInt32(pos + 52, 0);
+            WriteUInt32(pos + 56, NifBsplineTransformReader.AbsentChannelHandle);
+            WriteSingle(pos + 60, 0f);
+            WriteSingle(pos + 64, 0f);
+            WriteSingle(pos + 68, 0f);
+            WriteSingle(pos + 72, 1f);
+            WriteSingle(pos + 76, 0f);
+            WriteSingle(pos + 80, 0f);
+        }
+
         internal void WriteTextKeyBlock(int blockRef, float time, int labelStringIndex)
         {
             var pos = Nif.Blocks[blockRef].DataOffset;
@@ -937,6 +1000,30 @@ public sealed class NifControllerSequenceNameTrackReaderTests
             else
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(Data.AsSpan(offset, 2), value);
+            }
+        }
+
+        private void WriteUInt32(int offset, uint value)
+        {
+            if (Nif.IsBigEndian)
+            {
+                BinaryPrimitives.WriteUInt32BigEndian(Data.AsSpan(offset, 4), value);
+            }
+            else
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(offset, 4), value);
+            }
+        }
+
+        private void WriteInt16(int offset, short value)
+        {
+            if (Nif.IsBigEndian)
+            {
+                BinaryPrimitives.WriteInt16BigEndian(Data.AsSpan(offset, 2), value);
+            }
+            else
+            {
+                BinaryPrimitives.WriteInt16LittleEndian(Data.AsSpan(offset, 2), value);
             }
         }
 

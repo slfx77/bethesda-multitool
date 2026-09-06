@@ -14,4 +14,5 @@ internal sealed record NifNameTargetedAnimationClip(
     string? AccumRootName,
     NifNodeTrack[] Tracks,
     NifAnimTextKey[] TextKeys,
-    int UnsupportedTransformTrackCount);
+    int UnsupportedTransformTrackCount,
+    NifNameTargetedBsplineTransformTrack[]? BsplineTracks = null);

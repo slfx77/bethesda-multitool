@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 
@@ -98,7 +99,48 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
                     _clip.EndTime,
                     _clip.Loops,
                     _clip.PingPongs);
-                if (track.RotationKeys.Length > 0)
+                if (track.BsplineTransform is { } bspline)
+                {
+                    if (bspline.RotationControlPoints is { } rotationControlPoints)
+                    {
+                        rotation = NifOpenUniformCubicBspline.Sample(
+                            rotationControlPoints,
+                            bspline.StartTime,
+                            bspline.StopTime,
+                            trackTime);
+                    }
+                    else if (bspline.DefaultRotation is { } defaultRotation)
+                    {
+                        rotation = Normalize(defaultRotation);
+                    }
+
+                    if (bspline.TranslationControlPoints is { } translationControlPoints)
+                    {
+                        translation = NifOpenUniformCubicBspline.Sample(
+                            translationControlPoints,
+                            bspline.StartTime,
+                            bspline.StopTime,
+                            trackTime);
+                    }
+                    else if (bspline.DefaultTranslation is { } defaultTranslation)
+                    {
+                        translation = defaultTranslation;
+                    }
+
+                    if (bspline.ScaleControlPoints is { } scaleControlPoints)
+                    {
+                        scale = new Vector3(NifOpenUniformCubicBspline.Sample(
+                            scaleControlPoints,
+                            bspline.StartTime,
+                            bspline.StopTime,
+                            trackTime));
+                    }
+                    else if (bspline.DefaultScale is { } defaultScale)
+                    {
+                        scale = new Vector3(defaultScale);
+                    }
+                }
+                else if (track.RotationKeys.Length > 0)
                 {
                     rotation = SampleRotation(
                         track.RotationKeys,
@@ -237,8 +279,14 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
         BethesdaViewerKeyInterpolation interpolation)
     {
         var (lower, upper, fraction) = Bracket(keys, time);
-        return lower == upper || interpolation == BethesdaViewerKeyInterpolation.Constant
-            ? keys[lower].Value
+        if (lower == upper || interpolation == BethesdaViewerKeyInterpolation.Constant)
+        {
+            return keys[lower].Value;
+        }
+        return interpolation == BethesdaViewerKeyInterpolation.Quadratic &&
+               keys[lower].HasQuadraticTangents && keys[upper].HasQuadraticTangents
+            ? NifQuadraticVectorCurve.Sample(
+                keys[lower].Value, keys[upper].Value, keys[lower].Backward, keys[upper].Forward, fraction)
             : Vector3.Lerp(keys[lower].Value, keys[upper].Value, fraction);
     }
 
