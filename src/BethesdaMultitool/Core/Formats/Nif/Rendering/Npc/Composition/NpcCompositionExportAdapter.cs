@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assembly;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -119,17 +120,19 @@ internal static class NpcCompositionExportAdapter
                 skeletonContext.NodeIndicesByBoneName,
                 submesh =>
                 {
-                    if (bodyPart.TextureOverride != null &&
-                        NpcTextureHelpers.ShouldApplyBodyTextureOverride(
-                            submesh.DiffuseTexturePath,
-                            bodyPart.TextureOverride))
+                    OblivionNpcNormalMapResolver.ApplyMissingCombinedHandNormalMap(
+                        submesh, plan.Appearance, bodyPart.MeshPath, textureResolver);
+                    var resolvedTexture = NpcTextureHelpers.ResolveBodyPartTextureOverride(
+                        plan.Appearance, submesh, plan.EffectiveBodyTextures, bodyPart.TextureOverride);
+                    if (resolvedTexture != null)
                     {
-                        submesh.DiffuseTexturePath = bodyPart.TextureOverride;
+                        OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(
+                            submesh, plan.Appearance, textureResolver, resolvedTexture);
                     }
                 });
         }
 
-        NpcExportBodyAssembler.AddBodyEquipment(scene, plan, meshArchives, skeletonContext);
+        NpcExportBodyAssembler.AddBodyEquipment(scene, plan, meshArchives, textureResolver, skeletonContext);
         NpcExportBodyAssembler.AddWeapon(scene, plan, meshArchives, textureResolver, skeletonContext);
         NpcExportHeadAssembler.AddHeadContent(
             scene,

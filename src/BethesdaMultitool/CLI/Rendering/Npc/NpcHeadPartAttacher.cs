@@ -115,7 +115,7 @@ internal static class NpcHeadPartAttacher
                 {
                     if (npc.Game == BethesdaGame.Oblivion)
                     {
-                        _ = OblivionNpcFacePartMaterialResolver.Apply(
+                        _ = OblivionNpcFacePartMaterialResolver.ApplyClassicSkin2000(
                             sub,
                             textureResolver,
                             npc.EarTexturePath,

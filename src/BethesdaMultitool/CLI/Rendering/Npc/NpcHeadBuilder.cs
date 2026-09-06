@@ -276,6 +276,9 @@ internal static class NpcHeadBuilder
             CoveredSlots = plan.CoveredSlots,
             EffectiveBodyTexturePath = plan.EffectiveBodyTexturePath,
             EffectiveHandTexturePath = plan.EffectiveHandTexturePath,
+            EffectiveLowerBodyTexturePath = plan.EffectiveLowerBodyTexturePath,
+            EffectiveFootTexturePath = plan.EffectiveFootTexturePath,
+            EffectiveTailTexturePath = plan.EffectiveTailTexturePath,
             Weapon = plan.Weapon
         };
     }

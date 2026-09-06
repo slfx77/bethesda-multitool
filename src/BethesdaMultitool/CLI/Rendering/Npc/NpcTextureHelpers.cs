@@ -1,5 +1,9 @@
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
@@ -37,6 +41,21 @@ internal static class NpcTextureHelpers
         return BuildNpcBodyEgtTextureKey(npc.NpcFormId, "ears", npc.RenderVariantLabel);
     }
 
+    internal static string BuildNpcBodySkinTextureKey(NpcAppearance npc, NpcBodyTexturePart part)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        var label = part switch
+        {
+            NpcBodyTexturePart.UpperBody => "upperbody",
+            NpcBodyTexturePart.LowerBody => "lowerbody",
+            NpcBodyTexturePart.Hands => "hands",
+            NpcBodyTexturePart.Feet => "feet",
+            NpcBodyTexturePart.Tail => "tail",
+            _ => throw new ArgumentOutOfRangeException(nameof(part), part, "Unsupported body atlas.")
+        };
+        return $"body_skin\\{npc.NpcFormId:X8}{BuildRenderVariantSuffix(npc.RenderVariantLabel)}_{label}.dds";
+    }
+
     /// <summary>
     ///     Returns every resolver key that NPC composition may populate with an actor-specific
     ///     FaceGen/EGT texture. Keep capture and eviction callers on this single list so adding a
@@ -45,6 +64,25 @@ internal static class NpcTextureHelpers
     internal static string[] BuildNpcGeneratedTextureKeys(NpcAppearance npc)
     {
         ArgumentNullException.ThrowIfNull(npc);
+        if (npc.Game == BethesdaGame.Oblivion)
+        {
+            return
+            [
+                BuildNpcFaceEgtTextureKey(npc),
+                BuildNpcEarEgtTextureKey(npc),
+                BuildNpcBodyEgtTextureKey(npc.NpcFormId, "upperbody", npc.RenderVariantLabel),
+                BuildNpcBodyEgtTextureKey(npc.NpcFormId, "lowerbody", npc.RenderVariantLabel),
+                BuildNpcBodyEgtTextureKey(npc.NpcFormId, "hands", npc.RenderVariantLabel),
+                BuildNpcBodyEgtTextureKey(npc.NpcFormId, "feet", npc.RenderVariantLabel),
+                BuildNpcBodyEgtTextureKey(npc.NpcFormId, "tail", npc.RenderVariantLabel),
+                BuildNpcBodySkinTextureKey(npc, NpcBodyTexturePart.UpperBody),
+                BuildNpcBodySkinTextureKey(npc, NpcBodyTexturePart.LowerBody),
+                BuildNpcBodySkinTextureKey(npc, NpcBodyTexturePart.Hands),
+                BuildNpcBodySkinTextureKey(npc, NpcBodyTexturePart.Feet),
+                BuildNpcBodySkinTextureKey(npc, NpcBodyTexturePart.Tail)
+            ];
+        }
+
         return
         [
             BuildNpcFaceEgtTextureKey(npc),
@@ -124,7 +162,7 @@ internal static class NpcTextureHelpers
         // left Orc/Argonian/Khajiit torsos on the Imperial texture even though their hands and face
         // used the resolved RACE texture. Keep the broad FO3/NV root forms, and recognize the
         // body-part file names used by the nested TES4 race layout.
-        var fileName = Path.GetFileNameWithoutExtension(normalized);
+        var fileName = GetTextureFileName(normalized);
         return normalized.Contains("characters\\_male", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("characters\\male", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("characters\\_female", StringComparison.OrdinalIgnoreCase) ||
@@ -133,6 +171,129 @@ internal static class NpcTextureHelpers
                fileName.Contains("lowerbody", StringComparison.OrdinalIgnoreCase) ||
                fileName.Contains("hand", StringComparison.OrdinalIgnoreCase) ||
                fileName.Contains("foot", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Selects the race texture for exposed equipment skin. Classic TES4 has separate upper,
+    ///     leg, hand and foot atlases: using the upper-body texture for every non-hand part gives
+    ///     incorrect UV content even if the resulting color happens to resemble the race.
+    ///     Compatibility path for texture-only callers. Full NPC composition uses the submesh
+    ///     overload below, which applies TES4's owning-material/name gate instead of this heuristic.
+    /// </summary>
+    internal static string? ResolveEquipmentSkinTextureOverride(
+        NpcAppearance npc,
+        string? authoredTexturePath,
+        string? effectiveBodyTexturePath,
+        string? effectiveHandTexturePath)
+    {
+        return ResolveEquipmentSkinTextureOverride(npc, authoredTexturePath,
+            NpcBodyTextureSet.FromAppearance(npc) with
+            {
+                UpperBody = effectiveBodyTexturePath,
+                Hands = effectiveHandTexturePath
+            });
+    }
+
+    internal static string? ResolveEquipmentSkinTextureOverride(
+        NpcAppearance npc,
+        string? authoredTexturePath,
+        NpcBodyTextureSet textures)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        if (string.IsNullOrEmpty(authoredTexturePath))
+        {
+            return null;
+        }
+
+        if (npc.Game == BethesdaGame.Oblivion && IsClassicBodyTexturePath(authoredTexturePath))
+        {
+            var fileName = GetTextureFileName(authoredTexturePath);
+            // The installed female iron greaves name their exposed skin LegFemale.dds, not
+            // LowerBodyFemale.dds. Only the RACE lower-body atlas matches that part's UVs.
+            if (fileName.Contains("lowerbody", StringComparison.OrdinalIgnoreCase) ||
+                fileName.StartsWith("legfemale", StringComparison.OrdinalIgnoreCase) ||
+                fileName.StartsWith("legmale", StringComparison.OrdinalIgnoreCase))
+            {
+                return textures.LowerBody;
+            }
+
+            if (fileName.Contains("foot", StringComparison.OrdinalIgnoreCase) ||
+                fileName.StartsWith("feet", StringComparison.OrdinalIgnoreCase))
+            {
+                return textures.Feet;
+            }
+
+            if (fileName.Contains("hand", StringComparison.OrdinalIgnoreCase))
+            {
+                return textures.Hands ?? npc.HandTexturePath;
+            }
+
+            if (fileName.StartsWith("tail", StringComparison.OrdinalIgnoreCase))
+            {
+                return textures.Tail;
+            }
+        }
+
+        // Keep the established later-game body/hand atlas behavior, including its missing-body
+        // guard. TES4 leg/foot parts above never substitute the unrelated upper atlas when missing.
+        if (textures.UpperBody == null || !IsEquipmentSkinSubmesh(authoredTexturePath))
+        {
+            return null;
+        }
+
+        return authoredTexturePath.Contains("hand", StringComparison.OrdinalIgnoreCase)
+            ? textures.Hands ?? textures.UpperBody
+            : textures.UpperBody;
+    }
+
+    internal static string? ResolveEquipmentSkinTextureOverride(
+        NpcAppearance npc,
+        RenderableSubmesh submesh,
+        NpcBodyTextureSet textures)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        ArgumentNullException.ThrowIfNull(submesh);
+        return npc.Game == BethesdaGame.Oblivion
+            ? OblivionNpcBodyMaterialPolicy.ResolveTextureOverride(submesh, textures)
+            : ResolveEquipmentSkinTextureOverride(npc, submesh.DiffuseTexturePath, textures);
+    }
+
+    internal static string? ResolveBodyPartTextureOverride(
+        NpcAppearance npc,
+        RenderableSubmesh submesh,
+        NpcBodyTextureSet textures,
+        string? partTextureOverride)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        ArgumentNullException.ThrowIfNull(submesh);
+        if (npc.Game == BethesdaGame.Oblivion)
+        {
+            return OblivionNpcBodyMaterialPolicy.ResolveTextureOverride(submesh, textures);
+        }
+
+        return partTextureOverride != null &&
+               ShouldApplyBodyTextureOverride(submesh.DiffuseTexturePath, partTextureOverride)
+            ? partTextureOverride
+            : null;
+    }
+
+    private static bool IsClassicBodyTexturePath(string texturePath)
+    {
+        var normalized = texturePath.Replace('/', '\\');
+        return normalized.Contains("characters\\", StringComparison.OrdinalIgnoreCase) &&
+               !normalized.Contains("hair", StringComparison.OrdinalIgnoreCase) &&
+               !normalized.Contains("eyes", StringComparison.OrdinalIgnoreCase) &&
+               !normalized.Contains("head", StringComparison.OrdinalIgnoreCase) &&
+               !normalized.Contains("underwear", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetTextureFileName(string texturePath)
+    {
+        // NIF paths use backslashes even in the cross-platform CLI.
+        var normalized = texturePath.Replace('\\', '/');
+        var name = normalized[(normalized.LastIndexOf('/') + 1)..];
+        var extension = name.LastIndexOf('.');
+        return extension >= 0 ? name[..extension] : name;
     }
 
     /// <summary>

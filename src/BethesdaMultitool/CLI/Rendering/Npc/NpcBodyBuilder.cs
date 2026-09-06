@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Resources;
@@ -93,8 +94,10 @@ internal static class NpcBodyBuilder
         foreach (var bodyPart in plan.BodyParts)
         {
             LoadAndMergeBodyPart(
+                npc,
                 bodyPart.MeshPath,
                 bodyPart.TextureOverride,
+                plan.EffectiveBodyTextures,
                 bodyPart.RenderOrder,
                 meshArchives,
                 textureResolver,
@@ -140,7 +143,8 @@ internal static class NpcBodyBuilder
     ///     Loads a body part NIF with skeleton-driven skinning and merges into target model.
     /// </summary>
     private static void LoadAndMergeBodyPart(
-        string nifPath, string? textureOverride, int renderOrder,
+        NpcAppearance npc,
+        string nifPath, string? textureOverride, NpcBodyTextureSet textures, int renderOrder,
         MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
@@ -169,9 +173,12 @@ internal static class NpcBodyBuilder
 
         foreach (var sub in partModel.Submeshes)
         {
-            if (textureOverride != null &&
-                NpcTextureHelpers.ShouldApplyBodyTextureOverride(sub.DiffuseTexturePath, textureOverride))
-                sub.DiffuseTexturePath = textureOverride;
+            OblivionNpcNormalMapResolver.ApplyMissingCombinedHandNormalMap(sub, npc, nifPath, textureResolver);
+            var resolvedTexture = NpcTextureHelpers.ResolveBodyPartTextureOverride(npc, sub, textures, textureOverride);
+            if (resolvedTexture != null)
+            {
+                OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(sub, npc, textureResolver, resolvedTexture);
+            }
             sub.RenderOrder = renderOrder;
             sub.SourceNifPath = nifPath;
             targetModel.Submeshes.Add(sub);

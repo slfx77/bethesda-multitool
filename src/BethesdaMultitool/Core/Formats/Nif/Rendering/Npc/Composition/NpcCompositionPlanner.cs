@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Games;
 
@@ -41,20 +42,30 @@ internal static class NpcCompositionPlanner
 
         var coveredSlots = ResolveCoveredSlots(npc, options);
 
-        var effectiveBodyTex = npc.BodyTexturePath;
-        var effectiveHandTex = npc.HandTexturePath;
+        var bodyTextures = NpcBodyTextureSet.FromAppearance(npc);
         if (!options.HeadOnly &&
             options.ApplyEgt &&
             npc.FaceGenTextureCoeffs != null)
         {
             FaceGenTextureMorpher.DebugLabel = NpcTextureHelpers.BuildNpcRenderName(npc);
-            ApplyBodyEgtMorphs(
-                npc,
-                meshArchives,
-                textureResolver,
-                caches.EgtFiles,
-                ref effectiveBodyTex,
-                ref effectiveHandTex);
+            if (npc.Game == BethesdaGame.Oblivion)
+            {
+                bodyTextures = OblivionNpcBodyTextureComposer.Compose(
+                    npc, meshArchives, textureResolver, caches.EgtFiles);
+            }
+            else
+            {
+                var effectiveBodyTex = bodyTextures.UpperBody;
+                var effectiveHandTex = bodyTextures.Hands;
+                ApplyBodyEgtMorphs(
+                    npc,
+                    meshArchives,
+                    textureResolver,
+                    caches.EgtFiles,
+                    ref effectiveBodyTex,
+                    ref effectiveHandTex);
+                bodyTextures = bodyTextures with { UpperBody = effectiveBodyTex, Hands = effectiveHandTex };
+            }
         }
 
         var attachmentBoneTransforms = skeleton?.BodySkinningBones;
@@ -98,11 +109,14 @@ internal static class NpcCompositionPlanner
             Options = options,
             Skeleton = skeleton,
             Head = headPlan,
-            BodyParts = BuildBodyParts(npc, options, coveredSlots, effectiveBodyTex, effectiveHandTex),
+            BodyParts = BuildBodyParts(npc, options, coveredSlots, bodyTextures),
             BodyEquipment = bodyEquipment,
             CoveredSlots = coveredSlots,
-            EffectiveBodyTexturePath = effectiveBodyTex,
-            EffectiveHandTexturePath = effectiveHandTex,
+            EffectiveBodyTexturePath = bodyTextures.UpperBody,
+            EffectiveHandTexturePath = bodyTextures.Hands,
+            EffectiveLowerBodyTexturePath = bodyTextures.LowerBody,
+            EffectiveFootTexturePath = bodyTextures.Feet,
+            EffectiveTailTexturePath = bodyTextures.Tail,
             Weapon = weapon
         };
     }
@@ -289,31 +303,37 @@ internal static class NpcCompositionPlanner
 
         var effectiveEarTexturePath = npc.EarTexturePath;
         if (npc.Game == BethesdaGame.Oblivion &&
-            options.ApplyEgt &&
             npc.EarNifPath != null &&
-            npc.EarTexturePath != null &&
-            npc.FaceGenTextureCoeffs != null)
+            npc.EarTexturePath != null)
         {
             var earEgtPath = Path.ChangeExtension(npc.EarNifPath, ".egt");
-            var generatedEarTexturePath = NpcMeshHelpers.ApplyBodyEgtMorph(
-                earEgtPath,
-                npc.EarTexturePath,
-                npc.FaceGenTextureCoeffs,
-                npc.NpcFormId,
-                "ears",
-                npc.RenderVariantLabel,
-                meshArchives,
-                textureResolver,
-                caches.EgtFiles);
-            if (generatedEarTexturePath != null)
+            EgtParser? LoadEarEgt()
             {
-                effectiveEarTexturePath = generatedEarTexturePath;
-                Log.Info(
-                    "NPC ear texture selected formId=0x{0:X8} source=GeneratedEgt sourcePath={1} effectivePath={2}",
-                    npc.NpcFormId,
-                    earEgtPath,
-                    effectiveEarTexturePath);
+                if (!caches.EgtFiles.TryGetValue(earEgtPath, out var egt))
+                {
+                    egt = NpcMeshHelpers.LoadEgtFromBsa(earEgtPath, meshArchives);
+                    caches.EgtFiles[earEgtPath] = egt;
+                }
+
+                return egt;
             }
+
+            var earTexture = NpcEarTextureComposer.Resolve(
+                npc,
+                textureResolver,
+                npc.EarTexturePath,
+                options.ApplyEgt,
+                LoadEarEgt);
+            effectiveEarTexturePath = earTexture.EffectiveTexturePath;
+            Log.Info(
+                "NPC ear texture selected formId=0x{0:X8} source={1} sourcePath={2} effectivePath={3} " +
+                "map1Source={4} map1EffectivePath={5}",
+                npc.NpcFormId,
+                earTexture.Source,
+                earTexture.Source == NpcHeadTextureSource.GeneratedEgt ? earEgtPath : npc.EarTexturePath,
+                effectiveEarTexturePath ?? "(none)",
+                earTexture.FaceGenMap1Source,
+                earTexture.FaceGenMap1EffectivePath ?? "(none)");
         }
 
         var raceFacePartPaths = new[]
@@ -365,6 +385,16 @@ internal static class NpcCompositionPlanner
         string? effectiveBodyTex,
         string? effectiveHandTex)
     {
+        return BuildBodyParts(npc, options, coveredSlots,
+            NpcBodyTextureSet.FromAppearance(npc) with { UpperBody = effectiveBodyTex, Hands = effectiveHandTex });
+    }
+
+    internal static IReadOnlyList<NpcBodyMeshPlan> BuildBodyParts(
+        NpcAppearance npc,
+        NpcCompositionOptions options,
+        uint coveredSlots,
+        NpcBodyTextureSet textures)
+    {
         if (options.HeadOnly)
         {
             return Array.Empty<NpcBodyMeshPlan>();
@@ -377,7 +407,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.UpperBodyNifPath,
-                TextureOverride = effectiveBodyTex,
+                TextureOverride = textures.UpperBody,
                 RenderOrder = 0
             });
         }
@@ -392,7 +422,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.LowerBodyNifPath,
-                TextureOverride = npc.LowerBodyTexturePath,
+                TextureOverride = textures.LowerBody,
                 RenderOrder = 0
             });
         }
@@ -403,7 +433,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.HandNifPath,
-                TextureOverride = effectiveHandTex,
+                TextureOverride = textures.Hands,
                 RenderOrder = 0
             });
         }
@@ -414,7 +444,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.FootNifPath,
-                TextureOverride = npc.FootTexturePath,
+                TextureOverride = textures.Feet,
                 RenderOrder = 0
             });
         }
@@ -425,7 +455,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.LeftHandNifPath,
-                TextureOverride = effectiveHandTex,
+                TextureOverride = textures.Hands,
                 RenderOrder = 0
             });
         }
@@ -436,7 +466,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.RightHandNifPath,
-                TextureOverride = effectiveHandTex,
+                TextureOverride = textures.Hands,
                 RenderOrder = 0
             });
         }
@@ -447,7 +477,7 @@ internal static class NpcCompositionPlanner
             parts.Add(new NpcBodyMeshPlan
             {
                 MeshPath = npc.TailNifPath,
-                TextureOverride = npc.TailTexturePath,
+                TextureOverride = textures.Tail,
                 RenderOrder = 0
             });
         }

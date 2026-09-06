@@ -773,6 +773,17 @@ internal static class FaceGenTextureMorpher
         int width,
         int height)
     {
+        var (r, g, b, a) = BilinearSampleTextureChannels(pixels, fx, fy, width, height);
+        return ((byte)r, (byte)g, (byte)b, (byte)a);
+    }
+
+    private static (float R, float G, float B, float A) BilinearSampleTextureChannels(
+        byte[] pixels,
+        float fx,
+        float fy,
+        int width,
+        int height)
+    {
         fx = Math.Clamp(fx, 0, width - 1);
         fy = Math.Clamp(fy, 0, height - 1);
 
@@ -793,10 +804,10 @@ internal static class FaceGenTextureMorpher
         var w11 = sx * sy;
 
         return (
-            (byte)(pixels[i00] * w00 + pixels[i10] * w10 + pixels[i01] * w01 + pixels[i11] * w11),
-            (byte)(pixels[i00 + 1] * w00 + pixels[i10 + 1] * w10 + pixels[i01 + 1] * w01 + pixels[i11 + 1] * w11),
-            (byte)(pixels[i00 + 2] * w00 + pixels[i10 + 2] * w10 + pixels[i01 + 2] * w01 + pixels[i11 + 2] * w11),
-            (byte)(pixels[i00 + 3] * w00 + pixels[i10 + 3] * w10 + pixels[i01 + 3] * w01 + pixels[i11 + 3] * w11));
+            pixels[i00] * w00 + pixels[i10] * w10 + pixels[i01] * w01 + pixels[i11] * w11,
+            pixels[i00 + 1] * w00 + pixels[i10 + 1] * w10 + pixels[i01 + 1] * w01 + pixels[i11 + 1] * w11,
+            pixels[i00 + 2] * w00 + pixels[i10 + 2] * w10 + pixels[i01 + 2] * w01 + pixels[i11 + 2] * w11,
+            pixels[i00 + 3] * w00 + pixels[i10 + 3] * w10 + pixels[i01 + 3] * w01 + pixels[i11 + 3] * w11);
     }
 
     private static (float R, float G, float B) BilinearSampleEncodedDeltaTexture(
@@ -806,7 +817,10 @@ internal static class FaceGenTextureMorpher
         int width,
         int height)
     {
-        var (r, g, b, _) = BilinearSampleTexture(pixels, fx, fy, width, height);
+        // Retail texld filters Map0 before its floating-point decode. Quantizing that sample
+        // first makes a 127/128 midpoint become 127 (-1 delta), instead of 127.5 (zero delta).
+        // Keep the fractional channels until ApplyEncodedDeltaTexture clamps the composed RGB.
+        var (r, g, b, _) = BilinearSampleTextureChannels(pixels, fx, fy, width, height);
         // Shader decode: (sample - 0.5) * 2.0, where sample = byte/255.
         // In byte-space: byte * 2 - 255. Maps byte 0→-255, 127→-1, 128→1, 255→255.
         // Matches EncodeEngineCompressedChannel inverse: encode = (delta + 255) * 0.5

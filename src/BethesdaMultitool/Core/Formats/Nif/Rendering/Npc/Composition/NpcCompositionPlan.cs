@@ -26,5 +26,18 @@ internal sealed class NpcCompositionPlan
 
     public string? EffectiveHandTexturePath { get; init; }
 
+    public string? EffectiveLowerBodyTexturePath { get; init; }
+
+    public string? EffectiveFootTexturePath { get; init; }
+
+    public string? EffectiveTailTexturePath { get; init; }
+
+    public NpcBodyTextureSet EffectiveBodyTextures => new(
+        EffectiveBodyTexturePath,
+        EffectiveLowerBodyTexturePath ?? Appearance.LowerBodyTexturePath,
+        EffectiveHandTexturePath,
+        EffectiveFootTexturePath ?? Appearance.FootTexturePath,
+        EffectiveTailTexturePath ?? Appearance.TailTexturePath);
+
     public NpcWeaponCompositionPlan? Weapon { get; init; }
 }

@@ -243,22 +243,27 @@ internal static class NpcExportHeadAssembler
 
         var effectiveEarTexturePath = npc.EarTexturePath;
         if (npc.Game == BethesdaGame.Oblivion &&
-            !settings.NoEgt &&
             npc.EarNifPath != null &&
-            npc.EarTexturePath != null &&
-            npc.FaceGenTextureCoeffs != null)
+            npc.EarTexturePath != null)
         {
-            effectiveEarTexturePath = NpcMeshHelpers.ApplyBodyEgtMorph(
-                                      Path.ChangeExtension(npc.EarNifPath, ".egt"),
-                                      npc.EarTexturePath,
-                                      npc.FaceGenTextureCoeffs,
-                                      npc.NpcFormId,
-                                      "ears",
-                                      npc.RenderVariantLabel,
-                                      meshArchives,
-                                      textureResolver,
-                                      egtCache)
-                                  ?? effectiveEarTexturePath;
+            var earEgtPath = Path.ChangeExtension(npc.EarNifPath, ".egt");
+            EgtParser? LoadEarEgt()
+            {
+                if (!egtCache.TryGetValue(earEgtPath, out var egt))
+                {
+                    egt = NpcMeshHelpers.LoadEgtFromBsa(earEgtPath, meshArchives);
+                    egtCache[earEgtPath] = egt;
+                }
+
+                return egt;
+            }
+
+            effectiveEarTexturePath = NpcEarTextureComposer.Resolve(
+                npc,
+                textureResolver,
+                npc.EarTexturePath,
+                !settings.NoEgt,
+                LoadEarEgt).EffectiveTexturePath;
         }
 
         AddRaceFaceParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
@@ -457,7 +462,7 @@ internal static class NpcExportHeadAssembler
                 {
                     if (npc.Game == BethesdaGame.Oblivion)
                     {
-                        _ = OblivionNpcFacePartMaterialResolver.Apply(
+                        _ = OblivionNpcFacePartMaterialResolver.ApplyClassicSkin2000(
                             submesh,
                             textureResolver,
                             npc.EarTexturePath,

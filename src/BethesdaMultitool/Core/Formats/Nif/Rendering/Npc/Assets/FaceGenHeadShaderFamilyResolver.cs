@@ -9,7 +9,14 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 /// </summary>
 internal static class FaceGenHeadShaderFamilyResolver
 {
-    private static readonly DecodedTexture DefaultFaceGenMap1Texture = CreateDefaultFaceGenMap1Texture();
+    // Installed PC Oblivion 00553140 fills every RGB channel of the 32x32 manager+DB8
+    // default detail texture with 0x40; 004783A0 returns it to the head/body binders.
+    private const byte OblivionDefaultFaceGenMap1Channel = 0x40;
+
+    // Preserve the existing generic-family fallback from the retained Fallout Xenon oracle.
+    // It is not the PC Oblivion default consumed by the game-gated head/ear composers below.
+    private static readonly DecodedTexture DefaultFaceGenMap1Texture =
+        CreateSolidFaceGenMap1Texture(0x3E, 0x41, 0x3E, 0x40);
 
     private static readonly (float R, float G, float B) DefaultSubsurfaceColor =
         (24f / 255f, 8f / 255f, 8f / 255f);
@@ -31,12 +38,11 @@ internal static class FaceGenHeadShaderFamilyResolver
 
         foreach (var submesh in submeshes)
         {
-            _ = OblivionNpcFacePartMaterialResolver.Apply(
+            _ = OblivionNpcFacePartMaterialResolver.ApplyClassicSkin2000(
                 submesh,
                 textureResolver,
                 familySourceDiffusePath,
                 effectiveDiffusePath);
-            submesh.IsFaceGen = true;
         }
     }
 
@@ -131,7 +137,21 @@ internal static class FaceGenHeadShaderFamilyResolver
     /// </summary>
     internal static DecodedTexture ApplyDefaultDetailModulation(DecodedTexture diffuseTexture)
     {
-        return ApplyDetailModulation(diffuseTexture, DefaultFaceGenMap1Texture);
+        ArgumentNullException.ThrowIfNull(diffuseTexture);
+
+        var sourcePixels = diffuseTexture.Pixels;
+        var outputPixels = new byte[sourcePixels.Length];
+        for (var index = 0; index < sourcePixels.Length; index += 4)
+        {
+            // A constant tile needs no filtering. Sampling it through the byte-valued CPU
+            // bilinear path can truncate 63.999996 to 63 for non-power-of-two inputs.
+            outputPixels[index] = ApplyModulation(sourcePixels[index], OblivionDefaultFaceGenMap1Channel);
+            outputPixels[index + 1] = ApplyModulation(sourcePixels[index + 1], OblivionDefaultFaceGenMap1Channel);
+            outputPixels[index + 2] = ApplyModulation(sourcePixels[index + 2], OblivionDefaultFaceGenMap1Channel);
+            outputPixels[index + 3] = sourcePixels[index + 3];
+        }
+
+        return DecodedTexture.FromBaseLevel(outputPixels, diffuseTexture.Width, diffuseTexture.Height);
     }
 
     private static FaceGenHeadShaderFamilyResult ResolveSubmeshFamily(
@@ -246,21 +266,15 @@ internal static class FaceGenHeadShaderFamilyResolver
         return (byte)Math.Clamp((int)MathF.Round(scaled), 0, 255);
     }
 
-    private static DecodedTexture CreateDefaultFaceGenMap1Texture()
+    private static DecodedTexture CreateSolidFaceGenMap1Texture(byte red, byte green, byte blue, byte alpha)
     {
-        // Engine-accurate default for SKIN2000.pso FaceGenMap1. The 32x32
-        // procedural tile {0x3E, 0x41, 0x3E, 0x40} comes directly from
-        // BSFaceGenManager::ctor (named "DefaultDetailModFaceGenTexture")
-        // — it is what the runtime binds when the per-NPC age/sex variant
-        // lookup fails (which it does for all shipped NPCs, since
-        // Textures\<base><M|F><age>.dds files are not shipped).
         var pixels = new byte[32 * 32 * 4];
         for (var index = 0; index < pixels.Length; index += 4)
         {
-            pixels[index] = 0x3E;
-            pixels[index + 1] = 0x41;
-            pixels[index + 2] = 0x3E;
-            pixels[index + 3] = 0x40;
+            pixels[index] = red;
+            pixels[index + 1] = green;
+            pixels[index + 2] = blue;
+            pixels[index + 3] = alpha;
         }
 
         return DecodedTexture.FromBaseLevel(pixels, 32, 32);

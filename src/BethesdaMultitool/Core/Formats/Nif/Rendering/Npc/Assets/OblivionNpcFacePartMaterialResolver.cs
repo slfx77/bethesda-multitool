@@ -7,6 +7,26 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 internal static class OblivionNpcFacePartMaterialResolver
 {
     /// <summary>
+    ///     Applies the normal-map family and selects Oblivion's classic FaceGen skin shader.
+    ///     A missing or unusable normal map disables only bump mapping; it does not change the
+    ///     retail material family.
+    /// </summary>
+    internal static bool ApplyClassicSkin2000(
+        RenderableSubmesh submesh,
+        NifTextureResolver textureResolver,
+        string? familyDiffusePath,
+        string? effectiveDiffusePath)
+    {
+        var bumpReady = Apply(
+            submesh,
+            textureResolver,
+            familyDiffusePath,
+            effectiveDiffusePath);
+        submesh.IsFaceGen = true;
+        return bumpReady;
+    }
+
+    /// <summary>
     ///     Applies a resolved diffuse override and its existing <c>_n.dds</c> sibling. Returns <see langword="true" />
     ///     only when the submesh has every input required by the native bump-mapping route.
     /// </summary>

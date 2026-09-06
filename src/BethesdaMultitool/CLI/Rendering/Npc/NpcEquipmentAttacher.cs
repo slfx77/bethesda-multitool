@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
@@ -120,13 +121,16 @@ internal static class NpcEquipmentAttacher
                     sub.AlphaTestFunction, sub.AlphaTestThreshold,
                     sub.MaterialAlpha, sub.IsDoubleSided, sub.Positions.Length / 3);
 
-                if (effectiveBodyTex != null &&
-                    NpcTextureHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
+                OblivionNpcNormalMapResolver.ApplyMissingNormalMap(sub, npc.Game, textureResolver);
+                var skinTexture = NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(
+                    npc, sub, NpcBodyTextureSet.FromAppearance(npc) with
+                    {
+                        UpperBody = effectiveBodyTex,
+                        Hands = effectiveHandTex
+                    });
+                if (skinTexture != null)
                 {
-                    sub.DiffuseTexturePath =
-                        sub.DiffuseTexturePath!.Contains("hand", StringComparison.OrdinalIgnoreCase)
-                            ? effectiveHandTex ?? effectiveBodyTex
-                            : effectiveBodyTex;
+                    OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(sub, npc, textureResolver, skinTexture);
                 }
 
                 sub.RenderOrder = 5;
@@ -223,13 +227,16 @@ internal static class NpcEquipmentAttacher
                     continue;
                 }
 
-                if (plan.EffectiveBodyTexturePath != null &&
-                    NpcTextureHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
+                OblivionNpcNormalMapResolver.ApplyMissingNormalMap(
+                    sub, plan.Appearance.Game, textureResolver);
+                var skinTexture = NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(
+                    plan.Appearance,
+                    sub,
+                    plan.EffectiveBodyTextures);
+                if (skinTexture != null)
                 {
-                    sub.DiffuseTexturePath =
-                        sub.DiffuseTexturePath!.Contains("hand", StringComparison.OrdinalIgnoreCase)
-                            ? plan.EffectiveHandTexturePath ?? plan.EffectiveBodyTexturePath
-                            : plan.EffectiveBodyTexturePath;
+                    OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(
+                        sub, plan.Appearance, textureResolver, skinTexture);
                 }
 
                 sub.RenderOrder = 5;

@@ -127,11 +127,17 @@ internal static class NpcWeaponLoader
                     return;
                 }
 
-                attachmentSourceLabel = npc.WeaponVisual.AttachmentPoseKfPath is { } posePath
-                    ? $" (game-native attachment KF '{posePath}')"
-                    : usePowerArmorHolster
+                if (npc.WeaponVisual.AttachmentPoseKfPath is { } posePath)
+                {
+                    attachmentSourceLabel = $" (game-native attachment KF '{posePath}')";
+                }
+                else
+                {
+                    attachmentSourceLabel = usePowerArmorHolster
                         ? " (power armor holster KF)"
                         : " (holster KF)";
+                }
+
                 break;
             }
             default:

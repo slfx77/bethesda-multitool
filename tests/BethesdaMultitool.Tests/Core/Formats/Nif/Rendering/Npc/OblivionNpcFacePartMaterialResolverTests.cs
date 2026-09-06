@@ -61,6 +61,26 @@ public sealed class OblivionNpcFacePartMaterialResolverTests
     }
 
     [Fact]
+    public void ApplyClassicSkin2000_MissingNormalRetainsSkinFamilyWhileBumpFailsClosed()
+    {
+        using var textureResolver = new NifTextureResolver();
+        var submesh = CreateTriangle();
+
+        var bumpReady = OblivionNpcFacePartMaterialResolver.ApplyClassicSkin2000(
+            submesh,
+            textureResolver,
+            EarDiffusePath,
+            EffectiveEarDiffusePath);
+
+        Assert.False(bumpReady);
+        Assert.True(submesh.IsFaceGen);
+        Assert.Equal(EffectiveEarDiffusePath, submesh.DiffuseTexturePath);
+        Assert.Null(submesh.NormalMapTexturePath);
+        Assert.Null(submesh.Tangents);
+        Assert.Null(submesh.Bitangents);
+    }
+
+    [Fact]
     public void Apply_ZeroNormalFailsClosedWithoutCreatingNonFiniteTangentSpace()
     {
         using var textureResolver = CreateResolverWithNormalMap();

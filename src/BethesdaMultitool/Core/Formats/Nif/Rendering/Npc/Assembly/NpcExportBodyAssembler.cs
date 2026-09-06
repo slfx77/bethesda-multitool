@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
@@ -23,6 +24,7 @@ internal static class NpcExportBodyAssembler
         GlbScene scene,
         NpcCompositionPlan plan,
         MeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
         NpcExportSceneBuilder.SkeletonContext skeletonContext)
     {
         var pipBoyVisible = EquippedItem.AnyPipBoy(plan.BodyEquipment);
@@ -55,8 +57,9 @@ internal static class NpcExportBodyAssembler
                             NpcRenderHelpers.TransformSubmesh(submesh, composedTransform);
                             ApplyEquipmentTextureOverride(
                                 submesh,
-                                plan.EffectiveBodyTexturePath,
-                                plan.EffectiveHandTexturePath);
+                                plan.Appearance,
+                                textureResolver,
+                                plan.EffectiveBodyTextures);
                             NpcExportSceneBuilder.AddRigidSubmesh(scene, item.MeshPath, submesh);
                         }
 
@@ -72,8 +75,9 @@ internal static class NpcExportBodyAssembler
                 skeletonContext.NodeIndicesByBoneName,
                 submesh => ApplyEquipmentTextureOverride(
                     submesh,
-                    plan.EffectiveBodyTexturePath,
-                    plan.EffectiveHandTexturePath),
+                    plan.Appearance,
+                    textureResolver,
+                    plan.EffectiveBodyTextures),
                 excludeShape: name => IsExcludedPipBoyShape(name, pipBoyVisible));
         }
     }
@@ -82,6 +86,7 @@ internal static class NpcExportBodyAssembler
         GlbScene scene,
         NpcAppearance npc,
         MeshArchiveSet meshArchives,
+        NifTextureResolver textureResolver,
         Dictionary<string, int> nodeIndicesByBoneName,
         Dictionary<string, Matrix4x4> boneTransforms,
         string? effectiveBodyTex,
@@ -121,7 +126,7 @@ internal static class NpcExportBodyAssembler
                             var submesh = NpcExportSceneBuilder.CloneSubmesh(part.Submesh);
                             var composedTransform = part.ShapeWorldTransform * attachmentTransform;
                             NpcRenderHelpers.TransformSubmesh(submesh, composedTransform);
-                            ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex);
+                            ApplyEquipmentTextureOverride(submesh, npc, textureResolver, effectiveBodyTex, effectiveHandTex);
                             NpcExportSceneBuilder.AddRigidSubmesh(scene, item.MeshPath, submesh);
                         }
 
@@ -135,22 +140,34 @@ internal static class NpcExportBodyAssembler
                 item.MeshPath,
                 meshArchives,
                 nodeIndicesByBoneName,
-                submesh => ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex),
+                submesh => ApplyEquipmentTextureOverride(submesh, npc, textureResolver, effectiveBodyTex, effectiveHandTex),
                 excludeShape: name => IsExcludedPipBoyShape(name, pipBoyVisible));
         }
     }
 
     private static void ApplyEquipmentTextureOverride(
         RenderableSubmesh submesh,
+        NpcAppearance npc,
+        NifTextureResolver textureResolver,
         string? effectiveBodyTex,
         string? effectiveHandTex)
     {
-        if (effectiveBodyTex != null && NpcTextureHelpers.IsEquipmentSkinSubmesh(submesh.DiffuseTexturePath))
+        ApplyEquipmentTextureOverride(submesh, npc, textureResolver,
+            NpcBodyTextureSet.FromAppearance(npc) with { UpperBody = effectiveBodyTex, Hands = effectiveHandTex });
+    }
+
+    private static void ApplyEquipmentTextureOverride(
+        RenderableSubmesh submesh,
+        NpcAppearance npc,
+        NifTextureResolver textureResolver,
+        NpcBodyTextureSet textures)
+    {
+        OblivionNpcNormalMapResolver.ApplyMissingNormalMap(submesh, npc.Game, textureResolver);
+        var skinTexture = NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(
+            npc, submesh, textures);
+        if (skinTexture != null)
         {
-            submesh.DiffuseTexturePath =
-                submesh.DiffuseTexturePath?.Contains("hand", StringComparison.OrdinalIgnoreCase) == true
-                    ? effectiveHandTex ?? effectiveBodyTex
-                    : effectiveBodyTex;
+            OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(submesh, npc, textureResolver, skinTexture);
         }
     }
 

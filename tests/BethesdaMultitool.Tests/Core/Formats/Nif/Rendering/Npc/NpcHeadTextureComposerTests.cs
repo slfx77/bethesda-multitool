@@ -42,7 +42,36 @@ public sealed class NpcHeadTextureComposerTests
         Assert.Equal(result.EffectiveTexturePath, result.FaceGenMap1EffectivePath);
         var composite = Assert.IsType<DecodedTexture>(resolver.GetTexture(result.EffectiveTexturePath!));
         // (Base + 2 * (Map0 - 0.5)) * (4 * DefaultFaceGenMap1).
-        Assert.Equal<byte>([118, 103, 118, 255], composite.Pixels);
+        Assert.Equal<byte>([121, 101, 121, 255], composite.Pixels);
+        Assert.Equal<byte>([100, 110, 120, 255], textures[BaseTexturePath].Pixels);
+        Assert.Equal<byte>([138, 123, 128, 255], textures[AuthoredMap0Path].Pixels);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Oblivion)]
+    [InlineData(BethesdaGame.Fallout3)]
+    [InlineData(BethesdaGame.FalloutNewVegas)]
+    public void Resolve_AuthoredMap0PreservesFractionalSampling(BethesdaGame game)
+    {
+        var textures = new Dictionary<string, DecodedTexture>(StringComparer.OrdinalIgnoreCase)
+        {
+            [BaseTexturePath] = TestTextures.Single(100, 110, 120, 37),
+            [AuthoredMap0Path] = TestTextures.FromTexels(2, 1,
+                (127, 127, 0, 0), (128, 129, 255, 255))
+        };
+        using var resolver = CreateResolver(textures);
+        var npc = CreateNpc(faceGenTextureCoeffs: null, game: game);
+
+        var result = NpcHeadTextureComposer.Resolve(
+            npc, resolver, BaseTexturePath, true,
+            () => throw new InvalidOperationException("The authored map must not request EGT."));
+
+        Assert.Equal(NpcHeadTextureSource.AuthoredMap0, result.Source);
+        var composite = Assert.IsType<DecodedTexture>(resolver.GetTexture(result.EffectiveTexturePath!));
+        // Filtered Map0 gives deltas 0, 1, 0. Oblivion's existing 256/255 Map1 gain does not
+        // change these low-channel byte results; all callers preserve the same base alpha.
+        Assert.Equal<byte>([100, 111, 120, 37], composite.Pixels);
+        Assert.Equal<byte>([100, 110, 120, 37], textures[BaseTexturePath].Pixels);
     }
 
     [Fact]
@@ -77,6 +106,7 @@ public sealed class NpcHeadTextureComposerTests
     public void Resolve_NoEgtOmitsMap0ButRetainsRetailMap1Fallback()
     {
         var textures = CreateBaseAndAuthoredTextures();
+        textures[BaseTexturePath] = TestTextures.Single(128, 192, 254, 137);
         using var resolver = CreateResolver(textures);
         var npc = CreateNpc([1f]);
 
@@ -94,7 +124,42 @@ public sealed class NpcHeadTextureComposerTests
         Assert.Equal(@"facegen_egt\000222A8.dds", result.EffectiveTexturePath);
         Assert.Equal(result.EffectiveTexturePath, result.FaceGenMap1EffectivePath);
         var composite = Assert.IsType<DecodedTexture>(resolver.GetTexture(result.EffectiveTexturePath!));
-        Assert.Equal<byte>([97, 112, 117, 255], composite.Pixels);
+        Assert.Equal<byte>([129, 193, 255, 137], composite.Pixels);
+        var repeated = NpcHeadTextureComposer.Resolve(
+            npc,
+            resolver,
+            BaseTexturePath,
+            false,
+            () => throw new InvalidOperationException("No-EGT must not request an EGT."));
+        Assert.Equal(result, repeated);
+        Assert.Equal<byte>([129, 193, 255, 137], resolver.GetTexture(repeated.EffectiveTexturePath!)!.Pixels);
+        Assert.Equal<byte>([128, 192, 254, 137], textures[BaseTexturePath].Pixels);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Fallout3, false)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false)]
+    [InlineData(BethesdaGame.Fallout3, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, true)]
+    public void Resolve_FalloutDoesNotAcquireOblivionDefaultDetail(BethesdaGame game, bool applyEgt)
+    {
+        var textures = CreateBaseAndAuthoredTextures();
+        textures[BaseTexturePath] = TestTextures.Single(128, 192, 254, 23);
+        textures[AuthoredMap0Path] = TestTextures.Single(128, 128, 128, 255);
+        using var resolver = CreateResolver(textures);
+        var npc = CreateNpc(faceGenTextureCoeffs: null, game: game);
+
+        var result = NpcHeadTextureComposer.Resolve(
+            npc, resolver, BaseTexturePath, applyEgt,
+            () => throw new InvalidOperationException("The supplied authored map or no-EGT route must not load EGT."));
+
+        Assert.Equal(NpcFaceGenMap1Source.None, result.FaceGenMap1Source);
+        Assert.Null(result.FaceGenMap1EffectivePath);
+        Assert.Equal(applyEgt ? NpcHeadTextureSource.AuthoredMap0 : NpcHeadTextureSource.BaseDiffuse, result.Source);
+        var composite = Assert.IsType<DecodedTexture>(resolver.GetTexture(result.EffectiveTexturePath!));
+        byte[] expected = applyEgt ? [129, 193, 255, 23] : [128, 192, 254, 23];
+        Assert.Equal(expected, composite.Pixels);
+        Assert.Equal<byte>([128, 192, 254, 23], textures[BaseTexturePath].Pixels);
     }
 
     [Fact]
@@ -123,11 +188,12 @@ public sealed class NpcHeadTextureComposerTests
 
     private static NpcAppearance CreateNpc(
         float[]? faceGenTextureCoeffs,
-        string? renderVariantLabel = null)
+        string? renderVariantLabel = null,
+        BethesdaGame game = BethesdaGame.Oblivion)
     {
         return new NpcAppearance
         {
-            Game = BethesdaGame.Oblivion,
+            Game = game,
             NpcFormId = 0x000222A8,
             RenderVariantLabel = renderVariantLabel,
             AuthoredFaceGenMap0Path = AuthoredMap0Path,
