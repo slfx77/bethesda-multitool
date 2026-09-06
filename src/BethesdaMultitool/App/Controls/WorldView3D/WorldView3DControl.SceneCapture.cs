@@ -649,14 +649,31 @@ public sealed partial class WorldView3DControl
         // Sun shadows in captures: the shadow map is rendered at the END of a frame and sampled by
         // the NEXT one (ShadowMapRenderer12's replay-this-frame/sample-next-frame contract), and the
         // profiler typically sets the hour right before capturing — so a single one-shot frame would
-        // sample a stale (wrong-sun) or empty map. When shadows are active, record one extra PRIME
-        // frame first: identical scene recording minus the readback, whose frame-end shadow pass
-        // renders the map for the CURRENT sun; the real capture then samples it.
+        // sample a stale (wrong-sun) or empty map. Coherent primes refit the whole current ladder,
+        // retrying boundedly if the captured prefixes became stale or replay did not complete.
+        // Only the real frame resolves tonemapping/readback; primes never advance exposure history.
         var captureShadows = ShadowsEnvEnabled && _showShadows && _showLighting &&
                              _selectedInterior is null && captureReferencesEnabled;
-        for (var pass = captureShadows ? 0 : 1; pass < 2; pass++)
+        var coherentShadowPrime = !string.Equals(
+            EnvironmentVariables.Get(EnvironmentVariables.Viewer.CaptureShadowPriming),
+            "legacy", StringComparison.OrdinalIgnoreCase);
+        var fingerprintShadows = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.CaptureShadowFingerprint);
+        var deferFirstPrime = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.CaptureShadowDeferFirstPrime);
+        var primeAttempts = 0;
+        var shadowPrimeReady = !captureShadows;
+        ShadowContentKey? shadowPrimeContent = null;
+        while (true)
         {
-            var isPrime = pass == 0;
+            var isPrime = !shadowPrimeReady;
+            if (isPrime) primeAttempts++;
+            var forceCurrentShadowLadder = isPrime && coherentShadowPrime;
+            Vector3? captureArmedSunDirection = null;
+            // Delimit the saved color pass from live/prime draws in per-reference diagnostics.
+            RendererProfilerTrace.Event("capture-scene-pass", new Dictionary<string, object?>
+            {
+                ["phase"] = isPrime ? "prime" : "real",
+                ["primeAttempt"] = primeAttempts
+            });
             recorder.BeginFrame();
             var cmd = recorder.CommandList;
             var captureShadowRingReserved = false;
@@ -678,32 +695,19 @@ public sealed partial class WorldView3DControl
 
                 if (captureShadows)
                 {
-                    if (!_ringBuffer12!.TryReserveTail(ShadowPassRingReservationBytes))
+                    if (!_ringBuffer12!.TryReserveTail(CaptureShadowPrimingPolicy.RingReservationBytes))
                     {
                         throw new InvalidOperationException(
-                            $"The capture ring cannot reserve {ShadowPassRingReservationBytes} bytes " +
+                            $"The capture ring cannot reserve {CaptureShadowPrimingPolicy.RingReservationBytes} bytes " +
                             "for the sun-shadow pass.");
                     }
 
                     captureShadowRingReserved = true;
                     _shadowMap ??= new Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12(
                         _gpu12!, _cbvSrvUavHeap12!);
-                    // Arm EXACTLY as the live frame does (WorldView3DControl.Frame). Two things were
-                    // capture-only shortcuts and both made a capture a bad oracle for shadows:
-                    //   * _shadowFrameAnchor was never assigned here, so RecordSunShadowPass below fitted
-                    //     every cascade around the WORLD ORIGIN while the camera sat tens of thousands of
-                    //     units away — only the widest cascade could contain the shot, at ~64 world
-                    //     units/texel, so near-field shadow defects were structurally invisible.
-                    //   * No cascade fit was supplied, which disables the per-cascade instance
-                    //     classification the live viewer runs — so a capture could not reproduce a
-                    //     classification bug even in principle.
-                    _shadowFrameAnchor = ResolveShadowAnchor(_camera.Position);
-                    _shadowFrameSceneZSpan = ResolveShadowSceneZSpan();
-                    EnsureShadowLadderScale();
-                    _references!.ArmShadowCapture(
-                        MathF.Min(_shadowCasterRingRadiusScaled, _renderDistance),
-                        (_shadowFrameAnchor, Vector3.Normalize(_lastResolvedSunDirection),
-                            ResolveShadowCascadeRadii(), _shadowCascadeSnapScaled, _shadowFrameSceneZSpan));
+                    // Legacy is a same-binary diagnostic control, including its old arm-before-sun
+                    // resolve order. Coherent capture arms below, after resolving the requested sun.
+                    if (!coherentShadowPrime) ArmCaptureSunShadows();
                 }
                 else
                 {
@@ -725,6 +729,20 @@ public sealed partial class WorldView3DControl
                     lightViewProjection: viewProj,
                     lightViewportWidth: target.Width,
                     lightViewportHeight: target.Height);
+                if (captureShadows)
+                {
+                    if (coherentShadowPrime)
+                    {
+                        ArmCaptureSunShadows();
+                        captureArmedSunDirection = _lastResolvedSunDirection;
+                    }
+
+                    if (!isPrime)
+                    {
+                        EmitCaptureShadowSampleTelemetry(
+                            "real-color-bind", primeAttempts, captureRenderOrigin, _lastBoundShadowConstants);
+                    }
+                }
                 target.Bind(cmd);
 
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
@@ -1078,10 +1096,17 @@ public sealed partial class WorldView3DControl
                     }
                 }
 
-                // Frame-end shadow pass, same as the live loop (render origin 0 — this capture path
-                // is absolute). On the real pass it usually no-ops (key unchanged since the prime).
+                // Frame-end replay uses the capture's render origin. Only a coherent PRIME forces
+                // the full ladder; real frames and the live loop retain ordinary scheduling.
                 if (captureShadows)
                 {
+                    if (!isPrime && coherentShadowPrime && shadowPrimeContent != CaptureShadowContentKey())
+                    {
+                        throw new InvalidOperationException(
+                            "Scene content changed between the completed shadow prime and real color. " +
+                            "No image was saved from mismatched geometry and shadow maps.");
+                    }
+
                     _ringBuffer12!.ReleaseTailReservation();
                     captureShadowRingReserved = false;
                     Log.Info(
@@ -1089,10 +1114,12 @@ public sealed partial class WorldView3DControl
                         isPrime ? "prime" : "real", _shadowMap!.HasContent, _references!.ShadowDrawCount,
                         _lastBoundShadowParams.X, _lastBoundShadowParams.Y,
                         _lastBoundShadowParams.Z, _lastBoundShadowParams.W);
-                    RecordSunShadowPass(cmd, captureRenderOrigin, _camera.Position);
-                    // This POST-pass line is the capture oracle. The earlier line describes inputs;
-                    // these are the exact commands admitted by each cascade after classification,
-                    // including resident terrain cells.
+                    RecordSunShadowPass(cmd, captureRenderOrigin, _camera.Position,
+                        forceCurrentLadder: forceCurrentShadowLadder,
+                        captureArmedSunDirection: captureArmedSunDirection,
+                        diagnosticDefer: isPrime && primeAttempts == 1 && deferFirstPrime);
+                    // Submitted work is not sampled-map identity. The post-prime fingerprint and
+                    // real-color binding events below identify the generation the saved image used.
                     Log.Info(
                         "[Capture] shadow result pass={0}: mode={1} cascadeMask=0x{2:X} capturedBatches={3} " +
                         "refDraws=[{4}] refInstances=[{5}] terrainCells=[{6}] " +
@@ -1104,6 +1131,8 @@ public sealed partial class WorldView3DControl
                         string.Join(",", _lastShadowTerrainCellDrawsByCascade),
                         _references.ShadowDrawsIncludeAnimatedLeaves,
                         _references.ShadowDrawsIncludeAnimatedMeshes);
+                    EmitCaptureShadowPassTelemetry(isPrime, primeAttempts, coherentShadowPrime,
+                        isPrime && primeAttempts == 1 && deferFirstPrime);
                 }
 
                 if (!isPrime)
@@ -1187,6 +1216,29 @@ public sealed partial class WorldView3DControl
 
                 // Rethrow the ORIGINAL capture exception — a cleanup failure above must not mask it.
                 throw;
+            }
+
+            if (!isPrime) break;
+
+            var primeDecision = CaptureShadowPrimingPolicy.Decide(
+                coherentShadowPrime, _lastShadowCompletedCascadeMask, primeAttempts);
+            if (primeDecision == CaptureShadowPrimingDecision.Fail)
+            {
+                throw new InvalidOperationException(
+                    $"Sun-shadow capture did not complete all cascades after {primeAttempts} primes " +
+                    $"(completed=0x{_lastShadowCompletedCascadeMask:X}, defer={_lastShadowDeferredReason}). " +
+                    "No image was saved from stale shadow maps.");
+            }
+
+            if (primeDecision == CaptureShadowPrimingDecision.Ready)
+            {
+                // This helper stays synchronous: yielding here could let a live frame overwrite
+                // the accepted maps before the real color pass samples them.
+                var fingerprints = fingerprintShadows ? ReadCaptureShadowFingerprints() : null;
+                EmitCaptureShadowSampleTelemetry("post-prime", primeAttempts, captureRenderOrigin,
+                    _shadowMap!.GetSampleConstants(captureRenderOrigin), fingerprints);
+                shadowPrimeContent = CaptureShadowContentKey();
+                shadowPrimeReady = true;
             }
         }
 
@@ -1506,17 +1558,22 @@ public sealed partial class WorldView3DControl
     {
         static float[] Vec3(Vector3 value) => [value.X, value.Y, value.Z];
         static float[] Vec4(Vector4 value) => [value.X, value.Y, value.Z, value.W];
-        static Dictionary<string, object?>? WthsColor(StarfieldBlendableColorPatch? color) =>
-            color is null
-                ? null
-                : new Dictionary<string, object?>
-                {
-                    ["operation"] = color.Operation,
-                    ["value"] = color.Value is { } value
-                        ? new float?[] { value.X, value.Y, value.Z, value.W }
-                        : null,
-                    ["blendAmount"] = color.BlendAmount
-                };
+        static Dictionary<string, object?>? WthsColor(StarfieldBlendableColorPatch? color)
+        {
+            if (color is null)
+            {
+                return null;
+            }
+
+            return new Dictionary<string, object?>
+            {
+                ["operation"] = color.Operation,
+                ["value"] = color.Value is { } value
+                    ? new float?[] { value.X, value.Y, value.Z, value.W }
+                    : null,
+                ["blendAmount"] = color.BlendAmount
+            };
+        }
 
         var game = _data?.Game ?? Core.Games.BethesdaGame.Unknown;
         var interior = _selectedInterior;
@@ -1533,6 +1590,12 @@ public sealed partial class WorldView3DControl
             starfieldEnvironmentRoute,
             starfieldCelestialRoute);
         var weatherTransition = ResolveSelectedWeatherTransition();
+        var splineWeatherWind = Fo4BendableSplineWind.ResolveWeather(
+            weatherTransition.CurrentWeather?.Data,
+            weatherTransition.OutgoingWeather?.Data,
+            weatherTransition.CurrentWeatherWeight,
+            interior is not null,
+            WindDirection);
         var waterSelection = _waterAppearanceSelection;
         var waterRecord = waterSelection.Water;
 
@@ -1633,13 +1696,13 @@ public sealed partial class WorldView3DControl
         {
             sceneKind = worldspace is null ? "unlinked-exterior" : "exterior";
         }
+        else if (behavesLikeExterior)
+        {
+            sceneKind = "interior-behaves-like-exterior";
+        }
         else
         {
-            sceneKind = behavesLikeExterior
-                ? "interior-behaves-like-exterior"
-                : showsSky
-                    ? "interior-shows-sky"
-                    : "interior";
+            sceneKind = showsSky ? "interior-shows-sky" : "interior";
         }
 
         fields["sceneKind"] = sceneKind;
@@ -1935,13 +1998,21 @@ public sealed partial class WorldView3DControl
         fields["secundaPathFade"] = secundaPathFade;
         fields["secundaDrawAlpha"] = secundaDrawAlpha;
         var climateWeatherSettings = climate?.WeatherSettingsTypes ?? [];
-        fields["climateWeatherArchitecture"] = game == Core.Games.BethesdaGame.Starfield
-            ? climateWeatherSettings.Count > 0
-                ? "starfield-wths-reflection"
-                : climate?.WeatherTypes.Count > 0
-                    ? "legacy-wthr"
-                    : "none"
-            : "legacy-wthr";
+        string climateWeatherArchitecture;
+        if (game != Core.Games.BethesdaGame.Starfield)
+        {
+            climateWeatherArchitecture = "legacy-wthr";
+        }
+        else if (climateWeatherSettings.Count > 0)
+        {
+            climateWeatherArchitecture = "starfield-wths-reflection";
+        }
+        else
+        {
+            climateWeatherArchitecture = climate?.WeatherTypes.Count > 0 ? "legacy-wthr" : "none";
+        }
+
+        fields["climateWeatherArchitecture"] = climateWeatherArchitecture;
         fields["climateLegacyWeatherCount"] = climate?.WeatherTypes.Count ?? 0;
         fields["climateWeatherSettingsCount"] = climateWeatherSettings.Count;
         fields["climateWeatherSettings"] = climateWeatherSettings.Select(entry =>
@@ -1983,9 +2054,13 @@ public sealed partial class WorldView3DControl
                 _data?.AtmospheresByFormId)
             : null;
         fields["starfieldAtmosphereSourceData"] = atmosphereTelemetry;
-        fields["starfieldEnvironmentRoute"] = game != Core.Games.BethesdaGame.Starfield
-            ? null
-            : new Dictionary<string, object?>
+        if (game != Core.Games.BethesdaGame.Starfield)
+        {
+            fields["starfieldEnvironmentRoute"] = null;
+        }
+        else
+        {
+            fields["starfieldEnvironmentRoute"] = new Dictionary<string, object?>
             {
                 ["worldspaceFormId"] = worldspace is null ? null : $"0x{worldspace.FormId:X8}",
                 ["status"] = starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected",
@@ -2009,9 +2084,38 @@ public sealed partial class WorldView3DControl
                 ["selectionScope"] =
                     "unique WRLD←PNDT→ATMO→CLMT→WTHS static route; CE2 weighted/runtime transitions are not inferred"
             };
-        fields["starfieldCelestialRoute"] = game != Core.Games.BethesdaGame.Starfield
-            ? null
-            : new Dictionary<string, object?>
+        }
+
+        // The projected sun preset has one source of record; everything else is a distinct
+        // fail-closed reason, so this is a ladder rather than a value expression.
+        string sunPresetRenderSource;
+        if (starfieldRenderSunPreset is not null)
+        {
+            sunPresetRenderSource = "primary STDT PNAM→SUNP";
+        }
+        else if (starfieldEnvironmentRoute?.SunPresetOverrideFormId is
+                 { } nonzeroAtmosphereOverride && nonzeroAtmosphereOverride != 0)
+        {
+            sunPresetRenderSource = "blocked: nonzero ATMO override precedence/combination is unresolved";
+        }
+        else if (starfieldEnvironmentRoute is { } environmentRoute &&
+                 environmentRoute.Status != StarfieldEnvironmentRouteStatus.MissingAtmosphereReference &&
+                 environmentRoute.Atmosphere?.IsResolved != true)
+        {
+            sunPresetRenderSource = "blocked: ATMO override state did not resolve";
+        }
+        else
+        {
+            sunPresetRenderSource = "unavailable";
+        }
+
+        if (game != Core.Games.BethesdaGame.Starfield)
+        {
+            fields["starfieldCelestialRoute"] = null;
+        }
+        else
+        {
+            fields["starfieldCelestialRoute"] = new Dictionary<string, object?>
             {
                 ["status"] = starfieldCelestialRoute?.Status.ToString() ?? "not-selected",
                 ["failureDetail"] = starfieldCelestialRoute?.FailureDetail,
@@ -2031,19 +2135,12 @@ public sealed partial class WorldView3DControl
                 ["binaryStarDataFormId"] = starfieldCelestialRoute?.BinaryStar is { } binaryStar
                     ? $"0x{binaryStar.Star.FormId:X8}"
                     : null,
-                ["sunPresetRenderSource"] = starfieldRenderSunPreset is not null
-                    ? "primary STDT PNAM→SUNP"
-                    : starfieldEnvironmentRoute?.SunPresetOverrideFormId is
-                    { } nonzeroAtmosphereOverride && nonzeroAtmosphereOverride != 0
-                        ? "blocked: nonzero ATMO override precedence/combination is unresolved"
-                        : starfieldEnvironmentRoute is { } environmentRoute &&
-                          environmentRoute.Status != StarfieldEnvironmentRouteStatus.MissingAtmosphereReference &&
-                          environmentRoute.Atmosphere?.IsResolved != true
-                            ? "blocked: ATMO override state did not resolve"
-                        : "unavailable",
+                ["sunPresetRenderSource"] = sunPresetRenderSource,
                 ["projectedStarScope"] =
                     "primary SUNP disc/glare colors and disc texture only; draw visibility/placement/illuminance/TODD unresolved"
             };
+        }
+
         fields["starfieldEnvironmentRendering"] = game != Core.Games.BethesdaGame.Starfield
             ? null
             : new Dictionary<string, object?>
@@ -2058,9 +2155,34 @@ public sealed partial class WorldView3DControl
                 ["drawVisibilityProven"] = false,
                 ["ce2ParityClaimed"] = false
             };
-        fields["selectedClimateWeatherSettings"] = weatherSettingsResolution is null
-            ? null
-            : new Dictionary<string, object?>
+        if (weatherSettingsResolution is null)
+        {
+            fields["selectedClimateWeatherSettings"] = null;
+        }
+        else
+        {
+            string renderingStatus;
+            if (!weatherSettingsResolution.IsResolved)
+            {
+                renderingStatus = $"WTHS resolution failed closed: {weatherSettingsResolution.Status}";
+            }
+            else if (appliedWeatherChannels != StarfieldEnvironmentApproximationChannels.None)
+            {
+                renderingStatus =
+                    "listed WTHS Set channels were projected into viewer atmosphere state; draw visibility is not implied";
+            }
+            else if (rejectedWeatherChannels != StarfieldEnvironmentApproximationChannels.None)
+            {
+                renderingStatus =
+                    "resolved WTHS supported channels were rejected as incomplete, nonfinite, or not a Set operation";
+            }
+            else
+            {
+                renderingStatus =
+                    "resolved WTHS supplied no supported complete Set channel to the viewer atmosphere projection";
+            }
+
+            fields["selectedClimateWeatherSettings"] = new Dictionary<string, object?>
             {
                 ["selectionScope"] =
                     "active unique PNDT→ATMO→CLMT WSLT choice; weighted/global/runtime transitions fail closed",
@@ -2105,36 +2227,60 @@ public sealed partial class WorldView3DControl
                         ["moonlight"] = WthsColor(colors.Moonlight)
                     }
                     : null,
-                ["renderingStatus"] = weatherSettingsResolution.IsResolved != true
-                    ? $"WTHS resolution failed closed: {weatherSettingsResolution.Status}"
-                    : appliedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
-                        ? "listed WTHS Set channels were projected into viewer atmosphere state; draw visibility is not implied"
-                        : rejectedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
-                            ? "resolved WTHS supported channels were rejected as incomplete, nonfinite, or not a Set operation"
-                            : "resolved WTHS supplied no supported complete Set channel to the viewer atmosphere projection"
+                ["renderingStatus"] = renderingStatus
             };
-        fields["climateWeatherSettingsDecodeStatus"] = game != Core.Games.BethesdaGame.Starfield
-            ? "not-applicable"
-            : climate is null
-                ? $"no resolved CLMT for the active Starfield environment route: " +
-                  $"{starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected"}"
-                : climateWeatherSettings.Count == 0
-                    ? "no WSLT entries on the resolved CLMT"
-                    : weatherSettingsResolution?.IsResolved == true
-                        ? appliedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
-                            ? "WTHS REFL/RDIF resolved; bounded source-backed channels projected into viewer state"
-                            : "WTHS REFL/RDIF resolved; no supported bounded channel was projected"
-                        : $"WTHS resolution failed closed: {weatherSettingsResolution?.Status.ToString() ?? "unavailable"}";
-        fields["authoredSkyGeometryUnavailableReason"] =
-            game != Core.Games.BethesdaGame.Starfield
-                ? null
-                : climate is null
-                    ? $"No CLMT resolved for the active Starfield environment route " +
-                      $"({starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected"}); " +
-                      "CLDF/ATMO scattering and TODD geometry are not implemented"
-                    : string.IsNullOrWhiteSpace(climate.ModelPath)
-                        ? "Resolved Starfield CLMT has no sky MODL; CLDF/ATMO scattering and TODD geometry are not implemented"
-                        : null;
+        }
+
+        string climateWeatherSettingsDecodeStatus;
+        if (game != Core.Games.BethesdaGame.Starfield)
+        {
+            climateWeatherSettingsDecodeStatus = "not-applicable";
+        }
+        else if (climate is null)
+        {
+            climateWeatherSettingsDecodeStatus =
+                "no resolved CLMT for the active Starfield environment route: " +
+                $"{starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected"}";
+        }
+        else if (climateWeatherSettings.Count == 0)
+        {
+            climateWeatherSettingsDecodeStatus = "no WSLT entries on the resolved CLMT";
+        }
+        else if (weatherSettingsResolution?.IsResolved != true)
+        {
+            climateWeatherSettingsDecodeStatus =
+                $"WTHS resolution failed closed: {weatherSettingsResolution?.Status.ToString() ?? "unavailable"}";
+        }
+        else
+        {
+            climateWeatherSettingsDecodeStatus =
+                appliedWeatherChannels != StarfieldEnvironmentApproximationChannels.None
+                    ? "WTHS REFL/RDIF resolved; bounded source-backed channels projected into viewer state"
+                    : "WTHS REFL/RDIF resolved; no supported bounded channel was projected";
+        }
+
+        fields["climateWeatherSettingsDecodeStatus"] = climateWeatherSettingsDecodeStatus;
+
+        string? authoredSkyGeometryUnavailableReason;
+        if (game != Core.Games.BethesdaGame.Starfield)
+        {
+            authoredSkyGeometryUnavailableReason = null;
+        }
+        else if (climate is null)
+        {
+            authoredSkyGeometryUnavailableReason =
+                "No CLMT resolved for the active Starfield environment route " +
+                $"({starfieldEnvironmentRoute?.Status.ToString() ?? "not-selected"}); " +
+                "CLDF/ATMO scattering and TODD geometry are not implemented";
+        }
+        else
+        {
+            authoredSkyGeometryUnavailableReason = string.IsNullOrWhiteSpace(climate.ModelPath)
+                ? "Resolved Starfield CLMT has no sky MODL; CLDF/ATMO scattering and TODD geometry are not implemented"
+                : null;
+        }
+
+        fields["authoredSkyGeometryUnavailableReason"] = authoredSkyGeometryUnavailableReason;
         fields["authoredAtmosphere"] = new Dictionary<string, object?>
         {
             ["rawOverride"] = EnvironmentVariables.Get(AuthoredSkyArchitecture.EnvironmentVariableName),
@@ -2236,11 +2382,20 @@ public sealed partial class WorldView3DControl
             isInterior: interior is not null);
         fields["sceneSkyScale"] = sceneSkyTransform.Scale;
         fields["sceneSkyBias"] = sceneSkyTransform.Bias;
-        fields["sceneSkyOperation"] = sceneSkyTransform.Bias != 0f
-            ? "add"
-            : sceneSkyTransform.Scale != 1f
-                ? "multiply"
-                : "identity";
+        // Reported as an exact classification of the transform the renderer was handed, not a
+        // tolerance test: any nonzero bias is an add, and any scale that is not exactly 1 is a
+        // multiply, because that is precisely what the shader will do with these values.
+        string sceneSkyOperation;
+        if (sceneSkyTransform.Bias is not 0f)
+        {
+            sceneSkyOperation = "add";
+        }
+        else
+        {
+            sceneSkyOperation = sceneSkyTransform.Scale is not 1f ? "multiply" : "identity";
+        }
+
+        fields["sceneSkyOperation"] = sceneSkyOperation;
         fields["tonemapSaturation"] = tonemap.Saturation;
         fields["tonemapContrastAvgLum"] = tonemap.ContrastAvgLum;
         fields["tonemapContrast"] = tonemap.Contrast;
@@ -2581,6 +2736,14 @@ public sealed partial class WorldView3DControl
         fields["waterAnimationFps"] = waterStats?.WaterAnimationFps;
         fields["waterAnimationSeconds"] = waterStats?.WaterAnimationSeconds;
         fields["waterNoisePrepassUsed"] = waterStats?.WaterNoisePrepassUsed;
+        // Host binding state for the explicit synthetic probe, not a GPU observation or retail
+        // simulation verdict. A neutral-zero probe is bound/route-enabled with no contribution.
+        fields["waterOblivionDisplacementDiagnosticSource"] = _water?.OblivionDisplacementDiagnosticSource;
+        fields["waterOblivionDisplacementSourceBound"] = _water?.OblivionDisplacementSourceBound ?? false;
+        fields["waterOblivionDisplacementRouteEnabled"] = _water?.OblivionDisplacementRouteEnabled ?? false;
+        fields["waterOblivionDisplacementHasContribution"] = _water?.OblivionDisplacementHasContribution ?? false;
+        fields["waterOblivionDisplacementBlendRadius"] = _water?.OblivionDisplacementBlendRadius ?? 0f;
+        fields["waterOblivionDisplacementBlendAmount"] = _water?.OblivionDisplacementBlendAmount ?? 0f;
         fields["waterTelemetryUnavailableReason"] = waterStats is null
             ? "water rendering was disabled or unavailable for this capture"
             : waterStats.WaterTelemetryUnavailableReason;
@@ -2621,10 +2784,14 @@ public sealed partial class WorldView3DControl
             };
         fields["fo4BendableSplineWindSupported"] =
             referenceStats?.ReferenceFo4BendableSplineWindSupported;
-        fields["fo4BendableSplineWind"] =
-            referenceStats is not { ReferenceFo4BendableSplineWindSupported: true }
-                ? null
-                : new Dictionary<string, object?>
+        if (referenceStats is not { ReferenceFo4BendableSplineWindSupported: true })
+        {
+            fields["fo4BendableSplineWind"] = null;
+        }
+        else
+        {
+            fields["fo4BendableSplineWind"] =
+                new Dictionary<string, object?>
                 {
                     ["animationsEnabled"] =
                         referenceStats.ReferenceFo4BendableSplineAnimationsEnabled,
@@ -2679,6 +2846,8 @@ public sealed partial class WorldView3DControl
                             ? "no generated wind-spline color draw was submitted"
                             : null
                 };
+        }
+
         fields["tallGrassWindSupported"] =
             referenceStats?.ReferenceTallGrassWindSupported;
         if (referenceStats is not { ReferenceTallGrassWindSupported: true })

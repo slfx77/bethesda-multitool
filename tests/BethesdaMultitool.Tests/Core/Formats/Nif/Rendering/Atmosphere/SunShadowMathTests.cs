@@ -176,6 +176,14 @@ public sealed class SunShadowMathTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "D3D12", "ShadowMapRenderer12.cs");
 
+        // Live and capture replay the same constant-buffer ABI. They must share its tested
+        // reservation rather than reintroducing the old one-block reference-b0 assumption.
+        var reservation = SourceContract.Extract(frame,
+            "private const uint ShadowPassRingReservationBytes =", ";");
+        Assert.Contains("Core.Formats.Nif.Rendering.Profiling.CaptureShadowPrimingPolicy.RingReservationBytes",
+            reservation, StringComparison.Ordinal);
+        Assert.Contains("public const int CascadeCount = 4;", shadowMap, StringComparison.Ordinal);
+
         var reserve = frame.IndexOf(
             "TryReserveTail(ShadowPassRingReservationBytes)", StringComparison.Ordinal);
         var sceneAllocationsStart = frame.IndexOf("BindAtmosphereConstants(", reserve, StringComparison.Ordinal);

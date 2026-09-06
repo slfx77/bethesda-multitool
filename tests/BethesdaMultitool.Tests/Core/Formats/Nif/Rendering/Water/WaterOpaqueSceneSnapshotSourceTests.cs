@@ -205,7 +205,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
     {
         var source = ReadAppSource("WorldView3DControl.SceneCapture.cs");
         var capture = source[source.IndexOf("ulong fenceValue;", StringComparison.Ordinal)..];
-        var loopStart = capture.IndexOf("for (var pass = captureShadows ? 0 : 1; pass < 2; pass++)",
+        var loopStart = capture.IndexOf("while (true)",
             StringComparison.Ordinal);
         Assert.True(loopStart > 0);
 
@@ -377,7 +377,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         var capture = ReadAppSource("WorldView3DControl.SceneCapture.cs");
         var loop = Extract(
             capture,
-            "for (var pass = captureShadows ? 0 : 1; pass < 2; pass++)",
+            "var shadowPrimeReady = !captureShadows;",
             "Profiler_LastCaptureScenarioSnapshot =");
         SourceContract.AssertOrder(
             loop,

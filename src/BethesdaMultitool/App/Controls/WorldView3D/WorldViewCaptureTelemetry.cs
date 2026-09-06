@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 
 namespace BethesdaMultitool;
 
@@ -271,6 +272,23 @@ internal static class WorldViewCaptureTelemetry
             (from.B + (to.B - from.B) * toWeight) * scale,
             (from.A + (to.A - from.A) * toWeight) * scale
         ];
+    }
+
+    /// <summary>Caller owns the buffer and must wait for its copy fence before mapping.</summary>
+    internal static unsafe string ComputeShadowFingerprint(
+        Vortice.Direct3D12.ID3D12Resource buffer, int resolution, uint rowPitch)
+    {
+        void* data = null;
+        buffer.Map(0, &data).CheckError();
+        try
+        {
+            var length = checked((resolution - 1) * (int)rowPitch + resolution * sizeof(float));
+            return ShadowMapFingerprint.Compute(new ReadOnlySpan<byte>(data, length), resolution, checked((int)rowPitch));
+        }
+        finally
+        {
+            buffer.Unmap(0, null);
+        }
     }
 
     /// <summary>

@@ -163,9 +163,10 @@ public sealed class SelectedReferenceVisibilitySourceContractTests
             frame,
             StringComparison.Ordinal);
         Assert.Contains(
-            "!firstPublish && !anyVisibilityPending && dueCount > ShadowMaxCascadeRendersPerFrame",
+            "!forceCurrentLadder && !firstPublish && !anyVisibilityPending &&",
             frame,
             StringComparison.Ordinal);
+        Assert.Contains("dueCount > ShadowMaxCascadeRendersPerFrame)", frame, StringComparison.Ordinal);
         // A visibility-driven clear still commits its keys, but now through the shared authoritative
         // predicate rather than a bespoke visibility-only branch — the old branch's condition was a
         // strict subset, and gating on it left every OTHER authoritatively-empty cascade re-rendering

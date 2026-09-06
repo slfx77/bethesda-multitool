@@ -1,13 +1,22 @@
+using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Xunit;
+using static BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRendererConstants12;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 
 public sealed class GpuRingTailReservationTests
 {
     // ShadowMapRenderer12 is WINDOWS_GUI-only while this test assembly targets portable net10.0.
-    // SunShadowMathTests separately pins the host reservation formula to that renderer's count.
+    // SunShadowMathTests pins the live host to the shared budget and the renderer's cascade count.
     private const int ShadowCascadeCount = 4;
+    private const uint ShadowPassRingReservationBytes = CaptureShadowPrimingPolicy.RingReservationBytes;
+
+    // The current reference ABI spans two CB alignment blocks; the old 96-byte fixture hid
+    // that requirement. Terrain b0/b2 sizes and allocation shape are source-pinned separately
+    // by CaptureShadowPrimingPolicyTests.
+    private static readonly uint[] ShadowAllocationSizes = [InstancedShadowPerFrameConstants.ByteSize, 64, 16];
 
     // Mirrors WorldView3DControl's WaterPassRingReservationBytes (WINDOWS_GUI-only). Kept in sync here
     // so the water reservation's sizing contract is pinned the same way the shadow one is above.
@@ -19,17 +28,16 @@ public sealed class GpuRingTailReservationTests
     [Fact]
     public void ShadowSizedTail_FitsBeforeSceneConsumesItsAllocationWindow()
     {
-        const uint total = 4096;
-        const uint shadowTail =
-            (ShadowCascadeCount * 3u + 1u) * GpuRingBuffer12.CbAlignment;
+        const uint sceneWindow = 768;
+        const uint total = sceneWindow + ShadowPassRingReservationBytes;
 
         Assert.True(GpuRingBuffer12.TryPlanTailReservation(
-            768,
+            sceneWindow,
             total,
             0,
-            shadowTail,
+            ShadowPassRingReservationBytes,
             out var reserved));
-        Assert.Equal(shadowTail, reserved);
+        Assert.Equal(ShadowPassRingReservationBytes, reserved);
     }
 
     [Fact]
@@ -37,9 +45,9 @@ public sealed class GpuRingTailReservationTests
     {
         Assert.False(GpuRingBuffer12.TryPlanTailReservation(
             769,
-            4096,
+            768 + ShadowPassRingReservationBytes,
             0,
-            3328,
+            ShadowPassRingReservationBytes,
             out var reserved));
         Assert.Equal(0u, reserved);
     }
@@ -81,19 +89,18 @@ public sealed class GpuRingTailReservationTests
             1024,
             4096,
             0,
-            96,
+            InstancedShadowPerFrameConstants.ByteSize,
             GpuRingBuffer12.CbAlignment,
             out var allocationOffset,
             out var nextOffset));
         Assert.Equal(1024u, allocationOffset);
-        Assert.Equal(1120u, nextOffset);
+        Assert.Equal(1024u + InstancedShadowPerFrameConstants.ByteSize, nextOffset);
     }
 
     [Fact]
     public void PartialRelease_UnwindsAStackedReservationOnePassAtATime()
     {
-        const uint shadowTail =
-            (ShadowCascadeCount * 3u + 1u) * GpuRingBuffer12.CbAlignment;
+        const uint shadowTail = ShadowPassRingReservationBytes;
 
         // Water is reserved on top of the shadow tail (additive), then released back to the pass while
         // the shadow reservation must survive for the frame-end replay.
@@ -108,8 +115,7 @@ public sealed class GpuRingTailReservationTests
     [Fact]
     public void WaterConstantSequence_FitsAfterAnySceneEnd_WithShadowStillReserved()
     {
-        const uint shadowTail =
-            (ShadowCascadeCount * 3u + 1u) * GpuRingBuffer12.CbAlignment;
+        const uint shadowTail = ShadowPassRingReservationBytes;
         // A one-per-frame uniforms CB, then a noise CB + uniforms CB for every visible WATR batch —
         // the water pass's worst case at the reserved batch budget. (Sizes: WaterFrameUniforms = 448,
         // FnvNoiseUniforms rounds within one 256-byte block.)
@@ -156,9 +162,9 @@ public sealed class GpuRingTailReservationTests
     public void ShadowConstantSequence_FitsAfterEveryPossibleSceneEndOffset()
     {
         const uint totalBytes = 10_003; // deliberately not CB-aligned
-        const uint reservedBytes =
-            (ShadowCascadeCount * 3u + 1u) * GpuRingBuffer12.CbAlignment;
-        uint[] allocationSizes = [96, 64, 16]; // reference b0, terrain b0, terrain b2
+        const uint reservedBytes = ShadowPassRingReservationBytes;
+        Assert.Equal(InstancedShadowPerFrameConstants.ByteSize,
+            (uint)Marshal.SizeOf<InstancedShadowPerFrameConstants>());
         var ordinaryLimit = totalBytes - reservedBytes;
 
         for (uint sceneEnd = 0; sceneEnd <= ordinaryLimit; sceneEnd++)
@@ -173,7 +179,7 @@ public sealed class GpuRingTailReservationTests
             var shadowOffset = sceneEnd;
             for (var cascade = 0; cascade < ShadowCascadeCount; cascade++)
             {
-                foreach (var size in allocationSizes)
+                foreach (var size in ShadowAllocationSizes)
                 {
                     Assert.True(GpuRingBuffer12.TryPlanAllocation(
                             shadowOffset,
@@ -188,5 +194,32 @@ public sealed class GpuRingTailReservationTests
                 }
             }
         }
+    }
+
+    [Fact]
+    public void LegacyThreeBlockBudgetCannotReplayTheCurrentFourCascadeAbi()
+    {
+        // Deliberately reproduce the obsolete budget at an unaligned scene end. It reserves
+        // successfully but runs out before the final cascade's actual reference b0 can fit.
+        const uint legacyReservation = (ShadowCascadeCount * 3u + 1u) * GpuRingBuffer12.CbAlignment;
+        const uint sceneEnd = 1;
+        const uint total = sceneEnd + legacyReservation;
+        Assert.True(GpuRingBuffer12.TryPlanTailReservation(sceneEnd, total, 0, legacyReservation, out _));
+
+        var offset = sceneEnd;
+        for (var cascade = 0; cascade < ShadowCascadeCount - 1; cascade++)
+        {
+            foreach (var size in ShadowAllocationSizes)
+            {
+                Assert.True(GpuRingBuffer12.TryPlanAllocation(
+                    offset, total, 0, size, GpuRingBuffer12.CbAlignment, out _, out var nextOffset));
+                offset = nextOffset;
+            }
+        }
+
+        Assert.False(GpuRingBuffer12.TryPlanAllocation(
+            offset, total, 0, InstancedShadowPerFrameConstants.ByteSize, GpuRingBuffer12.CbAlignment,
+            out _, out var unchangedOffset));
+        Assert.Equal(offset, unchangedOffset);
     }
 }

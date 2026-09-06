@@ -50,7 +50,7 @@ public sealed partial class WorldView3DControl
     ///     bounded local radius so a subminimum evidence frame cannot be mistaken for the normal
     ///     interactive scene scope.
     /// </summary>
-    internal float Profiler_InteractiveMinimumRenderDistanceCells => MinRenderDistanceCells;
+    internal static float Profiler_InteractiveMinimumRenderDistanceCells => MinRenderDistanceCells;
 
     /// <summary>
     ///     Exact D3D12 surface size used by scored live frames. Layout dimensions are expressed in
@@ -283,6 +283,11 @@ public sealed partial class WorldView3DControl
         fields["shadowTerrainCellDraws"] = _lastShadowTerrainCellDraws;
         fields["shadowReferenceDrawsByCascade"] = _lastShadowReferenceDrawsByCascade;
         fields["shadowReferenceInstancesByCascade"] = _lastShadowReferenceInstancesByCascade;
+        fields["diagnosticOmitFo4SplineShadows"] = _references?.OmitsFo4SplineShadows ?? false;
+        fields["shadowOmittedSplineDrawsByCascade"] = _lastShadowOmittedSplineDrawsByCascade;
+        fields["shadowOmittedSplineInstancesByCascade"] = _lastShadowOmittedSplineInstancesByCascade;
+        fields["shadowSubmittedSplineDrawsByCascade"] = _lastShadowSubmittedSplineDrawsByCascade;
+        fields["shadowSubmittedSplineInstancesByCascade"] = _lastShadowSubmittedSplineInstancesByCascade;
         fields["shadowTerrainCellDrawsByCascade"] = _lastShadowTerrainCellDrawsByCascade;
         return fields;
     }

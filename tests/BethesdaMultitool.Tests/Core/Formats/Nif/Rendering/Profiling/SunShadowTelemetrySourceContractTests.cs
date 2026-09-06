@@ -156,7 +156,7 @@ public sealed class SunShadowTelemetrySourceContractTests
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         SourceContract.AssertOrder(capture,
             "[Capture] shadow state pass={0}",
-            "RecordSunShadowPass(cmd, captureRenderOrigin, _camera.Position);",
+            "RecordSunShadowPass(cmd, captureRenderOrigin, _camera.Position,",
             "[Capture] shadow result pass={0}");
         Assert.Contains("refDraws=[{4}] refInstances=[{5}] terrainCells=[{6}]", capture,
             StringComparison.Ordinal);

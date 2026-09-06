@@ -322,7 +322,7 @@ public sealed class StarfieldEnvironmentCaptureTelemetryTests
         Assert.Contains("StarfieldEnvironmentApproximationResult.Name", block, StringComparison.Ordinal);
         Assert.Contains("[\"drawVisibilityProven\"] = false", block, StringComparison.Ordinal);
         Assert.Contains("[\"ce2ParityClaimed\"] = false", block, StringComparison.Ordinal);
-        Assert.Contains("weatherSettingsResolution.IsResolved != true", block, StringComparison.Ordinal);
+        Assert.Contains("!weatherSettingsResolution.IsResolved", block, StringComparison.Ordinal);
         Assert.Contains("WTHS resolution failed closed", block, StringComparison.Ordinal);
         Assert.Contains("rejectedWeatherChannels != StarfieldEnvironmentApproximationChannels.None", block,
             StringComparison.Ordinal);
@@ -395,7 +395,7 @@ public sealed class StarfieldEnvironmentCaptureTelemetryTests
             "var starfieldCelestialRoute = CurrentStarfieldCelestialRoute(skyContext);",
             capture,
             StringComparison.Ordinal);
-        Assert.Contains(": climate is null", capture, StringComparison.Ordinal);
+        Assert.Contains("else if (climate is null)", capture, StringComparison.Ordinal);
         Assert.Contains(
             "no resolved CLMT for the active Starfield environment route",
             capture,

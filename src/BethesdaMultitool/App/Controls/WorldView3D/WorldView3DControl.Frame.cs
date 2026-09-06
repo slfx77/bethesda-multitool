@@ -40,10 +40,11 @@ public sealed partial class WorldView3DControl
 
     // The shadow pass runs after every screen-space draw. Protect its worst-case ring footprint at
     // frame start so a dense scene cannot clear a near cascade and then fail to allocate the three
-    // constants needed to repopulate it (reference b0 + terrain b0/b2). Each allocation is CB-aligned.
+    // constants needed to repopulate it (reference b0 + terrain b0/b2). Reference b0 is 352 bytes
+    // and occupies two 256-byte alignment blocks; terrain b0/b2 each need one. Share capture's
+    // tested four-cascade budget, including the worst-case initial alignment padding.
     private const uint ShadowPassRingReservationBytes =
-        ((uint)Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount * 3u + 1u) *
-        GpuRingBuffer12.CbAlignment; // three CBs per cascade + worst-case initial alignment pad
+        Core.Formats.Nif.Rendering.Profiling.CaptureShadowPrimingPolicy.RingReservationBytes;
 
     // Water draws after terrain + references, which in a whole-map / streaming frame fill the ring and
     // self-truncate. Protect the water pass's worst-case CB footprint — one per-frame uniforms CB plus,
@@ -123,6 +124,18 @@ public sealed partial class WorldView3DControl
     private readonly int[] _lastShadowTerrainCellDrawsByCascade =
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
+    private readonly int[] _lastShadowOmittedSplineDrawsByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowOmittedSplineInstancesByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowSubmittedSplineDrawsByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowSubmittedSplineInstancesByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
     private readonly ShadowContentKey[] _shadowContentKeys =
         new ShadowContentKey[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
@@ -171,6 +184,7 @@ public sealed partial class WorldView3DControl
     // GPU address of the most recent b3 atmosphere CB bound by BindAtmosphereConstants.
     private ulong _lastAtmosphereCbGpuAddress;
     private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
+    private Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.ShadowSampleConstants _lastBoundShadowConstants;
 
     // This frame's raw camera timestep (see FrameProfileSample.DeltaSeconds).
     private float _lastDeltaSeconds;
@@ -180,6 +194,12 @@ public sealed partial class WorldView3DControl
     private Vector3 _lastResolvedSunDirection = new(0.5f, 0.5f, 1f);
 
     private int _lastShadowCascadeMask;
+    private int _lastShadowCompletedCascadeMask;
+    private string _lastShadowDeferredReason = "none";
+    private float _lastShadowPostCullSceneZSpan;
+    private bool _lastShadowReferenceExtentChanged;
+    private readonly long[] _shadowCascadeGenerations =
+        new long[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
     // Captured batches before cascade filtering. The arrays below are the submitted-work truth.
     private int _lastShadowDrawCount;
@@ -560,6 +580,7 @@ public sealed partial class WorldView3DControl
             lightingOn, projectedSunShadowActive, fogEnabled);
         _references?.SetExternalEmittanceState(gameHour, _currentClimateTiming);
         _lastBoundShadowParams = shadow.Params0;
+        _lastBoundShadowConstants = shadow;
         // Interiors have no sky, so the sky-gradient REFLECTION stand-in must not run there: indoor
         // water was mirroring a flat grey "sky" instead of its authored DNAM ReflectionColor, which
         // is what retail's RT-free path uses when VarAmounts.y == 0. This lane is read only by the
@@ -656,15 +677,25 @@ public sealed partial class WorldView3DControl
     {
         _lastShadowMode = ShadowPassMode.Skipped;
         _lastShadowCascadeMask = 0;
+        _lastShadowCompletedCascadeMask = 0;
+        _lastShadowDeferredReason = "none";
+        _lastShadowPostCullSceneZSpan = 0f;
+        _lastShadowReferenceExtentChanged = false;
         _lastShadowDrawCount = 0;
         _lastShadowTerrainCellDraws = 0;
         Array.Clear(_lastShadowReferenceDrawsByCascade);
         Array.Clear(_lastShadowReferenceInstancesByCascade);
+        Array.Clear(_lastShadowOmittedSplineDrawsByCascade);
+        Array.Clear(_lastShadowOmittedSplineInstancesByCascade);
+        Array.Clear(_lastShadowSubmittedSplineDrawsByCascade);
+        Array.Clear(_lastShadowSubmittedSplineInstancesByCascade);
         Array.Clear(_lastShadowTerrainCellDrawsByCascade);
     }
 
     private void RecordSunShadowPass(
-        Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, Vector3 renderOrigin, Vector3 sceneCenter)
+        Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, Vector3 renderOrigin, Vector3 sceneCenter,
+        bool forceCurrentLadder = false, Vector3? captureArmedSunDirection = null,
+        bool diagnosticDefer = false)
     {
         ResetShadowPassTelemetry();
 
@@ -682,7 +713,7 @@ public sealed partial class WorldView3DControl
             referenceVisibility,
             terrainCasts);
         var hasCapturedCasters = _references.HasShadowDraws || terrainCasts;
-        if (!hasCapturedCasters)
+        if (!hasCapturedCasters && !forceCurrentLadder)
         {
             // Preserve published maps across an incidental empty/degenerate frame, as before. An
             // intentional reference- or terrain-visibility transition is different: the previous maps
@@ -755,7 +786,9 @@ public sealed partial class WorldView3DControl
             var contentPending = visibilityPending[i] ||
                                  (residentContentChanged &&
                                   _shadowContentThrottles[i] >= ShadowContentRerenderFrames << i);
-            cascadeDue[i] = posePending || contentPending;
+            // A saved image must not inherit live-frame throttling or an older animation clock.
+            // The default (live) schedule is unchanged; only a coherent capture prime forces refits.
+            cascadeDue[i] = forceCurrentLadder || posePending || contentPending;
             if (cascadeDue[i])
             {
                 dueCount++;
@@ -782,11 +815,17 @@ public sealed partial class WorldView3DControl
         // A reference toggle/load can make Render recull to a different extent; publishing those
         // captured prefixes through a differently-sized frustum would clip a newly shown tall caster.
         // Keep the prior maps for this frame and retry from the now-current extent on the next one.
-        if (SunShadowMath.ShouldDeferForReferenceExtentChange(
-                referenceExtentIdentityChanged,
-                _shadowFrameSceneZSpan,
-                ResolveShadowSceneZSpan()))
+        _lastShadowPostCullSceneZSpan = ResolveShadowSceneZSpan();
+        _lastShadowReferenceExtentChanged = SunShadowMath.ShouldDeferForReferenceExtentChange(
+            referenceExtentIdentityChanged || forceCurrentLadder,
+            _shadowFrameSceneZSpan,
+            _lastShadowPostCullSceneZSpan);
+        var captureSunChanged = captureArmedSunDirection is { } armedSun &&
+                                armedSun != _lastResolvedSunDirection;
+        if (_lastShadowReferenceExtentChanged || captureSunChanged || diagnosticDefer)
         {
+            _lastShadowDeferredReason = diagnosticDefer ? "diagnostic-first-prime" : "reference-extent-change";
+            if (captureSunChanged) _lastShadowDeferredReason = "capture-sun-change";
             _references.DisarmShadowCapture();
             return;
         }
@@ -804,7 +843,8 @@ public sealed partial class WorldView3DControl
         // Cap ordinary pose/streaming work and defer the rest — an overdue ladder becomes several even
         // frames instead of one spike. First publish and direct visibility actions are exempt: neither
         // may expose a ladder mixing old-visible and new-visible reference/terrain content.
-        if (!firstPublish && !anyVisibilityPending && dueCount > ShadowMaxCascadeRendersPerFrame)
+        if (!forceCurrentLadder && !firstPublish && !anyVisibilityPending &&
+            dueCount > ShadowMaxCascadeRendersPerFrame)
         {
             for (var dropped = dueCount - ShadowMaxCascadeRendersPerFrame; dropped > 0; dropped--)
             {
@@ -899,6 +939,10 @@ public sealed partial class WorldView3DControl
             var referenceReplayCompleted = _references.LastShadowReplayCompleted;
             _lastShadowReferenceDrawsByCascade[i] = _references.LastShadowSubmittedDrawCount;
             _lastShadowReferenceInstancesByCascade[i] = _references.LastShadowSubmittedInstanceCount;
+            _lastShadowOmittedSplineDrawsByCascade[i] = _references.LastShadowOmittedSplineDrawCount;
+            _lastShadowOmittedSplineInstancesByCascade[i] = _references.LastShadowOmittedSplineInstanceCount;
+            _lastShadowSubmittedSplineDrawsByCascade[i] = _references.LastShadowSubmittedSplineDrawCount;
+            _lastShadowSubmittedSplineInstancesByCascade[i] = _references.LastShadowSubmittedSplineInstanceCount;
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampProfiler12.ShadowCascadeRefs[i]);
             var terrainCellDraws = 0;
             // Meaningful only when terrainCasts — ShouldCommitCascadeState gates it on that flag,
@@ -922,8 +966,12 @@ public sealed partial class WorldView3DControl
             }
 
             _shadowMap.EndCascade(cmd, i);
+            _shadowCascadeGenerations[i]++;
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampProfiler12.ShadowCascadeEnd[i]);
             cascadeHasDraws[i] = drewCascade;
+            var replayCompleted = SunShadowMath.ShouldCommitCascadeState(
+                referenceReplayCompleted, terrainCasts, terrainReplayCompleted);
+            if (replayCompleted) _lastShadowCompletedCascadeMask |= 1 << i;
 
             if (!refit)
             {
@@ -957,8 +1005,7 @@ public sealed partial class WorldView3DControl
             // re-gathered terrain every frame forever. A pass that could not RUN (either side's ring
             // allocation failing) still retains the old keys and retries, which is what
             // TerrainRenderer12's own "the host ... retries" comment always promised but never got.
-            if (SunShadowMath.ShouldCommitCascadeState(
-                    referenceReplayCompleted, terrainCasts, terrainReplayCompleted))
+            if (replayCompleted)
             {
                 _shadowPoseKeys[i] = poseKeys[i];
                 _shadowContentKeys[i] = contentKey;
