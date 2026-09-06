@@ -23,7 +23,10 @@ public sealed class NifNodeKeyframeTrackCollectorTests
             [30] = ReverseHeader() with { Frequency = 7f, StopTime = 2f }
         };
 
-        var cycle = NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(tracks, headers);
+        var cycle = NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(
+            tracks,
+            headers,
+            BonesFor(tracks));
 
         Assert.NotNull(cycle);
         Assert.Equal(1f, cycle.Value.Frequency);
@@ -31,6 +34,7 @@ public sealed class NifNodeKeyframeTrackCollectorTests
         Assert.Equal(0f, cycle.Value.StartTime);
         Assert.Equal(49.06667f, cycle.Value.StopTime);
         Assert.Equal(NifCycleType.Reverse, cycle.Value.Cycle);
+        Assert.Equal([0, 1], Assert.IsType<int[]>(cycle.Value.TrackIndices));
     }
 
     [Theory]
@@ -38,7 +42,6 @@ public sealed class NifNodeKeyframeTrackCollectorTests
     [InlineData("phase")]
     [InlineData("start")]
     [InlineData("stop")]
-    [InlineData("cycle")]
     [InlineData("inactive")]
     [InlineData("non-finite")]
     public void IncompatibleMovingControllerGraphWithholdsTheFullCycle(string mismatch)
@@ -50,7 +53,6 @@ public sealed class NifNodeKeyframeTrackCollectorTests
             "phase" => first with { Phase = 1f },
             "start" => first with { StartTime = 1f },
             "stop" => first with { StopTime = 48f },
-            "cycle" => first with { Flags = 0x0008 },
             "inactive" => first with { Flags = 0x0002 },
             "non-finite" => first with { StopTime = float.PositiveInfinity },
             _ => throw new ArgumentOutOfRangeException(nameof(mismatch))
@@ -66,7 +68,35 @@ public sealed class NifNodeKeyframeTrackCollectorTests
             [20] = second
         };
 
-        Assert.Null(NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(tracks, headers));
+        Assert.Null(NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(
+            tracks,
+            headers,
+            BonesFor(tracks)));
+    }
+
+    [Fact]
+    public void MixedClampAndReverseMovingTracksSelectOnlyTheReverseLane()
+    {
+        var tracks = new Dictionary<int, NifNodeTrack>
+        {
+            [10] = MovingTrack("Body"),
+            [20] = MovingTrack("Rock_1"),
+            [30] = MovingTrack("Rock_2")
+        };
+        var headers = new Dictionary<int, NifTimeControllerHeader>
+        {
+            [10] = ReverseHeader() with { Flags = 0x000C },
+            [20] = ReverseHeader(),
+            [30] = ReverseHeader()
+        };
+
+        var cycle = NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(
+            tracks,
+            headers,
+            BonesFor(tracks));
+
+        Assert.NotNull(cycle);
+        Assert.Equal([1, 2], Assert.IsType<int[]>(cycle.Value.TrackIndices));
     }
 
     [Fact]
@@ -82,7 +112,10 @@ public sealed class NifNodeKeyframeTrackCollectorTests
             [10] = ReverseHeader()
         };
 
-        Assert.Null(NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(tracks, headers));
+        Assert.Null(NifNodeKeyframeTrackCollector.ResolveCompatibleReverseCycle(
+            tracks,
+            headers,
+            BonesFor(tracks)));
     }
 
     private static NifTimeControllerHeader ReverseHeader()
@@ -123,5 +156,18 @@ public sealed class NifNodeKeyframeTrackCollectorTests
             [new NifVec3Key(0f, Vector3.Zero)],
             NifKeyInterpolation.Linear,
             []);
+    }
+
+    private static NifAnimBone[] BonesFor(IReadOnlyDictionary<int, NifNodeTrack> tracks)
+    {
+        return tracks
+            .Select(static pair => new NifAnimBone(
+                pair.Value.NodeName,
+                -1,
+                Vector3.Zero,
+                Quaternion.Identity,
+                1f,
+                pair.Key))
+            .ToArray();
     }
 }

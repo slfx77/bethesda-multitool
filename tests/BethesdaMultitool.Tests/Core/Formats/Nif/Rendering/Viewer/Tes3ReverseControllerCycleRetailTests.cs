@@ -19,6 +19,8 @@ public sealed class Tes3ReverseControllerCycleRetailTests
     private const string ModelPath = @"meshes\r\atronach_storm.nif";
     private const string ModelSha256 =
         "C78C249A38EFCB13A386609FA2538E6A4CB3F3EE466B9ECE8D741FE0EF6A700B";
+    private static readonly string[] ExpectedControllerTargets =
+        ["Rock_1", "Rock_2", "Rock_3", "Rock_4", "Rock_5"];
     private static readonly string? Bsa =
         RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
 
@@ -38,6 +40,7 @@ public sealed class Tes3ReverseControllerCycleRetailTests
             "atronach_storm.nif",
             ModelPath);
         var scene = Assert.IsType<BethesdaViewerScene>(build.Scene);
+        Assert.NotEmpty(scene.MeshParts);
         var idle = Assert.Single(
             scene.AnimationClips,
             static clip => clip.Name == "Embedded Idle");
@@ -63,7 +66,7 @@ public sealed class Tes3ReverseControllerCycleRetailTests
             .Select(track => scene.Nodes[track.NodeIndex].LookupName ?? scene.Nodes[track.NodeIndex].Name)
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "Rock_1", "Rock_2", "Rock_3", "Rock_4", "Rock_5" }, targets);
+        Assert.Equal(ExpectedControllerTargets, targets);
 
         var evaluator = new BethesdaViewerAnimationPoseEvaluator(
             scene.Nodes.Select(static node => node.LocalTransform).ToArray(),

@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
@@ -44,6 +45,9 @@ internal sealed class BethesdaViewerAnimatedPose12
 
         var affectedNodes = ResolveAffectedNodes(scene, clip);
         var affectedParts = ResolveAffectedParts(scene, affectedNodes);
+        var morphsByPart = (clip.GeometryMorphTracks ?? [])
+            .ToDictionary(static track => track.MeshPartIndex, static track => track.Morph);
+        foreach (var partIndex in morphsByPart.Keys) affectedParts[partIndex] = true;
         ExpandBoundaryClosure(scene, affectedParts);
 
         var cachedBySource = new CachedSubmesh12?[scene.MeshParts.Count];
@@ -86,7 +90,8 @@ internal sealed class BethesdaViewerAnimatedPose12
                 source.Skin,
                 source.NativeSemantics.TintColor,
                 source.Submesh.StarfieldMaterialColor.IsVertexLerp,
-                scene.Nodes.Count);
+                scene.Nodes.Count,
+                morphsByPart.GetValueOrDefault(partIndex));
             parts.Add(scratch);
             _verticesByPart[partIndex] = scratch.WorkingVertices;
             _supportedParts[partIndex] = true;
@@ -132,7 +137,7 @@ internal sealed class BethesdaViewerAnimatedPose12
         _evaluator.EvaluateNodeWorlds(clockSeconds, _nodeWorlds);
         foreach (var part in _parts)
         {
-            part.Pose(_nodeWorlds);
+            part.Pose(_nodeWorlds, clockSeconds);
         }
 
         BethesdaViewerScenePoseMaterializer12.ApplyBoundaryStitchGroups(
@@ -272,6 +277,8 @@ internal sealed class BethesdaViewerAnimatedPose12
         private readonly int? _nodeIndex;
         private readonly GpuMeshUploader.GpuVertex[] _sourceVertices;
         private readonly SkinScratch? _skin;
+        private readonly NifGeometryMorphData? _morph;
+        private readonly float[] _morphWeights;
         private readonly (float R, float G, float B)? _tint;
         private readonly bool _preserveRawVertexColor;
 
@@ -283,7 +290,8 @@ internal sealed class BethesdaViewerAnimatedPose12
             DecodedBethesdaViewerSkinBinding12? skin,
             (float R, float G, float B)? tint,
             bool preserveRawVertexColor,
-            int nodeCount)
+            int nodeCount,
+            NifGeometryMorphData? morph)
         {
             MeshPartIndex = meshPartIndex;
             _nodeIndex = nodeIndex;
@@ -293,6 +301,13 @@ internal sealed class BethesdaViewerAnimatedPose12
             _preserveRawVertexColor = preserveRawVertexColor;
             WorkingVertices = new GpuMeshUploader.GpuVertex[sourceVertices.Length];
             _skin = skin is null ? null : new SkinScratch(skin, sourceVertices, nodeCount);
+            _morph = morph;
+            _morphWeights = morph is null ? [] : new float[morph.Targets.Length];
+            if (morph is not null && (skin is not null ||
+                !BethesdaViewerGeometryMorphPolicy.MatchesBase(morph, sourceVertices)))
+            {
+                throw new InvalidDataException("Animated morph requires its admitted unskinned source vertex binding.");
+            }
         }
 
         internal int MeshPartIndex { get; }
@@ -301,9 +316,13 @@ internal sealed class BethesdaViewerAnimatedPose12
 
         internal GpuMeshUploader.GpuVertex[] WorkingVertices { get; }
 
-        internal void Pose(ReadOnlySpan<Matrix4x4> nodeWorlds)
+        internal void Pose(ReadOnlySpan<Matrix4x4> nodeWorlds, float clockSeconds)
         {
             _sourceVertices.AsSpan().CopyTo(WorkingVertices);
+            if (_morph is not null)
+            {
+                BethesdaViewerGeometryMorphPolicy.Pose(_morph, clockSeconds, WorkingVertices, _morphWeights);
+            }
             if (_skin is not null)
             {
                 _skin.Pose(nodeWorlds, WorkingVertices);

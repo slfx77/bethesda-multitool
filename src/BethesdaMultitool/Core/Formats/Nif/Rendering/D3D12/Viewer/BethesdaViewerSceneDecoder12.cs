@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -159,7 +160,8 @@ internal static class BethesdaViewerSceneDecoder12
         var animationClips = SnapshotValidAnimationClips(
             scene.AnimationClips,
             nodes.Length,
-            parts.Length,
+            parts,
+            scene.BoundaryStitchGroups.Count != 0,
             scene.SourceLabel);
 
         return new DecodedBethesdaViewerScene12(
@@ -180,7 +182,8 @@ internal static class BethesdaViewerSceneDecoder12
     private static BethesdaViewerAnimationClip[] SnapshotValidAnimationClips(
         IEnumerable<BethesdaViewerAnimationClip> sourceClips,
         int nodeCount,
-        int meshPartCount,
+        DecodedBethesdaViewerMeshPart12[] parts,
+        bool hasBoundaryStitchGroups,
         string sourceLabel)
     {
         var snapshots = new List<BethesdaViewerAnimationClip>();
@@ -191,13 +194,23 @@ internal static class BethesdaViewerSceneDecoder12
                 if (!BethesdaViewerAnimationValidator.TryValidate(
                         source,
                         nodeCount,
-                        meshPartCount,
+                        parts.Length,
                         out var validationError))
                 {
                     Log.Warn(
                         "BethesdaViewerSceneDecoder12: animation clip in '{0}' was ignored: {1}.",
                         sourceLabel,
                         validationError);
+                    continue;
+                }
+
+                if (source.GeometryMorphTracks is { Length: > 0 } geometryMorphs &&
+                    (hasBoundaryStitchGroups || geometryMorphs.Any(track =>
+                        parts[track.MeshPartIndex].Skin is not null ||
+                        !BethesdaViewerGeometryMorphPolicy.MatchesBase(
+                            track.Morph, parts[track.MeshPartIndex].Submesh.Vertices))))
+                {
+                    Log.Warn("BethesdaViewerSceneDecoder12: geometry morph in '{0}' has an invalid decoded vertex binding.", sourceLabel);
                     continue;
                 }
 
@@ -239,7 +252,8 @@ internal static class BethesdaViewerSceneDecoder12
                     : (BethesdaViewerFloatKey[])track.EulerYKeys.Clone(),
                 track.EulerZKeys is null
                     ? null
-                    : (BethesdaViewerFloatKey[])track.EulerZKeys.Clone()))
+                    : (BethesdaViewerFloatKey[])track.EulerZKeys.Clone(),
+                SnapshotBsplineTransform(track.BsplineTransform)))
             .ToArray();
         var morphTracks = source.MorphWeightTracks
             .Select(static track => new BethesdaViewerMorphWeightTrack(
@@ -263,7 +277,23 @@ internal static class BethesdaViewerSceneDecoder12
             nodeTracks,
             morphTracks,
             (BethesdaViewerTextKey[])source.TextKeys.Clone(),
-            source.PingPongs);
+            source.PingPongs,
+            source.GeometryMorphTracks?.Select(static track => track with
+            {
+                Morph = track.Morph.Snapshot()
+            }).ToArray());
+    }
+
+    private static NifBsplineTransformData? SnapshotBsplineTransform(NifBsplineTransformData? source)
+    {
+        return source is null
+            ? null
+            : source with
+            {
+                TranslationControlPoints = source.TranslationControlPoints?.ToArray(),
+                RotationControlPoints = source.RotationControlPoints?.ToArray(),
+                ScaleControlPoints = source.ScaleControlPoints?.ToArray()
+            };
     }
 
     private static DecodedBethesdaViewerSubmeshSemantics12 SnapshotNativeSemantics(

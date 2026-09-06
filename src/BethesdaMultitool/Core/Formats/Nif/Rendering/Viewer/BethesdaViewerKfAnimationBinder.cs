@@ -37,9 +37,13 @@ internal static class BethesdaViewerKfAnimationBinder
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceLabel);
 
         var nif = NifParser.Parse(data);
-        var sources = nif is null
-            ? []
-            : NifControllerSequenceNameTrackReader.ReadAll(data, nif);
+        NifNameTargetedAnimationClip[] sources = [];
+        if (nif is not null)
+        {
+            sources = nif.BinaryVersion == 0x04000002
+                ? NifTes3SequenceStreamReader.ReadAll(data, nif)
+                : NifControllerSequenceNameTrackReader.ReadAll(data, nif);
+        }
         return Bind(scene, sources, sourceLabel);
     }
 
@@ -61,7 +65,8 @@ internal static class BethesdaViewerKfAnimationBinder
                 [],
                 [],
                 "No supported controller sequence was found. Supported KF layouts are " +
-                "Oblivion 20.0.0.4/.5 BS11 and Bethesda 20.2.0.7 BS streams.");
+                "Oblivion 20.0.0.4/.5 BS11, Bethesda 20.2.0.7 BS streams, and TES3 4.0.0.2 " +
+                "compatible active Reverse translation controller groups.");
         }
 
         var suppressAccumulatedRootMotion = scene.Purpose is

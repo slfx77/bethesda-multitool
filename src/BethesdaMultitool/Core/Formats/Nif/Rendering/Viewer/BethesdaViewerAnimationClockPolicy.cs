@@ -26,12 +26,16 @@ internal static class BethesdaViewerAnimationClockPolicy
         var earliestEntry = double.PositiveInfinity;
         var latestExit = double.NegativeInfinity;
         var longestPeriod = 0d;
-        foreach (var track in clip.NodeTracks)
+        var clocks = clip.NodeTracks.Select(static track => (track.Frequency, track.Phase))
+            .Concat((clip.GeometryMorphTracks ?? []).Select(static track =>
+                (track.Morph.Frequency, track.Morph.Phase)));
+        foreach (var track in clocks)
         {
             hasNodeTrack = true;
             var frequency = (double)track.Frequency;
             var phase = (double)track.Phase;
-            if (!double.IsFinite(frequency) || !double.IsFinite(phase) || frequency == 0d)
+            // Exactly zero frequency is the authored dormant/static controller, not a slow one.
+            if (!double.IsFinite(frequency) || !double.IsFinite(phase) || frequency is 0d)
             {
                 continue;
             }
@@ -59,8 +63,7 @@ internal static class BethesdaViewerAnimationClockPolicy
 
         if (!hasNodeTrack)
         {
-            // A morph-only/text-only clip is retained for future evaluators. Preserve its authored
-            // window in the UI even though the current node-pose streamer will decline playback.
+            // Legacy sampled-weight/text-only clips retain their authored presentation window.
             return new Window(clip.StartTime, (float)localSpan, clip.EndTime);
         }
 
@@ -71,9 +74,16 @@ internal static class BethesdaViewerAnimationClockPolicy
             return new Window(clip.StartTime, 0f, clip.StartTime);
         }
 
-        var duration = clip.Loops
-            ? longestPeriod * (clip.PingPongs ? 2d : 1d)
-            : latestExit - earliestEntry;
+        double duration;
+        if (clip.Loops)
+        {
+            duration = longestPeriod * (clip.PingPongs ? 2d : 1d);
+        }
+        else
+        {
+            duration = latestExit - earliestEntry;
+        }
+
         return new Window(
             ToFiniteFloat(earliestEntry),
             ToFiniteNonNegativeFloat(duration),

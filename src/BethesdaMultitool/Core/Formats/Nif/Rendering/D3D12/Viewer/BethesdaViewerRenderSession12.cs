@@ -60,6 +60,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
     private int _selectedAnimationClipIndex = -1;
     private bool _animationPlaying;
     private int _animationUploadFallbackCount;
+    private bool _ordinarySpecularLogged;
     private bool _disposed;
 
     public event EventHandler? StateChanged;
@@ -260,6 +261,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             }
         }
         _textureCache.ResetFrameStats();
+        LogSettledOrdinarySpecular();
         BindViewerAtmosphere(
             frame.CommandList,
             frame.FrameIndex,
@@ -404,6 +406,38 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         }
     }
 
+    private void LogSettledOrdinarySpecular()
+    {
+        if (_ordinarySpecularLogged || _mesh is null || !TexturesSettled)
+        {
+            return;
+        }
+
+        _ordinarySpecularLogged = true;
+        foreach (var submesh in _mesh.Submeshes)
+        {
+            if (submesh.OblivionHairLayer is { } layer)
+            {
+                Log.Info(
+                    "BethesdaSceneViewer: TES4 hair LayerMap sourceBlock={0} texture='{1}' " +
+                    "format={2} resident={3} active={4}.",
+                    submesh.SourceBlockIndex, layer.CacheKey, layer.Format, layer.IsResident,
+                    submesh.HasResidentOblivionHairLayer);
+            }
+            if (!submesh.UsesOblivionOrdinarySpecularPolicy)
+            {
+                continue;
+            }
+
+            Log.Info(
+                "BethesdaSceneViewer: ordinary TES4 specular sourceBlock={0} normal='{1}' " +
+                "format={2} resident={3} hasBump={4} candidateExponent={5} effectiveExponent={6}.",
+                submesh.SourceBlockIndex, submesh.Normal.CacheKey ?? "(fallback)",
+                submesh.Normal.Format, submesh.Normal.IsResident, submesh.HasBump,
+                submesh.Specular.W, submesh.EffectiveSpecular.W);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -443,7 +477,9 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                     throw new InvalidOperationException("The Bethesda scene pose is unavailable.");
 
         var buildStarted = Stopwatch.GetTimestamp();
+#pragma warning disable S1854 // definite-assignment seed for the finally-block read; every reachable path overwrites it
         var outcome = "faulted";
+#pragma warning restore S1854
         var meshUploadMilliseconds = 0d;
         var rawSkyMilliseconds = 0d;
         var referencePipelineMilliseconds = 0d;
@@ -659,7 +695,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             if (clip.MorphWeightTracks.Length > 0)
             {
                 Log.Warn(
-                    "BethesdaSceneViewer: clip '{0}' retains {1} morph-weight track(s), but this animation slice evaluates node transforms only.",
+                    "BethesdaSceneViewer: clip '{0}' retains {1} morph-weight track(s), but sampled-weight tracks have no authored geometry binding.",
                     clip.Name,
                     clip.MorphWeightTracks.Length);
             }
@@ -671,6 +707,11 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             }
 
             _animatedPose = animatedPose;
+            if (clip.GeometryMorphTracks is { Length: > 0 } geometryMorphs)
+            {
+                Log.Info("BethesdaSceneViewer: clip '{0}' evaluates {1} authored relative geometry morph track(s).",
+                    clip.Name, geometryMorphs.Length);
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and
                                    not StackOverflowException and
@@ -1031,6 +1072,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
 
         var mesh = _mesh;
         _mesh = null;
+        _ordinarySpecularLogged = false;
         DisposeSceneResourceNoThrow(mesh, "mesh cache entry");
 
         var textureCache = _textureCache;
@@ -1216,17 +1258,17 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         if (_animatedPose?.HasAnimatedGeometry == true && SelectedClip is { } clip)
         {
             message +=
-                $" Playing native clip '{clip.Name}' ({_animationClipNames.Length} available) through per-frame rigid/skinned pose buffers.";
+                $" Playing native clip '{clip.Name}' ({_animationClipNames.Length} available) through per-frame native pose buffers.";
             if (clip.MorphWeightTracks.Length > 0)
             {
                 message +=
-                    $" {clip.MorphWeightTracks.Length} retained morph-weight track(s) are not evaluated by this node-animation slice.";
+                    $" {clip.MorphWeightTracks.Length} retained morph-weight track(s) have no authored geometry binding and are not evaluated.";
             }
         }
         else if (_animationClipNames.Length > 0)
         {
             message +=
-                $" {_animationClipNames.Length} animation clip(s) are retained, but the selected clip has no supported node-deformed geometry.";
+                $" {_animationClipNames.Length} animation clip(s) are retained, but the selected clip has no supported native deformed geometry.";
         }
         if (alphaToCoverageFallbackCount > 0)
         {

@@ -98,7 +98,8 @@ internal static class NifNodeKeyframeTrackCollector
 
         var fullControllerCycle = ResolveCompatibleReverseCycle(
             tracksByNode,
-            controllerHeadersByNode);
+            controllerHeadersByNode,
+            bones);
         return new NifMeshAnimation(
             bones,
             tracks,
@@ -110,16 +111,19 @@ internal static class NifNodeKeyframeTrackCollector
     }
 
     /// <summary>
-    ///     Retains CYCLE_REVERSE only when every moving track belongs to an active controller and
-    ///     the complete controller clocks agree exactly. A mixed graph cannot be represented by
-    ///     one viewer timeline, so it deliberately receives no full-controller clip.
+    ///     Retains a CYCLE_REVERSE lane when every reverse-moving track shares one exact clock.
+    ///     Other active cycle modes remain outside the lane: TES3 can mix clamp body controllers
+    ///     with an independent reverse attachment group in one NIF.
     /// </summary>
     internal static NifControllerCycle? ResolveCompatibleReverseCycle(
         IReadOnlyDictionary<int, NifNodeTrack> tracksByNode,
-        IReadOnlyDictionary<int, NifTimeControllerHeader> controllerHeadersByNode)
+        IReadOnlyDictionary<int, NifTimeControllerHeader> controllerHeadersByNode,
+        IReadOnlyList<NifAnimBone> bones)
     {
         NifTimeControllerHeader candidate = default;
+        var candidateFrequency = 0f;
         var foundMovingController = false;
+        var reverseNodeIndices = new List<int>();
         foreach (var (nodeIndex, track) in tracksByNode)
         {
             if (!track.HasMotion)
@@ -129,7 +133,7 @@ internal static class NifNodeKeyframeTrackCollector
 
             if (!controllerHeadersByNode.TryGetValue(nodeIndex, out var header) ||
                 !header.IsActive ||
-                header.CycleType != NifCycleType.Reverse ||
+                !Enum.IsDefined(header.CycleType) ||
                 !float.IsFinite(header.Frequency) ||
                 !float.IsFinite(header.Phase) ||
                 !float.IsFinite(header.StartTime) ||
@@ -139,14 +143,28 @@ internal static class NifNodeKeyframeTrackCollector
                 return null;
             }
 
-            if (!foundMovingController)
+            if (header.CycleType != NifCycleType.Reverse)
             {
-                candidate = header;
-                foundMovingController = true;
                 continue;
             }
 
-            if (header.Frequency != candidate.Frequency ||
+            // NiKeyframeDataTrackReader owns the authored zero-frequency sentinel and normalizes
+            // it to one. Persist the same effective clock so the viewer boundary can compare the
+            // selected tracks without inventing a second interpretation.
+#pragma warning disable S1244 // Authored controller clocks must be byte-exact to share one lane.
+            var effectiveFrequency = header.Frequency == 0f ? 1f : header.Frequency;
+            if (track.Frequency != effectiveFrequency || track.Phase != header.Phase)
+            {
+                return null;
+            }
+
+            if (!foundMovingController)
+            {
+                candidate = header;
+                candidateFrequency = effectiveFrequency;
+                foundMovingController = true;
+            }
+            else if (effectiveFrequency != candidateFrequency ||
                 header.Phase != candidate.Phase ||
                 header.StartTime != candidate.StartTime ||
                 header.StopTime != candidate.StopTime ||
@@ -154,15 +172,36 @@ internal static class NifNodeKeyframeTrackCollector
             {
                 return null;
             }
+#pragma warning restore S1244
+
+            reverseNodeIndices.Add(nodeIndex);
         }
 
-        return foundMovingController
-            ? new NifControllerCycle(
-                candidate.Frequency,
-                candidate.Phase,
-                candidate.StartTime,
-                candidate.StopTime,
-                candidate.CycleType)
-            : null;
+        if (!foundMovingController)
+        {
+            return null;
+        }
+
+        var boneSlotBySourceBlock = bones
+            .Select(static (bone, index) => (bone.SourceBlockIndex, Index: index))
+            .Where(static entry => entry.SourceBlockIndex >= 0)
+            .ToDictionary(static entry => entry.SourceBlockIndex, static entry => entry.Index);
+        var trackIndices = new int[reverseNodeIndices.Count];
+        for (var index = 0; index < reverseNodeIndices.Count; index++)
+        {
+            if (!boneSlotBySourceBlock.TryGetValue(reverseNodeIndices[index], out trackIndices[index]))
+            {
+                return null;
+            }
+        }
+
+        Array.Sort(trackIndices);
+        return new NifControllerCycle(
+            candidateFrequency,
+            candidate.Phase,
+            candidate.StartTime,
+            candidate.StopTime,
+            candidate.CycleType,
+            trackIndices);
     }
 }

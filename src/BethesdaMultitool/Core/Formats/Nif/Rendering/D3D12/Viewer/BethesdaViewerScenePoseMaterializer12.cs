@@ -27,8 +27,6 @@ internal sealed record BethesdaViewerPosedScene12(
 
 internal static class BethesdaViewerScenePoseMaterializer12
 {
-    private const float DirectionEpsilon = 1e-12f;
-
     internal static BethesdaViewerPosedScene12 Materialize(DecodedBethesdaViewerScene12 scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -40,6 +38,10 @@ internal static class BethesdaViewerScenePoseMaterializer12
         var waterNormalPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var linearSkinningFallbackPartCount = 0;
         var liveParticleSnapshotPartCount = 0;
+        var morphTracks = scene.AnimationClips.SelectMany(static clip => clip.GeometryMorphTracks ?? []).ToArray();
+        var initialMorphs = morphTracks.GroupBy(static track => track.MeshPartIndex)
+            .ToDictionary(static group => group.Key, static group => group.First().Morph);
+        var morphBounds = new Dictionary<int, BethesdaViewerBounds>();
 
         for (var partIndex = 0; partIndex < scene.MeshParts.Count; partIndex++)
         {
@@ -80,6 +82,22 @@ internal static class BethesdaViewerScenePoseMaterializer12
                 else
                 {
                     var world = ResolveRigidWorld(scene, partIndex, part.Name, part.NodeIndex);
+                    if (initialMorphs.TryGetValue(partIndex, out var morph))
+                    {
+                        var clip = scene.AnimationClips.First(candidate =>
+                            candidate.GeometryMorphTracks?.Any(track => track.MeshPartIndex == partIndex) == true);
+                        var startClock = BethesdaViewerAnimationClockPolicy.Resolve(clip).RawOriginSeconds;
+                        BethesdaViewerGeometryMorphPolicy.Pose(morph, startClock, vertices, new float[morph.Targets.Length]);
+                        foreach (var track in morphTracks.Where(candidate => candidate.MeshPartIndex == partIndex))
+                        {
+                            var envelope = BethesdaViewerGeometryMorphPolicy.GetWorldBounds(track.Morph, world);
+                            if (!envelope.IsFinite) throw new InvalidDataException("Morph bounds contain non-finite values.");
+                            morphBounds[partIndex] = morphBounds.TryGetValue(partIndex, out var existing)
+                                ? new BethesdaViewerBounds(Vector3.Min(existing.Minimum, envelope.Minimum),
+                                    Vector3.Max(existing.Maximum, envelope.Maximum))
+                                : envelope;
+                        }
+                    }
                     TransformRigid(vertices, world);
                 }
 
@@ -154,6 +172,14 @@ internal static class BethesdaViewerScenePoseMaterializer12
         // same narrow policy that selects the dedicated renderer therefore owns the bounds exclusion;
         // NPC/creature parts carrying a sky tag remain ordinary assembled geometry and stay bounded.
         var posedBounds = ResolveAggregateBounds(scene, verticesByPart, supported);
+        foreach (var (partIndex, envelope) in morphBounds)
+        {
+            if (!supported[partIndex]) continue;
+            posedBounds = posedBounds is { } current
+                ? new BethesdaViewerBounds(Vector3.Min(current.Minimum, envelope.Minimum),
+                    Vector3.Max(current.Maximum, envelope.Maximum))
+                : envelope;
+        }
 
         var posedSubmeshes = new DecodedSubmesh12[scene.MeshParts.Count];
         for (var partIndex = 0; partIndex < posedSubmeshes.Length; partIndex++)
@@ -173,6 +199,11 @@ internal static class BethesdaViewerScenePoseMaterializer12
 
             var vertices = verticesByPart[partIndex];
             ResolveBounds(vertices, out var center, out var radius);
+            if (morphBounds.TryGetValue(partIndex, out var envelope))
+            {
+                center = envelope.Center;
+                radius = envelope.Size.Length() * 0.5f;
+            }
             var effectTint = ResolveEffectTint(
                 source.EffectTint,
                 scene.MeshParts[partIndex].NativeSemantics.TintColor);
@@ -236,6 +267,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
         return world;
     }
 
+    /// <summary>Skins one part's vertices into <paramref name="vertices" /> at the current pose.</summary>
     /// <returns>True when non-rigid matrices required the established linear fallback.</returns>
     private static bool SkinCurrentPose(
         DecodedBethesdaViewerScene12 scene,
@@ -386,7 +418,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
 
     internal static void TransformRigid(
         Span<GpuMeshUploader.GpuVertex> vertices,
-        in Matrix4x4 world)
+        Matrix4x4 world)
     {
         // Preserve the exact authored N/T/B payload on the overwhelmingly common identity path.
         // SpeedTree and classic basic-bump shaders intentionally encode data in vector magnitude.
@@ -416,7 +448,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
 
     private static Vector3 TransformDirectionPreservingMagnitude(
         Vector3 source,
-        in Matrix4x4 transform)
+        Matrix4x4 transform)
     {
         var transformed = Vector3.TransformNormal(source, transform);
         var sourceLength = source.Length();
@@ -582,14 +614,6 @@ internal static class BethesdaViewerScenePoseMaterializer12
         }
 
         return foundVertex ? new BethesdaViewerBounds(minimum, maximum) : null;
-    }
-
-    private static Vector3 NormalizeOrZero(Vector3 value)
-    {
-        var lengthSquared = value.LengthSquared();
-        return float.IsFinite(lengthSquared) && lengthSquared > DirectionEpsilon
-            ? value / MathF.Sqrt(lengthSquared)
-            : Vector3.Zero;
     }
 
     private static bool IsFinite(Vector3 value) =>

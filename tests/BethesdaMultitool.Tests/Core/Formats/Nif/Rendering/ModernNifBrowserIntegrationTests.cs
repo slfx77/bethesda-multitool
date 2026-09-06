@@ -105,7 +105,7 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
                 build.ExternalGeometry.IsComplete,
                 $"External geometry was incomplete: resolved " +
                 $"{build.ExternalGeometry.ResolvedCount}/{build.ExternalGeometry.ReferencedCount}; " +
-                $"missing=[{string.Join(", ", build.ExternalGeometry.MissingPaths)}]; " +
+                $"missing=[{string.Join(", ", build.ExternalGeometry.MissingPaths())}]; " +
                 $"decodeFailed=[{string.Join(", ", build.ExternalGeometry.DecodeFailedPaths)}]");
 
             Assert.All(

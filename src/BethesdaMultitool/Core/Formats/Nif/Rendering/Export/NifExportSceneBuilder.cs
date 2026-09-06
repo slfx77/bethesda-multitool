@@ -1,7 +1,7 @@
-using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -163,7 +163,8 @@ internal static class NifExportSceneBuilder
         MeshArchiveSet meshArchives,
         bool bindPose = false,
         string? idleAnimationPath = null,
-        string? weaponMeshPath = null)
+        string? weaponMeshPath = null,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         var plan = CreatureCompositionPlanner.CreatePlan(
             skeletonPath,
@@ -175,7 +176,8 @@ internal static class NifExportSceneBuilder
                 BindPose = bindPose
             },
             idleAnimationPath,
-            weaponMeshPath);
+            weaponMeshPath,
+            game: game);
         return plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, meshArchives);
     }
 
@@ -292,48 +294,5 @@ internal static class NifExportSceneBuilder
             PerVertexInfluences = skin.PerVertexInfluences
         };
         return true;
-    }
-
-    private static void ApplyWorldTransform(RenderableSubmesh submesh, Matrix4x4 transform)
-    {
-        for (var index = 0; index < submesh.Positions.Length; index += 3)
-        {
-            var transformed = Vector3.Transform(
-                new Vector3(
-                    submesh.Positions[index],
-                    submesh.Positions[index + 1],
-                    submesh.Positions[index + 2]),
-                transform);
-            submesh.Positions[index] = transformed.X;
-            submesh.Positions[index + 1] = transformed.Y;
-            submesh.Positions[index + 2] = transformed.Z;
-        }
-
-        if (submesh.Normals == null)
-        {
-            return;
-        }
-
-        var normalMatrix = Matrix4x4.Transpose(Matrix4x4.Invert(transform, out var inverse)
-            ? inverse
-            : Matrix4x4.Identity);
-
-        for (var index = 0; index < submesh.Normals.Length; index += 3)
-        {
-            var transformed = Vector3.TransformNormal(
-                new Vector3(
-                    submesh.Normals[index],
-                    submesh.Normals[index + 1],
-                    submesh.Normals[index + 2]),
-                normalMatrix);
-            if (transformed.LengthSquared() > 0.0001f)
-            {
-                transformed = Vector3.Normalize(transformed);
-            }
-
-            submesh.Normals[index] = transformed.X;
-            submesh.Normals[index + 1] = transformed.Y;
-            submesh.Normals[index + 2] = transformed.Z;
-        }
     }
 }

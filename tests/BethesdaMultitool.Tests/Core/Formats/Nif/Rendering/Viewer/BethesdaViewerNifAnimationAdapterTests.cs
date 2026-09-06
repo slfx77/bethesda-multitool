@@ -93,7 +93,8 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
                 0f,
                 0f,
                 49.06667f,
-                NifCycleType.Reverse)
+                NifCycleType.Reverse,
+                [0])
         };
 
         var idle = BethesdaViewerNifAnimationAdapter.TryCreateClip(scene, animation);
@@ -137,7 +138,8 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
                 0f,
                 0f,
                 2f,
-                NifCycleType.Reverse)
+                NifCycleType.Reverse,
+                [0])
         };
 
         Assert.Null(BethesdaViewerNifAnimationAdapter.TryCreateFullControllerCycleClip(

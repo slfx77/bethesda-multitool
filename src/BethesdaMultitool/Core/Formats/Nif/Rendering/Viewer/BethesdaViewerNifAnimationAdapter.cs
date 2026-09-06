@@ -41,21 +41,28 @@ internal static class BethesdaViewerNifAnimationAdapter
             !float.IsFinite(controller.Phase) ||
             !float.IsFinite(controller.StartTime) ||
             !float.IsFinite(controller.StopTime) ||
-            controller.StopTime <= controller.StartTime)
+            controller.StopTime <= controller.StartTime ||
+            controller.TrackIndices is not { Length: > 0 } trackIndices)
         {
             return null;
         }
 
         // Treat persisted/caller-created metadata as untrusted. The collector only publishes the
-        // full lane when every moving track agrees; recheck that invariant at the viewer boundary.
-        foreach (var track in animation.Tracks)
+        // exact reverse lane; recheck its bounds, uniqueness, motion, and clock at the viewer boundary.
+        var selectedTracks = new HashSet<int>();
+#pragma warning disable S1244 // Persisted target clocks must exactly match their versioned source clock.
+        foreach (var trackIndex in trackIndices)
         {
-            if (track is { HasMotion: true } &&
-                (track.Frequency != controller.Frequency || track.Phase != controller.Phase))
+            if ((uint)trackIndex >= (uint)animation.Tracks.Length ||
+                !selectedTracks.Add(trackIndex) ||
+                animation.Tracks[trackIndex] is not { HasMotion: true } track ||
+                track.Frequency != controller.Frequency ||
+                track.Phase != controller.Phase)
             {
                 return null;
             }
         }
+#pragma warning restore S1244
 
         return TryCreateClip(
             scene,
@@ -64,7 +71,8 @@ internal static class BethesdaViewerNifAnimationAdapter
             controller.StartTime,
             controller.StopTime,
             loops: true,
-            pingPongs: true);
+            pingPongs: true,
+            includedTrackIndices: selectedTracks);
     }
 
     private static BethesdaViewerAnimationClip? TryCreateClip(
@@ -74,7 +82,8 @@ internal static class BethesdaViewerNifAnimationAdapter
         float startTime,
         float stopTime,
         bool loops,
-        bool pingPongs)
+        bool pingPongs,
+        HashSet<int>? includedTrackIndices = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(animation);
@@ -90,6 +99,11 @@ internal static class BethesdaViewerNifAnimationAdapter
         var claimedNodes = new HashSet<int>();
         for (var boneIndex = 0; boneIndex < animation.Bones.Length; boneIndex++)
         {
+            if (includedTrackIndices is not null && !includedTrackIndices.Contains(boneIndex))
+            {
+                continue;
+            }
+
             var track = animation.Tracks[boneIndex];
             if (track is null || !track.HasAnyKeys)
             {
@@ -118,7 +132,8 @@ internal static class BethesdaViewerNifAnimationAdapter
                     .ToArray(),
                 translationInterpolation,
                 track.TranslationKeys
-                    .Select(static key => new BethesdaViewerVector3Key(key.Time, key.Value))
+                    .Select(static key => new BethesdaViewerVector3Key(
+                        key.Time, key.Value, key.Forward, key.Backward, key.HasQuadraticTangents))
                     .ToArray(),
                 scaleInterpolation,
                 track.ScaleKeys

@@ -57,7 +57,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
             Assert.NotNull(build.GlbBytes);
             Assert.Equal(2, build.ExternalGeometry.ReferencedCount);
             Assert.Equal(2, build.ExternalGeometry.ResolvedCount);
-            Assert.Empty(build.ExternalGeometry.MissingPaths);
+            Assert.Empty(build.ExternalGeometry.MissingPaths());
             Assert.Empty(build.ExternalGeometry.DecodeFailedPaths);
             Assert.True(build.ExternalGeometry.IsComplete);
             Assert.Null(build.ExternalGeometry.IncompleteWarningMessage);
@@ -111,7 +111,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
             Assert.NotNull(build.GlbBytes);
             Assert.Equal(2, build.ExternalGeometry.ReferencedCount);
             Assert.Equal(1, build.ExternalGeometry.ResolvedCount);
-            Assert.Equal([SiblingMeshPath], build.ExternalGeometry.MissingPaths);
+            Assert.Equal([SiblingMeshPath], build.ExternalGeometry.MissingPaths());
             Assert.Empty(build.ExternalGeometry.DecodeFailedPaths);
             Assert.False(build.ExternalGeometry.IsComplete);
             Assert.Equal(

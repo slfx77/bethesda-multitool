@@ -499,6 +499,29 @@ internal sealed class NifBrowserService : IDisposable
                             ex.Message);
                     }
                 }
+
+                // Geometry morph discovery is independent of node-track collection: a flag can
+                // animate only vertex positions while every scene node remains static.
+                try
+                {
+                    if (BethesdaViewerGeometryMorphPolicy.TryCreateClip(
+                            parsedData, parsedNif, viewerScene, out var morphClip, out var morphError))
+                    {
+                        if (morphClip is not null) viewerScene.AnimationClips.Add(morphClip);
+                    }
+                    else
+                    {
+                        Log.Warn("NifBrowserService: embedded geometry morph for '{0}' was ignored: {1}",
+                            sourceLabel, morphError);
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and
+                                           not StackOverflowException and
+                                           not OperationCanceledException)
+                {
+                    Log.Warn("NifBrowserService: embedded geometry morph for '{0}' was ignored: {1}",
+                        sourceLabel, ex.Message);
+                }
             }
             return new NifBrowserViewerSceneBuildResult(
                 viewerScene,
@@ -1041,7 +1064,7 @@ internal sealed class NifBrowserService : IDisposable
                 LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
-        internal Task Begin() => _discovery.Value;
+        internal Task<ArchiveSourceSet> Begin() => _discovery.Value;
 
         internal ArchiveSourceSet Get() =>
             _discovery.Value.GetAwaiter().GetResult();
@@ -1193,9 +1216,9 @@ internal sealed class NifBrowserService : IDisposable
     /// </summary>
     private static IGameFileSystem CreateArchiveModelFamilyFileSystem(
         string archivePath,
-        IReadOnlyList<string> siblingMeshArchivePaths)
+        string[] siblingMeshArchivePaths)
     {
-        var layers = new List<IGameFileSystem>(siblingMeshArchivePaths.Count + 1)
+        var layers = new List<IGameFileSystem>(siblingMeshArchivePaths.Length + 1)
         {
             ArchiveFileSystem.CreateLazy(archivePath, ArchiveHandleRegistry.Shared)
         };
@@ -1348,9 +1371,9 @@ internal sealed class NifBrowserService : IDisposable
     /// </summary>
     private static string[] MergeTextureSources(
         IReadOnlyList<string>? preferredSources,
-        IReadOnlyList<string> discoveredSources)
+        string[] discoveredSources)
     {
-        var merged = new List<string>((preferredSources?.Count ?? 0) + discoveredSources.Count);
+        var merged = new List<string>((preferredSources?.Count ?? 0) + discoveredSources.Length);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         Add(preferredSources);
@@ -1671,16 +1694,24 @@ internal sealed record NifExternalGeometryDiagnostics(
 
     internal int ResolvedCount => Resolutions.Count(static resolution => resolution.Resolved);
 
-    internal IReadOnlyList<string> MissingPaths => Resolutions
-        .Where(static resolution => !resolution.Resolved)
-        .Select(static resolution => resolution.VirtualPath)
-        .ToArray();
+    /// <summary>
+    ///     Referenced blobs that never resolved. A method rather than a property: it projects a new
+    ///     array each call, and a stored array would drag reference identity into this record's
+    ///     value equality.
+    /// </summary>
+    internal IReadOnlyList<string> MissingPaths()
+    {
+        return Resolutions
+            .Where(static resolution => !resolution.Resolved)
+            .Select(static resolution => resolution.VirtualPath)
+            .ToArray();
+    }
 
     internal bool IsComplete => ResolvedCount == ReferencedCount && DecodeFailedPaths.Count == 0;
 
     internal string? IncompleteWarningMessage => IsComplete
         ? null
         : $"External geometry is incomplete: located {ResolvedCount} of {ReferencedCount} referenced " +
-          $"blobs; {MissingPaths.Count} missing and {DecodeFailedPaths.Count} failed to decode. " +
+          $"blobs; {MissingPaths().Count} missing and {DecodeFailedPaths.Count} failed to decode. " +
           "Preview and exports omit those parts.";
 }
