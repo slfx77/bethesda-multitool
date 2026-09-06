@@ -359,6 +359,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 | [OpenTESArena](https://github.com/afritz1/OpenTESArena) | [MIT](https://github.com/afritz1/OpenTESArena/blob/master/LICENSE.txt) | Arena codecs, image/animation/map decoders and FLIC (ported) |
 | [daggerfall-unity](https://github.com/Interkarma/daggerfall-unity) | [MIT](https://github.com/Interkarma/daggerfall-unity/blob/master/LICENSE) | Daggerfall format decoders via DaggerfallConnect (ported) |
 | [falltergeist/dat-unpacker](https://github.com/falltergeist/dat-unpacker) | MIT | Fallout DAT1 LZSS decompression (ported) |
+| [RGUnity/redguard-file-exporter](https://github.com/RGUnity/redguard-file-exporter) | [MIT](https://github.com/RGUnity/redguard-file-exporter/blob/master/LICENSE) | Redguard ROB archive structure (ported) |
 
 ## Acknowledgments
 
@@ -396,7 +397,8 @@ written documentation — no code from those projects is present here.
 The Asset Browser also borrows two UI-framework-independent helpers from this project's
 sister app [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) (MIT):
 its latest-only job guard and its gallery thumbnail scaler. The map pane's 2D-level
-seam comes from the other sister app,
+seam and the CD-image reader (`archive` on .iso / .cue+.bin, with Redbook tracks as WAV)
+come from the other sister app,
 [NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) (MIT).
 
 **Ported (permissive):**
@@ -404,6 +406,8 @@ seam comes from the other sister app,
 - [OpenTESArena](https://github.com/afritz1/OpenTESArena) - Arena compression codecs and image decoders (MIT)
 - [daggerfall-unity](https://github.com/Interkarma/daggerfall-unity) - Daggerfall decoders via its DaggerfallConnect API layer (MIT)
 - [falltergeist/dat-unpacker](https://github.com/falltergeist/dat-unpacker) - Fallout DAT1 LZSS (MIT)
+- [RGUnity/redguard-file-exporter](https://github.com/RGUnity/redguard-file-exporter) - Redguard ROB archives and TEXBSI textures (MIT)
+- [twogood/unshield](https://github.com/twogood/unshield) - InstallShield 5 cabinet reading (MIT)
 - [kaitai_struct_formats](https://github.com/kaitai-io/kaitai_struct_formats) - `game/fallout_dat.ksy` structure cross-check (CC0-1.0)
 
 **Documentation only (not ported):**

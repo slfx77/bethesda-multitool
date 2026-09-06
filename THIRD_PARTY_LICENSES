@@ -164,11 +164,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-NeversoftMultitool - 2D level view seam
+NeversoftMultitool - 2D level view seam; RenderWare 3.x chunk walk and BINMESH plugin reader
 ================================================================================
 
 Source: https://github.com/slfx77/NeversoftMultitool
 License: MIT
+
+The RenderWare 3.x chunk walk and BINMESH plugin reader are also ported from it:
+  Core/Formats/RenderWare/RwChunk.cs   <- Core/Formats/Mesh/RenderWare/RwChunkReader.cs
+  Core/Formats/RenderWare/RwBinMesh.cs <- the BINMESH layout it declares
+Two deliberate divergences: the chunk 0x1300 size overshoot is corrected inside the reader
+rather than at call sites, and the library-id word is genuinely unpacked instead of compared
+against a constant (upstream's comparison reaches the correct branch by luck for every id in
+either corpus).
 
 The 2D-level seam behind the Asset Browser's map pane is ported from that project:
   Core/Rendering/Level2D/Level2DRender.cs <- Core/Rendering/Level2d/Level2dRender.cs
@@ -176,6 +184,17 @@ The 2D-level seam behind the Asset Browser's map pane is ported from that projec
                                               names carry a capital D here to satisfy this
                                               repo's naming rule, and the layer set is
                                               retargeted to the classic voxel/heightmap grids)
+
+The CD-image reader behind `archive` for .iso / .cue+.bin (commit 314bc9e0, 2026-08-14):
+  Core/Formats/DiscImage/IDiscSectorSource.cs  <- Core/Formats/DiscImage/IDiscSectorSource.cs
+  Core/Formats/DiscImage/IsoSectorSource.cs    <- Core/Formats/DiscImage/IsoSectorSource.cs
+  Core/Formats/DiscImage/RawSectorSource.cs    <- Core/Formats/DiscImage/RawSectorSource.cs
+  Core/Formats/DiscImage/CueSheet.cs           <- Core/Formats/DiscImage/CueSheet.cs
+  Core/Formats/DiscImage/DiscImageRecords.cs   <- CueTrack.cs, DiscTrackRegion.cs, DiscFileEntry.cs
+  Core/Formats/DiscImage/Iso9660FileSystem.cs  <- Core/Formats/DiscImage/Iso9660FileSystem.cs
+  Core/Formats/DiscImage/DiscImageBackend.cs   <- the ISO9660/raw/CD-DA paths of DiscImageArchive.cs,
+                                                  reshaped onto this repo's IArchiveBackend seam
+  (the GDI, XDVDFS, GCM and Wii paths are not taken)
 
 MIT License
 
@@ -308,6 +327,74 @@ FalloutLzss.cs) is ported from src/LZSS.cpp.
 The MIT License (MIT)
 
 Copyright (c) 2015-2018 Falltergeist developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+twogood/unshield - InstallShield 5 cabinet reading
+================================================================================
+
+Source: https://github.com/twogood/unshield
+License: MIT
+
+The InstallShield 5 cabinet reader (Core/Formats/InstallShield/InstallShieldCabinet.cs)
+is ported from unshield's lib/: cabfile.h (on-disk structs), libunshield.c (common
+header, cabinet descriptor, file table, file-group and component offset lists),
+file.c (IS5 file descriptors, volume header, chunked zlib extraction, deobfuscation),
+file_group.c, component.c, directory.c and helper.c. Redguard's Disc 1 keeps the
+entire install - including the 3dfx fxart textures the Steam release omits - inside
+one such cabinet.
+
+Copyright (c) 2003 David Eriksson <twogood@users.sourceforge.net>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+RGUnity/redguard-file-exporter - Redguard ROB archive structure
+================================================================================
+
+Source: https://github.com/RGUnity/redguard-file-exporter
+License: MIT
+
+The .ROB per-map object archive layout (Core/Formats/Redguard/RedguardRobParser.cs)
+is ported from 3DFileTest/Common/RedguardRobFile.{h,cpp}, and the TEXBSI 3dfx texture
+reader (Core/Formats/Redguard/RedguardTexBsiFile.cs) from RedguardTexBsiFile.{h,cpp}. Only the archive
+structure is taken; the bundled DevIL image library (LGPL) is not used.
+
+MIT License
+
+Copyright (c) 2020 Dave Humphrey
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
