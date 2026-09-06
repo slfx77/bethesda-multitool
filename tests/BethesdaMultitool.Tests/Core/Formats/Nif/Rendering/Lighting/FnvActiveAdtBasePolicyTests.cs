@@ -89,6 +89,64 @@ public sealed class FnvActiveAdtBasePolicyTests
         Assert.Equal(
             unrelated,
             FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility, unrelated | stalePolicyFlags));
+
+        // Admitting GREATER must not bypass any other invariant or retain stale route flags.
+        if (rejectedInvariant != "alpha-test")
+        {
+            var cutout = eligibility with { HasAlphaTest = true, AlphaTestFunction = 4 };
+            Assert.False(FnvActiveAdtBasePolicy.IsEligible(cutout));
+            Assert.Equal(unrelated,
+                FnvActiveAdtBasePolicy.ApplyRuntimeFlags(cutout, unrelated | stalePolicyFlags));
+        }
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(int.MaxValue)]
+    public void AlphaEligibility_AcceptsOnlyAuthoredGreaterWhenTestingIsEnabled(int function)
+    {
+        foreach (var mode in new[]
+                 { FnvClassicBasicShaderMode.Sls1009, FnvClassicBasicShaderMode.Sls1013VertexColor })
+        {
+            var eligibility = Eligible(mode) with { HasAlphaTest = true, AlphaTestFunction = function };
+            Assert.Equal(function == 4, FnvActiveAdtBasePolicy.IsEligible(eligibility));
+            var flags = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility, 0xC45u);
+            var expected = 0x45u;
+            if (function == 4)
+            {
+                expected |= FnvActiveAdtBasePolicy.RuntimeActiveAdtFlag;
+                if (mode == FnvClassicBasicShaderMode.Sls1013VertexColor)
+                {
+                    expected |= FnvActiveAdtBasePolicy.RuntimeActiveAdtVertexColorFlag;
+                }
+            }
+            Assert.Equal(expected, flags);
+            Assert.True(FnvActiveAdtBasePolicy.IsEligible(eligibility with { HasAlphaTest = false }));
+        }
+    }
+
+    [Theory]
+    [InlineData((int)FnvClassicBasicShaderMode.Sls1009)]
+    [InlineData((int)FnvClassicBasicShaderMode.Sls1013VertexColor)]
+    public void LegacyDiagnostic_ExcludesCutoutsWithoutDisablingOpaqueAdt(int classifierMode)
+    {
+        var opaque = Eligible((FnvClassicBasicShaderMode)classifierMode);
+        var cutout = opaque with { HasAlphaTest = true, AlphaTestFunction = 4 };
+        Assert.True(FnvActiveAdtBasePolicy.IsEligible(opaque, allowAlphaTested: false));
+        Assert.False(FnvActiveAdtBasePolicy.IsEligible(cutout, allowAlphaTested: false));
+        Assert.Equal(0x45u,
+            FnvActiveAdtBasePolicy.ApplyRuntimeFlags(cutout, 0xC45u, allowAlphaTested: false));
+        Assert.Equal(FnvActiveAdtBasePolicy.ApplyRuntimeFlags(opaque, 0x45u),
+            FnvActiveAdtBasePolicy.ApplyRuntimeFlags(opaque, 0x45u, allowAlphaTested: false));
     }
 
     [Fact]

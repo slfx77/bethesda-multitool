@@ -26,6 +26,7 @@ public sealed class FnvAtomicWranglerOverrideTraceSourceContractTests
         var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
+        var environment = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "EnvironmentVariables.cs");
 
         Assert.Contains("entry.TextureSetFormId, entry.Index", builder, StringComparison.Ordinal);
         Assert.Contains("alternateTextureIndex.TryGetValue(p.BaseFormId, out var alt)", cache,
@@ -37,7 +38,10 @@ public sealed class FnvAtomicWranglerOverrideTraceSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("reference.AlternateTextures", renderer, StringComparison.Ordinal);
         Assert.Contains("TraceReferenceTextureOverrides(r, mesh);", renderer, StringComparison.Ordinal);
-        Assert.Contains("FALLOUT_VIEWER_REFERENCE_OVERRIDE_TRACE", renderer, StringComparison.Ordinal);
+        Assert.Contains("EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceOverrideTrace)",
+            renderer, StringComparison.Ordinal);
+        Assert.Contains("ReferenceOverrideTrace = \"FALLOUT_VIEWER_REFERENCE_OVERRIDE_TRACE\"", environment,
+            StringComparison.Ordinal);
         Assert.Contains("reference-texture-override", renderer, StringComparison.Ordinal);
         Assert.Contains("textureSetFormIdHex", renderer, StringComparison.Ordinal);
         Assert.Contains("matchingGpuSubmeshes", renderer, StringComparison.Ordinal);

@@ -94,6 +94,49 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     }
 
     [Fact]
+    public void ActiveAdtHdrOutput_BypassesViewerFireflyBoundsBeforeFog()
+    {
+        var shader = ReadShader("reference.frag.hlsl");
+        var bounds = Section(shader, "// Generalized firefly bound:", "// SLS2000 always writes");
+
+        SourceContract.AssertOrder(bounds,
+            "if (!fnvActiveAdtBase)",
+            "if (!fullBright && !authoredGlow)",
+            "lit = min(lit, 1.0);",
+            "else",
+            "if (glowLuma > kEmissiveLumaCap)",
+            "lit *= kEmissiveLumaCap / glowLuma;");
+        Assert.Equal(1, bounds.Split("lit = min(lit, 1.0);").Length - 1);
+        Assert.DoesNotContain("saturate(lit)", bounds, StringComparison.Ordinal);
+        SourceContract.AssertOrder(shader,
+            "// Generalized firefly bound:",
+            "if (!fnvActiveAdtBase)",
+            "// SLS2000 always writes",
+            "float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);");
+    }
+
+    [Fact]
+    public void ActiveAdtCutouts_KeepTextureOnlyCoverageAndStrictAuthoredGreaterBeforeLighting()
+    {
+        var shader = ReadShader("reference.frag.hlsl");
+        // Function 4 must reject equality; this pins the existing NIF comparison, not a claim
+        // that PC SLS2000's conditional texkill alone establishes fixed-function alpha state.
+        Assert.Contains("if (fn == 4) return alpha > threshold;", shader, StringComparison.Ordinal);
+        Assert.Contains("if (fn == 6) return alpha >= threshold;", shader, StringComparison.Ordinal);
+        Assert.Contains("float vertexCoverageAlpha = (treeAnimation || fnvActiveAdtBase || starfieldMaterialLerp)",
+            shader, StringComparison.Ordinal);
+        SourceContract.AssertOrder(shader,
+            "float vertexCoverageAlpha =",
+            "? 1.0",
+            ": input.vVertexColor.a;",
+            ": saturate(sample.a * vertexCoverageAlpha);",
+            "float testAlpha = treeAnimation",
+            ": sampleAlpha;",
+            "if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;",
+            "float3 normal = normalize(input.vWorldNormal);");
+    }
+
+    [Fact]
     public void RecoveredArtifactSeparatesFogAndVertexColorPermutations()
     {
         var artifact = SourceContract.ReadSource(

@@ -63,8 +63,10 @@ public sealed class Fo4BendableSplineWindSourceContractTests
         SourceContract.AssertOrder(
             renderer,
             "var splineWind = sub.IsBendableSplineWind",
-            "Wind: sub.IsBendableSplineWind",
-            "? splineWind.WindVector",
+            "Vector4 wind;",
+            "if (sub.IsBendableSplineWind)",
+            "wind = splineWind.WindVector;",
+            "Wind: wind",
             "TallGrassWind: sub.IsBendableSplineWind",
             "? splineWind.WindVectorEx");
         Assert.Contains("Constant union: SpeedTree rock/rustle, or FO4 spline", constants,

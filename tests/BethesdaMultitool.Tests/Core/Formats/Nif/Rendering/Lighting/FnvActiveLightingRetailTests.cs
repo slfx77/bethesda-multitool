@@ -45,7 +45,7 @@ public sealed class FnvActiveLightingRetailTests(
     private const float WalkEyeHeight = 112f;
 
     [Fact]
-    public void PrimmGatedWall_PinsOpaqueActiveAdtBaseFixtureAndCaptureCamera()
+    public void PrimmGatedWall_PinsOpaqueAndGreaterCutoutActiveAdtFixturesAndCaptureCamera()
     {
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final FalloutNV.esm not available");
@@ -93,6 +93,8 @@ public sealed class FnvActiveLightingRetailTests(
             Assert.Equal(0x00000001u, submesh.ShaderMetadata?.ShaderFlags2);
             Assert.Equal(0u, submesh.ShaderMetadata!.ShaderFlags!.Value & ((1u << 1) | (1u << 5)));
             Assert.False(submesh.HasAlphaBlend);
+            Assert.Equal(4, submesh.AlphaTestFunction);
+            Assert.Equal(submesh.SourceBlockIndex == 25 ? 127 : 128, submesh.AlphaTestThreshold);
             Assert.Equal(1f, submesh.MaterialAlpha);
             Assert.Null(submesh.MaterialAlphaController);
         });
@@ -108,9 +110,11 @@ public sealed class FnvActiveLightingRetailTests(
                 candidate.Submesh.HasAlphaTest,
                 candidate.Submesh.MaterialAlpha,
                 candidate.Submesh.MaterialAlphaController is not null,
-                candidate.Mode)))
+                candidate.Mode,
+                AlphaTestFunction: candidate.Submesh.AlphaTestFunction)))
             .ToArray();
-        var activeFixture = Assert.Single(active);
+        Assert.Equal([15, 21, 25], active.Select(static candidate => candidate.Submesh.SourceBlockIndex));
+        var activeFixture = Assert.Single(active, static candidate => !candidate.Submesh.HasAlphaTest);
         Assert.Equal(21, activeFixture.Submesh.SourceBlockIndex);
         Assert.Equal("UrbanGatedWallStr01:0", activeFixture.Submesh.ShapeName);
         Assert.False(activeFixture.Submesh.HasAlphaTest);
@@ -175,10 +179,9 @@ public sealed class FnvActiveLightingRetailTests(
             $"Local bounds min={localMinimum}, max={localMaximum}, center={localCenter}; " +
             $"capture camera={camera}, pitch={pitchDegrees} deg, yaw={yawDegrees} deg.");
 
-        // One opaque block on the pinned REFR is the fixture-level contract. The profiler's 16-cell
-        // retail scene deliberately reports larger aggregate draw/instance counts from neighboring
-        // eligible geometry and retains alpha-tested fallback submissions for blocks 15 and 25.
-        Assert.Single(active);
+        // Exact sample-archive data: blocks 15/25 use GREATER 128/127 and now join opaque block 21.
+        // These are fixture-level identities, not the larger scene's aggregate draw/instance counts.
+        Assert.Equal(3, active.Length);
         VectorAssert.Equal(new Vector3(-55_889.066f, -46_366.82f, 5_978.201f), camera, 0.01f);
         Assert.InRange(pitchDegrees, -4.399f, -4.398f);
         Assert.InRange(MathF.Abs(yawDegrees), 179.999f, 180.001f);

@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
 ///     Bounded CPU policy for FNV's active retail pass 193 (<c>BSSM_ADT</c>) base route: one
-///     directional light, no placed lights, projected sun shadow, or fog, and an ordinary opaque
+///     directional light, no placed lights, projected sun shadow, or fog, and an ordinary opaque/cutout
 ///     standard/type-1 static material. <see cref="FnvClassicBasicShaderMode" /> is reused only as the strict
 ///     decoded-material
 ///     classifier and vertex-color discriminator; this policy does not activate or count the dormant
@@ -61,14 +61,17 @@ internal static class FnvActiveAdtBasePolicy
     /// </summary>
     internal const uint RuntimeSpeedTreeLeafNoSunShadowFlag = 1u << 13;
 
-    internal static bool IsEligible(in FnvActiveAdtBaseEligibility eligibility) =>
+    // Preserve authored GREATER cutouts on the ordinary base route. Other enabled comparisons
+    // remain outside this bounded subset. The diagnostic override reproduces the former exclusion
+    // without disabling ADT on opaque materials or changing the authored alpha state.
+    internal static bool IsEligible(in FnvActiveAdtBaseEligibility eligibility, bool allowAlphaTested = true) =>
         eligibility.Game == BethesdaGame.FalloutNewVegas &&
         eligibility.LightingEnabled &&
         eligibility.PlacedLightCount == 0 &&
         !eligibility.HasProjectedSunShadow &&
         !eligibility.FogEnabled &&
         !eligibility.HasAlphaBlend &&
-        !eligibility.HasAlphaTest &&
+        (!eligibility.HasAlphaTest || (allowAlphaTested && eligibility.AlphaTestFunction == 4)) &&
 #pragma warning disable S1244 // eligibility requires the exact authored default alpha of 1; any deviation routes to the alpha path
         eligibility.MaterialAlpha == 1f &&
 #pragma warning restore S1244
@@ -82,10 +85,11 @@ internal static class FnvActiveAdtBasePolicy
     /// </summary>
     internal static uint ApplyRuntimeFlags(
         in FnvActiveAdtBaseEligibility eligibility,
-        uint materialFlags)
+        uint materialFlags,
+        bool allowAlphaTested = true)
     {
         materialFlags &= ~(RuntimeActiveAdtFlag | RuntimeActiveAdtVertexColorFlag);
-        if (!IsEligible(eligibility))
+        if (!IsEligible(eligibility, allowAlphaTested))
         {
             return materialFlags;
         }
@@ -173,7 +177,8 @@ internal readonly record struct FnvActiveAdtBaseEligibility(
     bool HasAlphaTest,
     float MaterialAlpha,
     bool HasMaterialAlphaController,
-    FnvClassicBasicShaderMode ClassifierMode);
+    FnvClassicBasicShaderMode ClassifierMode,
+    int AlphaTestFunction = 0);
 
 internal readonly record struct FnvActiveAdtBaseEvaluation(
     Vector3 NormalizedDecodedNormal,

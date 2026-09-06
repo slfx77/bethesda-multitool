@@ -36,7 +36,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///     D3D12 placed-object renderer. Opaque/cutout references are batched by cached submesh
 ///     and rendered with instancing; blended/effect submeshes remain sorted back-to-front.
 /// </summary>
-internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
+internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     // viewProj (64) + the 4 SpeedTree wind-v2 sway matrices (4 × 64) — see reference_instanced.vert.hlsl
     // PerFrame. The shadow pass keeps its own shorter PerFrame; its shader variant never reads the matrices.
@@ -149,6 +149,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // don't cast (matching the engine's shadow-caster set).
     private readonly List<ShadowDraw> _shadowDraws = new(512);
     private bool _shadowCaptureArmed;
+    // Fixed for this renderer's entire lifetime. Every live/prime/export replay uses the same
+    // caster set, so a diagnostic capture can never publish filtered maps into an unfiltered run.
+    private readonly bool _omitFo4SplineShadows = Fo4SplineShadowDiagnosticPolicy.IsEnabled(
+        Environment.GetEnvironmentVariable(Fo4SplineShadowDiagnosticPolicy.EnvironmentVariable));
+
+    public bool OmitsFo4SplineShadows => _omitFo4SplineShadows;
+
     // Shadow-only caster ring (world units; 0 = off): frustum-rejected refs within it are kept as
     // casters for the shadow replay. Cached with the cull survivors (see _cachedShadowOnlyCasters).
     private float _shadowCasterRingRadius;
@@ -210,7 +217,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         VertexBufferView VertexBufferView, IndexBufferView IndexBufferView, int IndexCount,
         ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount, bool AlphaTested,
         CascadeCounts Cascades,
-        bool UsesTallGrassWind);
+        bool UsesTallGrassWind,
+        bool IsFo4BendableSpline);
 
     /// <summary>
     ///     One captured instanced-opaque COLOR draw for the water-reflection mirror replay: the
@@ -265,6 +273,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <summary>Exact instance count submitted by the most recent
     /// <see cref="RenderShadowDepth" /> invocation, after per-cascade filtering.</summary>
     public int LastShadowSubmittedInstanceCount { get; private set; }
+
+    public int LastShadowOmittedSplineDrawCount { get; private set; }
+    public int LastShadowOmittedSplineInstanceCount { get; private set; }
+    public int LastShadowSubmittedSplineDrawCount { get; private set; }
+    public int LastShadowSubmittedSplineInstanceCount { get; private set; }
 
     /// <summary>
     ///     True when the latest cascade replay reached an authoritative result, including the valid
@@ -1331,7 +1344,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var eligibility = ResolveFnvActiveAdtBaseEligibility(submesh);
             state.Z = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(
                 eligibility,
-                (uint)MathF.Round(state.Z));
+                (uint)MathF.Round(state.Z),
+                allowAlphaTested: FnvAdtAlphaTestEnabled);
         }
         return state;
     }
@@ -1370,7 +1384,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             submesh.AlphaTest,
             submesh.MaterialAlpha,
             submesh.MaterialAlphaController is not null,
-            submesh.ClassicBasicShaderMode);
+            submesh.ClassicBasicShaderMode,
+            submesh.AlphaTestFunction);
 
     private string? ResolveFnvActiveAdtBaseFallbackReason()
     {
@@ -1713,7 +1728,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     private static readonly uint ReferenceOverrideTraceFormId =
         uint.TryParse(
-            EnvironmentVariables.Get("FALLOUT_VIEWER_REFERENCE_OVERRIDE_TRACE")
+            EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceOverrideTrace)
                 ?.Replace("0x", "", StringComparison.OrdinalIgnoreCase),
             System.Globalization.NumberStyles.HexNumber, null, out var referenceOverrideTraceId)
             ? referenceOverrideTraceId
@@ -3015,13 +3030,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         ID3D12PipelineState? currentPso = null;
         var opaqueSubmissionStarted = StartTiming();
-        DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
+        DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
         LastStats.ReferenceOpaqueSubmissionMilliseconds = ElapsedMilliseconds(opaqueSubmissionStarted);
         // Depth-writing blend foliage draws here — INLINE, after the opaque batches but before the water
         // pass — with a depth-writing blend PSO, so the water surface occludes it from above (a no-depth
         // blend drawn after water painted over the surface). Runs every frame regardless of deferBlended.
         var blendedSubmissionStarted = StartTiming();
-        DrawDepthWritingBlend(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+        DrawDepthWritingBlend(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref submeshDraws);
         LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(blendedSubmissionStarted);
         // 3D-8: blended submeshes draw now (inline, e.g. top-down overlay) or are deferred to after the
         // water pass via RenderBlendedDeferred() so water never paints over transparent meshes.
@@ -3030,7 +3045,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             blendedSubmissionStarted = StartTiming();
             DrawBlended(
                 cmd, frameIndex, sceneDepthSampled: false,
-                ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+                ref currentPso, ref cbUpdateMs, ref submeshDraws);
             LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(blendedSubmissionStarted);
         }
 
@@ -3442,7 +3457,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var frontToBackView = state.OpaqueFrontToBackView;
         var frontToBackDepthValid = OpaqueFrontToBackPolicy.TryGetNearestViewDepth(
             in frontToBackView,
-            in referenceBounds,
+            referenceBounds,
             out var nearestViewDepth);
         var alphaDebug = AlphaDebugFilter != null
             && !string.IsNullOrEmpty(r.ModelPath)
@@ -3509,7 +3524,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     Vector3.DistanceSquared(worldCenter, cameraPosition),
                     sub.AlphaState,
                     sub.RenderState,
-                    sub.Specular,
+                    sub.EffectiveSpecular,
                     r.WorldMatrix,
                     referenceBounds,
                     r.FormId,
@@ -3565,7 +3580,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 sub, pso, usesGrassDistanceEnvelope, usesTallGrassWind, r.GrassWaveMultiplier,
                 usesModernStandardShader, externalEmittanceFormId);
             if (state.OpaqueFrontToBackView.Valid &&
-                !state.Target.OpaqueBatches.ObserveFrontToBackDepth(
+                !OpaqueBatchRegistry12.ObserveFrontToBackDepth(
                     batch,
                     frontToBackDepthValid,
                     nearestViewDepth))
@@ -3628,11 +3643,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var signature =
                 $"{reference.FormId:x8}:{reference.MeshId:x8}:{shapeName}:" +
                 $"{textureOverride.TextureSetFormId:x8}:{textureOverride.Index}";
-            if (!_referenceOverrideTraceLogged.Add(signature))
-            {
-                continue;
-            }
-
             var diffuseKey = textureOverride.Diffuse is { Length: > 0 } diffuse
                 ? GpuTextureCache12.NormalizeCacheKey(diffuse)
                 : null;
@@ -3645,7 +3655,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     (normalKey is null || string.Equals(
                         submesh.Normal.CacheKey, normalKey, StringComparison.OrdinalIgnoreCase)))
                 .ToArray();
+            // Refresh diagnostic object identity on every registration: a cached mesh can be
+            // evicted/recreated after its one-time provenance event has already been logged.
+            RegisterFnvAdTarget(reference, shapeName, textureOverride, diffuseKey, normalKey, matches);
+            if (!_referenceOverrideTraceLogged.Add(signature))
+            {
+                continue;
+            }
+
             var first = matches.FirstOrDefault();
+            string submissionRoute;
+            if (first is null)
+            {
+                submissionRoute = "none";
+            }
+            else
+            {
+                submissionRoute = first.AlphaRenderMode == NifAlphaRenderMode.Blend || first.IsBillboard
+                    ? "blended"
+                    : "opaque-instanced";
+            }
 
             RendererProfilerTrace.Event("reference-texture-override", new Dictionary<string, object?>
             {
@@ -3663,11 +3692,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 ["sourceBlockIndex"] = first?.SourceBlockIndex ?? -1,
                 ["diffuseResident"] = first?.Diffuse.IsResident ?? false,
                 ["normalResident"] = first?.Normal.IsResident ?? false,
-                ["submissionRoute"] = first is null
-                    ? "none"
-                    : first.AlphaRenderMode == NifAlphaRenderMode.Blend || first.IsBillboard
-                        ? "blended"
-                        : "opaque-instanced",
+                ["submissionRoute"] = submissionRoute,
                 ["outcome"] = matches.Length > 0 ? "override-applied-batch-admitted" : "override-not-applied",
                 ["batchAdmitted"] = matches.Length > 0,
             });
@@ -3773,7 +3798,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             TextureFeatureMask: (uint)MathF.Round(sub.TextureState.Z),
             HasBump: sub.HasBump,
             HasSpecularMap: sub.SpecularMap is not null,
-            SpecularExponent: sub.Specular.W,
+            SpecularExponent: sub.EffectiveSpecular.W,
             ModernEnvironmentMapDeclared: sub.EnvMap is not null,
             ModernEnvironmentMapScale: sub.EnvMapScale,
             WrapTextureU: !sub.ClampTextureU,
@@ -4209,13 +4234,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         ID3D12PipelineState? currentPso = null;
-        double cbUpdateMs = 0, drawCallMs = 0;
+        double cbUpdateMs = 0;
         var submeshDraws = 0;
         var sceneDepthSampled = _deferredSceneDepthIndex != NoSceneDepth;
         var submissionStarted = StartTiming();
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
-            ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
+            ref currentPso, ref cbUpdateMs, ref submeshDraws,
             probe is null ? DeferredWaterPartition.All : DeferredWaterPartition.NotWhollyBelow,
             probe, cameraZ, maxQueuedWaterHeight,
             interleave);
@@ -4223,7 +4248,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
-        LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
     }
 
     /// <summary>
@@ -4260,19 +4284,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         ID3D12PipelineState? currentPso = null;
-        double cbUpdateMs = 0, drawCallMs = 0;
+        double cbUpdateMs = 0;
         var submeshDraws = 0;
         var sceneDepthSampled = allowSceneDepth && _deferredSceneDepthIndex != NoSceneDepth;
         var submissionStarted = StartTiming();
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
-            ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
+            ref currentPso, ref cbUpdateMs, ref submeshDraws,
             waterPartition, probe, cameraZ, maxQueuedWaterHeight);
         LastStats.ReferenceBlendedSubmissionMilliseconds += ElapsedMilliseconds(submissionStarted);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
-        LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
     }
 
     // The shadow VS's PerFrame ABI lives in ReferenceRendererConstants12 as
@@ -4309,6 +4332,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _shadowCaptureArmed = false;
         LastShadowSubmittedDrawCount = 0;
         LastShadowSubmittedInstanceCount = 0;
+        LastShadowOmittedSplineDrawCount = 0;
+        LastShadowOmittedSplineInstanceCount = 0;
+        LastShadowSubmittedSplineDrawCount = 0;
+        LastShadowSubmittedSplineInstanceCount = 0;
         LastShadowReplayCompleted = false;
         if (_shadowDraws.Count == 0)
         {
@@ -4321,10 +4348,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var hasCascadeInstances = false;
         foreach (var draw in _shadowDraws)
         {
-            if (ShadowCascadeSubmissionPolicy.ClampInstanceCount(
-                    draw.DrawCount, draw.Cascades[cascadeIndex]) <= 0) continue;
+            var cascadeInstances = ShadowCascadeSubmissionPolicy.ClampInstanceCount(
+                draw.DrawCount, draw.Cascades[cascadeIndex]);
+            if (cascadeInstances <= 0) continue;
+            if (Fo4SplineShadowDiagnosticPolicy.ShouldOmit(_omitFo4SplineShadows, draw.IsFo4BendableSpline))
+            {
+                LastShadowOmittedSplineDrawCount++;
+                LastShadowOmittedSplineInstanceCount += cascadeInstances;
+                continue;
+            }
+
+            // Keep scanning to count every omitted positive prefix, even when this cascade has
+            // other casters. An all-omitted cascade remains an authoritative empty replay.
             hasCascadeInstances = true;
-            break;
+            if (!_omitFo4SplineShadows)
+            {
+                break; // preserve the ordinary replay's first-positive-prefix fast path
+            }
         }
 
         if (!hasCascadeInstances)
@@ -4378,6 +4418,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 continue;
             }
 
+            if (Fo4SplineShadowDiagnosticPolicy.ShouldOmit(_omitFo4SplineShadows, draw.IsFo4BendableSpline))
+            {
+                continue;
+            }
+
             var pso = draw.AlphaTested ? _pipelines.ShadowAlphaTestPso : _pipelines.ShadowOpaquePso;
             if (!ReferenceEquals(currentPso, pso))
             {
@@ -4398,6 +4443,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)cascadeInstances, 0, 0, 0);
             LastShadowSubmittedDrawCount++;
             LastShadowSubmittedInstanceCount += cascadeInstances;
+            if (draw.IsFo4BendableSpline)
+            {
+                LastShadowSubmittedSplineDrawCount++;
+                LastShadowSubmittedSplineInstanceCount += cascadeInstances;
+            }
             if (draw.UsesTallGrassWind)
             {
                 LastStats.ReferenceTallGrassShadowDraws++;
@@ -4613,32 +4663,43 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
         }
 
+        // SpeedTree billboards are pre-baked at a fixed pose, so they take no wind vector at all;
+        // everything else scales the frame's wind by the submesh's own SpeedTree speeds.
+        Vector4 wind;
+        if (sub.IsBendableSplineWind)
+        {
+            wind = splineWind.WindVector;
+        }
+        else if (sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard)
+        {
+            wind = Vector4.Zero;
+        }
+        else
+        {
+            wind = new Vector4(
+                _wind.X,
+                _wind.Y * sub.SpeedTreeWindSpeeds.X,
+                _wind.Z,
+                _wind.W * sub.SpeedTreeWindSpeeds.Y);
+        }
+
+        var effectiveSpecular = sub.EffectiveSpecular;
         return new InstanceDrawConstants(
             sub.AlphaState,
             sub.RenderState,
             textureState,
             new TexIndexQuad(
                 sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
-                sub.StarfieldOpacity?.BindlessIndex ??
-                sub.ClassicParallaxHeightMap?.BindlessIndex ??
-                sub.ClassicEnvMask?.BindlessIndex ?? sub.SpecularMap?.BindlessIndex ?? 0,
+                sub.ResolveAuxiliaryTextureIndex(0),
                 sub.GradientMap?.BindlessIndex ?? sub.Lighting30GlowMap?.BindlessIndex ?? 0),
             instanceBase,
             UvOffsetU: WrapUv(sub.UvScrollVelocity.X, UvScrollClock),
             UvOffsetV: WrapUv(sub.UvScrollVelocity.Y, UvScrollClock),
             WindMatrixValid: 1,
-            Specular: sub.Specular,
+            Specular: effectiveSpecular,
             CameraRight: _leafBillboardRight,
             CameraUp: _leafBillboardUp,
-            Wind: sub.IsBendableSplineWind
-                ? splineWind.WindVector
-                : sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard
-                    ? Vector4.Zero
-                    : new Vector4(
-                        _wind.X,
-                        _wind.Y * sub.SpeedTreeWindSpeeds.X,
-                        _wind.Z,
-                        _wind.W * sub.SpeedTreeWindSpeeds.Y),
+            Wind: wind,
             EffectTint: new Vector4(
                 ResolveEffectTint(sub, batchState.ExternalEmittanceFormId),
                 sub.HasEffectFalloff ? 1f : 0f),
@@ -4653,7 +4714,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     batchState.GrassWaveMultiplier),
             SpecularLodBounds: new Vector4(sub.LocalBoundsCenter, sub.LocalBoundsRadius),
             SpecularLodParams: _classicSpecularLodProfile.ShaderParameters(
-                specularEligible: sub.Specular.W > 0f));
+                specularEligible: effectiveSpecular.W > 0f));
     }
 
     private Vector3 ResolveEffectTint(CachedSubmesh12 submesh, uint externalEmittanceFormId)
@@ -4997,7 +5058,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
         ref ID3D12PipelineState? currentPso,
-        ref double cbUpdateMs,
         ref double srvBindMs,
         ref double drawCallMs,
         ref int srvBinds,
@@ -5537,7 +5597,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             packetDrawCount,
                             packetSub.AlphaTest,
                             packetMainCascades,
-                            UsesTallGrassWind: false));
+                            UsesTallGrassWind: false,
+                            IsFo4BendableSpline: Fo4SplineShadowDiagnosticPolicy.IsCaster(
+                                _renderCache?.Game ?? BethesdaGame.Unknown, packetSub.IsBendableSplineWind)));
                     }
 
                     if (packetDraw.TailCount > 0)
@@ -5556,7 +5618,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             packetDraw.TailCount,
                             packetSub.AlphaTest,
                             tailCascades,
-                            UsesTallGrassWind: false));
+                            UsesTallGrassWind: false,
+                            IsFo4BendableSpline: Fo4SplineShadowDiagnosticPolicy.IsCaster(
+                                _renderCache?.Game ?? BethesdaGame.Unknown, packetSub.IsBendableSplineWind)));
                     }
                 }
 
@@ -5920,6 +5984,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
                         LastStats.ReferenceOpaqueDirectDraws++;
                         ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
+                        ObserveFnvAdTargetInstancedDraw(
+                            sub, textureState, instanceDraw.AlphaState,
+                            drawInstanceCpuBase, drawStartInstance, drawCount);
                         ObserveFo4BendableSplineWindDraw(sub, drawCount);
                         if (batchState.UsesTallGrassWind)
                         {
@@ -5988,7 +6055,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                         instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
                         sub.AlphaTest, CascadeCounts.Uniform(drawCount + shadowCount),
-                        batchState.UsesTallGrassWind));
+                        batchState.UsesTallGrassWind,
+                        IsFo4BendableSpline: Fo4SplineShadowDiagnosticPolicy.IsCaster(
+                            _renderCache?.Game ?? BethesdaGame.Unknown, sub.IsBendableSplineWind)));
                 }
                 else
                 {
@@ -5997,7 +6066,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         _shadowDraws.Add(new ShadowDraw(
                             sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                             instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount,
-                            sub.AlphaTest, mainCascades, batchState.UsesTallGrassWind));
+                            sub.AlphaTest, mainCascades, batchState.UsesTallGrassWind,
+                            IsFo4BendableSpline: Fo4SplineShadowDiagnosticPolicy.IsCaster(
+                                _renderCache?.Game ?? BethesdaGame.Unknown, sub.IsBendableSplineWind)));
                     }
 
                     if (tailHasCascadeInstances)
@@ -6009,7 +6080,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             shadowTailCascades,
                             // Tall-grass shadow telemetry is attributed to the main draw only, so the
                             // tail must not double-count it.
-                            UsesTallGrassWind: false));
+                            UsesTallGrassWind: false,
+                            IsFo4BendableSpline: Fo4SplineShadowDiagnosticPolicy.IsCaster(
+                                _renderCache?.Game ?? BethesdaGame.Unknown, sub.IsBendableSplineWind)));
                     }
                 }
                 if (batchState.UsesTallGrassWind)
@@ -6127,7 +6200,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         bool sceneDepthSampled,
         ref ID3D12PipelineState? currentPso,
         ref double cbUpdateMs,
-        ref double drawCallMs,
         ref int submeshDraws,
         DeferredWaterPartition waterPartition = DeferredWaterPartition.All,
         IWaterHeightProbe? probe = null,
@@ -6385,7 +6457,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         int frameIndex,
         ref ID3D12PipelineState? currentPso,
         ref double cbUpdateMs,
-        ref double drawCallMs,
         ref int submeshDraws)
     {
         if (_depthWritingBlendDraws.Count == 0) return;
@@ -6563,13 +6634,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var tallGrassWind = BuildTallGrassWindConstants(
             usesTallGrassWind,
             draw.GrassWaveMultiplier);
+        var effectiveSpecular = draw.Submesh.EffectiveSpecular;
         var specularLodFade = ClassicSpecularLodFade.Compute(
             in _classicSpecularLodProfile,
             draw.Submesh.LocalBoundsCenter,
             draw.Submesh.LocalBoundsRadius,
             draw.World,
             _frameCameraPosition - _frameRenderOrigin,
-            specularEligible: draw.Specular.W > 0f);
+            specularEligible: effectiveSpecular.W > 0f);
         // Blended batches can be reused across frames. Resolve the runtime route here so a
         // lighting or placed-light transition cannot retain stale classic-basic shader flags.
         var textureState = ResolveTextureState(draw.Submesh);
@@ -6598,13 +6670,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
                 draw.Submesh.Normal.BindlessIndex,
-                draw.Submesh.StarfieldOpacity?.BindlessIndex ??
-                draw.Submesh.ClassicParallaxHeightMap?.BindlessIndex ??
-                draw.Submesh.ClassicEnvMask?.BindlessIndex ??
-                draw.Submesh.SpecularMap?.BindlessIndex ?? 0,
+                draw.Submesh.ResolveAuxiliaryTextureIndex(0),
                 draw.Submesh.GradientMap?.BindlessIndex ??
                 draw.Submesh.Lighting30GlowMap?.BindlessIndex ?? 0),
-            Specular = draw.Specular,
+            Specular = effectiveSpecular,
             // Leaf-billboard camera basis (consumed only when TextureState.y marks a leaf submesh, e.g. a
             // baked particle cloud) so the blended-path VS can re-face the quads to the camera.
             CameraRight = _leafBillboardRight,
@@ -6670,6 +6739,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         cmd.IASetIndexBuffer(indexBufferView);
         cmd.DrawIndexedInstanced((uint)effectiveIndexCount, 1, 0, 0, 0);
         ObserveFnvActiveAdtBaseDraw(draw.Submesh, textureState, 1);
+        ObserveFnvAdTargetIndividualDraw(draw, textureState, alphaState, effectiveIndexCount);
         if (usesTallGrassWind)
         {
             LastStats.ReferenceTallGrassDirectDraws++;
