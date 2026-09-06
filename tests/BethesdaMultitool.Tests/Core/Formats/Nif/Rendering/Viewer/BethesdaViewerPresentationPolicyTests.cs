@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Xunit;
 
@@ -17,8 +18,16 @@ public sealed class BethesdaViewerPresentationPolicyTests
             (BethesdaViewerScenePurpose)purposeValue,
             dedicatedRawSky: false);
 
-        Assert.Equal(90f, orbit.AzimuthDegrees);
+        Assert.Equal(0f, orbit.AzimuthDegrees);
         Assert.Equal(0f, orbit.ElevationDegrees);
+
+        // Assembled actors face +Y. Pin the actual camera vector as well as the angle so a future
+        // change cannot copy the legacy sprite renderer's different 90-degree convention again.
+        Assert.Equal(
+            Vector3.UnitY,
+            OrthoViewProjBuilder.EyeDirection(
+                orbit.AzimuthDegrees,
+                orbit.ElevationDegrees));
     }
 
     [Theory]
@@ -49,13 +58,36 @@ public sealed class BethesdaViewerPresentationPolicyTests
     [Theory]
     [InlineData((int)BethesdaViewerScenePurpose.NpcAppearance)]
     [InlineData((int)BethesdaViewerScenePurpose.CreatureAppearance)]
-    public void ActorPointerOrbitUsesRequestedDirectManipulationDirection(int purposeValue)
+    public void ActorPointerOrbitMatchesSisterToolDirectManipulation(int purposeValue)
     {
+        var purpose = (BethesdaViewerScenePurpose)purposeValue;
+        var initial = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
+            purpose,
+            dedicatedRawSky: false);
         var degrees = BethesdaViewerPresentationPolicy.OrbitDegreesForPointerDelta(
             new Vector2(20f, 10f),
-            (BethesdaViewerScenePurpose)purposeValue);
+            purpose);
 
-        Assert.Equal(new Vector2(7f, -3.5f), degrees);
+        Assert.Equal(new Vector2(7f, 3.5f), degrees);
+
+        var initialEye = OrthoViewProjBuilder.EyeDirection(
+            initial.AzimuthDegrees,
+            initial.ElevationDegrees);
+        var (screenRight, screenUp) = OrthoViewProjBuilder.CameraBasis(
+            initial.AzimuthDegrees,
+            initial.ElevationDegrees);
+        var afterRightDrag = OrthoViewProjBuilder.EyeDirection(
+            initial.AzimuthDegrees + degrees.X,
+            initial.ElevationDegrees);
+        var afterDownDrag = OrthoViewProjBuilder.EyeDirection(
+            initial.AzimuthDegrees,
+            initial.ElevationDegrees + degrees.Y);
+
+        // Three.js OrbitControls treats the pointer as directly manipulating the model: a rightward
+        // drag moves the eye screen-left (so the model follows right), while a downward drag moves
+        // the eye screen-up (so the model follows down).
+        Assert.True(Vector3.Dot(afterRightDrag - initialEye, screenRight) < 0f);
+        Assert.True(Vector3.Dot(afterDownDrag - initialEye, screenUp) > 0f);
     }
 
     [Fact]
@@ -65,7 +97,7 @@ public sealed class BethesdaViewerPresentationPolicyTests
             new Vector2(20f, 10f),
             BethesdaViewerScenePurpose.RawNif);
 
-        Assert.Equal(new Vector2(-7f, 3.5f), degrees);
+        Assert.Equal(new Vector2(7f, 3.5f), degrees);
     }
 
     [Theory]
@@ -78,6 +110,16 @@ public sealed class BethesdaViewerPresentationPolicyTests
             BethesdaViewerPresentationPolicy.OrbitDegreesForPointerDelta(
                 new Vector2(x, y),
                 BethesdaViewerScenePurpose.NpcAppearance));
+    }
+
+    [Fact]
+    public void UnknownScenePurposePointerOrbitIsIgnored()
+    {
+        Assert.Equal(
+            Vector2.Zero,
+            BethesdaViewerPresentationPolicy.OrbitDegreesForPointerDelta(
+                new Vector2(10f, 10f),
+                (BethesdaViewerScenePurpose)int.MaxValue));
     }
 
     [Theory]

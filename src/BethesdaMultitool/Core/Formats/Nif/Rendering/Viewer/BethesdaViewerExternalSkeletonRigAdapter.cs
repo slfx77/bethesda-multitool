@@ -247,7 +247,7 @@ internal static class BethesdaViewerExternalSkeletonRigAdapter
 
     private static bool TryBuildSkinRebindings(
         GlbScene source,
-        IReadOnlyDictionary<string, List<int>> skeletonSceneIndicesByName,
+        Dictionary<string, List<int>> skeletonSceneIndicesByName,
         out GlbSkinBinding?[] reboundSkins,
         out int reboundJointCount,
         out string diagnostic)
@@ -343,7 +343,7 @@ internal static class BethesdaViewerExternalSkeletonRigAdapter
 
     private static HashSet<int> CollectRetainedSourceNodes(
         GlbScene source,
-        IReadOnlyDictionary<string, List<int>> skeletonSceneIndicesByName)
+        Dictionary<string, List<int>> skeletonSceneIndicesByName)
     {
         var retained = new HashSet<int>();
         foreach (var part in source.MeshParts)

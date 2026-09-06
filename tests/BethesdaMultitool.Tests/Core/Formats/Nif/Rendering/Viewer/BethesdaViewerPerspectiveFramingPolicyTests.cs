@@ -8,20 +8,21 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Viewer;
 public sealed class BethesdaViewerPerspectiveFramingPolicyTests
 {
     [Fact]
-    public void Projected_bounds_fit_is_npc_only()
+    public void Projected_bounds_fit_is_actor_only()
     {
-        BethesdaViewerScenePurpose[] nonNpcPurposes =
+        BethesdaViewerScenePurpose[] nonActorPurposes =
         [
             BethesdaViewerScenePurpose.Unspecified,
             BethesdaViewerScenePurpose.RawNif,
-            BethesdaViewerScenePurpose.CreatureAppearance,
             BethesdaViewerScenePurpose.WorldReference
         ];
 
-        Assert.All(nonNpcPurposes, purpose =>
+        Assert.All(nonActorPurposes, purpose =>
             Assert.False(BethesdaViewerPerspectiveFramingPolicy.ShouldUseProjectedBoundsFit(purpose)));
         Assert.True(BethesdaViewerPerspectiveFramingPolicy.ShouldUseProjectedBoundsFit(
             BethesdaViewerScenePurpose.NpcAppearance));
+        Assert.True(BethesdaViewerPerspectiveFramingPolicy.ShouldUseProjectedBoundsFit(
+            BethesdaViewerScenePurpose.CreatureAppearance));
     }
 
     [Fact]
@@ -68,6 +69,35 @@ public sealed class BethesdaViewerPerspectiveFramingPolicyTests
         AssertAllCornersFit(bounds, eye, right, up, MathF.PI / 3f, 0.6f, portraitDistance);
     }
 
+    [Fact]
+    public void Front_facing_long_creature_is_not_shrunk_by_tail_depth_sphere()
+    {
+        // Representative upright quadruped/Daedra bounds: the visible body is narrow and tall while
+        // its tail produces a long +Y/-Y depth span. From the actor's +Y front, that tail is primarily
+        // depth rather than screen width and should not dictate a diagonal bounding-sphere radius.
+        var bounds = new BethesdaViewerBounds(
+            new Vector3(-28f, -130f, 0f),
+            new Vector3(28f, 35f, 120f));
+        const float verticalFov = MathF.PI / 3f;
+        const float aspect = 757f / 666f;
+        var eye = OrthoViewProjBuilder.EyeDirection(0f, 0f);
+        var (right, up) = OrthoViewProjBuilder.CameraBasis(0f, 0f);
+
+        Assert.True(BethesdaViewerPerspectiveFramingPolicy.TryResolveProjectedBoundsDistance(
+            bounds,
+            eye,
+            right,
+            up,
+            verticalFov,
+            aspect,
+            out var distance));
+
+        var legacyDistance = bounds.Size.Length() * 0.5f /
+                             MathF.Sin(verticalFov * 0.5f) * 1.2f;
+        Assert.True(distance < legacyDistance * 0.8f);
+        AssertAllCornersFit(bounds, eye, right, up, verticalFov, aspect, distance);
+    }
+
     private static void AssertAllCornersFit(
         BethesdaViewerBounds bounds,
         Vector3 eye,
@@ -80,7 +110,7 @@ public sealed class BethesdaViewerPerspectiveFramingPolicyTests
         var halfExtents = bounds.Size * 0.5f;
         var tanVertical = MathF.Tan(verticalFov * 0.5f);
         var tanHorizontal = tanVertical * aspect;
-        var paddedLimit = 1f / BethesdaViewerPerspectiveFramingPolicy.NpcFramingMargin + 0.0001f;
+        var paddedLimit = 1f / BethesdaViewerPerspectiveFramingPolicy.ActorFramingMargin + 0.0001f;
 
         for (var x = -1; x <= 1; x += 2)
         {

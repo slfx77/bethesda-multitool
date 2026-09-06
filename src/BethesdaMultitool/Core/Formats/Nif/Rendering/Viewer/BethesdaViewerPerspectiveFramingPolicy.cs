@@ -5,15 +5,18 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 /// <summary>
 ///     Perspective fit policy for assembled actor previews. Raw NIF inspection deliberately retains
 ///     the legacy bounding-sphere camera: its arbitrary model orientations make a stable orbit radius
-///     more useful than a tightly composed initial view. NPC appearances, by contrast, are authored
-///     upright and benefit from fitting their projected bounds to the actual viewport aspect.
+///     more useful than a tightly composed initial view. Actor appearances, by contrast, have a known
+///     initial bearing and benefit from fitting their projected bounds to the actual viewport aspect.
+///     The projected fit is especially important for long creatures: a tail extending mostly in camera
+///     depth should not shrink the whole creature as much as a three-dimensional bounding sphere does.
 /// </summary>
 internal static class BethesdaViewerPerspectiveFramingPolicy
 {
-    internal const float NpcFramingMargin = 1.1f;
+    internal const float ActorFramingMargin = 1.1f;
 
     internal static bool ShouldUseProjectedBoundsFit(BethesdaViewerScenePurpose purpose) =>
-        purpose == BethesdaViewerScenePurpose.NpcAppearance;
+        purpose is BethesdaViewerScenePurpose.NpcAppearance or
+            BethesdaViewerScenePurpose.CreatureAppearance;
 
     /// <summary>
     ///     Finds the shortest eye-to-target distance that keeps every AABB corner inside a
@@ -28,7 +31,7 @@ internal static class BethesdaViewerPerspectiveFramingPolicy
         float verticalFieldOfViewRadians,
         float aspectRatio,
         out float distance,
-        float framingMargin = NpcFramingMargin)
+        float framingMargin = ActorFramingMargin)
     {
         distance = 0f;
         if (!bounds.IsFinite ||

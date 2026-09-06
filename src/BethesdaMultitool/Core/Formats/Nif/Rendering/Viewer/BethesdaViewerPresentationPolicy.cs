@@ -16,7 +16,10 @@ internal static class BethesdaViewerPresentationPolicy
     private const float DefaultAssetAzimuthDegrees = 315f;
     private const float DefaultAssetElevationDegrees = 30f;
     private const float RawSkyElevationDegrees = -30f;
-    private const float ActorFrontAzimuthDegrees = 90f;
+    // Bethesda actors face world +Y. The native camera measures compass bearing clockwise from +Y,
+    // so its frontal eye is 0 degrees. Do not copy the sprite renderer's numeric 90-degree preset:
+    // that renderer measures azimuth counter-clockwise from +X, making the same +Y eye read as 90.
+    private const float ActorFrontAzimuthDegrees = 0f;
     private const float ActorFrontElevationDegrees = 0f;
     private const float OrbitDegreesPerPixel = 0.35f;
 
@@ -62,22 +65,25 @@ internal static class BethesdaViewerPresentationPolicy
     }
 
     /// <summary>
-    ///     Converts a pointer drag into the viewer's direct-manipulation orbit. The eye follows the
-    ///     dragged viewport direction: right increases compass azimuth and down lowers elevation.
+    ///     Converts a pointer drag into the classic direct-manipulation orbit used by the former
+    ///     WebView and the sister tools' Three.js OrbitControls. Dragging right moves the eye toward
+    ///     screen-left so the model follows the pointer; dragging down moves the eye toward screen-up.
+    ///     The purpose remains explicit so actor and raw-view contracts stay independent.
     /// </summary>
     internal static Vector2 OrbitDegreesForPointerDelta(
         Vector2 pixelDelta,
         BethesdaViewerScenePurpose purpose)
     {
-        if (!float.IsFinite(pixelDelta.X) || !float.IsFinite(pixelDelta.Y))
+        if (!float.IsFinite(pixelDelta.X) ||
+            !float.IsFinite(pixelDelta.Y) ||
+            !Enum.IsDefined(purpose))
         {
             return Vector2.Zero;
         }
 
-        var direction = IsActorAppearance(purpose) ? 1f : -1f;
         return new Vector2(
-            direction * pixelDelta.X * OrbitDegreesPerPixel,
-            -direction * pixelDelta.Y * OrbitDegreesPerPixel);
+            pixelDelta.X * OrbitDegreesPerPixel,
+            pixelDelta.Y * OrbitDegreesPerPixel);
     }
 
     private static bool IsActorAppearance(BethesdaViewerScenePurpose purpose) =>

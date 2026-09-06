@@ -17,7 +17,14 @@ internal enum BethesdaViewerScenePurpose
     RawNif,
     NpcAppearance,
     CreatureAppearance,
-    WorldReference
+    WorldReference,
+
+    /// <summary>
+    ///     A single mesh from one of the classic pre-plugin-era games, assembled without a NIF.
+    ///     Deliberately distinct from <see cref="RawNif" />: that value opts a scene into the
+    ///     native sky pass, which a classic mesh must not get.
+    /// </summary>
+    ClassicMesh
 }
 
 /// <summary>The semantic role of a node in a native Bethesda viewer scene.</summary>
@@ -153,7 +160,13 @@ internal sealed class BethesdaViewerScene
         });
     }
 
-    internal int ContractVersion => CurrentContractVersion;
+    /// <summary>
+    ///     The contract version this scene instance carries. Today every instance is seeded from
+    ///     <see cref="CurrentContractVersion" />, so the decoder/adapter guards that compare the two
+    ///     cannot fire yet; they exist so a future assembler that stamps an older version is rejected
+    ///     rather than silently mis-decoded.
+    /// </summary>
+    internal int ContractVersion { get; } = CurrentContractVersion;
 
     internal string SourceLabel { get; }
 

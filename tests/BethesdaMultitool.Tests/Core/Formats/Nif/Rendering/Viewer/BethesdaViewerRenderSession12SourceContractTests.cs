@@ -240,13 +240,22 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         var textureIndices = SourceContract.Extract(
             renderer,
             "TexIndices = new TexIndexQuad(",
-            "Specular = submesh.Specular,");
+            "Specular = submesh.EffectiveSpecular,");
 
         Assert.Contains("uint neutralTextureIndex", renderer, StringComparison.Ordinal);
         Assert.Contains("_neutralTextureIndex = neutralTextureIndex;", renderer, StringComparison.Ordinal);
         Assert.Contains("_textureCache.WhitePixel.BindlessIndex", session, StringComparison.Ordinal);
-        Assert.Contains("submesh.SpecularMap?.BindlessIndex ?? _neutralTextureIndex", textureIndices,
+        Assert.Contains("submesh.ResolveAuxiliaryTextureIndex(_neutralTextureIndex)", textureIndices,
             StringComparison.Ordinal);
+        var cached = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "CachedSubmesh12.cs");
+        var auxiliaryIndex = SourceContract.Extract(
+            cached, "    public uint ResolveAuxiliaryTextureIndex(uint fallbackIndex)", "    /// <summary>");
+        SourceContract.AssertOrder(auxiliaryIndex,
+            "StarfieldOpacity?.BindlessIndex ?? ClassicParallaxHeightMap?.BindlessIndex ??",
+            "ClassicEnvMask?.BindlessIndex ?? SpecularMap?.BindlessIndex ??",
+            "HasResidentOblivionHairLayer ? OblivionHairLayer!.BindlessIndex : fallbackIndex");
+        Assert.DoesNotContain("?? 0", auxiliaryIndex, StringComparison.Ordinal);
         Assert.Contains("submesh.Lighting30GlowMap?.BindlessIndex ?? _neutralTextureIndex", textureIndices,
             StringComparison.Ordinal);
         Assert.DoesNotContain("?? 0", textureIndices, StringComparison.Ordinal);
