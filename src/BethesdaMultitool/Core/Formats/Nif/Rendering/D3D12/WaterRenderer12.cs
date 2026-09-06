@@ -245,7 +245,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // The session cannot dispose a renderer whose constructor never returns. Keep every COM object,
     // footprint registration and shared-heap slot transaction-owned until the full PSO/tile graph is
     // complete, then transfer ownership to the ordinary fields/Dispose path.
-    private WaterConstructionTransaction? _constructionTransaction = new();
+    private readonly WaterConstructionTransaction? _constructionTransaction = new();
     private bool _disposed;
 
     private readonly record struct WaterOpaqueSceneSnapshotDescriptor(uint BindlessIndex, uint Width, uint Height)
@@ -1269,12 +1269,19 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         RefreshWaterMapTelemetry();
     }
 
-    private bool OblivionDisplacementEnabled =>
-        _game == BethesdaGame.Oblivion &&
-        RipplesEnabled &&
-        _oblivionDisplacementBindlessIndex != NoNormalMap &&
-        _oblivionDisplacementRadius > 0f &&
-        _oblivionDisplacementBlendAmount > 0f;
+    public bool OblivionDisplacementSourceBound =>
+        OblivionWaterDisplacementComposition.IsSourceBound(_game, _oblivionDisplacementBindlessIndex);
+
+    public bool OblivionDisplacementRouteEnabled =>
+        OblivionWaterDisplacementComposition.IsRouteEnabled(
+            _game, RipplesEnabled, _oblivionDisplacementBindlessIndex, _oblivionDisplacementRadius);
+
+    public bool OblivionDisplacementHasContribution =>
+        OblivionDisplacementRouteEnabled && _oblivionDisplacementBlendAmount > 0f;
+
+    public string? OblivionDisplacementDiagnosticSource => _oblivionDisplacementTelemetryPath;
+    public float OblivionDisplacementBlendRadius => _oblivionDisplacementRadius;
+    public float OblivionDisplacementBlendAmount => _oblivionDisplacementBlendAmount;
 
     private void RefreshWaterMapTelemetry()
     {
@@ -2238,6 +2245,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         // bypasses this direct dual-source slice; its exact FO76 optics are still an open item. If
         // that experiment cannot initialize/record, this strict path is the coherent fallback.
         var useFallout76Optics = !useModernPipeline && fallout76Visual.HasValue;
+        var skyrimOptics = SkyrimWaterOpticsConstants.Project(
+            _game, useSkyrimOpaqueSceneSnapshot, _appearance?.SkyrimOptics);
         var useStarfieldApproximation =
             _game == BethesdaGame.Starfield &&
             _waterProfile.ShaderVariant == WaterShaderVariant.StarfieldWaterApprox &&
@@ -2337,11 +2346,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 RenderOrigin = new Vector4(renderOrigin, _depthSampleCount),
                 // FO4-family constants (see WaterShaderVariant.Fo4Water). The strict FO76 path
                 // reinterprets the explicitly documented union lanes below.
-                Fo4Spec = new Vector4(
-                    surface.SunSpecularMagnitude, surface.SiltAmount, surface.ShallowAlpha, surface.DeepAlpha),
-                Fo4Ranges = new Vector4(
-                    surface.ColorShallowRange, surface.ColorDeepRange,
-                    surface.AlphaShallowRange, surface.AlphaDeepRange),
+                // These two existing registers are unused by the Skyrim family. Their strict
+                // snapshot union keeps the shared cbuffer byte size and all offsets unchanged.
+                Fo4Spec = useSkyrimOpaqueSceneSnapshot
+                    ? skyrimOptics.DepthControl
+                    : new Vector4(surface.SunSpecularMagnitude, surface.SiltAmount,
+                        surface.ShallowAlpha, surface.DeepAlpha),
+                Fo4Ranges = useSkyrimOpaqueSceneSnapshot
+                    ? skyrimOptics.Fog
+                    : new Vector4(surface.ColorShallowRange, surface.ColorDeepRange,
+                        surface.AlphaShallowRange, surface.AlphaDeepRange),
                 // Union register. FO4 retains DarkSilt.rgb; the strict FO76 permutation receives
                 // its exact decoded float BaseColor (no RGB8 compatibility round-trip). Both use w
                 // for the authored depth amount.
@@ -2420,6 +2434,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 Starfield = useStarfieldApproximation
                     ? _starfieldApproximation!.ProjectFrameUniforms()
                     : default,
+                OblivionDisplacementIndex =
+                    OblivionDisplacementRouteEnabled ? _oblivionDisplacementBindlessIndex : NoNormalMap,
+                OblivionDisplacementRadius = OblivionDisplacementRouteEnabled ? _oblivionDisplacementRadius : 0f,
+                OblivionDisplacementBlendAmount =
+                    OblivionDisplacementRouteEnabled ? _oblivionDisplacementBlendAmount : 0f,
+                OblivionDisplacementRoute = OblivionDisplacementRouteEnabled ? 1u : 0u,
             };
         }
 
@@ -2983,6 +3003,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             WaterReflectionDistortion = ReflectionDistortionScale,
             ReflectionViewProj = _reflectionViewProj,
             ReflectionSceneFlag = _reflectionIsScene && AllowsProjectiveSceneReflection ? 1u : 0u,
+            // FNV batch path: WATER007 displacement is Oblivion-only, so the route is off. The
+            // sentinel is written explicitly rather than left at a default 0, which would name
+            // bindless slot 0 as the source if the route flag were ever set here.
+            OblivionDisplacementIndex = NoNormalMap,
         };
 
         _frameMaterialCb[(material.WaterFormId, water001)] = perFrame.GpuAddress;
@@ -4073,6 +4097,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         // FO4-family union constants (appended so every other variant's offsets are untouched):
         // Fo4Spec = (Sun Specular Magnitude, Silt Amount, Shallow Alpha, Deep Alpha);
         // Fo4Ranges = (Color Shallow/Deep Range, Alpha Shallow/Deep Range) in world units;
+        // Skyrim snapshot only: Fo4Spec=DepthControl, Fo4Ranges=(far,span,power,enabled).
         // Fo4DarkSilt = FO4 DarkSilt.rgb or FO76 exact BaseColor.rgb; DepthAmount in w.
         public Vector4 Fo4Spec;
         public Vector4 Fo4Ranges;
@@ -4118,6 +4143,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         public uint ReflectionPad2;
         // Dedicated 13-register Starfield WATR tail. No pre-existing shader offset moves.
         public StarfieldWaterFrameUniforms Starfield;
+        // Final append-only register, mirroring water_common.hlsli's uint4 uOblivionDisplacement:
+        // x = bindless source (NoNormalMap = none), y/z = BlendRadius.xy the shader reads via
+        // asfloat, w = host route enabled. OblivionDisplacementUniformByteSize already counted
+        // this register, so omitting the member left the CPU struct 16 bytes short of the
+        // declared size and ValidateGpuLayouts refused to build the backend.
+        public uint OblivionDisplacementIndex;
+        public float OblivionDisplacementRadius;
+        public float OblivionDisplacementBlendAmount;
+        public uint OblivionDisplacementRoute;
     }
 }
 

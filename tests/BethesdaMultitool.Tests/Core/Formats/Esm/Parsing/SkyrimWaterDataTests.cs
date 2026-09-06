@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 /// <summary>
 ///     Pins the Skyrim WATR DNAM struct decode (xEdit wbDefinitionsTES5): the three wbByteColors at
 ///     40/44/48 (Shallow/Deep/Reflection) — shifted +4 from FNV by the extra float at +28 — plus
-///     SunPower@16, Reflectivity@20, Fresnel@24, under-water-fog Near@144/Far@148 (→ DepthFalloff),
+///     SunPower@16, Reflectivity@20, Fresnel@24, under-water-fog Near@144/Far@148 (kept as world-unit fog planes),
 ///     Specular Power@156 (→ Shininess), and the noise layer UV/wind/amplitude fields. Without this,
 ///     Skyrim water never matched the FNV 196-byte DNAM case and rendered with the default tint.
 ///     Grounded in tools/GhidraProject/skyrim_water_pixel_shader_decompiled.txt.
@@ -38,8 +38,8 @@ public sealed class SkyrimWaterDataTests
         d[49] = 0x80;
         d[50] = 0x90;
         d[51] = 0xFF; // Reflection
-        WriteFloat(d, 144, 0f, bigEndian); // under-water fog Near → DepthFalloffStart
-        WriteFloat(d, 148, 1000f, bigEndian); // under-water fog Far → DepthFalloffEnd
+        WriteFloat(d, 144, 0f, bigEndian); // under-water fog Near, world units
+        WriteFloat(d, 148, 1000f, bigEndian); // under-water fog Far, world units
         WriteFloat(d, 156, 100f, bigEndian); // Specular Power → Shininess
         WriteFloat(d, 172, 80f, bigEndian); // Noise Layer 1 UV Scale
         return d;
@@ -73,6 +73,9 @@ public sealed class SkyrimWaterDataTests
         Assert.Equal(0x00_60_50_40u, Assert.IsType<uint>(props["DeepColor"]));
         Assert.Equal(0x00_90_80_70u, Assert.IsType<uint>(props["ReflectionColor"]));
 
+        Assert.Equal(0f, Assert.IsType<float>(props["UnderwaterFogNear"]), 4);
+        Assert.Equal(1000f, Assert.IsType<float>(props["UnderwaterFogFar"]), 4);
+        // Compatibility aliases remain only for the existing unsupported/underwater route.
         Assert.Equal(0f, Assert.IsType<float>(props["DepthFalloffStart"]), 4);
         Assert.Equal(1000f, Assert.IsType<float>(props["DepthFalloffEnd"]), 4);
         Assert.Equal(100f, Assert.IsType<float>(props["Shininess"]), 4);

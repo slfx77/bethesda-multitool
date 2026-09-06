@@ -227,7 +227,9 @@ public sealed record WaterAppearance(
     // Exact Starfield WATR data retained only when an appearance already has independently authored
     // compatibility colors. Starfield DNAM itself has no shallow/deep endpoints, so its presence
     // never manufactures colors or changes the current flat-fallback rendering policy.
-    StarfieldWaterVisualData? StarfieldVisualData = null)
+    StarfieldWaterVisualData? StarfieldVisualData = null,
+    // Skyrim LE optical controls retain their own units; never project them into FNV feathering.
+    SkyrimWaterOptics? SkyrimOptics = null)
 {
     // Fallback molten palette for lava records whose DATA carries no colors — bright orange crust grading
     // to dark red by depth (the shader's lava branch boosts + pulses these).
@@ -331,6 +333,9 @@ public sealed record WaterAppearance(
                         starfieldValue is StarfieldWaterVisualData starfieldDecoded
             ? starfieldDecoded
             : null;
+        var skyrim = props.TryGetValue("SkyrimWaterOptics", out var skyrimValue)
+            ? skyrimValue as SkyrimWaterOptics
+            : null;
         var shallow = ExtractColor(props, "ShallowColor");
         var deep = ExtractColor(props, "DeepColor");
         var reflection = ExtractColor(props, "ReflectionColor");
@@ -354,7 +359,8 @@ public sealed record WaterAppearance(
             LightSilt: ExtractColor(props, "LightSiltColor"),
             Underwater: ExtractColor(props, "UnderwaterColor"),
             Fallout76VisualData: fallout76,
-            StarfieldVisualData: starfield);
+            StarfieldVisualData: starfield,
+            SkyrimOptics: skyrim);
     }
 
     /// <summary>

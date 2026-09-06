@@ -14,7 +14,9 @@ public static class EsmSchemas
 {
     private static readonly Dictionary<string, RecordDef> Tes3ByType = Index(Tes3Schema.Records);
     private static readonly Dictionary<string, RecordDef> OblivionByType = Index(OblivionSchema.Records);
-    private static readonly Dictionary<string, RecordDef> SkyrimByType = Index(SkyrimSchema.Records);
+    private static readonly IReadOnlyList<RecordDef> SkyrimRecords =
+        SkyrimWaterSchema.CompleteKnownFloatWidths(SkyrimSchema.Records);
+    private static readonly Dictionary<string, RecordDef> SkyrimByType = Index(SkyrimRecords);
     private static readonly Dictionary<string, RecordDef> Fallout3ByType = Index(Fallout3Schema.Records);
     private static readonly Dictionary<string, RecordDef> FalloutNvByType = Index(FalloutNvSchema.Records);
     private static readonly Dictionary<string, RecordDef> Fallout4ByType = Index(Fallout4Schema.Records);
@@ -27,7 +29,7 @@ public static class EsmSchemas
         {
             BethesdaGame.Morrowind => Tes3Schema.Records,
             BethesdaGame.Oblivion => OblivionSchema.Records,
-            BethesdaGame.Skyrim => SkyrimSchema.Records,
+            BethesdaGame.Skyrim => SkyrimRecords,
             BethesdaGame.Fallout3 => Fallout3Schema.Records,
             BethesdaGame.FalloutNewVegas => FalloutNvSchema.Records,
             BethesdaGame.Fallout4 => Fallout4Schema.Records,

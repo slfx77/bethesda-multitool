@@ -27,6 +27,8 @@ cbuffer Uniforms : register(b0)
     // ---- FO4-family union constants (appended so every earlier variant's offsets are untouched).
     // The default/architectural paths use FO4 meanings; FO76_WATER_OPTICS documents its two RGB
     // reinterpretations below. ----
+    // SKYRIM_OPAQUE_REFRACTION only: these two unused FO4 registers carry DepthControl.xyzw
+    // and (above-water FogFar, FogSpan, FogPower, authored-enable). No shared ABI offset changes.
     float4 uFo4Spec;     // x = Sun Specular Magnitude, y = Silt Amount, z = Shallow Alpha, w = Deep Alpha
     float4 uFo4Ranges;   // x/y = Color Shallow/Deep Range, z/w = Alpha Shallow/Deep Range
                          //       (multipliers of Depth Amount; retail authors them ≈1.0)

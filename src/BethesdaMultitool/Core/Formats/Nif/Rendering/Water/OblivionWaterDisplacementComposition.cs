@@ -1,5 +1,7 @@
 using System.Numerics;
 
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
 /// <summary>
@@ -47,6 +49,18 @@ internal static class OblivionWaterDisplacementComposition
         _ => "disabled",
     };
 
+    internal static bool IsSourceBound(BethesdaGame game, uint sourceIndex) =>
+        game == BethesdaGame.Oblivion && sourceIndex != uint.MaxValue;
+
+    // Zero blend is a valid binding control. It must retain the descriptor/radius/route while
+    // contributing no displacement, so amount deliberately does not participate in this gate.
+    internal static bool IsRouteEnabled(
+        BethesdaGame game,
+        bool ripplesEnabled,
+        uint sourceIndex,
+        float radius) =>
+        IsSourceBound(game, sourceIndex) && ripplesEnabled && radius > 0f;
+
     /// <summary>
     ///     Viewer adaptation of the retail player-centred quad: the camera is the only available
     ///     player stand-in. It maps the camera to (0.5, 0.5) and +/-512 world units to the quad edge.
@@ -60,7 +74,8 @@ internal static class OblivionWaterDisplacementComposition
     /// </summary>
     internal static float GetBlendWeight(Vector2 uv, float radius, float amount)
     {
-        if (radius <= 0f || amount == 0f)
+        // Exact zero is the authored "no displacement" amount, not a near-zero measurement.
+        if (radius <= 0f || amount is 0f)
         {
             return 0f;
         }

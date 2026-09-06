@@ -142,6 +142,7 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
+        BindOblivionDisplacementDiagnostic();
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         BindLegacyAnimatedWaterFrames(appearance);
         _water?.SetOblivionDetailTexture(oblivionDetailIndex);
@@ -508,6 +509,7 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
+        BindOblivionDisplacementDiagnostic();
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         var waterSelection = WaterAppearanceSelectionResolver.Resolve(
             cell: interior,

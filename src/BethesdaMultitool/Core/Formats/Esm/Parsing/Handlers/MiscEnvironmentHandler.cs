@@ -579,7 +579,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // floats, then Sun Specular Power@16, Reflectivity@20, Fresnel@24, an extra float@28, fog Above
     // Near@32/Far@36; then the three wbByteColors (R,G,B,A) at 40/44/48 (Shallow/Deep/Reflection) —
     // shifted +4 from FNV by that float@28. Later: noise Wind Direction@100.., Wind Speed@112..,
-    // under-water fog Near@144/Far@148 (the depth-fade analog → DepthFalloff), Specular Power@156
+    // under-water fog Near@144/Far@148 (kept in their authored world units), Specular Power@156
     // (the sun-spec exponent → Shininess), noise UV Scale@172.., Amplitude@184... Colors are packed
     // R|G<<8|B<<16 (endian-independent); scalars are endian-aware floats. Deeper fields exist only in
     // a full (non-truncated, optionalFromElement=36) DNAM, so each is added only when in-bounds.
@@ -619,6 +619,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         Add(props, d, "NoiseLayer1WindSpeed", 112, isBigEndian);
         Add(props, d, "NoiseLayer2WindSpeed", 116, isBigEndian);
         Add(props, d, "NoiseLayer3WindSpeed", 120, isBigEndian);
+        // These are world-unit underwater fog planes, not FNV normalized shoreline thresholds.
+        Add(props, d, "UnderwaterFogNear", 144, isBigEndian);
+        Add(props, d, "UnderwaterFogFar", 148, isBigEndian);
+        // Keep the old projection solely for the pre-existing underwater/unsupported-layout
+        // fallback. The strict Skyrim optical branch never consumes these FNV feather aliases.
         Add(props, d, "DepthFalloffStart", 144, isBigEndian);
         Add(props, d, "DepthFalloffEnd", 148, isBigEndian);
         Add(props, d, "Shininess", 156, isBigEndian);
@@ -628,6 +633,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         Add(props, d, "NoiseLayer1AmpScale", 184, isBigEndian);
         Add(props, d, "NoiseLayer2AmpScale", 188, isBigEndian);
         Add(props, d, "NoiseLayer3AmpScale", 192, isBigEndian);
+        // Typed PC LE cohort: raw authored values survive separately from compatibility defaults.
+        if (SkyrimWaterOptics.TryRead(d, isBigEndian) is { } optics)
+        {
+            props["SkyrimWaterOptics"] = optics;
+        }
         return props;
     }
 
@@ -2451,7 +2461,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         }
 
         var (data, dataSize) = recordData.Value;
-        var editorIdPrefix = CaptureStarfieldAtmosphereEditorIdPrefix(
+        var editorIdPrefix = CaptureLeadingStarfieldEditorId(
             data, dataSize, record.IsBigEndian);
         if (!string.IsNullOrWhiteSpace(editorIdPrefix))
         {
@@ -2647,40 +2657,6 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         failure =
             "ATMO outer fields must be exactly EDID+REFL or EDID+RFDP+RDIF in retail order.";
         return false;
-    }
-
-    private static string? CaptureStarfieldAtmosphereEditorIdPrefix(
-        byte[] data,
-        int dataSize,
-        bool isBigEndian)
-    {
-        if (dataSize < EsmSubrecordUtils.SubrecordHeaderSize || dataSize > data.Length)
-        {
-            return null;
-        }
-
-        var signature = data.AsSpan(0, sizeof(uint));
-        if (!(isBigEndian ? signature.SequenceEqual("DIDE"u8) : signature.SequenceEqual("EDID"u8)))
-        {
-            return null;
-        }
-
-        var length = isBigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(sizeof(uint)))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(sizeof(uint)));
-        if (length < 2 || EsmSubrecordUtils.SubrecordHeaderSize + length > dataSize)
-        {
-            return null;
-        }
-
-        var payload = data.AsSpan(EsmSubrecordUtils.SubrecordHeaderSize, length);
-        if (payload[^1] != 0 || payload[..^1].IndexOf((byte)0) >= 0)
-        {
-            return null;
-        }
-
-        var editorId = EsmStringUtils.DecodeGameText(payload[..^1]);
-        return string.IsNullOrWhiteSpace(editorId) ? null : editorId;
     }
 
     private StarfieldAtmosphereRecord CreateAtmosphereFailure(
@@ -3057,11 +3033,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                      fields[0].Signature == "EDID" &&
                      fields[1].Signature == "RFDP" &&
                      fields[2].Signature == "RDIF";
-        payloadKind = isFull
-            ? StarfieldSunPresetPayloadKind.FullObject
-            : isDiff
+        if (isFull)
+        {
+            payloadKind = StarfieldSunPresetPayloadKind.FullObject;
+        }
+        else
+        {
+            payloadKind = isDiff
                 ? StarfieldSunPresetPayloadKind.Diff
                 : StarfieldSunPresetPayloadKind.Unknown;
+        }
 
         if (!isFull && !isDiff)
         {

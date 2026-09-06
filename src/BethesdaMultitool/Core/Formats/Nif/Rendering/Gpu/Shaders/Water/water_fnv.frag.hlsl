@@ -35,6 +35,9 @@
 // so they remain tunable constants.
 
 #include "water_common.hlsli"
+#if SKYRIM_OPAQUE_REFRACTION
+#include "water_skyrim_optics.hlsli"
+#endif
 
 float4 main(PSInput input) : SV_Target
 {
@@ -92,6 +95,13 @@ float4 main(PSInput input) : SV_Target
     // discard here at pixel rate. Falls back to a view-angle proxy when no depth SRV is set.
     uint depthIndex = uDepthParams.x;
     float depthT;
+#if SKYRIM_OPAQUE_REFRACTION
+    // Bounded above-water slice; underwater and absent/invalid typed input keep the old path.
+    bool skyrimOpticsEnabled = SkyrimHasAuthoredOptics() &&
+        depthIndex != 0xFFFFFFFFu && uCamPosTime.z >= input.vWorldPos.z;
+    float2 skyrimColumns = float2(0.0, 0.0);
+    float4 skyrimDepthFactors = float4(1.0, 1.0, 1.0, 1.0);
+#endif
     float2 corrD;          // engine corrected-depth (slant, vertical) lanes in FogFar units
     float column = 0.0;    // view-space gap to the surface the water is OVER (only when sampled)
     float fogNear = uLegacySurface1.x;                    // DNAM@32 above-water FogNear (NVCleanWater -80)
@@ -131,6 +141,11 @@ float4 main(PSInput input) : SV_Target
         float3 scenePoint = uCamPosTime.xyz + (input.vWorldPos - uCamPosTime.xyz) * rayScale;
         float slantColumn = max(length(scenePoint - input.vWorldPos), 0.0);
         float verticalColumn = max(input.vWorldPos.z - scenePoint.z, 0.0);
+#if SKYRIM_OPAQUE_REFRACTION
+        skyrimColumns = float2(slantColumn, verticalColumn);
+        if (skyrimOpticsEnabled)
+            skyrimDepthFactors = SkyrimDepthFactors(skyrimColumns);
+#endif
         float2 D = float2(slantColumn, verticalColumn) / fogFar;
         corrD = saturate(lerp(float2(1.0, 1.0), D, noiseFade));
         float start = uSurface1.y;                 // DepthFalloffStart (D.y-normalized units)
@@ -205,6 +220,16 @@ float4 main(PSInput input) : SV_Target
     n3.z += 1.0;                // engine: + (0,0,1) z-bias — normal stays near-vertical (gentle ripples)
     n3.xy *= noiseFade;         // engine: xy faded out with distance
     float3 N = normalize(n3);
+#if SKYRIM_OPAQUE_REFRACTION
+    if (skyrimOpticsEnabled)
+    {
+        // Retain the existing direct sample/UV/distance approximation as the base input.
+        // Retail normalizes its composite BEFORE independent DepthControl.z interpolation;
+        // its own three-map distance blend remains outside this bounded depth correction.
+        float3 skyrimBaseNormal = normalize(float3(pert.xy * noiseFade, pert.z + 1.0));
+        N = SkyrimApplyNormalDepth(skyrimBaseNormal, skyrimDepthFactors.z);
+    }
+#endif
 
     float ndotv = saturate(dot(N, V));
 
@@ -217,6 +242,10 @@ float4 main(PSInput input) : SV_Target
     float3 body = lerp(uShallow.rgb, uDeep.rgb, corrD.y);
     float3 fnvBodyLightDir = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));
     body *= saturate(dot(N, fnvBodyLightDir));
+#if SKYRIM_OPAQUE_REFRACTION
+    if (skyrimOpticsEnabled)
+        body = lerp(uShallow.rgb, uDeep.rgb, SkyrimSlantDepthFraction(skyrimColumns.x));
+#endif
 
     // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
     float3 R = reflect(-V, N);
@@ -255,6 +284,12 @@ float4 main(PSInput input) : SV_Target
     float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
     float3 spec = (sunSpec + skyGlint) * sunCol * sunGate;
+#if SKYRIM_OPAQUE_REFRACTION
+    if (skyrimOpticsEnabled)
+        spec *= skyrimDepthFactors.w;
+    // DepthControl.x/y are preserved but not folded into unrelated inputs: the exact
+    // Fresnel-distance gate and projected distortion binding remain separate work.
+#endif
 
     // Fog weight W — WATER000.pso asm 136-141 (identical in WATER003, where it IS the alpha):
     //   W = depthT * (1 - sat(FogParam.z * (1 - corrD.x) / FogParam.w)) * FogColor.w
@@ -278,6 +313,11 @@ float4 main(PSInput input) : SV_Target
     {
         W = saturate(depthT * saturate(asfloat(uNoiseParams.w)));
     }
+
+#if SKYRIM_OPAQUE_REFRACTION
+    if (skyrimOpticsEnabled)
+        W = SkyrimBodyFogWeight(skyrimColumns.x);
+#endif
 
     // COMPOSITE. FNV at default PC settings runs WATER000, an OPAQUE draw (asm 165
     // `mov oC0.w, v6.w`) whose entire see-through comes from sampling the RefractionMap in RGB:
