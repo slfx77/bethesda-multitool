@@ -24,11 +24,13 @@ internal static class CaptureWorkingSetTrimDiagnostic
 
         // Do not request LOH compaction here. The diagnostic is used specifically on machines with
         // little remaining headroom, where relocating a large live heap could increase peak pressure.
+#pragma warning disable S1215 // the forced collection IS the measurement this opt-in diagnostic exists to take
         GC.Collect(
             GC.MaxGeneration,
             GCCollectionMode.Forced,
             blocking: true,
             compacting: false);
+#pragma warning restore S1215
         gcTimer.Stop();
 
         var emptyWorkingSetTimer = Stopwatch.StartNew();

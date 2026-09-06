@@ -1168,7 +1168,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             ["captureScopeEffectiveRadiusCells"] =
                 _worldView.Profiler_CameraPose.RenderDistance / _worldView.Profiler_CellWorldSize,
             ["captureScopeInteractiveMinimumRadiusCells"] =
-                _worldView.Profiler_InteractiveMinimumRenderDistanceCells,
+                WorldView3DControl.Profiler_InteractiveMinimumRenderDistanceCells,
             ["captureScopeEffectiveFarPlaneWorldUnits"] = _worldView.Profiler_CameraFarPlane,
             ["captureScopeFarPlanePolicy"] = "expanded-vertical-coverage-for-in-scope-square-footprint",
             ["captureScopeOutsideRadiusExcluded"] = local,

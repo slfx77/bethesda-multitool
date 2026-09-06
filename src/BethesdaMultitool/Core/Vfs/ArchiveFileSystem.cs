@@ -106,10 +106,7 @@ public sealed class ArchiveFileSystem : IGameFileSystem
     public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
-        if (maximumBytes > int.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maximumBytes, int.MaxValue);
 
         if (TryGetReader() is not { } reader || reader.FindEntry(path) is not { } entry ||
             entry.Size < 0 || entry.Size > maximumBytes)

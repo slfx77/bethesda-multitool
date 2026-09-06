@@ -122,7 +122,7 @@ internal static class StarfieldCelestialRouteResolver
     private static void AddSunPresetFailure(
         string role,
         StarfieldCelestialStarRoute starRoute,
-        ICollection<string> failures)
+        List<string> failures)
     {
         if (!starRoute.RequiresSunPresetResolution || starRoute.SunPreset?.IsResolved == true)
         {

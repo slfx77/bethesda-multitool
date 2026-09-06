@@ -58,10 +58,10 @@ internal static class NpcStartupActorSelector
     }
 
     private static NpcStartupActorSelection ResolveUnique(
-        IReadOnlyList<NpcListItem> matches,
+        NpcListItem[] matches,
         string failureDiagnostic)
     {
-        return matches.Count switch
+        return matches.Length switch
         {
             1 => new NpcStartupActorSelection(
                 NpcStartupActorSelectionStatus.Resolved,
@@ -74,7 +74,7 @@ internal static class NpcStartupActorSelector
             _ => new NpcStartupActorSelection(
                 NpcStartupActorSelectionStatus.Ambiguous,
                 null,
-                matches.Count,
+                matches.Length,
                 failureDiagnostic)
         };
     }

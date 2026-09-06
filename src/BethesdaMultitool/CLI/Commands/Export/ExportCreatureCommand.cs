@@ -183,7 +183,8 @@ internal static class ExportCreatureCommand
                     var scene = NifExportSceneBuilder.BuildCreature(
                         creature.SkeletonPath, creature.BodyModelPaths, meshArchives,
                         idleAnimationPath: creature.ResolveIdleAnimationPath(),
-                        weaponMeshPath: weaponMeshPath);
+                        weaponMeshPath: weaponMeshPath,
+                        game: resolver.Game);
                     if (scene == null || scene.MeshParts.Count == 0)
                     {
                         Log.Warn("No exportable geometry for creature 0x{0:X8}", formId);

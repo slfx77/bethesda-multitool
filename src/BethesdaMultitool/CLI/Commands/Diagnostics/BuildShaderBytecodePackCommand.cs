@@ -100,7 +100,8 @@ internal static class BuildShaderBytecodePackCommand
         // only a missing, stale, or corrupt pack actually requires the Windows FXC backend.
         if (!OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("Shader bytecode pack generation requires Windows D3DCompiler/FXC.");
+            await Console.Error.WriteLineAsync(
+                "Shader bytecode pack generation requires Windows D3DCompiler/FXC.");
             return 1;
         }
 

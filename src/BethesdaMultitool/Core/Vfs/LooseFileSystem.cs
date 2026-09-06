@@ -56,10 +56,7 @@ public sealed class LooseFileSystem : IGameFileSystem
     public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
-        if (maximumBytes > int.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maximumBytes, int.MaxValue);
 
         if (Resolve(path) is not { } full)
         {

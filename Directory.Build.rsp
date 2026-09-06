@@ -1,0 +1,20 @@
+# Default MSBuild arguments for every build in this repo.
+#
+# MSBuild auto-loads this file for `dotnet build` / `dotnet msbuild` invoked anywhere at or
+# below the repo root. Anything passed explicitly on the command line still wins, so these are
+# safe defaults rather than a policy you have to fight (verified: an explicit -m:1 overrides
+# the -m:4 below).
+#
+# WHY (measured 2026-09-05, 20-core / 31.7 GB box, 3-4 concurrent agent sessions):
+# MSBuild defaults to one node per logical core - 20 here - and each node drives concurrent
+# compilations of a 658k-LOC project through the shared Roslyn compiler server. Multiplied by
+# several sessions this drove VBCSCompiler to 14.3 GB private and the machine to 0 GB free.
+# The project graph is nearly linear (almost everything depends on BethesdaMultitool), so the
+# extra nodes buy very little wall clock and cost a great deal of peak memory.
+#
+# NOTE: this file caps parallelism only. The larger win is running the compiler under
+# workstation GC (DOTNET_gcServer=0), which an .rsp cannot set because it is an environment
+# variable, not an MSBuild argument. Use tools\scripts\build.ps1, which sets both.
+
+-m:4
+-nodeReuse:false

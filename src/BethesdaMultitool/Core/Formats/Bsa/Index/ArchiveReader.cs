@@ -252,7 +252,7 @@ public sealed class ArchiveReader : IDisposable
         return map;
     }
 
-    private IReadOnlyDictionary<string, BsaFileRecord> BuildBsaFileIndex()
+    private Dictionary<string, BsaFileRecord> BuildBsaFileIndex()
     {
         var extractor = AsBsaExtractor
             ?? throw new InvalidOperationException("The archive is not a BSA.");
@@ -270,7 +270,7 @@ public sealed class ArchiveReader : IDisposable
         return map;
     }
 
-    private IReadOnlyDictionary<string, Ba2FileRecord> BuildBa2FileIndex()
+    private Dictionary<string, Ba2FileRecord> BuildBa2FileIndex()
     {
         var extractor = AsBa2Extractor
             ?? throw new InvalidOperationException("The archive is not a BA2.");

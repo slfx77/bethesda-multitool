@@ -102,6 +102,15 @@ internal static class EnvironmentVariables
         public const string Worldspace = "FALLOUT_VIEWER_WORLDSPACE";
         public const string DumpReference = "FALLOUT_VIEWER_DUMP_REFR";
 
+        /// <summary>Diagnostic A/B only: "legacy" restores the historical single, scheduled shadow prime.</summary>
+        public const string CaptureShadowPriming = "FALLOUT_VIEWER_CAPTURE_SHADOW_PRIMING";
+
+        /// <summary>Reads the post-prime shadow texels before real color; never a performance measurement.</summary>
+        public const string CaptureShadowFingerprint = "FALLOUT_VIEWER_CAPTURE_SHADOW_FINGERPRINT";
+
+        /// <summary>Synthetic recovery control: defer only the first prime, without changing scene inputs.</summary>
+        public const string CaptureShadowDeferFirstPrime = "FALLOUT_VIEWER_CAPTURE_SHADOW_DEFER_FIRST_PRIME";
+
         /// <summary>
         ///     Optional absolute PNG path used by the native Mesh/NPC viewer capture buttons.
         ///     Intended for deterministic visual-regression automation; unset preserves the
@@ -285,6 +294,12 @@ internal static class EnvironmentVariables
         ///     draws, and the per-batch instance-buffer fallback remain on the direct path.
         /// </summary>
         public const string ReferenceOpaqueIndirect = "FALLOUT_VIEWER_REFERENCE_OPAQUE_INDIRECT";
+
+        /// <summary>One hexadecimal REFR to audit for MODS texture provenance and direct FNV draw evidence.</summary>
+        public const string ReferenceOverrideTrace = "FALLOUT_VIEWER_REFERENCE_OVERRIDE_TRACE";
+
+        /// <summary>Set to "0" to exclude native alpha-tested materials from the bounded FNV active-ADT route.</summary>
+        public const string FnvAdtAlphaTest = "FALLOUT_VIEWER_FNV_ADT_ALPHA_TEST";
 
         /// <summary>
         ///     Game-scoped, fail-closed pixel-shader specialization for audited modern opaque
