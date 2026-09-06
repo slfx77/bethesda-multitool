@@ -162,32 +162,33 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private void TryInitReferencePipeline()
     {
-        if (_data is null) return;
+        var data = _data;
+        if (data is null) return;
 
         try
         {
             // Clear any prior failure — this runs again on every ESM switch.
             _referencePipelineInitError = null;
-            var meshBsas = DiscoverMeshBsaPaths(_data);
+            var meshBsas = DiscoverMeshBsaPaths(data);
             if (meshBsas.Length == 0)
             {
                 Log.Warn(
                     "WorldView3DControl: no *Meshes*.bsa from '{0}' or {1} Load Order paths — REFRs will be skipped. Add an ESM whose Data folder contains a Meshes BSA to the Load Order.",
-                    Path.GetDirectoryName(_data.SourceFilePath ?? "") ?? "(unknown)",
-                    _data.AdditionalDataPaths.Count);
+                    Path.GetDirectoryName(data.SourceFilePath ?? "") ?? "(unknown)",
+                    data.AdditionalDataPaths.Count);
                 return;
             }
 
-            var textureBsas = DiscoverTextureBsaPaths(_data);
+            var textureBsas = DiscoverTextureBsaPaths(data);
             // Memory dumps reference prototype mesh paths that were renamed before the shipped
             // archives, so enable the fuzzy renamed-asset fallback (+ loose-file overrides) for
             // dumps only; ESM/ESP browsing stays exact-only.
             _meshArchives = MeshArchiveSet.Open(
                 meshBsas[0],
                 meshBsas.Length > 1 ? meshBsas[1..] : null,
-                enableFuzzy: _data.IsMemoryDump,
-                includeLooseFiles: _data.IsMemoryDump,
-                pathRenames: _data.MeshPathRenames);
+                enableFuzzy: data.IsMemoryDump,
+                includeLooseFiles: data.IsMemoryDump,
+                pathRenames: data.MeshPathRenames);
             _referenceTextureResolver = new NifTextureResolver(textureBsas);
             _referenceGpuTextureResolver12 =
                 new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);
@@ -226,12 +227,12 @@ public sealed partial class WorldView3DControl
                 autoSizeMeshCapacity: BethesdaMultitool.Core.EnvironmentVariables.Get(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity) is null,
                 // Authoritative leaf atlas from the TREE record's ICON (the .spt's dev material often never shipped).
-                speedTreeLeafTextures: _data?.SpeedTreeLeafTextures,
+                speedTreeLeafTextures: data.SpeedTreeLeafTextures,
                 // TREE CNAM canopy-depth dimming (leaf + branch scalars) — engine-applied per tree.
-                speedTreeDimming: _data?.SpeedTreeDimming);
+                speedTreeDimming: data.SpeedTreeDimming);
             _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
-                _cbvSrvUavHeap12, _referenceMeshCache12, _deletionQueue12, _data.Game,
+                _cbvSrvUavHeap12, _referenceMeshCache12, _deletionQueue12, data.Game,
                 _referenceEnabledOverrides)
             {
                 DetailedProfilingEnabled = _profileLogging,

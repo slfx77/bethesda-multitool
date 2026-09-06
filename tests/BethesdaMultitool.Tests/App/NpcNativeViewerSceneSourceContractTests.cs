@@ -195,12 +195,14 @@ public sealed class NpcNativeViewerSceneSourceContractTests
             headPlan,
             "var effectiveEarTexturePath = npc.EarTexturePath",
             "npc.Game == BethesdaGame.Oblivion",
-            "NpcMeshHelpers.ApplyBodyEgtMorph(",
-            "\"ears\"",
+            "NpcEarTextureComposer.Resolve(",
+            "map1Source={4} map1EffectivePath={5}",
             "EffectiveEarTexturePath = effectiveEarTexturePath");
         Assert.Contains("headPlan.EffectiveEarTexturePath", exportHead, StringComparison.Ordinal);
-        Assert.Contains("OblivionNpcFacePartMaterialResolver.Apply(", exportHead, StringComparison.Ordinal);
-        Assert.Contains("OblivionNpcFacePartMaterialResolver.Apply(", renderHead, StringComparison.Ordinal);
+        Assert.Contains("OblivionNpcFacePartMaterialResolver.ApplyClassicSkin2000(", exportHead,
+            StringComparison.Ordinal);
+        Assert.Contains("OblivionNpcFacePartMaterialResolver.ApplyClassicSkin2000(", renderHead,
+            StringComparison.Ordinal);
     }
 
     [Fact]

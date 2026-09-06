@@ -349,26 +349,6 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
         }
     }
 
-    private static void ReleaseSharedLease(BethesdaSceneViewerGraphicsContext12 context)
-    {
-        lock (SharedGate)
-        {
-            if (!ReferenceEquals(_shared, context) || _sharedLeaseCount <= 0)
-            {
-                return;
-            }
-
-            _sharedLeaseCount--;
-            if (_sharedLeaseCount != 0)
-            {
-                return;
-            }
-
-            _shared = null;
-            context.Dispose();
-        }
-    }
-
     internal sealed class BethesdaSceneViewerGraphicsLease12(
         BethesdaSceneViewerGraphicsContext12 context) : IDisposable
     {
@@ -383,6 +363,26 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
             if (released is not null)
             {
                 ReleaseSharedLease(released);
+            }
+        }
+
+        private static void ReleaseSharedLease(BethesdaSceneViewerGraphicsContext12 context)
+        {
+            lock (SharedGate)
+            {
+                if (!ReferenceEquals(_shared, context) || _sharedLeaseCount <= 0)
+                {
+                    return;
+                }
+
+                _sharedLeaseCount--;
+                if (_sharedLeaseCount != 0)
+                {
+                    return;
+                }
+
+                _shared = null;
+                context.Dispose();
             }
         }
     }

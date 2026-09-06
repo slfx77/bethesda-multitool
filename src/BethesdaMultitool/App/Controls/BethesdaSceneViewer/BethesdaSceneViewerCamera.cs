@@ -92,7 +92,7 @@ internal sealed class BethesdaSceneViewerCamera
             BethesdaViewerPerspectiveFramingPolicy.ShouldUseProjectedBoundsFit(purpose);
         _lastProjectedFramingAspect = float.NaN;
 
-        // Actors use their established renderer front (90-degree azimuth, horizon-level eye), while
+        // Actors use their established +Y front (native compass azimuth 0, horizon-level eye), while
         // arbitrary raw assets retain the useful three-quarter default. A camera-centred raw sky
         // keeps its inverse elevation so the FOV spans the authored horizon/upper hemisphere.
         var initialOrbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(

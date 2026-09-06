@@ -271,7 +271,7 @@ public sealed partial class BethesdaSceneViewerControl
 
     private static string MakeUniqueAnimationClipName(
         string requestedName,
-        IReadOnlySet<string> occupiedNames)
+        HashSet<string> occupiedNames)
     {
         if (!occupiedNames.Contains(requestedName))
         {

@@ -433,7 +433,6 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     {
         var sourceGeneration = unchecked(++_nifViewerLoadGeneration);
         var previousSourceCancellation = _nifViewerSourceLoadCts;
-        previousSourceCancellation?.Cancel();
         var sourceLoadCts = new CancellationTokenSource();
         _nifViewerSourceLoadCts = sourceLoadCts;
         var cancellationToken = sourceLoadCts.Token;
@@ -462,6 +461,17 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
         try
         {
+            // The prologue above must stay synchronous: it is the last point at which this call
+            // owns the UI state without a replacement or a disposal being able to interleave. The
+            // superseded load's token is still transitioned before any yield (CancelAsync only
+            // defers running its callbacks), and it is cancelled BEFORE this call's own token
+            // check so a call that is itself superseded while the callbacks drain cannot exit
+            // early and leave an older load running.
+            if (previousSourceCancellation is not null)
+            {
+                await previousSourceCancellation.CancelAsync();
+            }
+
             // Visibility/property changes do not paint until control returns to the dispatcher.
             // Yield one turn before any synchronous cancellation drain or service disposal work.
             await Task.Yield();
