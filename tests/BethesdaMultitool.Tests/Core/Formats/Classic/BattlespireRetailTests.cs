@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Battlespire;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Classic;
+using BethesdaMultitool.Core.Formats.Xngine.Flic;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -29,6 +30,87 @@ public sealed class BattlespireRetailTests
         var root = RealAssetPaths.Classics.Battlespire();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Battlespire (GAMEDATA)"));
         return root!;
+    }
+
+    [Fact]
+    public void EveryMovie_ParsesWholeAtOffsetZeroAndIsSixFortyByFourEighty()
+    {
+        var path = Path.Combine(RequireGameData(), "FLC.BSA");
+        Assert.SkipWhen(!File.Exists(path), RealAssetPaths.SkipMessage("FLC.BSA"));
+
+        using var archive = ArchiveReader.Open(path);
+        var entries = archive.ListFiles();
+        Assert.Equal(164, entries.Count);
+
+        var movies = 0;
+        var strays = new List<string>();
+        var failures = new List<string>();
+        var frames = 0;
+
+        foreach (var entry in entries)
+        {
+            var bytes = archive.ReadFile(entry.FullPath);
+            if (bytes is null || !FlicFile.IsFlic(bytes))
+            {
+                // ADR.TXT is an authoring directory listing, the same stray shape 3D.BSA carries.
+                strays.Add(entry.Name);
+                continue;
+            }
+
+            try
+            {
+                var flic = FlicFile.Parse(bytes, entry.Name);
+                Assert.Equal((640, 480), (flic.Width, flic.Height));
+                frames += flic.Frames.Count;
+                movies++;
+            }
+            catch (InvalidDataException e)
+            {
+                failures.Add($"{entry.Name}: {e.Message}");
+            }
+        }
+
+        Assert.Empty(failures);
+        Assert.Equal(163, movies);
+        Assert.Equal<string[]>(["ADR.TXT"], [.. strays]);
+        Assert.True(frames > 1_000, $"only {frames} frames decoded");
+    }
+
+    [Fact]
+    public void EveryMovie_StartsAtOffsetZero_NoJunkLeadBytes()
+    {
+        // ⛔ REFUTES a standing note that "some records carry 2 junk lead bytes — sniff 0xAF12 at
+        // +4 AND +6". Measured 2026-09-06: all 163 movies carry the magic at +4 and their declared
+        // size equals the whole entry, so NONE needs the +2 offset. The size equality is exact
+        // arithmetic, not a signature sniff — a +2 record could not satisfy it.
+        var path = Path.Combine(RequireGameData(), "FLC.BSA");
+        Assert.SkipWhen(!File.Exists(path), RealAssetPaths.SkipMessage("FLC.BSA"));
+
+        using var archive = ArchiveReader.Open(path);
+        var shifted = new List<string>();
+        var mismatched = new List<string>();
+
+        foreach (var entry in archive.ListFiles())
+        {
+            var bytes = archive.ReadFile(entry.FullPath);
+            if (bytes is null || bytes.Length < 8 || !FlicFile.IsFlic(bytes))
+            {
+                continue;
+            }
+
+            if (BitConverter.ToUInt16(bytes, 6) == FlicFile.FlcMagic && BitConverter.ToUInt16(bytes, 4) != FlicFile.FlcMagic)
+            {
+                shifted.Add(entry.Name);
+            }
+
+            if (BitConverter.ToUInt32(bytes, 0) != bytes.Length)
+            {
+                mismatched.Add($"{entry.Name}: declared {BitConverter.ToUInt32(bytes, 0)}, actual {bytes.Length}");
+            }
+        }
+
+        Assert.Empty(shifted);
+        Assert.Empty(mismatched);
     }
 
     [Fact]

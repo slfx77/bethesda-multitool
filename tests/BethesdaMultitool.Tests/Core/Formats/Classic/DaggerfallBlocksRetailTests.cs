@@ -33,6 +33,56 @@ public sealed class DaggerfallBlocksRetailTests
     }
 
     [Fact]
+    public void BlockAssembly_KeepsEveryPlacementInsideItsOwnBlockSquare()
+    {
+        var blocks = OpenArchive();
+
+        // ⚠ This is the check that discriminates the Z-mirror reading. A block is 4096 units
+        // square. Applying the mirror ONCE, as a frame conversion on the summed position, keeps
+        // every placement inside that square. Mirroring the model AND the sub-block position
+        // separately re-mirrors and pushes placements out past 4096 — while still producing a
+        // building that looks entirely plausible on its own.
+        var inspected = 0;
+        var placements = 0;
+        var outside = new List<string>();
+
+        for (var i = 0; i < blocks.Count && inspected < 40; i++)
+        {
+            if (blocks.TypeAt(i) != DaggerfallBlockType.Rmb)
+            {
+                continue;
+            }
+
+            var block = blocks.ParseRmb(i);
+            if (block.SubRecords.Count == 0)
+            {
+                continue;
+            }
+
+            inspected++;
+            var assembly = DaggerfallBlockSceneAssembler.Assemble(block.Name, block.SubRecords, _ => null);
+            placements += assembly.Placed;
+
+            foreach (var sub in block.SubRecords)
+            {
+                foreach (var model in sub.Exterior.Models)
+                {
+                    var at = DaggerfallBlockSceneAssembler.TransformFor(sub, model).Translation;
+                    if (at.Z is < -DaggerfallBlockSceneAssembler.BlockSideUnits
+                        or > (2 * DaggerfallBlockSceneAssembler.BlockSideUnits))
+                    {
+                        outside.Add($"{block.Name}: z={at.Z:F0}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(inspected >= 20, $"only {inspected} RMB blocks inspected");
+        Assert.True(placements > 0, "no models placed at all");
+        Assert.Empty(outside);
+    }
+
+    [Fact]
     public void Archive_HasTheRetailPopulation_IncludingTheStrayListing()
     {
         var blocks = OpenArchive();

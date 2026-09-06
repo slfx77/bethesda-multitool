@@ -380,6 +380,41 @@ public sealed class ArenaRetailInstallTests
     }
 
     [Fact]
+    public void UnpackedExecutable_CarriesItsOwnProvinceTableThatDisagreesWithCityData()
+    {
+        var root = RequireArenaRoot();
+        var exePath = Path.Combine(root, "A.EXE");
+        var cityPath = Path.Combine(root, "CITYDATA.00");
+        Assert.SkipWhen(!File.Exists(exePath) || !File.Exists(cityPath), RealAssetPaths.SkipMessage("Arena A.EXE + CITYDATA"));
+
+        var unpacked = ArenaExeUnpacker.Unpack(File.ReadAllBytes(exePath), "A.EXE");
+        var fromExe = ArenaExeData.TryReadProvinces(unpacked);
+
+        Assert.NotNull(fromExe);
+        Assert.Equal(ArenaExeData.ProvinceCount, fromExe.Count);
+        Assert.Equal("High Rock", fromExe[0].Name);
+        Assert.Equal("Imperial Province", fromExe[^1].Name);
+
+        // Every rectangle must sit inside the world map — the arithmetic that proves the table was
+        // found at the right address rather than somewhere that merely parses.
+        Assert.All(fromExe, p => Assert.InRange(p.Right, 1, ArenaExeData.WorldMapWidth));
+        Assert.All(fromExe, p => Assert.InRange(p.Bottom, 1, ArenaExeData.WorldMapHeight));
+
+        // ⚠⚠ The executable and CITYDATA carry INDEPENDENT province tables. Measured 2026-09-06:
+        // all nine rectangles differ, and CITYDATA spells the fifth "Summurset Isle" where the
+        // executable says "Summerset Isle". Pinned so neither is silently "corrected" to the other;
+        // which one the game draws with is not established.
+        var fromCityData = ArenaCityDataFile.Parse(File.ReadAllBytes(cityPath), "CITYDATA.00").Provinces;
+        var differing = fromExe.Where((p, i) =>
+            p.X != fromCityData[i].GlobalX || p.Y != fromCityData[i].GlobalY ||
+            p.Width != fromCityData[i].GlobalWidth || p.Height != fromCityData[i].GlobalHeight).Count();
+
+        Assert.Equal(ArenaExeData.ProvinceCount, differing);
+        Assert.Equal("Summerset Isle", fromExe[4].Name);
+        Assert.Equal("Summurset Isle", fromCityData[4].Name);
+    }
+
+    [Fact]
     public void PackedExecutable_UnpacksToItsDeclaredSizeAndRealGameText()
     {
         var root = RequireArenaRoot();
