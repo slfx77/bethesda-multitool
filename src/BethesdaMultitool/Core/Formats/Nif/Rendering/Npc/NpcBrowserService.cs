@@ -342,50 +342,54 @@ internal sealed class NpcBrowserService : IDisposable
             .Where(e => e.FormType == 0x2A)
             .ToList();
 
-        if (npcEntries.Count == 0)
-        {
-            Log.Warn("No NPC_ entries found in DMP runtime hash table");
-            meshArchives.Dispose();
-            textureResolver.Dispose();
-            return null;
-        }
-
-        Log.Info("Found {0} NPC_ entries in DMP, resolving appearances...", npcEntries.Count);
-
-        // Create struct reader with auto-detected layout
-        var structReader = RuntimeStructReader.CreateWithAutoDetect(
-            accessor,
-            fileSize,
-            minidumpInfo,
-            scanResult.RuntimeRefrFormEntries,
-            npcEntries);
-
         // Resolve all NPC appearances from DMP
         var dmpAppearances = new Dictionary<uint, NpcAppearance>();
-        foreach (var entry in npcEntries)
+        if (npcEntries.Count == 0)
         {
-            var npcRecord = structReader.ReadRuntimeNpc(entry);
-            if (npcRecord == null)
-            {
-                continue;
-            }
+            Log.Warn(
+                "No NPC_ entries found in DMP runtime hash table; companion-ESM creatures remain available");
+        }
+        else
+        {
+            Log.Info("Found {0} NPC_ entries in DMP, resolving appearances...", npcEntries.Count);
 
-            var appearance = resolver.ResolveFromDmpRecord(npcRecord, pluginName);
-            if (appearance != null)
+            // Runtime data remains authoritative for the DMP NPC tab. The companion ESM is used
+            // only for actor families that the runtime appearance path does not currently decode.
+            var structReader = RuntimeStructReader.CreateWithAutoDetect(
+                accessor,
+                fileSize,
+                minidumpInfo,
+                scanResult.RuntimeRefrFormEntries,
+                npcEntries);
+
+            foreach (var entry in npcEntries)
             {
-                dmpAppearances.TryAdd(appearance.NpcFormId, appearance);
+                var npcRecord = structReader.ReadRuntimeNpc(entry);
+                if (npcRecord == null)
+                {
+                    continue;
+                }
+
+                var appearance = resolver.ResolveFromDmpRecord(npcRecord, pluginName);
+                if (appearance != null)
+                {
+                    dmpAppearances.TryAdd(appearance.NpcFormId, appearance);
+                }
             }
         }
 
-        if (dmpAppearances.Count == 0)
+        if (dmpAppearances.Count == 0 && resolver.CreatureCount == 0)
         {
-            Log.Warn("No NPC appearances could be resolved from DMP");
+            Log.Warn("No runtime NPC appearances or companion-ESM creatures could be resolved for DMP browsing");
             meshArchives.Dispose();
             textureResolver.Dispose();
             return null;
         }
 
-        Log.Info("Resolved {0} NPC appearances from DMP", dmpAppearances.Count);
+        Log.Info(
+            "Resolved {0} runtime NPC appearances and {1} companion-ESM creatures for DMP browsing",
+            dmpAppearances.Count,
+            resolver.CreatureCount);
 
         return new NpcBrowserService(
             resolver,
@@ -419,7 +423,7 @@ internal sealed class NpcBrowserService : IDisposable
         return false;
     }
 
-    /// <summary>Returns the browsable list of NPCs (from ESM or DMP), optionally limited to named actors.</summary>
+    /// <summary>Returns the browsable actor list (from ESM or DMP), optionally limited to named actors.</summary>
     public List<NpcListItem> GetNpcList(bool namedOnly = false)
     {
         using var operation = _operationGate.Enter();
@@ -556,6 +560,15 @@ internal sealed class NpcBrowserService : IDisposable
                 IncludeWeapon = true,
                 BindPose = bindPose
             });
+        if (plan != null)
+        {
+            Log.Info(
+                "NPC Browser creature animation formId=0x{0:X8} source={1} composedOverrides={2:N0}.",
+                creatureFormId,
+                plan.AnimationSourcePath ?? "(bind/rest pose)",
+                plan.AnimationOverrides?.Count ?? 0);
+        }
+
         var exportScene = plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, _meshArchives);
 
         if (exportScene == null || exportScene.MeshParts.Count == 0)
@@ -944,9 +957,30 @@ internal sealed class NpcBrowserService : IDisposable
 
     private List<NpcListItem> GetNpcListFromDmp(bool namedOnly)
     {
-        var list = new List<NpcListItem>(_dmpAppearances!.Count);
+        return BuildDmpActorList(
+            _dmpAppearances!,
+            _resolver.GetAllCreatures(),
+            _game,
+            namedOnly);
+    }
 
-        foreach (var (formId, npc) in _dmpAppearances)
+    /// <summary>
+    ///     Builds the DMP browser's hybrid actor list. Runtime appearances remain authoritative
+    ///     for NPCs, while creatures come from the companion ESM used by the existing creature
+    ///     composition path.
+    /// </summary>
+    internal static List<NpcListItem> BuildDmpActorList(
+        IReadOnlyDictionary<uint, NpcAppearance> dmpAppearances,
+        IReadOnlyDictionary<uint, CreatureScanEntry> creatures,
+        BethesdaGame game,
+        bool namedOnly)
+    {
+        ArgumentNullException.ThrowIfNull(dmpAppearances);
+        ArgumentNullException.ThrowIfNull(creatures);
+
+        var list = new List<NpcListItem>(dmpAppearances.Count + creatures.Count);
+
+        foreach (var (formId, npc) in dmpAppearances)
         {
             if (namedOnly && string.IsNullOrEmpty(npc.FullName))
             {
@@ -954,6 +988,21 @@ internal sealed class NpcBrowserService : IDisposable
             }
 
             list.Add(new NpcListItem(formId, npc.EditorId, npc.FullName, npc.IsFemale, null));
+        }
+
+        foreach (var (formId, creature) in creatures)
+        {
+            if (namedOnly && string.IsNullOrEmpty(creature.FullName))
+            {
+                continue;
+            }
+
+            list.Add(new NpcListItem(
+                formId,
+                creature.EditorId,
+                creature.FullName,
+                creature.ResolveBodyModelPath(),
+                creature.GetCreatureTypeName(game)));
         }
 
         list.Sort((a, b) =>

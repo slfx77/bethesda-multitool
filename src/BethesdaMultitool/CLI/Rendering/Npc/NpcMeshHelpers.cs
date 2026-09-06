@@ -235,45 +235,14 @@ internal static class NpcMeshHelpers
             MinZ = source.MinZ,
             MaxX = source.MaxX,
             MaxY = source.MaxY,
-            MaxZ = source.MaxZ
+            MaxZ = source.MaxZ,
+            WasSkinned = source.WasSkinned,
+            ContainsParticleSource = source.ContainsParticleSource
         };
 
         foreach (var sub in source.Submeshes)
         {
-            clone.Submeshes.Add(new RenderableSubmesh
-            {
-                ShapeName = sub.ShapeName,
-                Positions = (float[])sub.Positions.Clone(),
-                Triangles = (ushort[])sub.Triangles.Clone(),
-                Normals = sub.Normals != null ? (float[])sub.Normals.Clone() : null,
-                UVs = sub.UVs != null ? (float[])sub.UVs.Clone() : null,
-                VertexColors = sub.VertexColors != null ? (byte[])sub.VertexColors.Clone() : null,
-                StarfieldMaterialColor = sub.StarfieldMaterialColor,
-                StarfieldMaterialAlpha = sub.StarfieldMaterialAlpha,
-                Tangents = sub.Tangents != null ? (float[])sub.Tangents.Clone() : null,
-                Bitangents = sub.Bitangents != null ? (float[])sub.Bitangents.Clone() : null,
-                ShaderMetadata = sub.ShaderMetadata,
-                DiffuseTexturePath = sub.DiffuseTexturePath,
-                NormalMapTexturePath = sub.NormalMapTexturePath,
-                BgsmGlowMapTexturePath = sub.BgsmGlowMapTexturePath,
-                BgsmEmissionColor = sub.BgsmEmissionColor,
-                IsEmissive = sub.IsEmissive,
-                UseVertexColors = sub.UseVertexColors,
-                UseVertexAlphaForOpacity = sub.UseVertexAlphaForOpacity,
-                IsTreeAnimation = sub.IsTreeAnimation,
-                IsDoubleSided = sub.IsDoubleSided,
-                HasAlphaBlend = sub.HasAlphaBlend,
-                HasAlphaTest = sub.HasAlphaTest,
-                AlphaTestThreshold = sub.AlphaTestThreshold,
-                AlphaTestFunction = sub.AlphaTestFunction,
-                SrcBlendMode = sub.SrcBlendMode,
-                DstBlendMode = sub.DstBlendMode,
-                MaterialAlpha = sub.MaterialAlpha,
-                IsEyeEnvmap = sub.IsEyeEnvmap,
-                EnvMapScale = sub.EnvMapScale,
-                RenderOrder = sub.RenderOrder,
-                TintColor = sub.TintColor
-            });
+            clone.Submeshes.Add(RenderableSubmeshCloner.DeepClone(sub));
         }
 
         return clone;

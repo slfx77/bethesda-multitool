@@ -21,6 +21,12 @@ internal sealed class CreatureCompositionPlan
 
     public Dictionary<string, NifAnimationParser.AnimPoseOverride>? AnimationOverrides { get; init; }
 
+    /// <summary>
+    ///     Exact virtual path of the KF that supplied <see cref="AnimationOverrides" />, or a
+    ///     skeleton-fragment label when the pose came from embedded controller data.
+    /// </summary>
+    public string? AnimationSourcePath { get; init; }
+
     public Matrix4x4? HeadAttachmentTransform { get; init; }
 
     public Matrix4x4? WeaponAttachmentTransform { get; init; }

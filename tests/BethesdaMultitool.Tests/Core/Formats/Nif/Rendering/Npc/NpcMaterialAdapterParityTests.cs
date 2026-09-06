@@ -1,4 +1,6 @@
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
@@ -93,7 +95,34 @@ public sealed class NpcMaterialAdapterParityTests
         {
             Assert.Equal(tint, submesh.TintColor!.Value);
             Assert.Equal(hairDiffusePath, submesh.DiffuseTexturePath);
+            Assert.False(submesh.UsesClassicHairMaterial);
         });
+    }
+
+    [Fact]
+    public void OblivionHairPolicyMarksClassicMaterialAndKeepsNormalRelief()
+    {
+        var submesh = CreateBaseHeadTriangle(withSpecularMaterial: true);
+        var model = new NifRenderableModel();
+        model.Submeshes.Add(submesh);
+
+        const string diffusePath = @"textures\characters\hair\short.dds";
+        const string normalPath = @"textures\characters\hair\short_n.dds";
+        using var textureResolver = new NifTextureResolver();
+        textureResolver.InjectTexture(normalPath, TestTextures.Single(127, 127, 255, 255));
+
+        NpcHairSubmeshPolicy.Apply(
+            model,
+            BethesdaGame.Oblivion,
+            (124f / 255f, 102f / 255f, 82f / 255f),
+            textureResolver,
+            diffusePath);
+
+        Assert.True(submesh.UsesClassicHairMaterial);
+        Assert.Equal(normalPath, submesh.NormalMapTexturePath);
+        Assert.NotNull(submesh.Tangents);
+        Assert.NotNull(submesh.Bitangents);
+        Assert.False(NifSpecularPolicy.IsEnabled(submesh));
     }
 
     [Fact]
@@ -113,6 +142,23 @@ public sealed class NpcMaterialAdapterParityTests
 
         Assert.Single(model.Submeshes);
         Assert.Null(submesh.TintColor);
+    }
+
+    [Fact]
+    public void CpuMultiViewCloneRetainsClassicSkinMaterialFamily()
+    {
+        var sourceSubmesh = CreateBaseHeadTriangle();
+        sourceSubmesh.IsFaceGen = true;
+        sourceSubmesh.SubsurfaceColor = (0.75f, 0.5f, 0.25f);
+        var source = new NifRenderableModel();
+        source.Submeshes.Add(sourceSubmesh);
+
+        var clone = NpcMeshHelpers.DeepCloneModel(source);
+
+        var clonedSubmesh = Assert.Single(clone.Submeshes);
+        Assert.True(clonedSubmesh.IsFaceGen);
+        Assert.Equal(sourceSubmesh.SubsurfaceColor, clonedSubmesh.SubsurfaceColor);
+        Assert.NotSame(sourceSubmesh.Positions, clonedSubmesh.Positions);
     }
 
     [Fact]
@@ -143,11 +189,41 @@ public sealed class NpcMaterialAdapterParityTests
             exportHead,
             "NpcHairSubmeshPolicy.Apply(",
             "NpcExportSceneBuilder.AddRigidModel(scene, npc.HairNifPath, hairModel);");
+        Assert.Contains(
+            "UsesClassicHairMaterial = game == BethesdaGame.Oblivion;",
+            SourceContract.ReadSource(
+                "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Npc", "Assets",
+                "NpcHairSubmeshPolicy.cs"),
+            StringComparison.Ordinal);
+        var classicHair = CreateBaseHeadTriangle();
+        classicHair.UsesClassicHairMaterial = true;
+        var genericHair = CreateBaseHeadTriangle();
+        genericHair.UsesClassicHairMaterial = false;
+        var source = new NifRenderableModel();
+        source.Submeshes.Add(classicHair);
+        source.Submeshes.Add(genericHair);
+
+        var clone = NpcMeshHelpers.DeepCloneModel(source);
+
+        Assert.NotSame(source, clone);
+        Assert.NotSame(source.Submeshes, clone.Submeshes);
+        Assert.Equal(2, clone.Submeshes.Count);
+        var clonedClassicHair = clone.Submeshes[0];
+        var clonedGenericHair = clone.Submeshes[1];
+        Assert.NotSame(classicHair, clonedClassicHair);
+        Assert.NotSame(genericHair, clonedGenericHair);
+        Assert.True(clonedClassicHair.UsesClassicHairMaterial);
+        Assert.False(clonedGenericHair.UsesClassicHairMaterial);
+
+        clonedClassicHair.UsesClassicHairMaterial = false;
+        clonedGenericHair.UsesClassicHairMaterial = true;
+        Assert.True(classicHair.UsesClassicHairMaterial);
+        Assert.False(genericHair.UsesClassicHairMaterial);
         Assert.DoesNotContain("hairModel.Submeshes.RemoveAll", cpuParts + exportHead,
             StringComparison.Ordinal);
     }
 
-    private static RenderableSubmesh CreateBaseHeadTriangle()
+    private static RenderableSubmesh CreateBaseHeadTriangle(bool withSpecularMaterial = false)
     {
         return new RenderableSubmesh
         {
@@ -157,7 +233,9 @@ public sealed class NpcMaterialAdapterParityTests
             UVs = [0f, 0f, 1f, 0f, 0f, 1f],
             Tangents = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
             Bitangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
-            DiffuseTexturePath = FamilyDiffusePath
+            DiffuseTexturePath = FamilyDiffusePath,
+            MaterialGlossiness = 10f,
+            SpecularColor = withSpecularMaterial ? (0.9f, 0.9f, 0.9f) : default
         };
     }
 }

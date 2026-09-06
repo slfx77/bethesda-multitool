@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -15,6 +16,22 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 /// </summary>
 internal static class CreatureCompositionPlanner
 {
+    private static readonly string[] OblivionDefaultIdleCandidates = ["idle.kf"];
+
+    private static readonly string[] FalloutStyleDefaultIdleCandidates =
+    [
+        "locomotion\\mtidle.kf",
+        "mtidle.kf"
+    ];
+
+    private static readonly string[] NonOblivionLastResortIdleCandidates =
+    [
+        "idleanims\\specialidle_toungehang.kf",
+        "idleanims\\specialidle_sniff.kf",
+        "idleanims\\mtidle.kf",
+        "locomotion\\mtforward.kf"
+    ];
+
     internal static CreatureCompositionPlan? CreatePlan(
         CreatureScanEntry creature,
         MeshArchiveSet meshArchives,
@@ -64,7 +81,8 @@ internal static class CreatureCompositionPlanner
             creature.ResolveIdleAnimationPath(),
             weaponMeshPath,
             creature,
-            weaponEntry);
+            weaponEntry,
+            resolver.Game);
     }
 
     internal static CreatureCompositionPlan? CreatePlan(
@@ -75,7 +93,8 @@ internal static class CreatureCompositionPlanner
         string? idleAnimationPath = null,
         string? weaponMeshPath = null,
         CreatureScanEntry? creature = null,
-        WeapScanEntry? weaponEntry = null)
+        WeapScanEntry? weaponEntry = null,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         ArgumentNullException.ThrowIfNull(skeletonPath);
         ArgumentNullException.ThrowIfNull(bodyModelPaths);
@@ -94,12 +113,14 @@ internal static class CreatureCompositionPlanner
             return null;
         }
 
-        var animationOverrides = ResolveCreatureAnimationOverrides(
+        var animation = ResolveCreatureAnimationOverrides(
             skeletonNifPath,
             skeletonRaw.Value,
             meshArchives,
             options,
-            idleAnimationPath);
+            idleAnimationPath,
+            game);
+        var animationOverrides = animation?.Overrides;
 
         // Merge weapon holster pose over base idle so arm/hand bones adopt a weapon-holding stance
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? weaponPoseOverrides = null;
@@ -182,106 +203,144 @@ internal static class CreatureCompositionPlanner
             BodyModelPaths = normalizedBodyPaths,
             BoneTransforms = boneTransforms,
             AnimationOverrides = animationOverrides,
+            AnimationSourcePath = animation?.SourcePath,
             HeadAttachmentTransform = headAttachmentTransform,
             WeaponAttachmentTransform = weaponAttachmentTransform,
             WeaponMeshPath = weaponMeshPath != null ? NormalizeMeshPath(weaponMeshPath) : null
         };
     }
 
-    private static Dictionary<string, NifAnimationParser.AnimPoseOverride>? ResolveCreatureAnimationOverrides(
+    private static CreatureAnimationResolution? ResolveCreatureAnimationOverrides(
         string skeletonNifPath,
         (byte[] Data, NifInfo Info) skeletonRaw,
         MeshArchiveSet meshArchives,
         CreatureCompositionOptions options,
-        string? idleAnimationPath)
+        string? idleAnimationPath,
+        BethesdaGame game)
     {
         if (options.BindPose)
         {
             return null;
         }
 
-        (byte[] Data, NifInfo Info)? idleRaw = null;
         if (!string.IsNullOrWhiteSpace(options.AnimOverride))
         {
             var overridePath = ResolveCreatureAnimationPath(skeletonNifPath, options.AnimOverride);
-            idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(overridePath, meshArchives, true);
+            var explicitAnimation = TryLoadCreatureAnimation(
+                overridePath,
+                meshArchives,
+                probeQuietly: false);
+            if (explicitAnimation != null)
+            {
+                return explicitAnimation;
+            }
         }
 
-        if (idleRaw == null && !string.IsNullOrWhiteSpace(idleAnimationPath))
+        if (!string.IsNullOrWhiteSpace(idleAnimationPath))
         {
             var kfPath = ResolveCreatureAnimationPath(skeletonNifPath, idleAnimationPath);
-            idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(kfPath, meshArchives, true);
-        }
-
-        if (idleRaw == null)
-        {
-            var skeletonDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
-            idleRaw = NpcMeshHelpers.LoadNifRawFromBsa(
-                skeletonDir + "locomotion\\mtidle.kf",
+            var recordAnimation = TryLoadCreatureAnimation(
+                kfPath,
                 meshArchives,
-                true);
-
-            // Some creatures (e.g., Super Mutants) store mtidle.kf directly in the creature
-            // root directory rather than in a locomotion subdirectory
-            idleRaw ??= NpcMeshHelpers.LoadNifRawFromBsa(
-                skeletonDir + "mtidle.kf",
-                meshArchives,
-                true);
-        }
-
-        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animationOverrides = null;
-        if (idleRaw != null)
-        {
-            animationOverrides = NifAnimationParser.ParseIdlePoseOverrides(idleRaw.Value.Data, idleRaw.Value.Info);
-        }
-
-        if (animationOverrides == null || animationOverrides.Count == 0)
-        {
-            animationOverrides = NifAnimationParser.ParseIdlePoseOverrides(
-                skeletonRaw.Data,
-                skeletonRaw.Info);
-        }
-
-        if (animationOverrides == null || animationOverrides.Count == 0)
-        {
-            animationOverrides = NifNodeControllerPoseReader.Parse(
-                skeletonRaw.Data,
-                skeletonRaw.Info);
-        }
-
-        if (animationOverrides == null || animationOverrides.Count == 0)
-        {
-            var skeletonDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
-            string[] candidateIdleKfs =
-            [
-                "mtidle.kf",
-                "idleanims\\specialidle_toungehang.kf",
-                "idleanims\\specialidle_sniff.kf",
-                "idleanims\\mtidle.kf",
-                "locomotion\\mtforward.kf"
-            ];
-            foreach (var candidateKf in candidateIdleKfs)
+                probeQuietly: false);
+            if (recordAnimation != null)
             {
-                var candidateRaw = NpcMeshHelpers.LoadNifRawFromBsa(
-                    skeletonDir + candidateKf,
-                    meshArchives,
-                    true);
-                if (candidateRaw == null)
-                {
-                    continue;
-                }
+                return recordAnimation;
+            }
+        }
 
-                animationOverrides = NifAnimationParser.ParseIdlePoseOverrides(
-                    candidateRaw.Value.Data,
-                    candidateRaw.Value.Info);
-                if (animationOverrides is { Count: > 0 })
+        var defaultCandidates = game == BethesdaGame.Oblivion
+            ? OblivionDefaultIdleCandidates
+            : FalloutStyleDefaultIdleCandidates;
+        foreach (var candidate in defaultCandidates)
+        {
+            var defaultAnimation = TryLoadCreatureAnimation(
+                ResolveSiblingAnimationPath(skeletonNifPath, candidate),
+                meshArchives,
+                probeQuietly: true);
+            if (defaultAnimation != null)
+            {
+                return defaultAnimation;
+            }
+        }
+
+        var embeddedSequence = NifAnimationParser.ParseIdlePoseOverrides(
+            skeletonRaw.Data,
+            skeletonRaw.Info);
+        if (embeddedSequence is { Count: > 0 })
+        {
+            return new CreatureAnimationResolution(
+                embeddedSequence,
+                $"{skeletonNifPath}#embedded-sequence");
+        }
+
+        var embeddedController = NifNodeControllerPoseReader.Parse(
+            skeletonRaw.Data,
+            skeletonRaw.Info);
+        if (embeddedController is { Count: > 0 })
+        {
+            return new CreatureAnimationResolution(
+                embeddedController,
+                $"{skeletonNifPath}#embedded-controller");
+        }
+
+        // Preserve the historical FO3/FNV recovery choices, but never substitute a combat,
+        // special-idle, or forward-movement clip for TES4's neutral sibling idle.
+        if (game != BethesdaGame.Oblivion)
+        {
+            foreach (var candidate in NonOblivionLastResortIdleCandidates)
+            {
+                var lastResort = TryLoadCreatureAnimation(
+                    ResolveSiblingAnimationPath(skeletonNifPath, candidate),
+                    meshArchives,
+                    probeQuietly: true);
+                if (lastResort != null)
                 {
-                    break;
+                    return lastResort;
                 }
             }
         }
 
-        return animationOverrides;
+        return null;
+    }
+
+    private static CreatureAnimationResolution? TryLoadCreatureAnimation(
+        string animationPath,
+        MeshArchiveSet meshArchives,
+        bool probeQuietly)
+    {
+        if (probeQuietly &&
+            !meshArchives.TryResolvePath(animationPath, out _, out _))
+        {
+            return null;
+        }
+
+        var raw = NpcMeshHelpers.LoadNifRawFromBsa(
+            animationPath,
+            meshArchives,
+            skipConversion: true);
+        if (raw == null)
+        {
+            return null;
+        }
+
+        var overrides = NifAnimationParser.ParseIdlePoseOverrides(
+            raw.Value.Data,
+            raw.Value.Info);
+        return overrides is { Count: > 0 }
+            ? new CreatureAnimationResolution(overrides, animationPath)
+            : null;
+    }
+
+    private static string ResolveSiblingAnimationPath(
+        string skeletonNifPath,
+        string relativeAnimationPath)
+    {
+        var skeletonDirectory = skeletonNifPath.Replace(
+            "skeleton.nif",
+            "",
+            StringComparison.OrdinalIgnoreCase);
+        return skeletonDirectory + relativeAnimationPath;
     }
 
     private static (Dictionary<string, NifAnimationParser.AnimPoseOverride> Overrides, NifInfo KfInfo)?
@@ -389,4 +448,8 @@ internal static class CreatureCompositionPlanner
             ? path
             : "meshes\\" + path.TrimStart('\\');
     }
+
+    private sealed record CreatureAnimationResolution(
+        Dictionary<string, NifAnimationParser.AnimPoseOverride> Overrides,
+        string SourcePath);
 }

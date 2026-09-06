@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 
@@ -21,6 +22,9 @@ internal static class NpcHairSubmeshPolicy
         foreach (var submesh in hairModel.Submeshes)
         {
             submesh.TintColor = tint;
+            submesh.UsesClassicHairMaterial = game == BethesdaGame.Oblivion;
+            submesh.OblivionHairLayerDiffusePath = null;
+            submesh.OblivionHairLayerTexturePath = null;
             if (game == BethesdaGame.Oblivion)
             {
                 _ = OblivionNpcFacePartMaterialResolver.Apply(
@@ -28,6 +32,7 @@ internal static class NpcHairSubmeshPolicy
                     textureResolver,
                     diffuseTexturePath,
                     diffuseTexturePath);
+                OblivionHairLayerPolicy.Apply(submesh, textureResolver, diffuseTexturePath);
             }
             else if (diffuseTexturePath != null)
             {
