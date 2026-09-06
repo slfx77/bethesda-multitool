@@ -28,7 +28,8 @@ public static class SpriteCommand
     {
         return new Option<string>("--game", "-g")
         {
-            Description = "Which game's decoders to use: auto (default), arena, or daggerfall",
+            Description =
+                "Which game's decoders to use: auto (default), arena, daggerfall, battlespire, redguard, stormhold or fallout",
             DefaultValueFactory = _ => "auto"
         };
     }
@@ -41,7 +42,11 @@ public static class SpriteCommand
             "arena" => ClassicSpriteGame.Arena,
             "daggerfall" or "df" => ClassicSpriteGame.Daggerfall,
             "battlespire" or "bs" => ClassicSpriteGame.Battlespire,
-            _ => throw new NotSupportedException($"Unknown --game '{value}'. Use auto, arena, daggerfall, or battlespire.")
+            "redguard" or "rg" => ClassicSpriteGame.Redguard,
+            "stormhold" or "sh" => ClassicSpriteGame.Stormhold,
+            "fallout" or "fo" => ClassicSpriteGame.Fallout,
+            _ => throw new NotSupportedException(
+                $"Unknown --game '{value}'. Use auto, arena, daggerfall, battlespire, redguard, stormhold, or fallout.")
         };
     }
 

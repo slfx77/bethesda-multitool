@@ -7,6 +7,8 @@ using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Battlespire;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
+using BethesdaMultitool.Core.Formats.Fallout;
+using BethesdaMultitool.Core.Formats.Redguard;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using BethesdaMultitool.Core.Games;
 using Spectre.Console;
@@ -613,9 +615,67 @@ public static class ClassicCommand
         return game == BethesdaGame.Battlespire ? XnGineMeshLayout.Battlespire : XnGineMeshLayout.Daggerfall;
     }
 
+    /// <summary>True when a resolved path is a Redguard per-map <c>.ROB</c> object archive.</summary>
+    private static bool IsRedguardRobPath(string path)
+    {
+        return Path.GetFileName(path).EndsWith(".ROB", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     True for Redguard's animated <c>.3DC</c>. It must be checked BEFORE the loose <c>.3D</c>
+    ///     path: a <c>.3DC</c> parses cleanly as a <c>.3D</c> and yields the wrong geometry in
+    ///     silence, because the header offsets a <c>.3D</c> reader trusts are frame 1's.
+    /// </summary>
+    private static bool Is3dcPath(string path)
+    {
+        return Path.GetFileName(path).EndsWith(".3DC", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Describes one animated Redguard mesh: its keyframe, plus the pose stack.</summary>
+    private static void Run3dcMeshInfo(string path)
+    {
+        var name = Path.GetFileName(path);
+        var file = Redguard3dcFile.Parse(File.ReadAllBytes(path), name);
+
+        PrintXnGineMesh(name, file.KeyframeMesh);
+        AnsiConsole.MarkupLine(
+            "  frames {0} ({1}), frame record {2} dwords, unaccounted region {3:N0} bytes",
+            file.FrameCount,
+            file.WideFrames ? "32-bit poses" : "16-bit deltas from the keyframe",
+            file.FrameRecordDwords,
+            file.UnaccountedLength);
+    }
+
+    /// <summary>Exports an animated mesh's keyframe to GLB.</summary>
+    private static void Run3dcMeshExport(string path, string outputDir)
+    {
+        var name = Path.GetFileName(path);
+        var file = Redguard3dcFile.Parse(File.ReadAllBytes(path), name);
+        var decomposed = XnGineMeshDecomposer.Decompose(file.KeyframeMesh);
+        var outputPath = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(name).ToUpperInvariant() + ".glb");
+        XnGineMeshGlbExporter.Write(decomposed, outputPath);
+
+        Run3dcMeshInfo(path);
+        AnsiConsole.MarkupLine(
+            "[green]Wrote[/] {0} [grey](keyframe pose; normals computed from the geometry — a .3DC stores none)[/]",
+            Markup.Escape(outputPath));
+    }
+
     private static void RunMeshInfo(string input, string? entry)
     {
         var path = ResolveMeshPath(input);
+        if (IsRedguardRobPath(path))
+        {
+            RunRedguardRobMeshInfo(path, entry);
+            return;
+        }
+
+        if (Is3dcPath(path))
+        {
+            Run3dcMeshInfo(path);
+            return;
+        }
+
         if (IsBattlespireMeshPath(path))
         {
             RunBattlespireMeshInfo(path, entry);
@@ -691,6 +751,47 @@ public static class ClassicCommand
         var polygonSizes = mesh.Planes.GroupBy(p => p.Points.Count).OrderBy(g => g.Key)
             .Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Key}-gon x{g.Count()}"));
         AnsiConsole.MarkupLine("  polygons: {0}", Markup.Escape(string.Join(", ", polygonSizes)));
+        PrintTextureReferences(mesh);
+    }
+
+    /// <summary>
+    ///     Lists a mesh's distinct texture references, raw and split.
+    ///     <para>
+    ///         The split is Daggerfall's: archive = bits &gt;&gt; 7, record = bits &amp; 0x7F, which
+    ///         names <c>TEXTURE.nnn</c>. Battlespire uses the same field but its textures live in
+    ///         BSI.BSA under NAMES, so the mapping from a reference to an entry there is not
+    ///         established — printing the raw value is what makes that measurable.
+    ///     </para>
+    /// </summary>
+    private static void PrintTextureReferences(XnGineMesh mesh)
+    {
+        var references = mesh.Planes
+            .Select(p => p.TextureBits)
+            .Distinct()
+            .Order()
+            .Select(bits => string.Create(
+                CultureInfo.InvariantCulture, $"{bits} (archive {bits >> 7}, record {bits & 0x7F})"))
+            .ToList();
+
+        AnsiConsole.MarkupLine(
+            "  texture refs ({0}): {1}", references.Count, Markup.Escape(string.Join(", ", references)));
+
+        // Battlespire's plane header is 10 bytes to Daggerfall's 8, so it carries fields this
+        // reader does not name. Showing the distinct tails is what makes the extra fields
+        // measurable instead of invisible.
+        var tails = mesh.Planes
+            .Select(p => Convert.ToHexString(p.HeaderTail.Span))
+            .Distinct()
+            .Order(StringComparer.Ordinal)
+            .Take(8)
+            .ToList();
+
+        if (tails.Count > 0 && tails[0].Length > 0)
+        {
+            AnsiConsole.MarkupLine("  plane header tails ({0} distinct): {1}",
+                mesh.Planes.Select(p => Convert.ToHexString(p.HeaderTail.Span)).Distinct().Count(),
+                Markup.Escape(string.Join(", ", tails)));
+        }
     }
 
     /// <summary>Describes one Battlespire mesh, or censuses its archive.</summary>
@@ -699,7 +800,7 @@ public static class ClassicCommand
         var name = Path.GetFileName(path);
         if (IsLooseMeshName(name))
         {
-            PrintBattlespireMesh(name, BattlespireMeshArchive.ParseLoose(
+            PrintXnGineMesh(name, BattlespireMeshArchive.ParseLoose(
                 File.ReadAllBytes(path), name, ResolveLooseMeshLayout(path)));
             return;
         }
@@ -713,7 +814,7 @@ public static class ClassicCommand
                 throw new InvalidOperationException($"No mesh named '{entry}' in {name}.");
             }
 
-            PrintBattlespireMesh(archive.EntryName(index), archive.Parse(index));
+            PrintXnGineMesh(archive.EntryName(index), archive.Parse(index));
             return;
         }
 
@@ -740,11 +841,89 @@ public static class ClassicCommand
         }
     }
 
-    private static void PrintBattlespireMesh(string name, XnGineMesh mesh)
+    /// <summary>
+    ///     Summarises a Redguard <c>.ROB</c>, or one named segment inside it. The empty placeholder
+    ///     segments are reported separately rather than counted as failures — a fifth of every
+    ///     retail archive is made of them.
+    /// </summary>
+    private static void RunRedguardRobMeshInfo(string path, string? entry)
+    {
+        var name = Path.GetFileName(path);
+        using var archive = RedguardRobMeshArchive.Open(path);
+
+        if (entry is not null)
+        {
+            var index = archive.IndexOf(entry);
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"No segment named '{entry}' in {name}.");
+            }
+
+            PrintXnGineMesh(archive.EntryName(index), archive.Parse(index));
+            return;
+        }
+
+        var planes = 0;
+        var points = 0;
+        var empty = 0;
+        var failures = new List<string>();
+        for (var i = 0; i < archive.Count; i++)
+        {
+            if (archive.IsEmpty(i))
+            {
+                empty++;
+                continue;
+            }
+
+            if (!archive.TryParse(i, out var mesh, out var error))
+            {
+                failures.Add($"{archive.EntryName(i)}: {error}");
+                continue;
+            }
+
+            planes += mesh.Planes.Count;
+            points += mesh.Points.Count;
+        }
+
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/] — [grey]{1:N0} segments ({2:N0} empty), {3:N0} points, {4:N0} planes[/]",
+            Markup.Escape(name), archive.Count, empty, points, planes);
+        foreach (var failure in failures)
+        {
+            AnsiConsole.MarkupLine("[red]unparsed[/] {0}", Markup.Escape(failure));
+        }
+    }
+
+    /// <summary>Exports one <c>.ROB</c> segment to GLB. Untextured: Redguard's TEXBSI art is not decoded yet.</summary>
+    private static void RunRedguardRobMeshExport(string path, string? entry, string outputDir)
+    {
+        var name = Path.GetFileName(path);
+        if (entry is null)
+        {
+            throw new InvalidOperationException($"{name} holds many meshes — pass --entry <name>.");
+        }
+
+        using var archive = RedguardRobMeshArchive.Open(path);
+        var index = archive.IndexOf(entry);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"No segment named '{entry}' in {name}.");
+        }
+
+        var mesh = archive.Parse(index);
+        var outputPath = Path.Combine(outputDir, archive.EntryName(index).ToUpperInvariant() + ".glb");
+        XnGineMeshGlbExporter.Write(XnGineMeshDecomposer.Decompose(mesh), outputPath);
+
+        PrintXnGineMesh(archive.EntryName(index), mesh);
+        AnsiConsole.MarkupLine("[green]Wrote[/] {0} [grey](untextured: Redguard's textures live in the undecoded TEXTURE.### / TEXBSI art)[/]",
+            Markup.Escape(outputPath));
+    }
+
+    private static void PrintXnGineMesh(string name, XnGineMesh mesh)
     {
         var decomposed = XnGineMeshDecomposer.Decompose(mesh);
         var size = mesh.Size;
-        AnsiConsole.MarkupLine("[bold]{0}[/] [grey]({1}, Battlespire layout)[/]", Markup.Escape(name), Markup.Escape(mesh.VersionTag));
+        AnsiConsole.MarkupLine("[bold]{0}[/] [grey]({1}, {2} layout)[/]",
+            Markup.Escape(name), Markup.Escape(mesh.VersionTag), mesh.Layout);
         AnsiConsole.MarkupLine("  points {0}, planes {1}, triangles {2}, textures {3}",
             mesh.Points.Count, mesh.Planes.Count, decomposed.TriangleCount, mesh.UniqueTextures.Count);
         AnsiConsole.MarkupLine("  radius {0:F2}, size {1:F2} x {2:F2} x {3:F2} units", mesh.RadiusUnits, size.X, size.Y, size.Z);
@@ -752,6 +931,7 @@ public static class ClassicCommand
         var polygonSizes = mesh.Planes.GroupBy(p => p.Points.Count).OrderBy(g => g.Key)
             .Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Key}-gon x{g.Count()}"));
         AnsiConsole.MarkupLine("  polygons: {0}", Markup.Escape(string.Join(", ", polygonSizes)));
+        PrintTextureReferences(mesh);
     }
 
     /// <summary>Exports one Battlespire mesh to GLB. Its textures live in BSI.BSA, which is not decoded yet.</summary>
@@ -788,7 +968,7 @@ public static class ClassicCommand
         var outputPath = Path.Combine(outputDir, stem.ToUpperInvariant() + ".glb");
         XnGineMeshGlbExporter.Write(decomposed, outputPath);
 
-        PrintBattlespireMesh(name, mesh);
+        PrintXnGineMesh(name, mesh);
         AnsiConsole.MarkupLine("[green]Wrote[/] {0} [grey](untextured: Battlespire's textures live in BSI.BSA, which is not decoded yet)[/]",
             Markup.Escape(outputPath));
     }
@@ -796,6 +976,18 @@ public static class ClassicCommand
     private static void RunMeshExport(string input, string? entry, string outputDir)
     {
         var path = ResolveMeshPath(input);
+        if (IsRedguardRobPath(path))
+        {
+            RunRedguardRobMeshExport(path, entry, outputDir);
+            return;
+        }
+
+        if (Is3dcPath(path))
+        {
+            Run3dcMeshExport(path, outputDir);
+            return;
+        }
+
         if (IsBattlespireMeshPath(path))
         {
             RunBattlespireMeshExport(path, entry, outputDir);
@@ -999,9 +1191,98 @@ public static class ClassicCommand
         return (bytes, Path.GetFileName(entryName.Replace('/', '\\')));
     }
 
+    /// <summary>
+    ///     Describes a Fallout 1 <c>.MAP</c>: its header and the tile grid of each present
+    ///     elevation. The object and script sections after the grids are not decoded yet, so their
+    ///     size is reported rather than their contents — an unparsed remainder should be visible.
+    /// </summary>
+    private static void RunFalloutMapInfo(byte[] bytes, string name)
+    {
+        var map = FalloutMapFile.Parse(bytes, name);
+
+        AnsiConsole.MarkupLine(
+            "[bold cyan]{0}[/] — [grey]Fallout map v{1}, {2} of 3 elevations (flags 0x{3:X})[/]",
+            Markup.Escape(map.MapName), map.Version, map.Elevations.Count, map.ElevationFlags);
+        AnsiConsole.MarkupLine("  player starts on tile {0}, elevation {1}, facing {2}; script {3}",
+            map.PlayerPosition, map.PlayerElevation, map.PlayerOrientation,
+            map.HasScript ? map.ScriptId.ToString(CultureInfo.InvariantCulture) : "none");
+
+        var table = new Table().Border(TableBorder.Rounded)
+            .AddColumn("Elevation")
+            .AddColumn("Floor tiles", c => c.RightAligned())
+            .AddColumn("Roofed", c => c.RightAligned())
+            .AddColumn("Distinct floors", c => c.RightAligned())
+            .AddColumn("Distinct roofs", c => c.RightAligned());
+        foreach (var elevation in map.Elevations)
+        {
+            // Tile 1 is the empty tile, so "used" means anything else - that is what makes an
+            // elevation's grid worth drawing.
+            table.AddRow(
+                elevation.Index.ToString(CultureInfo.InvariantCulture),
+                elevation.Tiles.Count(t => t.Floor > 1).ToString("N0", CultureInfo.InvariantCulture),
+                elevation.Tiles.Count(t => t.Roof > 1).ToString("N0", CultureInfo.InvariantCulture),
+                elevation.Tiles.Select(t => t.Floor).Distinct().Count().ToString("N0", CultureInfo.InvariantCulture),
+                elevation.Tiles.Select(t => t.Roof).Distinct().Count().ToString("N0", CultureInfo.InvariantCulture));
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine(
+            "[grey]{0:N0} bytes of script and object sections follow the grids — not decoded yet.[/]",
+            map.Remainder.Length);
+    }
+
     private static void RunMapInfo(string input, string? entryName)
     {
         var (bytes, name) = LoadMapSource(input, entryName);
+
+        if (FalloutMapFile.IsMapFile(bytes))
+        {
+            RunFalloutMapInfo(bytes, name);
+            return;
+        }
+
+        if (RedguardWldFile.IsWldFile(bytes))
+        {
+            var wld = RedguardWldFile.Parse(bytes, name);
+            AnsiConsole.MarkupLine(
+                "[bold cyan]{0}[/] — Redguard terrain, {1} layers of {2}x{3} (top ~192 rows used); header {4}",
+                Markup.Escape(name), wld.Layers.Count, RedguardWldFile.Width, RedguardWldFile.Height,
+                Markup.Escape(string.Join(", ", wld.Header)));
+
+            var layerTable = new Table().Border(TableBorder.Rounded)
+                .AddColumn("Layer").AddColumn("Distinct", c => c.RightAligned()).AddColumn("Max", c => c.RightAligned())
+                .AddColumn("Non-zero", c => c.RightAligned()).AddColumn("Mean step", c => c.RightAligned()).AddColumn("Reads as");
+            for (var i = 0; i < wld.Layers.Count; i++)
+            {
+                var layer = wld.Layers[i];
+                var nonZero = layer.Indices.Count(b => b != 0);
+                var step = RedguardWldFile.MeanStep(layer);
+                string readsAs;
+                if (nonZero == 0)
+                {
+                    readsAs = "empty";
+                }
+                else if (step < RedguardWldFile.SmoothStepThreshold)
+                {
+                    readsAs = "smooth (height-like)";
+                }
+                else
+                {
+                    readsAs = "categorical";
+                }
+
+                layerTable.AddRow(
+                    i.ToString(CultureInfo.InvariantCulture),
+                    layer.Indices.Distinct().Count().ToString(CultureInfo.InvariantCulture),
+                    layer.Indices.Max().ToString(CultureInfo.InvariantCulture),
+                    ((double)nonZero / layer.Indices.Length).ToString("P1", CultureInfo.InvariantCulture),
+                    step.ToString("F1", CultureInfo.InvariantCulture),
+                    readsAs);
+            }
+
+            AnsiConsole.Write(layerTable);
+            return;
+        }
 
         if (DaggerfallWoodsFile.IsWoodsFileName(name))
         {
@@ -1141,7 +1422,15 @@ public static class ClassicCommand
         var (bytes, name) = LoadMapSource(input, entryName);
 
         IReadOnlyList<ArenaMapRenderer.RenderedLayer> layers;
-        if (DaggerfallWoodsFile.IsWoodsFileName(name))
+        if (FalloutMapFile.IsMapFile(bytes))
+        {
+            layers = FalloutMapRenderer.RenderElevations(FalloutMapFile.Parse(bytes, name), outputDir, scale);
+        }
+        else if (RedguardWldFile.IsWldFile(bytes))
+        {
+            layers = RedguardMapRenderer.RenderLayers(RedguardWldFile.Parse(bytes, name), outputDir, scale);
+        }
+        else if (DaggerfallWoodsFile.IsWoodsFileName(name))
         {
             layers = [DaggerfallMapRenderer.RenderHeightMap(DaggerfallWoodsFile.Parse(bytes, name), outputDir, scale)];
         }
@@ -1179,7 +1468,7 @@ public static class ClassicCommand
             "Daggerfall: TEXT.RSC strings + BOOKS)");
         var inputArg = new Argument<string>("input")
         {
-            Description = "Install/data directory, or a single TEMPLATE.DAT, .INF, TEXT.RSC, BOKnnnnn.TXT or .QRC file"
+            Description = "Install/data directory, or a single TEMPLATE.DAT, .INF, TEXT.RSC, BOKnnnnn.TXT, .QRC or ENGLISH.RTX file"
         };
         var filterOption = new Option<string?>("--filter", "-f")
         {
@@ -1235,7 +1524,15 @@ public static class ClassicCommand
 
         if (File.Exists(input))
         {
-            PrintFile(input, filter, limit, ref printed);
+            if (RedguardRtxFile.IsRtxFile(input))
+            {
+                RunRedguardText(input, filter, limit, ref printed);
+            }
+            else
+            {
+                PrintFile(input, filter, limit, ref printed);
+            }
+
             WriteFooter(printed);
             return;
         }
@@ -1258,10 +1555,13 @@ public static class ClassicCommand
                 RunDaggerfall(Path.Combine(root, profile.ClassicLooseRoot), source is "all" or "text",
                     source is "all" or "books", source is "all" or "quests", filter, limit, ref printed);
                 break;
+            case BethesdaGame.Redguard:
+                RunRedguardText(Path.Combine(root, profile.ClassicLooseRoot, RedguardRtxFile.FileName), filter, limit, ref printed);
+                break;
             default:
                 throw new NotSupportedException(
                     $"'classic text' does not read {profile.Game} yet — its text formats land with its game vertical. " +
-                    "Arena and Daggerfall are supported today.");
+                    "Arena, Daggerfall and Redguard are supported today.");
         }
 
         WriteFooter(printed);
@@ -1342,6 +1642,44 @@ public static class ClassicCommand
                 PrintInf(ArenaInfFile.ParseText(System.Text.Encoding.Latin1.GetString(plain), name),
                     filter, limit, ref printed);
             }
+        }
+    }
+
+    /// <summary>
+    ///     Redguard's text is one database, <c>ENGLISH.RTX</c>: every line keyed by the 4-character
+    ///     label the scripts use, most of them voiced. Printed in file order as <c>tag  text</c>, with
+    ///     the voice's rate and length when there is one; <c>--filter</c> matches the tag or the text.
+    /// </summary>
+    private static void RunRedguardText(string path, string? filter, int limit, ref int printed)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        using var database = RedguardRtxFile.Open(path);
+        AnsiConsole.MarkupLine("[bold]{0}[/] — [grey]{1:N0} records, {2:N0} voiced[/]",
+            Markup.Escape(database.Name), database.Entries.Count, database.Entries.Count(e => e.IsVoiced));
+
+        foreach (var entry in database.Entries)
+        {
+            if (limit > 0 && printed >= limit)
+            {
+                break;
+            }
+
+            if (filter is not null &&
+                !entry.Text.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
+                !entry.Tag.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var voice = entry.Sound is { } sound
+                ? string.Create(CultureInfo.InvariantCulture, $"  [grey]({sound.SampleRate} Hz, {sound.DurationSeconds:F1}s)[/]")
+                : string.Empty;
+            AnsiConsole.MarkupLine("[cyan]{0}[/]  {1}{2}", Markup.Escape(entry.Tag), Markup.Escape(entry.Text), voice);
+            printed++;
         }
     }
 
