@@ -1,3 +1,5 @@
+using System.IO.Compression;
+
 namespace BethesdaMultitool.Core.Games;
 
 /// <summary>
@@ -7,6 +9,12 @@ namespace BethesdaMultitool.Core.Games;
 ///     conjunctive set of root-relative files (with <c>|</c>-separated any-of alternatives inside one
 ///     entry). Pure IO probes + <see cref="GameProfiles" /> data; depends on nothing in the format
 ///     layer, like the rest of <c>Core/Games</c>.
+///     <para>
+///         A J2ME title (the TES Travels JARs) is an install packaged as ONE PKZIP file, so
+///         <see cref="DetectFromArchive" /> applies the same marker sets to an archive's entry
+///         names. The BCL zip reader is used there only to LIST names; payload reads go through
+///         the format layer's own exact PKZIP parser.
+///     </para>
 /// </summary>
 public static class ClassicGameLocator
 {
@@ -26,6 +34,12 @@ public static class ClassicGameLocator
     /// </summary>
     private static readonly BethesdaGame[] ProbeOrder =
     [
+        BethesdaGame.FalloutBrotherhoodOfSteel,
+        BethesdaGame.OblivionPsp,
+        BethesdaGame.Shadowkey,
+        BethesdaGame.OblivionMobile,
+        BethesdaGame.Dawnstar,
+        BethesdaGame.Stormhold,
         BethesdaGame.FalloutTactics,
         BethesdaGame.Fallout2,
         BethesdaGame.Fallout1,
@@ -50,6 +64,75 @@ public static class ClassicGameLocator
         {
             var profile = GameProfiles.For(game);
             if (MarkersSatisfied(directory, profile.InstallMarkers))
+            {
+                return profile;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     The classic game packaged as the single PKZIP archive at <paramref name="archivePath" />
+    ///     (a J2ME JAR), or null when the file is missing, is not a zip, or no profile's markers are
+    ///     all present among its entry names. Markers are matched against root-relative entry
+    ///     names the same way <see cref="DetectFromDirectory" /> matches files, so the same profile
+    ///     identifies a JAR and the directory it was unpacked into.
+    /// </summary>
+    public static GameProfile? DetectFromArchive(string archivePath)
+    {
+        if (string.IsNullOrEmpty(archivePath) || !File.Exists(archivePath) || !HasZipMagic(archivePath))
+        {
+            return null;
+        }
+
+        HashSet<string> names;
+        try
+        {
+            using var zip = ZipFile.OpenRead(archivePath);
+            names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in zip.Entries)
+            {
+                names.Add(entry.FullName.Replace('/', '\\').TrimStart('\\'));
+            }
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return null;
+        }
+
+        return DetectFromArchiveNames(names);
+    }
+
+    /// <summary>
+    ///     The classic game whose install markers are all present among <paramref name="entryNames" />
+    ///     — the entry names of an archive that IS an install, root-relative, in either separator.
+    ///     <para>
+    ///         This is the seam for container families this assembly must not reach for.
+    ///         <see cref="DetectFromArchive" /> reads a PKZIP itself because the BCL ships that
+    ///         reader, but the PS2 disc image behind
+    ///         <see cref="BethesdaGame.FalloutBrotherhoodOfSteel" /> mounts through the format
+    ///         layer's ISO9660 backend — so the caller lists it and passes the names in here rather
+    ///         than <c>Core/Games</c> taking a dependency on <c>Core/Formats</c>.
+    ///     </para>
+    /// </summary>
+    public static GameProfile? DetectFromArchiveNames(IEnumerable<string> entryNames)
+    {
+        ArgumentNullException.ThrowIfNull(entryNames);
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in entryNames)
+        {
+            if (!string.IsNullOrEmpty(name))
+            {
+                names.Add(name.Replace('/', '\\').TrimStart('\\'));
+            }
+        }
+
+        foreach (var game in ProbeOrder)
+        {
+            var profile = GameProfiles.For(game);
+            if (MarkersSatisfied(profile.InstallMarkers, marker => names.Contains(marker.Replace('/', '\\'))))
             {
                 return profile;
             }
@@ -101,6 +184,11 @@ public static class ClassicGameLocator
     /// </summary>
     private static bool MarkersSatisfied(string root, IReadOnlyList<string> markers)
     {
+        return MarkersSatisfied(markers, alternative => File.Exists(Path.Combine(root, alternative)));
+    }
+
+    private static bool MarkersSatisfied(IReadOnlyList<string> markers, Func<string, bool> exists)
+    {
         if (markers.Count == 0)
         {
             return false;
@@ -111,7 +199,7 @@ public static class ClassicGameLocator
             var satisfied = false;
             foreach (var alternative in marker.Split('|'))
             {
-                if (File.Exists(Path.Combine(root, alternative)))
+                if (exists(alternative))
                 {
                     satisfied = true;
                     break;
@@ -125,5 +213,20 @@ public static class ClassicGameLocator
         }
 
         return true;
+    }
+
+    /// <summary>Whether the file opens with a PKZIP local-file-header signature (<c>PK\x03\x04</c>).</summary>
+    private static bool HasZipMagic(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            Span<byte> head = stackalloc byte[4];
+            return stream.Read(head) == 4 && head[0] == (byte)'P' && head[1] == (byte)'K' && head[2] == 3 && head[3] == 4;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }

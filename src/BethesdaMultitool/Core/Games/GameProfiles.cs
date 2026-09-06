@@ -334,6 +334,110 @@ public static class GameProfiles
                 InstallMarkers = [@"core\game.pck", @"core\bos.cfg"],
                 ClassicLooseRoot = "core",
                 ClassicArchiveGlobs = [@"core\*.bos"]
+            },
+
+            // ---- The Elder Scrolls Travels (mobile). The three J2ME titles ship as ONE JAR each: the
+            // JAR is the install, so ClassicGameLocator.DetectFromArchive matches these markers
+            // against the PKZIP entry names as well as against a directory the JAR was unpacked
+            // into. Fixture layouts measured 2026-09-04/05 (docs/handoff_mobile_travels_2026_09_04.md). ----
+
+            [BethesdaGame.Stormhold] = new()
+            {
+                Game = BethesdaGame.Stormhold,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Every data file sits loose at the JAR root: 9 big-endian .dat tables, 37 .cus
+                // sprites, 16 PNGs. ESGame.class is the MIDlet both Stormhold and Dawnstar share;
+                // the loose charin.dat + monsterfilenamesin.dat pair is what Dawnstar (which packs
+                // them into datfiles.lmp) never has loose.
+                InstallMarkers = ["ESGame.class", "charin.dat", "monsterfilenamesin.dat"]
+            },
+            [BethesdaGame.Dawnstar] = new()
+            {
+                Game = BethesdaGame.Dawnstar,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // The tables (except the loose npcstrings.dat) live in datfiles.lmp and the PNGs in
+                // imgfiles.lmp — text-delimited lumps ("-name-" + BE u32 offset + BE u16 length)
+                // that mount as archive layers UNDER the loose files, so a reader asks the mounted
+                // install for "charin.dat" and never cares which side served it.
+                InstallMarkers = ["ESGame.class", "datfiles.lmp", "imgfiles.lmp"],
+                ClassicArchiveGlobs = ["datfiles.lmp", "imgfiles.lmp"]
+            },
+            [BethesdaGame.Shadowkey] = new()
+            {
+                Game = BethesdaGame.Shadowkey,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Root = the Symbian application directory itself (...\system\apps\6R51), which holds
+                // the ARM E32 executable beside all 21 zones' per-zone files, the global packs
+                // (models.huge/idx, global.spr), the six StringTable.<lang> files and 1,533 Simkin
+                // scripts. The azra zone is the first town; every zone has a .zon. Loose-file based —
+                // the packs are mesh/sprite-pipeline containers, not general-purpose archives.
+                InstallMarkers = ["6R51.APP", "azra.zon", "StringTable.eng"]
+            },
+            [BethesdaGame.OblivionMobile] = new()
+            {
+                Game = BethesdaGame.OblivionMobile,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Everything is loose at the JAR root: level stems l01..l14 across .scr/.cml/.jtm,
+                // 13 lang_N.txt string tables, PNG tilesets. eso.ver carries the build ("2.424").
+                InstallMarkers = ["eso.ver", "startup.scr", "lang_0.txt"]
+            },
+            [BethesdaGame.OblivionPsp] = new()
+            {
+                Game = BethesdaGame.OblivionPsp,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // Root = an extracted UMD tree. PSP_GAME\PARAM.SFO plus the SYSDIR boot image are the
+                // disc conventions every PSP title shares; USRDIR\GR.ARC is this game's single data
+                // pack (13.1 MB in the Jun 2006 beta, 39.1 MB by Apr 2007) and is what makes the tree
+                // Oblivion's rather than some other PSP title. Beside it USRDIR\DATA holds RenderWare
+                // .RWS music and, from 2007, Bink movies.
+                // ⚠ The boot image is named per build: five of the seven staged betas ship
+                // SYSDIR\EBOOT.BIN, but the 11 January 2007 disc ships an UNENCRYPTED SYSDIR\BOOT.BIN
+                // instead (a debug/test build — the PSP loads BOOT.BIN when EBOOT.BIN is absent), so
+                // requiring EBOOT.BIN alone silently loses that build.
+                InstallMarkers =
+                [
+                    @"PSP_GAME\PARAM.SFO",
+                    @"PSP_GAME\SYSDIR\EBOOT.BIN|PSP_GAME\SYSDIR\BOOT.BIN",
+                    @"PSP_GAME\USRDIR\GR.ARC"
+                ],
+                ClassicLooseRoot = @"PSP_GAME\USRDIR"
+            },
+
+            // ---- Console spin-off. Like the J2ME titles, the install is ONE FILE — here a PS2 disc
+            // image — so ClassicGameLocator.DetectFromArchive matches these markers against the
+            // mounted ISO9660 entry names as well as against a directory the disc was extracted
+            // into. Measured 2026-09-06 on the shipped disc (352 files). ----
+
+            [BethesdaGame.FalloutBrotherhoodOfSteel] = new()
+            {
+                Game = BethesdaGame.FalloutBrotherhoodOfSteel,
+                Engine = EngineFamily.None,
+                RecordHeaderSize = 0,
+                GroupHeaderSize = 0,
+                HasRecordVersionTrailer = false,
+                // SYSTEM.CNF is the PS2 boot descriptor every disc for that console carries, so it
+                // is paired with DATA\ALL.DDF — the master record table, which is this game's and
+                // no other's. Requiring only the former would claim any PS2 disc handed to us.
+                InstallMarkers = ["SYSTEM.CNF", @"DATA\ALL.DDF"],
+                // The disc root IS the data root (as for Arena): leaving this empty makes an
+                // extracted disc directory address files by the same DATA\… paths the mounted ISO
+                // reports, so the record source cannot need two spellings of every path.
+                ClassicLooseRoot = ""
             }
         };
 

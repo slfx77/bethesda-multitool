@@ -27,6 +27,11 @@ public class GameProfilesTests
     [InlineData(BethesdaGame.Fallout1)]
     [InlineData(BethesdaGame.Fallout2)]
     [InlineData(BethesdaGame.FalloutTactics)]
+    [InlineData(BethesdaGame.Stormhold)]
+    [InlineData(BethesdaGame.Dawnstar)]
+    [InlineData(BethesdaGame.Shadowkey)]
+    [InlineData(BethesdaGame.OblivionMobile)]
+    [InlineData(BethesdaGame.OblivionPsp)]
     public void For_EveryKnownGame_ReturnsMatchingProfile(BethesdaGame game)
     {
         var profile = GameProfiles.For(game);

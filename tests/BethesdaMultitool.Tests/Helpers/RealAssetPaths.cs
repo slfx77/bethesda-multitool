@@ -160,6 +160,128 @@ internal static class RealAssetPaths
     }
 
     /// <summary>
+    ///     Console-only fixtures, which are disc images rather than installs.
+    /// </summary>
+    public static class Consoles
+    {
+        /// <summary>
+        ///     Fallout: Brotherhood of Steel (2004, PS2). The disc image is not an install, so the
+        ///     Steam probes cannot find it: this checks the <c>BETHESDA_TEST_DATA_ROOT</c> override
+        ///     and a repo-relative staging first, then the location the USER has supplied for it.
+        ///     ⚠ That last literal is exactly what this file warns against elsewhere — it is here
+        ///     because the image has no discoverable install, and it is a LAST resort behind two
+        ///     portable probes, so another machine sets the override rather than editing code.
+        /// </summary>
+        public static string? BrotherhoodOfSteelIso()
+        {
+            const string fileName = "FALLOUTBOS.iso";
+
+            var root = Environment.GetEnvironmentVariable(RootVariable);
+            if (!string.IsNullOrEmpty(root))
+            {
+                var flat = Path.Combine(root, fileName);
+                if (File.Exists(flat))
+                {
+                    return flat;
+                }
+            }
+
+            if (RepoRoot is { } repoRoot)
+            {
+                var staged = Path.Combine(repoRoot, "Sample", "Full_Builds", "Fallout Brotherhood of Steel", fileName);
+                if (File.Exists(staged))
+                {
+                    return staged;
+                }
+            }
+
+            var supplied = Path.Combine(@"D:\PS2", "Fallout - Brotherhood of Steel", fileName);
+            return File.Exists(supplied) ? supplied : null;
+        }
+    }
+
+    /// <summary>
+    ///     Fixtures for The Elder Scrolls Travels (mobile) titles. None is a Steam install: the
+    ///     three J2ME games are single JARs, Shadowkey is an unpacked Symbian tree, and the
+    ///     cancelled PSP Oblivion is a set of extracted UMD trees — all staged under
+    ///     <c>Sample/Full_Builds/</c> (or mirrored under <c>BETHESDA_TEST_DATA_ROOT</c>).
+    ///     <para>
+    ///         A JAR is its own install root: <c>ClassicGameLocator.DetectFromArchive</c> claims it
+    ///         from the entry names, so tests point the analyzer at the JAR directly and never
+    ///         unpack it. Shadowkey's root is the <c>system\apps\6R51</c> application directory.
+    ///     </para>
+    /// </summary>
+    public static class Travels
+    {
+        /// <summary>The Stormhold 176x208 English JAR (byte-identical to the v1.0.10 release JAR).</summary>
+        public static string? StormholdJar() => SampleFile(@"Full_Builds\test_stormhold_176x208_eng.jar");
+
+        /// <summary>The second, slightly larger v1.0.10 "(a)" Stormhold JAR — the same game, another build.</summary>
+        public static string? StormholdAlternateJar() =>
+            SampleFile(@"Full_Builds\Stormhold (J2ME)\The Elder Scrolls (2003)(Vir2L Studios)(v1.0.10)(a).jar");
+
+        public static string? DawnstarJar() => SampleFile(@"Full_Builds\test_dawnstar_176x208_eng.jar");
+
+        public static string? OblivionMobileJar() => SampleFile(@"Full_Builds\oblivion-repaired.jar");
+
+        /// <summary>The Shadowkey application directory (holds 6R51.APP, the 21 zones and the packs).</summary>
+        public static string? ShadowkeyRoot() =>
+            SampleDirectory(@"Full_Builds\Shadowkey (N-Gage)\The Elder Scrolls Travels - Shadowkey\system\apps\6R51");
+
+        /// <summary>The Shadowkey N-Gage release zip as shipped (the archive-level fixture).</summary>
+        public static string? ShadowkeyZip() => SampleFile(@"Full_Builds\The-Elder-Scrolls-Travels-Shadowkey_N-Gage_EN.zip");
+
+        /// <summary>The directory the six dated PSP beta ISOs were extracted into (one subdirectory per build).</summary>
+        public static string? OblivionPspBuildsRoot() => SampleDirectory(@"Full_Builds\Oblivion PSP (cancelled betas)");
+    }
+
+    /// <summary>
+    ///     Resolve a file under the repo's <c>Sample/</c> tree, or the same relative path under the
+    ///     <c>BETHESDA_TEST_DATA_ROOT</c> override. For fixtures that are never a Steam install.
+    /// </summary>
+    public static string? SampleFile(string sampleRelativePath)
+    {
+        foreach (var candidate in SampleCandidates(sampleRelativePath))
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Directory counterpart of <see cref="SampleFile" />.</summary>
+    public static string? SampleDirectory(string sampleRelativePath)
+    {
+        foreach (var candidate in SampleCandidates(sampleRelativePath))
+        {
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> SampleCandidates(string sampleRelativePath)
+    {
+        var root = Environment.GetEnvironmentVariable(RootVariable);
+        if (!string.IsNullOrEmpty(root))
+        {
+            yield return Path.Combine(root, sampleRelativePath);
+            yield return Path.Combine(root, "Sample", sampleRelativePath);
+        }
+
+        if (RepoRoot is { } repoRoot)
+        {
+            yield return Path.Combine(repoRoot, "Sample", sampleRelativePath);
+        }
+    }
+
+    /// <summary>
     ///     Resolve a directory inside a Steam-installed game (a Data folder, say) using the same probe
     ///     order as <see cref="SteamGameFile" />.
     /// </summary>

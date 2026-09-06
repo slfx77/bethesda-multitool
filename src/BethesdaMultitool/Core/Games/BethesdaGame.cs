@@ -58,5 +58,36 @@ public enum BethesdaGame
     Fallout2,
 
     /// <summary>Fallout Tactics: Brotherhood of Steel (2001): BOS archives (plain zip), SPR/TIL/ZAR art, ENT/ESH records.</summary>
-    FalloutTactics
+    FalloutTactics,
+
+    // ---- The Elder Scrolls Travels (2003-2007, mobile). Still no plugin stream: a J2ME title IS
+    // its JAR (a PKZIP of big-endian data tables, standard PNGs and custom sprites), Shadowkey is
+    // a Symbian application directory of little-endian per-zone files, and the cancelled PSP
+    // Oblivion is a set of UMD ISO trees. Registered 2026-09-05 per
+    // docs/handoff_mobile_travels_2026_09_04.md; append-only from here as above. ----
+
+    /// <summary>TES Travels: Stormhold (2003, J2ME / N-Gage, Vir2L): loose big-endian .dat tables, .cus sprites, PNG art.</summary>
+    Stormhold,
+
+    /// <summary>TES Travels: Dawnstar (2004, J2ME, Vir2L): datfiles.lmp / imgfiles.lmp lump containers over the Stormhold table family.</summary>
+    Dawnstar,
+
+    /// <summary>TES Travels: Shadowkey (2004, N-Gage / Symbian ARM): little-endian per-zone .zon/.ent/.zmp/.ztx families under system\apps\6R51.</summary>
+    Shadowkey,
+
+    /// <summary>TES Travels: Oblivion mobile (2006, J2ME, Vir2L): .jtm tile maps, .cml composites, .scr scripts, lang_N.txt strings.</summary>
+    OblivionMobile,
+
+    /// <summary>TES Travels: Oblivion PSP (cancelled, 2006-2007 UMD betas): PSP_GAME disc trees staged from the dated ISOs.</summary>
+    OblivionPsp,
+
+    // ---- Console spin-off. Like the J2ME titles this install is a single file — a PS2 disc image
+    // rather than a JAR — so it resolves through the same archive-mounted path. Appended 2026-09-06.
+    // ----
+
+    /// <summary>
+    ///     Fallout: Brotherhood of Steel (2004, PS2 / Xbox, Snowblind): a disc of <c>.CLP</c>
+    ///     containers, <c>.DDF</c> record stores and <c>.SDB</c> string databases.
+    /// </summary>
+    FalloutBrotherhoodOfSteel
 }

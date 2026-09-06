@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 
@@ -132,6 +133,119 @@ public class ClassicGameLocatorTests : IDisposable
             @"a\b\c\d\e\buried.bin");
 
         Assert.Null(ClassicGameLocator.DetectRootForFile(Path.Combine(fo1, @"a\b\c\d\e\buried.bin")));
+    }
+
+    private string MakeJar(string name, params string[] entryNames)
+    {
+        var path = Path.Combine(_root, name);
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.ReadWrite);
+        using var zip = new ZipArchive(stream, ZipArchiveMode.Create);
+        foreach (var entry in entryNames)
+        {
+            using var writer = zip.CreateEntry(entry).Open();
+            writer.WriteByte(0x00);
+        }
+
+        return path;
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Stormhold, "ESGame.class", "charin.dat", "monsterfilenamesin.dat")]
+    [InlineData(BethesdaGame.Dawnstar, "ESGame.class", "datfiles.lmp", "imgfiles.lmp")]
+    [InlineData(BethesdaGame.OblivionMobile, "eso.ver", "startup.scr", "lang_0.txt")]
+    public void DetectFromArchive_ClaimsAJ2meJarFromItsEntryNames(BethesdaGame expected, params string[] markers)
+    {
+        // A J2ME title IS its JAR: the same marker set that identifies an unpacked directory
+        // identifies the archive, and the archive's own path is the install root.
+        var jar = MakeJar($"{expected}.jar", [.. markers, "META-INF/MANIFEST.MF", "a.class"]);
+        Assert.Equal(expected, ClassicGameLocator.DetectFromArchive(jar)?.Game);
+    }
+
+    [Fact]
+    public void DetectFromArchive_MarkerSetsAreConjunctiveInsideAJar()
+    {
+        // Both Stormhold and Dawnstar ship ESGame.class; only the second/third markers separate
+        // them, and a JAR carrying neither pair is nobody's.
+        var half = MakeJar("half.jar", "ESGame.class", "npcstrings.dat");
+        Assert.Null(ClassicGameLocator.DetectFromArchive(half));
+    }
+
+    [Fact]
+    public void DetectFromArchive_ReadsNestedEntryNamesWithEitherSeparator()
+    {
+        // Markers are matched against separator-normalised entry names, so a marker written with a
+        // backslash still meets an entry the zip writer stored with a forward slash.
+        var jar = MakeJar("psp.jar", "PSP_GAME/PARAM.SFO", "PSP_GAME/SYSDIR/EBOOT.BIN", "PSP_GAME/USRDIR/GR.ARC");
+        Assert.Equal(BethesdaGame.OblivionPsp, ClassicGameLocator.DetectFromArchive(jar)?.Game);
+    }
+
+    [Fact]
+    public void DetectFromArchive_RejectsNonZipFilesAndMissingPaths()
+    {
+        var notZip = Path.Combine(_root, "GLOBAL.BSA");
+        File.WriteAllBytes(notZip, [0x00, 0x01, 0x02, 0x03]);
+        Assert.Null(ClassicGameLocator.DetectFromArchive(notZip));
+        Assert.Null(ClassicGameLocator.DetectFromArchive(Path.Combine(_root, "absent.jar")));
+
+        // Right magic, but not an archive: the BCL reader fails and the probe answers null rather than throwing.
+        var truncated = Path.Combine(_root, "truncated.jar");
+        File.WriteAllBytes(truncated, [(byte)'P', (byte)'K', 3, 4, 0, 0]);
+        Assert.Null(ClassicGameLocator.DetectFromArchive(truncated));
+    }
+
+    [Fact]
+    public void DetectFromDirectory_Shadowkey_MatchesTheSymbianApplicationDirectory()
+    {
+        // The root is the 6R51 application directory itself, not the Symbian system tree above it.
+        var app = MakeInstall(@"shadowkey\system\apps\6R51", "6R51.APP", "azra.zon", "StringTable.eng");
+        var profile = ClassicGameLocator.DetectFromDirectory(app);
+
+        Assert.Equal(BethesdaGame.Shadowkey, profile?.Game);
+        Assert.Equal(string.Empty, profile!.ClassicLooseRoot);
+        Assert.Null(ClassicGameLocator.DetectFromDirectory(Path.Combine(_root, "shadowkey")));
+    }
+
+    [Fact]
+    public void DetectRootForFile_ShadowkeyScriptInASubdirectory_ClimbsToTheApplicationDirectory()
+    {
+        var app = MakeInstall(@"shadowkey2\system\apps\6R51", "6R51.APP", "azra.zon", "StringTable.eng",
+            @"Armor\iron_boots.s");
+
+        var result = ClassicGameLocator.DetectRootForFile(Path.Combine(app, @"Armor\iron_boots.s"));
+
+        Assert.Equal(BethesdaGame.Shadowkey, result?.Profile.Game);
+        Assert.Equal(app, result?.Root);
+    }
+
+    [Fact]
+    public void DetectFromDirectory_OblivionPsp_MatchesAnExtractedUmdTree()
+    {
+        var umd = MakeInstall("psp", @"PSP_GAME\PARAM.SFO", @"PSP_GAME\SYSDIR\EBOOT.BIN", @"PSP_GAME\USRDIR\GR.ARC");
+
+        // A PSP tree without the game's data pack is some other PSP title, not Oblivion.
+        var otherPsp = MakeInstall("other-psp", @"PSP_GAME\PARAM.SFO", @"PSP_GAME\SYSDIR\EBOOT.BIN");
+        Assert.Null(ClassicGameLocator.DetectFromDirectory(otherPsp));
+
+        // The 11 January 2007 beta ships an unencrypted BOOT.BIN in place of EBOOT.BIN; requiring
+        // EBOOT.BIN alone dropped that build on the floor.
+        var bootOnly = MakeInstall("psp-boot", @"PSP_GAME\PARAM.SFO", @"PSP_GAME\SYSDIR\BOOT.BIN", @"PSP_GAME\USRDIR\GR.ARC");
+        Assert.Equal(BethesdaGame.OblivionPsp, ClassicGameLocator.DetectFromDirectory(bootOnly)?.Game);
+        var profile = ClassicGameLocator.DetectFromDirectory(umd);
+
+        Assert.Equal(BethesdaGame.OblivionPsp, profile?.Game);
+        Assert.Equal(@"PSP_GAME\USRDIR", profile!.ClassicLooseRoot);
+    }
+
+    [Fact]
+    public void DetectFromDirectory_UnpackedJ2meJars_ResolveLikeTheirArchives()
+    {
+        var stormhold = MakeInstall("stormhold", "ESGame.class", "charin.dat", "monsterfilenamesin.dat");
+        var dawnstar = MakeInstall("dawnstar", "ESGame.class", "datfiles.lmp", "imgfiles.lmp");
+        var oblivion = MakeInstall("oblivion", "eso.ver", "startup.scr", "lang_0.txt");
+
+        Assert.Equal(BethesdaGame.Stormhold, ClassicGameLocator.DetectFromDirectory(stormhold)?.Game);
+        Assert.Equal(BethesdaGame.Dawnstar, ClassicGameLocator.DetectFromDirectory(dawnstar)?.Game);
+        Assert.Equal(BethesdaGame.OblivionMobile, ClassicGameLocator.DetectFromDirectory(oblivion)?.Game);
     }
 
     [Fact]
