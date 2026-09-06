@@ -497,6 +497,7 @@ public sealed partial class BethesdaSceneViewerControl
         }
 
         var capture = TryPrepareCapture(graphics, surface);
+        if (_inputTrace is not null) _traceFrameSerial++;
         var submitted = false;
         var unfencedCaptureLifetimeTransferred = false;
         ulong submittedFenceValue = 0;
@@ -522,6 +523,7 @@ public sealed partial class BethesdaSceneViewerControl
                 graphics.Recorder.FrameIndex,
                 graphics.RingBuffer);
 
+            var traceCameraBeforeFit = capture is not null ? TraceCameraState() : null;
             var camera = _camera.GetFrame(surface.Width / (float)surface.Height);
             var frame = new BethesdaSceneViewerFrame12(
                 scene,
@@ -531,12 +533,15 @@ public sealed partial class BethesdaSceneViewerControl
                 camera,
                 graphics.Recorder.FrameIndex,
                 deltaSeconds);
+            TraceCaptureFrame(capture, camera, scene, graphics.Recorder.FrameIndex, deltaSeconds, traceCameraBeforeFit);
             session.Render(frame);
+            if (capture is not null) TraceCapturePhase(capture, "capture-render-return");
 
             surface.ResolveTo(graphics.Recorder, backBuffer);
             if (capture is not null)
             {
                 capture.RecordCopy(commandList, backBuffer);
+                TraceCapturePhase(capture, "capture-copy-recorded");
             }
             else
             {
@@ -564,7 +569,9 @@ public sealed partial class BethesdaSceneViewerControl
 
             submitted = true;
             submittedFenceValue = submission.FenceValue;
+            if (capture is not null) TraceCapturePhase(capture, "capture-queue-submitted", submittedFenceValue);
             surface.Present();
+            if (capture is not null) TraceCapturePhase(capture, "capture-present-return", submittedFenceValue);
             _hasPresentedFrame = true;
             if (!_streamingGpuIdleDrainSummaryLogged &&
                 _streamingGpuIdleDrainCount > 0 &&

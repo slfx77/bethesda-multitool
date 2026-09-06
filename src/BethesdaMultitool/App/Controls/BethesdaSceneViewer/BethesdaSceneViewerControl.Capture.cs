@@ -58,6 +58,7 @@ public sealed partial class BethesdaSceneViewerControl
             _captureRequest = request;
         }
 
+        TraceCaptureRequest(request);
         request.RegisterCancellation(() => OnCaptureCancellationRequested(request));
         if (request.IsCancellationRequested)
         {
@@ -134,6 +135,7 @@ public sealed partial class BethesdaSceneViewerControl
     private void SubmitCaptureReadback(BethesdaSceneViewerCaptureRequest12 request, ulong fenceValue)
     {
         request.MarkSubmitted();
+        TraceCapturePhase(request, "capture-readback-start", fenceValue);
 
         // Do not wait on the shared recorder or the WinUI thread. The request owns an AddRef'd fence
         // interface and its readback resource, so a tab unload/control disposal can safely release the
@@ -149,14 +151,17 @@ public sealed partial class BethesdaSceneViewerControl
                         request.ReadbackToBytes(),
                         request.PixelWidth,
                         request.PixelHeight));
+                    TraceCapturePhase(request, "capture-readback-bytes-produced", fenceValue);
                 }
             }
             catch (OperationCanceledException)
             {
+                TraceCapturePhase(request, "capture-readback-canceled", fenceValue);
                 request.TrySetCanceled();
             }
             catch (Exception ex)
             {
+                TraceCapturePhase(request, "capture-readback-failed", fenceValue, ex.Message);
                 request.TrySetException(ex);
             }
             finally
@@ -185,6 +190,7 @@ public sealed partial class BethesdaSceneViewerControl
 
     private void OnCaptureCancellationRequested(BethesdaSceneViewerCaptureRequest12 request)
     {
+        TraceCapturePhase(request, "capture-cancellation-requested");
         request.TrySetCanceled();
 
         // CancellationToken callbacks may run on any thread. Resource removal is queued to WinUI so
@@ -208,12 +214,14 @@ public sealed partial class BethesdaSceneViewerControl
 
         if (dispose)
         {
+            TraceCapturePhase(request, "capture-canceled-before-gpu");
             request.Dispose();
         }
     }
 
     private void AbandonCaptureRequest(BethesdaSceneViewerCaptureRequest12 request, Exception exception)
     {
+        TraceCapturePhase(request, "capture-abandoned", failure: exception.Message);
         lock (_captureGate)
         {
             if (ReferenceEquals(_captureRequest, request))
@@ -235,6 +243,7 @@ public sealed partial class BethesdaSceneViewerControl
         BethesdaSceneViewerCaptureRequest12 request,
         Exception exception)
     {
+        TraceCapturePhase(request, "capture-unfenced", failure: exception.Message);
         lock (_captureGate)
         {
             if (ReferenceEquals(_captureRequest, request))
@@ -262,6 +271,7 @@ public sealed partial class BethesdaSceneViewerControl
 
         if (pending is not null)
         {
+            TraceCapturePhase(pending, "capture-canceled-by-host", failure: reason);
             pending.TrySetException(new InvalidOperationException(reason));
             pending.Dispose();
         }
@@ -307,6 +317,11 @@ public sealed partial class BethesdaSceneViewerControl
         }
 
         internal Task<BethesdaSceneViewerFrameCapture> Task => _completion.Task;
+
+        // Written on the UI thread before publishing the readback task; immutable on that worker.
+        internal long TraceCaptureId { get; set; }
+        internal long TraceFrameSerial { get; set; }
+        internal long TraceRenderSceneEpoch { get; set; }
 
         internal bool IsCancellationRequested => _cancellationToken.IsCancellationRequested;
 
@@ -483,8 +498,8 @@ internal sealed class BethesdaSceneViewerFrameCapture
     internal BethesdaSceneViewerFrameCapture(byte[] bgraPixels, int pixelWidth, int pixelHeight)
     {
         ArgumentNullException.ThrowIfNull(bgraPixels);
-        if (pixelWidth <= 0) throw new ArgumentOutOfRangeException(nameof(pixelWidth));
-        if (pixelHeight <= 0) throw new ArgumentOutOfRangeException(nameof(pixelHeight));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelHeight);
         if (bgraPixels.Length != checked(pixelWidth * pixelHeight * 4))
         {
             throw new ArgumentException("The BGRA buffer is not tightly packed for its dimensions.",

@@ -49,6 +49,11 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     public BethesdaSceneViewerControl()
     {
         InitializeComponent();
+        _inputTrace?.Write("trace-start", new
+        {
+            enabled = true,
+            recordLimit = BethesdaViewerInputTraceBudget.DefaultRecordLimit
+        });
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         ApplyRenderStateVisuals();
@@ -139,11 +144,25 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     }
 
     /// <summary>Publishes a renderer-neutral scene directly, with no GLB serialization boundary.</summary>
-    internal void SetScene(BethesdaViewerScene? scene)
+    internal void SetScene(
+        BethesdaViewerScene? scene,
+        [System.Runtime.CompilerServices.CallerMemberName] string traceReason = "")
     {
         VerifyUiThread();
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (ReferenceEquals(_scene, scene)) return;
+        if (ReferenceEquals(_scene, scene))
+        {
+            _inputTrace?.Write("set-scene-same-instance", new
+            {
+                reason = traceReason,
+                scene = TraceSceneState(),
+                camera = TraceCameraState()
+            });
+            return;
+        }
+
+        var traceCameraBefore = TraceCameraState();
+        var traceSceneBefore = TraceSceneState();
 
         unchecked
         {
@@ -155,6 +174,7 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         _streamingGpuIdleDrainMilliseconds = 0;
         _streamingGpuIdleDrainSummaryLogged = false;
         _scene = scene;
+        if (_inputTrace is not null) _traceSceneEpoch++;
         // A session may validate/materialize synchronously, but host promotion must wait until this
         // exact scene has survived command recording, submission, and Present at least once.
         ResetPresentedFrameGate();
@@ -163,6 +183,14 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
             scene?.Game ?? Core.Games.BethesdaGame.Unknown,
             scene?.Purpose ?? BethesdaViewerScenePurpose.Unspecified,
             BethesdaViewerNativeSkyPolicy.ShouldUseDedicatedRawNifFraming(scene));
+        _inputTrace?.Write("set-scene-frame-reset", new
+        {
+            reason = traceReason,
+            sceneBefore = traceSceneBefore,
+            sceneAfter = TraceSceneState(),
+            cameraBefore = traceCameraBefore,
+            cameraAfter = TraceCameraState()
+        });
         if (_sessionInitialized && _renderSession is not null)
         {
             try
@@ -183,18 +211,27 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
 
     internal void ClearScene() => SetScene(null);
 
-    internal void FrameScene()
+    internal void FrameScene(
+        [System.Runtime.CompilerServices.CallerMemberName] string traceReason = "")
     {
         VerifyUiThread();
+        var traceCameraBefore = TraceCameraState();
         _camera.Frame(
             _scene?.Bounds,
             _scene?.Game ?? Core.Games.BethesdaGame.Unknown,
             _scene?.Purpose ?? BethesdaViewerScenePurpose.Unspecified,
             BethesdaViewerNativeSkyPolicy.ShouldUseDedicatedRawNifFraming(_scene));
+        _inputTrace?.Write("frame-scene-reset", new
+        {
+            reason = traceReason,
+            scene = TraceSceneState(),
+            cameraBefore = traceCameraBefore,
+            cameraAfter = TraceCameraState()
+        });
         InvalidateViewport();
     }
 
-    internal void InvalidateViewport()
+    internal new void InvalidateViewport()
     {
         VerifyUiThread();
         if (_disposed) return;
