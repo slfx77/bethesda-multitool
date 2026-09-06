@@ -97,10 +97,20 @@ public sealed class RenderableSubmeshClonerTests
         nameof(RenderableSubmesh.MaterialGlossiness),
         nameof(RenderableSubmesh.SpecularColor),
         nameof(RenderableSubmesh.MaterialDiffuse),
+        nameof(RenderableSubmesh.LegacyMaterialName),
+        nameof(RenderableSubmesh.HasAuthoredOblivionBodySkinInputs),
+        nameof(RenderableSubmesh.AuthoredOblivionBodySkinDiffusePath),
+        nameof(RenderableSubmesh.AuthoredOblivionBodySkinAmbientColor),
+        nameof(RenderableSubmesh.HasAuthoredOblivionOrdinaryInputs),
+        nameof(RenderableSubmesh.AuthoredOblivionOrdinaryDiffusePath),
         nameof(RenderableSubmesh.IsEyeEnvmap),
         nameof(RenderableSubmesh.EnvMapScale),
         nameof(RenderableSubmesh.RenderOrder),
         nameof(RenderableSubmesh.TintColor),
+        nameof(RenderableSubmesh.UsesClassicHairMaterial),
+        nameof(RenderableSubmesh.HasAuthoredOblivionHairLayerInputs),
+        nameof(RenderableSubmesh.OblivionHairLayerDiffusePath),
+        nameof(RenderableSubmesh.OblivionHairLayerTexturePath),
         nameof(RenderableSubmesh.IsFaceGen),
         nameof(RenderableSubmesh.SubsurfaceColor),
         nameof(RenderableSubmesh.AnimatedEmissiveColor),
@@ -169,6 +179,8 @@ public sealed class RenderableSubmeshClonerTests
             {
                 nameof(RenderableSubmesh.SourceNifPath) => renderState.SourceNifPath,
                 nameof(RenderableSubmesh.SkyType) => renderState.SkyType,
+                nameof(RenderableSubmesh.HasAuthoredOblivionHairLayerInputs) =>
+                    geometry.HasAuthoredOblivionHairLayerInputs && renderState.HasAuthoredOblivionHairLayerInputs,
                 _ when geometryProperties.Contains(property.Name) => property.GetValue(geometry),
                 _ => property.GetValue(renderState)
             };
@@ -291,6 +303,12 @@ public sealed class RenderableSubmeshClonerTests
         return new RenderableSubmesh
         {
             ShapeName = $"{tag}-shape",
+            LegacyMaterialName = $"{tag}-material",
+            HasAuthoredOblivionBodySkinInputs = true,
+            AuthoredOblivionBodySkinAmbientColor = (0.25f, 0.5f, 0.75f),
+            AuthoredOblivionBodySkinDiffusePath = $@"textures\{tag}-authored-body.dds",
+            HasAuthoredOblivionOrdinaryInputs = true,
+            AuthoredOblivionOrdinaryDiffusePath = $@"textures\{tag}-authored-ordinary.dds",
             Positions = [1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f],
             LocalBounds = new NifLocalBounds(new Vector3(10f, 11f, 12f), 13f),
             Triangles = [0, 1, 2],
@@ -357,6 +375,10 @@ public sealed class RenderableSubmeshClonerTests
             EnvMapScale = 0.56f,
             RenderOrder = 57,
             TintColor = (0.58f, 0.59f, 0.60f),
+            UsesClassicHairMaterial = true,
+            HasAuthoredOblivionHairLayerInputs = true,
+            OblivionHairLayerDiffusePath = tag + "/hair.dds",
+            OblivionHairLayerTexturePath = tag + "/hair_hl.dds",
             IsFaceGen = true,
             SubsurfaceColor = (0.61f, 0.62f, 0.63f),
             AnimatedEmissiveColor = (0.64f, 0.65f, 0.66f),

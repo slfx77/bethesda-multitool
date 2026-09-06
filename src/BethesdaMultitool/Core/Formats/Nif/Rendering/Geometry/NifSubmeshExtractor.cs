@@ -60,7 +60,7 @@ internal static class NifSubmeshExtractor
         // before the UV sets), so it takes a dedicated reader rather than the FNV/Oblivion one.
         var submesh = NifVersions.IsLegacyNetImmerse(nif.BinaryVersion)
                       && dataBlock.TypeName is "NiTriShapeData" or "NiTriStripsData"
-            ? ExtractMorrowindGeometryData(
+            ? ExtractLegacyNetImmerseGeometryData(
                 data,
                 dataBlock,
                 nif.IsBigEndian,
@@ -81,7 +81,9 @@ internal static class NifSubmeshExtractor
                     skinning,
                     useDualQuaternionSkinning,
                     preSkinMorphDeltas,
-                    shapeName),
+                    shapeName,
+                    sourceNif: nif,
+                    sourceShapeIndex: shapeIndex),
                 "NiTriStripsData" => ExtractTriStripsData(
                     data,
                     dataBlock,
@@ -92,7 +94,9 @@ internal static class NifSubmeshExtractor
                     skinning,
                     useDualQuaternionSkinning,
                     preSkinMorphDeltas,
-                    shapeName),
+                    shapeName,
+                    sourceNif: nif,
+                    sourceShapeIndex: shapeIndex),
                 // BSTriShape and its variants are self-contained (the shape block IS its own data block,
                 // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
                 "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
@@ -124,7 +128,9 @@ internal static class NifSubmeshExtractor
                 useDualQuaternionSkinning,
                 preSkinMorphDeltas,
                 shapeName,
-                partitionTriangles);
+                partitionTriangles,
+                sourceNif: nif,
+                sourceShapeIndex: shapeIndex);
         }
 
         if (submesh == null)
@@ -162,9 +168,7 @@ internal static class NifSubmeshExtractor
             // AlphaSettings state below alone can activate slot-2 red-channel cutout.
             UseVertexAlphaForOpacity = dataBlock.TypeName != "BSGeometry",
             IsDoubleSided = isDoubleSided,
-            HasAlphaBlend = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout
-                ? false
-                : hasAlphaBlend,
+            HasAlphaBlend = !submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout && hasAlphaBlend,
             HasAlphaTest = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout || hasAlphaTest,
             AlphaTestThreshold = submesh.StarfieldMaterialAlpha.IsLayer0OpacityCutout
                 ? ToAlphaThresholdByte(submesh.StarfieldMaterialAlpha.AlphaTestThreshold)
@@ -244,7 +248,9 @@ internal static class NifSubmeshExtractor
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
         string? shapeName = null,
-        ushort[]? fallbackTriangles = null)
+        ushort[]? fallbackTriangles = null,
+        NifInfo? sourceNif = null,
+        int sourceShapeIndex = -1)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -483,6 +489,15 @@ internal static class NifSubmeshExtractor
             }
         }
 
+        // Preserve inline data (even malformed inline data is not silently replaced by an extra).
+        // Recover the owner's authored local basis before the shared transform/skinning operation.
+        if ((bsVectorFlags & 0x1000) == 0 &&
+            NifOblivionTangentExtraReader.Read(data, sourceNif, sourceShapeIndex, numVerts, normals) is { } basis)
+        {
+            tangents = basis.Tangents;
+            bitangents = basis.Bitangents;
+        }
+
         // Apply EGM morph deltas in bind-pose space BEFORE skinning transforms vertices
         if (preSkinMorphDeltas != null)
         {
@@ -534,7 +549,7 @@ internal static class NifSubmeshExtractor
     ///     (NiTriStripsData: Num Strips + Strip Lengths + jagged Points). Field offsets validated
     ///     byte-for-byte against the schema measure walk; gated via NifVersions.IsLegacyNetImmerse.
     /// </summary>
-    private static RenderableSubmesh? ExtractMorrowindGeometryData(
+    internal static RenderableSubmesh? ExtractLegacyNetImmerseGeometryData(
         byte[] data,
         BlockInfo block,
         bool be,
@@ -809,7 +824,9 @@ internal static class NifSubmeshExtractor
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
-        string? shapeName = null)
+        string? shapeName = null,
+        NifInfo? sourceNif = null,
+        int sourceShapeIndex = -1)
     {
         var triangles = NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, be, binaryVersion);
         if (triangles == null || triangles.Length == 0)
@@ -960,6 +977,13 @@ internal static class NifSubmeshExtractor
             {
                 uvs = NifGeometryDataReader.ReadUvs(data, pos, numVerts, be);
             }
+        }
+
+        if ((bsVectorFlags & 0x1000) == 0 &&
+            NifOblivionTangentExtraReader.Read(data, sourceNif, sourceShapeIndex, numVerts, normals) is { } basis)
+        {
+            tangents = basis.Tangents;
+            bitangents = basis.Bitangents;
         }
 
         // Apply EGM morph deltas in bind-pose space BEFORE skinning transforms vertices

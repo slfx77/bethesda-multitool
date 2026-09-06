@@ -233,7 +233,8 @@ internal static class NifRenderPropertyReader
                 BinaryUtils.ReadFloat(data, glossinessOffset, nif.IsBigEndian),
                 specR, specG, specB,
                 emR, emG, emB, emissiveMult, true,
-                ambientColor, diffuseColor);
+                ambientColor, diffuseColor,
+                NifObjectBlockReader.ReadBlockName(data, propBlock, nif));
         }
 
         return defaultInfo;
@@ -446,5 +447,6 @@ internal static class NifRenderPropertyReader
         // Legacy (BsVersion < 26) NiMaterialProperty ambient/diffuse lanes. Null on Bethesda
         // streams (FO3+ removed the fields) and when the shape has no material.
         (float R, float G, float B)? Ambient = null,
-        (float R, float G, float B)? Diffuse = null);
+        (float R, float G, float B)? Diffuse = null,
+        string? Name = null);
 }

@@ -26,6 +26,43 @@ internal sealed class RenderableSubmesh
     /// <summary>Name of the source NiTriShape/NiTriStrips block, if available.</summary>
     public string? ShapeName { get; init; }
 
+    /// <summary>
+    ///     Owning NiMaterialProperty's NiObjectNET name, not a later-game external material path.
+    ///     NPC composition uses it before GPU decoding; raw meshes do not acquire actor materials.
+    /// </summary>
+    public string? LegacyMaterialName { get; set; }
+
+    /// <summary>
+    ///     Source-verified PC Oblivion body-skin subset: a static base-only legacy skin material
+    ///     with authored normals, UVs and tangent extra data. This is provenance, not shader
+    ///     selection: NPC composition must still validate resolved textures and current geometry.
+    ///     False includes unsupported or malformed source variants, not just non-skin materials.
+    /// </summary>
+    public bool HasAuthoredOblivionBodySkinInputs { get; set; }
+
+    /// <summary>
+    ///     Original base texture family captured with the source eligibility above. Composition
+    ///     preserves this provenance even after an actor atlas replaces DiffuseTexturePath, so
+    ///     repeated eligibility checks cannot mistake an injected atlas for the authored family.
+    /// </summary>
+    public string? AuthoredOblivionBodySkinDiffusePath { get; set; }
+
+    /// <summary>
+    ///     Exact finite authored ambient RGB of the verified body source. Retained for provenance;
+    ///     the bounded SKIN2000 no-color path does not multiply lighting by this material value.
+    /// </summary>
+    public (float R, float G, float B)? AuthoredOblivionBodySkinAmbientColor { get; set; }
+
+    /// <summary>
+    ///     Strict static PC TES4 ordinary legacy source, with no inherited properties/effects or
+    ///     secondary normal. A current material/texture check is still required before using the
+    ///     resident normal format to constrain specular. Skin, hair and eye sources are excluded.
+    /// </summary>
+    public bool HasAuthoredOblivionOrdinaryInputs { get; set; }
+
+    /// <summary>Original base path read from that source, retained across texture substitutions.</summary>
+    public string? AuthoredOblivionOrdinaryDiffusePath { get; set; }
+
     /// <summary>X, Y, Z per vertex (length = numVertices * 3).</summary>
     public required float[] Positions { get; init; }
 
@@ -285,7 +322,7 @@ internal sealed class RenderableSubmesh
     public (float R, float G, float B)? MaterialDiffuse { get; set; }
 
     /// <summary>True if BSShaderFlags bit 17 (Eye_Environment_Mapping = 0x20000) is set.</summary>
-    public bool IsEyeEnvmap { get; init; }
+    public bool IsEyeEnvmap { get; set; }
 
     /// <summary>BSShaderProperty EnvMapScale — controls eye cubemap reflection strength. Typical 0.5-1.0.</summary>
     public float EnvMapScale { get; init; }
@@ -302,6 +339,22 @@ internal sealed class RenderableSubmesh
     ///     Null = no tint (1.0 multiplier).
     /// </summary>
     public (float R, float G, float B)? TintColor { get; set; }
+
+    /// <summary>
+    ///     True for Oblivion actor hair assembled for the retail SM3002/HAIR material family.
+    ///     This is explicit because its stock metadata-less NiMaterialProperty must not be inferred
+    ///     as the generic white-specular material used by later shader-property NIFs.
+    /// </summary>
+    public bool UsesClassicHairMaterial { get; set; }
+
+    /// <summary>Exact static TES4 Hair source with authored green/alpha equal to one.</summary>
+    public bool HasAuthoredOblivionHairLayerInputs { get; set; }
+
+    /// <summary>Actor-selected diffuse family associated with the optional SM3 hair layer.</summary>
+    public string? OblivionHairLayerDiffusePath { get; set; }
+
+    /// <summary>Independent SM3 LayerMap, never specular or coverage data.</summary>
+    public string? OblivionHairLayerTexturePath { get; set; }
 
     /// <summary>
     ///     True if this submesh uses the classic FaceGen skin shader. Deterministic head rendering

@@ -203,6 +203,8 @@ internal static class NifExportExtractor
             }
         }
 
+        var bodySkinSources = NifOblivionBodySkinSourceReader.Create(data, nif);
+        var ordinarySources = NifOblivionOrdinarySourceReader.Create(data, nif);
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
             var shapeBlock = nif.Blocks[shapeIndex];
@@ -241,15 +243,21 @@ internal static class NifExportExtractor
             var submesh = ExtractRawSubmesh(
                 data,
                 nif,
+                shapeIndex,
                 dataBlock,
                 shapeName,
                 properties,
-                shapeMorphDeltas);
+                shapeMorphDeltas,
+                bodySkinSources?.ReadAmbientColor(shapeIndex));
             if (submesh == null)
             {
                 continue;
             }
             submesh.SourceBlockIndex = shapeIndex;
+            submesh.AuthoredOblivionOrdinaryDiffusePath = ordinarySources?.ReadDiffusePath(shapeIndex);
+            submesh.HasAuthoredOblivionOrdinaryInputs = submesh.AuthoredOblivionOrdinaryDiffusePath is not null;
+            submesh.HasAuthoredOblivionHairLayerInputs =
+                NifOblivionHairSourceReader.IsEligible(data, nif, shapeIndex);
 
             var shapeWorldTransform = worldTransforms.TryGetValue(shapeIndex, out var shapeWorld)
                 ? shapeWorld
@@ -354,12 +362,28 @@ internal static class NifExportExtractor
     private static RenderableSubmesh? ExtractRawSubmesh(
         byte[] data,
         NifInfo nif,
+        int shapeIndex,
         BlockInfo dataBlock,
         string shapeName,
         ShapeProperties properties,
-        float[]? preSkinMorphDeltas)
+        float[]? preSkinMorphDeltas,
+        (float R, float G, float B)? authoredBodySkinAmbient)
     {
-        var raw = dataBlock.TypeName switch
+        // TES3's NetImmerse 4.0.0.2 NiTri*Data layout predates the shared Gamebryo reader used by
+        // later games. The world renderer already routes these blocks through the bounded legacy
+        // reader; keep the hierarchy-preserving Mesh Viewer/export path on that same source of truth.
+        var raw = NifVersions.IsLegacyNetImmerse(nif.BinaryVersion) &&
+                  dataBlock.TypeName is "NiTriShapeData" or "NiTriStripsData"
+            ? NifSubmeshExtractor.ExtractLegacyNetImmerseGeometryData(
+                data,
+                dataBlock,
+                nif.IsBigEndian,
+                Matrix4x4.Identity,
+                skinning: null,
+                useDualQuaternionSkinning: false,
+                preSkinMorphDeltas,
+                shapeName)
+            : dataBlock.TypeName switch
         {
             "NiTriShapeData" => NifSubmeshExtractor.ExtractTriShapeData(
                 data,
@@ -370,7 +394,9 @@ internal static class NifExportExtractor
                 Matrix4x4.Identity,
                 null,
                 false,
-                preSkinMorphDeltas),
+                preSkinMorphDeltas,
+                sourceNif: nif,
+                sourceShapeIndex: shapeIndex),
             "NiTriStripsData" => NifSubmeshExtractor.ExtractTriStripsData(
                 data,
                 dataBlock,
@@ -380,7 +406,9 @@ internal static class NifExportExtractor
                 Matrix4x4.Identity,
                 null,
                 false,
-                preSkinMorphDeltas),
+                preSkinMorphDeltas,
+                sourceNif: nif,
+                sourceShapeIndex: shapeIndex),
             "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape" =>
                 NifSubmeshExtractor.ExtractBsTriShape(
                     data,
@@ -398,9 +426,14 @@ internal static class NifExportExtractor
             return null;
         }
 
+        var hasAuthoredBodySkinInputs = authoredBodySkinAmbient is not null;
         return new RenderableSubmesh
         {
             ShapeName = shapeName,
+            LegacyMaterialName = properties.LegacyMaterialName,
+            HasAuthoredOblivionBodySkinInputs = hasAuthoredBodySkinInputs,
+            AuthoredOblivionBodySkinAmbientColor = authoredBodySkinAmbient,
+            AuthoredOblivionBodySkinDiffusePath = hasAuthoredBodySkinInputs ? properties.DiffusePath : null,
             Positions = raw.Positions,
             Triangles = raw.Triangles,
             Normals = raw.Normals,
@@ -424,6 +457,8 @@ internal static class NifExportExtractor
             DstBlendMode = properties.DstBlendMode,
             MaterialAlpha = properties.MaterialAlpha,
             MaterialGlossiness = properties.MaterialGlossiness,
+            SpecularColor = properties.SpecularColor,
+            MaterialDiffuse = properties.MaterialDiffuse,
             IsEyeEnvmap = properties.IsEyeEnvmap,
             EnvMapScale = properties.EnvMapScale
         };
@@ -500,7 +535,11 @@ internal static class NifExportExtractor
             SrcBlendMode = srcBlendMode,
             DstBlendMode = dstBlendMode,
             MaterialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs),
+            LegacyMaterialName = NifBlockParsers.ReadMaterialName(data, nif, propRefs),
             MaterialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs),
+            SpecularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs),
+            MaterialDiffuse = NifMaterialDiffusePolicy.Carry(
+                nif.BsVersion, NifBlockParsers.ReadMaterialDiffuse(data, nif, propRefs)),
             IsEyeEnvmap = isEyeEnvmap,
             EnvMapScale = envMapScale
         };
@@ -581,6 +620,8 @@ internal static class NifExportExtractor
 
         public string? DiffusePath { get; init; }
 
+        public string? LegacyMaterialName { get; init; }
+
         public string? NormalMapPath { get; init; }
 
         public bool IsEmissive { get; init; }
@@ -608,6 +649,10 @@ internal static class NifExportExtractor
         public float MaterialAlpha { get; init; } = 1f;
 
         public float MaterialGlossiness { get; init; } = 10f;
+
+        public (float R, float G, float B) SpecularColor { get; init; }
+
+        public (float R, float G, float B)? MaterialDiffuse { get; init; }
 
         public bool IsEyeEnvmap { get; init; }
 

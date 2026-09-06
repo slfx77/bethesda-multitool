@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -392,6 +393,8 @@ internal static class NifGeometryExtractor
         var textureEffectEnvMaps = NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
             data, nif, nodeChildren, shapeDataMap.Keys);
 
+        var bodySkinSources = NifOblivionBodySkinSourceReader.Create(data, nif);
+        var ordinarySources = NifOblivionOrdinarySourceReader.Create(data, nif);
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
             var isTreeAnimationShape = treeAnimationShapes.Contains(shapeIndex);
@@ -441,6 +444,7 @@ internal static class NifGeometryExtractor
             var materialGlossiness = 10f;
             var specularColor = (R: 0f, G: 0f, B: 0f);
             (float R, float G, float B)? materialDiffuse = null;
+            string? legacyMaterialName = null;
             var isEyeEnvmap = false;
             var envMapScale = 0f;
             var isDecal = false;
@@ -640,6 +644,7 @@ internal static class NifGeometryExtractor
                 // blowing-snow planes (authored 0.4/0.6) render at alpha 1.
                 materialAlpha *= NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
+                legacyMaterialName = NifBlockParsers.ReadMaterialName(data, nif, propRefs);
                 specularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs);
                 // Legacy (BsVersion < 26) ambient/diffuse lanes only; FO3+ streams yield null here,
                 // which keeps the untextured white-fallback bind inert for those games.
@@ -984,6 +989,16 @@ internal static class NifGeometryExtractor
                 }
 
                 submesh.MaterialDiffuse = materialDiffuse;
+                submesh.LegacyMaterialName = legacyMaterialName;
+                submesh.AuthoredOblivionBodySkinAmbientColor = bodySkinSources?.ReadAmbientColor(shapeIndex);
+                submesh.HasAuthoredOblivionBodySkinInputs = submesh.AuthoredOblivionBodySkinAmbientColor is not null;
+                submesh.AuthoredOblivionBodySkinDiffusePath =
+                    submesh.HasAuthoredOblivionBodySkinInputs ? diffusePath : null;
+                submesh.AuthoredOblivionOrdinaryDiffusePath =
+                    ordinarySources?.ReadDiffusePath(shapeIndex);
+                submesh.HasAuthoredOblivionOrdinaryInputs = submesh.AuthoredOblivionOrdinaryDiffusePath is not null;
+                submesh.HasAuthoredOblivionHairLayerInputs =
+                    NifOblivionHairSourceReader.IsEligible(data, nif, shapeIndex);
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;
@@ -1007,9 +1022,8 @@ internal static class NifGeometryExtractor
                 submesh.EffectTint = effectTint;
                 submesh.EffectFalloff = effectFalloff;
                 submesh.SoftParticleFalloffDepth = softParticleFalloffDepth;
-                submesh.UseVertexAlphaForOpacity = nif.Blocks[shapeIndex].TypeName == "BSGeometry"
-                    ? false
-                    : useVertexAlpha;
+                submesh.UseVertexAlphaForOpacity =
+                    nif.Blocks[shapeIndex].TypeName != "BSGeometry" && useVertexAlpha;
                 submesh.IsTreeAnimation = isTreeAnimationShape;
                 submesh.ClampTextureU = clampTextureU;
                 submesh.ClampTextureV = clampTextureV;

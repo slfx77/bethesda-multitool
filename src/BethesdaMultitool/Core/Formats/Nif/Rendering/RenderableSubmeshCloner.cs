@@ -23,7 +23,8 @@ internal static class RenderableSubmeshCloner
     ///     Shape name, bounds, source block, and every vertex/index buffer come from
     ///     <paramref name="geometry" />. Source path and typed sky classification prefer
     ///     <paramref name="renderState" /> but retain the geometry value when resolution supplied
-    ///     no override. Every other writable property is owned by <paramref name="renderState" />.
+    ///     no override. Hair raw-color provenance requires both inputs, because the copied vertex
+    ///     stream belongs to geometry. Every other writable property is owned by <paramref name="renderState" />.
     /// </summary>
     internal static RenderableSubmesh CloneGeometryWithRenderState(
         RenderableSubmesh geometry,
@@ -101,10 +102,21 @@ internal static class RenderableSubmeshCloner
             MaterialGlossiness = renderState.MaterialGlossiness,
             SpecularColor = renderState.SpecularColor,
             MaterialDiffuse = renderState.MaterialDiffuse,
+            LegacyMaterialName = renderState.LegacyMaterialName,
+            HasAuthoredOblivionBodySkinInputs = renderState.HasAuthoredOblivionBodySkinInputs,
+            AuthoredOblivionBodySkinAmbientColor = renderState.AuthoredOblivionBodySkinAmbientColor,
+            AuthoredOblivionBodySkinDiffusePath = renderState.AuthoredOblivionBodySkinDiffusePath,
+            HasAuthoredOblivionOrdinaryInputs = renderState.HasAuthoredOblivionOrdinaryInputs,
+            AuthoredOblivionOrdinaryDiffusePath = renderState.AuthoredOblivionOrdinaryDiffusePath,
             IsEyeEnvmap = renderState.IsEyeEnvmap,
             EnvMapScale = renderState.EnvMapScale,
             RenderOrder = renderState.RenderOrder,
             TintColor = renderState.TintColor,
+            UsesClassicHairMaterial = renderState.UsesClassicHairMaterial,
+            HasAuthoredOblivionHairLayerInputs = geometry.HasAuthoredOblivionHairLayerInputs &&
+                                                   renderState.HasAuthoredOblivionHairLayerInputs,
+            OblivionHairLayerDiffusePath = renderState.OblivionHairLayerDiffusePath,
+            OblivionHairLayerTexturePath = renderState.OblivionHairLayerTexturePath,
             IsFaceGen = renderState.IsFaceGen,
             SubsurfaceColor = renderState.SubsurfaceColor,
             AnimatedEmissiveColor = renderState.AnimatedEmissiveColor,

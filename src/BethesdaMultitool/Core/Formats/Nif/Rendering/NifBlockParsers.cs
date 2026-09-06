@@ -395,6 +395,11 @@ internal static class NifBlockParsers
         return NifRenderPropertyReader.ReadMaterialAlpha(data, nif, propertyRefs);
     }
 
+    internal static string? ReadMaterialName(byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        return NifRenderPropertyReader.ReadMaterialProperty(data, nif, propertyRefs).Name;
+    }
+
     internal static float ReadMaterialGlossiness(byte[] data, NifInfo nif, List<int> propertyRefs)
     {
         return NifRenderPropertyReader.ReadMaterialGlossiness(data, nif, propertyRefs);
