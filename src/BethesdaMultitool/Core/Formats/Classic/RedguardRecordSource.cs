@@ -8,7 +8,8 @@ namespace BethesdaMultitool.Core.Formats.Classic;
 ///     Synthesizes browsable records from a Redguard install. <c>WORLD.INI</c> is the master
 ///     registry every other file hangs off, so its 29 worlds are the first record family: each
 ///     <c>RWLD</c> carries the world's map, terrain, palette and sky plus its lighting settings,
-///     and says which of its referenced files are actually shipped.
+///     and says which of its referenced files are actually shipped. The map databases those
+///     worlds name follow as <c>RMAP</c>/<c>ROBJ</c> via <see cref="RedguardMapRecordSource" />.
 /// </summary>
 internal static class RedguardRecordSource
 {
@@ -36,6 +37,9 @@ internal static class RedguardRecordSource
             cancellationToken.ThrowIfCancellationRequested();
             records.GenericRecords.Add(BuildWorldRecord(dataRoot, world, registry));
         }
+
+        RedguardMapRecordSource.Populate(dataRoot, records, cancellationToken);
+        RedguardTextRecordSource.Populate(dataRoot, records, cancellationToken);
     }
 
     /// <summary>

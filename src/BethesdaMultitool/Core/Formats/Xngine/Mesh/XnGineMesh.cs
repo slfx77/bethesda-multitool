@@ -178,8 +178,22 @@ internal sealed class XnGineMesh
         (Max.Y - Min.Y) / PointDivisor,
         (Max.Z - Min.Z) / PointDivisor);
 
-    /// <summary>Parses one mesh record in the given game's plane-list layout.</summary>
-    public static XnGineMesh Parse(ReadOnlyMemory<byte> bytes, uint objectId, XnGineMeshLayout layout = XnGineMeshLayout.Daggerfall)
+    /// <summary>
+    ///     Parses one mesh record in the given game's plane-list layout.
+    ///     <para>
+    ///         <paramref name="suppliedPoints" /> and <paramref name="suppliedNormals" /> replace the
+    ///         lists the header points at. Redguard's animated <c>.3DC</c> needs both: its geometry
+    ///         is named by a frame table rather than by the header (whose offsets are frame 1's), and
+    ///         it stores no per-plane normal list a <c>.3D</c> reader could use. Everything else —
+    ///         the header, the plane walk and the UV handling — is identical, so it stays shared.
+    ///     </para>
+    /// </summary>
+    public static XnGineMesh Parse(
+        ReadOnlyMemory<byte> bytes,
+        uint objectId,
+        XnGineMeshLayout layout = XnGineMeshLayout.Daggerfall,
+        IReadOnlyList<XnGineMeshPoint>? suppliedPoints = null,
+        IReadOnlyList<XnGineMeshPoint>? suppliedNormals = null)
     {
         var planeHeaderLength = layout == XnGineMeshLayout.Battlespire
             ? BattlespirePlaneHeaderLength
@@ -211,14 +225,28 @@ internal sealed class XnGineMesh
         var unknown3 = BinaryPrimitives.ReadUInt32LittleEndian(span[56..]);
         var planeListOffset = BinaryPrimitives.ReadInt32LittleEndian(span[60..]);
 
-        if (pointCount < 0 || pointListOffset < 0 || pointListOffset + (long)pointCount * PointLength > span.Length)
+        if (suppliedPoints is null &&
+            (pointCount < 0 || pointListOffset < 0 || pointListOffset + (long)pointCount * PointLength > span.Length))
         {
             throw new InvalidDataException($"Mesh {objectId}: {pointCount} points at {pointListOffset} do not fit in {span.Length} bytes.");
         }
 
-        if (planeCount < 0 || normalListOffset < 0 || normalListOffset + (long)planeCount * PointLength > span.Length)
+        if (suppliedNormals is null &&
+            (planeCount < 0 || normalListOffset < 0 || normalListOffset + (long)planeCount * PointLength > span.Length))
         {
             throw new InvalidDataException($"Mesh {objectId}: {planeCount} normals at {normalListOffset} do not fit in {span.Length} bytes.");
+        }
+
+        if (suppliedPoints is not null && suppliedPoints.Count != pointCount)
+        {
+            throw new InvalidDataException(
+                $"Mesh {objectId}: {suppliedPoints.Count} supplied points contradict the header's {pointCount}.");
+        }
+
+        if (suppliedNormals is not null && suppliedNormals.Count != planeCount)
+        {
+            throw new InvalidDataException(
+                $"Mesh {objectId}: {suppliedNormals.Count} supplied normals contradict the header's {planeCount}.");
         }
 
         if (planeListOffset < 0 || planeListOffset > span.Length)
@@ -229,11 +257,13 @@ internal sealed class XnGineMesh
         var points = new XnGineMeshPoint[pointCount];
         for (var i = 0; i < pointCount; i++)
         {
-            points[i] = ReadPoint(span[(pointListOffset + i * PointLength)..]);
+            points[i] = suppliedPoints is not null
+                ? suppliedPoints[i]
+                : ReadPoint(span[(pointListOffset + i * PointLength)..]);
         }
 
         var context = new PlaneContext(bytes, objectId, layout, version, planeHeaderLength, pointCount,
-            planeDataOffset, normalListOffset);
+            planeDataOffset, normalListOffset, suppliedNormals);
         var planes = new XnGinePlane[planeCount];
         var textures = new List<(int Archive, int Record)>();
         var position = planeListOffset;
@@ -280,7 +310,8 @@ internal sealed class XnGineMesh
         int PlaneHeaderLength,
         int PointCount,
         int PlaneDataOffset,
-        int NormalListOffset);
+        int NormalListOffset,
+        IReadOnlyList<XnGineMeshPoint>? SuppliedNormals);
 
     /// <summary>Reads one plane's header and points, advancing <paramref name="position" />.</summary>
     private static XnGinePlane ReadPlane(PlaneContext context, int index, ref int position)
@@ -338,7 +369,9 @@ internal sealed class XnGineMesh
             Unknown1 = unknown1,
             TextureBits = textureBits,
             HeaderTail = headerTail,
-            Normal = ReadPoint(span[(context.NormalListOffset + index * PointLength)..]),
+            Normal = context.SuppliedNormals is { } normals
+                ? normals[index]
+                : ReadPoint(span[(context.NormalListOffset + index * PointLength)..]),
             Points = planePoints,
             PlaneData = planeData
         };
