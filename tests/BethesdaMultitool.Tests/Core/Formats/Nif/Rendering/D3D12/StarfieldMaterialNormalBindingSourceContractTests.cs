@@ -48,7 +48,7 @@ public sealed class StarfieldMaterialNormalBindingSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("HasDerivedStarfieldNormal: sub.HasDerivedStarfieldNormal", renderer,
             StringComparison.Ordinal);
-        Assert.Contains("SpecularExponent: sub.Specular.W", renderer, StringComparison.Ordinal);
+        Assert.Contains("SpecularExponent: sub.EffectiveSpecular.W", renderer, StringComparison.Ordinal);
         Assert.Contains("TryResolveStarfieldDiffuseLitVariant(variant", renderer,
             StringComparison.Ordinal);
         Assert.Contains("_pipelines.TryGetStarfieldDiffuseLitPso(alphaGreater, doubleSided", renderer,

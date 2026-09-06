@@ -323,6 +323,12 @@ uint MaterialTextureFlags(float packedState)
     return (uint)round(packedState);
 }
 
+// bit 19 = a positive resident TES4 actor-hair LayerMap in TexIndices.z.
+bool HasOblivionHairLayer(float packedState)
+{
+    return (((uint)round(packedState)) & 524288u) != 0u;
+}
+
 bool HasMaterialSpecularMap(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 1u) != 0u;
@@ -709,6 +715,17 @@ float4 main(PSInput input) : SV_Target
 
     float4 sample = SampleMaterialTexture(
         input.vTexIndices.x, materialUv, input.vTextureState.z);
+
+    // Recovered TES4 SM3/SM3LL hair LayerMap. Admission proves actor Hair, raw source
+    // green/alpha1 and a positive resident color texture. Keep both filtered inputs independent:
+    // filtering a precomposited atlas changes the alpha-weighted strand color. Coverage remains
+    // the original BaseMap alpha; neither layer alpha nor normal alpha replaces it.
+    if (HasOblivionHairLayer(input.vTextureState.z))
+    {
+        float4 hairLayer = SampleMaterialTexture(
+            input.vTexIndices.z, materialUv, input.vTextureState.z);
+        sample.rgb = lerp(sample.rgb, hairLayer.rgb, hairLayer.a);
+    }
 
     // FO4/FO76 grayscale-to-palette (vTextureState.w >= 0 = the material's GradientMapV row): the
     // palette lookup REPLACES the diffuse RGB — the raw base texture is authoring data (FO4's
@@ -1201,22 +1218,28 @@ float4 main(PSInput input) : SV_Target
     // that ceiling for every shape without authored glow, after ALL lighting terms. Full-bright
     // NoLighting shapes and Lighting30 emittance keep their HDR headroom (that's bloom's input —
     // flattening it is the regression the HDR program exists to avoid).
-    if (!fullBright && !authoredGlow)
+    // Active SLS2000 clamps only the aggregate shade's lower bound. Its final RGB has no
+    // upper clamp, with fog enabled or disabled; preserve that HDR input to the fog composite.
+    // The existing viewer firefly bounds remain unchanged for every fallback material.
+    if (!fnvActiveAdtBase)
     {
-        lit = min(lit, 1.0);
-    }
-    else
-    {
-        // Emissive firefly cap: authored glow keeps HDR headroom for bloom, but a sub-pixel glow
-        // triangle (welkynd stones, gate fire, glow-map windows at distance) can ride an extreme
-        // Lighting30 emittance product (EmissiveMult × HDR scale × glow map) into single MSAA
-        // samples as isolated white dots. Bound its LUMINANCE at a high ceiling — hue-preserving
-        // scale, never a flat saturate (that would flatten neon/goo/fire and pre-empt bloom).
-        // Ordinary glow (goo ~2.4, neon 2-4) passes untouched.
-        float glowLuma = dot(lit, float3(0.299, 0.587, 0.114));
-        if (glowLuma > kEmissiveLumaCap)
+        if (!fullBright && !authoredGlow)
         {
-            lit *= kEmissiveLumaCap / glowLuma;
+            lit = min(lit, 1.0);
+        }
+        else
+        {
+            // Emissive firefly cap: authored glow keeps HDR headroom for bloom, but a sub-pixel glow
+            // triangle (welkynd stones, gate fire, glow-map windows at distance) can ride an extreme
+            // Lighting30 emittance product (EmissiveMult × HDR scale × glow map) into single MSAA
+            // samples as isolated white dots. Bound its LUMINANCE at a high ceiling — hue-preserving
+            // scale, never a flat saturate (that would flatten neon/goo/fire and pre-empt bloom).
+            // Ordinary glow (goo ~2.4, neon 2-4) passes untouched.
+            float glowLuma = dot(lit, float3(0.299, 0.587, 0.114));
+            if (glowLuma > kEmissiveLumaCap)
+            {
+                lit *= kEmissiveLumaCap / glowLuma;
+            }
         }
     }
 

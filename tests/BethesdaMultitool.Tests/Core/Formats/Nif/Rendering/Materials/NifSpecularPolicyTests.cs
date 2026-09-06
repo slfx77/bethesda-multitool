@@ -35,6 +35,37 @@ public sealed class NifSpecularPolicyTests
     }
 
     [Fact]
+    public void ClassicHairMaterial_DoesNotPromoteNiMaterialGlossIntoWhiteSpecular()
+    {
+        var submesh = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f],
+            Triangles = [],
+            Normals = [0f, 0f, 1f],
+            Tangents = [1f, 0f, 0f],
+            Bitangents = [0f, 1f, 0f],
+            NormalMapTexturePath = @"textures\characters\hair\short_n.dds",
+            MaterialGlossiness = 10f,
+            SpecularColor = (0.9f, 0.9f, 0.9f),
+            TintColor = (124f / 255f, 102f / 255f, 82f / 255f),
+            UsesClassicHairMaterial = true
+        };
+
+        Assert.False(NifSpecularPolicy.IsEnabled(submesh));
+    }
+
+    [Fact]
+    public void ShaderAuthoredHairTint_RetainsExplicitSpecularPermutation()
+    {
+        var submesh = ClassicSubmesh(1u, (0.9f, 0.9f, 0.9f));
+        submesh.TintColor = (0.4f, 0.3f, 0.2f);
+
+        Assert.NotNull(submesh.ShaderMetadata);
+        Assert.False(submesh.UsesClassicHairMaterial);
+        Assert.True(NifSpecularPolicy.IsEnabled(submesh));
+    }
+
+    [Fact]
     public void RetailCliffVertiC2_AuthoredSpecularShapesSurviveBlackMaterialColor()
     {
         BucketBTestGuard.SkipUnlessEnabled();

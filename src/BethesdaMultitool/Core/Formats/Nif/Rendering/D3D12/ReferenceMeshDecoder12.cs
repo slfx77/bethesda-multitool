@@ -579,7 +579,9 @@ internal sealed class ReferenceMeshDecoder12
                 BgsmEmissionColor: sub.BgsmEmissionColor,
                 UsesExternalEmittance: sub.UsesExternalEmittance,
                 ExternalEmittanceInfluence: sub.ExternalEmittanceInfluence,
-                IsTreeAnimation: sub.IsTreeAnimation));
+                IsTreeAnimation: sub.IsTreeAnimation,
+                UsesOblivionOrdinarySpecularPolicy: sub.UsesOblivionOrdinarySpecularPolicy,
+                OblivionHairLayerTexturePath: sub.OblivionHairLayerTexturePath));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -665,7 +667,9 @@ internal sealed class ReferenceMeshDecoder12
                 BgsmEmissionColor: sub.BgsmEmissionColor,
                 UsesExternalEmittance: sub.UsesExternalEmittance,
                 ExternalEmittanceInfluence: sub.ExternalEmittanceInfluence,
-                IsTreeAnimation: sub.IsTreeAnimation));
+                IsTreeAnimation: sub.IsTreeAnimation,
+                UsesOblivionOrdinarySpecularPolicy: sub.UsesOblivionOrdinarySpecularPolicy,
+                OblivionHairLayerTexturePath: sub.OblivionHairLayerTexturePath));
         }
 
         return new DecodedNifMesh12(
@@ -709,7 +713,7 @@ internal sealed class ReferenceMeshDecoder12
             {
                 if (track is null) continue;
                 total += track.RotationKeys.Length * 20L;
-                total += track.TranslationKeys.Length * 16L;
+                total += (long)track.TranslationKeys.Length * System.Runtime.CompilerServices.Unsafe.SizeOf<NifVec3Key>();
                 total += track.ScaleKeys.Length * 8L;
             }
         }

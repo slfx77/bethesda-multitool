@@ -2012,6 +2012,19 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                 var specularMap = !string.IsNullOrEmpty(sub.SpecularMapTexturePath)
                     ? Acquire(textureCache.GetOrUpload(sub.SpecularMapTexturePath!))
                     : null;
+                // This named union arm never sets the specular-map flag. Keep incompatible
+                // decoded payloads on their existing material path even in release builds.
+                var hairLayerCompatible = sub.SpecularMapTexturePath is null &&
+                                          sub.ClassicEnvironmentMaskTexturePath is null &&
+                                          sub.ClassicParallaxHeightMapTexturePath is null &&
+                                          !sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout;
+                System.Diagnostics.Debug.Assert(
+                    sub.OblivionHairLayerTexturePath is null || hairLayerCompatible,
+                    "Oblivion hair layer and other TexIndices.z material lanes cannot coexist.");
+                var oblivionHairLayer = hairLayerCompatible &&
+                                        !string.IsNullOrEmpty(sub.OblivionHairLayerTexturePath)
+                    ? Acquire(textureCache.GetOrUpload(sub.OblivionHairLayerTexturePath!))
+                    : null;
                 var gradientMap = !string.IsNullOrEmpty(sub.GradientMapTexturePath)
                     ? Acquire(textureCache.GetOrUpload(sub.GradientMapTexturePath!))
                     : null;
@@ -2104,6 +2117,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     StarfieldOpacity = starfieldOpacity,
                     HasDerivedStarfieldNormal = normalBinding.IsDerived,
                     SpecularMap = specularMap,
+                    OblivionHairLayer = oblivionHairLayer,
                     GradientMap = gradientMap,
                     Lighting30GlowMap = lighting30GlowMap,
                     BgsmGlowMap = bgsmGlowMap,
@@ -2124,6 +2138,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub, normalBinding.HasBump),
                     Specular = BuildSpecular(sub),
+                    UsesOblivionOrdinarySpecularPolicy = sub.UsesOblivionOrdinarySpecularPolicy,
                     HasBump = normalBinding.HasBump,
                     AlphaRenderMode = sub.AlphaRenderMode,
                     AlphaBlend = sub.AlphaBlend,
@@ -2176,9 +2191,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
                     IsDecal = sub.IsDecal,
                     // default(Vector3) = a pre-effect-fields payload (or a caller that skipped the
                     // arg); black would tint everything out, so normalize to the no-op white.
-                    EffectTint = sub.EffectTintSpecified
-                        ? sub.EffectTint
-                        : sub.EffectTint == default ? Vector3.One : sub.EffectTint,
+                    EffectTint = !sub.EffectTintSpecified && sub.EffectTint == default
+                        ? Vector3.One
+                        : sub.EffectTint,
                     UsesExternalEmittance = sub.UsesExternalEmittance,
                     ExternalEmittanceInfluence = sub.ExternalEmittanceInfluence,
                     EffectFalloffParams = sub.EffectFalloffParams,
@@ -2288,6 +2303,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
             textureCache.Release(submesh.Diffuse);
             textureCache.Release(submesh.Normal);
             textureCache.Release(submesh.SpecularMap);
+            textureCache.Release(submesh.OblivionHairLayer);
             textureCache.Release(submesh.GradientMap);
             textureCache.Release(submesh.Lighting30GlowMap);
             textureCache.Release(submesh.BgsmGlowMap);
@@ -2392,12 +2408,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable, IGpuCommandSubmissionP
         // only the surviving fronds blend + write depth — exactly the engine's blend+test+ZBuffer_Write.
         var alphaTestEnabled = (sub.AlphaRenderMode != NifAlphaRenderMode.Blend || sub.DepthWritingBlend)
                                && sub.AlphaTest;
+        // CE2's layer-0 opacity cutout owns the threshold when it is in play; otherwise the inline
+        // NIF material's own value applies.
+        var alphaTestThreshold = sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
+            ? sub.StarfieldMaterialAlpha.AlphaTestThreshold
+            : sub.AlphaTestThreshold;
         return new Vector4(
-            alphaTestEnabled
-                ? sub.StarfieldMaterialAlpha.IsLayer0OpacityCutout
-                    ? sub.StarfieldMaterialAlpha.AlphaTestThreshold
-                    : sub.AlphaTestThreshold
-                : 0f,
+            alphaTestEnabled ? alphaTestThreshold : 0f,
             alphaTestEnabled ? sub.AlphaTestFunction : -1f,
             Math.Clamp(sub.MaterialAlpha, 0f, 8f),
             sub.AlphaRenderMode == NifAlphaRenderMode.Blend ? 1f : 0f);

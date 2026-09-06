@@ -368,11 +368,18 @@ internal sealed class BethesdaViewerStaticRenderer12
             return $"{used}/{eligible} eligible opaque part(s) use the direct {name} shader.";
         }
 
-        var reason = !requested
-            ? $"{activation} is disabled"
-            : !available
-                ? "the atomic direct PSO family was unavailable"
-                : "the specialized PSO lookup failed closed";
+        string reason;
+        if (!requested)
+        {
+            reason = $"{activation} is disabled";
+        }
+        else
+        {
+            reason = available
+                ? "the specialized PSO lookup failed closed"
+                : "the atomic direct PSO family was unavailable";
+        }
+
         return $"{used}/{eligible} eligible opaque part(s) use the direct {name} shader; " +
                $"{eligible - used} use the generic material shader because {reason}.";
     }
@@ -637,7 +644,7 @@ internal sealed class BethesdaViewerStaticRenderer12
             TextureFeatureMask: (uint)MathF.Round(submesh.TextureState.Z),
             HasBump: submesh.HasBump,
             HasSpecularMap: submesh.SpecularMap is not null,
-            SpecularExponent: submesh.Specular.W,
+            SpecularExponent: submesh.EffectiveSpecular.W,
             ModernEnvironmentMapDeclared: submesh.EnvMap is not null,
             ModernEnvironmentMapScale: submesh.EnvMapScale,
             WrapTextureU: !submesh.ClampTextureU,
@@ -782,13 +789,10 @@ internal sealed class BethesdaViewerStaticRenderer12
             TexIndices = new TexIndexQuad(
                 submesh.Diffuse.BindlessIndex,
                 submesh.Normal.BindlessIndex,
-                submesh.StarfieldOpacity?.BindlessIndex ??
-                submesh.ClassicParallaxHeightMap?.BindlessIndex ??
-                submesh.ClassicEnvMask?.BindlessIndex ??
-                submesh.SpecularMap?.BindlessIndex ?? _neutralTextureIndex,
+                submesh.ResolveAuxiliaryTextureIndex(_neutralTextureIndex),
                 submesh.GradientMap?.BindlessIndex ??
                 submesh.Lighting30GlowMap?.BindlessIndex ?? _neutralTextureIndex),
-            Specular = submesh.Specular,
+            Specular = submesh.EffectiveSpecular,
             CameraRight = new Vector4(cameraRight, 0f),
             CameraUp = new Vector4(cameraUp, 0f),
             EffectTint = new Vector4(submesh.EffectTint, submesh.HasEffectFalloff ? 1f : 0f),

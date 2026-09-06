@@ -33,6 +33,8 @@ struct PSInput
     nointerpolation float vSpecularLodFade : TEXCOORD15;
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
     nointerpolation float4 vHeatmap : TEXCOORD17;
+    centroid float3 vClassicSkinLight : TEXCOORD18;
+    centroid float3 vClassicSkinEye : TEXCOORD19;
     bool IsFrontFace : SV_IsFrontFace;
 };
 
@@ -82,6 +84,7 @@ float4 main(PSInput input) : SV_Target
     }
 
     float3 normal = geometricNormal;
+    float3 tangentNormal = float3(0.0, 0.0, 1.0);
     if (input.vRenderState.y > 0.5)
     {
         float4 normalSample = SampleClassicSkinTexture(
@@ -102,6 +105,7 @@ float4 main(PSInput input) : SV_Target
             mapNormal = normalSample.rgb * 2.0 - 1.0;
         }
         mapNormal = normalize(mapNormal);
+        tangentNormal = mapNormal;
 
         float tangentLengthSquared = dot(input.vTangent, input.vTangent);
         float bitangentLengthSquared = dot(input.vBitangent, input.vBitangent);
@@ -138,10 +142,21 @@ float4 main(PSInput input) : SV_Target
         ? eyeVector * rsqrt(eyeLengthSquared)
         : float3(0.0, 0.0, 1.0);
 
-    // Retail SKIN2000.pso, instruction-for-instruction algebra: unwrapped direct light plus the
-    // view-dependent cubic rim. Ambient is added to the light aggregate before the nonnegative max.
+    // Keep the existing geometric fallback for absent normal maps or unusable projected inputs.
+    // The admitted mapped route uses the complete recovered VS/PS pair: centroid light is used
+    // directly; only the interpolated eye is normalized again by SKIN2000.pso. Its map normal is
+    // tangent-space and has no pixel-stage TBN reconstruction or back-face normal flip.
     float NdotL = max(dot(normal, lightDirection), 0.0);
     float NdotV = max(dot(normal, viewDirection), 0.0);
+    float classicEyeLengthSquared = dot(input.vClassicSkinEye, input.vClassicSkinEye);
+    if (input.vRenderState.y > 0.5 &&
+        all(isfinite(input.vClassicSkinLight)) && all(isfinite(input.vClassicSkinEye)) &&
+        classicEyeLengthSquared > 0.0 && isfinite(classicEyeLengthSquared))
+    {
+        NdotL = max(dot(tangentNormal, input.vClassicSkinLight), 0.0);
+        float3 interpolatedEye = normalize(input.vClassicSkinEye);
+        NdotV = max(dot(tangentNormal, interpolatedEye), 0.0);
+    }
     float oneMinusNdotV = 1.0 - NdotV;
     float3 rim = 0.5 * lightColor *
         oneMinusNdotV * oneMinusNdotV * oneMinusNdotV;

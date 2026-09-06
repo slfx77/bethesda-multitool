@@ -184,4 +184,8 @@ internal sealed record DecodedSubmesh12(
     // Non-persisted generated BNDS identity. VertexColor.w is the quantized displacement weight;
     // flexibility is the exact DNAM value supplied to the recovered shader equation.
     bool IsBendableSplineWind = false,
-    float BendableSplineWindFlexibility = 0f);
+    float BendableSplineWindFlexibility = 0f,
+    // Strict TES4 source/composition eligibility; the normal's live format is read at draw time.
+    bool UsesOblivionOrdinarySpecularPolicy = false,
+    // Strict TES4 actor Hair only; positive resident LayerMap is sampled independently of BaseMap.
+    string? OblivionHairLayerTexturePath = null);

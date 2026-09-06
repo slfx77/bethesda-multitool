@@ -119,8 +119,15 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // baked rest pose for internally skinned trees. Warm v92 entries retain misaligned influences.
     // v94: TREE_ANIM identity is persisted and its raw vertex alpha is retained as wind data while
     // pixel coverage ignores it. Warm v93 entries contain policy-normalized or opacity-weighted alpha.
+    // v95: embedded TES3 reverse-controller metadata retains its exact animation-track subset.
+    // Warm v94 entries have only a clock and cannot distinguish mixed Clamp/Reverse controller graphs.
+    // v96: supported PC Oblivion shapes recover their authored tangent-extra basis before skinning.
+    // Warm v95 entries retain the missing tangent/bitangent payload and bypass the corrected decoder.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 94;
+    // v97: ordinary TES4 specular retains strict source eligibility through warm-cache decode.
+    // v98: independent, strictly admitted Oblivion actor hair LayerMap path.
+    // v99: authored quadratic Vector3 translation tangents survive warm animation decode.
+    internal const int DecoderVersion = 99;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -378,8 +385,15 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             writer.Write(track.TranslationKeys.Length);
             foreach (var key in track.TranslationKeys)
             {
+                ValidateQuadraticVectorKey(key, track.TranslationInterpolation);
                 writer.Write(key.Time);
                 WriteVector3(writer, key.Value);
+                writer.Write(key.HasQuadraticTangents);
+                if (key.HasQuadraticTangents)
+                {
+                    WriteVector3(writer, key.Forward);
+                    WriteVector3(writer, key.Backward);
+                }
             }
 
             writer.Write((byte)track.ScaleInterpolation);
@@ -404,21 +418,18 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(anim.FullControllerCycle.HasValue);
         if (anim.FullControllerCycle is { } controller)
         {
-            if (!float.IsFinite(controller.Frequency) ||
-                !float.IsFinite(controller.Phase) ||
-                !float.IsFinite(controller.StartTime) ||
-                !float.IsFinite(controller.StopTime) ||
-                controller.StopTime <= controller.StartTime ||
-                !Enum.IsDefined(controller.Cycle))
-            {
-                throw new InvalidDataException("Cannot cache an invalid full controller cycle.");
-            }
+            var trackIndices = ValidateFullControllerCycle(controller, anim.Tracks);
 
             writer.Write(controller.Frequency);
             writer.Write(controller.Phase);
             writer.Write(controller.StartTime);
             writer.Write(controller.StopTime);
             writer.Write((byte)controller.Cycle);
+            writer.Write(trackIndices.Length);
+            foreach (var trackIndex in trackIndices)
+            {
+                writer.Write(trackIndex);
+            }
         }
     }
 
@@ -552,7 +563,13 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             var transKeys = new NifVec3Key[ReadInt32(reader, 0, MaxKeysPerChannel)];
             for (var k = 0; k < transKeys.Length; k++)
             {
-                transKeys[k] = new NifVec3Key(reader.ReadSingle(), ReadVector3(reader));
+                var time = reader.ReadSingle();
+                var value = ReadVector3(reader);
+                var hasTangents = reader.ReadBoolean();
+                transKeys[k] = hasTangents
+                    ? new NifVec3Key(time, value, ReadVector3(reader), ReadVector3(reader), true)
+                    : new NifVec3Key(time, value);
+                ValidateQuadraticVectorKey(transKeys[k], transInterp);
             }
 
             var scaleInterp = (NifKeyInterpolation)reader.ReadByte();
@@ -584,15 +601,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             var startTime = reader.ReadSingle();
             var stopTime = reader.ReadSingle();
             var cycleValue = reader.ReadByte();
-            if (!float.IsFinite(frequency) ||
-                !float.IsFinite(phase) ||
-                !float.IsFinite(startTime) ||
-                !float.IsFinite(stopTime) ||
-                stopTime <= startTime ||
-                cycleValue > (byte)NifCycleType.Clamp)
+            var trackIndices = new int[ReadInt32(reader, 1, boneCount)];
+            for (var index = 0; index < trackIndices.Length; index++)
             {
-                throw new InvalidDataException(
-                    "Invalid full controller cycle in decoded mesh cache.");
+                trackIndices[index] = reader.ReadInt32();
             }
 
             fullControllerCycle = new NifControllerCycle(
@@ -600,7 +612,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
                 phase,
                 startTime,
                 stopTime,
-                (NifCycleType)cycleValue);
+                (NifCycleType)cycleValue,
+                trackIndices);
+            ValidateFullControllerCycle(fullControllerCycle.Value, tracks);
         }
 
         return new NifMeshAnimation(
@@ -611,6 +625,42 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             clipStop,
             clipLoops,
             fullControllerCycle);
+    }
+
+    private static int[] ValidateFullControllerCycle(
+        NifControllerCycle controller,
+        NifNodeTrack?[] tracks)
+    {
+        var trackIndices = controller.TrackIndices;
+        if (!float.IsFinite(controller.Frequency) ||
+            !float.IsFinite(controller.Phase) ||
+            !float.IsFinite(controller.StartTime) ||
+            !float.IsFinite(controller.StopTime) ||
+            controller.StopTime <= controller.StartTime ||
+            !Enum.IsDefined(controller.Cycle) ||
+            trackIndices is not { Length: > 0 } ||
+            trackIndices.Length > tracks.Length)
+        {
+            throw new InvalidDataException("Invalid full controller cycle in decoded mesh cache.");
+        }
+
+        var selectedTracks = new HashSet<int>();
+#pragma warning disable S1244 // Cached target clocks must exactly match their versioned source clock.
+        foreach (var trackIndex in trackIndices)
+        {
+            if ((uint)trackIndex >= (uint)tracks.Length ||
+                !selectedTracks.Add(trackIndex) ||
+                tracks[trackIndex] is not { HasMotion: true } track ||
+                track.Frequency != controller.Frequency ||
+                track.Phase != controller.Phase)
+            {
+                throw new InvalidDataException(
+                    "Invalid full controller cycle track selection in decoded mesh cache.");
+            }
+        }
+#pragma warning restore S1244
+
+        return trackIndices;
     }
 
     private static void WriteSubmesh(BinaryWriter writer, ReferenceDecodedSubmeshPayload12 submesh)
@@ -733,6 +783,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.UsesExternalEmittance);
         writer.Write(submesh.ExternalEmittanceInfluence);
         writer.Write(submesh.IsTreeAnimation);
+        writer.Write(submesh.UsesOblivionOrdinarySpecularPolicy);
+        WriteNullableString(writer, submesh.OblivionHairLayerTexturePath, MaxStringBytes);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -833,7 +885,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             ReadVector3(reader),
             UsesExternalEmittance: reader.ReadBoolean(),
             ExternalEmittanceInfluence: reader.ReadSingle(),
-            IsTreeAnimation: reader.ReadBoolean());
+            IsTreeAnimation: reader.ReadBoolean(),
+            UsesOblivionOrdinarySpecularPolicy: reader.ReadBoolean(),
+            OblivionHairLayerTexturePath: ReadNullableString(reader, MaxStringBytes));
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -932,7 +986,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     {
         var valid = state.Mode switch
         {
-            StarfieldMaterialAlphaRenderMode.None => state.AlphaTestThreshold == 0f,
+            // Round-trip validation of bytes this cache itself wrote: None stores exactly 0f.
+            StarfieldMaterialAlphaRenderMode.None => state.AlphaTestThreshold is 0f,
             StarfieldMaterialAlphaRenderMode.Layer0OpacityCutout =>
                 float.IsFinite(state.AlphaTestThreshold) &&
                 state.AlphaTestThreshold > 0f &&
@@ -1191,6 +1246,18 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         return new Vector2(reader.ReadSingle(), reader.ReadSingle());
     }
 
+    private static void ValidateQuadraticVectorKey(NifVec3Key key, NifKeyInterpolation interpolation)
+    {
+        if (key.HasQuadraticTangents &&
+            (interpolation != NifKeyInterpolation.Quadratic || !float.IsFinite(key.Time) ||
+             !NifQuadraticVectorCurve.IsFiniteAuthored(key.Value) ||
+             !NifQuadraticVectorCurve.IsFiniteAuthored(key.Forward) ||
+             !NifQuadraticVectorCurve.IsFiniteAuthored(key.Backward)))
+        {
+            throw new InvalidDataException("Invalid authored quadratic Vector3 key in decoded animation cache.");
+        }
+    }
+
     private static void WriteVector3(BinaryWriter writer, Vector3 value)
     {
         writer.Write(value.X);
@@ -1377,4 +1444,6 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool UsesExternalEmittance = false,
     float ExternalEmittanceInfluence = 1f,
     // v94+: vertex alpha is retained as TREE_ANIM wind data and excluded from pixel coverage.
-    bool IsTreeAnimation = false);
+    bool IsTreeAnimation = false,
+    bool UsesOblivionOrdinarySpecularPolicy = false,
+    string? OblivionHairLayerTexturePath = null);

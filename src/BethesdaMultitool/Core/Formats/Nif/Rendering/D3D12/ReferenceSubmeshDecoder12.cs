@@ -176,6 +176,10 @@ internal static class ReferenceSubmeshDecoder12
             BgsmEmissionColor: submesh.BgsmEmissionColor,
             UsesExternalEmittance: submesh.UsesExternalEmittance,
             ExternalEmittanceInfluence: submesh.ExternalEmittanceInfluence,
-            IsTreeAnimation: submesh.IsTreeAnimation);
+            IsTreeAnimation: submesh.IsTreeAnimation,
+            UsesOblivionOrdinarySpecularPolicy:
+                OblivionOrdinarySpecularPolicy.IsEligible(submesh, diffusePath, normalPath),
+            OblivionHairLayerTexturePath:
+                OblivionHairLayerPolicy.ResolveTexturePath(submesh, diffusePath));
     }
 }

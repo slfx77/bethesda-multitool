@@ -80,7 +80,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     // factory instance, so its ordinary Dispose path cannot run. Every PSO created while this bag is
     // active is transaction-owned; a successful constructor commits the bag to the fields below,
     // while a failure releases the partial graph in reverse creation order.
-    private PipelineConstructionTransaction? _constructionTransaction = new();
+    private readonly PipelineConstructionTransaction? _constructionTransaction = new();
     private readonly HashSet<ID3D12PipelineState> _ownedMirrorPsos =
         new(ReferenceEqualityComparer.Instance);
 
@@ -878,10 +878,11 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         ID3D12PipelineState? doubleSided = null;
         try
         {
-            // Keep reference.vert's full per-draw output signature. The dedicated pixel program
-            // consumes the same ABI and replaces only the source-proven FaceGen material equation.
+            // Only the TES4 FaceGen direct PSO receives the recovered centroid light/eye varyings.
+            // The generic, FNV, modern and instanced vertex permutations retain their existing ABI.
             var vertexShader = CompileEmbeddedShader(
-                "reference.vert.hlsl", "main", "vs_5_1");
+                "reference.vert.hlsl", "main", "vs_5_1",
+                new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1"));
             var pixelShader = CompileEmbeddedShader(
                 "reference_classic_skin.frag.hlsl", "main", "ps_5_1");
 

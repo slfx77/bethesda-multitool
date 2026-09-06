@@ -133,6 +133,28 @@ float WrapTallGrassPhase(float phase)
 #define REFERENCE_DIRECT_OUTPUT_MODERN_STATE 1
 #endif
 
+#ifdef REFERENCE_OBLIVION_CLASSIC_SKIN
+// SKIN2000/2001 normalize the complete projected direction per vertex. Placement scale
+// cancels in this normalization; never normalize the three authored basis axes here.
+float3 NormalizeClassicSkinDirection(float3 direction)
+{
+    float lengthSquared = dot(direction, direction);
+    return all(isfinite(direction)) && isfinite(lengthSquared) && lengthSquared > 1e-8
+        ? direction * rsqrt(lengthSquared)
+        : 0.0.xxx;
+}
+
+float3 ProjectClassicSkinDirection(float3 tangent, float3 bitangent, float3 normal, float3 direction)
+{
+    if (dot(tangent, tangent) <= 1e-8 || dot(bitangent, bitangent) <= 1e-8 || dot(normal, normal) <= 1e-8)
+    {
+        return 0.0.xxx;
+    }
+    return NormalizeClassicSkinDirection(float3(
+        dot(tangent, direction), dot(bitangent, direction), dot(normal, direction)));
+}
+#endif
+
 struct VSOutput
 {
     float4 Position     : SV_Position;
@@ -172,6 +194,10 @@ struct VSOutput
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
     // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
     nointerpolation float4 vHeatmap : TEXCOORD17;
+#endif
+#ifdef REFERENCE_OBLIVION_CLASSIC_SKIN
+    centroid float3 vClassicSkinLight : TEXCOORD18;
+    centroid float3 vClassicSkinEye : TEXCOORD19;
 #endif
 };
 
@@ -291,6 +317,17 @@ VSOutput main(VSInput input)
 #endif
 #ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     o.vHeatmap = heatmap;
+#endif
+#ifdef REFERENCE_OBLIVION_CLASSIC_SKIN
+    bool classicSceneLighting = uSunColorLighting.w >= 0.5;
+    float3 classicLight = classicSceneLighting
+        ? uSunDirIntensity.xyz
+        : float3(0.5, 0.5, 1.0);
+    o.vClassicSkinLight = ProjectClassicSkinDirection(
+        o.vTangent, o.vBitangent, o.vWorldNormal, classicLight);
+    float3 classicEye = NormalizeClassicSkinDirection(uCameraPosFogPower.xyz - worldPos.xyz);
+    o.vClassicSkinEye = ProjectClassicSkinDirection(
+        o.vTangent, o.vBitangent, o.vWorldNormal, classicEye);
 #endif
     return o;
 }

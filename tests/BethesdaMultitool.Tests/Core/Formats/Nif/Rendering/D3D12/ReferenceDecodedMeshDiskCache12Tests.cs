@@ -132,13 +132,109 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // controller clock instead of flattening it to ClipLoops. v91 drops Skyrim's bogus slot-1
         // NOR sentinel; v92 persists draw-time external-emittance eligibility/weight. v93 reparses
         // classic Skyrim's per-partition skin footers. v94 carries TREE_ANIM ancestry and retains
-        // raw vertex alpha as wind data. This assertion pins every bump.
+        // raw vertex alpha as wind data. v95 retains the reverse controller's exact selected track
+        // subset for mixed TES3 graphs. This assertion pins every bump.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
         Assert.Equal(default(StarfieldMaterialColorRenderState), loaded.StarfieldMaterialColor);
         Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
-        Assert.Equal(94, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        // v96: classic PC Oblivion tangent-extra recovery changes cached decoded vertex bases.
+        // v97: strict ordinary TES4 source eligibility controls live normal-format specular.
+        // v98: the independent TES4 actor-hair layer texture path joins the persistent payload.
+        Assert.Equal(99, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StoreAndTryLoad_PreservesOrdinaryOblivionSpecularEligibility(bool eligible)
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var original = CreatePayload();
+        var submesh = Assert.Single(original.Submeshes) with
+        {
+            UsesOblivionOrdinarySpecularPolicy = eligible
+        };
+        var payload = original with { Submeshes = [submesh] };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        Assert.NotNull(entry.Mesh);
+        var loaded = Assert.Single(entry.Mesh.Submeshes);
+        Assert.Equal(eligible, loaded.UsesOblivionOrdinarySpecularPolicy);
+        Assert.Equal(submesh.SpecularColor, loaded.SpecularColor);
+        Assert.Equal(submesh.Glossiness, loaded.Glossiness);
+        Assert.Equal(submesh.SpecularEnabled, loaded.SpecularEnabled);
+        Assert.Equal(submesh.NormalMapTexturePath, loaded.NormalMapTexturePath);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("textures/characters/hair/grey_hl.dds")]
+    public void StoreAndTryLoad_PreservesIndependentHairLayer(string? layer)
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var original = CreatePayload();
+        var submesh = Assert.Single(original.Submeshes) with
+        {
+            OblivionHairLayerTexturePath = layer,
+            SpecularMapTexturePath = null,
+            ClassicEnvironmentMaskTexturePath = null,
+            ClassicParallaxHeightMapTexturePath = null
+        };
+        cache.Store(metadata, null, original with { Submeshes = [submesh] });
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        Assert.NotNull(entry.Mesh);
+        var loaded = Assert.Single(entry.Mesh.Submeshes);
+        Assert.Equal(layer, loaded.OblivionHairLayerTexturePath);
+        Assert.Null(loaded.SpecularMapTexturePath);
+        Assert.Null(loaded.ClassicEnvironmentMaskTexturePath);
+        Assert.Equal(submesh.AlphaTestThreshold, loaded.AlphaTestThreshold);
+        Assert.Equal(submesh.MaterialAlpha, loaded.MaterialAlpha);
+        Assert.Equal(submesh.Vertices[0].VertexColor, loaded.Vertices[0].VertexColor);
+    }
+
+    [Theory]
+    [InlineData(false, false, 2.5f)]
+    [InlineData(true, false, 4.375f)]
+    [InlineData(true, true, 1.5625f)]
+    public void StoreAndTryLoad_PreservesQuadraticVectorHandlesAndTheirPresence(
+        bool hasTangents, bool zeroHandles, float expectedQuarterValue)
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        NifVec3Key[] keys;
+        if (hasTangents)
+        {
+            keys = [new(0f, Vector3.Zero, zeroHandles ? Vector3.Zero : new Vector3(77f),
+                    zeroHandles ? Vector3.Zero : new Vector3(20f), true),
+                new(1f, new Vector3(10f), Vector3.Zero,
+                    zeroHandles ? Vector3.Zero : new Vector3(88f), true)];
+        }
+        else
+        {
+            keys = [new(0f, Vector3.Zero), new(1f, new Vector3(10f))];
+        }
+        var animation = new NifMeshAnimation(
+            [new NifAnimBone("Rock", -1, Vector3.Zero, Quaternion.Identity, 1f)],
+            [new NifNodeTrack("Rock", 1f, 0f, NifKeyInterpolation.Linear, [],
+                NifKeyInterpolation.Quadratic, keys, NifKeyInterpolation.Linear, [])],
+            [], 0f, 1f, false);
+        cache.Store(metadata, null, CreatePayload() with { Animation = animation });
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        var loaded = Assert.IsType<NifMeshAnimation>(entry.Mesh?.Animation);
+        var track = Assert.IsType<NifNodeTrack>(Assert.Single(loaded.Tracks));
+        Assert.Equal(keys, track.TranslationKeys);
+        Assert.Equal(expectedQuarterValue,
+            NifTrackSampler.SampleTranslation(track.TranslationKeys, .25f, track.TranslationInterpolation).X, 5);
     }
 
     [Fact]
@@ -166,7 +262,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
             47.4f,
             49.06667f,
             true,
-            new NifControllerCycle(1f, 0f, 0f, 49.06667f, NifCycleType.Reverse));
+            new NifControllerCycle(1f, 0f, 0f, 49.06667f, NifCycleType.Reverse, [0]));
         var payload = CreatePayload() with { Animation = animation };
 
         cache.Store(metadata, null, payload);
@@ -180,6 +276,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(0f, cycle.StartTime);
         Assert.Equal(49.06667f, cycle.StopTime);
         Assert.Equal(NifCycleType.Reverse, cycle.Cycle);
+        Assert.Equal([0], Assert.IsType<int[]>(cycle.TrackIndices));
         Assert.Equal(47.4f, loadedAnimation.ClipStart);
         Assert.Equal(49.06667f, loadedAnimation.ClipStop);
         Assert.True(loadedAnimation.ClipLoops);
@@ -546,6 +643,10 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [InlineData(86)] // v87 classifies Starfield ShaderRoute::Water onto the water sentinel.
     [InlineData(87)] // v88 retains Starfield vertex-Lerp RGBA + render mode.
     [InlineData(93)] // v94 persists TREE_ANIM alpha provenance and raw wind weights.
+    [InlineData(94)] // v95 persists the exact reverse-controller track subset.
+    [InlineData(95)] // Missing PC Oblivion authored tangent-extra bases.
+    [InlineData(97)] // Missing independent TES4 actor-hair LayerMap path.
+    [InlineData(98)] // Missing authored quadratic Vector3 animation tangents.
     public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
     {
         using var tempDir = new TempDirectory();

@@ -185,4 +185,32 @@ public sealed class ReferenceSubmeshDecoder12Tests
         Assert.Equal(RenderableSubmesh.WaterSurfaceTexturePath, decoded.DiffuseTexturePath);
         Assert.Null(decoded.ParticleRuntime);
     }
+
+    [Fact]
+    public void DecodeKeepsClassicHairNormalMapWhileSuppressingGenericWhiteSpecular()
+    {
+        const string normalPath = @"textures\characters\hair\short_n.dds";
+        var source = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f],
+            Triangles = [],
+            Normals = [0f, 0f, 1f],
+            Tangents = [1f, 0f, 0f],
+            Bitangents = [0f, 1f, 0f],
+            NormalMapTexturePath = normalPath,
+            MaterialGlossiness = 10f,
+            SpecularColor = (0.9f, 0.9f, 0.9f),
+            TintColor = (124f / 255f, 102f / 255f, 82f / 255f),
+            UsesClassicHairMaterial = true
+        };
+
+        var decoded = ReferenceSubmeshDecoder12.Decode(
+            source,
+            new ReferenceSubmeshDecodeOptions12(null, normalPath));
+
+        Assert.True(decoded.HasBump);
+        Assert.Equal(normalPath, decoded.NormalMapTexturePath);
+        Assert.False(decoded.SpecularEnabled);
+        Assert.Equal(10f, decoded.Glossiness);
+    }
 }

@@ -190,6 +190,9 @@ internal static class ShaderPermutations
         new("skin.frag.hlsl", "main", "ps_5_1",
             [new ShaderMacro("CLASSIC_SKIN2000", "1")],
             "CLI sprite renderer: Oblivion SKIN2000 FaceGen specialization"),
+        new("reference.vert.hlsl", "main", "vs_5_1",
+            [new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")],
+            "native Actors viewer: Oblivion SKIN2000/2001 centroid light and eye"),
         new("reference_classic_skin.frag.hlsl", "main", "ps_5_1", None,
             "native Actors viewer: Oblivion SKIN2000 FaceGen specialization"),
         // Not referenced by any renderer today. Kept compiling deliberately: they are the last

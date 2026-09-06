@@ -14,6 +14,17 @@ internal static class NifSpecularPolicy
             return false;
         }
 
+        // Retail TES4 SM3002/HAIR programs consume HairTint and the normal texture, but expose
+        // neither NiMaterialProperty.SpecularColor nor Glossiness. Letting the generic fallback
+        // reinterpret the stock 0.9 / 10 values as an additive white Blinn highlight turns the
+        // authored normal-alpha strands into a metallic white crown. The NPC adapter supplies an
+        // explicit semantic so metadata-less non-hair tints and every modern hair shader remain
+        // outside this exception.
+        if (sub.UsesClassicHairMaterial)
+        {
+            return false;
+        }
+
         // FO3/FNV's specular SLS permutation is selected by BSShaderFlags.Specular. Its pixel
         // shader scales the highlight by NormalMap.a and the LIGHT color; it does not multiply by
         // NiMaterialProperty.SpecularColor. Retail assets consequently author black material

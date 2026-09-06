@@ -86,6 +86,21 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public GpuTextureCache12.Entry? SpecularMap { get; init; }
 
+    /// <summary>TES4 actor SM3 hair LayerMap; a named, mutually-exclusive TexIndices.z arm.</summary>
+    public GpuTextureCache12.Entry? OblivionHairLayer { get; init; }
+
+    public bool HasResidentOblivionHairLayer => OblivionHairLayerPolicy.IsResidentLayer(
+        OblivionHairLayer?.CacheKey,
+        OblivionHairLayer?.IsResident == true,
+        OblivionHairLayer?.IsCubemap == true,
+        OblivionHairLayer?.Format ?? default);
+
+    /// <summary>Read live descriptor promotion in every static, frozen, instanced and blended draw.</summary>
+    public uint ResolveAuxiliaryTextureIndex(uint fallbackIndex) =>
+        StarfieldOpacity?.BindlessIndex ?? ClassicParallaxHeightMap?.BindlessIndex ??
+        ClassicEnvMask?.BindlessIndex ?? SpecularMap?.BindlessIndex ??
+        (HasResidentOblivionHairLayer ? OblivionHairLayer!.BindlessIndex : fallbackIndex);
+
     /// <summary>
     ///     FO4/FO76 grayscale-to-palette texture, or null. When set, the shader replaces the diffuse
     ///     RGB with <c>palette.Sample(u: diffuse.G, v: GradientMapV × vertexColor.R)</c>.
@@ -213,13 +228,20 @@ internal sealed class CachedSubmesh12
     // Sun specular term (1A): xyz = tint, w = Phong exponent (0 = no specular). Mirrors the
     // uSpecular cbuffer field in reference(_instanced).vert.hlsl / reference.frag.hlsl.
     public required Vector4 Specular { get; init; }
+    public bool UsesOblivionOrdinarySpecularPolicy { get; init; }
+
+    /// <summary>Reevaluated after texture promotion; pinned fallback pixels are not loaded normals.</summary>
+    public Vector4 EffectiveSpecular => OblivionOrdinarySpecularPolicy.Resolve(
+        Specular, UsesOblivionOrdinarySpecularPolicy, HasBump,
+        Normal.CacheKey is not null, Normal.IsResident, Normal.Format);
+
     public Vector4 TextureState
     {
         get
         {
             if (_textureStateCached)
             {
-                return _textureState;
+                return WithResidentHairLayer(_textureState);
             }
 
             System.Diagnostics.Debug.Assert(
@@ -311,11 +333,29 @@ internal sealed class CachedSubmesh12
                 _textureStateCached = true;
             }
 
-            return state;
+            return WithResidentHairLayer(state);
         }
     }
+
+    private Vector4 WithResidentHairLayer(Vector4 state)
+    {
+        // Residency is deliberately excluded from _textureStateCached: pending, failed and
+        // replacement entries must never leave a stale positive sampling flag in frozen draws.
+        var compatible = SpecularMap is null && ClassicEnvMask is null &&
+                         ClassicParallaxHeightMap is null && StarfieldOpacity is null;
+        System.Diagnostics.Debug.Assert(
+            OblivionHairLayer is null || compatible,
+            "Oblivion hair layer and other TexIndices.z material lanes cannot coexist.");
+        if (compatible && HasResidentOblivionHairLayer)
+        {
+            state.Z = (uint)state.Z | OblivionHairLayerPolicy.TextureFlag;
+        }
+        return state;
+    }
+
     public bool TexturesReady => Diffuse.IsReady && Normal.IsReady &&
                                   SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false } &&
+                                  OblivionHairLayer is not { IsReady: false } &&
                                   Lighting30GlowMap is not { IsReady: false } &&
                                   BgsmGlowMap is not { IsReady: false } &&
                                   EnvMap is not { IsReady: false } &&

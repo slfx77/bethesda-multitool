@@ -51,9 +51,9 @@ public sealed class OblivionClassicSkin2000SourceContractTests
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             rasterizer,
-            "if (tri.IsFaceGen)\n        {\n            fr = r * shade;",
-            "else if (tri.IsStarfieldVertexLerp)",
-            "else if (tri.HasTintColor)");
+            "if (!tri.IsFaceGen && tri.IsStarfieldVertexLerp)",
+            "else if (!tri.IsFaceGen && tri.HasTintColor)",
+            "else\n        {\n            fr = r * shade;");
 
         Assert.Contains("new ShaderMacro(\"CLASSIC_SKIN2000\", \"1\")", gpu,
             StringComparison.Ordinal);
