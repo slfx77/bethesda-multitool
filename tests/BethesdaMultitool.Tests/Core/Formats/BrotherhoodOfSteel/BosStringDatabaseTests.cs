@@ -16,8 +16,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.BrotherhoodOfSteel;
 public sealed class BosStringDatabaseTests
 {
     /// <summary>
-    ///     Builds a database: strings from +12, then a hash table of 8-byte slots at
-    ///     <paramref name="pad" />-adjusted offset, unused slots zeroed.
+    ///     Builds a database: strings from +12, then a hash table of 8-byte slots, padded with
+    ///     <paramref name="emptySlots" /> zeroed entries. <paramref name="declared" /> overrides the
+    ///     header's string count so a disagreeing count can be tested.
     /// </summary>
     private static byte[] Database((uint Hash, string Value)[] entries, int emptySlots = 2, uint? declared = null)
     {
