@@ -186,27 +186,12 @@ public static class EsmParsedRecordTypes
     public static readonly IReadOnlySet<string> Codes =
         All.Select(e => e.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    static EsmParsedRecordTypes()
-    {
-        // A signature may have distinct typed schemas only when every mapping is explicitly game-scoped
-        // and no two mappings apply to the same game. A global entry plus any scoped entry would overlap,
-        // as would duplicate entries for one game, so fail during type initialization instead of letting
-        // UI accounting silently choose an arbitrary collection.
-        foreach (var group in All.GroupBy(entry => entry.Code, StringComparer.OrdinalIgnoreCase))
-        {
-            if (group.Count() <= 1)
-            {
-                continue;
-            }
-
-            if (group.Any(entry => entry.Game is null) ||
-                group.GroupBy(entry => entry.Game).Any(gameGroup => gameGroup.Count() > 1))
-            {
-                throw new InvalidOperationException(
-                    $"Parsed record type {group.Key} has overlapping global/game-scoped mappings.");
-            }
-        }
-    }
+    // INVARIANT: a signature may have distinct typed schemas only when every mapping is explicitly
+    // game-scoped and no two mappings apply to the same game. A global entry plus any scoped entry
+    // would overlap, as would duplicate entries for one game, and UI accounting would then silently
+    // choose an arbitrary collection. `All` is a compile-time table, so this is checked once by
+    // EsmParsedRecordTypesTests.Mappings_DoNotOverlapGloballyOrWithinAGame rather than at runtime:
+    // a type initializer that throws makes the whole type unusable behind a TypeInitializationException.
 
     /// <summary>
     ///     Type codes the semantic parser actually handles for <paramref name="game" />. Most handlers
@@ -220,7 +205,8 @@ public static class EsmParsedRecordTypes
 
     /// <summary>
     ///     Typed-output mappings applicable to <paramref name="game" />. At most one entry per signature
-    ///     is possible for a game; the static registry invariant rejects overlapping mappings.
+    ///     is possible for a game; EsmParsedRecordTypesTests.Mappings_DoNotOverlapGloballyOrWithinAGame
+    ///     keeps <see cref="All" /> free of overlapping mappings.
     /// </summary>
     public static IEnumerable<Entry> EntriesForGame(BethesdaGame game) =>
         All.Where(entry => entry.Game is null || entry.Game == game);

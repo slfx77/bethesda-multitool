@@ -1067,16 +1067,16 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
     private static CellDataFlagSemantics CellFlagSemanticsForGame(BethesdaGame game)
     {
-        return game is BethesdaGame.Skyrim
-            or BethesdaGame.Fallout4
-            or BethesdaGame.Fallout76
-            or BethesdaGame.Starfield
-            ? CellDataFlagSemantics.Creation
-            : game == BethesdaGame.Fallout3
-                ? CellDataFlagSemantics.Fallout3
-                : game == BethesdaGame.Unknown
-                ? CellDataFlagSemantics.Unknown
-                : CellDataFlagSemantics.ClassicBit7;
+        return game switch
+        {
+            BethesdaGame.Skyrim
+                or BethesdaGame.Fallout4
+                or BethesdaGame.Fallout76
+                or BethesdaGame.Starfield => CellDataFlagSemantics.Creation,
+            BethesdaGame.Fallout3 => CellDataFlagSemantics.Fallout3,
+            BethesdaGame.Unknown => CellDataFlagSemantics.Unknown,
+            _ => CellDataFlagSemantics.ClassicBit7
+        };
     }
 
     private CellRecord? StampCellFlagSemantics(CellRecord? cell)

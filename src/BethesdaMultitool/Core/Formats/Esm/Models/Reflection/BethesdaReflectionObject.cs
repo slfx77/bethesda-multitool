@@ -8,7 +8,17 @@ internal sealed record BethesdaReflectionObject(
     string TypeName,
     IReadOnlyDictionary<string, BethesdaReflectionValue> Fields);
 
-internal abstract record BethesdaReflectionValue;
+/// <summary>
+///     Closed union of the value shapes a BETH reflection stream can carry. The constructor is
+///     <c>private protected</c> so the case list stays exactly the records declared below — a
+///     consumer switching over them does not have to handle an unknown outside case.
+/// </summary>
+internal abstract record BethesdaReflectionValue
+{
+    private protected BethesdaReflectionValue()
+    {
+    }
+}
 
 internal sealed record BethesdaReflectionNullValue : BethesdaReflectionValue;
 

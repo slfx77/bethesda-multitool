@@ -52,11 +52,7 @@ internal static class DialogueResultScriptParser
                 SourceText = sourceDecision.SourceText,
                 // A decompiled fallback is not the fragment's own text, so it must not inherit
                 // the fragment's provenance — reports separate the two.
-                SourceTextOrigin = sourceDecision.SourceText is null
-                    ? ScriptSourceTextOrigin.None
-                    : sourceDecision.SourceIsDecompiled
-                        ? ScriptSourceTextOrigin.DecompiledFromBytecode
-                        : sourceOrigin,
+                SourceTextOrigin = sourceDecision.ResolveSourceTextOrigin(sourceOrigin),
                 IsDmpDerived = isDmpDerived,
                 DecompiledText = decompiledText,
                 CompiledData = block.CompiledData,

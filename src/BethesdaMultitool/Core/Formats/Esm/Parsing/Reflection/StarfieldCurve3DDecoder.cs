@@ -316,11 +316,15 @@ internal static class StarfieldCurve3DDecoder
         metadata = default;
         error = null;
         var position = 0;
-        if (!TryReadNamedToken(body, ref position, strings, FloatCurveType) ||
-            !TryReadNamedToken(body, ref position, strings, FloatCurveType))
+        // A USER field names its type twice — the declared static type, then the concrete
+        // serialized type — and this decoder accepts only the exact type in both slots.
+        for (var declaration = 0; declaration < 2; declaration++)
         {
-            error = "USER does not declare and serialize exact type BSFloatCurve.";
-            return false;
+            if (!TryReadNamedToken(body, ref position, strings, FloatCurveType))
+            {
+                error = "USER does not declare and serialize exact type BSFloatCurve.";
+                return false;
+            }
         }
 
         if (!TryReadFiniteFloat(body, ref position, out var maxInput) ||

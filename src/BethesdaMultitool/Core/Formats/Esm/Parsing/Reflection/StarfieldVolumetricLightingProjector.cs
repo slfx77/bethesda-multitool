@@ -47,7 +47,7 @@ internal static class StarfieldVolumetricLightingReflectionSchema
     private const uint ChunkDiff = 0x46464944; // DIFF
     private const int HeaderSize = 24;
 
-    private static readonly IReadOnlyDictionary<string, ExpectedClass> ExpectedClasses =
+    private static readonly Dictionary<string, ExpectedClass> ExpectedClasses =
         new Dictionary<string, ExpectedClass>(StringComparer.Ordinal)
         {
             ["XMFLOAT4"] = Class(8,

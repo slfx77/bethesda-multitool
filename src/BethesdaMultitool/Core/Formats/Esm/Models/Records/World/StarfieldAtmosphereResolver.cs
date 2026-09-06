@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>Why a merged Starfield ATMO record did or did not resolve.</summary>
@@ -180,7 +182,7 @@ internal static class StarfieldAtmosphereResolver
         }
     }
 
-    private static IReadOnlyList<uint> RootwardChain(IReadOnlyList<uint> targetFirstTraversal)
+    private static ReadOnlyCollection<uint> RootwardChain(IReadOnlyList<uint> targetFirstTraversal)
     {
         var chain = targetFirstTraversal.Reverse().ToArray();
         return Array.AsReadOnly(chain);

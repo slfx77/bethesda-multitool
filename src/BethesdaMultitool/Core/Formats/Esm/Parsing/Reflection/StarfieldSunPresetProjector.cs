@@ -397,7 +397,7 @@ internal static class StarfieldSunPresetProjector
 
     private static bool TryRejectUnexpectedFields(
         BethesdaReflectionObject value,
-        IReadOnlySet<string> allowedFields,
+        HashSet<string> allowedFields,
         out string? error)
     {
         foreach (var fieldName in value.Fields.Keys)

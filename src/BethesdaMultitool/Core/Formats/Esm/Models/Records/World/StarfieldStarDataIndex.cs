@@ -69,7 +69,7 @@ internal sealed class StarfieldStarDataIndex
     }
 
     private static void Add(
-        IDictionary<uint, List<StarfieldStarDataRecord>> index,
+        Dictionary<uint, List<StarfieldStarDataRecord>> index,
         uint key,
         StarfieldStarDataRecord record)
     {
@@ -82,8 +82,8 @@ internal sealed class StarfieldStarDataIndex
         bucket.Add(record);
     }
 
-    private static IReadOnlyDictionary<uint, IReadOnlyList<StarfieldStarDataRecord>> Freeze(
-        IReadOnlyDictionary<uint, List<StarfieldStarDataRecord>> source)
+    private static ReadOnlyDictionary<uint, IReadOnlyList<StarfieldStarDataRecord>> Freeze(
+        Dictionary<uint, List<StarfieldStarDataRecord>> source)
     {
         var snapshot = new Dictionary<uint, IReadOnlyList<StarfieldStarDataRecord>>(source.Count);
         foreach (var (key, records) in source)

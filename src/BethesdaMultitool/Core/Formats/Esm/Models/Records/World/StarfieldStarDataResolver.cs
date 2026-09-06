@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>Why an STDT route selected by a PNDT scalar system ID did or did not resolve.</summary>
@@ -172,7 +174,7 @@ internal static class StarfieldStarDataResolver
         }
     }
 
-    private static IReadOnlyList<uint> CandidateFormIds(
+    private static ReadOnlyCollection<uint> CandidateFormIds(
         IEnumerable<StarfieldStarDataRecord> records) =>
         Array.AsReadOnly(records.Select(record => record.FormId).ToArray());
 }

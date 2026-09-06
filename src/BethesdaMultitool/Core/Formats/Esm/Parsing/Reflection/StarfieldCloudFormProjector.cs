@@ -49,7 +49,7 @@ internal static class StarfieldCloudFormReflectionSchema
     private const uint ChunkDiff = 0x46464944; // DIFF
     private const int HeaderSize = 24;
 
-    private static readonly IReadOnlyDictionary<string, ExpectedClass> ExpectedClasses =
+    private static readonly Dictionary<string, ExpectedClass> ExpectedClasses =
         new Dictionary<string, ExpectedClass>(StringComparer.Ordinal)
         {
             ["BGSCloudForm::ShadowParams"] = Class(0,
@@ -869,7 +869,7 @@ internal static class StarfieldCloudFormProjector
 
     private static bool TryRequireExactFields(
         BethesdaReflectionObject reflected,
-        IReadOnlySet<string> expected,
+        HashSet<string> expected,
         out string? error)
     {
         error = null;

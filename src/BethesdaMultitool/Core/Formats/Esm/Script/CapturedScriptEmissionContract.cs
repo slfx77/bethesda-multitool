@@ -252,11 +252,16 @@ internal static class CapturedScriptEmissionContract
         var declarations = new List<string>(variables.Count);
         foreach (var variable in variables)
         {
-            var storage = variable.Type != 0
-                ? "short"
-                : UsedAsReference(decompiledText, variable.Name!)
-                    ? "ref"
-                    : "float";
+            string storage;
+            if (variable.Type != 0)
+            {
+                storage = "short";
+            }
+            else
+            {
+                storage = UsedAsReference(decompiledText, variable.Name!) ? "ref" : "float";
+            }
+
             declarations.Add($"{storage} {variable.Name}");
         }
 
@@ -740,7 +745,23 @@ internal static class CapturedScriptEmissionContract
         string? SourceText,
         string? BundleIssue,
         string? SourceIssue,
-        bool SourceIsDecompiled = false);
+        bool SourceIsDecompiled = false)
+    {
+        /// <summary>
+        ///     Provenance for <see cref="SourceText" />. A decompiled fallback is not the record's own
+        ///     authored text, so it never inherits <paramref name="authoredOrigin" /> — reports keep
+        ///     the two apart — and no text at all reports <see cref="ScriptSourceTextOrigin.None" />.
+        /// </summary>
+        internal ScriptSourceTextOrigin ResolveSourceTextOrigin(ScriptSourceTextOrigin authoredOrigin)
+        {
+            if (SourceText is null)
+            {
+                return ScriptSourceTextOrigin.None;
+            }
+
+            return SourceIsDecompiled ? ScriptSourceTextOrigin.DecompiledFromBytecode : authoredOrigin;
+        }
+    }
 
     internal sealed record StandaloneDecision(
         ScriptRecord Script,

@@ -137,9 +137,16 @@ public sealed class CellEncoder : IRecordEncoder
             // is 40, and Skyrim's reviewed shape is 92 with an embedded Inherits word. Using the
             // 40-byte schema for Skyrim would silently discard its directional ambient/far-fog
             // fields and inheritance mask on a typed round trip.
-            var xcllLength = embedsLightingInheritance
-                ? 92
-                : cell.LightingData.ContainsKey("FogPow") ? 40 : 36;
+            int xcllLength;
+            if (embedsLightingInheritance)
+            {
+                xcllLength = 92;
+            }
+            else
+            {
+                xcllLength = cell.LightingData.ContainsKey("FogPow") ? 40 : 36;
+            }
+
             var schema = SubrecordSchemaRegistry.GetSchema("XCLL", "CELL", xcllLength);
             if (schema is not null)
             {

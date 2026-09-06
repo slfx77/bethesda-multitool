@@ -355,11 +355,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         return ApplySourceCorrespondenceStatus(script, script with
         {
             SourceText = decision.SourceText,
-            SourceTextOrigin = decision.SourceText is null
-                ? ScriptSourceTextOrigin.None
-                : decision.SourceIsDecompiled
-                    ? ScriptSourceTextOrigin.DecompiledFromBytecode
-                    : script.SourceTextOrigin,
+            SourceTextOrigin = decision.ResolveSourceTextOrigin(script.SourceTextOrigin),
             IsIncompleteExecutableBundle = !decision.ExecutableBundleSafe
         });
     }

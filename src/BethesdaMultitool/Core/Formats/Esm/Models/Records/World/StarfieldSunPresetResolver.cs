@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>Why a merged Starfield SUNP record did or did not resolve.</summary>
@@ -174,7 +176,7 @@ internal static class StarfieldSunPresetResolver
         }
     }
 
-    private static IReadOnlyList<uint> RootwardChain(IReadOnlyList<uint> targetFirstTraversal) =>
+    private static ReadOnlyCollection<uint> RootwardChain(IReadOnlyList<uint> targetFirstTraversal) =>
         Array.AsReadOnly(targetFirstTraversal.Reverse().ToArray());
 
     private static bool IsComplete(StarfieldSunPresetPatch patch) =>

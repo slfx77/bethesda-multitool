@@ -305,6 +305,73 @@ internal static class EsmLandEnricher
         return result;
     }
 
+    /// <summary>
+    ///     Viewer-shaped master-terrain fallback: master data comes from already-parsed Load-Order
+    ///     <see cref="CellRecord" />s instead of the converter pipeline's raw record index.
+    ///     Grid-keyed (<c>(worldspace, gridX, gridY)</c>), so it also reaches dump cells whose
+    ///     FormIDs diverged from the master (the FormID-keyed load-order cell merge cannot), and
+    ///     per-category via <see cref="LandVisualData.MergeForEmission" /> (a dump cell that kept
+    ///     its texture layers but lost VCLR still gains the master's colors — the whole-object
+    ///     <c>override ?? base</c> merge cannot). Unlike the converter-shaped overload it also
+    ///     fills the terrain GEOMETRY hole: a cell with neither <see cref="CellRecord.Heightmap" />
+    ///     nor <see cref="CellRecord.RuntimeTerrainMesh" /> inherits the master's heightmap,
+    ///     because the 3D terrain decode reads exactly those two fields — visual categories alone
+    ///     leave recovered placements floating over nothing.
+    ///     <para>
+    ///         Wired behind the viewer's DMP-only "Master ESM terrain" preview toggle
+    ///         (<c>SingleFileTab.PopulateWorldMapAsync</c>). The returned list is a viewer-local
+    ///         copy: enriched cells are new instances whose merged <see cref="LandVisualData" />
+    ///         drops <c>SourceParentCellFormId</c> (the provenance field <c>CellLandPlanner</c>
+    ///         gates on), so they must never flow into conversion — the tab enriches only the
+    ///         merged world-view collection, never <c>_session.SemanticResult</c>.
+    ///     </para>
+    /// </summary>
+    internal static IReadOnlyList<CellRecord> EnrichCellsWithMasterEsmLandFallback(
+        IReadOnlyList<CellRecord> cells,
+        IReadOnlyList<CellRecord> masterCells)
+    {
+        if (cells.Count == 0 || masterCells.Count == 0)
+        {
+            return cells;
+        }
+
+        // Grid index over master exteriors, each terrain half resolved independently with
+        // last-wins precedence: loadOrderRecords.Cells lists base plugins first and appends later
+        // overlays, so the later plugin's data should win (matching every other merge here), and a
+        // same-grid cell that only carries visuals must not starve the heightmap out of the cell
+        // that carries the geometry.
+        var masterByGrid = new Dictionary<(uint Worldspace, int GridX, int GridY),
+            (LandVisualData? Visual, LandHeightmap? Heightmap)>();
+        foreach (var master in masterCells)
+        {
+            if (master.IsInterior
+                || master.WorldspaceFormId is not { } wsId
+                || master.GridX is not { } gx
+                || master.GridY is not { } gy
+                || (master.LandVisualData is null && master.Heightmap is null))
+            {
+                continue;
+            }
+
+            var key = (wsId, gx, gy);
+            masterByGrid.TryGetValue(key, out var slot);
+            masterByGrid[key] = (master.LandVisualData ?? slot.Visual, master.Heightmap ?? slot.Heightmap);
+        }
+
+        if (masterByGrid.Count == 0)
+        {
+            return cells;
+        }
+
+        var result = new List<CellRecord>(cells.Count);
+        foreach (var cell in cells)
+        {
+            result.Add(TryApplyMasterCellFallback(cell, masterByGrid) ?? cell);
+        }
+
+        return result;
+    }
+
     private static CellRecord? TryApplyMasterFallback(
         CellRecord cell,
         IReadOnlyDictionary<(uint Worldspace, int GridX, int GridY), uint> masterExteriorCellByGrid,
@@ -372,73 +439,6 @@ internal static class EsmLandEnricher
         var data = new byte[dataSize];
         Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
         return LandSubrecordParser.ParseVisualOnly(data, dataSize, false);
-    }
-
-    /// <summary>
-    ///     Viewer-shaped master-terrain fallback: master data comes from already-parsed Load-Order
-    ///     <see cref="CellRecord" />s instead of the converter pipeline's raw record index.
-    ///     Grid-keyed (<c>(worldspace, gridX, gridY)</c>), so it also reaches dump cells whose
-    ///     FormIDs diverged from the master (the FormID-keyed load-order cell merge cannot), and
-    ///     per-category via <see cref="LandVisualData.MergeForEmission" /> (a dump cell that kept
-    ///     its texture layers but lost VCLR still gains the master's colors — the whole-object
-    ///     <c>override ?? base</c> merge cannot). Unlike the converter-shaped overload it also
-    ///     fills the terrain GEOMETRY hole: a cell with neither <see cref="CellRecord.Heightmap" />
-    ///     nor <see cref="CellRecord.RuntimeTerrainMesh" /> inherits the master's heightmap,
-    ///     because the 3D terrain decode reads exactly those two fields — visual categories alone
-    ///     leave recovered placements floating over nothing.
-    ///     <para>
-    ///         Wired behind the viewer's DMP-only "Master ESM terrain" preview toggle
-    ///         (<c>SingleFileTab.PopulateWorldMapAsync</c>). The returned list is a viewer-local
-    ///         copy: enriched cells are new instances whose merged <see cref="LandVisualData" />
-    ///         drops <c>SourceParentCellFormId</c> (the provenance field <c>CellLandPlanner</c>
-    ///         gates on), so they must never flow into conversion — the tab enriches only the
-    ///         merged world-view collection, never <c>_session.SemanticResult</c>.
-    ///     </para>
-    /// </summary>
-    internal static IReadOnlyList<CellRecord> EnrichCellsWithMasterEsmLandFallback(
-        IReadOnlyList<CellRecord> cells,
-        IReadOnlyList<CellRecord> masterCells)
-    {
-        if (cells.Count == 0 || masterCells.Count == 0)
-        {
-            return cells;
-        }
-
-        // Grid index over master exteriors, each terrain half resolved independently with
-        // last-wins precedence: loadOrderRecords.Cells lists base plugins first and appends later
-        // overlays, so the later plugin's data should win (matching every other merge here), and a
-        // same-grid cell that only carries visuals must not starve the heightmap out of the cell
-        // that carries the geometry.
-        var masterByGrid = new Dictionary<(uint Worldspace, int GridX, int GridY),
-            (LandVisualData? Visual, LandHeightmap? Heightmap)>();
-        foreach (var master in masterCells)
-        {
-            if (master.IsInterior
-                || master.WorldspaceFormId is not { } wsId
-                || master.GridX is not { } gx
-                || master.GridY is not { } gy
-                || (master.LandVisualData is null && master.Heightmap is null))
-            {
-                continue;
-            }
-
-            var key = (wsId, gx, gy);
-            masterByGrid.TryGetValue(key, out var slot);
-            masterByGrid[key] = (master.LandVisualData ?? slot.Visual, master.Heightmap ?? slot.Heightmap);
-        }
-
-        if (masterByGrid.Count == 0)
-        {
-            return cells;
-        }
-
-        var result = new List<CellRecord>(cells.Count);
-        foreach (var cell in cells)
-        {
-            result.Add(TryApplyMasterCellFallback(cell, masterByGrid) ?? cell);
-        }
-
-        return result;
     }
 
     private static CellRecord? TryApplyMasterCellFallback(

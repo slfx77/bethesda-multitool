@@ -560,6 +560,11 @@ internal sealed class RuntimeWorldReader
                editorId.StartsWith(SyntheticLandEditorIdPrefix, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    ///     Reads every runtime LAND payload reachable from the supplied editor-ID entries, keyed by
+    ///     FormId.
+    /// </summary>
+    /// <param name="entries">Runtime editor-ID entries to walk.</param>
     /// <param name="logSummary">
     ///     False while probing candidate FormTypes to identify this build's LAND type — one summary
     ///     per rejected candidate is noise, and the caller reports the winner instead.

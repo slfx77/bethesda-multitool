@@ -278,11 +278,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 CompiledData = curCompiledData,
                 SourceText = sourceDecision.SourceText,
                 DecompiledText = decompiledText,
-                SourceTextOrigin = sourceDecision.SourceText is null
-                    ? ScriptSourceTextOrigin.None
-                    : sourceDecision.SourceIsDecompiled
-                        ? ScriptSourceTextOrigin.DecompiledFromBytecode
-                        : sourceOrigin,
+                SourceTextOrigin = sourceDecision.ResolveSourceTextOrigin(sourceOrigin),
                 IsDmpDerived = isDmpDerived,
                 Variables = curVariables.Count > 0 ? [..curVariables] : [],
                 ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : [],

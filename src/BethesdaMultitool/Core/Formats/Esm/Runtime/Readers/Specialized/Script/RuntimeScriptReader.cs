@@ -194,11 +194,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         var result = new DialogueResultScript
         {
             SourceText = sourceDecision.SourceText,
-            SourceTextOrigin = sourceDecision.SourceText is null
-                ? ScriptSourceTextOrigin.None
-                : sourceDecision.SourceIsDecompiled
-                    ? ScriptSourceTextOrigin.DecompiledFromBytecode
-                    : sourceOrigin,
+            SourceTextOrigin = sourceDecision.ResolveSourceTextOrigin(sourceOrigin),
             IsDmpDerived = true,
             DecompiledText = decompiledText,
             CompiledData = compiledData,
