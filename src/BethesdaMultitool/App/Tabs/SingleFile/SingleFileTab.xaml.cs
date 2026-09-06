@@ -108,6 +108,13 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             await _tasks.RunExclusiveAsync("populate-worldmap", PopulateWorldMapAsync);
         }
 
+        // A classic install takes the Actors tab over entirely — its list is synchronous and needs
+        // no archive, so it runs here rather than through the NPC browser's async populate.
+        if (ReferenceEquals(selected, NpcBrowserTab) && TryShowClassicActors(_session.FileType))
+        {
+            return;
+        }
+
         // Auto-populate NPC Browser when first selected
         if (ReferenceEquals(selected, NpcBrowserTab) &&
             !_session.NpcBrowserPopulated &&
@@ -260,17 +267,17 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     }
 
     /// <summary>
-    ///     Selects a sub-tab if it is currently shown, and reports whether it was. Every navigation
-    ///     path goes through this rather than assigning <c>SelectedItem</c> directly: assigning a
-    ///     TabViewItem that is not in <c>TabItems</c> silently clears the selection, which would
-    ///     leave the pane blank with no tab highlighted.
+    ///     Selects a sub-tab if it is currently shown, and does nothing when it is not. Every
+    ///     navigation path goes through this rather than assigning <c>SelectedItem</c> directly:
+    ///     assigning a TabViewItem that is not in <c>TabItems</c> silently clears the selection,
+    ///     which would leave the pane blank with no tab highlighted.
     /// </summary>
-    private bool TrySelectSubTab(AnalysisSubTab tab)
+    private void TrySelectSubTab(AnalysisSubTab tab)
     {
         var item = SubTabItem(tab);
         if (!SubTabView.TabItems.Contains(item))
         {
-            return false;
+            return;
         }
 
         SubTabView.SelectedItem = item;
@@ -286,8 +293,6 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         {
             NpcSceneViewer.InvalidateViewport();
         }
-
-        return true;
     }
 
     #endregion
@@ -698,9 +703,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             HexViewer.Clear();
             ResetSubTabs();
 
-            if (!File.Exists(filePath))
+            // A classic pre-plugin-era install has no single file to point at, so the source may
+            // be a DIRECTORY; FileTypeDetector recognizes both shapes.
+            if (!File.Exists(filePath) && !Directory.Exists(filePath))
             {
-                await ShowDialogAsync("Analysis Failed", $"File not found: {filePath}");
+                await ShowDialogAsync("Analysis Failed", $"Not found: {filePath}");
                 return;
             }
 
@@ -872,6 +879,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         picker.FileTypeFilter.Add(".esp");
         picker.FileTypeFilter.Add(".fxs");
         picker.FileTypeFilter.Add(".fos");
+        // A J2ME Travels title IS its JAR — one PKZIP that constitutes the whole install.
+        picker.FileTypeFilter.Add(".jar");
         InitializeWithWindow.Initialize(picker,
             WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
@@ -879,6 +888,30 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         if (file == null) return;
 
         MinidumpPathTextBox.Text = file.Path;
+        _analysisResult = null;
+        _carvedFiles.ReplaceAll([]);
+        _allCarvedFiles.Clear();
+        HexViewer.Clear();
+        ResetSubTabs();
+        UpdateButtonStates();
+    }
+
+    /// <summary>
+    ///     Opens a classic game INSTALL as the analysis source. Those titles predate the plugin
+    ///     era and ship no single master file, so the analyzable unit is the folder (or, for the
+    ///     J2ME Travels titles, the one JAR that is the whole install, which the file picker takes).
+    /// </summary>
+    private async void OpenGameFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.ComputerFolder };
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
+
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder == null) return;
+
+        MinidumpPathTextBox.Text = folder.Path;
         _analysisResult = null;
         _carvedFiles.ReplaceAll([]);
         _allCarvedFiles.Clear();
@@ -986,8 +1019,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private void MinidumpPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         var currentPath = MinidumpPathTextBox.Text;
-        if (!string.IsNullOrEmpty(currentPath) && currentPath != _lastInputPath &&
-            File.Exists(currentPath) && FileTypeDetector.IsSupportedExtension(currentPath))
+        if (currentPath != _lastInputPath && FileTypeDetector.IsSupportedSource(currentPath))
         {
             UpdateOutputPathFromInput(currentPath);
             _lastInputPath = currentPath;

@@ -33,6 +33,11 @@ public sealed partial class SingleFileTab
     private double _analysisProgressFloor;
     private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
 
+    // A classic install is analyzed and semantically loaded in ONE step -- there is no record
+    // stream to scan separately, so ClassicGameAnalyzer synthesizes the collection directly. The
+    // loaded result is stashed here for the parse phase that follows the shared plumbing.
+    private UnifiedAnalysisResult? _pendingClassicResult;
+
     // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
     private SaveFile? _pendingSaveData;
 
@@ -268,6 +273,16 @@ public sealed partial class SingleFileTab
                 var result = await AnalyzeSaveFileAsync(filePath, progress);
                 return new FileAnalysisArtifacts(result, null);
             }
+            case AnalysisFileType.ClassicGameData:
+            {
+                // No separate scan phase exists for an install: the classic analyzer produces the
+                // finished record collection, so load it here and hand the parse phase the result.
+                var unified = await SemanticFileLoader.LoadAsync(
+                    filePath,
+                    new SemanticFileLoadOptions { FileType = fileType });
+                _pendingClassicResult = unified;
+                return new FileAnalysisArtifacts(unified.RawResult, null);
+            }
             default:
                 throw new NotSupportedException($"Unknown file type: {filePath}");
         }
@@ -277,6 +292,15 @@ public sealed partial class SingleFileTab
         IProgress<(int percent, string phase)> reconProgress,
         byte[]? esmFileBuffer)
     {
+        if (_pendingClassicResult != null)
+        {
+            // The analysis phase already produced the finished collection; re-running the loader
+            // here would re-read the whole install for no gain.
+            var classic = _pendingClassicResult;
+            _pendingClassicResult = null;
+            return classic;
+        }
+
         if (_session.IsEsmFile && esmFileBuffer != null)
         {
             return await Task.Run(() =>

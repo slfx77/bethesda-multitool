@@ -100,6 +100,8 @@ public class FileTypeDetectorTests
     [InlineData("file.ESM")]
     [InlineData("file.esp")]
     [InlineData("file.ESP")]
+    [InlineData("file.jar")]
+    [InlineData("file.JAR")]
     [InlineData("path/to/file.dmp")]
     [InlineData("C:\\Users\\test\\file.esm")]
     public void IsSupportedExtension_ValidExtension_ReturnsTrue(string path)
@@ -117,6 +119,63 @@ public class FileTypeDetectorTests
     public void IsSupportedExtension_InvalidExtension_ReturnsFalse(string path)
     {
         Assert.False(FileTypeDetector.IsSupportedExtension(path));
+    }
+
+    #endregion
+
+    #region IsSupportedSource
+
+    /// <summary>
+    ///     An install DIRECTORY is a legitimate analysis source: the classic pre-plugin-era games
+    ///     ship no single master file. This is what let them reach the Single File Analysis tab.
+    /// </summary>
+    [Fact]
+    public void IsSupportedSource_Directory_IsTrue()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "bmt-src-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            Assert.True(FileTypeDetector.IsSupportedSource(dir));
+            // ...and it is accepted as a DIRECTORY, not by its (absent) extension.
+            Assert.False(FileTypeDetector.IsSupportedExtension(dir));
+        }
+        finally
+        {
+            Directory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void IsSupportedSource_ExistingSupportedFile_IsTrue()
+    {
+        var file = Path.Combine(Path.GetTempPath(), "bmt-src-" + Guid.NewGuid().ToString("N") + ".esm");
+        File.WriteAllBytes(file, new byte[] { 0x54, 0x45, 0x53, 0x34 });
+        try
+        {
+            Assert.True(FileTypeDetector.IsSupportedSource(file));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    /// <summary>A supported extension is not enough — the path has to exist.</summary>
+    [Fact]
+    public void IsSupportedSource_MissingFile_IsFalse()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "bmt-absent-" + Guid.NewGuid().ToString("N") + ".esm");
+        Assert.True(FileTypeDetector.IsSupportedExtension(missing));
+        Assert.False(FileTypeDetector.IsSupportedSource(missing));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void IsSupportedSource_MissingPath_IsFalse(string? path)
+    {
+        Assert.False(FileTypeDetector.IsSupportedSource(path));
     }
 
     #endregion

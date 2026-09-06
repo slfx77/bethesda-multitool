@@ -105,6 +105,12 @@
   <data name="Button_Browse.Content" xml:space="preserve">
     <value>Browse...</value>
   </data>
+  <data name="Button_BrowseFolder.Content" xml:space="preserve">
+    <value>Open Folder...</value>
+  </data>
+  <data name="Button_BrowseFolder.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open a classic game install folder</value>
+  </data>
   <data name="Button_SelectAll.Content" xml:space="preserve">
     <value>Select All</value>
   </data>

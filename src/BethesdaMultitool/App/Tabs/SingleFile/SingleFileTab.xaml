@@ -825,6 +825,37 @@
               </StackPanel>
             </StackPanel>
 
+            <!--
+              Classic-game actors. The ESM browser below needs raw records plus a meshes archive,
+              which no pre-plugin game has, so those games get this small dedicated list instead of
+              a broken reuse of it. Populated from ClassicActorList.
+            -->
+            <Grid x:Name="ClassicActorPanel" Visibility="Collapsed" Padding="12,0,12,12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260" MinWidth="200" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" MinWidth="240" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <TextBlock x:Name="ClassicActorHeading" Grid.Row="0" Grid.ColumnSpan="3"
+                         Style="{StaticResource SubtitleTextBlockStyle}"
+                         AutomationProperties.HeadingLevel="Level2"
+                         Margin="0,0,0,8" Text="Actors" />
+
+              <ListView x:Name="ClassicActorList" Grid.Row="1" Grid.Column="0"
+                        AutomationProperties.Name="Classic game actors"
+                        SelectionMode="Single"
+                        SelectionChanged="ClassicActorList_SelectionChanged" />
+
+              <ListView x:Name="ClassicActorStats" Grid.Row="1" Grid.Column="2"
+                        AutomationProperties.Name="Selected actor statistics"
+                        SelectionMode="None" />
+            </Grid>
+
             <!--  Main NPC browser content  -->
             <Grid x:Name="NpcBrowserContent" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
@@ -883,13 +914,13 @@
                 <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
                   <CheckBox x:Name="NpcNamedOnlyCheckBox"
                             Content="Named only" IsChecked="True"
-                            Checked="NpcNamedOnlyCheckBox_Changed"
-                            Unchecked="NpcNamedOnlyCheckBox_Changed"
+                            Checked="NpcListOptionCheckBox_Changed"
+                            Unchecked="NpcListOptionCheckBox_Changed"
                             MinWidth="0" />
                   <CheckBox x:Name="NpcShowEditorIdCheckBox"
                             Content="Show Editor ID" IsChecked="False"
-                            Checked="NpcShowEditorIdCheckBox_Changed"
-                            Unchecked="NpcShowEditorIdCheckBox_Changed"
+                            Checked="NpcListOptionCheckBox_Changed"
+                            Unchecked="NpcListOptionCheckBox_Changed"
                             MinWidth="0" />
                 </StackPanel>
                 <ListView x:Name="NpcListView" Grid.Row="3"
@@ -1415,6 +1446,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <!--  Minidump Path  -->
@@ -1436,11 +1468,20 @@
           Grid.Row="0"
           Grid.Column="2"
           Click="OpenMinidumpButton_Click" />
+        <!--  The classic pre-plugin-era games are INSTALLS, not single files, so they are opened
+              as a folder. FileTypeDetector accepts both shapes.  -->
+        <Button
+          x:Name="OpenGameFolderButton"
+          x:Uid="Button_BrowseFolder"
+          Grid.Row="0"
+          Grid.Column="3"
+          Margin="4,0,0,0"
+          Click="OpenGameFolderButton_Click" />
         <Button
           x:Name="AnalyzeButton"
           x:Uid="Button_Analyze"
           Grid.Row="0"
-          Grid.Column="3"
+          Grid.Column="4"
           MinWidth="120"
           Margin="8,0,0,0"
           Click="AnalyzeButton_Click"

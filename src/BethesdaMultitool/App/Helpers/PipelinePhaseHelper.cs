@@ -42,10 +42,14 @@ internal static class PipelinePhaseHelper
             return (false, false);
         }
 
-        var valid = !string.IsNullOrEmpty(inputPath)
-                    && File.Exists(inputPath)
-                    && FileTypeDetector.IsSupportedExtension(inputPath);
-        var extractEnabled = valid && hasAnalysisResult && !string.IsNullOrEmpty(outputPath);
+        var valid = FileTypeDetector.IsSupportedSource(inputPath);
+        // Carve extraction reads a byte range out of ONE file, and only out of a format the carver
+        // understands. An install root has no byte range at all, and a JAR is an install that
+        // happens to be a file -- neither is a carve target, so both leave the button disabled.
+        var isCarveSource = !string.IsNullOrEmpty(inputPath)
+                            && File.Exists(inputPath)
+                            && !inputPath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase);
+        var extractEnabled = isCarveSource && hasAnalysisResult && !string.IsNullOrEmpty(outputPath);
         return (valid, extractEnabled);
     }
 
@@ -63,22 +67,43 @@ internal static class PipelinePhaseHelper
     ///     Computes the file info card display values from an analysis result.
     /// </summary>
     internal static FileInfoDisplay? ComputeFileInfoDisplay(
-        Core.Analysis.AnalysisResult? result, bool isEsmFile, Func<long, string> formatSize)
+        Core.Analysis.AnalysisResult? result, AnalysisFileType fileType, Func<long, string> formatSize)
     {
         if (result == null)
         {
             return null;
         }
 
-        var fileInfo = new FileInfo(result.FilePath);
+        // A classic source can be an install DIRECTORY, which FileInfo cannot describe at all --
+        // its Length throws rather than returning anything usable. Route both shapes through
+        // AnalysisSourcePath so the card renders for a folder exactly as it does for a file.
+        var name = AnalysisSourcePath.DisplayName(result.FilePath);
+        var sizeText = AnalysisSourcePath.IsInstallDirectory(result.FilePath)
+            ? "Install directory"
+            : formatSize(AnalysisSourcePath.SizeOf(result.FilePath));
 
-        if (isEsmFile)
+        if (fileType == AnalysisFileType.ClassicGameData)
+        {
+            return new FileInfoDisplay
+            {
+                FileName = name,
+                FileSize = sizeText,
+                Format = "Classic game install",
+                // These games predate a single plugin format and do not share one byte order --
+                // the J2ME titles are big-endian, Shadowkey and the PSP build little-endian -- so
+                // the honest answer is per-format rather than a single label for the install.
+                Endianness = "Per format",
+                ShowBuildPanel = false
+            };
+        }
+
+        if (fileType == AnalysisFileType.EsmFile)
         {
             var isBE = result.EsmRecords?.MainRecords.FirstOrDefault()?.IsBigEndian ?? false;
             return new FileInfoDisplay
             {
-                FileName = fileInfo.Name,
-                FileSize = formatSize(fileInfo.Length),
+                FileName = name,
+                FileSize = sizeText,
                 Format = "ESM (Elder Scrolls Master)",
                 Endianness = isBE ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)",
                 ShowBuildPanel = false
@@ -91,8 +116,8 @@ internal static class PipelinePhaseHelper
             var compileDate = DateTimeOffset.FromUnixTimeSeconds(gameModule.TimeDateStamp);
             return new FileInfoDisplay
             {
-                FileName = fileInfo.Name,
-                FileSize = formatSize(fileInfo.Length),
+                FileName = name,
+                FileSize = sizeText,
                 Format = "Minidump (Xbox 360)",
                 Endianness = "Big-Endian (PowerPC)",
                 ShowBuildPanel = true,
@@ -103,8 +128,8 @@ internal static class PipelinePhaseHelper
 
         return new FileInfoDisplay
         {
-            FileName = fileInfo.Name,
-            FileSize = formatSize(fileInfo.Length),
+            FileName = name,
+            FileSize = sizeText,
             Format = "Minidump (Xbox 360)",
             Endianness = "Big-Endian (PowerPC)",
             ShowBuildPanel = false

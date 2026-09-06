@@ -73,6 +73,33 @@ public static class AnalysisSubTabPolicy
         AnalysisSubTab.Reports
     ];
 
+    /// <summary>
+    ///     A classic install synthesizes generic records and nothing else yet, so it shows only
+    ///     the two tabs that can be populated. <see cref="AnalysisSubTab.World" /> is excluded on
+    ///     purpose: the world views require an ESM-shaped <c>WorldViewData</c> with per-cell
+    ///     heightmaps, which a tile-grid game cannot supply. Dialogue and Actors follow when their
+    ///     synthesizers land; RawView and Coverage are DMP concepts.
+    /// </summary>
+    private static readonly AnalysisSubTab[] ClassicGameTabs =
+    [
+        AnalysisSubTab.Summary,
+        AnalysisSubTab.Records,
+
+        // Dialogue is offered because Stormhold and Dawnstar synthesize a DialogueTreeResult that
+        // the existing viewer reads unchanged. The other classic games have none, and the viewer
+        // already degrades to a "no dialogue data" message rather than an empty tree — a visible
+        // "nothing here" is better than hiding a tab that works for two of the games.
+        AnalysisSubTab.Dialogue,
+
+        // Actors is offered because the tab now carries a dedicated classic list beside its ESM
+        // browser, fed by ClassicActorList — the browser itself needs raw records plus a meshes
+        // archive and could never have served these games.
+        AnalysisSubTab.Actors
+
+        // World stays out: its views need ESM-shaped WorldViewData with per-cell LAND heightmaps,
+        // which no pre-plugin game has, and there is no equivalent small view to give it.
+    ];
+
     /// <summary>Save games carry no dialogue trees or actor browsers worth a tab.</summary>
     private static readonly AnalysisSubTab[] SaveFileTabs =
     [
@@ -93,6 +120,7 @@ public static class AnalysisSubTabPolicy
         {
             AnalysisFileType.EsmFile => EsmFileTabs,
             AnalysisFileType.SaveFile => SaveFileTabs,
+            AnalysisFileType.ClassicGameData => ClassicGameTabs,
             _ => AllTabs
         };
     }

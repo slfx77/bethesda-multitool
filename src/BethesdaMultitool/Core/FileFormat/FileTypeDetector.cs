@@ -46,6 +46,22 @@ public static class FileTypeDetector
                 return AnalysisFileType.SaveFile;
             }
 
+            // A J2ME JAR (TES Travels) IS a classic install: one PKZIP whose entry names carry a
+            // profile's install markers. Checked before the location probe because the JAR can sit
+            // anywhere (a Sample folder, a download directory) with no install around it.
+            if (result == AnalysisFileType.Unknown && ClassicGameLocator.DetectFromArchive(filePath) is not null)
+            {
+                return AnalysisFileType.ClassicGameData;
+            }
+
+            // A console disc image is an install the same way: Fallout: Brotherhood of Steel ships
+            // as one PS2 ISO. Gated on the ISO9660 signature inside the probe, so an ordinary file
+            // never pays for a mount.
+            if (result == AnalysisFileType.Unknown && ClassicSourceProbe.TryDetectDiscImage(filePath) is not null)
+            {
+                return AnalysisFileType.ClassicGameData;
+            }
+
             // Classic-era formats mostly have weak or no magic (Fallout DAT1 has none), so the last
             // resort is location: a declared artifact inside a detected classic install.
             if (result == AnalysisFileType.Unknown && ClassicSourceProbe.TryDetect(filePath) is not null)
@@ -113,6 +129,24 @@ public static class FileTypeDetector
                filePath.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) ||
                filePath.EndsWith(".esp", StringComparison.OrdinalIgnoreCase) ||
                filePath.EndsWith(".fxs", StringComparison.OrdinalIgnoreCase) ||
-               filePath.EndsWith(".fos", StringComparison.OrdinalIgnoreCase);
+               filePath.EndsWith(".fos", StringComparison.OrdinalIgnoreCase) ||
+               // A J2ME Travels title IS its JAR: one PKZIP that constitutes the whole install.
+               filePath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="path" /> names something the analysis pipeline can open: a
+    ///     supported single file, or a DIRECTORY — the classic pre-plugin-era games ship no single
+    ///     plugin, so an install folder is a legitimate source.
+    ///     <para>
+    ///         Deliberately cheap, because this runs on every keystroke in the path box: it checks
+    ///         existence and extension only and does NOT probe install markers. A directory that
+    ///         holds no recognizable game is reported by the analysis run itself.
+    ///     </para>
+    /// </summary>
+    public static bool IsSupportedSource(string? path)
+    {
+        return !string.IsNullOrEmpty(path) &&
+               (Directory.Exists(path) || (File.Exists(path) && IsSupportedExtension(path)));
     }
 }

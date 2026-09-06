@@ -103,7 +103,7 @@ public sealed partial class SingleFileTab
     private void UpdateFileInfoCard()
     {
         var display = PipelinePhaseHelper.ComputeFileInfoDisplay(
-            _session.AnalysisResult, _session.IsEsmFile, FormatSize);
+            _session.AnalysisResult, _session.FileType, FormatSize);
         if (display == null) return;
 
         InfoFileName.Text = display.FileName;

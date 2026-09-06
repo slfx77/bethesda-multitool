@@ -158,10 +158,11 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     {
         Dispose();
         FilePath = filePath;
-        FileSize = new FileInfo(filePath).Length;
+        // A classic install root is a DIRECTORY: no length to read and nothing to map.
+        FileSize = AnalysisSourcePath.SizeOf(filePath);
         AnalysisResult = result;
         FileType = fileType;
-        if (openAccessor)
+        if (openAccessor && AnalysisSourcePath.IsMappable(filePath))
         {
             _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
@@ -175,7 +176,7 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     public void AdoptSemanticSession(UnifiedAnalysisResult session)
     {
         FilePath = session.FilePath;
-        FileSize = new FileInfo(session.FilePath).Length;
+        FileSize = AnalysisSourcePath.SizeOf(session.FilePath);
         AnalysisResult = session.RawResult;
         FileType = session.FileType;
 
@@ -195,7 +196,7 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
             _mmf = mappedFile;
             Accessor = accessor;
         }
-        else
+        else if (AnalysisSourcePath.IsMappable(session.FilePath))
         {
             _mmf = MemoryMappedFile.CreateFromFile(session.FilePath, FileMode.Open, null, 0,
                 MemoryMappedFileAccess.Read);
@@ -206,7 +207,7 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
         Resolver = session.Resolver;
 
         _registration?.Dispose();
-        _registration = ResourceRegistry.Instance.Register(this, Path.GetFileName(session.FilePath));
+        _registration = ResourceRegistry.Instance.Register(this, AnalysisSourcePath.DisplayName(session.FilePath));
         MemoryBudgetCoordinator.Instance.CheckNow("session-adopt");
     }
 

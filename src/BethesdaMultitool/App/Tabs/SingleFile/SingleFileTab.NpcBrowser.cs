@@ -530,13 +530,11 @@ public sealed partial class SingleFileTab
         RefreshNpcList();
     }
 
-    private void NpcNamedOnlyCheckBox_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_npcListRefreshInProgress) return;
-        RefreshNpcList();
-    }
-
-    private void NpcShowEditorIdCheckBox_Changed(object sender, RoutedEventArgs e)
+    /// <summary>
+    ///     Shared by the "Named only" and "Show Editor ID" checkboxes: both simply re-project the
+    ///     actor list, which already reads each checkbox's current state.
+    /// </summary>
+    private void NpcListOptionCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_npcListRefreshInProgress) return;
         RefreshNpcList();
@@ -735,7 +733,7 @@ public sealed partial class SingleFileTab
             // publication boundary so the first SwapChainPanel frame never requires a tab toggle.
             NpcSceneViewer.SetPresentationActive(ReferenceEquals(SubTabView.SelectedItem, NpcBrowserTab));
             NpcSceneViewer.SetScene(scene);
-            NpcSceneViewer.FrameScene();
+            NpcSceneViewer.FrameScene("npc-scene-publication");
             NpcSceneViewer.InvalidateViewport();
 
             // Let CompositionTarget produce one real native frame before deciding whether a
@@ -1436,7 +1434,7 @@ public sealed partial class SingleFileTab
         if (_npcViewerScene is not null)
         {
             NpcSceneViewer.SetScene(_npcViewerScene);
-            NpcSceneViewer.FrameScene();
+            NpcSceneViewer.FrameScene("npc-native-ready-promotion");
             NpcSceneViewer.InvalidateViewport();
         }
     }

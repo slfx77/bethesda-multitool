@@ -47,6 +47,7 @@ public sealed partial class SingleFileTab
                && !_session.WorldMapPopulated
                && (_session.HasEsmRecords || _session.IsSaveFile))
         {
+            // The whole retry condition lives in the loop test; each pass is the body.
         }
     }
 

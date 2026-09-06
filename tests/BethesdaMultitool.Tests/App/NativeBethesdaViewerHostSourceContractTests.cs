@@ -216,7 +216,7 @@ public sealed class NativeBethesdaViewerHostSourceContractTests
         SourceContract.AssertOrder(
             SourceContract.Extract(
                 npcHost,
-                "private bool TrySelectSubTab(AnalysisSubTab tab)",
+                "private void TrySelectSubTab(AnalysisSubTab tab)",
                 "#endregion"),
             "SubTabView.SelectedItem = item;",
             "NpcSceneViewer.SetPresentationActive(actorsSelected);",

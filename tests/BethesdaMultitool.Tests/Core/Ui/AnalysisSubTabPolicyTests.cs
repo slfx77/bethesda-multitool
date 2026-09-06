@@ -102,6 +102,37 @@ public class AnalysisSubTabPolicyTests
         Assert.Equal(expected, AnalysisSubTabPolicy.VisibleFor(AnalysisFileType.SaveFile));
     }
 
+    /// <summary>
+    ///     A classic install synthesizes generic records and nothing else yet, so it shows only
+    ///     Summary and Records. World is excluded ON PURPOSE: the world views require an
+    ///     ESM-shaped WorldViewData with per-cell heightmaps, which a tile-grid game has none of.
+    /// </summary>
+    [Fact]
+    public void VisibleFor_ClassicGameData_ShowsSummaryRecordsDialogueAndActors()
+    {
+        AnalysisSubTab[] expected =
+        [
+            AnalysisSubTab.Summary,
+            AnalysisSubTab.Records,
+            AnalysisSubTab.Dialogue,
+            AnalysisSubTab.Actors
+        ];
+
+        Assert.Equal(expected, AnalysisSubTabPolicy.VisibleFor(AnalysisFileType.ClassicGameData));
+    }
+
+    /// <summary>
+    ///     The world views would throw on a classic source, so this exclusion is load-bearing
+    ///     rather than cosmetic and is pinned separately from the list above.
+    /// </summary>
+    [Fact]
+    public void VisibleFor_ClassicGameData_HidesWorld()
+    {
+        Assert.DoesNotContain(
+            AnalysisSubTab.World,
+            AnalysisSubTabPolicy.VisibleFor(AnalysisFileType.ClassicGameData));
+    }
+
     /// <summary>A not-yet-analyzed file keeps the full surface — same list as a dump.</summary>
     [Fact]
     public void VisibleFor_Unknown_MatchesMinidump()
@@ -154,5 +185,20 @@ public class AnalysisSubTabPolicyTests
         var pairs = HiddenPairs();
 
         Assert.NotEmpty(pairs);
+    }
+
+    /// <summary>
+    ///     ⚠ World stays hidden for classic installs and this is load-bearing rather than cosmetic:
+    ///     its views demand ESM-shaped WorldViewData with per-cell LAND heightmaps, which a
+    ///     tile-grid game has none of, and unlike Actors there is no small dedicated view to give
+    ///     it instead.
+    /// </summary>
+    [Fact]
+    public void VisibleFor_ClassicGameData_StillHidesWorldEvenThoughActorsIsNowShown()
+    {
+        var tabs = AnalysisSubTabPolicy.VisibleFor(AnalysisFileType.ClassicGameData);
+
+        Assert.Contains(AnalysisSubTab.Actors, tabs);
+        Assert.DoesNotContain(AnalysisSubTab.World, tabs);
     }
 }
