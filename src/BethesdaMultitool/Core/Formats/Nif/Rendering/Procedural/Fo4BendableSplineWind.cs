@@ -40,6 +40,8 @@ internal static class Fo4BendableSplineWind
 
     private const float TimerScale = 0.0016666667070239782f;
     private const float TimerRadians = 6.283180236816406f;
+    // Sky::UpdateWind uses MULSS with 0x3B808081, not division by 255.
+    private const float WeatherByteScale = 0.003921568859368563f;
     private const float FrequencyEpsilon = 1e-6f;
     private const float DirectionEpsilonSquared = 1e-12f;
 
@@ -237,13 +239,15 @@ internal static class Fo4BendableSplineWind
             : Vector2.UnitX;
     }
 
-    internal static float DirectionByteToRadians(byte value) => value / 255f * MathF.Tau;
+    // This is the deterministic weather center; retail additionally selects a random angle.
+    internal static float DirectionByteToRadians(byte value) => NormalizeByte(value) * MathF.Tau;
 
-    internal static float DirectionRangeByteToDegrees(byte value) => value / 255f * 180f;
+    internal static float DirectionRangeByteToDegrees(byte value) => NormalizeByte(value) * 180f;
 
-    private static float NormalizeByte(byte value) => value / 255f;
+    private static float NormalizeByte(byte value) => value * WeatherByteScale;
 
-    private static float Lerp(float from, float to, float amount) => from + (to - from) * amount;
+    // Preserve the producer's separately rounded weighted terms rather than difference-form lerp.
+    private static float Lerp(float from, float to, float amount) => from * (1f - amount) + to * amount;
 
     private static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);

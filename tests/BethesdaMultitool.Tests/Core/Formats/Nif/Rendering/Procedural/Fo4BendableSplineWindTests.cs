@@ -34,10 +34,12 @@ public sealed class Fo4BendableSplineWindTests
             animationSeconds: 6d,
             animationsEnabled: true);
 
-        Assert.Equal(120f / 255f, resolved.NormalizedSpeed, 7);
-        Assert.Equal(48f / 255f, resolved.NormalizedTurbulence, 7);
-        Assert.Equal(15f / 255f * MathF.Tau, resolved.DirectionRadians, 7);
-        Assert.Equal(43f / 255f * 180f, resolved.DirectionRangeDegrees, 6);
+        // Sky::UpdateWind normalizes via the float reciprocal 0x3B808081 and retains
+        // intermediate float rounding. The oracle README records the operation trace.
+        Assert.Equal(0x3EF0F0F2, BitConverter.SingleToInt32Bits(resolved.NormalizedSpeed));
+        Assert.Equal(0x3E40C0C2, BitConverter.SingleToInt32Bits(resolved.NormalizedTurbulence));
+        Assert.Equal(0x3EBD3C1A, BitConverter.SingleToInt32Bits(resolved.DirectionRadians));
+        Assert.Equal(0x41F2D2D3, BitConverter.SingleToInt32Bits(resolved.DirectionRangeDegrees));
         Assert.Equal(0.932472229f, resolved.Direction.X, 6);
         Assert.Equal(0.361241666f, resolved.Direction.Y, 6);
         Assert.Equal(
@@ -48,9 +50,9 @@ public sealed class Fo4BendableSplineWindTests
         Assert.Equal(Fo4BendableSplineWind.HighestFrequency, 4f);
         Assert.Equal(Fo4BendableSplineWind.LowestSpeedLowMultiplier, 0f);
         Assert.Equal(Fo4BendableSplineWind.HighestSpeedHighMultiplier, 1.5f);
-        Assert.Equal(1.158823529f, constants.WindVectorEx.Z, 6);
-        Assert.Equal(114.602076125f, constants.WindVectorEx.X, 5);
-        Assert.Equal(154.463667820f, constants.WindVectorEx.Y, 5);
+        Assert.Equal(0x3F945455, BitConverter.SingleToInt32Bits(constants.WindVectorEx.Z));
+        Assert.Equal(0x42E53444, BitConverter.SingleToInt32Bits(constants.WindVectorEx.X));
+        Assert.Equal(0x431A76B4, BitConverter.SingleToInt32Bits(constants.WindVectorEx.Y));
         Assert.Equal(resolved.DirectionRadians, constants.WindVector.X, 6);
         Assert.Equal(0.8f, constants.WindVector.Y);
         Assert.Equal(constants.WindVector.Z, constants.WindVector.W);
@@ -61,7 +63,7 @@ public sealed class Fo4BendableSplineWindTests
     {
         var packed = Fo4BendableSplineWind.PackTimer(6d);
 
-        Assert.Equal(unchecked((int)0x3D80ADF6), BitConverter.SingleToInt32Bits(packed));
+        Assert.Equal(0x3D80ADF6, BitConverter.SingleToInt32Bits(packed));
         Assert.Equal(0.0628318041563034f, packed);
     }
 
@@ -156,13 +158,51 @@ public sealed class Fo4BendableSplineWindTests
         var resolved = Fo4BendableSplineWind.ResolveWeather(
             current, outgoing, currentWeight: 0.25f, isInterior: false, HostFallback);
 
-        Assert.Equal(80f / 255f, resolved.NormalizedSpeed, 7);
-        Assert.Equal(40f / 255f, resolved.NormalizedTurbulence, 7);
-        Assert.Equal(64f / 255f * MathF.Tau, resolved.DirectionRadians, 7);
-        Assert.Equal(32f / 255f * 180f, resolved.DirectionRangeDegrees, 6);
+        Assert.Equal(0x3EA0A0A2, BitConverter.SingleToInt32Bits(resolved.NormalizedSpeed));
+        Assert.Equal(0x3E20A0A2, BitConverter.SingleToInt32Bits(resolved.NormalizedTurbulence));
+        Assert.Equal(0x3FC9D9B5, BitConverter.SingleToInt32Bits(resolved.DirectionRadians));
+        Assert.Equal(0x41B4B4B5, BitConverter.SingleToInt32Bits(resolved.DirectionRangeDegrees));
         Assert.Equal(
             Fo4BendableSplineWindDirectionSelection.CurrentWeatherCenter,
             resolved.DirectionSelection);
+    }
+
+    [Fact]
+    public void WeatherTransition_PreservesRecoveredWeightedTermRounding()
+    {
+        var current = new WeatherData { WindSpeed = 15, WindTurbulence = 15 };
+        var outgoing = new WeatherData { WindSpeed = 48, WindTurbulence = 100 };
+
+        var resolved = Fo4BendableSplineWind.ResolveWeather(
+            current, outgoing, currentWeight: 0.25f, isInterior: false, HostFallback);
+
+        // Difference-form lerp produces 0x3E1F9FA0 and 0x3E9E1E1F for these inputs.
+        Assert.Equal(0x3E1F9FA1, BitConverter.SingleToInt32Bits(resolved.NormalizedSpeed));
+        Assert.Equal(0x3E9E1E20, BitConverter.SingleToInt32Bits(resolved.NormalizedTurbulence));
+    }
+
+    [Theory]
+    [InlineData(39, 0x3F848485)]
+    [InlineData(73, 0x3FC04040)]
+    public void Frequency_PreservesRecoveredWeightedTermRounding(byte turbulence, int expectedBits)
+    {
+        var resolved = Fo4BendableSplineWind.ResolveWeather(
+            new WeatherData { WindSpeed = 120, WindTurbulence = turbulence },
+            outgoing: null,
+            currentWeight: 1f,
+            isInterior: false,
+            HostFallback);
+
+        var constants = Fo4BendableSplineWind.BuildConstants(
+            resolved.Direction,
+            resolved.NormalizedSpeed,
+            resolved.NormalizedTurbulence,
+            flexibility: 0.8f,
+            animationSeconds: 6d,
+            animationsEnabled: true);
+
+        // Difference-form lerp rounds down for byte 39 and up for byte 73.
+        Assert.Equal(expectedBits, BitConverter.SingleToInt32Bits(constants.WindVectorEx.Z));
     }
 
     [Fact]

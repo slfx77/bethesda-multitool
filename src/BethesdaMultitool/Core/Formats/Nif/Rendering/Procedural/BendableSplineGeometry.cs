@@ -228,7 +228,7 @@ internal static class BendableSplineGeometry
         var midpoint = (start + end) * 0.5f;
         // Retail leaves a strictly vertical spline unsagged; gravity only lowers spans with a
         // horizontal component.
-        if (start.X != end.X || start.Y != end.Y)
+        if (!start.X.Equals(end.X) || !start.Y.Equals(end.Y))
         {
             midpoint.Z -= Vector3.Distance(start, end) * SagPercentage * slack;
         }
@@ -350,16 +350,10 @@ internal static class BendableSplineGeometry
         var seed = MathF.Abs(direction.Y) < 0.999f ? Vector3.UnitY : Vector3.UnitX;
         ringX = Vector3.Normalize(Vector3.Cross(seed, direction));
         ringY = Vector3.Normalize(Vector3.Cross(direction, ringX));
-        // With a +Z span the expressions above yield ringX=+X and ringY=+Y, exactly retail's
-        // (sin(theta), cos(theta)) cross-section ordering.
-        if (direction.Z >= 0.999f)
+        // With a span parallel to either Z-axis direction, retail uses the identity ring plane:
+        // ringX=+X and ringY=+Y, exactly its (sin(theta), cos(theta)) cross-section ordering.
+        if (MathF.Abs(direction.Z) >= 0.999f)
         {
-            ringX = Vector3.UnitX;
-            ringY = Vector3.UnitY;
-        }
-        else if (direction.Z <= -0.999f)
-        {
-            // Retail treats the antiparallel axis as identity. Its ring plane is still correct.
             ringX = Vector3.UnitX;
             ringY = Vector3.UnitY;
         }
